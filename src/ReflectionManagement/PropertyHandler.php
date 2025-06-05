@@ -96,7 +96,7 @@
 			$className = is_object($class) ? get_class($class) : $class;
 			
 			// Check if the ReflectionClass already exists in cache
-			if (!array_key_exists($className, $this->reflection_classes)) {
+			if (!isset($this->reflection_classes[$className])) {
 				// Create a new ReflectionClass and cache it
 				$this->reflection_classes[$className] = new \ReflectionClass($className);
 			}
@@ -119,7 +119,7 @@
 			$key = "{$className}:{$propertyName}";
 			
 			// Check if the ReflectionProperty already exists in cache
-			if (!array_key_exists($key, $this->reflection_properties)) {
+			if (!isset($this->reflection_properties[$key])) {
 				// Create a new ReflectionProperty and make it accessible
 				$this->reflection_properties[$key] = $this->findPropertyInHierarchy($className, $propertyName);
 				$this->reflection_properties[$key]->setAccessible(true);
