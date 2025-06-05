@@ -259,18 +259,6 @@
 		}
 		
 		/**
-		 * Update the sort order
-		 * @param string $sortOrder New sort order
-		 */
-		public function updateSortOrder(string $sortOrder): void {
-			// Save the new sort order
-			$this->sortOrder = $sortOrder;
-			
-			// Use markDirty() instead of manual setting
-			$this->markDirty();
-		}
-		
-		/**
 		 * Filters the collection based on a callback function
 		 * @param callable $callback A callback function that takes an element and returns bool
 		 * @return array<T> An array containing only elements that pass the filter
