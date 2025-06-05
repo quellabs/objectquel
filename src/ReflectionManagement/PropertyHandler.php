@@ -114,7 +114,7 @@
 		 * @param string $propertyName The name of the property to retrieve
 		 * @return mixed The property value if accessible, null if uninitialized, false on error
 		 */
-		public function get($object, string $propertyName): mixed {
+		public function get(object $object, string $propertyName): mixed {
 			try {
 				// Get the reflection property object for the given property name
 				$reflection = $this->getReflectionProperty($object, $propertyName);
@@ -123,6 +123,20 @@
 				// This prevents the "must not be accessed before initialization" Error
 				// that occurs with typed properties in PHP 7.4+
 				if (!$reflection->isInitialized($object)) {
+					// Return type-compatible default value for uninitialized typed properties
+					$type = $reflection->getType();
+					
+					if ($type instanceof \ReflectionNamedType && !$type->allowsNull()) {
+						return match ($type->getName()) {
+							'string' => '',
+							'int' => 0,
+							'float' => 0.0,
+							'bool' => false,
+							'array' => [],
+							default => null
+						};
+					}
+					
 					return null;
 				}
 				
