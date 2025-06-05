@@ -9,16 +9,8 @@
 	 */
 	class PropertyHandler {
 		
-		protected array $reflection_classes;
-		protected array $reflection_properties;
-		
-		/**
-		 * PropertyHandler constructor.
-		 */
-		public function __construct() {
-			$this->reflection_properties = [];
-			$this->reflection_classes = [];
-		}
+		private array $reflection_classes = [];
+		private array $reflection_properties = [];
 		
 		/**
 		 * Returns true if the property exists, false if not
@@ -112,6 +104,30 @@
 			// Return the cached or newly created ReflectionClass
 			return $this->reflection_classes[$className];
 		}
+
+		/**
+		 * Retrieves a ReflectionProperty instance for the specified property of a class.
+		 * @param string|object $class The object or the name of the class to get the property from.
+		 * @param string $propertyName The name of the property to reflect.
+		 * @return \ReflectionProperty A ReflectionProperty instance.
+		 */
+		private function getReflectionProperty(string|object $class, string $propertyName): \ReflectionProperty {
+			// Determine the class name from the object or directly use the provided class name
+			$className = is_object($class) ? get_class($class) : $class;
+			
+			// Create a key based on the class name and property name
+			$key = "{$className}:{$propertyName}";
+			
+			// Check if the ReflectionProperty already exists in cache
+			if (!array_key_exists($key, $this->reflection_properties)) {
+				// Create a new ReflectionProperty and make it accessible
+				$this->reflection_properties[$key] = $this->findPropertyInHierarchy($className, $propertyName);
+				$this->reflection_properties[$key]->setAccessible(true);
+			}
+			
+			// Return the cached or newly created ReflectionProperty
+			return $this->reflection_properties[$key];
+		}
 		
 		/**
 		 * Retrieves the correct ReflectionProperty for a given property name in the class hierarchy.
@@ -119,7 +135,7 @@
 		 * @param string $propertyName The name of the property to search for.
 		 * @return \ReflectionProperty|null The ReflectionProperty object if found, or null otherwise.
 		 */
-		private function getCorrectPropertyClass(string|object $class, string $propertyName): ?\ReflectionProperty {
+		private function findPropertyInHierarchy(string|object $class, string $propertyName): ?\ReflectionProperty {
 			try {
 				// Initialize ReflectionClass for the given class name or object
 				$reflectionClass = $this->getReflectionClass($class);
@@ -140,29 +156,5 @@
 			
 			// Return null if the property is not found in any class in the hierarchy
 			return null;
-		}
-		
-		/**
-		 * Retrieves a ReflectionProperty instance for the specified property of a class.
-		 * @param string|object $class The object or the name of the class to get the property from.
-		 * @param string $propertyName The name of the property to reflect.
-		 * @return \ReflectionProperty A ReflectionProperty instance.
-		 */
-		private function getReflectionProperty(string|object $class, string $propertyName): \ReflectionProperty {
-			// Determine the class name from the object or directly use the provided class name
-			$className = is_object($class) ? get_class($class) : $class;
-			
-			// Create a key based on the class name and property name
-			$key = "{$className}:{$propertyName}";
-			
-			// Check if the ReflectionProperty already exists in cache
-			if (!array_key_exists($key, $this->reflection_properties)) {
-				// Create a new ReflectionProperty and make it accessible
-				$this->reflection_properties[$key] = $this->getCorrectPropertyClass($className, $propertyName);
-				$this->reflection_properties[$key]->setAccessible(true);
-			}
-			
-			// Return the cached or newly created ReflectionProperty
-			return $this->reflection_properties[$key];
 		}
 	}
