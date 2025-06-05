@@ -426,4 +426,67 @@
 			// Set dirty flag
 			$this->isDirty = true;
 		}
+		
+		/**
+		 * Filters the collection based on a callback function
+		 * @param callable $callback A callback function that takes an element and returns bool
+		 * @return array<T> An array containing only elements that pass the filter
+		 */
+		public function filter(callable $callback): array {
+			$filtered = [];
+			
+			foreach ($this->collection as $key => $item) {
+				if ($callback($item, $key)) {
+					$filtered[] = $item;
+				}
+			}
+			
+			return $filtered;
+		}
+		
+		/**
+		 * Maps each element of the collection through a callback function
+		 * @param callable $callback A callback function that takes an element and returns a transformed value
+		 * @return array An array containing the transformed elements
+		 */
+		public function map(callable $callback): array {
+			$mapped = [];
+			
+			foreach ($this->collection as $key => $item) {
+				$mapped[] = $callback($item, $key);
+			}
+			
+			return $mapped;
+		}
+		
+		/**
+		 * Reduces the collection to a single value using a callback function
+		 * @param callable $callback A callback function that takes accumulator, current item, and key
+		 * @param mixed $initial The initial value for the accumulator
+		 * @return mixed The final accumulated value
+		 */
+		public function reduce(callable $callback, mixed $initial = null): mixed {
+			$accumulator = $initial;
+			
+			foreach ($this->collection as $key => $item) {
+				$accumulator = $callback($accumulator, $item, $key);
+			}
+			
+			return $accumulator;
+		}
+		
+		/**
+		 * Checks if any element in the collection matches the given callback
+		 * @param callable $callback A callback function that takes an element and returns bool
+		 * @return bool True if any element matches, false otherwise
+		 */
+		public function any(callable $callback): bool {
+			foreach ($this->collection as $key => $item) {
+				if ($callback($item, $key)) {
+					return true;
+				}
+			}
+			
+			return false;
+		}
 	}
