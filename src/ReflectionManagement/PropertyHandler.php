@@ -109,12 +109,13 @@
 			// Return the newly created ReflectionClass
 			return $reflection;
 		}
-
+		
 		/**
 		 * Retrieves a ReflectionProperty instance for the specified property of a class.
 		 * @param string|object $class The object or the name of the class to get the property from.
 		 * @param string $propertyName The name of the property to reflect.
 		 * @return \ReflectionProperty A ReflectionProperty instance.
+		 * @throws \ReflectionException
 		 */
 		private function getReflectionProperty(string|object $class, string $propertyName): \ReflectionProperty {
 			// Determine the class name from the object or directly use the provided class name
