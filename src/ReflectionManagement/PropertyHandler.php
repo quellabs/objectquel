@@ -96,13 +96,18 @@
 			$className = is_object($class) ? get_class($class) : $class;
 			
 			// Check if the ReflectionClass already exists in cache
-			if (!isset($this->reflection_classes[$className])) {
-				// Create a new ReflectionClass and cache it
-				$this->reflection_classes[$className] = new \ReflectionClass($className);
+			if (isset($this->reflection_classes[$className])) {
+				return $this->reflection_classes[$className];
 			}
 			
-			// Return the cached or newly created ReflectionClass
-			return $this->reflection_classes[$className];
+			// Create a new ReflectionClass
+			$reflection = new \ReflectionClass($className);
+			
+			// Cache it
+			$this->reflection_classes[$className] = $reflection;
+			
+			// Return the newly created ReflectionClass
+			return $reflection;
 		}
 
 		/**
@@ -119,14 +124,19 @@
 			$key = "{$className}:{$propertyName}";
 			
 			// Check if the ReflectionProperty already exists in cache
-			if (!isset($this->reflection_properties[$key])) {
-				// Create a new ReflectionProperty and make it accessible
-				$this->reflection_properties[$key] = $this->findPropertyInHierarchy($className, $propertyName);
-				$this->reflection_properties[$key]->setAccessible(true);
+			if (isset($this->reflection_properties[$key])) {
+				return $this->reflection_properties[$key];
 			}
 			
-			// Return the cached or newly created ReflectionProperty
-			return $this->reflection_properties[$key];
+			// Create a new ReflectionProperty and make it accessible
+			$reflection = new \ReflectionProperty($className, $propertyName);
+			$reflection->setAccessible(true);
+			
+			// Cache it
+			$this->reflection_properties[$key] = $reflection;
+			
+			// Return newly created ReflectionProperty
+			return $reflection;
 		}
 		
 		/**
