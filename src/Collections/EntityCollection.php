@@ -310,4 +310,38 @@
 			$this->doInitialize();
 			return $this->collection->toArray();
 		}
+		
+		/**
+		 * Maps each element of the collection through a callback function
+		 * @param callable $callback A callback function that takes an element and returns a transformed value
+		 * @return array<T> An array containing the transformed elements
+		 * @throws QuelException
+		 */
+		public function map(callable $callback): array {
+			$this->doInitialize();
+			return $this->collection->map($callback);
+		}
+		
+		/**
+		 * Reduces the collection to a single value using a callback function
+		 * @param callable $callback A callback function that takes accumulator, current item, and key
+		 * @param mixed $initial The initial value for the accumulator
+		 * @return mixed The final accumulated value
+		 * @throws QuelException
+		 */
+		public function reduce(callable $callback, mixed $initial = null): mixed {
+			$this->doInitialize();
+			return $this->collection->reduce($callback, $initial);
+		}
+		
+		/**
+		 * Checks if any element in the collection matches the given callback
+		 * @param callable $callback A callback function that takes an element and returns bool
+		 * @return bool True if any element matches, false otherwise
+		 * @throws QuelException
+		 */
+		public function any(callable $callback): bool {
+			$this->doInitialize();
+			return $this->collection->any($callback);
+		}
 	}
