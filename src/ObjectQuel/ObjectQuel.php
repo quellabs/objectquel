@@ -264,7 +264,7 @@
 			// Doorloop elke annotatiegroep van de gerelateerde entiteit.
 			foreach ($entityAnnotations as $annotations) {
 				// Ga door naar de volgende groep als RequiredRelation annotatie niet aanwezig is.
-				if (!$this->inArrayObject(RequiredRelation::class, $annotations->toArray())) {
+				if (!$this->inArrayObject(RequiredRelation::class, $annotations->toIndexedArray())) {
 					continue;
 				}
 				

@@ -907,7 +907,7 @@
 			
 			// Filter annotations to find only those that are instances of the Cascade class
 			// This separates cascade annotations from other annotation types
-			$cascadeAnnotations = array_filter($entityAnnotations[$property]->toArray(), function ($a) {
+			$cascadeAnnotations = array_filter($entityAnnotations[$property]->toIndexedArray(), function ($a) {
 				return $a instanceof Cascade;
 			});
 			

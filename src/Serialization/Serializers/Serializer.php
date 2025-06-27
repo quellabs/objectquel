@@ -250,7 +250,7 @@
 				foreach ($annotations as $annotation) {
 					if ($annotation instanceof Column) {
 						// Check if the property is part of a serialization group. If not, skip the property
-						if (!$this->propertyInSerializeGroup($annotations->toArray())) {
+						if (!$this->propertyInSerializeGroup($annotations->toIndexedArray())) {
 							break;
 						}
 						

@@ -547,7 +547,7 @@
 						    'precision'     => $columnAnnotation->getPrecision(),  // Decimal precision (for numeric types)
 						    
 						    // Check if this column is an auto-incrementing identity column
-						    'identity'      => $this->isIdentityColumn($propertyAnnotations->toArray()),
+						    'identity'      => $this->isIdentityColumn($propertyAnnotations->toIndexedArray()),
 					    ];
 					} catch (ParserException $e) {
 				    }
@@ -625,7 +625,7 @@
 			    });
 				
 				// Cache and return result
-			    return $this->index_cache[$owningTable] = $filteredResults->toArray();
+			    return $this->index_cache[$owningTable] = $filteredResults->toIndexedArray();
 		    } catch (ParserException $e) {
 			    return [];
 		    }
