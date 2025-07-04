@@ -26,8 +26,6 @@
 	use Quellabs\ObjectQuel\QueryManagement\QueryExecutor;
 	use Quellabs\ObjectQuel\ReflectionManagement\PropertyHandler;
 	use Quellabs\ObjectQuel\Validation\EntityToValidation;
-	use Quellabs\SignalHub\SignalHub;
-	use Quellabs\SignalHub\SignalHubLocator;
 	
 	/**
 	 * Represents an Entity Manager.
@@ -40,7 +38,6 @@
 		protected QueryBuilder $query_builder;
 		protected PropertyHandler $property_handler;
 		protected QueryExecutor $query_executor;
-		protected ProxyGenerator $proxy_generator;
 		
 		/**
 		 * EntityManager constructor - accepts optional configuration or discovers it
@@ -54,7 +51,6 @@
 			$this->query_builder = new QueryBuilder($this->entity_store);
 			$this->query_executor = new QueryExecutor($this);
 			$this->property_handler = new PropertyHandler();
-			$this->proxy_generator = new ProxyGenerator($this->entity_store, $configuration);
         }
 
 		/**
@@ -87,14 +83,6 @@
 		 */
 		public function getPropertyHandler(): PropertyHandler {
 			return $this->property_handler;
-		}
-		
-		/**
-		 * Returns the proxy generator
-		 * @return ProxyGenerator
-		 */
-		public function getProxyGenerator(): ProxyGenerator {
-			return $this->proxy_generator;
 		}
 		
         /**

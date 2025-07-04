@@ -26,7 +26,7 @@
 		private ?DatabaseAdapter $connection = null;
 		private ?AnnotationReader $annotationReader = null;
 		private ?EntityStore $entityStore = null;
-		private string $entityPath;
+		private array $entityPaths;
 		private string $migrationsPath;
 		private Configuration $configuration;
 		
@@ -40,7 +40,7 @@
 		public function __construct(ConsoleInput $input, ConsoleOutput $output, ?ProviderInterface $provider = null) {
 			parent::__construct($input, $output, $provider);
 			$this->configuration = $provider->getConfiguration();
-			$this->entityPath = $this->configuration->getEntityPath();
+			$this->entityPaths = $this->configuration->getEntityPaths();
 			$this->migrationsPath = $this->configuration->getMigrationsPath();
 		}
 		
@@ -52,24 +52,17 @@
 		public function execute(ConfigurationManager $config): int {
 			$this->output->writeLn("Generating database migrations based on entity changes...");
 			
-			// Initialize the entity schema analyzer
-			$entitySchemaAnalyzer = new EntitySchemaAnalyzer(
-				$this->getConnection(),
-				$this->getAnnotationReader(),
-				$this->getEntityStore(),
-				$this->entityPath
-			);
+			// Step 1: Fetch the entity map from the Entity Store
+			$entityMap = $this->getEntityStore()->getEntityMap();
 			
-			// Step 1: Scan and validate entities
-			$entityClasses = $entitySchemaAnalyzer->scanEntityClasses();
-			
-			if (empty($entityClasses)) {
+			if (empty($entityMap)) {
 				$this->output->writeLn("No entity classes found.");
 				return 1;
 			}
 			
 			// Step 2: Analyze changes between entities and database
-			$allChanges = $entitySchemaAnalyzer->analyzeEntityChanges($entityClasses);
+			$entitySchemaAnalyzer = new EntitySchemaAnalyzer($this->getConnection(), $this->getEntityStore());
+			$allChanges = $entitySchemaAnalyzer->analyzeEntityChanges($entityMap);
 			
 			// Step 3: Generate a migration file based on changes
 			$migrationBuilder = new PhinxMigrationBuilder($this->migrationsPath);
@@ -109,14 +102,18 @@
 		}
 		
 		/**
-		 * Returns the database connector
-		 * @return DatabaseAdapter
+		 * Returns the database connector using lazy initialization pattern
+		 * @return DatabaseAdapter The database adapter instance
 		 */
 		private function getConnection(): DatabaseAdapter {
+			// Check if connection has already been established
 			if ($this->connection === null) {
+				// Create a new database adapter with stored configuration
+				// This only happens on first call (lazy initialization)
 				$this->connection = new DatabaseAdapter($this->configuration);
 			}
 			
+			// Return the existing or newly created connection
 			return $this->connection;
 		}
 		
@@ -125,14 +122,22 @@
 		 * @return AnnotationReader
 		 */
 		private function getAnnotationReader(): AnnotationReader {
+			// Check if annotation reader is already initialized to avoid recreating it
 			if ($this->annotationReader === null) {
+				// Create a new configuration object for the annotation reader
 				$annotationReaderConfiguration = new \Quellabs\AnnotationReader\Configuration();
+				
+				// Configure whether to use annotation caching based on the main configuration
 				$annotationReaderConfiguration->setUseAnnotationCache($this->configuration->useMetadataCache());
+				
+				// Set the cache path for annotations from the main configuration
 				$annotationReaderConfiguration->setAnnotationCachePath($this->configuration->getMetadataCachePath());
 				
+				// Initialize the annotation reader with the configured settings
 				$this->annotationReader = new AnnotationReader($annotationReaderConfiguration);
 			}
 			
+			// Return the initialized annotation reader instance
 			return $this->annotationReader;
 		}
 		
@@ -141,10 +146,12 @@
 		 * @return EntityStore
 		 */
 		private function getEntityStore(): EntityStore {
+			// Check if the EntityStore instance has already been created (lazy loading)
 			if ($this->entityStore === null) {
 				$this->entityStore = new EntityStore($this->configuration);
 			}
 			
+			// Return the EntityStore instance (either newly created or existing)
 			return $this->entityStore;
 		}
 	}

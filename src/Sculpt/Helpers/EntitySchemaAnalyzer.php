@@ -11,40 +11,23 @@
 	 */
 	class EntitySchemaAnalyzer {
 		private DatabaseAdapter $connection;
-		private AnnotationReader $annotationReader;
 		private EntityStore $entityStore;
-		private string $entityPath;
 		private IndexComparator $indexComparator;
 		private SchemaComparator $schemaComparator;
 		
 		/**
 		 * EntitySchemaAnalyzer constructor
 		 * @param DatabaseAdapter $connection Database connection adapter
-		 * @param AnnotationReader $annotationReader Annotation reader for entity metadata
 		 * @param EntityStore $entityStore Entity store for entity definitions
-		 * @param string $entityPath Path to entity classes
 		 */
 		public function __construct(
 			DatabaseAdapter  $connection,
-			AnnotationReader $annotationReader,
 			EntityStore      $entityStore,
-			string           $entityPath
 		) {
 			$this->connection = $connection;
-			$this->annotationReader = $annotationReader;
 			$this->entityStore = $entityStore;
-			$this->entityPath = $entityPath;
 			$this->indexComparator = new IndexComparator($connection, $entityStore);
 			$this->schemaComparator = new SchemaComparator();
-		}
-		
-		/**
-		 * Scan the entity path for entity classes
-		 * @return array Mapping of class names to table names
-		 */
-		public function scanEntityClasses(): array {
-			$entityScanner = new EntityScanner($this->entityPath, $this->annotationReader);
-			return $entityScanner->scanEntities();
 		}
 		
 		/**

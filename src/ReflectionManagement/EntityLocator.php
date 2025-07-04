@@ -53,20 +53,24 @@
 		 * @return array List of discovered entity class names
 		 */
 		public function discoverEntities(): array {
+			// Return cached entities
 			if (!empty($this->entityClasses)) {
 				return $this->entityClasses;
 			}
 			
-			// Get the services path from configuration
-			$entityDirectory = realpath($this->configuration->getEntityPath());
-			
-			// Validate the directory exists
-			if (!is_dir($entityDirectory) || !is_readable($entityDirectory)) {
-				throw new \RuntimeException("Entity directory does not exist or is not readable: {$entityDirectory}");
+			// Get the service path from configuration
+			foreach($this->configuration->getEntityPaths() as $entityPath) {
+				// Make absolute
+				$entityDirectory = realpath($entityPath);
+				
+				// Skip directory if it does not exist
+				if (!is_dir($entityDirectory) || !is_readable($entityDirectory)) {
+					continue;
+				}
+				
+				// Process the root directory and all subdirectories recursively
+				$this->processDirectory($entityDirectory, $this->entityClasses);
 			}
-			
-			// Process the root directory and all subdirectories recursively
-			$this->processDirectory($entityDirectory);
 			
 			// Return the list
 			return $this->entityClasses;
@@ -76,7 +80,7 @@
 		 * Recursively process a directory and its subdirectories for entity files
 		 * @param string $directory The directory path to process
 		 */
-		private function processDirectory(string $directory): void {
+		private function processDirectory(string $directory, array &$result): void {
 			// Get all PHP files in the current directory
 			$entityFiles = glob($directory . DIRECTORY_SEPARATOR . "*.php");
 			
@@ -92,7 +96,7 @@
 				
 				// Check if it's a valid entity class
 				if ($this->isEntity($entityName)) {
-					$this->entityClasses[] = $entityName;
+					$result[] = $entityName;
 				}
 			}
 			
@@ -101,7 +105,7 @@
 			
 			// Process each subdirectory recursively
 			foreach ($subdirectories as $subdirectory) {
-				$this->processDirectory($subdirectory);
+				$this->processDirectory($subdirectory, $result);
 			}
 		}
 		

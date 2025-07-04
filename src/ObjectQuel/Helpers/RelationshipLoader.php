@@ -138,7 +138,7 @@
 			
 			// Gather information needed to create the proxy
 			$targetEntityName = $dependency->getTargetEntity();
-			$proxyClassName = $this->entityManager->getProxyGenerator()->getProxyClass($targetEntityName);
+			$proxyClassName = $this->entityManager->getEntityStore()->getProxyGenerator()->getProxyClass($targetEntityName);
 			
 			if ($dependency instanceof ManyToOne) {
 				$relationPropertyName = $dependency->getInversedBy();

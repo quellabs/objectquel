@@ -14,7 +14,7 @@
 		protected EntityStore $entityStore;
 		protected ReflectionHandler $reflectionHandler;
 		protected AnnotationReader $annotationReader;
-		protected string|bool $servicesPath;
+		protected array $servicesPaths;
 		protected string|false $proxyPath;
 		protected string|false $proxyNamespace;
 		protected array $types;
@@ -29,14 +29,29 @@
 			$this->entityStore = $entityStore;
 			$this->reflectionHandler = $entityStore->getReflectionHandler();
 			$this->annotationReader = $entityStore->getAnnotationReader();
-			$this->servicesPath = realpath($configuration->getEntityPath());
-			$this->proxyPath =  $configuration->getProxyDir() ? realpath($configuration->getProxyDir()) : "";
-			$this->proxyNamespace = $configuration->getProxyNamespace() ?: 'Quellabs\\ObjectQuel\\Proxy\\Runtime';
-			$this->types = ["int", "float", "bool", "string", "array", "object", "resource", "null", "callable", "iterable", "mixed", "false", "void", "static"];
+			$this->servicesPaths = $configuration->getEntityPaths();
+			$this->proxyPath = $configuration->getProxyDir() ?? "";
+			$this->proxyNamespace = $entityStore->getProxyNamespace();
 			
-			// Only initialize proxies if a servicesPath and proxyPath is set
-			if (!empty($this->servicesPath) && !empty($this->proxyPath)) {
+			$this->types = [
+				"int", "float", "bool", "string", "array", "object", "resource", "null",
+				"callable", "iterable", "mixed", "false", "void", "static"
+			];
+			
+			// Only initialize proxies if servicesPaths and proxyPath are set
+			if (!empty($this->servicesPaths) && !empty($this->proxyPath)) {
+				$this->createProxyPathIfNotPresent();
 				$this->initializeProxies();
+			}
+		}
+		
+		/**
+		 * Create the proxy dir if it's missing
+		 * @return void
+		 */
+		private function createProxyPathIfNotPresent(): void {
+			if (!is_dir($this->proxyPath)) {
+				mkdir($this->proxyPath, 0777, true);
 			}
 		}
 		
@@ -47,28 +62,40 @@
 		 * @return void
 		 */
 		private function initializeProxies(): void {
-			// Scan the services directory to get all files that might contain entities
-			$entityFiles = scandir($this->servicesPath);
-			
-			// Iterate through each file in the directory to process potential entity files
-			foreach ($entityFiles as $fileName) {
-				// Filter out non-PHP files (like directories, text files, etc.)
-				// Only process .php files as they are the only ones that can contain PHP entities
-				if (!$this->isPHPFile($fileName)) {
+			foreach ($this->servicesPaths as $servicesPath) {
+				// Ensure the service path exists
+				if (!is_dir($servicesPath)) {
 					continue;
 				}
 				
-				// Extract the entity name from the filename and check if it's a valid entity class
-				// This prevents processing of regular PHP files that aren't entity classes
-				$entityName = $this->constructEntityName($fileName);
+				// Scan the services directory to get all files that might contain entities
+				$entityFiles = scandir($servicesPath);
 				
-				if (!$this->isEntity($entityName)) {
-					continue;
-				}
-				
-				// Check if the proxy file is outdated compared to the source entity file
-				// Proxies need to be regenerated when the original entity has been modified
-				if ($this->isOutdated($fileName)) {
+				// Iterate through each file in the directory to process potential entity files
+				foreach ($entityFiles as $fileName) {
+					// Filter out non-PHP files (like directories, text files, etc.)
+					// Only process .php files as they are the only ones that can contain PHP entities
+					if (!$this->isPHPFile($fileName)) {
+						continue;
+					}
+					
+					// Get the full path to the entity file
+					$entityFilePath = $servicesPath . DIRECTORY_SEPARATOR . $fileName;
+					
+					// Extract the entity name from the file and check if it's a valid entity class
+					$entityName = $this->constructEntityName($entityFilePath);
+					
+					// Skip if the entity does not exist
+					if (!$this->entityStore->exists($entityName)) {
+						continue;
+					}
+					
+					// Check if the proxy file is outdated compared to the source entity file
+					// Proxies need to be regenerated when the original entity has been modified
+					if (!$this->isOutdated($entityFilePath)) {
+						continue;
+					}
+					
 					// Create a lock file to prevent race conditions in multi-threaded/multi-process environments
 					// This ensures that only one process generates the proxy at a time
 					$lockFile = $this->proxyPath . DIRECTORY_SEPARATOR . $fileName . '.lock';
@@ -86,7 +113,7 @@
 						if (flock($lockHandle, LOCK_EX)) {
 							// Double-check if the file is still outdated after acquiring the lock
 							// Another process might have already updated it while we were waiting
-							if ($this->isOutdated($fileName)) {
+							if ($this->isOutdated($entityFilePath)) {
 								// Generate the full path for the proxy file
 								$proxyFilePath = $this->proxyPath . DIRECTORY_SEPARATOR . $fileName;
 								
@@ -124,45 +151,60 @@
 		}
 		
 		/**
-		 * Checks if the entity is an ORM table
-		 * @param string $entityName
-		 * @return bool
-		 */
-		private function isEntity(string $entityName): bool {
-			try {
-				// Attempt to read Table annotations from the specified entity class
-				// This will search for @Table annotations on the class definition
-				$annotations = $this->annotationReader->getClassAnnotations($entityName, Table::class);
-				
-				// An entity is considered valid if it has at least one Table annotation
-				// Return true if annotations were found, false if the collection is empty
-				return !$annotations->isEmpty();
-			} catch (ParserException $e) {
-				// Handle cases where annotation parsing fails due to syntax errors or invalid annotations
-				// Return false to indicate the entity is not valid when parsing errors occur
-				// This ensures the method fails safely rather than throwing an exception
-				return false;
-			}
-		}
-		
-		/**
 		 * Returns true if the file is outdated, false if not
-		 * @param string $fileName
+		 * @param string $entityFilePath Full path to the entity file
 		 * @return bool
 		 */
-		private function isOutdated(string $fileName): bool {
+		private function isOutdated(string $entityFilePath): bool {
+			$fileName = basename($entityFilePath);
 			$proxyFilePath = $this->proxyPath . DIRECTORY_SEPARATOR . $fileName;
-			$entityFilePath = $this->servicesPath . DIRECTORY_SEPARATOR . $fileName;
+			
 			return !file_exists($proxyFilePath) || filemtime($entityFilePath) > filemtime($proxyFilePath);
 		}
 		
 		/**
-		 * Constructs the full entity name
-		 * @param string $fileName
-		 * @return string
+		 * Constructs the full entity name from the file path
+		 * @param string $entityFilePath Full path to the entity file
+		 * @return string The fully qualified class name
 		 */
-		private function constructEntityName(string $fileName): string {
-			return "Quellabs\\ObjectQuel\\Entity\\" . substr($fileName, 0, strpos($fileName, ".php"));
+		private function constructEntityName(string $entityFilePath): string {
+			// Try to determine the actual namespace and class name from the file
+			$fileContents = file_get_contents($entityFilePath);
+			$namespace = $this->extractNamespaceFromFile($fileContents);
+			$className = $this->extractClassNameFromFile($fileContents);
+			
+			if ($namespace && $className) {
+				return $namespace . '\\' . $className;
+			}
+			
+			// Fallback: use filename without extension
+			return basename($entityFilePath, '.php');
+		}
+		
+		/**
+		 * Extract namespace from PHP file content
+		 * @param string $fileContent
+		 * @return string|null
+		 */
+		private function extractNamespaceFromFile(string $fileContent): ?string {
+			if (preg_match('/namespace\s+([^;]+);/', $fileContent, $matches)) {
+				return trim($matches[1]);
+			}
+			
+			return null;
+		}
+		
+		/**
+		 * Extract class name from PHP file content
+		 * @param string $fileContent
+		 * @return string|null
+		 */
+		private function extractClassNameFromFile(string $fileContent): ?string {
+			if (preg_match('/class\s+([a-zA-Z_\x7f-\xff][a-zA-Z0-9_\x7f-\xff]*)\s*(?:extends|implements|{)/', $fileContent, $matches)) {
+				return trim($matches[1]);
+			}
+			
+			return null;
 		}
 		
 		/**
@@ -185,110 +227,134 @@
 		
 		/**
 		 * Retrieves the class name of a given entity, without the namespace.
-		 * @param mixed $classNameWithNamespace The entity from which we want to retrieve the class name.
+		 * @param string $classNameWithNamespace The entity from which we want to retrieve the class name.
 		 * @return string The class name without the namespace.
 		 */
-		protected function getClassNameWithoutNamespace(mixed $classNameWithNamespace): string {
+		protected function getClassNameWithoutNamespace(string $classNameWithNamespace): string {
 			return ltrim(strrchr($classNameWithNamespace, '\\'), '\\');
 		}
 		
 		/**
 		 * Convert a type to its string representation.
-		 * @param string $type      The type to convert.
-		 * @param bool $nullable    Indicates if the type can be null.
+		 * @param string $type The type to convert.
+		 * @param bool $nullable Indicates if the type can be null.
 		 * @return string The string representation of the type.
 		 */
 		protected function typeToString(string $type, bool $nullable): string {
-			// Special case for type 'mixed'
+			// Return empty string for empty type
+			if ($type === '') {
+				return '';
+			}
+			
+			// Special case for 'mixed' type - cannot be nullable
 			if ($type === 'mixed') {
-				return "mixed";
+				return 'mixed';
 			}
 			
-			// Check if the type is not empty.
-			$result = "";
-
-			if ($type !== "") {
-				// Check if the type is in the predefined types list.
-				// If not, prepend it with a backslash.
-				if (!in_array($type, $this->types)) {
-					$result = "\\{$type}";
-				} else {
-					$result = $type;
-				}
-				
-				// If the type is nullable, prepend it with a question mark.
-				if ($nullable && ($result !== 'mixed')) {
-					$result = "?{$result}";
-				}
+			// Special case for 'self' type
+			if ($type === 'self') {
+				return 'self';
 			}
 			
-			return $result;
+			// Determine if type needs namespace prefix
+			$result = in_array($type, $this->types) ? $type : "\\{$type}";
+			
+			// Add nullable prefix if needed
+			return $nullable ? "?{$result}" : $result;
 		}
 		
 		/**
-		 * Maakt een stringrepresentatie van de methods van een gegeven entiteit,
-		 * inclusief hun types, zichtbaarheid en documentatiecommentaar.
-		 * @param mixed $entity De entiteit waarvan de eigenschappen worden opgehaald.
-		 * @return string Een samengevoegde string die de eigenschappen van de entiteit beschrijft.
+		 * Creates a string representation of the methods of a given entity,
+		 * including their types, visibility and documentation comments.
+		 * @param mixed $entity The entity whose properties are retrieved.
+		 * @return string A concatenated string that describes the properties of the entity.
 		 */
 		protected function makeProxyMethods(mixed $entity): string {
 			$result = [];
 			
-			// Haal identifier keys op
+			// Get identifier keys
 			$identifierKeys = $this->entityStore->getIdentifierKeys($entity);
 			$identifierKeysGetterMethod = 'get' . ucfirst($identifierKeys[0]);
 			$hasConstructor = $this->reflectionHandler->hasConstructor($entity);
 			$constructorParentCode = $hasConstructor ? "parent::__construct();" : "";
 			
-			// Voeg de constructor toe en de lazy load functie toe
+			// Add the constructor and the lazy load function
 			$result[] = "
-				private \$entityManager;
-				private \$initialized;
-				
-				public function __construct(\\Quellabs\ObjectQuel\\EntityManager \$entityManager) {
-					\$this->entityManager = \$entityManager;
-					\$this->initialized = false;
-					{$constructorParentCode}
-				}
-				
-				protected function doInitialize() {
-					\$this->entityManager->find(\\{$entity}::class, \$this->{$identifierKeysGetterMethod}());
-					\$this->setInitialized();
-				}
-
-				public function isInitialized(): bool {
-					return \$this->initialized;
-				}
-
-				public function setInitialized(): void {
-					\$this->initialized = true;
-				}
+			    /**
+			     * The EntityManager instance used to lazy-load entity data from the database
+			     * @var \\Quellabs\\ObjectQuel\\EntityManager
+			     */
+			    private \\Quellabs\\ObjectQuel\\EntityManager \$entityManager;
+			    
+			    /**
+			     * Flag indicating whether the proxy has been initialized with actual entity data
+			     * @var bool
+			     */
+			    private bool \$initialized;
+			    
+			    /**
+			     * The proxy is created in an uninitialized state and will only load the actual
+			     * entity data from the database when first accessed via doInitialize().
+			     * @param \\Quellabs\\ObjectQuel\\EntityManager \$entityManager The EntityManager instance for database operations
+			     */
+			    public function __construct(\\Quellabs\\ObjectQuel\\EntityManager \$entityManager) {
+			       \$this->entityManager = \$entityManager;
+			       \$this->initialized = false;
+			       {$constructorParentCode}
+			    }
+			    
+			    /**
+			     * This method is called internally when the proxy needs to access entity properties
+			     * or methods for the first time. It uses the EntityManager to fetch the complete
+			     * entity data based on the entity's identifier and marks the proxy as initialized.
+			     * @return void
+			     */
+			    protected function doInitialize(): void {
+			       \$this->entityManager->find(\\{$entity}::class, \$this->{$identifierKeysGetterMethod}());
+			       \$this->setInitialized();
+			    }
+			
+			    /**
+			     * Checks if the proxy has been initialized with actual entity data
+			     * @return bool True if the entity data has been loaded from the database, false otherwise
+			     */
+			    public function isInitialized(): bool {
+			       return \$this->initialized;
+			    }
+			
+			    /**
+			     * Marks the proxy as initialized
+			     * @return void
+			     */
+			    public function setInitialized(): void {
+			       \$this->initialized = true;
+			    }
 			";
 			
-			// Loop door alle methoden van het gegeven object om proxy-methoden te genereren.
+			// Loop through all methods of the given object to generate proxy methods.
 			foreach ($this->reflectionHandler->getMethods($entity) as $method) {
-				// Sla de constructor en primary key getter over
+				// Skip the constructor and primary key getter
 				if (in_array($method, ["__construct", $identifierKeysGetterMethod])) {
 					continue;
 				}
 				
-				// Sla private functies over
+				// Skip private functions
 				$visibility = $this->reflectionHandler->getMethodVisibility($entity, $method);
 				
 				if ($visibility === "private") {
 					continue;
 				}
 				
-				// Verkrijg belangrijke informatie over de methode via reflectie.
+				// Obtain important information about the method via reflection.
 				$returnType = $this->reflectionHandler->getMethodReturnType($entity, $method);
 				$returnTypeNullable = $this->reflectionHandler->methodReturnTypeIsNullable($entity, $method);
 				$docComment = $this->reflectionHandler->getMethodDocComment($entity, $method);
 				
-				// Initialiseer een array om de parameterlijst op te bouwen.
+				// Initialize an array to build the parameter list.
 				$parameterList = [];
 				$parameters = $this->reflectionHandler->getMethodParameters($entity, $method);
 				
-				// Loop door de parameters en bouw de lijst op.
+				// Loop through the parameters and build the list.
 				foreach ($parameters as $parameter) {
 					$parameterType = $this->typeToString($parameter["type"], $parameter["nullable"]);
 					
@@ -303,20 +369,20 @@
 					}
 				}
 				
-				// Maak de uiteindelijke parameterlijst en parameter naam lijst.
+				// Create the final parameter list and parameter name list.
 				$parameterString = implode(",", $parameterList);
-				$parameterNamesString = implode(",", array_map(function ($e) { return "\${$e}";}, array_column($parameters, "name")));
+				$parameterNamesString = implode(",", array_map(function ($e) { return "\${$e}"; }, array_column($parameters, "name")));
 				$returnTypeString = $this->typeToString($returnType, $returnTypeNullable);
 				$returnTypeString = !empty($returnTypeString) ? ": {$returnTypeString}" : "";
 				
-				// Functies die void retourneren, hebben geen return-statement. Anders crasht de boel.
+				// Functions that return void don't have a return statement. Otherwise everything crashes.
 				if (str_contains($returnTypeString, "void")) {
 					$returnStatement = "";
 				} else {
 					$returnStatement = "return ";
 				}
 				
-				// Voeg de proxy methode toe aan de resultatenlijst.
+				// Add the proxy method to the results list.
 				$result[] = "
 					{$docComment}
 					{$visibility} function {$method}({$parameterString}){$returnTypeString} {
@@ -326,7 +392,7 @@
 		        ";
 			}
 			
-			// Voeg alle gegenereerde proxy-methoden samen tot één string en retourneer deze.
+			// Combine all generated proxy methods into one string and return it.
 			return implode("\n", $result);
 		}
 		

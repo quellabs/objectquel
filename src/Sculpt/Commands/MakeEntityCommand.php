@@ -94,7 +94,7 @@
 			
 			// Show the appropriate message to user based on whether the entity exists
 			$entityNamePlus = $entityName . "Entity";
-			$entityPath = realpath($this->configuration->getEntityPath());
+			$entityPath = realpath($this->configuration->getEntityCreationPath());
 			
 			if (!$this->getEntityModifier()->entityExists($entityNamePlus)) {
 				$this->output->writeLn("\nCreating new entity: {$entityPath}/{$entityNamePlus}.php\n");
@@ -104,7 +104,6 @@
 			
 			// Get list of available entities for relationships
 			$availableEntities = [];
-			$entityPath = $this->configuration->getEntityPath();
 			
 			if (is_dir($entityPath)) {
 				$files = scandir($entityPath);

@@ -34,7 +34,7 @@
 		 * @return string Path to the entity file
 		 */
 		public function getEntityPath(string $entityName): string {
-			return $this->configuration->getEntityPath() . '/' . $entityName . '.php';
+			return $this->configuration->getEntityCreationPath() . '/' . $entityName . '.php';
 		}
 		
 		/**
@@ -74,11 +74,11 @@
 		public function createNewEntity(string $entityName, array $properties): bool {
 			// Ensure the entity directory exists before attempting to create files
 			// This is important for first-time setup or when deploying to new environments
-			if (!is_dir($this->configuration->getEntityPath())) {
+			if (!is_dir($this->configuration->getEntityCreationPath())) {
 				// Create the directory structure recursively with standard permissions
 				// 0755 allows the owner to read/write/execute and others to read/execute
 				// The 'true' parameter creates parent directories as needed
-				mkdir($this->configuration->getEntityPath(), 0755, true);
+				mkdir($this->configuration->getEntityCreationPath(), 0755, true);
 			}
 			
 			// Generate the complete entity class content as a string
