@@ -1,0 +1,64 @@
+{
+  "name": "quellabs/objectquel",
+  "description": "A sophisticated ORM system with a unique query language and streamlined architecture",
+  "type": "library",
+  "license": "MIT",
+  "authors": [
+    {
+      "name": "Floris van den Berg",
+      "email": "info@quellabs.com"
+    }
+  ],
+  "keywords": [
+    "ORM",
+    "ObjectQuel",
+    "query language",
+    "entity manager"
+  ],
+  "support": {
+    "email": "support@quellabs.com",
+    "issues": "https://github.com/quellabs/objectquel/issues",
+    "forum": "https://github.com/quellabs/objectquel/discussions",
+    "wiki": "https://github.com/quellabs/objectquel/wiki",
+    "docs": "https://objectquel.quellabs.com/docs",
+    "source": "https://github.com/quellabs/objectquel"
+  },
+  "config": {
+    "platform": {
+      "php": "8.2"
+    },
+    "allow-plugins": {
+      "quellabs/discover": false
+    }
+  },
+  "require": {
+    "ext-json": "*",
+    "ext-mysqli": "*",
+    "ext-pdo": "*",
+    "ext-curl": "*",
+    "ext-gd": "*",
+    "ext-fileinfo": "*",
+    "quellabs/contracts": "^1.",
+    "quellabs/signal-hub": "^1.",
+    "quellabs/annotation-reader": "^1.",
+    "quellabs/sculpt": "^1.",
+    "quellabs/discover": "^1.",
+    "quellabs/dependency-injection": "^1.",
+    "robmorgan/phinx": "*",
+    "cakephp/database": "*",
+    "softcreatr/jsonpath": "*"
+  },
+  "autoload": {
+    "psr-4": {
+      "Quellabs\\ObjectQuel\\": "src/"
+    }
+  },
+  "extra": {
+    "discover": {
+      "sculpt": {
+        "provider": "Quellabs\\ObjectQuel\\Sculpt\\ServiceProvider",
+        "config": "config/database.php"
+      }
+    }
+  }
+}
