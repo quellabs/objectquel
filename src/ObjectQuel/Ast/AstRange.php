@@ -46,7 +46,7 @@
 		
 		/**
 		 * Maakt de relatie verplicht
-		 * @var bool $required
+		 * @param bool $required
 		 * @return void
 		 */
 		public function setRequired(bool $required=true): void {

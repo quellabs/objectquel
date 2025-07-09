@@ -75,6 +75,13 @@
 		public function createPropertyLookupAstUsingRelation(AstIdentifier $joinProperty, mixed $relation): AstInterface {
 			// Get the entity and range from the join property
 			$entity = $joinProperty->getParent();
+
+			// Type check to ensure we have the correct entity type
+			if (!$entity instanceof AstIdentifier) {
+				throw new \InvalidArgumentException('Expected parent to be an AstIdentifier');
+			}
+
+			// Fetch range and relationColumn
 			$range = $entity->getRange();
 			$relationColumn = $relation->getRelationColumn();
 			

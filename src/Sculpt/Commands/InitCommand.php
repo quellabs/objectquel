@@ -6,6 +6,7 @@
 	use Quellabs\Contracts\IO\ConsoleInput;
 	use Quellabs\Contracts\IO\ConsoleOutput;
 	use Quellabs\Discover\Discover;
+	use Quellabs\ObjectQuel\Sculpt\ServiceProvider;
 	use Quellabs\Sculpt\Contracts\CommandBase;
 	use Quellabs\Sculpt\ConfigurationManager;
 	
@@ -33,9 +34,9 @@
 		 * InitCommand constructor
 		 * @param ConsoleInput $input
 		 * @param ConsoleOutput $output
-		 * @param ProviderInterface|null $provider
+		 * @param ServiceProvider|null $provider
 		 */
-		public function __construct(ConsoleInput $input, ConsoleOutput $output, ?ProviderInterface $provider = null) {
+		public function __construct(ConsoleInput $input, ConsoleOutput $output, ?ServiceProvider $provider = null) {
 			parent::__construct($input, $output, $provider);
 			$this->discover = new Discover();
 		}

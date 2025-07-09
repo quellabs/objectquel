@@ -133,35 +133,40 @@
 	    /**
 	     * Fetches a numeric value (integer or float) from a string starting at the current position.
 	     * If the number is malformed (e.g., contains multiple decimal points), an exception is thrown.
-	     * @return string The numeric value extracted from the string.
+	     * @return int|float The numeric value extracted from the string.
 	     * @throws LexerException If the number is malformed or if no number is found.
 	     */
-		protected function fetchNumber(): string {
-			$string = "";
-			$decimalFound = false;
-			
-			while ($this->pos < $this->length) {
-				$char = $this->string[$this->pos];
-
-				if (!ctype_digit($char) && $char !== '.') {
-					break; // Geen deel van een getal; stop de iteratie.
-				}
-				
-				if ($char === '.') {
-					if ($decimalFound) {
-						// Als er al een decimaal punt is gevonden, is het getal foutief gevormd.
-						throw new LexerException("Malformed floating point number");
-					}
-
-					$decimalFound = true;
-				}
-				
-				$string .= $char;
-				$this->pos++;
-			}
-			
-			return $string;
-		}
+	    protected function fetchNumber(): int|float {
+		    $numberString = "";
+		    $startPos = $this->pos;
+		    
+		    // Collect all digits and dots
+		    while ($this->pos < $this->length) {
+			    $char = $this->string[$this->pos];
+			    
+			    if (!ctype_digit($char) && $char !== '.') {
+				    break;
+			    }
+			    
+			    $numberString .= $char;
+			    $this->pos++;
+		    }
+		    
+		    // Count decimal points and validate
+		    $dotCount = substr_count($numberString, '.');
+		    
+			// Error if more than one dot found
+		    if ($dotCount > 1) {
+			    throw new LexerException("Malformed floating point number at position {$startPos}");
+		    }
+		    
+		    // Convert to appropriate numeric type
+		    if ($dotCount === 1) {
+			    return (float)$numberString;
+		    } else {
+			    return (int)$numberString;
+		    }
+	    }
         
         /**
          * Fetches the next token

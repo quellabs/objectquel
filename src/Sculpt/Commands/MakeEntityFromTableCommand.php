@@ -10,6 +10,7 @@
 	use Quellabs\ObjectQuel\Configuration;
 	use Quellabs\ObjectQuel\DatabaseAdapter\DatabaseAdapter;
 	use Quellabs\ObjectQuel\OrmException;
+	use Quellabs\ObjectQuel\Sculpt\ServiceProvider;
 	use Quellabs\Sculpt\Contracts\CommandBase;
 	use Quellabs\Sculpt\ConfigurationManager;
 	use Quellabs\Sculpt\Console\ConsoleInput;
@@ -30,10 +31,9 @@
 		 * MakeEntityFromTableCommand constructor
 		 * @param ConsoleInput $input
 		 * @param ConsoleOutput $output
-		 * @param ProviderInterface|null $provider
-		 * @throws OrmException
+		 * @param ServiceProvider|null $provider
 		 */
-		public function __construct(ConsoleInput $input, ConsoleOutput $output, ?ProviderInterface $provider = null) {
+		public function __construct(ConsoleInput $input, ConsoleOutput $output, ?ServiceProvider $provider = null) {
 			parent::__construct($input, $output, $provider);
 			$this->configuration = $provider->getConfiguration();
 		}

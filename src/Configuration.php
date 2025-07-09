@@ -4,7 +4,6 @@
 	
 	/**
 	 * Configuration class for ObjectQuel ORM
-	 * @implements \ArrayAccess Provides array-like access to configuration parameters
 	 */
 	class Configuration implements \ArrayAccess {
 		

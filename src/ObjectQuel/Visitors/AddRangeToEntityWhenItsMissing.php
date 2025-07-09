@@ -30,7 +30,7 @@
 		 * @return void
 		 */
 		public function visitNode(AstInterface $node): void {
-			// This visitor only handles AstEntity
+			// This visitor only handles AstIdentifier
 			if (!$node instanceof AstIdentifier) {
 				return;
 			}
@@ -77,7 +77,7 @@
 			// Add the new AstRange
 			$this->ranges[] = $newRange;
 			
-			// Set the new alias for the AstEntity
+			// Set the new alias for the AstIdentifier
 			$node->setRange($newRange);
 		}
 		
