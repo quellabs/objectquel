@@ -2,7 +2,7 @@
 	
 	namespace Quellabs\ObjectQuel\Persistence;
 	
-	use Quellabs\ObjectQuel\DatabaseAdapter\databaseAdapter;
+	use Quellabs\ObjectQuel\DatabaseAdapter\DatabaseAdapter;
 	use Quellabs\ObjectQuel\EntityStore;
 	use Quellabs\ObjectQuel\OrmException;
 	use Quellabs\ObjectQuel\ReflectionManagement\PropertyHandler;

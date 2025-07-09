@@ -2,28 +2,32 @@
 	
 	namespace Quellabs\ObjectQuel\Validation;
 	
-	use Quellabs\ObjectQuel\AnnotationsReader\Annotations\Validation\Date;
-	use Quellabs\ObjectQuel\AnnotationsReader\Annotations\Validation\Email;
-	use Quellabs\ObjectQuel\AnnotationsReader\Annotations\Validation\Length;
-	use Quellabs\ObjectQuel\AnnotationsReader\Annotations\Validation\NotBlank;
-	use Quellabs\ObjectQuel\AnnotationsReader\Annotations\Validation\RegExp;
-	use Quellabs\ObjectQuel\AnnotationsReader\Annotations\Validation\Type;
-	use Quellabs\ObjectQuel\AnnotationsReader\Annotations\Validation\ValueIn;
-	use Quellabs\ObjectQuel\AnnotationsReader\AnnotationsReader;
-	use Quellabs\ObjectQuel\Kernel\Kernel;
-	use Quellabs\ObjectQuel\Kernel\ReflectionHandler;
+	use Quellabs\AnnotationReader\Configuration;
+	use Quellabs\AnnotationReader\AnnotationReader;
+	use Quellabs\ObjectQuel\Validation\Rules\Date;
+	use Quellabs\ObjectQuel\Validation\Rules\Email;
+	use Quellabs\ObjectQuel\Validation\Rules\Length;
+	use Quellabs\ObjectQuel\Validation\Rules\NotBlank;
+	use Quellabs\ObjectQuel\Validation\Rules\RegExp;
+	use Quellabs\ObjectQuel\Validation\Rules\Type;
+	use Quellabs\ObjectQuel\Validation\Rules\ValueIn;
+	use Quellabs\ObjectQuel\ReflectionManagement\ReflectionHandler;
 	
 	class EntityToValidation {
 		
-		private AnnotationsReader $annotationReader;
+		private AnnotationReader $annotationReader;
 		private ReflectionHandler $reflectionHandler;
 		
 		/**
 		 * EntityToValidation constructor
 		 */
 		public function __construct() {
+			$annotationReaderConfiguration = new Configuration();
+			$annotationReaderConfiguration->setUseAnnotationCache(false);
+			$annotationReaderConfiguration->setAnnotationCachePath('');
+			
 			$this->reflectionHandler = new ReflectionHandler();
-			$this->annotationReader = new AnnotationsReader();
+			$this->annotationReader = new AnnotationReader($annotationReaderConfiguration);
 		}
 		
 		/**
