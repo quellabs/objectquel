@@ -9,14 +9,11 @@
 	use Quellabs\ObjectQuel\EntityStore;
 	use Quellabs\ObjectQuel\ObjectQuel\QuelException;
 	use Quellabs\ObjectQuel\ReflectionManagement\PropertyHandler;
-
+	
 	/**
 	 * Collection class for managing entities with lazy-loading capabilities.
 	 * @template T of object
 	 * @implements CollectionInterface<T>
-	 * @implements ArrayAccess<int|string, T>
-	 * @implements Iterator<int|string, T>
-	 * @implements Countable
 	 */
 	class EntityCollection implements CollectionInterface {
 		

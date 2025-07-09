@@ -16,7 +16,6 @@
 		
 		/**
 		 * The EntityStore for storing and fetching entity metadata.
-		 * @var $entityStore EntityStore
 		 */
 		private EntityStore $entityStore;
 		
@@ -72,7 +71,7 @@
 		 * @return void
 		 */
 		public function visitNode(AstInterface $node): void {
-			// Checks if the node is an instance of AstEntity. If not, the function stops.
+			// Checks if the node is an instance of AstIdentifier. If not, the function stops.
 			if (!$node instanceof AstIdentifier) {
 				return;
 			}

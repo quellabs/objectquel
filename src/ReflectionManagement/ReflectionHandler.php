@@ -219,7 +219,7 @@
 				}
 				
 				// If the type is not null, get its name and return
-				return $typeClass->getName();
+				return (string)$typeClass;
 			} catch (\ReflectionException $e) {
 				return null;
 			}
@@ -344,7 +344,7 @@
 					return implode("|", array_map(function($type) { return $type->getName(); }, $returnTypeClass->getTypes()));
 				}
 				
-				return $returnTypeClass->getName();
+				return (string)$returnTypeClass;
 			} catch (\ReflectionException $e) {
 				return "";
 			}
@@ -472,7 +472,7 @@
 				// Loop through each parameter and store its details in the result array
 				foreach ($parameterClass as $parameter) {
 					$type = $parameter->getType();
-					$typeName = $type !== null ? $type->getName() : "";
+					$typeName = $type !== null ? (string)$type : "";
 					$isDefaultValueAvailable = $parameter->isDefaultValueAvailable();
 					
 					$result[] = [

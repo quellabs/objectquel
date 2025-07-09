@@ -4,7 +4,7 @@
 	
 	use Cake\Database\Schema\CollectionInterface;
 	use Cake\Database\StatementInterface;
-	use Cake\Datasource\ConnectionInterface;
+	use Cake\Database\Connection;
 	use Cake\Datasource\ConnectionManager;
 	use Phinx\Db\Adapter\AdapterInterface;
 	use Quellabs\ObjectQuel\Configuration;
@@ -16,7 +16,7 @@
 	class DatabaseAdapter {
 		
 		protected Configuration $configuration;
-		protected ConnectionInterface $connection;
+		protected Connection $connection;
 		protected array $descriptions;
 		protected array $columns_ex_descriptions;
 		protected int $last_error;
@@ -53,9 +53,9 @@
 		
 		/**
 		 * Returns the CakePHP connection
-		 * @return ConnectionInterface
+		 * @return Connection
 		 */
-		public function getConnection(): ConnectionInterface {
+		public function getConnection(): Connection {
 			return $this->connection;
 		}
 		
@@ -106,7 +106,7 @@
 			$typeMapper = new TypeMapper();
 			
 			// Get primary key columns first so we can mark them in column definitions
-			$primaryKey = $phinxAdapter->getPrimaryKey($tableName);
+			$primaryKey = $this->getPrimaryKeyColumns($tableName);
 			
 			// Keep a list of decimal types for precision/scale inclusion
 			// Phinx seems to sometimes return precision for integer fields which is incorrect
@@ -163,16 +163,43 @@
 		 * @return string
 		 */
 		public function getPrimaryKey(string $tableName): string {
-			return $this->getOne("
-                SELECT
-                    `COLUMN_NAME`
-                FROM `INFORMATION_SCHEMA`.`COLUMNS`
-                WHERE `table_schema` IN(SELECT DATABASE()) AND
-                      `table_name`=:tableName AND
-                      `column_key`='PRI'
-            ", [
-				'tableName' => $tableName
-			]);
+			// Get all primary key columns
+			$primaryKeyColumns = $this->getPrimaryKeyColumns($tableName);
+			
+			// Return first primary key column (assumes single-column PK)
+			// Uses null coalescing operator to return empty string if no columns exist
+			return $primaryKeyColumns[0] ?? '';
+		}
+		
+		/**
+		 * Returns the primary key columns for a table
+		 * @param string $tableName
+		 * @return array
+		 */
+		private function getPrimaryKeyColumns(string $tableName): array {
+			try {
+				// Get the schema descriptor for the specified table
+				$schema = $this->connection->getSchemaCollection()->describe($tableName);
+				
+				// Iterate through all constraints defined on the table
+				foreach ($schema->constraints() as $constraint) {
+					// Get detailed information about the current constraint
+					$constraintData = $schema->getConstraint($constraint);
+					
+					// Check if this constraint is a primary key constraint
+					if ($constraintData['type'] === 'primary') {
+						// Return the column names that make up the primary key
+						// This supports both single and composite primary keys
+						return $constraintData['columns'];
+					}
+				}
+			} catch (\Exception $e) {
+				// Silently fail and return empty string
+			}
+			
+			// Return an empty array if no primary key could be determined
+			// This indicates the table has no primary key or it couldn't be detected
+			return [];
 		}
 		
 		/**
@@ -327,21 +354,37 @@
 		 * @return array
 		 */
 		public function getForeignKeys(string $tableName): array {
-			return $this->getAll("
-				SELECT
-					COLUMN_NAME,
-					CONSTRAINT_NAME,
-					REFERENCED_TABLE_NAME,
-					REFERENCED_COLUMN_NAME
-				FROM
-					INFORMATION_SCHEMA.KEY_COLUMN_USAGE
-				WHERE
-				    TABLE_SCHEMA = DATABASE() AND
-					TABLE_NAME = :tableName AND
-					REFERENCED_TABLE_NAME IS NOT NULL;
-			", [
-				'tableName' => $tableName
-			]);
+			try {
+				// This array will receive the foreign key data
+				$foreignKeys = [];
+				
+				// Get the schema descriptor for the specified table
+				$schema = $this->connection->getSchemaCollection()->describe($tableName);
+				
+				// Iterate through all constraints defined on the table
+				foreach ($schema->constraints() as $constraint) {
+					// Get detailed information about the current constraint
+					$constraintData = $schema->getConstraint($constraint);
+					
+					// Check if this constraint is a foreign key constraint
+					if ($constraintData['type'] === 'foreign') {
+						// Build the foreign key information array to match the original format
+						foreach ($constraintData['columns'] as $index => $column) {
+							$foreignKeys[] = [
+								'COLUMN_NAME' => $column,
+								'CONSTRAINT_NAME' => $constraint,
+								'REFERENCED_TABLE_NAME' => $constraintData['references'][0] ?? null,
+								'REFERENCED_COLUMN_NAME' => $constraintData['references'][1][$index] ?? null
+							];
+						}
+					}
+				}
+				
+				return $foreignKeys;
+			} catch (\Exception $e) {
+				// Silently fail and return an empty array
+				return [];
+			}
 		}
 		
 		/**

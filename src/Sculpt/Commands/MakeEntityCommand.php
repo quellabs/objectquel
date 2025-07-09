@@ -11,6 +11,7 @@
 	use Quellabs\ObjectQuel\EntityStore;
 	use Quellabs\ObjectQuel\OrmException;
 	use Quellabs\ObjectQuel\Sculpt\Helpers\EntityModifier;
+	use Quellabs\ObjectQuel\Sculpt\ServiceProvider;
 	use Quellabs\Sculpt\Contracts\CommandBase;
 	use Quellabs\Sculpt\ConfigurationManager;
 	use Quellabs\Sculpt\Console\ConsoleInput;
@@ -46,10 +47,9 @@
 		 * MakeEntityCommand constructor
 		 * @param ConsoleInput $input
 		 * @param ConsoleOutput $output
-		 * @param ProviderInterface|null $provider
-		 * @throws OrmException
+		 * @param ServiceProvider|null $provider
 		 */
-		public function __construct(ConsoleInput $input, ConsoleOutput $output, ?ProviderInterface $provider = null) {
+		public function __construct(ConsoleInput $input, ConsoleOutput $output, ?ServiceProvider $provider = null) {
 			parent::__construct($input, $output, $provider);
 			$this->configuration = $provider->getConfiguration();
 		}

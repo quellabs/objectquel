@@ -19,7 +19,6 @@
 		/**
 		 * The EntityStore for storing and fetching entity metadata.
 		 * Used to validate if referenced entities actually exist in the system.
-		 * @var $entityStore EntityStore
 		 */
 		private EntityStore $entityStore;
 		
