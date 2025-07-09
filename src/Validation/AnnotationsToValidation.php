@@ -2,13 +2,13 @@
 	
 	namespace Quellabs\ObjectQuel\Validation;
 	
-	use Quellabs\ObjectQuel\AnnotationsReader\Annotations\Validation\Date;
-	use Quellabs\ObjectQuel\AnnotationsReader\Annotations\Validation\Email;
-	use Quellabs\ObjectQuel\AnnotationsReader\Annotations\Validation\Length;
-	use Quellabs\ObjectQuel\AnnotationsReader\Annotations\Validation\NotBlank;
-	use Quellabs\ObjectQuel\AnnotationsReader\Annotations\Validation\RegExp;
-	use Quellabs\ObjectQuel\AnnotationsReader\Annotations\Validation\Type;
-	use Quellabs\ObjectQuel\AnnotationsReader\Annotations\Validation\ValueIn;
+	use Quellabs\ObjectQuel\Validation\Rules\Date;
+	use Quellabs\ObjectQuel\Validation\Rules\Email;
+	use Quellabs\ObjectQuel\Validation\Rules\Length;
+	use Quellabs\ObjectQuel\Validation\Rules\NotBlank;
+	use Quellabs\ObjectQuel\Validation\Rules\RegExp;
+	use Quellabs\ObjectQuel\Validation\Rules\Type;
+	use Quellabs\ObjectQuel\Validation\Rules\ValueIn;
 	
 	class AnnotationsToValidation {
 		
@@ -23,13 +23,13 @@
 		public function convert(array $annotations): array {
 			// Mapping of annotation classes to validation rule classes
 			$annotationMap = [
-				Date::class          => Rules\Date::class,
-				Email::class         => Rules\Email::class,
-				Length::class        => Rules\Length::class,
-				NotBlank::class      => Rules\NotBlank::class,
-				RegExp::class        => Rules\RegExp::class,
-				Type::class          => Rules\Type::class,
-				ValueIn::class       => Rules\ValueIn::class,
+				Date::class     => Rules\Date::class,
+				Email::class    => Rules\Email::class,
+				Length::class   => Rules\Length::class,
+				NotBlank::class => Rules\NotBlank::class,
+				RegExp::class   => Rules\RegExp::class,
+				Type::class     => Rules\Type::class,
+				ValueIn::class  => Rules\ValueIn::class,
 			];
 			
 			// Loop through all properties of the entity
