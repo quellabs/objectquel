@@ -192,19 +192,6 @@
 		}
 		
 		/**
-		 * Returns true if the identifier is an entity, false if not
-		 * @param AstInterface $ast
-		 * @return bool
-		 */
-		protected function identifierIsEntity(AstInterface $ast): bool {
-			return (
-				$ast instanceof AstIdentifier &&
-				$ast->getRange() instanceof AstRangeDatabase &&
-				!$ast->hasNext()
-			);
-		}
-		
-		/**
 		 * Filters and returns an array of valid OneToMany dependencies for a given entity and property.
 		 * @param object $entity The entity whose property is being checked.
 		 * @param string $property The name of the entity's property.
@@ -268,17 +255,20 @@
 			
 			// Find a range that matches the relation criteria. If one is found, return true.
 			foreach ($this->retrieve->getValues() as $value) {
+				$expression = $value->getExpression();
+				
 				// Omit non entity values
-				if (!$this->identifierIsEntity($value->getExpression())) {
+				if (!($expression instanceof AstIdentifier) ||
+					!($expression->getRange() instanceof AstRangeDatabase) ||
+					$expression->hasNext()) {
 					continue;
 				}
 				
 				// Check if the entity matches and if the join property occurs in the range
-				$entity = $value->getExpression();
-				$range = $entity->getRange();
+				$range = $expression->getRange();
 				
 				if (
-					$entity->getEntityName() === $targetEntity &&
+					$expression->getEntityName() === $targetEntity &&
 					$range->hasJoinProperty($targetEntity, $joinProperty)
 				) {
 					return true;

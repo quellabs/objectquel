@@ -235,68 +235,103 @@
 		}
 		
 		/**
-		 * Processes a generic expression in an Abstract Syntax Tree (AST).
-		 * This function checks for special cases like '= string', which might
-		 * be converted to a LIKE expression in SQL, and regular expressions,
-		 * before processing the standard expression.
-		 * @param AstInterface $ast The AST node that represents the expression.
-		 * @param string $operator The operator in the expression (for example '=', '<', etc.).
-		 * @return void
+		 * Handles generic expression processing with support for special string cases.
+		 * Processes AST nodes for standard comparisons and delegates wildcard/regex handling to specialized methods.
+		 *
+		 * @param AstInterface $ast The AST node to process
+		 * @param string $operator The comparison operator
 		 */
 		protected function genericHandleExpression(AstInterface $ast, string $operator): void {
-			// Check if the operator is equal to "=" or "<>", the only supported special operators.
-			if (in_array($operator, ["=", "<>"], true)) {
-				// Handle the case where the right side of the expression is a string.
-				if ($ast->getRight() instanceof AstString) {
-					$stringAst = $ast->getRight();
-					$stringValue = $stringAst->getValue();
-					
-					// Check if the string value contains wildcard characters.
-					if (str_contains($stringValue, "*") || str_contains($stringValue, "?")) {
-						// Add the string to visited nodes for possible further processing.
-						$this->addToVisitedNodes($stringAst);
-						
-						// Process the left side of the expression.
-						$ast->getLeft()->accept($this);
-						
-						// Replace wildcard characters with SQL LIKE syntax equivalents.
-						$stringValue = str_replace(["%", "_", "*", "?"], ["\\%", "\\_", "%", "_"], $stringValue);
-						
-						// Determine the LIKE operator based on the original operator.
-						$regexpOperator = $operator == "=" ? " LIKE " : " NOT LIKE ";
-						
-						// Add the result with the adjusted operator and value.
-						$this->result[] = "{$regexpOperator}\"{$stringValue}\"";
-						return;
-					}
-				}
+			// We can only call getLeft/getRight on these nodes
+			if (
+				!$ast instanceof AstTerm &&
+				!$ast instanceof AstBinaryOperator &&
+				!$ast instanceof AstExpression &&
+				!$ast instanceof AstFactor
+			) {
+				return;
+			}
+			
+			if (in_array($operator, ['=', '<>'], true)) {
+				$rightAst = $ast->getRight();
 				
-				// Handle the case where the right side of the expression is a regular expression.
-				if ($ast->getRight() instanceof AstRegExp) {
-					$regexpAst = $ast->getRight();
-					$stringValue = $regexpAst->getValue();
-					
-					// Add the regular expression to visited nodes.
-					$this->addToVisitedNodes($regexpAst);
-					
-					// Process the left side of the expression.
-					$ast->getLeft()->accept($this);
-					
-					// Determine the REGEXP operator based on the original operator.
-					$regexpOperator = $operator == "=" ? " REGEXP " : " NOT REGEXP ";
-					
-					// Add the result with the adjusted operator and value of the regular expression.
-					$this->result[] = "{$regexpOperator}\"{$stringValue}\"";
+				if (
+					($rightAst instanceof AstString && $this->handleWildcardString($rightAst, $ast, $operator)) ||
+					($rightAst instanceof AstRegExp && $this->handleRegularExpression($rightAst, $ast, $operator))
+				) {
 					return;
 				}
 			}
 			
-			// If none of the special cases apply, process the expression in the standard way.
-			// This includes accepting the left side of the expression, adding the operator,
-			// and then accepting the right side of the expression.
 			$ast->getLeft()->accept($this);
 			$this->result[] = " {$operator} ";
 			$ast->getRight()->accept($this);
+		}
+		
+		/**
+		 * Handles wildcard string patterns by converting them to SQL LIKE syntax.
+		 * Converts * (match any sequence) to % and ? (match single character) to _.
+		 * @param AstString $rightAst The right-hand side AST node to check
+		 * @param AstBinaryOperator|AstExpression|AstFactor|AstTerm $ast The full AST node
+		 * @param string $operator The comparison operator
+		 * @return bool True if wildcard string was handled, false otherwise
+		 */
+		private function handleWildcardString(AstString $rightAst, AstExpression|AstBinaryOperator|AstFactor|AstTerm $ast, string $operator): bool {
+			// Extract the string value from the AST node
+			$stringValue = $rightAst->getValue();
+			
+			// Check if the string contains wildcard characters (* or ?)
+			if (!str_contains($stringValue, "*") && !str_contains($stringValue, "?")) {
+				return false;
+			}
+			
+			// Mark this node as visited to prevent duplicate processing
+			$this->addToVisitedNodes($rightAst);
+			
+			// Process the left-hand side of the comparison
+			$ast->getLeft()->accept($this);
+			
+			// Convert wildcards to SQL LIKE pattern syntax:
+			// - Escape existing SQL wildcards (% and _) with backslashes
+			// - Convert * (match any sequence) to % (SQL wildcard for any sequence)
+			// - Convert ? (match single character) to _ (SQL wildcard for single character)
+			$stringValue = str_replace(["%", "_", "*", "?"], ["\\%", "\\_", "%", "_"], $stringValue);
+			
+			// Choose the appropriate LIKE operator based on the original operator
+			$likeOperator = $operator == "=" ? " LIKE " : " NOT LIKE ";
+			
+			// Add the SQL LIKE clause to the result
+			$this->result[] = "{$likeOperator}\"{$stringValue}\"";
+			
+			// Indicate that special case was handled
+			return true;
+		}
+		
+		/**
+		 * Handles regular expression patterns by converting them to SQL REGEXP syntax.
+		 * @param AstRegExp $rightAst The right-hand side AST node to check
+		 * @param AstBinaryOperator|AstExpression|AstFactor|AstTerm $ast The full AST node
+		 * @param string $operator The comparison operator
+		 * @return bool True if regular expression was handled, false otherwise
+		 */
+		private function handleRegularExpression(AstRegExp $rightAst, AstExpression|AstBinaryOperator|AstFactor|AstTerm $ast, string $operator): bool {
+			// Extract the regex pattern from the AST node
+			$stringValue = $rightAst->getValue();
+			
+			// Mark this node as visited to prevent duplicate processing
+			$this->addToVisitedNodes($rightAst);
+			
+			// Process the left-hand side of the comparison
+			$ast->getLeft()->accept($this);
+			
+			// Choose appropriate REGEXP operator based on the original operator
+			$regexpOperator = $operator == "=" ? " REGEXP " : " NOT REGEXP ";
+			
+			// Add the SQL REGEXP clause to the result
+			$this->result[] = "{$regexpOperator}\"{$stringValue}\"";
+			
+			// Indicate that special case was handled
+			return true;
 		}
 		
 		/**
@@ -341,16 +376,30 @@
 		 * @return void
 		 */
 		protected function handleAlias(AstAlias $ast): void {
-			// Process an entity separately
+			// Extract the expression part from the alias (e.g., in "users u", this gets "users")
 			$expression = $ast->getExpression();
 			
+			// Early return if the expression is not an identifier
+			// This handles cases where the expression might be a subquery or other complex expression
+			if (!$expression instanceof AstIdentifier) {
+				return;
+			}
+			
+			// Check if this identifier represents an entity (table/model reference)
+			// Entities need special handling compared to regular column references
 			if ($this->identifierIsEntity($expression)) {
+				// Mark this node as visited to prevent infinite recursion
+				// This is important for circular references in the AST
 				$this->addToVisitedNodes($expression);
+				
+				// Handle entity-specific processing (likely adds table name to FROM clause)
 				$this->handleEntity($expression);
 				return;
 			}
 			
-			// Process the expression that comes before the alias.
+			// For non-entity identifiers (columns, functions, etc.),
+			// use the visitor pattern to process the expression normally
+			// This will handle the SQL generation for the expression part of the alias
 			$ast->getExpression()->accept($this);
 		}
 		
@@ -450,20 +499,41 @@
 		}
 		
 		/**
-		 * Processes an entity
-		 * @param AstInterface $ast
+		 * Processes an entity by generating SQL column selections with proper aliasing
+		 * @param AstInterface $ast The AST node to process
 		 * @return void
 		 */
 		protected function handleEntity(AstInterface $ast): void {
+			// Early return if the AST node is not an identifier
+			// Only AstIdentifier nodes represent entities that can be processed
+			if (!$ast instanceof AstIdentifier) {
+				return;
+			}
+			
+			// Initialize an array to store the generated column selections
 			$result = [];
+			
+			// Get the range object from the AST identifier
+			// The range typically represents a table or entity reference
 			$range = $ast->getRange();
+			
+			// Extract the name from the range (e.g., table alias or table name)
 			$rangeName = $range->getName();
+			
+			// Retrieve the column mapping for this entity from the entity store
+			// This maps logical column names to actual database column names
 			$columnMap = $this->entityStore->getColumnMap($ast->getEntityName());
 			
+			// Iterate through each column in the entity's column map
 			foreach($columnMap as $item => $value) {
+				// Generate an SQL column selection with alias
+				// Format: "table_name.actual_column as `table_name.logical_column`"
+				// This creates properly aliased columns for the SELECT statement
 				$result[] = "{$rangeName}.{$value} as `{$rangeName}.{$item}`";
 			}
 			
+			// Join all column selections with commas and add to the main result array
+			// This builds the column list portion of the SQL SELECT statement
 			$this->result[] = implode(",", $result);
 		}
 		
@@ -504,14 +574,20 @@
 		
 		/**
 		 * Parse count function
-		 * @param AstInterface $ast
+		 * @param AstCount|AstUCount $ast
 		 * @param bool $distinct
 		 * @return void
 		 */
-		protected function universalHandleCount(AstInterface $ast, bool $distinct): void {
+		protected function universalHandleCount(AstCount|AstUCount $ast, bool $distinct): void {
 			// Get the identifier (entity or property) that needs to be counted.
 			$identifier = $ast->getIdentifier();
-			
+
+			// Early return if the expression is not an identifier
+			// This handles cases where the expression might be a subquery or other complex expression
+			if (!$identifier instanceof AstIdentifier) {
+				return;
+			}
+
 			// If the identifier is an entity, we count the number of unique instances of this entity.
 			if ($this->identifierIsEntity($identifier)) {
 				// Add the entity to the list of visited nodes.
@@ -533,23 +609,21 @@
 			}
 			
 			// If the identifier is a specific property within an entity, we count how often this property occurs.
-			if ($identifier instanceof AstIdentifier) {
-				// Add the property and the associated entity to the list of visited nodes.
-				$this->addToVisitedNodes($identifier);
-				
-				// Get the range of the entity where the property is part of.
-				$range = $identifier->getRange()->getName();
-				
-				// Get the property name and the corresponding column name in the database.
-				$property = $identifier->getNext()->getName();
-				$columnMap = $this->entityStore->getColumnMap($identifier->getEntityName());
-				
-				// Add the COUNT operation to the result, to count the frequency of a specific property.
-				if ($distinct) {
-					$this->result[] = "COUNT(DISTINCT {$range}.{$columnMap[$property]})";
-				} else {
-					$this->result[] = "COUNT({$range}.{$columnMap[$property]})";
-				}
+			// Add the property and the associated entity to the list of visited nodes.
+			$this->addToVisitedNodes($identifier);
+			
+			// Get the range of the entity where the property is part of.
+			$range = $identifier->getRange()->getName();
+			
+			// Get the property name and the corresponding column name in the database.
+			$property = $identifier->getNext()->getName();
+			$columnMap = $this->entityStore->getColumnMap($identifier->getEntityName());
+			
+			// Add the COUNT operation to the result, to count the frequency of a specific property.
+			if ($distinct) {
+				$this->result[] = "COUNT(DISTINCT {$range}.{$columnMap[$property]})";
+			} else {
+				$this->result[] = "COUNT({$range}.{$columnMap[$property]})";
 			}
 		}
 		

@@ -2,6 +2,7 @@
 	
 	namespace Quellabs\ObjectQuel\ObjectQuel\Visitors;
 	
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstBinaryOperator;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstExpression;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstFactor;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstIdentifier;
@@ -50,25 +51,36 @@
 		 * @return void
 		 */
 		public function visitNode(AstInterface $node): void {
-			// Only process nodes that can have left and right children
-			if ($node instanceof AstFactor || $node instanceof AstTerm || $node instanceof AstExpression) {
-				// Get the left child node
-				$left = $node->getLeft();
-				
-				// If the left node is an entity and has a defined macro, replace it
-				if ($this->identifierIsEntity($left) && isset($this->macros[$left->getName()])) {
-					// Substitute the left node with its corresponding macro
-					$node->setLeft($this->macros[$left->getName()]);
-				}
-				
-				// Get the right child node
-				$right = $node->getRight();
-				
-				// If the right node is an entity and has a defined macro, replace it
-				if ($this->identifierIsEntity($right) && isset($this->macros[$right->getName()])) {
-					// Substitute the right node with its corresponding macro
-					$node->setRight($this->macros[$right->getName()]);
-				}
+			// We can only call getLeft/getRight on these nodes
+			if (
+				!$node instanceof AstTerm &&
+				!$node instanceof AstBinaryOperator &&
+				!$node instanceof AstExpression &&
+				!$node instanceof AstFactor
+			) {
+				return;
+			}
+			
+			// Get the left child node
+			$left = $node->getLeft();
+			
+			// If the left node is an entity and has a defined macro, replace it
+			// @phpstan-ignore-next-line
+			if ($this->identifierIsEntity($left) && isset($this->macros[$left->getName()])) {
+				// Substitute the left node with its corresponding macro
+				// @phpstan-ignore-next-line
+				$node->setLeft($this->macros[$left->getName()]);
+			}
+			
+			// Get the right child node
+			$right = $node->getRight();
+			
+			// If the right node is an entity and has a defined macro, replace it
+			// @phpstan-ignore-next-line
+			if ($this->identifierIsEntity($right) && isset($this->macros[$right->getName()])) {
+				// Substitute the right node with its corresponding macro
+				// @phpstan-ignore-next-line
+				$node->setRight($this->macros[$right->getName()]);
 			}
 		}
 	}

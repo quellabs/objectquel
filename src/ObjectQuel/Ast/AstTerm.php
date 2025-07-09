@@ -47,10 +47,28 @@
 		}
 		
 		/**
+		 * Updates the left side with a new AST
+		 * @param AstInterface $ast
+		 * @return void
+		 */
+		public function setLeft(AstInterface $ast): void {
+			$this->left = $ast;
+		}
+		
+		/**
 		 * Get the right-hand operand of this expression.
 		 * @return AstInterface The right operand.
 		 */
 		public function getRight(): AstInterface {
 			return $this->right;
+		}
+		
+		/**
+		 * Updates the right side with a new AST
+		 * @param AstInterface $ast
+		 * @return void
+		 */
+		public function setRight(AstInterface $ast): void {
+			$this->right = $ast;
 		}
 	}

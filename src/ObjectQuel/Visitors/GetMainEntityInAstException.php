@@ -2,7 +2,7 @@
 	
 	namespace Quellabs\ObjectQuel\ObjectQuel\Visitors;
 	
-	use Quellabs\ObjectQuel\ObjectQuel\AstInterface;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstIn;
 	
 	/**
 	 * Class GetMainEntityInAstException
@@ -12,18 +12,18 @@
 		/**
 		 * The AST object that is stored and passed with the exception.
 		 * This allows the exception handler to access the found node.
-		 * @var AstInterface
+		 * @var AstIn
 		 */
-		private AstInterface $astObject;
+		private AstIn $astObject;
 		
 		/**
 		 * Constructor for GetMainEntityInAstException.
-		 * @param AstInterface $astObject The AST object that represents the main entity.
+		 * @param AstIn $astObject The AST object that represents the main entity.
 		 * @param string $message The error message for the exception (empty by default).
 		 * @param int $code The error code for the exception (0 by default).
 		 * @param \Throwable|null $previous Any previous exception that caused this exception.
 		 */
-		public function __construct(AstInterface $astObject, $message = "", $code = 0, \Throwable $previous = null) {
+		public function __construct(AstIn $astObject, $message = "", $code = 0, \Throwable $previous = null) {
 			// Call the parent Exception constructor to properly initialize the exception
 			parent::__construct($message, $code, $previous);
 			
@@ -33,9 +33,9 @@
 		
 		/**
 		 * Retrieves the stored AST object.
-		 * @return AstInterface The stored AST object representing the found main entity.
+		 * @return AstIn The stored AST object representing the found main entity.
 		 */
-		public function getAstObject(): AstInterface {
+		public function getAstObject(): AstIn {
 			return $this->astObject;
 		}
 	}

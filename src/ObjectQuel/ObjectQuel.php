@@ -12,11 +12,13 @@
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstBinaryOperator;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstExists;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstExpression;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstFactor;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstIdentifier;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstIn;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstNumber;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRangeDatabase;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRetrieve;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstTerm;
 	use Quellabs\ObjectQuel\ObjectQuel\Visitors\AddNamespacesToEntities;
 	use Quellabs\ObjectQuel\ObjectQuel\Visitors\AddRangeToEntityWhenItsMissing;
 	use Quellabs\ObjectQuel\ObjectQuel\Visitors\AliasPlugAliasPattern;
@@ -414,15 +416,23 @@
 			    $parent->setConditions($item);
 		    }
 		    
-			// If parentLeft flag is true, set the item as the left child of the parent
-		    elseif ($parentLeft) {
-			    $parent->setLeft($item);
+		    // We can only call setLeft/setRight on these nodes
+		    if (
+			    !$parent instanceof AstTerm &&
+			    !$parent instanceof AstBinaryOperator &&
+			    !$parent instanceof AstExpression &&
+			    !$parent instanceof AstFactor
+		    ) {
+			    return;
 		    }
-		    
-			// Otherwise, set the item as the right child of the parent
-		    else {
-			    $parent->setRight($item);
-		    }
+			
+		    // If parentLeft flag is true, set the item as the left child of the parent
+		    // Otherwise, set the item as the right child of the parent
+			if ($parentLeft) {
+				$parent->setLeft($item);
+			} else {
+				$parent->setRight($item);
+			}
 	    }
 		
 	    /**
@@ -438,6 +448,16 @@
 	     * @param bool $parentLeft Whether current item is left child of parent
 	     */
 	    private function handleExistsOperatorHelper(?AstInterface $parent, AstInterface $item, array &$list, bool $parentLeft = false): void {
+			// We can only call getLeft/getRight on these nodes
+		    if (
+				!$item instanceof AstTerm &&
+				!$item instanceof AstBinaryOperator &&
+				!$item instanceof AstExpression &&
+				!$item instanceof AstFactor
+		    ) {
+				return;
+		    }
+			
 		    // Process left branch for AND/OR operations
 		    if ($item->getLeft() instanceof AstBinaryOperator) {
 			    $this->handleExistsOperatorHelper($item, $item->getLeft(), $list, true);
@@ -727,7 +747,8 @@
 				$visitor = new GetMainEntityInAst($astIdentifier);
 				$e->getConditions()->accept($visitor);
 			} catch (GetMainEntityInAstException $exception) {
-				$exception->getAstObject()->setParameters($newParameters);
+				$astObject = $exception->getAstObject();
+				$astObject->setParameters($newParameters);
 				return;
 			}
 			
