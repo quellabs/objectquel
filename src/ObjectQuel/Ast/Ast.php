@@ -12,7 +12,7 @@
 	 */
 	abstract class Ast implements AstInterface {
 		
-		private ?Ast $parent = null;
+		private ?AstInterface $parent = null;
 		
 		/**
 		 * Accepts a visitor to perform operations on this node.
@@ -43,18 +43,18 @@
 		
 		/**
 		 * Returns the parent Ast
-		 * @return Ast|null
+		 * @return AstInterface|null
 		 */
-		public function getParent(): ?Ast {
+		public function getParent(): ?AstInterface {
 			return $this->parent;
 		}
 		
 		/**
 		 * Sets a new parent Ast
-		 * @param Ast|null $parent
+		 * @param AstInterface|null $parent
 		 * @return void
 		 */
-		public function setParent(?Ast $parent): void {
+		public function setParent(?AstInterface $parent): void {
 			$this->parent = $parent;
 		}
 	}

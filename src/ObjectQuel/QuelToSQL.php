@@ -218,8 +218,19 @@
 				$retrieveEntitiesVisitor = new QuelToSQLConvertToString($this->entityStore, $this->parameters, "SORT");
 				$astObject->getIdentifier()->accept($retrieveEntitiesVisitor);
 				
-				// Process the results into a SQL ORDER BY clause
-				$parametersSql = implode(",", array_unique(array_map(function ($e) { return $e->getValue(); }, $astObject->getParameters())));
+				// Process the results into an SQL ORDER BY clause
+				$mappedParameters = array_map(function ($e) {
+					if (method_exists($e, "getValue")) {
+						return $e->getValue();
+					} else {
+						return "";
+					}
+				}, $astObject->getParameters());
+				
+				// Remove empty values, make unique and implode
+				$parametersSql = implode(",", array_unique(array_filter($mappedParameters)));
+				
+				// Return results
 				return " ORDER BY FIELD(" . $retrieveEntitiesVisitor->getResult() . ", " . $parametersSql . ")";
 			}
 		}

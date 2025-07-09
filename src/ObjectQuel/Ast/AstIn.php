@@ -12,10 +12,10 @@
 		
 		/**
 		 * AstIn constructor
-		 * @param AstInterface $identifier
+		 * @param AstIdentifier $identifier
 		 * @param array $parameterList
 		 */
-		public function __construct(AstInterface $identifier, array $parameterList) {
+		public function __construct(AstIdentifier $identifier, array $parameterList) {
 			$this->identifier = $identifier;
 			$this->parameterList = $parameterList;
 		}
@@ -53,9 +53,9 @@
 		
 		/**
 		 * Returns all parameters used in the IN-statement
-		 * @return AstInterface
+		 * @return AstIdentifier
 		 */
-		public function getIdentifier(): AstInterface {
+		public function getIdentifier(): AstIdentifier {
 			return $this->identifier;
 		}
 

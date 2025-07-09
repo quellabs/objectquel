@@ -5,6 +5,7 @@
 	use Quellabs\ObjectQuel\Annotations\Orm\Column;
 	use Quellabs\ObjectQuel\EntityManager;
 	use Quellabs\ObjectQuel\EntityStore;
+	use Quellabs\ObjectQuel\ObjectQuel\QuelException;
 	use Quellabs\ObjectQuel\UnitOfWork;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstAlias;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstIdentifier;
@@ -83,6 +84,7 @@
 		 * @param array $filteredRow Data row containing entity properties
 		 * @param array $relationCache Cache containing relationship information
 		 * @return object|null The processed entity object or null if no data
+		 * @throws QuelException
 		 */
 		private function processEntity(AstAlias $value, array $filteredRow, array $relationCache): ?object {
 			// Check if the array contains any meaningful data
@@ -93,6 +95,12 @@
 			
 			// Extract metadata about the entity from the expression
 			$expression = $value->getExpression();
+
+			// The expression has to be an AstIdentifier
+			if (!$expression instanceof AstIdentifier) {
+				throw new QuelException("expression should be of type AstIdentifier");
+			}
+			
 			$entity = $this->entityStore->normalizeEntityName($expression->getEntityName()); // The entity class name
 			$rangeName = $expression->getRange()->getName(); // The alias/range name in the query
 			
