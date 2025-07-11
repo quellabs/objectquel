@@ -29,10 +29,13 @@
 	use Quellabs\ObjectQuel\ProxyGenerator\ProxyInterface;
 	use Quellabs\ObjectQuel\ReflectionManagement\PropertyHandler;
 	use Quellabs\ObjectQuel\Serialization\Serializers\SQLSerializer;
+	use Quellabs\SignalHub\HasSignals;
 	use Quellabs\SignalHub\SignalHub;
 	use Quellabs\SignalHub\SignalHubLocator;
 	
 	class UnitOfWork {
+		
+		use HasSignals;
 		
 		protected array $original_entity_data;
 		protected array $identity_map;
@@ -42,7 +45,6 @@
 		protected PropertyHandler $property_handler;
 		protected ?SQLSerializer $serializer;
 		protected ?DatabaseAdapter $connection;
-		protected SignalHub $signal_hub;
 		protected EntityLifecycleManager $lifecycleManager;
 		
 		/**
@@ -50,6 +52,8 @@
 		 * @param EntityManager $entityManager
 		 */
 		public function __construct(EntityManager $entityManager) {
+			$this->setSignalHub(SignalHubLocator::getInstance());
+
 			$this->connection = $entityManager->getConnection();
 			$this->entity_manager = $entityManager;
 			$this->entity_store = $entityManager->getEntityStore();
@@ -58,13 +62,12 @@
 			$this->original_entity_data = [];
 			$this->entity_removal_list = [];
 			$this->identity_map = [];
-			$this->signal_hub = SignalHubLocator::getInstance();
 			
 			// Register the signals
 			$this->registerLifecycleSignals();
 			
 			// Create the EntityLifecycleManager instance
-			$this->lifecycleManager = new EntityLifecycleManager($this->signal_hub, $this->entity_store);
+			$this->lifecycleManager = new EntityLifecycleManager($this->getSignalHub(), $this->entity_store);
 		}
 		
 		/**
@@ -299,25 +302,25 @@
 							case DirtyState::New:
 								$changed[] = $entity; // Add entity to the changed list
 								
-								$this->signal_hub->getSignal('orm.prePersist')->emit($entity);
+								$this->getSignalHub()->getSignal('orm.prePersist')->emit($entity);
 								$insertPersister->persist($entity); // Insert if the entity is new.
-								$this->signal_hub->getSignal('orm.postPersist')->emit($entity);
+								$this->getSignalHub()->getSignal('orm.postPersist')->emit($entity);
 								break;
 							
 							case DirtyState::Dirty:
 								$changed[] = $entity; // Add entity to the changed list
 								
-								$this->signal_hub->getSignal('orm.preUpdate')->emit($entity);
+								$this->getSignalHub()->getSignal('orm.preUpdate')->emit($entity);
 								$updatePersister->persist($entity); // Update if the entity has been modified.
-								$this->signal_hub->getSignal('orm.postUpdate')->emit($entity);
+								$this->getSignalHub()->getSignal('orm.postUpdate')->emit($entity);
 								break;
 							
 							case DirtyState::Deleted:
 								$deleted[] = $entity; // Add entity to the deleted list
 								
-								$this->signal_hub->getSignal('orm.preDelete')->emit($entity);
+								$this->getSignalHub()->getSignal('orm.preDelete')->emit($entity);
 								$deletePersister->persist($entity); // Delete if the entity is marked for deletion.
-								$this->signal_hub->getSignal('orm.postDelete')->emit($entity);
+								$this->getSignalHub()->getSignal('orm.postDelete')->emit($entity);
 								break;
 						}
 					}
@@ -1127,11 +1130,11 @@
 		 */
 		private function registerLifecycleSignals(): void {
 			// Define standard ORM lifecycle signals
-			$this->signal_hub->createSignal('orm.prePersist', ['object']);
-			$this->signal_hub->createSignal('orm.postPersist', ['object']);
-			$this->signal_hub->createSignal('orm.preUpdate', ['object']);
-			$this->signal_hub->createSignal('orm.postUpdate', ['object']);
-			$this->signal_hub->createSignal('orm.preDelete', ['object']);
-			$this->signal_hub->createSignal('orm.postDelete', ['object']);
+			$this->createSignal(['object'], 'orm.prePersist');
+			$this->createSignal(['object'], 'orm.postPersist');
+			$this->createSignal(['object'], 'orm.preUpdate');
+			$this->createSignal(['object'], 'orm.postUpdate');
+			$this->createSignal(['object'], 'orm.preDelete');
+			$this->createSignal(['object'], 'orm.postDelete');
 		}
 	}
