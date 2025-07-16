@@ -766,13 +766,20 @@
 					if (!empty($parentEntity)) {
 						// Get the parent entity's primary key value(s)
 						$parentPrimaryKeys = $this->getIdentifiers($parentEntity);
+
+						// Only handle simple primary keys, skip composite ones
+						if (count($parentPrimaryKeys) !== 1) {
+							continue;
+						}
+						
+						// Fetch the first primary key
 						$primaryKeyValue = $parentPrimaryKeys[array_key_first($parentPrimaryKeys)];
 						
 						// Add it to the result
 						$result[] = [
 							'entity'   => $parentEntity, // The parent entity itself
 							'property' => $annotation->getRelationColumn(), // The name of the property that defines the relationship
-							'value'    => $primaryKeyValue // The value of the inverse relationship
+							'value'    => $primaryKeyValue // The primary key value of the parent entity
 						];
 					}
 					
@@ -797,16 +804,14 @@
 			// Fetch the primary key names from the entity store
 			$primaryKeys = $this->getEntityStore()->getIdentifierKeys($entity);
 			
-			// Initialize the result array to hold key-value pairs of primary keys
-			$result = [];
-			
 			// Loop through each primary key name
+			$result = [];
+
 			foreach ($primaryKeys as $key) {
 				// Fetch the corresponding value for each primary key from the entity using the property handler
 				$result[$key] = $this->property_handler->get($entity, $key);
 			}
 			
-			// Return the array of primary key names and their corresponding values
 			return $result;
 		}
 		
@@ -872,7 +877,7 @@
 			foreach (array_merge($manyToOneDependencies, $oneToOneDependencies) as $property => $annotation) {
 				// Skip if this relationship doesn't point to our parent entity class
 				// This ensures we only process relationships relevant to the deleted entity
-				if ($annotation->getTargetEntity() !== $normalizedClass) {
+				if ($this->entity_store->normalizeEntityName($annotation->getTargetEntity()) !== $normalizedClass) {
 					continue;
 				}
 				
@@ -966,15 +971,24 @@
 		 * @return void
 		 */
 		private function cascadeDeleteDependentObjects(string $dependentEntityClass, string $property, object $parentEntity): void {
-			// Get the relationship value from the parent entity
-			$propertyValue = $this->getValueFromEntity($parentEntity, $property);
+			// Extract the primary key identifiers from the parent entity
+			// This returns an array of primary key field names and their values
+			$parentPrimaryKeys = $this->getIdentifiers($parentEntity);
 			
-			// Find dependent objects using the property value
+			// Get the first (and typically only) primary key value
+			// array_key_first() returns the first key, then we use that to get the corresponding value
+			$parentId = $parentPrimaryKeys[array_key_first($parentPrimaryKeys)];
+			
+			// Query the entity manager to find all dependent objects
+			// that have a foreign key relationship to the parent entity
+			// Uses the specified property name to match against the parent's ID
 			$dependentObjects = $this->entity_manager->findBy($dependentEntityClass, [
-				$property => $propertyValue
+				$property => $parentId
 			]);
 			
-			// Schedule each dependent object for deletion
+			// Iterate through each found dependent object and mark it for deletion
+			// This doesn't immediately delete the objects, but schedules them for deletion
+			// when the entity manager flushes changes to the database
 			foreach ($dependentObjects as $dependentObject) {
 				$this->scheduleForDelete($dependentObject);
 			}
@@ -1090,7 +1104,7 @@
 			
 			// Check each OneToOne relationship defined in this entity
 			foreach ($oneToOneDependencies as $property => $annotation) {
-				// Skip if this is the inverse (non-owning) side of the relationship
+				// Skip if this is the owning side of the relationship - we only want to process non-owning sides
 				if (empty($annotation->getMappedBy())) {
 					continue;
 				}
