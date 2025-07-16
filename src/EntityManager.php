@@ -20,7 +20,6 @@
 	use Quellabs\ObjectQuel\DatabaseAdapter\DatabaseAdapter;
 	use Quellabs\ObjectQuel\ObjectQuel\QuelException;
 	use Quellabs\ObjectQuel\ObjectQuel\QuelResult;
-	use Quellabs\ObjectQuel\ProxyGenerator\ProxyGenerator;
 	use Quellabs\ObjectQuel\ProxyGenerator\ProxyInterface;
 	use Quellabs\ObjectQuel\QueryManagement\QueryBuilder;
 	use Quellabs\ObjectQuel\QueryManagement\QueryExecutor;
