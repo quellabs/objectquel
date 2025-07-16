@@ -51,10 +51,6 @@
 		/**
 		 * Retrieve the name of the relationship column.
 		 * This method retrieves the name of the column that represents the OneToMany relationship in the database.
-		 * The column name is determined based on the following priorities:
-		 * 1. If the parameter "relationColumn" is set in the annotation, then this value is used.
-		 * 2. If "relationColumn" is not set but "mappedBy" is, then the value of "mappedBy" is used.
-		 * 3. If neither parameter is set, null is returned.
 		 * @return string|null The name of the join column or null if it is not set.
 		 */
 		public function getRelationColumn(): ?string {
