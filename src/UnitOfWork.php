@@ -764,10 +764,15 @@
 					
 					// If the parent entity exists, add it to the result with its relationship details.
 					if (!empty($parentEntity)) {
+						// Get the parent entity's primary key value(s)
+						$parentPrimaryKeys = $this->getIdentifiers($parentEntity);
+						$primaryKeyValue = $parentPrimaryKeys[array_key_first($parentPrimaryKeys)];
+						
+						// Add it to the result
 						$result[] = [
 							'entity'   => $parentEntity, // The parent entity itself
 							'property' => $annotation->getRelationColumn(), // The name of the property that defines the relationship
-							'value'    => $this->property_handler->get($parentEntity, $annotation->getInversedBy()) // The value of the inverse relationship
+							'value'    => $primaryKeyValue // The value of the inverse relationship
 						];
 					}
 					
