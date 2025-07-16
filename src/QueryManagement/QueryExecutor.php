@@ -106,66 +106,6 @@
 		}
 		
 		/**
-		 * Retrieves all results of an executed ObjectQuel query.
-		 * @param string $query
-		 * @param array $parameters
-		 * @return array
-		 * @throws QuelException
-		 */
-		public function getAll(string $query, array $parameters = []): array {
-			// Executes the query with the specified parameters.
-			$rs = $this->executeQuery($query, $parameters);
-			
-			// Checks if the query has successful results.
-			if ($rs->recordCount() == 0) {
-				return [];
-			}
-			
-			// Iterates through all rows of the result.
-			$result = [];
-			while ($row = $rs->fetchRow()) {
-				$result[] = $row;
-			}
-			
-			return $result;
-		}
-		
-		/**
-		 * Executes an ObjectQuel query and returns an array of objects from the
-		 * first column of each result, with duplicates removed.
-		 * @param string $query The ObjectQuel query to execute.
-		 * @param array $parameters Optional parameters for the query.
-		 * @return array An array of unique objects from the first column of the query results.
-		 * @throws QuelException
-		 */
-		public function getCol(string $query, array $parameters = []): array {
-			// Executes the query with the specified parameters.
-			$rs = $this->executeQuery($query, $parameters);
-			
-			// Checks if the query was successful and has results.
-			if ($rs->recordCount() == 0) {
-				return [];
-			}
-			
-			// Get the result
-			$result = [];
-			$keys = null;
-			
-			while ($row = $rs->fetchRow()) {
-				// Determines the keys (column names) of the first row, if not already determined.
-				if ($keys === null) {
-					$keys = array_keys($row);
-				}
-				
-				// Adds the value of the first column to the result.
-				$result[] = $row[$keys[0]];
-			}
-			
-			// Returns deduplicated results.
-			return $this->deDuplicateObjects($result);
-		}
-		
-		/**
 		 * Execute a decomposed query plan
 		 * @param string $query The query to execute
 		 * @param array $parameters Initial parameters for the plan

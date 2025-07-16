@@ -15,7 +15,7 @@
 	 * @package     Quellabs\ObjectQuel
 	 */
 	
-    namespace Quellabs\ObjectQuel;
+	namespace Quellabs\ObjectQuel;
 	
 	use Quellabs\ObjectQuel\DatabaseAdapter\DatabaseAdapter;
 	use Quellabs\ObjectQuel\ObjectQuel\QuelException;
@@ -26,14 +26,33 @@
 	use Quellabs\ObjectQuel\QueryManagement\QueryExecutor;
 	use Quellabs\ObjectQuel\ReflectionManagement\PropertyHandler;
 	use Quellabs\ObjectQuel\Validation\EntityToValidation;
+	use Quellabs\SignalHub\HasSignals;
+	use Quellabs\SignalHub\Signal;
+	use Quellabs\SignalHub\SignalHub;
+	use Quellabs\SignalHub\SignalHubLocator;
 	
 	/**
 	 * Represents an Entity Manager.
 	 */
 	class EntityManager {
+		
+		/**
+		 * This class uses signals
+		 */
+		use HasSignals;
+		
+		/**
+		 * Signals
+		 */
+		protected Signal $debugQuerySignal;
+		
+		/**
+		 * Properties
+		 */
 		protected Configuration $configuration;
-        protected DatabaseAdapter $connection;
-        protected UnitOfWork $unit_of_work;
+		protected SignalHub $signal_hub;
+		protected DatabaseAdapter $connection;
+		protected UnitOfWork $unit_of_work;
 		protected EntityStore $entity_store;
 		protected QueryBuilder $query_builder;
 		protected PropertyHandler $property_handler;
@@ -43,16 +62,21 @@
 		 * EntityManager constructor - accepts optional configuration or discovers it
 		 * @param Configuration|null $configuration
 		 */
-        public function __construct(?Configuration $configuration = null) {
-	        $this->configuration = $configuration;
-            $this->connection = new DatabaseAdapter($configuration);
-	        $this->entity_store = new EntityStore($configuration);
-            $this->unit_of_work = new UnitOfWork($this);
+		public function __construct(?Configuration $configuration = null) {
+			$this->configuration = $configuration;
+			$this->signal_hub = SignalHubLocator::getInstance();
+			$this->connection = new DatabaseAdapter($configuration);
+			$this->entity_store = new EntityStore($configuration);
+			$this->unit_of_work = new UnitOfWork($this, $this->signal_hub);
 			$this->query_builder = new QueryBuilder($this->entity_store);
 			$this->query_executor = new QueryExecutor($this);
 			$this->property_handler = new PropertyHandler();
-        }
-
+			
+			// Assign the signal hub to this class
+			$this->setSignalHub(SignalHubLocator::getInstance());
+			$this->debugQuerySignal = $this->createSignal(['array'], 'debug.objectquel.query');
+		}
+		
 		/**
 		 * Returns the DatabaseAdapter
 		 * @return DatabaseAdapter
@@ -85,19 +109,19 @@
 			return $this->property_handler;
 		}
 		
-        /**
-         * Adds an entity to the entity manager list
-         * @param $entity
-         * @return bool
-         */
-        public function persist(&$entity): bool {
-            if (!is_object($entity)) {
+		/**
+		 * Adds an entity to the entity manager list
+		 * @param $entity
+		 * @return bool
+		 */
+		public function persist(&$entity): bool {
+			if (!is_object($entity)) {
 				return false;
 			}
 			
 			return $this->unit_of_work->persistNew($entity);
-        }
-    
+		}
+		
 		/**
 		 * Flush all changed entities to the database
 		 * If an error occurs, an OrmException is thrown.
@@ -105,9 +129,9 @@
 		 * @return void
 		 * @throws OrmException
 		 */
-        public function flush(mixed $entity = null): void {
-            $this->unit_of_work->commit($entity);
-        }
+		public function flush(mixed $entity = null): void {
+			$this->unit_of_work->commit($entity);
+		}
 		
 		/**
 		 * Detach an entity from the EntityManager.
@@ -125,19 +149,55 @@
 		 * @return QuelResult|null The results of the execution plan
 		 * @throws QuelException
 		 */
-		public function executeQuery(string $query, array $parameters=[]): ?QuelResult {
-			return $this->query_executor->executeQuery($query, $parameters);
+		public function executeQuery(string $query, array $parameters = []): ?QuelResult {
+			// Record start time for performance monitoring
+			$start = microtime(true);
+			
+			// Execute the query through the query executor
+			$result = $this->query_executor->executeQuery($query, $parameters);
+			
+			// Record end time to calculate execution duration
+			$end = microtime(true);
+			
+			// Emit debug signal with comprehensive query execution information
+			// Time is converted to milliseconds for easier readability
+			$this->debugQuerySignal->emit([
+				'query'             => $query,
+				'bound_parameters'  => $parameters,
+				'execution_time_ms' => round(($end - $start) * 1000),
+				'timestamp'         => date('Y-m-d H:i:s'),
+				'memory_usage_kb'   => memory_get_usage(true) / 1024,
+				'peak_memory_kb'    => memory_get_peak_usage(true) / 1024
+			]);
+			
+			return $result;
 		}
 		
 		/**
 		 * Retrieves all results from an executed ObjectQuel query.
-		 * @param string $query
-		 * @param array $parameters
-		 * @return array
-		 * @throws QuelException
+		 * @param string $query The ObjectQuel query string to execute
+		 * @param array $parameters Optional parameters to bind to the query (default: empty array)
+		 * @return array Array of all rows returned by the query, or empty array if no results
+		 * @throws QuelException When query execution fails or encounters an error
 		 */
-		public function getAll(string $query, array $parameters=[]): array {
-			return $this->query_executor->getAll($query, $parameters);
+		public function getAll(string $query, array $parameters = []): array {
+			// Execute the ObjectQuel query with the provided parameters
+			// This delegates to the executeQuery method which handles parameter binding and execution
+			$rs = $this->executeQuery($query, $parameters);
+			
+			// Check if the query returned any results
+			if ($rs->recordCount() == 0) {
+				return [];
+			}
+			
+			// Build result array by iterating through all rows in the result set
+			$result = [];
+			while ($row = $rs->fetchRow()) {
+				$result[] = $row;
+			}
+			
+			// Return the complete array of all fetched rows
+			return $result;
 		}
 		
 		/**
@@ -147,8 +207,31 @@
 		 * @param array $parameters Optional parameters for the query.
 		 * @return array An array of unique objects from the first column of query results.
 		 */
-		public function getCol(string $query, array $parameters=[]): array {
-			return $this->query_executor->getCol($query, $parameters);
+		public function getCol(string $query, array $parameters = []): array {
+			// Execute the ObjectQuel query with the provided parameters
+			$rs = $this->executeQuery($query, $parameters);
+			
+			// Return an empty array if the query returned no results
+			if ($rs->recordCount() == 0) {
+				return [];
+			}
+			
+			// Iterate through each row in the result set
+			$result = [];
+			$keys = null;
+
+			while ($row = $rs->fetchRow()) {
+				// Get column names from the first row (cached for performance)
+				if ($keys === null) {
+					$keys = array_keys($row);
+				}
+				
+				// Extract the value from the first column and add to the result array
+				$result[] = $row[$keys[0]];
+			}
+			
+			// Remove duplicate objects from the result array before returning
+			return $this->query_executor->deDuplicateObjects($result);
 		}
 		
 		/**
@@ -172,7 +255,7 @@
 			$query = $this->query_builder->prepareQuery($entityType, $primaryKeys);
 			
 			// Execute query and retrieve result
-			$result = $this->query_executor->getAll($query, $primaryKeys);
+			$result = $this->getAll($query, $primaryKeys);
 			
 			// Extract the main column from the result
 			$filteredResult = array_column($result, "main");
