@@ -719,12 +719,12 @@
 	     */
 	    private function internalGetDependencies(mixed $entity, string $desiredAnnotationType): array {
 		    // Determine the class name of the entity
-		    if (!is_object($entity)) {
-			    $entityClass = ltrim($entity, "\\");
-		    } elseif ($entity instanceof \ReflectionClass) {
+		    if ($entity instanceof \ReflectionClass) {
 			    $entityClass = $entity->getName();
-		    } else {
+		    } elseif (is_object($entity)) {
 			    $entityClass = get_class($entity);
+		    } else {
+			    $entityClass = ltrim($entity, "\\");
 		    }
 		    
 		    // If the class name is a proxy, get the class from the parent
