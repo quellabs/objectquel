@@ -764,6 +764,9 @@
 					
 					// If the parent entity exists, add it to the result with its relationship details.
 					if (!empty($parentEntity)) {
+						// Get the relation column name, or fall back to a convention
+						$relationColumn = $annotation->getRelationColumn() ?? "{$property}Id";
+						
 						// Get the parent entity's primary key value(s)
 						$parentPrimaryKeys = $this->getIdentifiers($parentEntity);
 
@@ -773,12 +776,13 @@
 						}
 						
 						// Fetch the first primary key
-						$primaryKeyValue = $parentPrimaryKeys[array_key_first($parentPrimaryKeys)];
+						$primaryKey = array_key_first($parentPrimaryKeys);
+						$primaryKeyValue = $parentPrimaryKeys[$primaryKey];
 						
 						// Add it to the result
 						$result[] = [
 							'entity'   => $parentEntity, // The parent entity itself
-							'property' => $annotation->getRelationColumn(), // The name of the property that defines the relationship
+							'property' => $relationColumn, // The name of the property that defines the relationship
 							'value'    => $primaryKeyValue // The primary key value of the parent entity
 						];
 					}
@@ -881,6 +885,9 @@
 					continue;
 				}
 				
+				// Fetch relation column
+				$relationColumn = $annotation->getRelationColumn() ?? "{$property}Id";
+				
 				// Get cascade configuration information for this relationship
 				// This tells us how changes to the parent should propagate to dependents
 				$cascadeInfo = $this->getCascadeInfo($dependentEntityClass, $property);
@@ -896,7 +903,7 @@
 				// The relationship column is used to identify which dependent objects reference this parent
 				$this->cascadeDeleteDependentObjects(
 					$dependentEntityClass,             // The class of dependent objects to search for
-					$annotation->getRelationColumn(),  // The column/property that references the parent
+					$relationColumn,                   // The property that references the parent
 					$entity                            // The parent entity being deleted
 				);
 			}
