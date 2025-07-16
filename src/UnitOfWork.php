@@ -31,7 +31,6 @@
 	use Quellabs\ObjectQuel\Serialization\Serializers\SQLSerializer;
 	use Quellabs\SignalHub\HasSignals;
 	use Quellabs\SignalHub\SignalHub;
-	use Quellabs\SignalHub\SignalHubLocator;
 	
 	class UnitOfWork {
 		
@@ -50,9 +49,10 @@
 		/**
 		 * UnitOfWork constructor.
 		 * @param EntityManager $entityManager
+		 * @param SignalHub $signalHub
 		 */
-		public function __construct(EntityManager $entityManager) {
-			$this->setSignalHub(SignalHubLocator::getInstance());
+		public function __construct(EntityManager $entityManager, SignalHub $signalHub) {
+			$this->setSignalHub($signalHub);
 
 			$this->connection = $entityManager->getConnection();
 			$this->entity_manager = $entityManager;
