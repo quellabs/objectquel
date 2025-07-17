@@ -348,6 +348,11 @@
 			$this->identity_map = [];
 			$this->original_entity_data = [];
 			$this->entity_removal_list = [];
+			
+			// Add garbage collection hint for large datasets
+			if (extension_loaded('gc')) {
+				gc_collect_cycles();
+			}
 		}
 		
 		/**
