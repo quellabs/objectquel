@@ -125,19 +125,35 @@
 		 * @return QuelResult|null The results of the execution plan
 		 * @throws QuelException
 		 */
-		public function executeQuery(string $query, array $parameters=[]): ?QuelResult {
+		public function executeQuery(string $query, array $parameters = []): ?QuelResult {
 			return $this->query_executor->executeQuery($query, $parameters);
 		}
 		
 		/**
 		 * Retrieves all results from an executed ObjectQuel query.
-		 * @param string $query
-		 * @param array $parameters
-		 * @return array
-		 * @throws QuelException
+		 * @param string $query The ObjectQuel query string to execute
+		 * @param array $parameters Optional parameters to bind to the query (default: empty array)
+		 * @return array Array of all rows returned by the query, or empty array if no results
+		 * @throws QuelException When query execution fails or encounters an error
 		 */
-		public function getAll(string $query, array $parameters=[]): array {
-			return $this->query_executor->getAll($query, $parameters);
+		public function getAll(string $query, array $parameters = []): array {
+			// Execute the ObjectQuel query with the provided parameters
+			// This delegates to the executeQuery method which handles parameter binding and execution
+			$rs = $this->executeQuery($query, $parameters);
+			
+			// Check if the query returned any results
+			if ($rs->recordCount() == 0) {
+				return [];
+			}
+			
+			// Build result array by iterating through all rows in the result set
+			$result = [];
+			while ($row = $rs->fetchRow()) {
+				$result[] = $row;
+			}
+			
+			// Return the complete array of all fetched rows
+			return $result;
 		}
 		
 		/**
@@ -147,8 +163,31 @@
 		 * @param array $parameters Optional parameters for the query.
 		 * @return array An array of unique objects from the first column of query results.
 		 */
-		public function getCol(string $query, array $parameters=[]): array {
-			return $this->query_executor->getCol($query, $parameters);
+		public function getCol(string $query, array $parameters = []): array {
+			// Execute the ObjectQuel query with the provided parameters
+			$rs = $this->executeQuery($query, $parameters);
+			
+			// Return an empty array if the query returned no results
+			if ($rs->recordCount() == 0) {
+				return [];
+			}
+			
+			// Iterate through each row in the result set
+			$result = [];
+			$keys = null;
+
+			while ($row = $rs->fetchRow()) {
+				// Get column names from the first row (cached for performance)
+				if ($keys === null) {
+					$keys = array_keys($row);
+				}
+				
+				// Extract the value from the first column and add to the result array
+				$result[] = $row[$keys[0]];
+			}
+			
+			// Remove duplicate objects from the result array before returning
+			return $this->query_executor->deDuplicateObjects($result);
 		}
 		
 		/**
@@ -172,7 +211,7 @@
 			$query = $this->query_builder->prepareQuery($entityType, $primaryKeys);
 			
 			// Execute query and retrieve result
-			$result = $this->query_executor->getAll($query, $primaryKeys);
+			$result = $this->getAll($query, $primaryKeys);
 			
 			// Extract the main column from the result
 			$filteredResult = array_column($result, "main");

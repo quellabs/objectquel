@@ -47,20 +47,10 @@
 		/**
 		 * Retrieve the name of the relationship column.
 		 * This method retrieves the name of the column that represents the ManyToOne relationship in the database.
-		 * The column name is determined based on the following priorities:
-		 * 1. If the parameter "relationColumn" is set in the annotation, then this value is used.
-		 * 2. If "relationColumn" is not set but "inversedBy" is, then the value of "inversedBy" is used.
-		 * 3. If neither parameter is set, null is returned.
 		 * @return string|null The name of the join column or null if it is not set.
 		 */
 		public function getRelationColumn(): ?string {
-			if (isset($this->parameters["relationColumn"])) {
-				return $this->parameters["relationColumn"];
-			} elseif (isset($this->parameters["inversedBy"])) {
-				return $this->parameters["inversedBy"];
-			} else {
-				return null;
-			}
+			return $this->parameters["relationColumn"] ?? null;
 		}
 		
 		/**
