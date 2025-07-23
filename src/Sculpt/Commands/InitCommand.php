@@ -9,6 +9,7 @@
 	use Quellabs\ObjectQuel\Sculpt\ServiceProvider;
 	use Quellabs\Sculpt\Contracts\CommandBase;
 	use Quellabs\Sculpt\ConfigurationManager;
+	use Quellabs\Support\ComposerUtils;
 	
 	/**
 	 * InitCommand - Initialize ObjectQuel configuration in your project
@@ -70,13 +71,12 @@
 		 * @return int Exit code (0 for success, 1 for failure)
 		 */
 		public function execute(ConfigurationManager $config): int {
-			// Show an introductory message
+			// Show an introuctory message
 			$this->output->writeLn("");
 			$this->output->writeLn("Initializing ObjectQuel configuration...");
 			
 			// Determine the target directory - project root is preferable
-			$projectRoot = $this->discover->getProjectRoot();
-			$configDir = $projectRoot . "/config";
+			$configDir = ComposerUtils::getProjectRoot() . "/config";
 			
 			// Create config directory if it doesn't already exist
 			if (!is_dir($configDir)) {
