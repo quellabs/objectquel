@@ -43,7 +43,7 @@
 		/**
 		 * Signals
 		 */
-		protected Signal $debugQuerySignal;
+		protected ?Signal $debugQuerySignal;
 		
 		/**
 		 * Properties
@@ -72,8 +72,15 @@
 			$this->property_handler = new PropertyHandler();
 			
 			// Assign the signal hub to this class
-			$this->setSignalHub(SignalHubLocator::getInstance());
-			$this->debugQuerySignal = $this->createSignal(['array'], 'debug.objectquel.query');
+			$signalHub = SignalHubLocator::getInstance();
+			$this->setSignalHub($signalHub);
+			
+			// Fetch Signal or create if it doesn't exist
+			$this->debugQuerySignal = $signalHub->getSignal('debug.objectquel.query');
+			
+			if ($this->debugQuerySignal === null) {
+				$this->debugQuerySignal = $this->createSignal(['array'], 'debug.objectquel.query');
+			}
 		}
 		
 		/**
