@@ -254,7 +254,7 @@
 				$precision = null;
 				$scale = null;
 				
-				if (in_array($propertyType, ['decimal'])) {
+				if ($propertyType == 'decimal') {
 					// Ask for precision with validation
 					$precision = null;
 					

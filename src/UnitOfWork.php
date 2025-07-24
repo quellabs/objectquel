@@ -956,14 +956,9 @@
 			if (!in_array('remove', $cascadeAnnotation->getOperations())) {
 				return false;
 			}
-			
 			// Skip database-level cascades (handled by DB itself)
-			if ($cascadeAnnotation->getStrategy() === 'database') {
-				return false;
-			}
-			
 			// Yes, cascading removal should be performed
-			return true;
+			return $cascadeAnnotation->getStrategy() !== 'database';
 		}
 		
 		/**
