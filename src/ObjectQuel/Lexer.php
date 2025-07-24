@@ -118,7 +118,7 @@
 			while ($this->pos < $this->length) {
 				$currentChar = $this->string[$this->pos];
 				
-				if ($currentChar == "\n") {
+				if ($currentChar === "\n") {
 					++$this->lineNumber;
 				}
 				
@@ -182,7 +182,7 @@
             $this->advance();
 			
             // end of file
-            if ($this->pos == $this->length) {
+	        if ($this->pos === $this->length) {
                 return new Token(Token::Eof);
             }
             
@@ -192,11 +192,9 @@
             }
     
             // negative number
-            if ($this->pos + 1 < $this->length) {
-                if (($this->string[$this->pos] == '-') && ctype_digit($this->string[$this->pos + 1])) {
-                    ++$this->pos;
-                    return new Token(Token::Number, $this->fetchNumber() * -1, $this->lineNumber);
-                }
+	        if ($this->pos + 1 < $this->length && ($this->string[$this->pos] == '-' && ctype_digit($this->string[$this->pos + 1]))) {
+		        ++$this->pos;
+		        return new Token(Token::Number, $this->fetchNumber() * -1, $this->lineNumber);
             }
     
             // double quote or single quote = string
@@ -206,7 +204,7 @@
     
                 while ($this->string[++$this->pos] !== $firstChar) {
 					// Controleer op een niet afgesloten string op basis van end-of-stream
-					if ($this->pos == $this->length) {
+	                if ($this->pos === $this->length) {
 						throw new LexerException("Unexpected end of data");
 					}
 					
@@ -325,7 +323,7 @@
          * @throws LexerException
          */
         public function match(int $token): Token {
-            if ($this->next_token->getType() == $token) {
+	        if ($this->next_token->getType() === $token) {
                 $currentToken = $this->next_token;
                 $this->next_token = $this->lookahead;
                 $this->lookahead = $this->nextToken();
@@ -343,7 +341,7 @@
          * @throws LexerException
          */
         public function optionalMatch(int $token, Token &$result = null): bool {
-            if ($this->next_token->getType() == $token) {
+	        if ($this->next_token->getType() === $token) {
 				$result = $this->match($token);
                 return true;
             }

@@ -362,7 +362,7 @@
 						$parameterList[] = "{$parameterType} \${$parameter["name"]}";
 					} elseif ($parameter["default"] === null) {
 						$parameterList[] = "{$parameterType} \${$parameter["name"]}=NULL";
-					} elseif ($parameterType == "string") {
+					} elseif ($parameterType === "string") {
 						$parameterList[] = "{$parameterType} \${$parameter["name"]}='{$parameter["default"]}'";
 					} else {
 						$parameterList[] = "{$parameterType} \${$parameter["name"]}={$parameter["default"]}";

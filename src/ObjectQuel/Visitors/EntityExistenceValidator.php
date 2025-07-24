@@ -51,10 +51,8 @@
 			$this->visitedNodes[spl_object_id($ast)] = true;
 			
 			// Also add all AstIdentifier child properties for complete traversal
-			if ($ast instanceof AstIdentifier) {
-				if ($ast->hasNext()) {
-					$this->addToVisitedNodes($ast->getNext());
-				}
+			if ($ast instanceof AstIdentifier && $ast->hasNext()) {
+				$this->addToVisitedNodes($ast->getNext());
 			}
 		}
 		

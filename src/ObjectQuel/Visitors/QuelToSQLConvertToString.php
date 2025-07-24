@@ -148,10 +148,8 @@
 			$this->visitedNodes[spl_object_id($ast)] = true;
 			
 			// Also add all AstIdentifier child properties
-			if ($ast instanceof AstIdentifier) {
-				if ($ast->hasNext()) {
-					$this->addToVisitedNodes($ast->getNext());
-				}
+			if ($ast instanceof AstIdentifier && $ast->hasNext()) {
+				$this->addToVisitedNodes($ast->getNext());
 			}
 		}
 		
@@ -298,7 +296,7 @@
 			$stringValue = str_replace(["%", "_", "*", "?"], ["\\%", "\\_", "%", "_"], $stringValue);
 			
 			// Choose the appropriate LIKE operator based on the original operator
-			$likeOperator = $operator == "=" ? " LIKE " : " NOT LIKE ";
+			$likeOperator = $operator === "=" ? " LIKE " : " NOT LIKE ";
 			
 			// Add the SQL LIKE clause to the result
 			$this->result[] = "{$likeOperator}\"{$stringValue}\"";
@@ -325,7 +323,7 @@
 			$ast->getLeft()->accept($this);
 			
 			// Choose appropriate REGEXP operator based on the original operator
-			$regexpOperator = $operator == "=" ? " REGEXP " : " NOT REGEXP ";
+			$regexpOperator = $operator === "=" ? " REGEXP " : " NOT REGEXP ";
 			
 			// Add the SQL REGEXP clause to the result
 			$this->result[] = "{$regexpOperator}\"{$stringValue}\"";
