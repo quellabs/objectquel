@@ -223,18 +223,8 @@
 					return $newNode;
 				}
 				
-				// Case 2: If only left side has valid database conditions
-				if ($leftCondition !== null) {
-					return $leftCondition;
-				}
-				
-				// Case 3: If only right side has valid database conditions
-				if ($rightCondition !== null) {
-					return $rightCondition;
-				}
-				
-				// Case 4: If neither side has valid database conditions
-				return null;
+				// Case 2: If left or right side has valid database conditions
+				return $leftCondition !== null ? $leftCondition : $rightCondition;
 			}
 			
 			// For literals or other standalone expressions that don't involve any ranges.

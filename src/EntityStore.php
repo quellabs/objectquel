@@ -168,14 +168,9 @@
 		    
 		    // Get the parent class name using the ReflectionHandler
 		    $parentClass = $this->getReflectionHandler()->getParent($normalizedClass);
-		    
 		    // Check if the parent class exists in the entity_table_name array
-		    if ($parentClass !== null && isset($this->entity_table_name[$parentClass])) {
-			    return true;
-		    }
-		    
 		    // Return false if neither the entity nor its parent class exists in the entity_table_name array
-		    return false;
+		    return $parentClass !== null && isset($this->entity_table_name[$parentClass]);
 	    }
 	    
 	    /**
