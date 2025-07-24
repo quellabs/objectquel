@@ -90,7 +90,7 @@
 				return $this->entityStore->normalizeEntityName($e->getTargetEntity()) === $entityType;
 			});
 			
-			foreach ($oneToOneDependenciesFiltered as $propertyName => $relation) {
+			foreach ($oneToOneDependenciesFiltered as $relation) {
 				// Create a unique alias for the range.
 				$alias = $this->createAlias($rangeCounter);
 				
@@ -126,7 +126,7 @@
 				return $this->entityStore->normalizeEntityName($e->getTargetEntity()) === $entityType;
 			});
 			
-			foreach ($manyToOneDependenciesFiltered as $propertyName => $relation) {
+			foreach ($manyToOneDependenciesFiltered as $relation) {
 				// Create a unique alias for the range.
 				$alias = $this->createAlias($rangeCounter);
 				
