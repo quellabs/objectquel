@@ -3,7 +3,6 @@
 	namespace Quellabs\ObjectQuel\QueryManagement;
 	
 	use Flow\JSONPath\JSONPathException;
-	use Quellabs\Cache\FileCache;
 	use Quellabs\ObjectQuel\EntityManager;
 	use Quellabs\ObjectQuel\DatabaseAdapter\DatabaseAdapter;
 	use Quellabs\ObjectQuel\Execution\ExecutionStage;

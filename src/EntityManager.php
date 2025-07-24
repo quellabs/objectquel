@@ -17,7 +17,6 @@
 	
 	namespace Quellabs\ObjectQuel;
 	
-	use Quellabs\Cache\FileCache;
 	use Quellabs\ObjectQuel\DatabaseAdapter\DatabaseAdapter;
 	use Quellabs\ObjectQuel\ObjectQuel\QuelException;
 	use Quellabs\ObjectQuel\ObjectQuel\QuelResult;
@@ -117,19 +116,11 @@
 		}
 		
 		/**
-		 * Returns the file cache component
-		 * @return FileCache
-		 */
-		public function getFileCache(): FileCache {
-			return $this->file_cache;
-		}
-		
-		/**
 		 * Adds an entity to the entity manager list
 		 * @param $entity
 		 * @return bool
 		 */
-		public function persist(&$entity): bool {
+		public function persist($entity): bool {
 			if (!is_object($entity)) {
 				return false;
 			}
