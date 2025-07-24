@@ -67,7 +67,7 @@
 			];
 			
 			// Loop through all dependency types.
-			foreach ($dependencies as $dependencyType => $dependency) {
+			foreach ($dependencies as $dependency) {
 				if (isset($dependency[$propertyName])) {
 					$relation = $dependency[$propertyName];
 					$targetEntity = $relation->getTargetEntity();
