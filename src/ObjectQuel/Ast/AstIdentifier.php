@@ -124,10 +124,10 @@
 		
 		/**
 		 * Sets the next identifier in the chain
-		 * @param Ast|null $next
+		 * @param AstIdentifier|null $next
 		 * @return void
 		 */
-		public function setNext(?Ast $next): void {
+		public function setNext(?AstIdentifier $next): void {
 			$this->next = $next;
 		}
 		

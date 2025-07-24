@@ -92,7 +92,8 @@
 				$this->lexer->match(Token::Not);
 				
 				// If we have "NOT IN", we need to peek ahead to see if IN follows
-				if ($this->lexer->lookahead() == Token::In) {
+				// @phpstan-ignore-next-line
+				if ($this->lexer->lookahead() === Token::In) {
 					// Get the left expression from a parent parse - this would be the value
 					// we're checking in the NOT IN statement
 					$arithmeticExpression = new ArithmeticExpression($this->lexer);

@@ -61,11 +61,11 @@
 		 * Create a new execution stage
 		 * @param string $name Unique identifier for this stage
 		 * @param AstRetrieve $query The ObjectQuel query for this stage
-		 * @param AstRange|null $range The attached range, or null if none attached
+		 * @param AstRangeDatabase|AstRangeJsonSource|null $range The attached range, or null if none attached
 		 * @param array $staticParams Fixed parameters that don't depend on other stages
 		 * @param AstInterface|null $joinConditions The conditions for joining this stage with the final result
 		 */
-		public function __construct(string $name, AstRetrieve $query, ?AstRange $range, array $staticParams = [], ?AstInterface $joinConditions=null) {
+		public function __construct(string $name, AstRetrieve $query, AstRangeDatabase|AstRangeJsonSource|null $range, array $staticParams = [], ?AstInterface $joinConditions = null) {
 			$this->name = $name;
 			$this->query = $query;
 			$this->range = $range;
@@ -152,9 +152,10 @@
 		
 		/**
 		 * Sets the range
+		 * @param AstRangeDatabase|AstRangeJsonSource|null $range
 		 * @return void
 		 */
-		public function setRange(?AstRange $range): void {
+		public function setRange(AstRangeDatabase|AstRangeJsonSource|null $range): void {
 			$this->range = $range;
 		}
 		
