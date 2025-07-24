@@ -3,6 +3,7 @@
 	namespace Quellabs\ObjectQuel\QueryManagement;
 	
 	use Flow\JSONPath\JSONPathException;
+	use Quellabs\Cache\FileCache;
 	use Quellabs\ObjectQuel\EntityManager;
 	use Quellabs\ObjectQuel\DatabaseAdapter\DatabaseAdapter;
 	use Quellabs\ObjectQuel\Execution\ExecutionStage;
@@ -113,8 +114,14 @@
 		 * @throws QuelException
 		 */
 		public function executeQuery(string $query, array $parameters = []): QuelResult {
+			// Load cache component
+			$fileCache = new FileCache("objectquel");
+			
 			// Parse the input query string into an Abstract Syntax Tree (AST)
-			$ast = $this->getObjectQuel()->parse($query);
+			// Get the AST from cache if possible
+			$ast = $fileCache->remember(md5($query), 3600, function () use ($query) {
+				return $this->getObjectQuel()->parse($query);
+			});
 			
 			// Decompose the query
 			$decomposer = new QueryDecomposer();
