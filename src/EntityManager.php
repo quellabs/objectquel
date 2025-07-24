@@ -17,6 +17,7 @@
 	
 	namespace Quellabs\ObjectQuel;
 	
+	use Quellabs\Cache\FileCache;
 	use Quellabs\ObjectQuel\DatabaseAdapter\DatabaseAdapter;
 	use Quellabs\ObjectQuel\ObjectQuel\QuelException;
 	use Quellabs\ObjectQuel\ObjectQuel\QuelResult;
@@ -113,6 +114,14 @@
 		 */
 		public function getPropertyHandler(): PropertyHandler {
 			return $this->property_handler;
+		}
+		
+		/**
+		 * Returns the file cache component
+		 * @return FileCache
+		 */
+		public function getFileCache(): FileCache {
+			return $this->file_cache;
 		}
 		
 		/**
