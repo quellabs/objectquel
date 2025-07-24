@@ -76,10 +76,10 @@
 			$this->setSignalHub($signalHub);
 			
 			// Fetch Signal or create if it doesn't exist
-			$this->debugQuerySignal = $signalHub->getSignal('debug.objectquel.query');
+			$this->debugQuerySignal = $signalHub->getSignal('debug.database.query');
 			
 			if ($this->debugQuerySignal === null) {
-				$this->debugQuerySignal = $this->createSignal(['array'], 'debug.objectquel.query');
+				$this->debugQuerySignal = $this->createSignal(['array'], 'debug.database.query');
 			}
 		}
 		
@@ -168,6 +168,7 @@
 			// Emit debug signal with comprehensive query execution information
 			// Time is converted to milliseconds for easier readability
 			$this->debugQuerySignal->emit([
+				'driver' => 'objectquel',
 				'query'             => $query,
 				'bound_parameters'  => $parameters,
 				'execution_time_ms' => round(($end - $start) * 1000),
