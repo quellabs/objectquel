@@ -465,7 +465,7 @@
 				$this->clearCache();
 				
 				// Create a new execution plan to hold all the query stages
-				$plan = new ExecutionPlan();
+				$plan = new ExecutionPlan($query);
 				
 				// Extract the database query
 				$databaseStage = $this->createDatabaseExecutionStage($query, $staticParams);

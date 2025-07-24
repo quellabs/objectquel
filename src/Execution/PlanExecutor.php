@@ -115,7 +115,6 @@
 		
 		/**
 		 * Performs a cross join (Cartesian product) between two result sets
-		 *
 		 * @param array $leftResult The left result set
 		 * @param array $rightResult The right result set
 		 * @return array The combined result set

@@ -115,23 +115,23 @@
 		 */
 		public function executeQuery(string $query, array $parameters = []): QuelResult {
 			// Load cache component
-			$fileCache = new FileCache("objectquel");
+			$fileCache = new FileCache("quel-queries");
 			
-			// Parse the input query string into an Abstract Syntax Tree (AST)
-			// Get the AST from cache if possible
-			$ast = $fileCache->remember(md5($query), 3600, function () use ($query) {
-				return $this->getObjectQuel()->parse($query);
+			// Get the query plan from cache if possible
+			$executionPlan = $fileCache->remember(md5($query), 3600, function () use ($query, $parameters) {
+				// Parse the input query string into an Abstract Syntax Tree (AST)
+				$ast = $this->getObjectQuel()->parse($query);
+				
+				// Decompose the query
+				$decomposer = new QueryDecomposer();
+				return $decomposer->buildExecutionPlan($ast, $parameters);
 			});
-			
-			// Decompose the query
-			$decomposer = new QueryDecomposer();
-			$executionPlan = $decomposer->buildExecutionPlan($ast, $parameters);
 			
 			// Execute the returned execution plan and return the QuelResult
 			$result = $this->planExecutor->execute($executionPlan);
 			
 			// QuelResult gebruikt de AST om de ontvangen data te transformeren naar entities
-			return new QuelResult($this->entityManager, $ast, $result);
+			return new QuelResult($this->entityManager, $executionPlan->getAst(), $result);
 		}
 		
 		/**
