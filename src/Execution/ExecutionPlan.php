@@ -2,8 +2,6 @@
 	
 	namespace Quellabs\ObjectQuel\Execution;
 	
-	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRetrieve;
-	
 	/**
 	 * ExecutionPlan class manages the execution of query stages within the EntityManager system.
 	 * It maintains a collection of stages and provides methods to organize and retrieve them
@@ -12,32 +10,10 @@
 	class ExecutionPlan {
 		
 		/**
-		 * The parsed query (AST)
-		 * @var AstRetrieve
-		 */
-		private AstRetrieve $ast;
-		
-		/**
 		 * Collection of execution stages that make up this plan
 		 * @var ExecutionStage[]
 		 */
 		private array $stages;
-		
-		/**
-		 * ExecutionPlan constructor
-		 * @param AstRetrieve $query
-		 */
-		public function __construct(AstRetrieve $ast) {
-			$this->ast = $ast;
-		}
-		
-		/**
-		 * Returns the parsed query
-		 * @return AstRetrieve
-		 */
-		public function getAst(): AstRetrieve {
-			return $this->ast;
-		}
 		
 		/**
 		 * Returns the name of the main output stage.
