@@ -48,7 +48,10 @@
 			
 			// Create the database connection
 			ConnectionManager::setConfig('default', ['url' => $configuration->getDsn()]);
-			$this->connection = ConnectionManager::get('default');
+			
+			/** @var Connection $connection */
+			$connection = ConnectionManager::get('default');
+			$this->connection = $connection;
 		}
 		
 		/**

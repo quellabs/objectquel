@@ -40,7 +40,6 @@
 	class ObjectQuel {
 		
 		private EntityStore $entityStore;
-		private EntityManager $entityManager;
 		private DatabaseAdapter $connection;
 		private int $fullQueryResultCount;
 		
@@ -49,7 +48,6 @@
 		 * @param EntityManager $entityManager
 		 */
 		public function __construct(EntityManager $entityManager) {
-			$this->entityManager = $entityManager;
 			$this->entityStore = $entityManager->getEntityStore();
 			$this->connection = $entityManager->getConnection();
 			$this->fullQueryResultCount = 0;

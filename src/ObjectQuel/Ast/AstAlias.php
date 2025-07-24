@@ -75,7 +75,7 @@
 		/**
 		 * Returns true if this field is present in the eventual result, false if not
 		 * A field may be invisible if it was automatically added for join purposes
-		 * @return true
+		 * @return bool
 		 */
 		public function isVisibleInResult(): bool {
 			return $this->visibleInResult;

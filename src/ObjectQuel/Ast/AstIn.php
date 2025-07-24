@@ -7,7 +7,7 @@
 	
 	class AstIn extends Ast {
 		
-		protected AstInterface $identifier;
+		protected AstIdentifier $identifier;
 		protected array $parameterList;
 		
 		/**

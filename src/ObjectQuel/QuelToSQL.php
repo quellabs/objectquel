@@ -43,22 +43,6 @@
 		}
 
 		/**
-		 * Searches for a range with a specific name in an array of ranges.
-		 * @param array $ranges The list of ranges to search through.
-		 * @param string $rangeName The name of the range being searched for.
-		 * @return AstRangeDatabase|null The found range or null if it is not found.
-		 */
-		private function findRangeByName(array $ranges, string $rangeName): ?AstRangeDatabase {
-			foreach ($ranges as $range) {
-				if ($range->getName() === $rangeName) {
-					return $range;
-				}
-			}
-			
-			return null;
-		}
-
-		/**
 		 * Returns the keyword DISTINCT if the query is unique
 		 * @param AstRetrieve $retrieve
 		 * @return string
@@ -102,7 +86,7 @@
 				
 				// Check if the alias is not a complete entity
 				if (!empty($sqlResult)) {
-					if (($value instanceof AstAlias) && !$this->identifierIsEntity($value->getExpression())) {
+					if (!$this->identifierIsEntity($value->getExpression())) {
 						// Add the alias to the SQL result
 						$sqlResult .= " as `{$value->getName()}`";
 					}
