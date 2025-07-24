@@ -73,11 +73,9 @@
 			}
 			
 			// Simple types checked by is_...
-			if (in_array($this->conditions["type"], $this->is_a_types)) {
-				if (!call_user_func("is_{$this->conditions["type"]}", $value)) {
-					$this->error = "This value should be of type {$this->conditions["type"]}";
-					return false;
-				}
+			if (in_array($this->conditions["type"], $this->is_a_types) && !call_user_func("is_{$this->conditions["type"]}", $value)) {
+				$this->error = "This value should be of type {$this->conditions["type"]}";
+				return false;
 			}
 			
 			// ctype checks

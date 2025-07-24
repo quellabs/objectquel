@@ -58,7 +58,7 @@
 			// Iterate over all files in the "Entity" directory.
 			foreach ($normalizerFiles as $fileName) {
 				// Skip if the file is not a PHP file.
-				if (($fileName == 'NormalizerInterface.php') || !$this->isPHPFile($fileName)) {
+				if (($fileName === 'NormalizerInterface.php') || !$this->isPHPFile($fileName)) {
 					continue;
 				}
 				

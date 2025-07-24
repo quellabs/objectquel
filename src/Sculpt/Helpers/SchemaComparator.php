@@ -79,7 +79,7 @@
 				$tableCompare = $this->normalizeColumnValues($tableCompare);
 				
 				// Only flag as changed if the normalized values differ
-				if ($entityCompare != $tableCompare) {
+				if ($entityCompare !== $tableCompare) {
 					$result[$name] = [
 						'from' => $tableColumn,
 						'to'   => $entityColumn,

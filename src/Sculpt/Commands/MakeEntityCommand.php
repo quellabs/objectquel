@@ -237,7 +237,7 @@
 				}
 				
 				// For string type, ask for length; otherwise set to null
-				if ($propertyType == 'string') {
+				if ($propertyType === 'string') {
 					$propertyLimit = $this->input->ask("\nCharacter limit for this string field", "255");
 				} else {
 					$propertyLimit = null;
@@ -254,7 +254,7 @@
 				$precision = null;
 				$scale = null;
 				
-				if ($propertyType == 'decimal') {
+				if ($propertyType === 'decimal') {
 					// Ask for precision with validation
 					$precision = null;
 					
