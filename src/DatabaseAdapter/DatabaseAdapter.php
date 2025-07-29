@@ -153,7 +153,7 @@
 					'identity'       => $column->getIdentity(),
 					
 					// Whether this column is part of the primary key
-					'primary_key'    => in_array($column->getName(), $primaryKey["columns"]),
+					'primary_key'    => in_array($column->getName(), $primaryKey),
 				];
 			}
 			
