@@ -59,6 +59,15 @@
 		}
 		
 		/**
+		 * Gets the corresponding JS type for this column's database type
+		 * @return string The JS type that corresponds to this column's database type
+		 * @see TypeMapper::phinxTypeToJsType() For the actual type conversion logic
+		 */
+		public function getJsType(): string {
+			return TypeMapper::phinxTypeToJsType($this->getType());
+		}
+		
+		/**
 		 * Gets the column length/size
 		 * This method retrieves the defined length or size constraint for a database column
 		 * (e.g., VARCHAR(255) where 255 is the limit)
