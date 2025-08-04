@@ -12,18 +12,6 @@
 	class SchemaComparator {
 		
 		/**
-		 * @var TypeMapper Class responsible for mapping phinx types to php and vice versa
-		 */
-		private TypeMapper $typeMapper;
-		
-		/**
-		 * SchemaComparator constructor
-		 */
-		public function __construct() {
-			$this->typeMapper = new TypeMapper();
-		}
-		
-		/**
 		 * Main public method to compare entity properties with table columns
 		 * Identifies added, modified, and deleted columns
 		 * @param array $entityColumns Map of property names to definitions from entity model
@@ -55,7 +43,7 @@
 				$columnType = $entityColumn['type'] ?? 'string';
 				
 				// Get only the relevant properties for this specific column type
-				$relevantProperties = $this->typeMapper->getRelevantProperties($columnType);
+				$relevantProperties = TypeMapper::getRelevantProperties($columnType);
 				
 				// Filter the entity and table columns to include ONLY the relevant properties
 				// This automatically ignores any properties not relevant to this column type
@@ -65,13 +53,13 @@
 				// Normalize entity column definition by adding default limit if missing
 				// This handles cases where the entity relies on database defaults
 				if (!isset($entityCompare['limit'])) {
-					$entityCompare['limit'] = $this->typeMapper->getDefaultLimit($entityCompare['type']);
+					$entityCompare['limit'] = TypeMapper::getDefaultLimit($entityCompare['type']);
 				}
 
 				// Normalize database column metadata by adding default limit if missing
 				// This handles cases where database metadata doesn't explicitly report standard limits
 				if (!isset($tableCompare['limit'])) {
-					$tableCompare['limit'] = $this->typeMapper->getDefaultLimit($tableCompare['type']);
+					$tableCompare['limit'] = TypeMapper::getDefaultLimit($tableCompare['type']);
 				}
 				
 				// Normalize the values for proper comparison

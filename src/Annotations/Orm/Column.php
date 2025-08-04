@@ -3,6 +3,7 @@
 	namespace Quellabs\ObjectQuel\Annotations\Orm;
 	
 	use Quellabs\AnnotationReader\AnnotationInterface;
+	use Quellabs\ObjectQuel\DatabaseAdapter\TypeMapper;
 	
 	/**
 	 * Column annotation class for ORM mapping
@@ -46,6 +47,15 @@
 		 */
 		public function getType(): string {
 			return $this->parameters["type"];
+		}
+		
+		/**
+		 * Gets the corresponding PHP type for this column's database type
+		 * @return string The PHP type that corresponds to this column's database type
+		 * @see TypeMapper::phinxTypeToPhpType() For the actual type conversion logic
+		 */
+		public function getPhpType(): string {
+			return TypeMapper::phinxTypeToPhpType($this->getType());
 		}
 		
 		/**

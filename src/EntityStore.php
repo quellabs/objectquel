@@ -17,6 +17,7 @@
 	
 	namespace Quellabs\ObjectQuel;
     
+    use Quellabs\AnnotationReader\AnnotationInterface;
     use Quellabs\AnnotationReader\AnnotationReader;
     use Quellabs\AnnotationReader\Exception\ParserException;
     use Quellabs\ObjectQuel\Annotations\Orm\Column;
@@ -344,20 +345,46 @@
 	    
 	    /**
 	     * Returns the entity's annotations
-	     * @param mixed $entity
-	     * @return array
-	     */
-	    public function getAnnotations(mixed $entity): array {
+	     * @param mixed $entity The entity object or class name string to get annotations for
+	     * @param string|null $annotationType Optional class name to filter annotations by specific type
+	     * @return array<string, AnnotationInterface[]>|array<string, AnnotationInterface>
+	     *         Array of annotation objects, optionally filtered by type
+         */
+	    public function getAnnotations(mixed $entity, ?string $annotationType = null): array {
 		    // Determine the class name of the entity
+		    // If $entity is not an object, treat it as a class name and remove leading backslash
+		    // If $entity is an object, get its class name using get_class()
 		    $entityClass = !is_object($entity) ? ltrim($entity, "\\") : get_class($entity);
 		    
 		    // If the class name is a proxy, get the class from the parent
+		    // This handles cases where ORM proxies or other wrapper classes are used
 		    $normalizedClass = $this->normalizeEntityName($entityClass);
 		    
-		    // Return the annotation information
-		    return $this->entity_annotations[$normalizedClass] ?? [];
+		    // Fetch annotation info from the cached annotations array
+		    // Use null coalescing operator to return an empty array if no annotations exist for this class
+		    $annotationList = $this->entity_annotations[$normalizedClass] ?? [];
+		    
+		    // Check if we need to filter by a specific annotation type
+		    if ($annotationType !== null) {
+			    $filteredList = [];
+			    
+			    foreach ($annotationList as $property => $annotations) {
+				    foreach ($annotations as $annotation) {
+					    // Check if the current annotation is an instance of the requested type
+					    // is_a() compares the annotation object against the class name string
+					    if (is_a($annotation, $annotationType)) {
+						    $filteredList[$property] = $annotation;
+					    }
+				    }
+			    }
+			    
+			    return $filteredList;
+		    }
+		    
+		    // No specific type requested, return all annotations for this entity
+		    return $annotationList;
 	    }
-	    
+
 	    /**
 	     * Retrieves all OneToOne dependencies for a specific entity.
 	     * @param mixed $entity The name of the entity for which you want to get the OneToOne dependencies.
@@ -521,9 +548,6 @@
 		    $result = [];
 		    
 		    try {
-			    // Initialize type mapper to get default limits for column types
-			    $typeMapper = new TypeMapper();
-			    
 			    // Create a reflection object for the provided class to inspect its properties
 			    $reflection = new \ReflectionClass($className);
 			    
@@ -559,7 +583,7 @@
 						    'php_type'      => $property->getType(),               // PHP type (from reflection)
 						    
 						    // Get column limit from annotation or use default based on the column type
-						    'limit'         => $columnAnnotation->getLimit() ?? $typeMapper->getDefaultLimit($columnType),
+						    'limit'         => $columnAnnotation->getLimit() ?? TypeMapper::getDefaultLimit($columnType),
 						    'nullable'      => $columnAnnotation->isNullable(),    // Whether column allows NULL values
 						    'unsigned'      => $columnAnnotation->isUnsigned(),    // Whether numeric column is unsigned
 						    'default'       => $columnAnnotation->getDefault(),    // Default value for the column

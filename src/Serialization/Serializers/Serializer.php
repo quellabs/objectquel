@@ -22,7 +22,6 @@
 		protected PropertyHandler $propertyHandler;
 		protected ReflectionHandler $reflectionHandler;
 		protected AnnotationReader $annotationReader;
-		protected TypeMapper $typeMapper;
 		
 		/**
 		 * Serializer constructor
@@ -35,7 +34,6 @@
 			$this->propertyHandler = new PropertyHandler();
 			$this->reflectionHandler = $entityStore->getReflectionHandler();
 			$this->annotationReader = $entityStore->getAnnotationReader();
-			$this->typeMapper = new TypeMapper();
 			
 			$this->serialization_group_name = $serializationGroupName;
 			$this->normalizers = [];
@@ -151,7 +149,7 @@
 			}
 			
 			// Perform casting if needed
-			return match ($this->typeMapper->phinxTypeToPhpType($columnType)) {
+			return match (TypeMapper::phinxTypeToPhpType($columnType)) {
 				'int' => (int)$value,
 				'float' => (float)$value,
 				'bool' => (bool)$value,

@@ -105,9 +105,6 @@
 			// Fetch the Phinx adapter
 			$phinxAdapter = $this->getPhinxAdapter();
 			
-			// Fetch the type mapper
-			$typeMapper = new TypeMapper();
-			
 			// Get primary key columns first so we can mark them in column definitions
 			$primaryKey = $this->getPrimaryKeyColumns($tableName);
 			
@@ -125,11 +122,11 @@
 					'type'           => $columnType,
 					
 					// PHP type of this column
-					'php_type'       => $typeMapper->phinxTypeToPhpType($columnType),
+					'php_type'       => TypeMapper::phinxTypeToPhpType($columnType),
 					
 					// Maximum length for string types or display width for numeric types
 					// Only apply if the column type supports limits
-					'limit'          => $column->getLimit() ?? $typeMapper->getDefaultLimit($columnType),
+					'limit'          => $column->getLimit() ?? TypeMapper::getDefaultLimit($columnType),
 					
 					// Default value for the column if not specified during insert
 					'default'        => $column->getDefault(),

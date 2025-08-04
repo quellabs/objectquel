@@ -11,7 +11,6 @@
 	 * migration code for creating, modifying, or removing database tables, columns, and indexes.
 	 */
 	class PhinxMigrationBuilder {
-		private TypeMapper $phinxTypeMapper;
 		private string $migrationsPath;
 		
 		/**
@@ -20,7 +19,6 @@
 		 */
 		public function __construct(string $migrationsPath) {
 			$this->migrationsPath = $migrationsPath;
-			$this->phinxTypeMapper = new TypeMapper();
 		}
 		
 		/**
@@ -576,7 +574,7 @@ PHP;
 		 */
 		private function addLimitOption(array &$options, array $propertyDef): void {
 			if (!empty($propertyDef['limit'])) {
-				$options[] = "'limit' => " . $this->phinxTypeMapper->formatValue($propertyDef['limit']);
+				$options[] = "'limit' => " . TypeMapper::formatValue($propertyDef['limit']);
 			}
 		}
 		
@@ -587,7 +585,7 @@ PHP;
 		 */
 		private function addDefaultOption(array &$options, array $propertyDef): void {
 			if (!empty($propertyDef['default']) && $propertyDef['default'] !== null) {
-				$options[] = "'default' => " . $this->phinxTypeMapper->formatValue($propertyDef['default']);
+				$options[] = "'default' => " . TypeMapper::formatValue($propertyDef['default']);
 			}
 		}
 		

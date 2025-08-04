@@ -3,7 +3,7 @@
 	namespace Quellabs\ObjectQuel\DatabaseAdapter;
 	
 	/**
-	 * TypeMapper class
+	 * TypeMapper static utility class
 	 */
 	class TypeMapper {
 		
@@ -11,7 +11,7 @@
 		 * Default limits for column types
 		 * @var array
 		 */
-		private array $defaultLimits = [
+		private static array $defaultLimits = [
 			// Integer types
 			'tinyinteger'  => 4,
 			'smallinteger' => 6,
@@ -25,12 +25,18 @@
 		];
 		
 		/**
+		 * Prevent instantiation
+		 */
+		private function __construct() {
+		}
+		
+		/**
 		 * Get the default limit for a column type
 		 * @param string $type Column type
 		 * @return int|array|null The default limit (null if not applicable)
 		 */
-		public function getDefaultLimit(string $type): int|array|null {
-			return $this->defaultLimits[$type] ?? null;
+		public static function getDefaultLimit(string $type): int|array|null {
+			return self::$defaultLimits[$type] ?? null;
 		}
 		
 		/**
@@ -38,7 +44,7 @@
 		 * @param string $phinxType The Phinx column type
 		 * @return string The corresponding PHP type
 		 */
-		public function phinxTypeToPhpType(string $phinxType): string {
+		public static function phinxTypeToPhpType(string $phinxType): string {
 			$typeMap = [
 				// Integer types
 				'tinyinteger'  => 'int',
@@ -83,11 +89,37 @@
 		}
 		
 		/**
+		 * Converts a Phinx database column type to its corresponding JavaScript/TypeScript type.
+		 * This method first converts the Phinx type to a PHP type, then maps that PHP type
+		 * to the appropriate JavaScript equivalent for use in frontend code or API documentation.
+		 * @param string $phinxType The Phinx column type (e.g., 'integer', 'text', 'datetime')
+		 * @return string The corresponding JavaScript type (e.g., 'number', 'string', 'Date')
+		 */
+		public static function phinxTypeToJsType(string $phinxType): string {
+			// First convert Phinx type to PHP type using existing method
+			$phpType = self::phinxTypeToPhpType($phinxType);
+			
+			// Map PHP types to their JavaScript equivalents
+			$typeMap = [
+				'int'               => 'number',        // PHP integers become JS numbers
+				'float'             => 'number',        // PHP floats become JS numbers
+				'bool'              => 'boolean',       // PHP booleans become JS booleans
+				'string'            => 'string',        // PHP strings remain strings
+				'array'             => 'array',         // PHP arrays become JS arrays
+				'DateTime'          => 'Date',          // PHP DateTime objects become JS Date objects
+				'DateTimeImmutable' => 'Date'           // PHP DateTimeImmutable objects become JS Date objects
+			];
+			
+			// Return the mapped JavaScript type, defaulting to 'string' for unknown types
+			return $typeMap[$phpType] ?? 'string';
+		}
+		
+		/**
 		 * Get relevant properties for column comparison based on type
 		 * @param string $type
 		 * @return array
 		 */
-		public function getRelevantProperties(string $type): array {
+		public static function getRelevantProperties(string $type): array {
 			// Base properties all columns have
 			$baseProperties = ['type', 'null', 'default'];
 			
@@ -134,7 +166,7 @@
 		 * @param mixed $value The value to format
 		 * @return string Formatted value
 		 */
-		public function formatValue(mixed $value): string {
+		public static function formatValue(mixed $value): string {
 			if (is_null($value)) {
 				return 'null';
 			}
