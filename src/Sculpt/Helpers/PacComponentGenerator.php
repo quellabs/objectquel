@@ -105,7 +105,7 @@
 			$reset = [];
 			$changes = [];
 			$assignAfterLoad = [];
-			
+			$assignAfterSave = [];
 			$lastKey = array_key_last($entityData['columns']);
 			
 			// Process columns
@@ -114,6 +114,7 @@
 				$defaultValue = $entityData['columnAnnotations'][$property]->getDefault();
 				
 				$assignAfterLoad[] = "this.{$property} = data.{$property};";
+				$assignAfterSave[] = "if (typeof data.{$property} !== 'undefined') this.{$property} = data.{$property};";
 				
 				if (in_array($property, $entityData['identifiers']) || !$hasDefault) {
 					$properties[] = "{$property}: null";
@@ -142,7 +143,8 @@
 				'reset'           => $reset,
 				'changes'         => $changes,
 				'toFormData'      => $this->generateToFormDataStatements($entityData['columns'], $entityData['columnAnnotations']),
-				'assignAfterLoad' => $assignAfterLoad
+				'assignAfterLoad' => $assignAfterLoad,
+				'assignAfterSave' => $assignAfterSave,
 			];
 		}
 		
@@ -274,7 +276,7 @@ if (typeof module !== 'undefined' && module.exports) {
 				implode("\n", array_map(fn($e) => str_repeat(" ", 8) . $e, $components['changes'])),
 				implode("\n", array_map(fn($e) => str_repeat(" ", 8) . $e, $components['toFormData'])),
 				implode("\n", array_map(fn($e) => str_repeat(" ", 16) . $e, $components['assignAfterLoad'])),
-				implode("\n", array_map(fn($e) => str_repeat(" ", 16) . $e, $components['assignAfterLoad'])),
+				implode("\n", array_map(fn($e) => str_repeat(" ", 16) . $e, $components['assignAfterSave'])),
 			);
 		}
 		
