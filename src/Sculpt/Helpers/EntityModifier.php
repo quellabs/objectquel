@@ -8,7 +8,6 @@
 	class EntityModifier {
 		
 		private Configuration $configuration;
-		private TypeMapper $typeMapper;
 		
 		/**
 		 * Constructor for EntityModifier
@@ -16,7 +15,6 @@
 		 */
 		public function __construct(Configuration $configuration) {
 			$this->configuration = $configuration;
-			$this->typeMapper = new TypeMapper();
 		}
 		
 		/**
@@ -530,7 +528,7 @@
 			
 			// Handle regular properties
 			$type = $property['type'] ?? 'string';
-			$phpType = $this->typeMapper->phinxTypeToPhpType($type);
+			$phpType = TypeMapper::phinxTypeToPhpType($type);
 			$nullableIndicator = $nullable ? '?' : '';
 			
 			return "protected {$nullableIndicator}{$phpType} \${$property['name']};";
@@ -576,7 +574,7 @@
 			// Handle regular property getter
 			$nullable = $property['nullable'] ?? false;
 			$type = $property['type'] ?? 'string';
-			$phpType = $this->typeMapper->phinxTypeToPhpType($type);
+			$phpType = TypeMapper::phinxTypeToPhpType($type);
 			$nullableIndicator = $nullable ? '?' : '';
 			
 			return "\n      /**\n" .
@@ -617,7 +615,7 @@
 			// Handle regular property setter
 			$nullable = $property['nullable'] ?? false;
 			$type = $property['type'] ?? 'string';
-			$phpType = $this->typeMapper->phinxTypeToPhpType($type);
+			$phpType = TypeMapper::phinxTypeToPhpType($type);
 			$nullableIndicator = $nullable ? '?' : '';
 			
 			return "\n      /**\n" .

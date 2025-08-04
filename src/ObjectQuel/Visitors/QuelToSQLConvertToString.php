@@ -50,7 +50,6 @@
 		private array $visitedNodes;
 		private array $parameters;
 		private string $partOfQuery;
-		private TypeMapper $typeMapper;
 		
 		/**
 		 * Constructor to initialize the entities array.
@@ -64,7 +63,6 @@
 			$this->entityStore = $store;
 			$this->parameters = &$parameters;
 			$this->partOfQuery = $partOfQuery;
-			$this->typeMapper = new TypeMapper();
 		}
 		
 		/**
@@ -97,7 +95,7 @@
 			// Search for Column annotation to get type
 			foreach ($annotationList[$identifier->getName()] as $annotation) {
 				if ($annotation instanceof Column) {
-					return $this->typeMapper->phinxTypeToPhpType($annotation->getType());
+					return TypeMapper::phinxTypeToPhpType($annotation->getType());
 				}
 			}
 			
