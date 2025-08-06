@@ -55,7 +55,7 @@
 				do {
 					// Check if the current class in the hierarchy has the property
 					if ($reflectionClass->hasProperty($propertyName)) {
-						// If property exists, return the ReflectionProperty object
+						// If the property exists, return the ReflectionProperty object
 						return $reflectionClass->getProperty($propertyName);
 					}
 					
@@ -114,7 +114,7 @@
 		 * @param string $propertyName The name of the property to retrieve
 		 * @return mixed The property value if accessible, null if uninitialized, false on error
 		 */
-		public function get($object, string $propertyName): mixed {
+		public function get(object $object, string $propertyName): mixed {
 			try {
 				// Get the reflection property object for the given property name
 				$reflection = $this->getReflectionProperty($object, $propertyName);
@@ -137,12 +137,12 @@
 		
 		/**
 		 * Sets a property value
-		 * @param $object
+		 * @param object $object
 		 * @param string $propertyName
 		 * @param mixed $value
 		 * @return bool
 		 */
-		public function set($object, string $propertyName, mixed $value): bool {
+		public function set(object $object, string $propertyName, mixed $value): bool {
 			try {
 				$reflection = $this->getReflectionProperty($object, $propertyName);
 				$reflection->setValue($object, $value);
