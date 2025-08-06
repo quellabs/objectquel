@@ -4,6 +4,7 @@
 	
 	use Quellabs\Sculpt\Application;
 	use Quellabs\ObjectQuel\Configuration;
+	use Quellabs\Support\ComposerUtils;
 	
 	/**
 	 * ObjectQuel service provider for the Sculpt framework
