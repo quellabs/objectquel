@@ -24,7 +24,7 @@
 					\Quellabs\ObjectQuel\Sculpt\Commands\MakeMigrationsCommand::class,
 					\Quellabs\ObjectQuel\Sculpt\Commands\QuelMigrateCommand::class,
 					\Quellabs\ObjectQuel\Sculpt\Commands\QuelCreatePhinxConfigCommand::class,
-					\Quellabs\ObjectQuel\Sculpt\Commands\PacGenerateCommand::class,
+					\Quellabs\ObjectQuel\Sculpt\Commands\PacGenerateEntityCommand::class,
 				]);
 			}
 		}

@@ -2,10 +2,13 @@
 	
 	namespace Quellabs\ObjectQuel\Sculpt\Commands;
 	
-	use Quellabs\ObjectQuel\Sculpt\Helpers\PacComponentGenerator;
+	use Quellabs\ObjectQuel\EntityStore;
+	use Quellabs\ObjectQuel\Sculpt\Helpers\PacCanvasControllerGenerator;
+	use Quellabs\ObjectQuel\Sculpt\Helpers\PacJSGenerator;
 	use Quellabs\Sculpt\Contracts\CommandBase;
 	use Quellabs\Sculpt\ConfigurationManager;
 	use Quellabs\Support\ComposerUtils;
+	use Quellabs\Support\FrameworkDetector;
 	
 	/**
 	 * PacGenerateCommand - CLI command for generating WakaPAC JavaScript abstractions from ObjectQuel entities
@@ -14,7 +17,10 @@
 	 * for reactive data binding and component management. The generated files include property
 	 * mappings, utility methods, and factory functions based on the entity's column definitions.
 	 */
-	class PacGenerateCommand extends CommandBase {
+	class PacGenerateEntityCommand extends CommandBase {
+		
+		/** @var EntityStore|null Cached entity store instance for metadata retrieval */
+		private ?EntityStore $entityStore = null;
 		
 		/**
 		 * Get the command signature for CLI usage
@@ -85,6 +91,9 @@ HELP;
 				// Get the project root directory
 				$rootDir = ComposerUtils::getProjectRoot();
 				
+				// Fetch the entity store
+				$entityStore = $this->getEntityStore();
+				
 				// Fetch entity Name from cli or ask for it if it's not given
 				$entityName = $config->getPositional(0);
 
@@ -108,18 +117,41 @@ HELP;
 				
 				// Construct the full entity class name with "Entity" suffix
 				$entityNamePlus = $entityName . "Entity";
+
+				// Check if the entity exists
+				if (!$entityStore->exists($entityNamePlus)) {
+					throw new \Exception("Entity {$entityNamePlus} does not exist");
+				}
 				
 				// Create the generator instance with the entity name and configuration
-				$generator = new PacComponentGenerator($entityNamePlus, $this->provider->getConfiguration());
+				$jsGenerator = new PacJSGenerator($entityNamePlus, $entityStore);
 				
 				// Ensure the output directory exists before writing
 				$this->ensureDirectoryExists(dirname($outputPath));
 				
 				// Generate and write the JavaScript abstraction file
-				file_put_contents($outputPath, $generator->create());
+				file_put_contents($outputPath, $jsGenerator->create());
 				
 				// Inform user of successful generation
 				$this->output->success("Generated PAC abstraction: {$outputPath}");
+				
+				// Create the controller too
+				switch(FrameworkDetector::detect()) {
+					case 'canvas' :
+						$outputPath = ComposerUtils::getProjectRoot() . "/src/Controllers/Pac{$entityName}Controller.php";
+						$phpGenerator = new PacCanvasControllerGenerator($entityNamePlus, $entityStore);
+						break;
+						
+					default :
+						$this->output->warning("Skipped generating PAC controller because no framework detected");
+						return 0;
+				}
+				
+				// Generate and write the controller file
+				file_put_contents($outputPath, $phpGenerator->create());
+				
+				// Inform user of successful generation
+				$this->output->success("Generated PAC controller: {$outputPath}");
 				
 				return 0;
 			} catch (\Exception $e) {
@@ -136,5 +168,18 @@ HELP;
 			if (!is_dir($directory)) {
 				mkdir($directory, 0755, true);
 			}
+		}
+		
+		
+		/**
+		 * Returns the EntityStore instance, creating it if necessary
+		 * @return EntityStore The entity store instance
+		 */
+		private function getEntityStore(): EntityStore {
+			if ($this->entityStore === null) {
+				$this->entityStore = new EntityStore($this->provider->getConfiguration());
+			}
+			
+			return $this->entityStore;
 		}
 	}
