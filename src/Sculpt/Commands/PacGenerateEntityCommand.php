@@ -88,88 +88,158 @@ HELP;
 		 */
 		public function execute(ConfigurationManager $config): int {
 			try {
-				// Get the project root directory
-				$rootDir = ComposerUtils::getProjectRoot();
+				// Get the entity name from configuration or user input
+				$entityName = $this->getEntityName($config);
 				
-				// Fetch the entity store
+				// Check if entity name was provided - exit gracefully if not
+				if (empty($entityName)) {
+					$this->output->writeLn("No entity name provided. Exiting.");
+					return 0;
+				}
+				
+				// Initialize the entity store for data access operations
 				$entityStore = $this->getEntityStore();
 				
-				// Fetch entity Name from cli or ask for it if it's not given
-				$entityName = $config->getPositional(0);
-
-				if ($entityName === null) {
-					// Prompt user for the entity name (without "Entity" suffix)
-					$entityName = $this->input->ask("Class name of the entity to create (e.g. AgreeableElephant)");
-					
-					// If no entity name provided, exit gracefully
-					if (empty($entityName)) {
-						$this->output->writeLn("No entity name provided. Exiting.");
-						return 0;
-					}
-				}
+				// Construct the full entity class name by appending "Entity" suffix
+				$fullEntityName = $entityName . "Entity";
 				
-				// Determine the output path
-				if ($config->get("o") !== null) {
-					$outputPath = $config->get("o");
-				} else {
-					$outputPath = $rootDir . "/public/js/abstractions/{$entityName}Abstraction.js";
-				}
+				// Verify that the specified entity exists in the store before proceeding
+				$this->validateEntityExists($entityStore, $fullEntityName);
 				
-				// Construct the full entity class name with "Entity" suffix
-				$entityNamePlus = $entityName . "Entity";
-
-				// Check if the entity exists
-				if (!$entityStore->exists($entityNamePlus)) {
-					throw new \Exception("Entity {$entityNamePlus} does not exist");
-				}
+				// Determine the output path for the generated JavaScript abstraction files
+				$jsOutputPath = $this->getJavaScriptOutputPath($config, $entityName);
 				
-				// Create the generator instance with the entity name and configuration
-				$jsGenerator = new PacJSGenerator($entityNamePlus, $entityStore);
+				// Generate the JavaScript abstraction layer for the entity
+				// This creates client-side code to interact with the entity
+				$this->generateJavaScriptAbstraction($fullEntityName, $entityStore, $jsOutputPath);
 				
-				// Ensure the output directory exists before writing
-				$this->ensureDirectoryExists(dirname($outputPath));
+				// Check if a web framework is detected and generate appropriate controller
+				// This creates server-side endpoints for the PAC (Presentation-Abstraction-Control) pattern
+				$this->generateControllerIfFrameworkDetected($entityName, $fullEntityName, $entityStore);
 				
-				// Generate and write the JavaScript abstraction file
-				file_put_contents($outputPath, $jsGenerator->create());
-				
-				// Inform user of successful generation
-				$this->output->success("Generated PAC abstraction: {$outputPath}");
-				
-				// Create the controller too
-				switch(FrameworkDetector::detect()) {
-					case 'canvas' :
-						$outputPath = ComposerUtils::getProjectRoot() . "/src/Controllers/Pac{$entityName}Controller.php";
-						$phpGenerator = new PacCanvasControllerGenerator($entityNamePlus, $entityStore);
-						break;
-						
-					default :
-						$this->output->warning("Skipped generating PAC controller because no framework detected");
-						return 0;
-				}
-				
-				// Generate and write the controller file
-				file_put_contents($outputPath, $phpGenerator->create());
-				
-				// Inform user of successful generation
-				$this->output->success("Generated PAC controller: {$outputPath}");
-				
+				// Return success exit code
 				return 0;
+				
 			} catch (\Exception $e) {
+				// Log any errors that occurred during execution
 				$this->output->error($e->getMessage());
+				
+				// Note: Returning 0 here might be intentional for graceful degradation,
+				// but typically you'd return 1 or another non-zero code to indicate failure
 				return 0;
 			}
 		}
 		
 		/**
+		 * Get entity name from config or prompt user
+		 * @param ConfigurationManager $config
+		 * @return string|null
+		 */
+		private function getEntityName(ConfigurationManager $config): ?string {
+			// First, try to get the entity name from the first positional argument
+			$entityName = $config->getPositional(0);
+			
+			// If entity name was provided as a command line argument, return it
+			if ($entityName !== null) {
+				return $entityName;
+			}
+			
+			// If no entity name was provided, prompt the user interactively
+			// Note: The prompt asks for just the class name without "Entity" suffix
+			// Example: User would enter "AgreeableElephant" not "AgreeableElephantEntity"
+			return $this->input->ask("Class name of the entity to create (e.g. AgreeableElephant)");
+		}
+		
+		/**
+		 * Validate that the entity exists in the store
+		 * @param EntityStore $entityStore
+		 * @param string $fullEntityName
+		 * @throws \Exception
+		 */
+		private function validateEntityExists(EntityStore $entityStore, string $fullEntityName): void {
+			if (!$entityStore->exists($fullEntityName)) {
+				throw new \Exception("Entity {$fullEntityName} does not exist");
+			}
+		}
+		
+		/**
+		 * Determine the JavaScript output path
+		 * @param ConfigurationManager $config
+		 * @param string $entityName
+		 * @return string
+		 */
+		private function getJavaScriptOutputPath(ConfigurationManager $config, string $entityName): string {
+			// Check if a custom output path was explicitly provided via the "o" option
+			if ($config->get("o") !== null) {
+				return $config->get("o");
+			}
+			
+			// If no custom path specified, get the provider configuration to build default path
+			$config = $this->getProvider()->getConfig();
+			
+			// Get the project root directory from Composer
+			$rootDir = ComposerUtils::getProjectRoot();
+			
+			// Use configured public directory or default to "public"
+			$publicDir = $config["public_directory"] ?? "public";
+			
+			// Build and return the default abstraction file path
+			// Format: {projectRoot}/{publicDir}/js/abstractions/{EntityName}Abstraction.js
+			return "{$rootDir}/{$publicDir}/js/abstractions/{$entityName}Abstraction.js";
+		}
+		
+		/**
+		 * Generate the JavaScript abstraction file
+		 * @param string $fullEntityName
+		 * @param EntityStore $entityStore
+		 * @param string $outputPath
+		 */
+		private function generateJavaScriptAbstraction(string $fullEntityName, EntityStore $entityStore, string $outputPath): void {
+			// Create the generator instance with the entity name and configuration
+			$jsGenerator = new PacJSGenerator($fullEntityName, $entityStore);
+			
+			// Ensure the output directory exists before writing
+			$this->ensureDirectoryExists(dirname($outputPath));
+			
+			// Generate and write the JavaScript abstraction file
+			file_put_contents($outputPath, $jsGenerator->create());
+			
+			// Inform user of successful generation
+			$this->output->success("Generated PAC abstraction: {$outputPath}");
+		}
+		
+		/**
+		 * Generate controller if a supported framework is detected
+		 * @param string $entityName
+		 * @param string $fullEntityName
+		 * @param EntityStore $entityStore
+		 */
+		private function generateControllerIfFrameworkDetected(string $entityName, string $fullEntityName, EntityStore $entityStore): void {
+			$framework = FrameworkDetector::detect();
+			
+			if ($framework !== 'canvas') {
+				$this->output->warning("Skipped generating PAC controller because no framework detected");
+				return;
+			}
+			
+			$outputPath = ComposerUtils::getProjectRoot() . "/src/Controllers/Pac{$entityName}Controller.php";
+			$phpGenerator = new PacCanvasControllerGenerator($fullEntityName, $entityStore);
+			
+			// Generate and write the controller file
+			file_put_contents($outputPath, $phpGenerator->create());
+			
+			// Inform user of successful generation
+			$this->output->success("Generated PAC controller: {$outputPath}");
+		}
+		
+		/**
 		 * Ensure the output directory exists, creating it if necessary
-		 * @return void
 		 */
 		private function ensureDirectoryExists(string $directory): void {
 			if (!is_dir($directory)) {
 				mkdir($directory, 0755, true);
 			}
 		}
-		
 		
 		/**
 		 * Returns the EntityStore instance, creating it if necessary

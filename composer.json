@@ -55,7 +55,7 @@
     "discover": {
       "sculpt": {
         "provider": "Quellabs\\ObjectQuel\\Sculpt\\ServiceProvider",
-        "config": "config/database.php"
+        "config": ["config/app.php", "config/database.php"]
       }
     }
   }
