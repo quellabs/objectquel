@@ -11,22 +11,25 @@
 	/**
 	 * Represents a single execution stage within a decomposed query execution plan.
 	 * Each stage represents a discrete query that must be executed to contribute to
-	 * the final result set.
+	 * the final result set. Stages can depend on results from other stages, allowing
+	 * for complex query composition where the output of one query becomes the input
+	 * for another.
 	 *
-	 * Stages can depend on results from other stages, allowing for complex query
-	 * composition where the output of one query becomes the input for another.
+	 * Example usage:
+	 * - Stage 1: Retrieve base data from database
+	 * - Stage 2: Use Stage 1 results to query additional related data
+	 * - Stage 3: Join results from stages 1 and 2 based on join conditions
 	 */
 	class ExecutionStage {
+
 		/**
 		 * Unique name/identifier for this stage
-		 * Used to reference this stage from other stages and from the execution plan
 		 * @var string
 		 */
 		private string $name;
 		
 		/**
 		 * The ObjectQuel query to execute for this stage
-		 * This contains the parsed query string that will be parsed and executed
 		 * @var AstRetrieve
 		 */
 		private AstRetrieve $query;
@@ -46,24 +49,29 @@
 		private $resultProcessor = null;
 		
 		/**
-		 * The conditions for a join
-		 * @var null
+		 * The conditions for a join operation with other stages
+		 * @var AstInterface|null
 		 */
 		private ?AstInterface $joinConditions = null;
 		
 		/**
-		 * The attached range
+		 * Defines where this stage should execute its query:
+		 * - AstRangeDatabase: Query executes against a database table/view
+		 * - AstRangeJsonSource: Query executes against JSON data source
+		 * - null: Range will be determined dynamically or inherited
 		 * @var AstRangeDatabase|AstRangeJsonSource|null
 		 */
 		private AstRangeDatabase|AstRangeJsonSource|null $range;
 		
 		/**
 		 * Create a new execution stage
-		 * @param string $name Unique identifier for this stage
-		 * @param AstRetrieve $query The ObjectQuel query for this stage
-		 * @param AstRangeDatabase|AstRangeJsonSource|null $range The attached range, or null if none attached
-		 * @param array $staticParams Fixed parameters that don't depend on other stages
-		 * @param AstInterface|null $joinConditions The conditions for joining this stage with the final result
+		 * @param string $name Unique identifier for this stage within the execution plan
+		 * @param AstRetrieve $query The ObjectQuel query AST for this stage
+		 * @param AstRangeDatabase|AstRangeJsonSource|null $range The data source range, or null if to be determined later
+		 * @param array $staticParams Fixed parameters that don't depend on other stages' results
+		 * @param AstInterface|null $joinConditions The conditions for joining this stage with other stages
+		 *
+		 * @throws \InvalidArgumentException If name is empty or query is invalid
 		 */
 		public function __construct(string $name, AstRetrieve $query, AstRangeDatabase|AstRangeJsonSource|null $range, array $staticParams = [], ?AstInterface $joinConditions = null) {
 			$this->name = $name;
@@ -74,23 +82,23 @@
 		}
 		
 		/**
-		 * Returns the query to execute
-		 * @return AstRetrieve The ObjectQuel query associated with this stage
+		 * Returns the query AST to execute for this stage
+		 * @return AstRetrieve The ObjectQuel query AST associated with this stage
 		 */
 		public function getQuery(): AstRetrieve {
 			return $this->query;
 		}
 		
 		/**
-		 * Returns true if the stage has a result processor
-		 * @return bool Whether a result processor has been configured
+		 * Checks if this stage has a result processor configured
+		 * @return bool True if a result processor has been configured, false otherwise
 		 */
 		public function hasResultProcessor(): bool {
 			return $this->resultProcessor !== null;
 		}
 		
 		/**
-		 * Returns the result processor
+		 * Returns the result processor function if one is configured
 		 * @return callable|null The processor function or null if none is set
 		 */
 		public function getResultProcessor(): ?callable {
@@ -98,8 +106,8 @@
 		}
 		
 		/**
-		 * Set a processor function to transform results before passing to next stages
-		 * @param callable|null $processor Function that takes results and returns processed results
+		 * Set a processor function to transform results before passing to dependent stages
+		 * @param callable|null $processor Function that takes results array and returns processed array
 		 * @return ExecutionStage This stage instance for method chaining
 		 */
 		public function setResultProcessor(?callable $processor): self {
@@ -108,8 +116,8 @@
 		}
 		
 		/**
-		 * Get the name of this stage
-		 * @return string Stage name
+		 * Get the unique name/identifier of this execution stage
+		 * @return string The unique stage name
 		 */
 		public function getName(): string {
 			return $this->name;
@@ -117,25 +125,23 @@
 		
 		/**
 		 * Get the static parameters configured for this stage
-		 * Static parameters are fixed values provided at stage creation time
-		 * that don't depend on other stages' execution.
-		 * @return array The static parameters for this stage
+		 * @return array Associative array of parameter names to values
 		 */
 		public function getStaticParams(): array {
 			return $this->staticParams;
 		}
 		
 		/**
-		 * Returns the join conditions
-		 * @return AstInterface|null
+		 * Returns the join conditions for this stage
+		 * @return AstInterface|null The join condition AST or null if no conditions
 		 */
 		public function getJoinConditions(): ?AstInterface {
 			return $this->joinConditions;
 		}
 		
 		/**
-		 * Updates the join conditions
-		 * @param AstInterface|null $joinConditions
+		 * Updates the join conditions for this stage
+		 * @param AstInterface|null $joinConditions New join conditions or null to remove
 		 * @return void
 		 */
 		public function setJoinConditions(?AstInterface $joinConditions): void {
@@ -143,16 +149,16 @@
 		}
 		
 		/**
-		 * Gets the query type
-		 * @return AstRangeDatabase|AstRangeJsonSource|null
+		 * Gets the data source range/target for this stage's query
+		 * @return AstRangeDatabase|AstRangeJsonSource|null The configured range
 		 */
 		public function getRange(): AstRangeDatabase|AstRangeJsonSource|null {
 			return $this->range;
 		}
 		
 		/**
-		 * Sets the range
-		 * @param AstRangeDatabase|AstRangeJsonSource|null $range
+		 * Sets the data source range for this stage
+		 * @param AstRangeDatabase|AstRangeJsonSource|null $range New range or null
 		 * @return void
 		 */
 		public function setRange(AstRangeDatabase|AstRangeJsonSource|null $range): void {
@@ -160,16 +166,27 @@
 		}
 		
 		/**
-		 * Returns the join type (always 'left' for now)
-		 * @todo Implement code to determine the join type
-		 * @return string
+		 * Determines the type of join this stage should perform
+		 *
+		 * The join type affects how this stage's results are combined with
+		 * results from other stages:
+		 * - 'cross': No join conditions, creates cartesian product
+		 * - 'left': Left join based on join conditions
+		 *
+		 * @todo Implement more sophisticated logic to determine optimal join type
+		 * @todo Add support for 'inner', 'right', 'full outer' join types
+		 * @todo Consider query optimization hints for join type selection
+		 *
+		 * @return string The join type ('cross' or 'left' currently)
 		 */
 		public function getJoinType(): string {
+			// If no join conditions are specified, default to cross join
+			// which creates a cartesian product of all result sets
 			if ($this->getJoinConditions() === null) {
 				return 'cross';
-			} else {
-				return 'left';
 			}
+			
+			// When join conditions exist, default to left join
+			return 'left';
 		}
-		
 	}

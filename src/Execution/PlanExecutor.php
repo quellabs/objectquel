@@ -11,8 +11,6 @@
 	use Quellabs\ObjectQuel\Execution\Joins\InnerJoinStrategy;
 	
 	/**
-	 * Responsible for executing individual stages of a decomposed query plan
-	 *
 	 * The PlanExecutor handles the actual execution of ExecutionStages within an ExecutionPlan,
 	 * respecting the dependencies between stages and combining their results into a final output.
 	 * It manages parameter passing between stages and handles error conditions during execution.
@@ -119,6 +117,7 @@
 			// Apply post-processing if the stage has a result processor defined
 			// This allows for custom transformations or filtering after query execution
 			if ($result && $stage->hasResultProcessor()) {
+				// Fetch the results processor to modify the result
 				$processor = $stage->getResultProcessor();
 				
 				// Execute the processor function, passing the result by reference for modification
@@ -163,8 +162,8 @@
 				// Find the stage object to get join configuration
 				$stage = $this->findStageByName($allStages, $stageName);
 				
+				// Skip stages that can't be found (shouldn't happen in normal operation)
 				if ($stage === null) {
-					// Skip stages that can't be found (shouldn't happen in normal operation)
 					continue;
 				}
 				
@@ -178,23 +177,6 @@
 			}
 			
 			return $combinedResult;
-		}
-		
-		/**
-		 * Find a stage by name from the stages array
-		 * @param array $stages Array of ExecutionStage objects
-		 * @param string $stageName Name of the stage to find
-		 * @return ExecutionStage|null The found stage or null if not found
-		 */
-		private function findStageByName(array $stages, string $stageName): ?ExecutionStage {
-			// Linear search through stages array
-			foreach ($stages as $stage) {
-				if ($stage->getName() === $stageName) {
-					return $stage;
-				}
-			}
-			// Return null if stage not found
-			return null;
 		}
 		
 		/**
@@ -218,4 +200,22 @@
 				throw new QuelException("Join failed ({$joinType}): {$e->getMessage()}", 0, $e);
 			}
 		}
+		
+		/**
+		 * Find a stage by name from the stages array
+		 * @param array $stages Array of ExecutionStage objects
+		 * @param string $stageName Name of the stage to find
+		 * @return ExecutionStage|null The found stage or null if not found
+		 */
+		private function findStageByName(array $stages, string $stageName): ?ExecutionStage {
+			// Linear search through stages array
+			foreach ($stages as $stage) {
+				if ($stage->getName() === $stageName) {
+					return $stage;
+				}
+			}
+			// Return null if stage not found
+			return null;
+		}
+
 	}
