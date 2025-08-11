@@ -6,9 +6,9 @@
 	use Quellabs\ObjectQuel\ObjectQuel\AstVisitorInterface;
 	
 	/**
-	 * Class AstAvg
+	 * Class AstMax
 	 */
-	class AstAvg extends Ast {
+	class AstMax extends Ast {
 		
 		/**
 		 * @var AstInterface The right-hand operand of the AND expression.
@@ -16,7 +16,7 @@
 		protected AstInterface $identifier;
 		
 		/**
-		 * AstCount constructor.
+		 * AstMax constructor.
 		 * @param AstInterface $entityOrIdentifier
 		 */
 		public function __construct(AstInterface $entityOrIdentifier) {

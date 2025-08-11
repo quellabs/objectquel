@@ -25,6 +25,8 @@
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstIsFloat;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstIsInteger;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstIsNumeric;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstMax;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstMin;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstNot;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstNull;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstNumber;
@@ -34,6 +36,7 @@
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRegExp;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstSearch;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstString;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstSum;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstTerm;
 	use Quellabs\ObjectQuel\ObjectQuel\AstInterface;
 	use Quellabs\ObjectQuel\ObjectQuel\AstVisitorInterface;
@@ -566,6 +569,33 @@
 		}
 		
 		/**
+		 * Processes the MAX aggregate function within an abstract syntax tree (AST).
+		 * @param AstMax $max The MAX AST node to process
+		 * @return void
+		 */
+		protected function handleMax(AstMax $max): void {
+			$this->universalHandleAggregates($max, true, 'MAX');
+		}
+		
+		/**
+		 * Processes the MIN aggregate function within an abstract syntax tree (AST).
+		 * @param AstMin $min The MIN AST node to process
+		 * @return void
+		 */
+		protected function handleMin(AstMin $min): void {
+			$this->universalHandleAggregates($min, true, 'MIN');
+		}
+		
+		/**
+		 * Processes the SUM aggregate function within an abstract syntax tree (AST).
+		 * @param AstSum $sum The SUM AST node to process
+		 * @return void
+		 */
+		protected function handleSum(AstSum $sum): void {
+			$this->universalHandleAggregates($sum, true, 'SUM');
+		}
+		
+		/**
 		 * Handles 'IS NULL'. The SQL equivalent is exactly the same.
 		 * @param AstCheckNull $ast
 		 * @return void
@@ -679,13 +709,13 @@
 		
 		/**
 		 * Universal handler for aggregate functions (COUNT, AVG, SUM, etc.)
-		 * @param AstCount|AstCountU|AstAvg|AstAvgU $ast The aggregate AST node
+		 * @param AstCount|AstCountU|AstAvg|AstAvgU|AstMax|AstMin|AstSum $ast The aggregate AST node
 		 * @param bool $distinct Whether to use DISTINCT
 		 * @param string $aggregateFunction The SQL aggregate function name (COUNT, AVG, SUM, etc.)
 		 * @return void
 		 */
 		private function universalHandleAggregates(
-			AstCount|AstCountU|AstAvg|AstAvgU $ast,
+			AstCount|AstCountU|AstAvg|AstAvgU|AstMax|AstMin|AstSum $ast,
 			bool $distinct,
 			string $aggregateFunction
 		): void {
