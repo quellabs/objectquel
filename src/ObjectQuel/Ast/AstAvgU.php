@@ -48,12 +48,4 @@
 		public function setIdentifier(AstIdentifier $ast): void {
 			$this->identifier = $ast;
 		}
-		
-		/**
-		 * Returns the return type of this node
-		 * @return string|null
-		 */
-		public function getReturnType(): ?string {
-			return null;
-		}
 	}

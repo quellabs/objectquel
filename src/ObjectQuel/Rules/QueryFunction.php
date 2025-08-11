@@ -5,6 +5,8 @@
 	
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstAvg;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstAvgU;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstMax;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstMin;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstConcat;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstCount;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstExists;
@@ -17,6 +19,7 @@
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstSearch;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstString;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstCountU;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstSum;
 	use Quellabs\ObjectQuel\ObjectQuel\AstInterface;
 	use Quellabs\ObjectQuel\ObjectQuel\Lexer;
 	use Quellabs\ObjectQuel\ObjectQuel\LexerException;
@@ -67,6 +70,9 @@
 				'countu' => $this->parseCountU(),
 				'avg' => $this->parseAvg(),
 				'avgu' => $this->parseAvgU(),
+				'max' => $this->parseMax(),
+				'min' => $this->parseMin(),
+				'sum' => $this->parseSum(),
 				'concat' => $this->parseConcat(),
 				'search' => $this->parseSearch(),
 				'is_empty' => $this->parseIsEmpty(),
@@ -146,6 +152,39 @@
 		 */
 		protected function parseAvgU(): AstAvgU {
 			return $this->parseSingleParameter(AstAvgU::class, true);
+		}
+		
+		/**
+		 * Parse MAX() function - finds the maximum value among numeric values
+		 * Returns the largest non-null numeric value from the input.
+		 * @return AstMax The AstMax AST node
+		 * @throws LexerException When token matching fails
+		 * @throws ParserException When parsing fails
+		 */
+		protected function parseMax(): AstMax {
+			return $this->parseSingleParameter(AstMax::class, true);
+		}
+		
+		/**
+		 * Parse MIN() function - finds the minimum value among numeric values
+		 * Returns the smallest non-null numeric value from the input.
+		 * @return AstMin The AstMin AST node
+		 * @throws LexerException When token matching fails
+		 * @throws ParserException When parsing fails
+		 */
+		protected function parseMin(): AstMin {
+			return $this->parseSingleParameter(AstMin::class, true);
+		}
+		
+		/**
+		 * Parse SUM() function - calculates the sum of numeric values
+		 * Returns the total of all non-null numeric values from the input.
+		 * @return AstSum The AstSum AST node
+		 * @throws LexerException When token matching fails
+		 * @throws ParserException When parsing fails
+		 */
+		protected function parseSum(): AstSum {
+			return $this->parseSingleParameter(AstSum::class, true);
 		}
 		
 		/**
