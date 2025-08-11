@@ -6,9 +6,9 @@
 	use Quellabs\ObjectQuel\ObjectQuel\AstVisitorInterface;
 	
 	/**
-	 * Class AstUCount
+	 * Class AstAvgU
 	 */
-	class AstUCount extends Ast {
+	class AstAvgU extends Ast {
 		
 		/**
 		 * @var AstInterface The right-hand operand of the AND expression.
@@ -54,6 +54,6 @@
 		 * @return string|null
 		 */
 		public function getReturnType(): ?string {
-			return "integer";
+			return null;
 		}
 	}

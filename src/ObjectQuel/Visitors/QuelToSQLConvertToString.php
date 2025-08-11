@@ -1,9 +1,9 @@
 <?php
 	
-	// Namespace declaration voor gestructureerde code
+	// Namespace declaration for structured code
 	namespace Quellabs\ObjectQuel\ObjectQuel\Visitors;
 	
-	// Importeer de vereiste klassen en interfaces
+	// Import the required classes and interfaces
 	use Quellabs\ObjectQuel\Annotations\Orm\Column;
 	use Quellabs\ObjectQuel\DatabaseAdapter\TypeMapper;
 	use Quellabs\ObjectQuel\EntityStore;
@@ -14,6 +14,9 @@
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstCheckNull;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstConcat;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstCount;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstCountU;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstAvg;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstAvgU;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstExpression;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstFactor;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstIdentifier;
@@ -32,7 +35,6 @@
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstSearch;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstString;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstTerm;
-	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstUCount;
 	use Quellabs\ObjectQuel\ObjectQuel\AstInterface;
 	use Quellabs\ObjectQuel\ObjectQuel\AstVisitorInterface;
 	
@@ -63,6 +65,59 @@
 			$this->entityStore = $store;
 			$this->parameters = &$parameters;
 			$this->partOfQuery = $partOfQuery;
+		}
+		
+		/**
+		 * Visit a node in the AST.
+		 * @param AstInterface $node The node to visit.
+		 * @return void
+		 */
+		public function visitNode(AstInterface $node): void {
+			// Generate a unique hash for the object to prevent duplicates.
+			$objectHash = spl_object_id($node);
+			
+			// If the object has already been visited, skip it to prevent infinite loops.
+			if (isset($this->visitedNodes[$objectHash])) {
+				return;
+			}
+			
+			// Mark the object as visited.
+			$this->visitedNodes[$objectHash] = true;
+			
+			// Determine the name of the method that will handle this specific type of Ast node.
+			// The 'substr' function is used to get the relevant parts of the class name.
+			$className = ltrim(strrchr(get_class($node), '\\'), '\\');
+			$handleMethod = 'handle' . substr($className, 3);
+			
+			// Check if the determined method exists and call it if that is the case.
+			if (method_exists($this, $handleMethod)) {
+				$this->{$handleMethod}($node);
+			}
+		}
+		
+		/**
+		 * Visit a node in the AST and return the SQL
+		 * @param AstInterface $node The node to visit.
+		 * @return string
+		 */
+		public function visitNodeAndReturnSQL(AstInterface $node): string {
+			$pos = count($this->result);
+			
+			$this->visitNode($node);
+			
+			$slice = implode("", array_slice($this->result, $pos, 1));
+			
+			$this->result = array_slice($this->result, 0, $pos);
+			
+			return $slice;
+		}
+		
+		/**
+		 * Get the collected entities.
+		 * @return string The produced string
+		 */
+		public function getResult(): string {
+			return implode("", $this->result);
 		}
 		
 		/**
@@ -567,24 +622,29 @@
 			// Add the closing bracket to the 'IN' condition.
 			$this->result[] = ")";
 		}
-		
+	
 		/**
-		 * Parse count function
-		 * @param AstCount|AstUCount $ast
-		 * @param bool $distinct
+		 * Universal handler for aggregate functions (COUNT, AVG, SUM, etc.)
+		 * @param AstCount|AstCountU|AstAvg|AstAvgU $ast The aggregate AST node
+		 * @param bool $distinct Whether to use DISTINCT
+		 * @param string $aggregateFunction The SQL aggregate function name (COUNT, AVG, SUM, etc.)
 		 * @return void
 		 */
-		protected function universalHandleCount(AstCount|AstUCount $ast, bool $distinct): void {
-			// Get the identifier (entity or property) that needs to be counted.
+		protected function universalHandleAggregates(
+			AstCount|AstCountU|AstAvg|AstAvgU $ast,
+			bool $distinct,
+			string $aggregateFunction
+		): void {
+			// Get the identifier (entity or property) that needs to be aggregated.
 			$identifier = $ast->getIdentifier();
-
+			
 			// Early return if the expression is not an identifier
 			// This handles cases where the expression might be a subquery or other complex expression
 			if (!$identifier instanceof AstIdentifier) {
 				return;
 			}
-
-			// If the identifier is an entity, we count the number of unique instances of this entity.
+			
+			// If the identifier is an entity, we aggregate based on the primary identifier column
 			if ($this->identifierIsEntity($identifier)) {
 				// Add the entity to the list of visited nodes.
 				$this->addToVisitedNodes($identifier);
@@ -596,15 +656,16 @@
 				// Get the column names that determine the identification of the entity.
 				$identifierColumns = $this->entityStore->getIdentifierColumnNames($entityName);
 				
-				// Add the COUNT DISTINCT operation to the result, to count unique entities.
+				// Add the aggregate operation to the result
 				if ($distinct) {
-					$this->result[] = "COUNT(DISTINCT {$range}.{$identifierColumns[0]})";
+					$this->result[] = "{$aggregateFunction}(DISTINCT {$range}.{$identifierColumns[0]})";
 				} else {
-					$this->result[] = "COUNT({$range}.{$identifierColumns[0]})";
+					$this->result[] = "{$aggregateFunction}({$range}.{$identifierColumns[0]})";
 				}
+				return;
 			}
 			
-			// If the identifier is a specific property within an entity, we count how often this property occurs.
+			// If the identifier is a specific property within an entity, we aggregate that property
 			// Add the property and the associated entity to the list of visited nodes.
 			$this->addToVisitedNodes($identifier);
 			
@@ -615,11 +676,11 @@
 			$property = $identifier->getNext()->getName();
 			$columnMap = $this->entityStore->getColumnMap($identifier->getEntityName());
 			
-			// Add the COUNT operation to the result, to count the frequency of a specific property.
+			// Add the aggregate operation to the result
 			if ($distinct) {
-				$this->result[] = "COUNT(DISTINCT {$range}.{$columnMap[$property]})";
+				$this->result[] = "{$aggregateFunction}(DISTINCT {$range}.{$columnMap[$property]})";
 			} else {
-				$this->result[] = "COUNT({$range}.{$columnMap[$property]})";
+				$this->result[] = "{$aggregateFunction}({$range}.{$columnMap[$property]})";
 			}
 		}
 		
@@ -629,16 +690,34 @@
 		 * @return void
 		 */
 		protected function handleCount(AstCount $count): void {
-			$this->universalHandleCount($count, false);
+			$this->universalHandleAggregates($count, false, 'COUNT');
 		}
 		
 		/**
 		 * This function processes the 'count' command within an abstract syntax tree (AST).
-		 * @param AstUCount $count
+		 * @param AstCountU $count
 		 * @return void
 		 */
-		protected function handleUCount(AstUCount $count): void {
-			$this->universalHandleCount($count, true);
+		protected function handleUCount(AstCountU $count): void {
+			$this->universalHandleAggregates($count, true, 'COUNT');
+		}
+		
+		/**
+		 * This function processes the 'average' command within an abstract syntax tree (AST).
+		 * @param AstAvg $avg
+		 * @return void
+		 */
+		protected function handleAvg(AstAvg $avg): void {
+			$this->universalHandleAggregates($avg, false, 'AVG');
+		}
+		
+		/**
+		 * This function processes the 'average unique' command within an abstract syntax tree (AST).
+		 * @param AstAvgU $avg
+		 * @return void
+		 */
+		protected function handleAvgU(AstAvgU $avg): void {
+			$this->universalHandleAggregates($avg, true, 'AVG');
 		}
 		
 		/**
@@ -865,58 +944,5 @@
 			} else {
 				$this->result[] = "{$string} REGEXP '^-?[0-9]+\\.[0-9]+$'"; // For unknown types, check if the value matches the float pattern
 			}
-		}
-		
-		/**
-		 * Visit a node in the AST.
-		 * @param AstInterface $node The node to visit.
-		 * @return void
-		 */
-		public function visitNode(AstInterface $node): void {
-			// Generate a unique hash for the object to prevent duplicates.
-			$objectHash = spl_object_id($node);
-			
-			// If the object has already been visited, skip it to prevent infinite loops.
-			if (isset($this->visitedNodes[$objectHash])) {
-				return;
-			}
-			
-			// Mark the object as visited.
-			$this->visitedNodes[$objectHash] = true;
-			
-			// Determine the name of the method that will handle this specific type of Ast node.
-			// The 'substr' function is used to get the relevant parts of the class name.
-			$className = ltrim(strrchr(get_class($node), '\\'), '\\');
-			$handleMethod = 'handle' . substr($className, 3);
-			
-			// Check if the determined method exists and call it if that is the case.
-			if (method_exists($this, $handleMethod)) {
-				$this->{$handleMethod}($node);
-			}
-		}
-		
-		/**
-		 * Visit a node in the AST and return the SQL
-		 * @param AstInterface $node The node to visit.
-		 * @return string
-		 */
-		public function visitNodeAndReturnSQL(AstInterface $node): string {
-			$pos = count($this->result);
-			
-			$this->visitNode($node);
-			
-			$slice = implode("", array_slice($this->result, $pos, 1));
-			
-			$this->result = array_slice($this->result, 0, $pos);
-			
-			return $slice;
-		}
-		
-		/**
-		 * Get the collected entities.
-		 * @return string The produced string
-		 */
-		public function getResult(): string {
-			return implode("", $this->result);
 		}
 	}
