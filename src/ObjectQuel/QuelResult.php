@@ -13,7 +13,7 @@
 	 * This class handles the hydration, relationship loading, and transformation of database query results.
 	 * It implements ArrayAccess and IteratorAggregate to allow array-like access and iteration over the result set.
 	 */
-	class QuelResult implements \ArrayAccess, \IteratorAggregate {
+	class QuelResult implements \ArrayAccess, \IteratorAggregate, \JsonSerializable {
 		
 		/**
 		 * Responsible for converting raw data into entity objects
@@ -46,16 +46,6 @@
 		private bool $sortInApplicationLogic;
 		
 		/**
-		 * Pagination window value (for pagination functionality)
-		 */
-		private ?int $window;
-		
-		/**
-		 * Number of items per window (for pagination functionality)
-		 */
-		private ?int $windowSize;
-		
-		/**
 		 * Constructor initializes helpers and processes the raw data into structured results
 		 * @param entityManager $entityManager Entity manager for data handling
 		 * @param AstRetrieve $retrieve AST object containing query information
@@ -77,10 +67,6 @@
 			
 			// Initialize iterator position
 			$this->index = 0;
-			
-			// Set pagination parameters
-			$this->window = $retrieve->getWindow();
-			$this->windowSize = $retrieve->getWindowSize() ?? $entityManager->getDefaultWindowSize();
 			
 			// Get values from the AST (Abstract Syntax Tree)
 			$ast = $retrieve->getValues();
@@ -162,33 +148,6 @@
 		}
 		
 		/**
-		 * Returns true if sort and pagination are done in application logic, false if using mysql
-		 * Useful for determining how results are being processed
-		 * @return bool True if sorting in application, false if in database
-		 */
-		public function getSortInApplicationLogic(): bool {
-			return $this->sortInApplicationLogic;
-		}
-		
-		/**
-		 * Returns the pagination window, or null if there is none
-		 * Part of the pagination mechanism
-		 * @return int|null Current window value or null if pagination is not active
-		 */
-		public function getWindow(): ?int {
-			return $this->window;
-		}
-		
-		/**
-		 * Returns the pagination page_size, or null if there is none
-		 * Part of the pagination mechanism
-		 * @return int|null Current page size or null if pagination is not active
-		 */
-		public function getWindowSize(): ?int {
-			return $this->windowSize;
-		}
-		
-		/**
 		 * Returns the raw data in this recordset
 		 * Provides direct access to the underlying result array
 		 * @return array The complete result set
@@ -198,73 +157,22 @@
 		}
 		
 		/**
-		 * Apply a custom transformation function to the entire result set
-		 * Allows for flexible post-processing of results
-		 * @param callable $transformer Function that transforms the entire result array
-		 * @return $this Returns $this for method chaining
-		 */
-		public function transform(callable $transformer): self {
-			$this->result = $transformer($this->result);
-			return $this;
-		}
-		
-		/**
-		 * Filters the entire result set
-		 * Allows for custom filtering logic to be applied
-		 * @param callable $condition Function that takes the result array and returns filtered array
-		 * @return $this For method chaining
-		 */
-		public function filter(callable $condition): self {
-			$this->result = $condition($this->result);
-			return $this;
-		}
-		
-		/**
 		 * Merge another QuelResult or array of rows into this one
 		 * Useful for combining multiple result sets
 		 * @param array|QuelResult $otherResult The result to merge
-		 * @return $this Returns $this for method chaining
+		 * @return $this Returns a new QuelResult with merged data
 		 */
 		public function merge(array|QuelResult $otherResult): self {
+			$cloned = clone $this;
+			$cloned->index = 0;
+			
 			if ($otherResult instanceof QuelResult) {
-				$this->result = array_merge($this->result, $otherResult->getResults());
+				$cloned->result = array_merge($cloned->result, $otherResult->getResults());
 			} else {
-				$this->result = array_merge($this->result, $otherResult);
+				$cloned->result = array_merge($cloned->result, $otherResult);
 			}
 			
-			return $this;
-		}
-		
-		/**
-		 * Extract values for a specific field from the result set
-		 * Handles both object entities and array results
-		 * @param string $field The field to extract
-		 * @return array Array of extracted values, deduplicated and with nulls removed
-		 */
-		public function extractFieldValues(string $field): array {
-			$values = [];
-			
-			// Implementation depends on how your QuelResult stores data
-			// This is a generic example:
-			foreach ($this->getResults() as $result) {
-				if (is_object($result)) {
-					// Handle entity objects using getter methods
-					$getter = 'get' . ucfirst($field);
-					
-					if (method_exists($result, $getter)) {
-						$values[] = $result->$getter();
-					} elseif (property_exists($result, $field)) {
-						// Try property access if getter doesn't exist
-						$values[] = $result->$field;
-					}
-				} elseif (is_array($result) && isset($result[$field])) {
-					// Handle array results
-					$values[] = $result[$field];
-				}
-			}
-			
-			// Remove duplicates and null values
-			return array_values(array_filter(array_unique($values)));
+			return $cloned;
 		}
 		
 		/**
@@ -315,5 +223,13 @@
 		 */
 		public function offsetUnset(mixed $offset): void {
 			unset($this->result[$offset]);
+		}
+		
+		/**
+		 * JsonSerializable implementation: Returns data which can be serialized by json_encode()
+		 * @return array The result set that can be JSON serialized
+		 */
+		public function jsonSerialize(): array {
+			return $this->result;
 		}
 	}
