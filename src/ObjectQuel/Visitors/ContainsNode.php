@@ -44,7 +44,7 @@
 				// Using is_a() for type checking (supports inheritance)
 				if (is_a($node, $nodeType)) {
 					// Throw exception immediately when restricted node type is found
-					throw new \Exception($nodeType);
+					throw new \Exception(basename($nodeType));
 				}
 			}
 		}

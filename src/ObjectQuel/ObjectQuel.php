@@ -505,9 +505,12 @@
 				// The visitor will examine each node and throw an exception if aggregates are found
 				$ast->getConditions()->accept($visitor);
 			} catch (\Exception $e) {
+				// Extract aggregate function from node type
+				$nodeType = strtoupper(substr($e->getMessage(), 3));
+				
 				// Convert the generic exception to a more specific QuelException
 				// This maintains the error message while using the framework's exception hierarchy
-				throw new QuelException("Aggregate function '{$e->getMessage()}' is not allowed in WHERE clause");
+				throw new QuelException("Aggregate function '{$nodeType}' is not allowed in WHERE clause");
 			}
 		}
 	    
