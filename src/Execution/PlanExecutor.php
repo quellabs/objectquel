@@ -2,10 +2,13 @@
 	
 	namespace Quellabs\ObjectQuel\Execution;
 	
-	use Quellabs\ObjectQuel\ObjectQuel\AstInterface;
 	use Quellabs\ObjectQuel\ObjectQuel\QuelException;
 	use Quellabs\ObjectQuel\QueryManagement\ConditionEvaluator;
 	use Quellabs\ObjectQuel\QueryManagement\QueryExecutor;
+	use Quellabs\ObjectQuel\Execution\Joins\JoinStrategyInterface;
+	use Quellabs\ObjectQuel\Execution\Joins\CrossJoinStrategy;
+	use Quellabs\ObjectQuel\Execution\Joins\LeftJoinStrategy;
+	use Quellabs\ObjectQuel\Execution\Joins\InnerJoinStrategy;
 	
 	/**
 	 * Responsible for executing individual stages of a decomposed query plan
@@ -18,192 +21,30 @@
 		
 		/**
 		 * Entity manager instance used to execute the actual queries
-		 * This is the underlying engine that processes individual query strings
 		 * @var QueryExecutor
 		 */
 		private QueryExecutor $queryExecutor;
 		
 		/**
-		 * Condition evaluator used to evaluate join conditions
+		 * Condition evaluator for join strategies that need to evaluate join conditions
 		 * @var ConditionEvaluator
 		 */
 		private ConditionEvaluator $conditionEvaluator;
 		
 		/**
-		 * Create a new stage executor
+		 * Cache for join strategy instances to prevent duplicate creation
+		 * @var array<string, JoinStrategyInterface>
+		 */
+		private array $joinStrategyCache = [];
+		
+		/**
+		 * Create a new plan executor
 		 * @param QueryExecutor $queryExecutor The entity manager to use for execution
 		 * @param ConditionEvaluator $conditionEvaluator The evaluator for conditions
 		 */
 		public function __construct(QueryExecutor $queryExecutor, ConditionEvaluator $conditionEvaluator) {
 			$this->queryExecutor = $queryExecutor;
 			$this->conditionEvaluator = $conditionEvaluator;
-		}
-		
-		/**
-		 * Process an individual stage with dependencies
-		 * @param ExecutionStage $stage The stage to execute
-		 * @return array The result of this stage's execution
-		 * @throws QuelException When dependencies cannot be satisfied or execution fails
-		 */
-		private function executeStage(ExecutionStage $stage): array {
-			// Execute the query with combined parameters
-			$result = $this->queryExecutor->executeStage($stage, $stage->getStaticParams());
-			
-			// Apply post-processing if specified
-			if ($result && $stage->hasResultProcessor()) {
-				$processor = $stage->getResultProcessor();
-				$processor($result);
-			}
-			
-			return $result;
-		}
-		
-		/**
-		 * Combines results from multiple stages into a single result object
-		 * This method joins the results of all stages with the main stage's result,
-		 * creating a consolidated result set that represents the complete query output.
-		 * @param ExecutionPlan $plan The execution plan with stage information
-		 * @param array $intermediateResults Results from all stages, indexed by stage name
-		 * @return array The combined result after performing all necessary joins
-		 * @throws QuelException
-		 */
-		private function combineResults(ExecutionPlan $plan, array $intermediateResults): array {
-			// Get the main stage name from the plan
-			$mainStageName = $plan->getMainStageName();
-			
-			// Find the main result
-			if (!isset($intermediateResults[$mainStageName])) {
-				return [];
-			}
-			
-			// Start with the main result as our base
-			$combinedResult = $intermediateResults[$mainStageName];
-			
-			// Get all stages from the plan to access their join conditions and join types
-			$allStages = $plan->getStagesInOrder();
-			
-			foreach ($intermediateResults as $stageName => $stageResult) {
-				// Skip the main result itself
-				if ($stageName === $mainStageName) {
-					continue;
-				}
-				
-				// Get the stage object to access join conditions and type
-				$stageFiltered = array_values(array_filter($allStages, function ($e) use ($stageName) {
-					return $e->getName() === $stageName;
-				}));
-				
-				if (empty($stageFiltered)) {
-					continue;
-				}
-				
-				// Get join conditions and join type
-				$stage = $stageFiltered[0];
-				$joinConditions = $stage->getJoinConditions();
-				
-				// Perform the appropriate type of join
-				$combinedResult = match ($stage->getJoinType()) {
-					'cross' => $this->performCrossJoin($combinedResult, $stageResult),
-					'inner' => $this->performInnerJoin($combinedResult, $stageResult, $joinConditions),
-					default => $this->performLeftJoin($combinedResult, $stageResult, $joinConditions),
-				};
-			}
-			
-			// Return the joined result
-			return $combinedResult;
-		}
-		
-		/**
-		 * Performs a cross join (Cartesian product) between two result sets
-		 * @param array $leftResult The left result set
-		 * @param array $rightResult The right result set
-		 * @return array The combined result set
-		 */
-		private function performCrossJoin(array $leftResult, array $rightResult): array {
-			$combined = [];
-			
-			// For each row in the left result, combine with every row in the right result
-			foreach ($leftResult as $leftRow) {
-				foreach ($rightResult as $rightRow) {
-					// Merge the left and right rows
-					$combined[] = array_merge($leftRow, $rightRow);
-				}
-			}
-			
-			// If left result is empty but right has results, return right result
-			if (empty($combined) && !empty($rightResult)) {
-				return $rightResult;
-			}
-			
-			return $combined;
-		}
-		
-		/**
-		 * Performs a left join between two result sets based on join conditions
-		 *
-		 * @param array $leftResult The left result set
-		 * @param array $rightResult The right result set
-		 * @param AstInterface $joinConditions The join conditions
-		 * @return array The joined result set
-		 * @throws QuelException
-		 */
-		private function performLeftJoin(array $leftResult, array $rightResult, AstInterface $joinConditions): array {
-			$combined = [];
-			
-			// For each row in the left result
-			foreach ($leftResult as $leftRow) {
-				$matched = false;
-				
-				// Check against each row in the right result
-				foreach ($rightResult as $rightRow) {
-					// Temporarily combine the rows to evaluate join condition
-					$combinedRow = array_merge($leftRow, $rightRow);
-					
-					// Evaluate join condition against combined row using the ConditionEvaluator
-					if ($this->conditionEvaluator->evaluate($joinConditions, $combinedRow)) {
-						// Add the combined row to the result
-						$combined[] = $combinedRow;
-						$matched = true;
-					}
-				}
-				
-				// If no match found, keep the left row with nulls for right columns
-				if (!$matched) {
-					// Create null placeholders for all right columns
-					$nullRight = array_fill_keys(array_keys(reset($rightResult) ?: []), null);
-					$combined[] = array_merge($leftRow, $nullRight);
-				}
-			}
-			
-			return $combined;
-		}
-		
-		/**
-		 * Performs an inner join between two result sets based on join conditions
-		 * @param array $leftResult The left result set
-		 * @param array $rightResult The right result set
-		 * @param AstInterface $joinConditions The join conditions
-		 * @return array The joined result set
-		 * @throws QuelException
-		 */
-		private function performInnerJoin(array $leftResult, array $rightResult, AstInterface $joinConditions): array {
-			$combined = [];
-			
-			foreach ($leftResult as $leftRow) {
-				// Check against each row in the right result
-				foreach ($rightResult as $rightRow) {
-					// Temporarily combine the rows to evaluate join condition
-					$combinedRow = array_merge($leftRow, $rightRow);
-					
-					// Evaluate join condition against combined row using the ConditionEvaluator
-					if ($this->conditionEvaluator->evaluate($joinConditions, $combinedRow)) {
-						// Add the combined row to the result
-						$combined[] = $combinedRow;
-					}
-				}
-			}
-			
-			return $combined;
 		}
 		
 		/**
@@ -216,22 +57,165 @@
 			// Get stages in execution order (respecting dependencies)
 			$stagesInOrder = $plan->getStagesInOrder();
 			
-			// If there's only one stage, perform a simple query execution
+			// Optimization: If there's only one stage, perform a simple query execution
+			// This avoids unnecessary overhead of the multi-stage execution process
 			if (count($stagesInOrder) === 1) {
 				return $this->queryExecutor->executeStage($stagesInOrder[0], $stagesInOrder[0]->getStaticParams());
 			}
 			
-			// Otherwise, execute each stage in the correct order and combine the results
+			// Multi-stage execution: execute each stage in the correct order and combine the results
 			$intermediateResults = [];
 			
+			// Execute each stage sequentially, maintaining dependency order
 			foreach ($stagesInOrder as $stage) {
 				try {
 					$intermediateResults[$stage->getName()] = $this->executeStage($stage);
 				} catch (QuelException $e) {
+					// Wrap any execution errors with stage context information
 					throw new QuelException("Stage '{$stage->getName()}' failed: {$e->getMessage()}");
 				}
 			}
 			
+			// Combine all intermediate results into a single final result
 			return $this->combineResults($plan, $intermediateResults);
+		}
+		
+		/**
+		 * Creates a join strategy instance for the specified join type.
+		 * Each join strategy implements JoinStrategyInterface and handles a specific type of join operation.
+		 * Uses caching to prevent duplicate creation of strategy instances.
+		 * @param string $joinType The type of join strategy to create
+		 * @return JoinStrategyInterface The join strategy instance
+		 * @throws QuelException When join type is unsupported
+		 */
+		private function createJoinStrategy(string $joinType): JoinStrategyInterface {
+			// Check if strategy is already cached
+			if (isset($this->joinStrategyCache[$joinType])) {
+				return $this->joinStrategyCache[$joinType];
+			}
+			
+			// Create and cache the strategy
+			$strategy = match($joinType) {
+				'cross' => new CrossJoinStrategy(),                          // Cartesian product join
+				'left'  => new LeftJoinStrategy($this->conditionEvaluator),  // Left outer join
+				'inner' => new InnerJoinStrategy($this->conditionEvaluator), // Inner join
+				default => throw new QuelException("Unsupported join type: {$joinType}")
+			};
+			
+			$this->joinStrategyCache[$joinType] = $strategy;
+			return $strategy;
+		}
+		
+		/**
+		 * Process an individual stage with dependencies
+		 * @param ExecutionStage $stage The stage to execute
+		 * @return array The result of this stage's execution
+		 * @throws QuelException When dependencies cannot be satisfied or execution fails
+		 */
+		private function executeStage(ExecutionStage $stage): array {
+			// Execute the query with static parameters defined in the stage
+			$result = $this->queryExecutor->executeStage($stage, $stage->getStaticParams());
+			
+			// Apply post-processing if the stage has a result processor defined
+			// This allows for custom transformations or filtering after query execution
+			if ($result && $stage->hasResultProcessor()) {
+				$processor = $stage->getResultProcessor();
+				
+				// Execute the processor function, passing the result by reference for modification
+				$processor($result);
+			}
+			
+			return $result;
+		}
+		
+		/**
+		 * This method performs the complex task of joining results from different stages
+		 * based on their join types and conditions. It starts with the main stage result
+		 * and progressively joins other stage results to build the final combined result.
+		 * @param ExecutionPlan $plan The execution plan with stage information
+		 * @param array $intermediateResults Results from all stages, indexed by stage name
+		 * @return array The combined result after performing all necessary joins
+		 * @throws QuelException
+		 */
+		private function combineResults(ExecutionPlan $plan, array $intermediateResults): array {
+			// Get the main stage name from the plan - this serves as the base for all joins
+			$mainStageName = $plan->getMainStageName();
+			
+			// Validate that the main stage result exists
+			// If no main result, return empty array (no data to join against)
+			if (!isset($intermediateResults[$mainStageName])) {
+				return [];
+			}
+			
+			// Start with the main result as our base for all subsequent joins
+			$combinedResult = $intermediateResults[$mainStageName];
+			
+			// Get all stages from the plan to access their join conditions and join types
+			$allStages = $plan->getStagesInOrder();
+			
+			// Iterate through all stage results to perform joins
+			foreach ($intermediateResults as $stageName => $stageResult) {
+				// Skip the main result itself - it's already our base
+				if ($stageName === $mainStageName) {
+					continue;
+				}
+				
+				// Find the stage object to get join configuration
+				$stage = $this->findStageByName($allStages, $stageName);
+				
+				if ($stage === null) {
+					// Skip stages that can't be found (shouldn't happen in normal operation)
+					continue;
+				}
+				
+				// Perform the join using the appropriate strategy based on the stage's join type
+				$combinedResult = $this->performJoin(
+					$combinedResult,           // Current combined result (left side of join)
+					$stageResult,             // Current stage result (right side of join)
+					$stage->getJoinType(),    // Type of join to perform (inner, left, cross, etc.)
+					$stage->getJoinConditions() // Conditions for the join operation
+				);
+			}
+			
+			return $combinedResult;
+		}
+		
+		/**
+		 * Find a stage by name from the stages array
+		 * @param array $stages Array of ExecutionStage objects
+		 * @param string $stageName Name of the stage to find
+		 * @return ExecutionStage|null The found stage or null if not found
+		 */
+		private function findStageByName(array $stages, string $stageName): ?ExecutionStage {
+			// Linear search through stages array
+			foreach ($stages as $stage) {
+				if ($stage->getName() === $stageName) {
+					return $stage;
+				}
+			}
+			// Return null if stage not found
+			return null;
+		}
+		
+		/**
+		 * Perform a join using the appropriate strategy
+		 * @param array $leftResult The left result set (typically the accumulated result)
+		 * @param array $rightResult The right result set (current stage result to join)
+		 * @param string $joinType The type of join to perform (cross, left, inner)
+		 * @param mixed|null $joinConditions The join conditions (if applicable)
+		 * @return array The joined result set
+		 * @throws QuelException When join type is unsupported or join fails
+		 */
+		private function performJoin(array $leftResult, array $rightResult, string $joinType, mixed $joinConditions = null): array {
+			try {
+				// Create the join strategy on-demand for the specific join type
+				$strategy = $this->createJoinStrategy($joinType);
+				
+				// Execute the join using the selected strategy
+				return $strategy->join($leftResult, $rightResult, $joinConditions);
+			} catch (QuelException $e) {
+				// Wrap any join errors with additional context
+				throw new QuelException("Join failed ({$joinType}): {$e->getMessage()}", 0, $e);
+			}
 		}
 	}

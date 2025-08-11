@@ -114,7 +114,7 @@
 		 */
 		public function executeQuery(string $query, array $parameters = []): QuelResult {
 			// Parse the input query string into an Abstract Syntax Tree (AST)
-			$ast = $this->getObjectQuel()->parse($query);
+			$ast = $this->getObjectQuel()->parse(trim($query));
 			
 			// Decompose the query
 			$decomposer = new QueryDecomposer();
