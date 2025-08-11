@@ -70,8 +70,6 @@
 		 * @param AstRangeDatabase|AstRangeJsonSource|null $range The data source range, or null if to be determined later
 		 * @param array $staticParams Fixed parameters that don't depend on other stages' results
 		 * @param AstInterface|null $joinConditions The conditions for joining this stage with other stages
-		 *
-		 * @throws \InvalidArgumentException If name is empty or query is invalid
 		 */
 		public function __construct(string $name, AstRetrieve $query, AstRangeDatabase|AstRangeJsonSource|null $range, array $staticParams = [], ?AstInterface $joinConditions = null) {
 			$this->name = $name;

@@ -13,6 +13,7 @@
 	 * Categorizes conditions into first-stage filters, join conditions, cross filters, and post filters
 	 */
 	class StagedExecutionConditionVisitor implements AstVisitorInterface {
+		
 		/**
 		 * Range alias to source type mapping (json/database)
 		 * @var array
@@ -244,16 +245,16 @@
 		 * Gets the field name from an expression node
 		 * @param AstInterface $node
 		 * @return string|null
+		 * @phpstan-ignore-next-line return.unusedType
 		 */
 		private function getFieldName(AstInterface $node): ?string {
-			// Implementeer logica om veldnaam te extraheren
-			// Dit is een placeholder
+			// Implement logic to extract field name
+			// This is a placeholder
 			return null;
 		}
 		
 		/**
 		 * Checks if all ranges are of the same source type
-		 *
 		 * @param array $ranges
 		 * @return bool
 		 */

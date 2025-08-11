@@ -20,23 +20,22 @@
 		 * @return array The combined result set containing all possible combinations
 		 */
 		public function join(array $leftResult, array $rightResult, ?AstInterface $conditions = null): array {
-			// Cross joins ignore conditions, so we don't use the $conditions parameter
-			
 			// Handle empty result sets
 			if (empty($leftResult) && empty($rightResult)) {
 				return [];
 			}
 			
-			// If left is empty but right has data, return right result
-			if (empty($leftResult) && !empty($rightResult)) {
+			// If left is empty (and we know right is not empty from above)
+			if (empty($leftResult)) {
 				return $rightResult;
 			}
 			
-			// If right is empty but left has data, return left result
-			if (empty($rightResult) && !empty($leftResult)) {
+			// If right is empty (and we know left is not empty from above)
+			if (empty($rightResult)) {
 				return $leftResult;
 			}
 			
+			// Cross joins ignore conditions, so we don't use the $conditions parameter
 			return $this->performCartesianProduct($leftResult, $rightResult);
 		}
 		

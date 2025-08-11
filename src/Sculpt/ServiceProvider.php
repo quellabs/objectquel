@@ -32,7 +32,7 @@
 		
 		/**
 		 * Returns the default configuration
-		 * @return array[]
+		 * @return array<string, string|int>
 		 */
 		public static function getDefaults(): array {
 			return [

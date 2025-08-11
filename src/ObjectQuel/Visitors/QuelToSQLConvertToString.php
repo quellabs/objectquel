@@ -735,7 +735,7 @@
 				
 				// Get the range and name of the entity.
 				$range = $identifier->getRange()->getName();
-				$entityName = $identifier->getRange()->getEntityName();
+				$entityName = $identifier->getEntityName();
 				
 				// Get the column names that determine the identification of the entity.
 				$identifierColumns = $this->entityStore->getIdentifierColumnNames($entityName);

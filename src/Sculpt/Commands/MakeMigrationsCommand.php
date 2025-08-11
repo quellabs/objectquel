@@ -25,9 +25,7 @@
 	 */
 	class MakeMigrationsCommand extends CommandBase {
 		private ?DatabaseAdapter $connection = null;
-		private ?AnnotationReader $annotationReader = null;
 		private ?EntityStore $entityStore = null;
-		private array $entityPaths;
 		private string $migrationsPath;
 		private Configuration $configuration;
 		
@@ -40,7 +38,6 @@
 		public function __construct(ConsoleInput $input, ConsoleOutput $output, ?ServiceProvider $provider = null) {
 			parent::__construct($input, $output, $provider);
 			$this->configuration = $provider->getConfiguration();
-			$this->entityPaths = $this->configuration->getEntityPaths();
 			$this->migrationsPath = $this->configuration->getMigrationsPath();
 		}
 		
@@ -115,30 +112,6 @@
 			
 			// Return the existing or newly created connection
 			return $this->connection;
-		}
-		
-		/**
-		 * Returns the AnnotationReader object
-		 * @return AnnotationReader
-		 */
-		private function getAnnotationReader(): AnnotationReader {
-			// Check if annotation reader is already initialized to avoid recreating it
-			if ($this->annotationReader === null) {
-				// Create a new configuration object for the annotation reader
-				$annotationReaderConfiguration = new \Quellabs\AnnotationReader\Configuration();
-				
-				// Configure whether to use annotation caching based on the main configuration
-				$annotationReaderConfiguration->setUseAnnotationCache($this->configuration->useMetadataCache());
-				
-				// Set the cache path for annotations from the main configuration
-				$annotationReaderConfiguration->setAnnotationCachePath($this->configuration->getMetadataCachePath());
-				
-				// Initialize the annotation reader with the configured settings
-				$this->annotationReader = new AnnotationReader($annotationReaderConfiguration);
-			}
-			
-			// Return the initialized annotation reader instance
-			return $this->annotationReader;
 		}
 		
 		/**

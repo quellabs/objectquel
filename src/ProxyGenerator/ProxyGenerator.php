@@ -113,6 +113,7 @@
 						if (flock($lockHandle, LOCK_EX)) {
 							// Double-check if the file is still outdated after acquiring the lock
 							// Another process might have already updated it while we were waiting
+							// @phpstan-ignore if.alwaysTrue */
 							if ($this->isOutdated($entityFilePath)) {
 								// Generate the full path for the proxy file
 								$proxyFilePath = $this->proxyPath . DIRECTORY_SEPARATOR . $fileName;

@@ -17,18 +17,15 @@
 		
 		private EntityStore $entityStore;
 		private string $entityName;
-		private string $rangeName;
 		
 		/**
 		 * ValidateRelationInViaValid constructor.
 		 * @param EntityStore $entityStore
 		 * @param string $entityName
-		 * @param string $rangeName
 		 */
-		public function __construct(EntityStore $entityStore, string $entityName, string $rangeName) {
+		public function __construct(EntityStore $entityStore, string $entityName) {
 			$this->entityStore = $entityStore;
 			$this->entityName = $entityName;
-			$this->rangeName = $rangeName;
 		}
 		
 		/**

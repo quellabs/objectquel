@@ -36,7 +36,7 @@
 		 * Entity store for handling entity metadata
 		 * @var EntityStore|null
 		 */
-		private ?EntityStore $entityStore;
+		private ?EntityStore $entityStore = null;
 		
 		/**
 		 * @var Configuration

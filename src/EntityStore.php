@@ -19,6 +19,7 @@
     
     use Quellabs\AnnotationReader\AnnotationInterface;
     use Quellabs\AnnotationReader\AnnotationReader;
+    use Quellabs\AnnotationReader\Collection\AnnotationCollection;
     use Quellabs\AnnotationReader\Exception\ParserException;
     use Quellabs\ObjectQuel\Annotations\Orm\Column;
     use Quellabs\ObjectQuel\Annotations\Orm\Index;
@@ -347,7 +348,7 @@
 	     * Returns the entity's annotations
 	     * @param mixed $entity The entity object or class name string to get annotations for
 	     * @param string|null $annotationType Optional class name to filter annotations by specific type
-	     * @return array<string, AnnotationInterface[]>|array<string, AnnotationInterface>
+	     * @return array<string, AnnotationCollection>
 	     *         Array of annotation objects, optionally filtered by type
          */
 	    public function getAnnotations(mixed $entity, ?string $annotationType = null): array {

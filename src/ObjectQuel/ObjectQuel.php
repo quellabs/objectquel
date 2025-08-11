@@ -816,7 +816,7 @@
 					$joinProperty = $range->getJoinProperty();
 					
 					if ($joinProperty !== null) {
-						$rangeOnlyOtherRanges = new ValidateRelationInViaValid($this->entityStore, $range->getEntityName(), $range->getName());
+						$rangeOnlyOtherRanges = new ValidateRelationInViaValid($this->entityStore, $range->getEntityName());
 						$joinProperty->accept($rangeOnlyOtherRanges);
 					}
 				} catch (QuelException $e) {
