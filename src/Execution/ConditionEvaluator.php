@@ -1,6 +1,6 @@
 <?php
 	
-	namespace Quellabs\ObjectQuel\QueryManagement;
+	namespace Quellabs\ObjectQuel\Execution;
 	
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstBinaryOperator;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstBool;

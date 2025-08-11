@@ -1,9 +1,7 @@
 <?php
 	
-	namespace Quellabs\ObjectQuel\QueryManagement;
+	namespace Quellabs\ObjectQuel\Execution;
 	
-	use Quellabs\ObjectQuel\Execution\ExecutionPlan;
-	use Quellabs\ObjectQuel\Execution\ExecutionStage;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstAlias;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstAvg;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstAvgU;

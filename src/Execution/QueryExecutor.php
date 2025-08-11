@@ -1,12 +1,10 @@
 <?php
 	
-	namespace Quellabs\ObjectQuel\QueryManagement;
+	namespace Quellabs\ObjectQuel\Execution;
 	
 	use Flow\JSONPath\JSONPathException;
 	use Quellabs\ObjectQuel\EntityManager;
 	use Quellabs\ObjectQuel\DatabaseAdapter\DatabaseAdapter;
-	use Quellabs\ObjectQuel\Execution\ExecutionStage;
-	use Quellabs\ObjectQuel\Execution\PlanExecutor;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRangeJsonSource;
 	use Quellabs\ObjectQuel\ObjectQuel\ObjectQuel;
 	use Quellabs\ObjectQuel\ObjectQuel\QuelException;

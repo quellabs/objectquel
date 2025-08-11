@@ -3,8 +3,6 @@
 	namespace Quellabs\ObjectQuel\Execution;
 	
 	use Quellabs\ObjectQuel\ObjectQuel\QuelException;
-	use Quellabs\ObjectQuel\QueryManagement\ConditionEvaluator;
-	use Quellabs\ObjectQuel\QueryManagement\QueryExecutor;
 	use Quellabs\ObjectQuel\Execution\Joins\JoinStrategyInterface;
 	use Quellabs\ObjectQuel\Execution\Joins\CrossJoinStrategy;
 	use Quellabs\ObjectQuel\Execution\Joins\LeftJoinStrategy;

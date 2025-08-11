@@ -21,8 +21,8 @@
 	use Quellabs\ObjectQuel\ObjectQuel\QuelException;
 	use Quellabs\ObjectQuel\ObjectQuel\QuelResult;
 	use Quellabs\ObjectQuel\ProxyGenerator\ProxyInterface;
-	use Quellabs\ObjectQuel\QueryManagement\QueryBuilder;
-	use Quellabs\ObjectQuel\QueryManagement\QueryExecutor;
+	use Quellabs\ObjectQuel\Execution\QueryBuilder;
+	use Quellabs\ObjectQuel\Execution\QueryExecutor;
 	use Quellabs\ObjectQuel\ReflectionManagement\PropertyHandler;
 	use Quellabs\ObjectQuel\Validation\EntityToValidation;
 	use Quellabs\SignalHub\HasSignals;
