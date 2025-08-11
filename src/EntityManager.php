@@ -160,7 +160,7 @@
 			$start = microtime(true);
 			
 			// Execute the query through the query executor
-			$result = $this->query_executor->executeQuery(trim($query), $parameters);
+			$result = $this->query_executor->executeQuery($query, $parameters);
 			
 			// Record end time to calculate execution duration
 			$end = microtime(true);

@@ -229,33 +229,7 @@
 			// Combine all field conditions with OR
 			$this->result[] = '(' . implode(" OR ", $conditions) . ')';
 		}
-		
-		/**
-		 * Processes an AstConcat object and converts it to the SQL CONCAT function.
-		 * @param AstConcat $concat The AstConcat object with the parameters to process.
-		 * @return void
-		 */
-		protected function handleConcat(AstConcat $concat): void {
-			// Start the CONCAT function in SQL.
-			$this->result[] = "CONCAT(";
-			
-			// Loop through all parameters of the AstConcat object.
-			$counter = 0;
-			
-			foreach($concat->getParameters() as $parameter) {
-				// If this is not the first item, add a comma.
-				if ($counter > 0) {
-					$this->result[] = ",";
-				}
-				
-				// Accept the current parameter object and process it.
-				$parameter->accept($this);
-				++$counter;
-			}
-			
-			// Close the CONCAT function in SQL.
-			$this->result[] = ")";
-		}
+
 		
 		/**
 		 * Handles generic expression processing with support for special string cases.
@@ -288,6 +262,33 @@
 			$ast->getLeft()->accept($this);
 			$this->result[] = " {$operator} ";
 			$ast->getRight()->accept($this);
+		}
+		
+		/**
+		 * Processes an AstConcat object and converts it to the SQL CONCAT function.
+		 * @param AstConcat $concat The AstConcat object with the parameters to process.
+		 * @return void
+		 */
+		protected function handleConcat(AstConcat $concat): void {
+			// Start the CONCAT function in SQL.
+			$this->result[] = "CONCAT(";
+			
+			// Loop through all parameters of the AstConcat object.
+			$counter = 0;
+			
+			foreach($concat->getParameters() as $parameter) {
+				// If this is not the first item, add a comma.
+				if ($counter > 0) {
+					$this->result[] = ",";
+				}
+				
+				// Accept the current parameter object and process it.
+				$parameter->accept($this);
+				++$counter;
+			}
+			
+			// Close the CONCAT function in SQL.
+			$this->result[] = ")";
 		}
 		
 		/**
@@ -527,67 +528,6 @@
 			// Add the closing bracket to the 'IN' condition.
 			$this->result[] = ")";
 		}
-	
-		/**
-		 * Universal handler for aggregate functions (COUNT, AVG, SUM, etc.)
-		 * @param AstCount|AstCountU|AstAvg|AstAvgU $ast The aggregate AST node
-		 * @param bool $distinct Whether to use DISTINCT
-		 * @param string $aggregateFunction The SQL aggregate function name (COUNT, AVG, SUM, etc.)
-		 * @return void
-		 */
-		protected function universalHandleAggregates(
-			AstCount|AstCountU|AstAvg|AstAvgU $ast,
-			bool $distinct,
-			string $aggregateFunction
-		): void {
-			// Get the identifier (entity or property) that needs to be aggregated.
-			$identifier = $ast->getIdentifier();
-			
-			// Early return if the expression is not an identifier
-			// This handles cases where the expression might be a subquery or other complex expression
-			if (!$identifier instanceof AstIdentifier) {
-				return;
-			}
-			
-			// If the identifier is an entity, we aggregate based on the primary identifier column
-			if ($this->identifierIsEntity($identifier)) {
-				// Add the entity to the list of visited nodes.
-				$this->addToVisitedNodes($identifier);
-				
-				// Get the range and name of the entity.
-				$range = $identifier->getRange()->getName();
-				$entityName = $identifier->getName();
-				
-				// Get the column names that determine the identification of the entity.
-				$identifierColumns = $this->entityStore->getIdentifierColumnNames($entityName);
-				
-				// Add the aggregate operation to the result
-				if ($distinct) {
-					$this->result[] = "{$aggregateFunction}(DISTINCT {$range}.{$identifierColumns[0]})";
-				} else {
-					$this->result[] = "{$aggregateFunction}({$range}.{$identifierColumns[0]})";
-				}
-				return;
-			}
-			
-			// If the identifier is a specific property within an entity, we aggregate that property
-			// Add the property and the associated entity to the list of visited nodes.
-			$this->addToVisitedNodes($identifier);
-			
-			// Get the range of the entity where the property is part of.
-			$range = $identifier->getRange()->getName();
-			
-			// Get the property name and the corresponding column name in the database.
-			$property = $identifier->getNext()->getName();
-			$columnMap = $this->entityStore->getColumnMap($identifier->getEntityName());
-			
-			// Add the aggregate operation to the result
-			if ($distinct) {
-				$this->result[] = "{$aggregateFunction}(DISTINCT {$range}.{$columnMap[$property]})";
-			} else {
-				$this->result[] = "{$aggregateFunction}({$range}.{$columnMap[$property]})";
-			}
-		}
 		
 		/**
 		 * This function processes the 'count' command within an abstract syntax tree (AST).
@@ -735,6 +675,68 @@
 		 */
 		protected function handleIsFloat(AstIsFloat $ast): void {
 			$this->handleTypeCheckWithPattern($ast, 'FLOAT');
+		}
+		
+		/**
+		 * Universal handler for aggregate functions (COUNT, AVG, SUM, etc.)
+		 * @param AstCount|AstCountU|AstAvg|AstAvgU $ast The aggregate AST node
+		 * @param bool $distinct Whether to use DISTINCT
+		 * @param string $aggregateFunction The SQL aggregate function name (COUNT, AVG, SUM, etc.)
+		 * @return void
+		 */
+		private function universalHandleAggregates(
+			AstCount|AstCountU|AstAvg|AstAvgU $ast,
+			bool $distinct,
+			string $aggregateFunction
+		): void {
+			// Get the identifier (entity or property) that needs to be aggregated.
+			$identifier = $ast->getIdentifier();
+			
+			// Early return if the expression is not an identifier
+			// This handles cases where the expression might be a subquery or other complex expression
+			if (!$identifier instanceof AstIdentifier) {
+				return;
+			}
+			
+			// If the identifier is an entity, we aggregate based on the primary identifier column
+			if ($this->identifierIsEntity($identifier)) {
+				// Add the entity to the list of visited nodes.
+				$this->addToVisitedNodes($identifier);
+				
+				// Get the range and name of the entity.
+				$range = $identifier->getRange()->getName();
+				$entityName = $identifier->getRange()->getEntityName();
+				
+				// Get the column names that determine the identification of the entity.
+				$identifierColumns = $this->entityStore->getIdentifierColumnNames($entityName);
+				
+				// Add the aggregate operation to the result
+				if ($distinct) {
+					$this->result[] = "{$aggregateFunction}(DISTINCT {$range}.{$identifierColumns[0]})";
+				} else {
+					$this->result[] = "{$aggregateFunction}({$range}.{$identifierColumns[0]})";
+				}
+				
+				return;
+			}
+			
+			// If the identifier is a specific property within an entity, we aggregate that property
+			// Add the property and the associated entity to the list of visited nodes.
+			$this->addToVisitedNodes($identifier);
+			
+			// Get the range of the entity where the property is part of.
+			$range = $identifier->getRange()->getName();
+			
+			// Get the property name and the corresponding column name in the database.
+			$property = $identifier->getNext()->getName();
+			$columnMap = $this->entityStore->getColumnMap($identifier->getEntityName());
+			
+			// Add the aggregate operation to the result
+			if ($distinct) {
+				$this->result[] = "{$aggregateFunction}(DISTINCT {$range}.{$columnMap[$property]})";
+			} else {
+				$this->result[] = "{$aggregateFunction}({$range}.{$columnMap[$property]})";
+			}
 		}
 		
 		/**
