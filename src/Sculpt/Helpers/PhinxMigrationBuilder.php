@@ -584,7 +584,7 @@ PHP;
 		 * @param array $propertyDef Property definition
 		 */
 		private function addDefaultOption(array &$options, array $propertyDef): void {
-			if (!empty($propertyDef['default']) && $propertyDef['default'] !== null) {
+			if (!empty($propertyDef['default'])) {
 				$options[] = "'default' => " . TypeMapper::formatValue($propertyDef['default']);
 			}
 		}

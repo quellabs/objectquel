@@ -246,10 +246,20 @@ HELP;
 		 * @return EntityStore The entity store instance
 		 */
 		private function getEntityStore(): EntityStore {
+			// Check if EntityStore has already been instantiated (lazy loading pattern)
 			if ($this->entityStore === null) {
+				// Verify that the provider supports configuration retrieval
+				// This prevents runtime errors if an incompatible provider is used
+				if (!method_exists($this->provider, "getConfiguration")) {
+					throw new \RuntimeException("No getConfiguration method available");
+				}
+				
+				// Initialize the EntityStore with the provider's configuration
+				// This creates the store only when first needed, improving performance
 				$this->entityStore = new EntityStore($this->provider->getConfiguration());
 			}
 			
+			// Return the cached instance (either existing or newly created)
 			return $this->entityStore;
 		}
 	}

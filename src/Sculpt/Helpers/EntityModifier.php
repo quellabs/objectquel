@@ -824,6 +824,7 @@
 			$braceLevel = 1;
 			
 			// Continue searching until we reach the end of content or find the matching brace
+			// @phpstan-ignore-next-line greater.alwaysTrue
 			while ($offset < strlen($content) && $braceLevel > 0) {
 				// Check current character
 				if ($content[$offset] === '{') {
@@ -1000,9 +1001,9 @@
 		/**
 		 * Pluralize a word
 		 * @param string $word
-		 * @return array|string|null
+		 * @return string|null
 		 */
-		private function pluralize(string $word): array|string|null {
+		private function pluralize(string $word): string|null {
 			// Convert to lowercase for rule checking
 			$lower = strtolower($word);
 			

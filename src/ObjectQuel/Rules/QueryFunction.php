@@ -83,12 +83,13 @@
 				default => throw new ParserException("Command {$command} is not valid."),
 			};
 		}
-
+		
 		/**
 		 * Generic parser for simple single-parameter functions
-		 * @param string $astClass The fully qualified AST class name to instantiate
+		 * @template T of AstInterface
+		 * @param class-string<T> $astClass The fully qualified AST class name to instantiate
 		 * @param bool $usePropertyChain Whether to parse as property chain (entity.property) or as general expression
-		 * @return AstInterface The instantiated AST node
+		 * @return T The instantiated AST node
 		 * @throws LexerException When token matching fails
 		 * @throws ParserException When parsing fails
 		 */
@@ -323,7 +324,9 @@
 					break;
 				}
 				
-				$identifiers[] = $this->expressionRule->parse();
+				/** @var AstIdentifier $identifier */
+				$identifier = $this->expressionRule->parse();
+				$identifiers[] = $identifier;
 			} while ($this->lexer->optionalMatch(Token::Comma));
 			
 			return $identifiers;

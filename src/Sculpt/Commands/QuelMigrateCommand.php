@@ -37,9 +37,16 @@
 		 * @return int Exit code (0 for success)
 		 */
 		public function execute(ConfigurationManager $config): int {
+			// Check if we can generate the phinx config
+			// This line exists to make PhpStan happy
+			if (!method_exists($this->getProvider(), 'createPhinxConfig')) {
+				$this->output->error("Unable to fetch phinx configuration");
+				return 1;
+			}
+			
 			// Create a Phinx configuration
 			$phinxConfig = new Config($this->getProvider()->createPhinxConfig());
-			
+
 			// Create the manager with buffered output to capture all output
 			// Always use the 'development' environment since that's all our config supports
 			$inputArgs = $this->prepareInputArgs($config);
@@ -165,7 +172,7 @@ HELP;
 			
 			// If no pending migrations, nothing to do
 			if ($count === 0) {
-				$this->output->writeLn("<info>No pending migrations found.</info>");
+				$this->output->writeLn("No pending migrations found.");
 				return false;
 			}
 			
@@ -182,7 +189,7 @@ HELP;
 			}
 			
 			// Display pending migrations with proper singular/plural form
-			$this->output->writeLn("<info>{$count} pending " . ($count === 1 ? "migration" : "migrations") . " found:</info>");
+			$this->output->writeLn("{$count} pending " . ($count === 1 ? "migration" : "migrations") . " found:");
 			$this->output->writeLn(""); // Empty line for better readability
 			
 			// Build table rows with migration information
@@ -211,17 +218,17 @@ HELP;
 			// First check if there are pending migrations and get user confirmation
 			// This will return false if no migrations exist or user cancels the operation
 			if (!$this->confirmMigrations($manager, $config)) {
-				$this->output->writeLn("<info>Migration operation canceled.</info>");
+				$this->output->writeLn("Migration operation canceled.");
 				return 0; // Return success code since this is not an error
 			}
 			
 			// Output message
-			$this->output->writeLn("<info>Running migrations...</info>");
+			$this->output->writeLn("Running migrations...");
 			
 			// Check if this is a dry run (simulation only)
 			// This is useful for previewing what changes will be made without actually applying them
 			if ($config->hasFlag('dry-run') || $config->hasFlag('d')) {
-				$this->output->writeLn("<dim>Dry run mode - no database changes will be made.</dim>");
+				$this->output->writeLn("Dry run mode - no database changes will be made.");
 			}
 			
 			// Check if a specific target version was requested
@@ -230,7 +237,7 @@ HELP;
 			
 			if ($target) {
 				// Migrate to the specific target version
-				$this->output->writeLn("<info>Migrating to version: {$target}</info>");
+				$this->output->writeLn("Migrating to version: {$target}");
 				$manager->migrate($this->environment, $target);
 			} else {
 				// No target specified, migrate to the latest version
@@ -238,7 +245,7 @@ HELP;
 			}
 			
 			// All migrations completed without errors
-			$this->output->writeLn("<success>Migration completed successfully.</success>");
+			$this->output->success("Migration completed successfully.");
 			return 0; // Return success exit code
 		}
 		
@@ -262,25 +269,25 @@ HELP;
 				
 				// Show cancel message if the user entered 'n'
 				if (!$this->input->confirm($message, false)) {
-					$this->output->writeLn("<info>Rollback operation canceled.</info>");
+					$this->output->writeLn("Rollback operation canceled.");
 					return 0;
 				}
 			}
 			
 			// Show message
-			$this->output->writeLn("<info>Rolling back migrations...</info>");
+			$this->output->writeLn("Rolling back migrations...");
 			
 			// Check for dry run
 			if ($config->hasFlag('dry-run') || $config->hasFlag('d')) {
-				$this->output->writeLn("<dim>Dry run mode - no database changes will be made.</dim>");
+				$this->output->writeLn("Dry run mode - no database changes will be made.");
 			}
 			
 			// Get the target version and steps
 			if ($target) {
-				$this->output->writeLn("<info>Rolling back to version: {$target}</info>");
+				$this->output->writeLn("Rolling back to version: {$target}");
 				$manager->rollback($this->environment, $target);
 			} else {
-				$this->output->writeLn("<info>Rolling back {$steps} " . ($steps === 1 ? "migration" : "migrations") . "</info>");
+				$this->output->writeLn("Rolling back {$steps} " . ($steps === 1 ? "migration" : "migrations"));
 				$manager->rollback($this->environment, null, $steps);
 			}
 			
@@ -296,7 +303,7 @@ HELP;
 		 */
 		private function showStatus(Manager $manager): int {
 			// Show status
-			$this->output->writeLn("<info>Migration Status:</info>");
+			$this->output->writeLn("Migration Status:");
 			
 			// Instead of printing directly, capture the output from Phinx
 			$manager->printStatus($this->environment);

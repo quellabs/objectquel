@@ -22,9 +22,6 @@
 		/** @var string The property name to search for */
 		private string $property;
 		
-		/** @var AstIdentifier|null The found identifier node */
-		private ?AstIdentifier $result;
-		
 		/**
 		 * FindIdentifier constructor
 		 * @param string $entityName The entity name to match
@@ -33,7 +30,6 @@
 		public function __construct(string $entityName, string $property) {
 			$this->entityName = $entityName;
 			$this->property = $property;
-			$this->result = null;
 		}
 		
 		/**
@@ -63,13 +59,5 @@
 			
 			// If we reach here, we found a match - throw exception to halt traversal
 			throw new AstFinderException("Found identifier", 0, null, $node);
-		}
-		
-		/**
-		 * Gets the found identifier result
-		 * @return AstIdentifier|null The found identifier or null if not found
-		 */
-		public function getResult(): ?AstIdentifier {
-			return $this->result;
 		}
 	}
