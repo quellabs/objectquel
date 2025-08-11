@@ -44,6 +44,21 @@
 	 */
 	class QuelToSQLConvertToString implements AstVisitorInterface {
 		
+		// Wildcard character mappings for SQL LIKE patterns
+		private const array WILDCARD_MAPPINGS = [
+			'%' => '\\%',   // Escape existing SQL wildcards
+			'_' => '\\_',   // Escape existing SQL wildcards
+			'*' => '%',     // Convert asterisk to SQL any-sequence wildcard
+			'?' => '_'      // Convert question mark to SQL single-character wildcard
+		];
+		
+		// Regular expression patterns for type checking
+		private const array REGEX_PATTERNS = [
+			'NUMERIC' => '^-?[0-9]+(\\.[0-9]+)?$',  // Matches integers and floats
+			'INTEGER' => '^-?[0-9]+$',              // Matches only integers
+			'FLOAT' => '^-?[0-9]+\\.[0-9]+$'        // Matches only floats with decimal point
+		];
+		
 		// The entity store for entity to table conversions
 		private EntityStore $entityStore;
 		
@@ -66,7 +81,7 @@
 			$this->parameters = &$parameters;
 			$this->partOfQuery = $partOfQuery;
 		}
-		
+
 		/**
 		 * Visit a node in the AST.
 		 * @param AstInterface $node The node to visit.
@@ -86,7 +101,7 @@
 			
 			// Determine the name of the method that will handle this specific type of Ast node.
 			// The 'substr' function is used to get the relevant parts of the class name.
-			$className = ltrim(strrchr(get_class($node), '\\'), '\\');
+			$className = $this->extractClassName($node);
 			$handleMethod = 'handle' . substr($className, 3);
 			
 			// Check if the determined method exists and call it if that is the case.
@@ -158,16 +173,11 @@
 		}
 		
 		/**
-		 * Recursively infers the return type of an AST node and its children
+		 * Recursively infers the return type of AST node and its children
 		 * @param AstInterface $ast Abstract syntax tree node
 		 * @return string|null Inferred return type or null if none found
 		 */
 		public function inferReturnType(AstInterface $ast): ?string {
-			// Boolean operations
-			if ($ast instanceof AstBinaryOperator || $ast instanceof AstExpression) {
-				return 'boolean';
-			}
-			
 			// Process identifiers
 			if ($ast instanceof AstIdentifier) {
 				return $this->inferReturnTypeOfIdentifier($ast);
@@ -214,45 +224,7 @@
 		protected function handleSearch(AstSearch $search): void {
 			$searchKey = uniqid();
 			$parsed = $search->parseSearchData($this->parameters);
-			$conditions = [];
-			
-			foreach ($search->getIdentifiers() as $identifier) {
-				// Mark nodes as visited
-				$this->addToVisitedNodes($identifier);
-				
-				// Get column name
-				$entityName = $identifier->getEntityName();
-				$rangeName = $identifier->getRange()->getName();
-				$propertyName = $identifier->getNext()->getName();
-				$columnMap = $this->entityStore->getColumnMap($entityName);
-				$columnName = "{$rangeName}.{$columnMap[$propertyName]}";
-				
-				// Build conditions for this identifier
-				$fieldConditions = [];
-				$termTypes = [
-					'or_terms'  => ['operator' => 'OR', 'comparison' => 'LIKE'],
-					'and_terms' => ['operator' => 'AND', 'comparison' => 'LIKE'],
-					'not_terms' => ['operator' => 'AND', 'comparison' => 'NOT LIKE']
-				];
-				
-				foreach ($termTypes as $termType => $config) {
-					$termConditions = [];
-					
-					foreach ($parsed[$termType] as $i => $term) {
-						$paramName = "{$termType}{$searchKey}{$i}";
-						$termConditions[] = "{$columnName} {$config['comparison']} :{$paramName}";
-						$this->parameters[$paramName] = "%{$term}%";
-					}
-					
-					if (!empty($termConditions)) {
-						$fieldConditions[] = '(' . implode(" {$config['operator']} ", $termConditions) . ')';
-					}
-				}
-				
-				if (!empty($fieldConditions)) {
-					$conditions[] = '(' . implode(' AND ', $fieldConditions) . ')';
-				}
-			}
+			$conditions = $this->buildSearchConditions($search, $parsed, $searchKey);
 			
 			// Combine all field conditions with OR
 			$this->result[] = '(' . implode(" OR ", $conditions) . ')';
@@ -288,7 +260,6 @@
 		/**
 		 * Handles generic expression processing with support for special string cases.
 		 * Processes AST nodes for standard comparisons and delegates wildcard/regex handling to specialized methods.
-		 *
 		 * @param AstInterface $ast The AST node to process
 		 * @param string $operator The comparison operator
 		 */
@@ -317,72 +288,6 @@
 			$ast->getLeft()->accept($this);
 			$this->result[] = " {$operator} ";
 			$ast->getRight()->accept($this);
-		}
-		
-		/**
-		 * Handles wildcard string patterns by converting them to SQL LIKE syntax.
-		 * Converts * (match any sequence) to % and ? (match single character) to _.
-		 * @param AstString $rightAst The right-hand side AST node to check
-		 * @param AstBinaryOperator|AstExpression|AstFactor|AstTerm $ast The full AST node
-		 * @param string $operator The comparison operator
-		 * @return bool True if wildcard string was handled, false otherwise
-		 */
-		private function handleWildcardString(AstString $rightAst, AstExpression|AstBinaryOperator|AstFactor|AstTerm $ast, string $operator): bool {
-			// Extract the string value from the AST node
-			$stringValue = $rightAst->getValue();
-			
-			// Check if the string contains wildcard characters (* or ?)
-			if (!str_contains($stringValue, "*") && !str_contains($stringValue, "?")) {
-				return false;
-			}
-			
-			// Mark this node as visited to prevent duplicate processing
-			$this->addToVisitedNodes($rightAst);
-			
-			// Process the left-hand side of the comparison
-			$ast->getLeft()->accept($this);
-			
-			// Convert wildcards to SQL LIKE pattern syntax:
-			// - Escape existing SQL wildcards (% and _) with backslashes
-			// - Convert * (match any sequence) to % (SQL wildcard for any sequence)
-			// - Convert ? (match single character) to _ (SQL wildcard for single character)
-			$stringValue = str_replace(["%", "_", "*", "?"], ["\\%", "\\_", "%", "_"], $stringValue);
-			
-			// Choose the appropriate LIKE operator based on the original operator
-			$likeOperator = $operator === "=" ? " LIKE " : " NOT LIKE ";
-			
-			// Add the SQL LIKE clause to the result
-			$this->result[] = "{$likeOperator}\"{$stringValue}\"";
-			
-			// Indicate that special case was handled
-			return true;
-		}
-		
-		/**
-		 * Handles regular expression patterns by converting them to SQL REGEXP syntax.
-		 * @param AstRegExp $rightAst The right-hand side AST node to check
-		 * @param AstBinaryOperator|AstExpression|AstFactor|AstTerm $ast The full AST node
-		 * @param string $operator The comparison operator
-		 * @return bool True if regular expression was handled, false otherwise
-		 */
-		private function handleRegularExpression(AstRegExp $rightAst, AstExpression|AstBinaryOperator|AstFactor|AstTerm $ast, string $operator): bool {
-			// Extract the regex pattern from the AST node
-			$stringValue = $rightAst->getValue();
-			
-			// Mark this node as visited to prevent duplicate processing
-			$this->addToVisitedNodes($rightAst);
-			
-			// Process the left-hand side of the comparison
-			$ast->getLeft()->accept($this);
-			
-			// Choose appropriate REGEXP operator based on the original operator
-			$regexpOperator = $operator === "=" ? " REGEXP " : " NOT REGEXP ";
-			
-			// Add the SQL REGEXP clause to the result
-			$this->result[] = "{$regexpOperator}\"{$stringValue}\"";
-			
-			// Indicate that special case was handled
-			return true;
 		}
 		
 		/**
@@ -496,7 +401,7 @@
 		 * @return void
 		 */
 		protected function handleString(AstString $ast): void {
-			$this->result[] = "\"{$ast->getValue()}\"";
+			$this->result[] = "\"" . addslashes($ast->getValue()) . "\"";
 		}
 		
 		/**
@@ -797,43 +702,7 @@
 		 * @return void
 		 */
 		protected function handleIsNumeric(AstIsNumeric $ast): void {
-			$this->visitNode($ast);
-			
-			// Fetch the node value
-			$valueNode = $ast->getValue();
-			
-			// Special case for number. This will always be true
-			if ($valueNode instanceof AstNumber) {
-				$this->addToVisitedNodes($valueNode);
-				$this->result[] = "1";
-				return;
-			}
-			
-			// Handle boolean and null values - they are never numeric
-			if ($valueNode instanceof AstBool || $valueNode instanceof AstNull) {
-				$this->addToVisitedNodes($valueNode);
-				$this->result[] = "0";
-				return;
-			}
-			
-			// Handle string literals - check if the string matches a valid numeric pattern
-			if ($valueNode instanceof AstString) {
-				$this->addToVisitedNodes($valueNode);
-				$string = "'" . addslashes($valueNode->getValue()) . "'";
-				$this->result[] = "{$string} REGEXP '^-?[0-9]+(\\.[0-9]+)?$'";
-				return;
-			}
-
-			// Handle identifiers (variables, function calls, etc.)
-			$inferredType = $this->inferReturnType($valueNode);
-			$string = $this->visitNodeAndReturnSQL($valueNode);
-			
-			// Return the appropriate result based on the inferred type
-			if (($inferredType === 'float') || ($inferredType == "integer")) {
-				$this->result[] = "1";
-			} else {
-				$this->result[] = "{$string} REGEXP '^-?[0-9]+(\\.[0-9]+)?$'"; // For unknown types, check if the value matches the float pattern
-			}
+			$this->handleTypeCheckWithPattern($ast, 'NUMERIC');
 		}
 		
 		/**
@@ -849,47 +718,7 @@
 		 * @return void
 		 */
 		protected function handleIsInteger(AstIsInteger $ast): void {
-			// Add AstIsInteger handles nodes list
-			$this->visitNode($ast);
-			
-			// Fetch the node value
-			$valueNode = $ast->getValue();
-			
-			// Handle string literals - check if the string matches a valid integer pattern
-			if ($valueNode instanceof AstString) {
-				$this->addToVisitedNodes($valueNode);
-				$string = "'" . addslashes($valueNode->getValue()) . "'";
-				$this->result[] = "{$string} REGEXP '^-?[0-9]+$'";
-				return;
-			}
-			
-			// Handle numeric values - check if the number has no decimal point
-			if ($valueNode instanceof AstNumber) {
-				$this->addToVisitedNodes($valueNode);
-				$this->result[] = !str_contains($valueNode->getValue(), ".") ? "1" : "0";
-				return;
-			}
-			
-			// Handle boolean and null values - they are never integers
-			if ($valueNode instanceof AstBool || $valueNode instanceof AstNull) {
-				$this->addToVisitedNodes($valueNode);
-				$this->result[] = "0";
-				return;
-			}
-			
-			// Handle identifiers (variables, function calls, etc.)
-			$inferredType = $this->inferReturnType($valueNode);
-			$string = $this->visitNodeAndReturnSQL($valueNode);
-			
-			// Return appropriate result based on the inferred type
-			if ($inferredType == "integer") {
-				$this->result[] = "1";    // Known integer types are always integers
-			} elseif ($inferredType == "float") {
-				$this->result[] = "0";    // Float types are never integers
-			} else {
-				// For unknown types, check if the value matches an integer pattern
-				$this->result[] = "{$string} REGEXP '^-?[0-9]+$'";
-			}
+			$this->handleTypeCheckWithPattern($ast, 'INTEGER');
 		}
 		
 		/**
@@ -905,44 +734,238 @@
 		 * @return void
 		 */
 		protected function handleIsFloat(AstIsFloat $ast): void {
-			$this->visitNode($ast);
+			$this->handleTypeCheckWithPattern($ast, 'FLOAT');
+		}
+		
+		/**
+		 * Extract the name of a class from the object
+		 * @param object $node
+		 * @return string
+		 */
+		private function extractClassName(object $node): string {
+			return ltrim(strrchr(get_class($node), '\\'), '\\');
+		}
+		
+		/**
+		 * Builds search conditions for multiple identifiers based on parsed search terms
+		 * @param AstSearch $search The search AST node containing identifiers to search
+		 * @param array $parsed Parsed search data containing or_terms, and_terms, and not_terms
+		 * @param string $searchKey Unique key for parameter naming to avoid conflicts
+		 * @return array Array of SQL condition strings
+		 */
+		private function buildSearchConditions(AstSearch $search, array $parsed, string $searchKey): array {
+			$conditions = [];
 			
-			// Fetch the node value
+			foreach ($search->getIdentifiers() as $identifier) {
+				// Mark nodes as visited to prevent duplicate processing
+				$this->addToVisitedNodes($identifier);
+				
+				// Resolve the column name for this identifier
+				$columnName = $this->resolveSearchColumnName($identifier);
+				
+				// Build conditions for this specific identifier/column
+				$fieldConditions = $this->buildFieldConditions($columnName, $parsed, $searchKey);
+				
+				if (!empty($fieldConditions)) {
+					$conditions[] = '(' . implode(' AND ', $fieldConditions) . ')';
+				}
+			}
+			
+			return $conditions;
+		}
+		
+		/**
+		 * Resolves the full SQL column name for a search identifier
+		 * @param AstIdentifier $identifier The identifier to resolve
+		 * @return string The resolved column name (e.g., "alias.column_name")
+		 */
+		private function resolveSearchColumnName(AstIdentifier $identifier): string {
+			$entityName = $identifier->getEntityName();
+			$rangeName = $identifier->getRange()->getName();
+			$propertyName = $identifier->getNext()->getName();
+			$columnMap = $this->entityStore->getColumnMap($entityName);
+			
+			return "{$rangeName}.{$columnMap[$propertyName]}";
+		}
+		
+		/**
+		 * Builds field-specific conditions for different term types (OR, AND, NOT)
+		 * @param string $columnName The SQL column name to search in
+		 * @param array $parsed Parsed search terms organized by type
+		 * @param string $searchKey Unique key for parameter naming
+		 * @return array Array of condition strings for this field
+		 */
+		private function buildFieldConditions(string $columnName, array $parsed, string $searchKey): array {
+			$fieldConditions = [];
+			
+			// Define term types and their SQL operators
+			$termTypes = [
+				'or_terms'  => ['operator' => 'OR', 'comparison' => 'LIKE'],
+				'and_terms' => ['operator' => 'AND', 'comparison' => 'LIKE'],
+				'not_terms' => ['operator' => 'AND', 'comparison' => 'NOT LIKE']
+			];
+			
+			foreach ($termTypes as $termType => $config) {
+				$termConditions = $this->buildTermConditions(
+					$columnName,
+					$parsed[$termType],
+					$config,
+					$termType,
+					$searchKey
+				);
+				
+				if (!empty($termConditions)) {
+					$fieldConditions[] = '(' . implode(" {$config['operator']} ", $termConditions) . ')';
+				}
+			}
+			
+			return $fieldConditions;
+		}
+		
+		/**
+		 * Builds conditions for a specific term type (or_terms, and_terms, not_terms)
+		 * @param string $columnName The SQL column name
+		 * @param array $terms Array of search terms for this type
+		 * @param array $config Configuration containing operator and comparison type
+		 * @param string $termType The type of terms being processed
+		 * @param string $searchKey Unique key for parameter naming
+		 * @return array Array of individual term conditions
+		 */
+		private function buildTermConditions(
+			string $columnName,
+			array $terms,
+			array $config,
+			string $termType,
+			string $searchKey
+		): array {
+			$termConditions = [];
+			
+			foreach ($terms as $index => $term) {
+				$paramName = "{$termType}{$searchKey}{$index}";
+				$termConditions[] = "{$columnName} {$config['comparison']} :{$paramName}";
+				$this->parameters[$paramName] = "%{$term}%";
+			}
+			
+			return $termConditions;
+		}
+		
+		/**
+		 * Handles wildcard string patterns by converting them to SQL LIKE syntax.
+		 * Converts * (match any sequence) to % and ? (match single character) to _.
+		 * @param AstString $rightAst The right-hand side AST node to check
+		 * @param AstBinaryOperator|AstExpression|AstFactor|AstTerm $ast The full AST node
+		 * @param string $operator The comparison operator
+		 * @return bool True if wildcard string was handled, false otherwise
+		 */
+		private function handleWildcardString(AstString $rightAst, AstExpression|AstBinaryOperator|AstFactor|AstTerm $ast, string $operator): bool {
+			// Get the value
+			$stringValue = $rightAst->getValue();
+			
+			// Check if the string contains wildcard characters
+			if (!str_contains($stringValue, "*") && !str_contains($stringValue, "?")) {
+				return false;
+			}
+			
+			// Mark this node as visited to prevent duplicate processing
+			$this->addToVisitedNodes($rightAst);
+			
+			// Process the left-hand side of the comparison
+			$ast->getLeft()->accept($this);
+			
+			// Convert wildcards using the constant mapping
+			$stringValue = str_replace(
+				array_keys(self::WILDCARD_MAPPINGS),
+				array_values(self::WILDCARD_MAPPINGS),
+				$stringValue
+			);
+			
+			// Choose the appropriate LIKE operator based on the original operator
+			$likeOperator = $operator === "=" ? " LIKE " : " NOT LIKE ";
+			
+			// Add the SQL LIKE clause to the result
+			$this->result[] = "{$likeOperator}\"" . addslashes($stringValue) . "\"";
+
+			return true;
+		}
+		
+		/**
+		 * Handle type checking operations using regex patterns from constants
+		 * @param AstIsNumeric|AstIsInteger|AstIsFloat $ast The type check AST node
+		 * @param string $patternKey The key for the regex pattern in REGEX_PATTERNS
+		 * @return void
+		 */
+		private function handleTypeCheckWithPattern(AstIsNumeric|AstIsInteger|AstIsFloat $ast, string $patternKey): void {
+			$this->visitNode($ast);
 			$valueNode = $ast->getValue();
 			
-			// Handle string literals - check if the string matches a valid float pattern
+			// Handle string literals - check if the string matches the pattern
 			if ($valueNode instanceof AstString) {
-				$this->addToVisitedNodes($ast->getValue());
+				$this->addToVisitedNodes($valueNode);
 				$string = "'" . addslashes($valueNode->getValue()) . "'";
-				$this->result[] = "{$string} REGEXP '^-?[0-9]+\\.[0-9]+$'";
+				$pattern = self::REGEX_PATTERNS[$patternKey];
+				$this->result[] = "{$string} REGEXP '{$pattern}'";
 				return;
 			}
 			
-			// Handle numeric values - a number is a float if it's not equal to its floor value
+			// Handle numeric values
 			if ($valueNode instanceof AstNumber) {
-				$this->addToVisitedNodes($ast->getValue());
-				$this->result[] = str_contains($valueNode->getValue(), ".") ? "1" : "0";
+				$this->addToVisitedNodes($valueNode);
+				
+				$this->result[] = match($patternKey) {
+					'NUMERIC' => "1",  // Numbers are always numeric
+					'INTEGER' => !str_contains($valueNode->getValue(), ".") ? "1" : "0",
+					'FLOAT' => str_contains($valueNode->getValue(), ".") ? "1" : "0",
+					default => "0"
+				};
+				
 				return;
 			}
 			
-			// Handle boolean and null values - they are never floats
+			// Handle boolean and null values - they are never numeric/integer/float
 			if ($valueNode instanceof AstBool || $valueNode instanceof AstNull) {
-				$this->addToVisitedNodes($ast->getValue());
+				$this->addToVisitedNodes($valueNode);
 				$this->result[] = "0";
 				return;
 			}
 			
-			// Handle identifiers (variables, function calls, etc.)
+			// Handle identifiers based on inferred type
 			$inferredType = $this->inferReturnType($valueNode);
-			$string = $this->visitNodeAndReturnSQL($ast->getValue());
+			$string = $this->visitNodeAndReturnSQL($valueNode);
 			
-			// Return the appropriate result based on the inferred type
-			if ($inferredType == "integer") {
-				$this->result[] = "0"; // Known integer types are never floats
-			} elseif ($inferredType == "float") {
-				$this->result[] = "1"; // Known float types are always floats
-			} else {
-				$this->result[] = "{$string} REGEXP '^-?[0-9]+\\.[0-9]+$'"; // For unknown types, check if the value matches the float pattern
-			}
+			$this->result[] = match([$patternKey, $inferredType]) {
+				['NUMERIC', 'integer'], ['NUMERIC', 'float'] => "1",
+				['INTEGER', 'integer'] => "1",
+				['INTEGER', 'float'] => "0",
+				['FLOAT', 'float'] => "1",
+				['FLOAT', 'integer'] => "0",
+				default => "{$string} REGEXP '" . self::REGEX_PATTERNS[$patternKey] . "'"
+			};
+		}
+		
+		/**
+		 * Handles regular expression patterns by converting them to SQL REGEXP syntax.
+		 * @param AstRegExp $rightAst The right-hand side AST node to check
+		 * @param AstBinaryOperator|AstExpression|AstFactor|AstTerm $ast The full AST node
+		 * @param string $operator The comparison operator
+		 * @return bool True if regular expression was handled, false otherwise
+		 */
+		private function handleRegularExpression(AstRegExp $rightAst, AstExpression|AstBinaryOperator|AstFactor|AstTerm $ast, string $operator): bool {
+			// Extract the regex pattern from the AST node
+			$stringValue = $rightAst->getValue();
+			
+			// Mark this node as visited to prevent duplicate processing
+			$this->addToVisitedNodes($rightAst);
+			
+			// Process the left-hand side of the comparison
+			$ast->getLeft()->accept($this);
+			
+			// Choose appropriate REGEXP operator based on the original operator
+			$regexpOperator = $operator === "=" ? " REGEXP " : " NOT REGEXP ";
+			
+			// Add the SQL REGEXP clause to the result
+			$this->result[] = "{$regexpOperator}\"{$stringValue}\"";
+			
+			// Indicate that special case was handled
+			return true;
 		}
 	}

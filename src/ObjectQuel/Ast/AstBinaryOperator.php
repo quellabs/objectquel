@@ -102,4 +102,11 @@
 			$this->operator = $operator;
 		}
 		
+		/**
+		 * The return type of this node
+		 * @return string|null
+		 */
+		public function getReturnType(): ?string {
+			return "boolean";
+		}
 	}

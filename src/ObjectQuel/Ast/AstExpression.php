@@ -88,4 +88,12 @@
 		public function setRight(AstInterface $ast): void {
 			$this->right = $ast;
 		}
+		
+		/**
+		 * The return type of this node
+		 * @return string|null
+		 */
+		public function getReturnType(): ?string {
+			return "boolean";
+		}
 	}
