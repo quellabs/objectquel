@@ -102,6 +102,7 @@
 		 * Retrieves database index configurations for an entity
 		 * @param mixed $entity The entity object or class to get indexes for
 		 * @return array Formatted array of database indexes with their configurations
+		 * @throws \Exception
 		 */
 		public function getEntityIndexes(mixed $entity): array {
 			// Fetch the column map
@@ -119,15 +120,22 @@
 				
 				// Convert entity property names to their corresponding database column names
 				$databaseColumns = [];
+				
 				foreach ($columns as $column) {
+					// If the indexed column does not exist, throw an error and abort migration creation
+					if (!isset($columnMap[$column])) {
+						$tableName = $this->entityStore->getOwningTable($entity);
+						throw new \Exception("Column '$column' not found in '$tableName'.");
+					}
+					
 					$databaseColumns[] = $columnMap[$column];
 				}
 				
 				// Build the index configuration array
 				$result[$annotation->getName()] = [
-					'columns' => $databaseColumns,    // Database column names for this index
+					'columns' => $databaseColumns,                // Database column names for this index
 					'type'    => $isUnique ? 'UNIQUE' : 'INDEX',  // Index type identifier
-					'unique'  => $isUnique            // Boolean flag for uniqueness constraint
+					'unique'  => $isUnique                        // Boolean flag for uniqueness constraint
 				];
 			}
 			
