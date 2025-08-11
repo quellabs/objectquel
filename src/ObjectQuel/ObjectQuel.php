@@ -9,20 +9,28 @@
 	use Quellabs\ObjectQuel\EntityManager;
 	use Quellabs\ObjectQuel\EntityStore;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstAlias;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstAvg;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstAvgU;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstBinaryOperator;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstCount;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstCountU;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstExists;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstExpression;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstFactor;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstIdentifier;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstIn;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstMax;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstMin;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstNumber;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRangeDatabase;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRetrieve;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstSum;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstTerm;
 	use Quellabs\ObjectQuel\ObjectQuel\Visitors\AddNamespacesToEntities;
 	use Quellabs\ObjectQuel\ObjectQuel\Visitors\AddRangeToEntityWhenItsMissing;
 	use Quellabs\ObjectQuel\ObjectQuel\Visitors\AliasPlugAliasPattern;
 	use Quellabs\ObjectQuel\ObjectQuel\Visitors\ContainsCheckIsNullForRange;
+	use Quellabs\ObjectQuel\ObjectQuel\Visitors\ContainsNode;
 	use Quellabs\ObjectQuel\ObjectQuel\Visitors\ContainsRange;
 	use Quellabs\ObjectQuel\ObjectQuel\Visitors\EntityExistenceValidator;
 	use Quellabs\ObjectQuel\ObjectQuel\Visitors\EntityPlugMacros;
@@ -36,6 +44,7 @@
 	use Quellabs\ObjectQuel\ObjectQuel\Visitors\RangeOnlyReferencesOtherRanges;
 	use Quellabs\ObjectQuel\ObjectQuel\Visitors\TransformRelationInViaToPropertyLookup;
 	use Quellabs\ObjectQuel\ObjectQuel\Visitors\ValidateRelationInViaValid;
+	use Smarty\FunctionHandler\Count;
 	
 	class ObjectQuel {
 		
@@ -53,6 +62,71 @@
 			$this->fullQueryResultCount = 0;
 		}
 		
+		/**
+		 * Parses a Quel query and returns its AST representation.
+		 * This function takes a Quel query string and processes it through a lexer and parser
+		 * to generate an Abstract Syntax Tree (AST) representation of the query. It returns
+		 * the AST if the parsing is successful and the AST is of type `AstRetrieve`.
+		 * Otherwise, it returns null.
+		 * @param string $query The Quel query string.
+		 * @param array $parameters
+		 * @return AstRetrieve|null The AST representation of the query or null if parsing fails.
+		 * @throws QuelException If there is a problem during lexing or parsing.
+		 */
+		public function parse(string $query, array $parameters=[]): ?AstRetrieve {
+			try {
+				// Initialize the lexer with the query to tokenize the input.
+				$lexer = new Lexer($query);
+				
+				// Initialize the parser with the lexer to interpret the tokens and create the AST.
+				$parser = new Parser($lexer);
+				
+				// Parse the query to generate the AST.
+				$ast = $parser->parse();
+				
+				// Check if the generated AST is of type AstRetrieve.
+				// If it is not, handle the unexpected AST type by returning null.
+				if (!$ast instanceof AstRetrieve) {
+					// Handle unexpected AST type, log error, or throw exception
+					return null;
+				}
+				
+				// Validate the retrieved AST to ensure it meets the expected criteria.
+				$this->validateAstRetrieve($ast);
+				
+				// Als de query paginering gebruikt ('window x using page_size y'), dan moeten we
+				// de query aanpassen om te bepalen welke primary keys vallen binnen het window.
+				if (($ast->getWindow() !== null) && !$ast->getSortInApplicationLogic()) {
+					$this->addPaginationDataToQuery($ast, $parameters);
+				}
+				
+				// Return the valid AST.
+				return $ast;
+			} catch (LexerException | ParserException $e) {
+				// Catch lexer and parser exceptions, wrap them in a QuelException, and rethrow.
+				throw new QuelException($e->getMessage());
+			}
+		}
+		
+		/**
+		 * Convert AstRetrieve node to SQL
+		 * @param AstRetrieve $retrieve
+		 * @param array $parameters
+		 * @return string
+		 */
+		public function convertToSQL(AstRetrieve $retrieve, array &$parameters): string {
+			$quelToSQL = new QuelToSQL($this->entityStore, $parameters);
+			return $quelToSQL->convertToSQL($retrieve);
+		}
+		
+		/**
+		 * Returns the full query results count when paginating
+		 * @return int
+		 */
+		public function getFullQueryResultCount(): int {
+			return $this->fullQueryResultCount;
+		}
+
 		/**
 		 * Valideert dat er geen dubbele range-namen zijn in de AST van een Quel-query.
 		 * Deze functie controleert of elke range in de AstRetrieve-query een unieke naam heeft.
@@ -396,7 +470,46 @@
 			// Het AST-object accepteert de 'rangeProcessor' voor verdere verwerking.
 			$ast->accept($rangeProcessor);
 		}
-	    
+		
+		/**
+		 * Validates that no aggregate functions are present in the WHERE clause conditions
+		 *
+		 * SQL standard prohibits the use of aggregate functions (COUNT, SUM, AVG, MIN, MAX)
+		 * directly in WHERE clauses. Aggregates should only appear in SELECT, HAVING, or ORDER BY clauses.
+		 * This method enforces this rule by scanning the AST conditions for any aggregate function nodes.
+		 *
+		 * @param AstRetrieve $ast The retrieve statement AST to validate
+		 * @throws QuelException Thrown when aggregate functions are found in WHERE conditions,
+		 *                      with a message indicating which aggregate type was detected
+		 */
+		private function validateNoAggregatesInWhereStatement(AstRetrieve $ast): void {
+			// Early return if there are no WHERE conditions to validate
+			if ($ast->getConditions() === null) {
+				return;
+			}
+			
+			// Create a visitor to detect aggregate function nodes in the AST
+			// This visitor will throw an exception if any of these aggregate types are found
+			$visitor = new ContainsNode([
+				AstCount::class,    // COUNT() aggregate function
+				AstCountU::class,   // COUNT(DISTINCT) aggregate function
+				AstAvg::class,      // AVG() average aggregate function
+				AstAvgU::class,     // AVG(DISTINCT) aggregate function
+				AstMin::class,      // MIN() minimum aggregate function
+				AstMax::class,      // MAX() maximum aggregate function
+				AstSum::class       // SUM() summation aggregate function
+			]);
+			
+			try {
+				// Traverse the WHERE conditions AST using the visitor pattern
+				// The visitor will examine each node and throw an exception if aggregates are found
+				$ast->getConditions()->accept($visitor);
+			} catch (\Exception $e) {
+				// Convert the generic exception to a more specific QuelException
+				// This maintains the error message while using the framework's exception hierarchy
+				throw new QuelException("Aggregate function '{$e->getMessage()}' is not allowed in WHERE clause");
+			}
+		}
 	    
 	    /**
 	     * Sets the appropriate child relationship between parent and item nodes in the AST.
@@ -612,6 +725,9 @@
 			// Valideer dat er geen hele entities worden gebruikt als condities.
 			$this->validateNoExpressionsAllowedOnEntitiesValidator($ast);
 			
+			// Valide no aggregates in where statement
+			$this->validateNoAggregatesInWhereStatement($ast);
+			
 			// Voeg 'alias patterns' toe indien nodig. Deze patterns maken het makkelijk
 			// om gegevens uit het SQL-resultaat te hydrateren.
 			$this->plugAliasPatterns($ast);
@@ -819,70 +935,5 @@
 			} else {
 				$this->addPaginationDataToQueryDefault($e, $parameters, $primaryKeyInfo);
 			}
-		}
-		
-		/**
-         * Parses a Quel query and returns its AST representation.
-         * This function takes a Quel query string and processes it through a lexer and parser
-         * to generate an Abstract Syntax Tree (AST) representation of the query. It returns
-         * the AST if the parsing is successful and the AST is of type `AstRetrieve`.
-         * Otherwise, it returns null.
-         * @param string $query The Quel query string.
-		 * @param array $parameters
-		 * @return AstRetrieve|null The AST representation of the query or null if parsing fails.
-         * @throws QuelException If there is a problem during lexing or parsing.
-         */
-        public function parse(string $query, array $parameters=[]): ?AstRetrieve {
-            try {
-                // Initialize the lexer with the query to tokenize the input.
-                $lexer = new Lexer($query);
-                
-                // Initialize the parser with the lexer to interpret the tokens and create the AST.
-                $parser = new Parser($lexer);
-                
-                // Parse the query to generate the AST.
-                $ast = $parser->parse();
-                
-                // Check if the generated AST is of type AstRetrieve.
-                // If it is not, handle the unexpected AST type by returning null.
-                if (!$ast instanceof AstRetrieve) {
-                    // Handle unexpected AST type, log error, or throw exception
-                    return null;
-                }
-                
-                // Validate the retrieved AST to ensure it meets the expected criteria.
-                $this->validateAstRetrieve($ast);
-				
-				// Als de query paginering gebruikt ('window x using page_size y'), dan moeten we
-				// de query aanpassen om te bepalen welke primary keys vallen binnen het window.
-				if (($ast->getWindow() !== null) && !$ast->getSortInApplicationLogic()) {
-					$this->addPaginationDataToQuery($ast, $parameters);
-				}
-				
-				// Return the valid AST.
-                return $ast;
-            } catch (LexerException | ParserException $e) {
-                // Catch lexer and parser exceptions, wrap them in a QuelException, and rethrow.
-                throw new QuelException($e->getMessage());
-            }
-        }
-
-		/**
-		 * Convert AstRetrieve node to SQL
-		 * @param AstRetrieve $retrieve
-		 * @param array $parameters
-		 * @return string
-		 */
-		public function convertToSQL(AstRetrieve $retrieve, array &$parameters): string {
-			$quelToSQL = new QuelToSQL($this->entityStore, $parameters);
-			return $quelToSQL->convertToSQL($retrieve);
-		}
-		
-		/**
-		 * Returns the full query results count when paginating
-		 * @return int
-		 */
-		public function getFullQueryResultCount(): int {
-			return $this->fullQueryResultCount;
 		}
 	}

@@ -574,7 +574,7 @@
 		 * @return void
 		 */
 		protected function handleMax(AstMax $max): void {
-			$this->universalHandleAggregates($max, true, 'MAX');
+			$this->universalHandleAggregates($max, false, 'MAX');
 		}
 		
 		/**
@@ -583,7 +583,7 @@
 		 * @return void
 		 */
 		protected function handleMin(AstMin $min): void {
-			$this->universalHandleAggregates($min, true, 'MIN');
+			$this->universalHandleAggregates($min, false, 'MIN');
 		}
 		
 		/**
@@ -592,7 +592,7 @@
 		 * @return void
 		 */
 		protected function handleSum(AstSum $sum): void {
-			$this->universalHandleAggregates($sum, true, 'SUM');
+			$this->universalHandleAggregates($sum, false, 'SUM');
 		}
 		
 		/**
