@@ -10,6 +10,7 @@
 	 * to identify changes such as added, modified, or deleted columns.
 	 */
 	class SchemaComparator {
+		
 		private const array NUMERIC_PROPERTIES = ['limit', 'precision', 'scale'];
 		private const array BOOLEAN_PROPERTIES = ['null', 'unsigned', 'signed', 'identity'];
 		
@@ -94,7 +95,6 @@
 			];
 		}
 		
-		
 		/**
 		 * Check if a specific column has changed between entity and table definitions
 		 * @param array $entityColumn Column definition from entity model
@@ -156,25 +156,17 @@
 		 */
 		private function normalizeColumnDefinition(array $columnDefinition): array {
 			// Step 1: Add any missing default values to ensure all required properties are present
-			// This prevents comparison issues when some definitions are missing optional properties
 			$normalized = $this->addDefaultValues($columnDefinition);
 			
 			// Step 2: Remove irrelevant or comparison-specific properties that shouldn't affect equality
-			// This filters out properties like timestamps, comments, or other metadata that
-			// don't impact the actual column structure
 			$normalized = $this->filterRelevantProperties($normalized);
 			
-			// Step 3: Standardize property values to a consistent format
-			// This handles cases like converting string booleans to actual booleans,
-			// normalizing case sensitivity, or standardizing numeric representations
+			// Step 3: Standardize property values to a consistent format - pass full context
 			$normalized = $this->normalizePropertyValues($normalized);
 			
 			// Step 4: Sort the array keys alphabetically for consistent ordering
-			// This ensures that two functionally identical column definitions will have
-			// the same array structure regardless of the original key order
 			ksort($normalized);
 			
-			// Return result
 			return $normalized;
 		}
 		
@@ -214,35 +206,72 @@
 		 */
 		private function normalizePropertyValues(array $columnDefinition): array {
 			$result = $columnDefinition;
+			$columnType = $result['type'] ?? 'string';
 			
 			foreach ($result as $property => $value) {
-				$result[$property] = $this->normalizePropertyValue($property, $value);
+				$result[$property] = $this->normalizePropertyValue($property, $value, $columnType);
 			}
 			
 			return $result;
 		}
 		
 		/**
-		 * Normalize a specific property value based on its type
+		 * Normalize a specific property value based on its type and column context
 		 * @param string $property Property name
 		 * @param mixed $value Property value to normalize
+		 * @param string $columnType The column type for context
 		 * @return mixed Normalized property value
 		 */
-		private function normalizePropertyValue(string $property, mixed $value): mixed {
+		private function normalizePropertyValue(string $property, mixed $value, string $columnType): mixed {
+			// Convert numeric properties to integers if the value is numeric
+			// This ensures consistent data types for properties like length, precision, scale, etc.
 			if (in_array($property, self::NUMERIC_PROPERTIES) && is_numeric($value)) {
 				return (int)$value;
 			}
 			
+			// Convert boolean properties to actual boolean values
+			// This handles properties like nullable, unsigned, auto_increment, etc.
 			if (in_array($property, self::BOOLEAN_PROPERTIES)) {
 				return (bool)$value;
 			}
 			
-			// Normalize string values
+			// Special case: handle default values for boolean columns
+			// Boolean column defaults need special normalization (e.g., "0"/"1" strings to booleans)
+			if ($property === 'default' && $columnType === 'boolean') {
+				return $this->normalizeBooleanDefault($value);
+			}
+			
+			// Clean up string values by removing leading/trailing whitespace
+			// This ensures consistent formatting for string properties
 			if (is_string($value)) {
 				return trim($value);
 			}
 			
+			// Return the value unchanged if no specific normalization rules apply
+			// This preserves the original value for unsupported types or edge cases
 			return $value;
+		}
+		
+		/**
+		 * Normalize boolean default values to handle database tinyint(1) vs PHP boolean differences
+		 * @param mixed $value The default value to normalize (can be bool, int, string, or other types)
+		 * @return int Normalized boolean value as integer for consistency (0 or 1)
+		 */
+		private function normalizeBooleanDefault(mixed $value): int {
+			// Handle all truthy boolean representations
+			// Covers: PHP true, integer 1, string '1', string 'true' (case-sensitive)
+			if ($value === true || $value === 1 || $value === '1' || $value === 'true') {
+				return 1;
+			}
+			
+			// Handle all falsy boolean representations
+			// Covers: PHP false, integer 0, string '0', string 'false' (case-sensitive)
+			if ($value === false || $value === 0 || $value === '0' || $value === 'false') {
+				return 0;
+			}
+			
+			// Fallback for unexpected values
+			return is_numeric($value) ? (int)$value : 0;
 		}
 		
 		/**
