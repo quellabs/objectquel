@@ -29,8 +29,7 @@
 			return [
 				'added'    => $this->getAddedColumns($entityColumns, $tableColumns),
 				'modified' => $this->getModifiedColumns($entityColumns, $tableColumns),
-				'deleted'  => $this->getDeletedColumns($entityColumns, $tableColumns),
-				'summary'  => $this->generateChangeSummary($entityColumns, $tableColumns)
+				'deleted'  => $this->getDeletedColumns($entityColumns, $tableColumns)
 			];
 		}
 		
@@ -73,26 +72,6 @@
 			}
 			
 			return $result;
-		}
-		
-		/**
-		 * Generate a summary of changes for easy reporting
-		 * @param array $entityColumns Map of property names to definitions from entity model
-		 * @param array $tableColumns Map of column names to definitions from database
-		 * @return array Summary statistics including counts and flags
-		 */
-		private function generateChangeSummary(array $entityColumns, array $tableColumns): array {
-			$added = count($this->getAddedColumns($entityColumns, $tableColumns));
-			$deleted = count($this->getDeletedColumns($entityColumns, $tableColumns));
-			$modified = count($this->getModifiedColumns($entityColumns, $tableColumns));
-			
-			return [
-				'total_changes'  => $added + $deleted + $modified,
-				'added_count'    => $added,
-				'deleted_count'  => $deleted,
-				'modified_count' => $modified,
-				'has_changes'    => ($added + $deleted + $modified) > 0
-			];
 		}
 		
 		/**
