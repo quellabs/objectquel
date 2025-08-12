@@ -12,31 +12,28 @@
 	use Quellabs\ObjectQuel\ObjectQuel\Token;
 	
 	/**
-	 * The Retrieve class is responsible for parsing 'retrieve' statements in the ObjectQuel language.
-	 * It handles the parsing of retrieval operations including field selection, aliases, filtering,
-	 * sorting, and pagination operations.
+	 * Parser for 'retrieve' statements in the ObjectQuel language.
 	 */
 	class Retrieve {
 		
-		/**
-		 * The lexer instance that provides tokens for parsing
-		 */
+		/** @var int Default number of records per page when window size is not specified */
+		private const int DEFAULT_WINDOW_SIZE = 1;
+		
+		/** @var string Default sort order when ASC/DESC is not explicitly specified */
+		private const string DEFAULT_SORT_ORDER = '';
+		
+		/** @var Lexer The lexer instance that tokenizes input and provides tokens for parsing */
 		private Lexer $lexer;
 		
-		/**
-		 * Rule for parsing arithmetic expressions in the retrieval statement
-		 */
+		/** @var ArithmeticExpression Parser rule for handling arithmetic expressions in field lists and sort clauses */
 		private ArithmeticExpression $expressionRule;
 		
-		/**
-		 * Rule for parsing filter expressions in the 'where' clause
-		 */
+		/** @var FilterExpression Parser rule for handling filter expressions in WHERE clauses */
 		private FilterExpression $filterExpressionRule;
 		
 		/**
-		 * Constructor for the Retrieve parser
-		 * Initializes the lexer and creates instances of required expression rules
-		 * @param Lexer $lexer The lexer that tokenizes the input
+		 * Initialize the Retrieve parser with required dependencies.
+		 * @param Lexer $lexer The lexer instance for token processing
 		 */
 		public function __construct(Lexer $lexer) {
 			$this->lexer = $lexer;
@@ -45,146 +42,274 @@
 		}
 		
 		/**
-		 * Parses the values (fields/expressions) to be retrieved within a retrieval statement.
-		 * This method handles field expressions and their potential aliases.
-		 * @param AstRetrieve $retrieve The AST retrieval node to store parsed values
-		 * @return array An array of AstAlias objects representing parsed field expressions
-		 * @throws LexerException If there's an error during lexical analysis
-		 * @throws ParserException If there's a parsing error, such as duplicate aliases or invalid expressions
+		 * Parse a complete 'retrieve' statement from the ObjectQuel language.
+		 * @param array $directives Query modification directives affecting behavior
+		 * @param AstRangeDatabase[] $ranges Database ranges to query from
+		 * @return AstRetrieve Complete AST representation of the retrieve operation
+		 * @throws LexerException|ParserException on parsing or lexical errors
 		 */
-		protected function parseValues(AstRetrieve $retrieve): array {
+		public function parse(array $directives, array $ranges): AstRetrieve {
+			$this->lexer->match(Token::Retrieve);
+			
+			$retrieve = new AstRetrieve(
+				$directives,
+				$ranges,
+				$this->lexer->optionalMatch(Token::Unique)
+			);
+			
+			$this->parseFieldList($retrieve);
+			$this->parseWhereClause($retrieve);
+			$this->parseSortClause($retrieve);
+			$this->parseWindowClause($retrieve);
+			$this->consumeOptionalSemicolon();
+			
+			return $retrieve;
+		}
+		
+		/**
+		 * Parse all field expressions in the retrieve statement's field list.
+		 * @param AstRetrieve $retrieve The AST node to populate with field data
+		 * @return AstAlias[] Array of parsed field aliases
+		 * @throws LexerException|ParserException
+		 */
+		private function parseValues(AstRetrieve $retrieve): array {
 			$values = [];
 			
 			do {
-				// Save the starting position of the lexer to calculate source slice later
-				$startPos = $this->lexer->getPos();
-				
-				// Check if the current field has an explicit alias (e.g., "alias = expression")
-				// by looking ahead to see if the next token is an equals sign
-				$aliasToken = $this->lexer->peekNext() == Token::Equals ? $this->lexer->match(Token::Identifier) : null;
-				
-				// If there's an alias token, consume the equals sign
-				if ($aliasToken) {
-					$this->lexer->match(Token::Equals);
-				}
-				
-				// Parse the expression that represents the field or calculated value
-				$expression = $this->expressionRule->parse();
-				
-				// Regular expressions are not allowed in the field list - enforce this constraint
-				if ($expression instanceof AstRegExp) {
-					throw new ParserException("Regular expressions are not allowed in the value list. Please remove the regular expression.");
-				}
-				
-				// Get the original source code for this expression (useful when no explicit alias is provided)
-				$sourceSlice = $this->lexer->getSourceSlice($startPos, $this->lexer->getPos() - $startPos);
-				
-				// Process the alias for this field expression
-				if ($aliasToken === null || !$retrieve->macroExists($aliasToken->getValue())) {
-					// If there's an alias, add it as a macro in the retrieve node
-					if ($aliasToken !== null) {
-						$retrieve->addMacro($aliasToken->getValue(), $expression);
-					}
-					
-					// Determine the alias name - either explicit or derived from source
-					$aliasName = $aliasToken ? $aliasToken->getValue() : $sourceSlice;
-					$values[] = new AstAlias(trim($aliasName), $expression);
-				} else {
-					// Prevent duplicate alias names to avoid ambiguity
-					throw new ParserException("Duplicate variable name detected: '{$aliasToken->getValue()}'. Please use unique names.");
-				}
-				
-				// Continue parsing if there are more fields separated by commas
+				$values[] = $this->parseFieldExpression($retrieve);
 			} while ($this->lexer->optionalMatch(Token::Comma));
 			
 			return $values;
 		}
 		
 		/**
-		 * Parse a complete 'retrieve' statement in the ObjectQuel language.
-		 * This method handles the entire retrieval operation including field selection,
-		 * filtering (where clause), sorting, and pagination (window clause).
-		 * @param array $directives Query directives that modify the retrieval behavior
-		 * @param AstRangeDatabase[] $ranges Database ranges to retrieve from
-		 * @return AstRetrieve The complete AST node representing the retrieve operation
-		 * @throws LexerException If there's an error during lexical analysis
-		 * @throws ParserException If there's a parsing error in any part of the statement
+		 * Parse a single field expression with its optional alias definition.
+		 * @param AstRetrieve $retrieve The AST node for macro management
+		 * @return AstAlias The parsed field alias containing name and expression
+		 * @throws LexerException|ParserException
 		 */
-		public function parse(array $directives, array $ranges): AstRetrieve {
-			// Match and consume the 'retrieve' keyword token
-			$this->lexer->match(Token::Retrieve);
+		private function parseFieldExpression(AstRetrieve $retrieve): AstAlias {
+			// Store the current lexer position for potential alias name generation
+			$startPos = $this->lexer->getPos();
 			
-			// Create a new AST node for the 'retrieve' operation
-			// The 'unique' flag is set if the 'unique' keyword is present
-			$retrieve = new AstRetrieve($directives, $ranges, $this->lexer->optionalMatch(Token::Unique));
+			// Check for explicit alias syntax: "alias = expression"
+			// If found, capture the alias identifier token, otherwise set to null
+			$aliasToken = $this->isExplicitAlias() ? $this->lexer->match(Token::Identifier) : null;
 			
-			// Match and consume the opening parenthesis before field list
+			// If we found an explicit alias, consume the required equals sign
+			if ($aliasToken) {
+				$this->lexer->match(Token::Equals);
+			}
+			
+			// Parse the actual expression (right side of alias or standalone expression)
+			$expression = $this->expressionRule->parse();
+			
+			// Validate that the parsed expression is suitable for use in a field context
+			$this->validateFieldExpression($expression);
+			
+			// Determine the final alias name (either from explicit token or auto-generated)
+			$aliasName = $this->determineAliasName($aliasToken, $startPos);
+			
+			// Handle any macro processing related to this alias definition
+			$this->processAliasMacro($retrieve, $aliasToken, $expression);
+			
+			// Create and return the AST node representing this field alias
+			// Trim whitespace from alias name to ensure clean identifiers
+			return new AstAlias(trim($aliasName), $expression);
+		}
+		
+		/**
+		 * Check if the current parsing position indicates an explicit alias definition.
+		 * @return bool True if next token is equals sign, indicating explicit alias
+		 */
+		private function isExplicitAlias(): bool {
+			return $this->lexer->peekNext() === Token::Equals;
+		}
+		
+		/**
+		 * Validate that the parsed expression is allowed in field lists.
+		 * @param mixed $expression The parsed expression to validate
+		 * @throws ParserException if expression type is not allowed in field lists
+		 */
+		private function validateFieldExpression($expression): void {
+			if ($expression instanceof AstRegExp) {
+				throw new ParserException(
+					'Regular expressions are not allowed in the value list. Please remove the regular expression.'
+				);
+			}
+		}
+		
+		/**
+		 * Determine the appropriate alias name for a field expression.
+		 * @param Token|null $aliasToken The explicit alias token if present
+		 * @param int $startPos Starting position for source slice calculation
+		 * @return string The resolved alias name
+		 */
+		private function determineAliasName(?Token $aliasToken, int $startPos): string {
+			if ($aliasToken) {
+				return $aliasToken->getValue();
+			}
+			
+			return $this->lexer->getSourceSlice($startPos, $this->lexer->getPos() - $startPos);
+		}
+		
+		/**
+		 * Process alias macros and validate for duplicates within the retrieve statement.
+		 * @param AstRetrieve $retrieve The retrieve AST node managing macros
+		 * @param Token|null $aliasToken The alias token if an explicit alias was provided
+		 * @param mixed $expression The expression associated with this alias
+		 * @throws ParserException if duplicate alias name is detected
+		 */
+		private function processAliasMacro(AstRetrieve $retrieve, ?Token $aliasToken, $expression): void {
+			if (!$aliasToken) {
+				return;
+			}
+			
+			$aliasName = $aliasToken->getValue();
+			
+			if ($retrieve->macroExists($aliasName)) {
+				throw new ParserException(
+					"Duplicate variable name detected: '{$aliasName}'. Please use unique names."
+				);
+			}
+			
+			$retrieve->addMacro($aliasName, $expression);
+		}
+		
+		/**
+		 * Parse the field list section of the retrieve statement.
+		 * @param AstRetrieve $retrieve The retrieve AST node to populate with fields
+		 * @throws LexerException|ParserException on parsing errors
+		 */
+		private function parseFieldList(AstRetrieve $retrieve): void {
 			$this->lexer->match(Token::ParenthesesOpen);
 			
-			// Parse all field expressions inside the parentheses and add them to the AstRetrieve node
 			foreach ($this->parseValues($retrieve) as $value) {
 				$retrieve->addValue($value);
 			}
 			
-			// Match and consume the closing parenthesis after field list
 			$this->lexer->match(Token::ParenthesesClose);
-			
-			// Parse the optional 'where' clause if present
-			// This clause filters the retrieved records based on specified conditions
+		}
+		
+		/**
+		 * Parse the optional WHERE clause for result filtering.
+		 * @param AstRetrieve $retrieve The retrieve AST node to set conditions on
+		 * @throws LexerException|ParserException on parsing errors in filter expression
+		 */
+		private function parseWhereClause(AstRetrieve $retrieve): void {
 			if ($this->lexer->optionalMatch(Token::Where)) {
 				$retrieve->setConditions($this->filterExpressionRule->parse());
 			}
-			
-			// Parse the optional 'sort by' clause if present
-			// This clause specifies the ordering of retrieved records
-			if ($this->lexer->optionalMatch(Token::Sort)) {
-				$this->lexer->match(Token::By);
-				
-				$sortArray = [];
-				
-				do {
-					// Parse each sort expression
-					$sortResult = $this->expressionRule->parse();
-					
-					// Determine sort order (asc, desc, or default if not specified)
-					if ($this->lexer->optionalMatch(Token::Asc)) {
-						$order = 'asc';
-					} elseif ($this->lexer->optionalMatch(Token::Desc)) {
-						$order = 'desc';
-					} else {
-						$order = ''; // Default sort order when not explicitly specified
-					}
-					
-					// Add the sort expression and order to the sort array
-					$sortArray[] = ['ast' => $sortResult, 'order' => $order];
-				} while ($this->lexer->optionalMatch(Token::Comma));
-				
-				// Set the sort specifications in the retrieve node
-				$retrieve->setSort($sortArray);
+		}
+		
+		/**
+		 * Parse the optional SORT BY clause for result ordering.
+		 * @param AstRetrieve $retrieve The retrieve AST node to set sort specifications on
+		 * @throws LexerException|ParserException on parsing errors in sort expressions
+		 */
+		private function parseSortClause(AstRetrieve $retrieve): void {
+			if (!$this->lexer->optionalMatch(Token::Sort)) {
+				return;
 			}
 			
-			// Parse the optional 'window' clause if present
-			// This clause implements pagination functionality
-			if ($this->lexer->optionalMatch(Token::Window)) {
-				// Parse the window (page) number
-				$window = $this->lexer->match(Token::Number);
-				$this->lexer->match(Token::Using);
+			$this->lexer->match(Token::By);
+			$sortArray = $this->parseSortExpressions();
+			$retrieve->setSort($sortArray);
+		}
+		
+		/**
+		 * Parse individual sort expressions and their order specifications.
+		 * @return array[] Array of sort specifications with 'ast' and 'order' keys
+		 * @throws LexerException|ParserException on expression parsing errors
+		 */
+		private function parseSortExpressions(): array {
+			$sortArray = [];
+			
+			do {
+				$expression = $this->expressionRule->parse();
+				$order = $this->parseSortOrder();
+				
+				$sortArray[] = [
+					'ast'   => $expression,
+					'order' => $order
+				];
+			} while ($this->lexer->optionalMatch(Token::Comma));
+			
+			return $sortArray;
+		}
+		
+		/**
+		 * Parse the sort order specification (ASC/DESC) for a sort expression.
+		 * @return string Sort order: 'asc', 'desc', or default empty string
+		 * @throws LexerException
+		 */
+		private function parseSortOrder(): string {
+			if ($this->lexer->optionalMatch(Token::Asc)) {
+				return 'asc';
+			}
+			
+			if ($this->lexer->optionalMatch(Token::Desc)) {
+				return 'desc';
+			}
+			
+			return self::DEFAULT_SORT_ORDER;
+		}
+		
+		/**
+		 * Parse the optional WINDOW clause for pagination support.
+		 * @param AstRetrieve $retrieve The retrieve AST node to set pagination on
+		 * @throws LexerException on parsing errors in window specification
+		 */
+		private function parseWindowClause(AstRetrieve $retrieve): void {
+			// Check if WINDOW keyword is present - if not, skip window parsing entirely
+			if (!$this->lexer->optionalMatch(Token::Window)) {
+				return;
+			}
+			
+			// Parse the required window number (which window/page to retrieve)
+			// This represents the page number or window index in the result set
+			$windowNumber = $this->lexer->match(Token::Number);
+			
+			// Parse the window size specification (how many records per window)
+			$windowSize = $this->parseWindowSize();
+			
+			// Apply the parsed pagination settings to the retrieve AST node
+			// Set which window/page number to retrieve (0-based)
+			$retrieve->setWindow($windowNumber->getValue());
+			
+			// Set how many records should be included in each window/page
+			$retrieve->setWindowSize($windowSize);
+		}
+		
+		/**
+		 * Parse the window size specification from a WINDOW clause.
+		 * @return int The parsed window size or default if not specified
+		 * @throws LexerException on parsing errors
+		 */
+		private function parseWindowSize(): int {
+			// Short notation: WINDOW 1, 10
+			if ($this->lexer->optionalMatch(Token::Comma)) {
+				$sizeToken = $this->lexer->match(Token::Number);
+				return $sizeToken->getValue();
+			}
+			
+			// Explicit notation: WINDOW 1 USING WINDOW_SIZE 10
+			if ($this->lexer->optionalMatch(Token::Using)) {
 				$this->lexer->match(Token::WindowSize);
-				
-				// Parse the window size (records per page)
-				$windowSize = $this->lexer->match(Token::Number);
-				
-				// Set window and window size in the retrieve node
-				$retrieve->setWindow($window->getValue());
-				$retrieve->setWindowSize($windowSize->getValue());
+				$sizeToken = $this->lexer->match(Token::Number);
+				return $sizeToken->getValue();
 			}
 			
-			// Handle optional semicolon at the end of the statement
-			if ($this->lexer->lookahead() == Token::Semicolon) {
+			return self::DEFAULT_WINDOW_SIZE;
+		}
+		
+		/**
+		 * Consume an optional trailing semicolon from the retrieve statement.
+		 * @throws LexerException if semicolon token cannot be properly consumed
+		 */
+		private function consumeOptionalSemicolon(): void {
+			if ($this->lexer->lookahead() === Token::Semicolon) {
 				$this->lexer->match(Token::Semicolon);
 			}
-			
-			// Return the complete retrieve node representing the parsed statement
-			return $retrieve;
 		}
 	}
