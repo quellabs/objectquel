@@ -438,7 +438,11 @@
 			// If this is a 'SORT BY', then we may need to convert a NULL value to COALESCE.
 			// Without COALESCE, sorting will not be correct.
 			$annotations = $this->entityStore->getAnnotations($entityName);
-			$annotationsOfProperty = array_values(array_filter($annotations[$propertyName], function($e) { return $e instanceof Column; }));
+			
+			$annotationsOfProperty = array_values(array_filter(
+				$annotations[$propertyName]->toArray(),
+				function($e) { return $e instanceof Column; }
+			));
 			
 			if (!$annotationsOfProperty[0]->isNullable()) {
 				$this->result[] = $rangeName . "." . $columnMap[$propertyName];

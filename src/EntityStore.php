@@ -506,7 +506,7 @@
 			    }
 			    
 			    // Get the entity name and its associated primary key if the range doesn't have a join property
-			    $entityName = $range->getEntity()->getName();
+			    $entityName = $range->getEntityName();
 			    $entityNameIdentifierKeys = $this->getIdentifierKeys($entityName);
 			    
 			    // Return the range name, entity name, and the primary key of the entity
