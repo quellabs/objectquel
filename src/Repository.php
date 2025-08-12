@@ -1,14 +1,23 @@
 <?php
 	
-	/**
-	 * ObjectQuel - A Sophisticated Object-Relational Mapping (ORM) System
-	 *
-	 * ObjectQuel is an ORM that brings a fresh approach to database interaction,
-	 * featuring a unique query language, a streamlined architecture, and powerful
-	 * entity relationship management. It implements the Data Mapper pattern for
-	 * clear separation between domain models and underlying database structures.
+	/*
+	 * ╔═══════════════════════════════════════════════════════════════════════════════════════╗
+	 * ║                                                                                       ║
+	 * ║   ██████╗ ██████╗      ██╗███████╗ ██████╗████████╗ ██████╗ ██╗   ██╗███████╗██╗      ║
+	 * ║  ██╔═══██╗██╔══██╗     ██║██╔════╝██╔════╝╚══██╔══╝██╔═══██╗██║   ██║██╔════╝██║      ║
+	 * ║  ██║   ██║██████╔╝     ██║█████╗  ██║        ██║   ██║   ██║██║   ██║█████╗  ██║      ║
+	 * ║  ██║   ██║██╔══██╗██   ██║██╔══╝  ██║        ██║   ██║▄▄ ██║██║   ██║██╔══╝  ██║      ║
+	 * ║  ╚██████╔╝██████╔╝╚█████╔╝███████╗╚██████╗   ██║   ╚██████╔╝╚██████╔╝███████╗███████╗ ║
+	 * ║   ╚═════╝ ╚═════╝  ╚════╝ ╚══════╝ ╚═════╝   ╚═╝    ╚══▀▀═╝  ╚═════╝ ╚══════╝╚══════╝ ║
+	 * ║                                                                                       ║
+	 * ║  ObjectQuel - Powerful Object-Relational Mapping built on the Data Mapper pattern     ║
+	 * ║                                                                                       ║
+	 * ║  Clean separation between entities and persistence logic with an intuitive,           ║
+	 * ║  object-oriented query language. Powered by CakePHP's robust database foundation.     ║
+	 * ║                                                                                       ║
+	 * ╚═══════════════════════════════════════════════════════════════════════════════════════╝
 	 */
-
+	
 	namespace Quellabs\ObjectQuel;
 	
 	use Quellabs\ObjectQuel\ObjectQuel\QuelException;
