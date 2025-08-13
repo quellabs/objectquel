@@ -13,7 +13,7 @@
 	 * This class handles the hydration, relationship loading, and transformation of database query results.
 	 * It implements ArrayAccess and IteratorAggregate to allow array-like access and iteration over the result set.
 	 */
-	class QuelResult implements \ArrayAccess, \IteratorAggregate, \JsonSerializable {
+	class QuelResult implements \ArrayAccess, \IteratorAggregate, \JsonSerializable, \Countable {
 		
 		/**
 		 * Responsible for converting raw data into entity objects
@@ -231,5 +231,13 @@
 		 */
 		public function jsonSerialize(): array {
 			return $this->result;
+		}
+		
+		/**
+		 * Countable implementation: Returns the number of elements in the result set
+		 * @return int Number of elements in the result set
+		 */
+		public function count(): int {
+			return count($this->result);
 		}
 	}
