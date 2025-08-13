@@ -256,8 +256,6 @@
 				
 				if ($propertyType === 'decimal') {
 					// Ask for precision with validation
-					$precision = null;
-					
 					while ($precision === null || $precision <= 0) {
 						$precision = (int) $this->input->ask("\nPrecision (total digits, e.g. 10)?", 10);
 						
@@ -267,8 +265,6 @@
 					}
 					
 					// Ask for scale with validation against precision
-					$scale = null;
-					
 					while ($scale === null || $scale < 0 || $scale > $precision) {
 						$scale = (int) $this->input->ask("\nScale (decimal digits, e.g. 2)?", 2);
 						
