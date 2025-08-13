@@ -101,36 +101,49 @@ HELP;
 		 */
 		public function execute(ConfigurationManager $config): int {
 			try {
+				// Extract the entity name from the configuration
 				$entityName = $this->getEntityName($config);
 				
+				// Validate that an entity name was provided
 				if (empty($entityName)) {
 					$this->output->writeLn('Entity name is required.');
 					return 1;
 				}
 				
+				// Store the original entity name for later use in file generation
 				$originalEntityName = $entityName;
+				
+				// Clean and format the entity name for use in repository class naming
 				$repositoryBaseName = $this->sanitizeEntityName($entityName);
 				
+				// Check if the specified entity actually exists in the system
 				if (!$this->validateEntityExists($originalEntityName)) {
 					return 1;
 				}
 				
+				// Construct the full file path where the repository will be created
 				$repositoryPath = $this->buildRepositoryPath($repositoryBaseName);
 				
+				// Check if we should proceed with creation (handles existing files and force flag)
 				if (!$this->shouldCreateRepository($repositoryPath, $config->hasFlag('force'))) {
-					return 0;
+					return 0; // Exit gracefully if creation was skipped
 				}
 				
+				// Generate and write the repository file to disk
 				$this->createRepositoryFile($originalEntityName, $repositoryBaseName, $repositoryPath);
 				
+				// Display success message with the created repository name and location
 				$this->output->writeLn("Repository '{$repositoryBaseName}" . self::REPOSITORY_SUFFIX . "' created successfully at: {$repositoryPath}");
 				
+				// Return success exit code
 				return 0;
 				
 			} catch (RuntimeException $e) {
+				// Handle expected runtime errors (e.g., file system issues, validation failures)
 				$this->output->writeLn("Error: {$e->getMessage()}");
 				return 1;
 			} catch (\Throwable $e) {
+				// Catch any other unexpected exceptions to prevent crashes
 				$this->output->writeLn("Unexpected error: {$e->getMessage()}");
 				return 1;
 			}
