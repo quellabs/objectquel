@@ -298,6 +298,12 @@
 					continue;
 				}
 				
+				// Skip the range if the includeAsJoin flag is clear
+				// We will probably use this range as a subquery then
+				if (!$range->includeAsJoin()) {
+					continue;
+				}
+				
 				// Get the name and join property of the entity.
 				$rangeName = $range->getName();
 				$joinProperty = $range->getJoinProperty();
