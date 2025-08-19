@@ -2,6 +2,7 @@
 	
 	namespace Quellabs\ObjectQuel\Execution;
 	
+	use Cake\Database\StatementInterface;
 	use Flow\JSONPath\JSONPathException;
 	use Quellabs\ObjectQuel\EntityManager;
 	use Quellabs\ObjectQuel\DatabaseAdapter\DatabaseAdapter;
@@ -146,7 +147,7 @@
 			
 			// Retrieve all data and pass it to QuelResult
 			$result = [];
-			while ($row = $rs->fetch('assoc')) {
+			while ($row = $rs->fetch(StatementInterface::FETCH_TYPE_ASSOC)) {
 				$result[] = $row;
 			}
 			
