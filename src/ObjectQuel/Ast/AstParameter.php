@@ -30,4 +30,8 @@
 		public function getName(): string {
 			return $this->name;
 		}
+		
+		public function deepClone(): static {
+			return new static($this->name);
+		}
 	}

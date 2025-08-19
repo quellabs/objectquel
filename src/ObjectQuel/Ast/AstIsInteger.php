@@ -22,6 +22,7 @@
 		 */
 		public function __construct(AstInterface $identifierOrString) {
 			$this->identifierOrString = $identifierOrString;
+			$this->identifierOrString->setParent($this);
 		}
 		
 		/**
@@ -48,5 +49,17 @@
 		 */
 		public function getReturnType(): ?string {
 			return "boolean";
+		}
+		
+		/**
+		 * Clone this node
+		 * @return $this
+		 */
+		public function deepClone(): static {
+			// Clone the identifier
+			$clonedIdentifier = $this->identifierOrString->deepClone();
+			
+			// Return cloned node
+			return new static($clonedIdentifier);
 		}
 	}

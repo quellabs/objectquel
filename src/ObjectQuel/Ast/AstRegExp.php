@@ -18,7 +18,7 @@
 		 * This contains the actual pattern without the delimiters.
 		 * @var string
 		 */
-		protected string $string;
+		protected string $value;
 		
 		/**
 		 * The flags used in the regular expression pattern.
@@ -31,12 +31,12 @@
 		/**
 		 * AstRegExp constructor.
 		 * Initializes a new regular expression AST node with the specified pattern and flags.
-		 * @param string $string The regular expression pattern string.
+		 * @param string $value The regular expression pattern string.
 		 * @param string $flags The regular expression flags (optional).
 		 *                      Default is an empty string, meaning no flags are set.
 		 */
-		public function __construct(string $string, string $flags='') {
-			$this->string = $string;
+		public function __construct(string $value, string $flags='') {
+			$this->value = $value;
 			$this->flags = $flags;
 		}
 		
@@ -45,7 +45,7 @@
 		 * @return string The stored regular expression pattern.
 		 */
 		public function getValue(): string {
-			return $this->string;
+			return $this->value;
 		}
 		
 		/**
@@ -55,5 +55,9 @@
 		 */
 		public function getFlags(): string {
 			return $this->flags;
+		}
+		
+		public function deepClone(): static {
+			return new static($this->getValue(), $this->getFlags());
 		}
 	}

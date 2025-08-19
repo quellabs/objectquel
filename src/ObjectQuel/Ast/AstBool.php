@@ -38,4 +38,12 @@
 		public function getReturnType(): ?string {
 			return "boolean";
 		}
+		
+		/**
+		 * Clone this node
+		 * @return $this
+		 */
+		public function deepClone(): static {
+			return new static($this->bool);
+		}
 	}

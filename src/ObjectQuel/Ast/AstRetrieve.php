@@ -368,4 +368,65 @@
 		public function setSortInApplicationLogic(bool $setSort): void {
 			$this->sort_in_application_logic = $setSort;
 		}
+		
+		public function deepClone(): static {
+			// Clone all child arrays
+			$clonedRanges = $this->cloneArray($this->ranges);
+			$clonedValues = $this->cloneArray($this->values);
+			$clonedMacros = $this->cloneArray($this->macros);
+			$clonedSort = $this->cloneSortArray($this->sort);
+			
+			// Clone single node
+			$clonedConditions = $this->conditions?->deepClone();
+			
+			// Create new instance
+			$clone = new static($this->directives, $clonedRanges, $this->unique);
+			
+			// Set all the cloned properties
+			$clone->values = $clonedValues;
+			$clone->macros = $clonedMacros;
+			$clone->conditions = $clonedConditions;
+			$clone->sort = $clonedSort;
+			
+			// Copy primitive properties
+			$clone->sort_in_application_logic = $this->sort_in_application_logic;
+			$clone->window = $this->window;
+			$clone->window_size = $this->window_size;
+			
+			// Set parent relationships for all cloned children
+			foreach ($clonedRanges as $range) {
+				$range->setParent($clone);
+			}
+			
+			foreach ($clonedValues as $value) {
+				$value->setParent($clone);
+			}
+			
+			foreach ($clonedMacros as $macro) {
+				$macro->setParent($clone);
+			}
+			
+			if ($clonedConditions) {
+				$clonedConditions->setParent($clone);
+			}
+			
+			foreach ($clonedSort as $sortItem) {
+				$sortItem['ast']->setParent($clone);
+			}
+			
+			return $clone;
+		}
+		
+		protected function cloneSortArray(array $sortArray): array {
+			$cloned = [];
+			
+			foreach ($sortArray as $key => $sortItem) {
+				$newSortItem = $sortItem; // Copy primitive values
+				$newSortItem['ast'] = $sortItem['ast']->deepClone();
+				
+				$cloned[$key] = $newSortItem;
+			}
+			
+			return $cloned;
+		}
 	}

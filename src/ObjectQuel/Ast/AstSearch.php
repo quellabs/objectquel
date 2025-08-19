@@ -24,6 +24,13 @@
 		public function __construct(array $identifiers, AstString|AstParameter $searchString) {
 			$this->identifiers = $identifiers;
 			$this->searchString = $searchString;
+			
+			// Automatically set parent relationships
+			$this->searchString->setParent($this);
+
+			foreach ($this->identifiers as $identifier) {
+				$identifier->setParent($this);
+			}
 		}
 		
 		/**
@@ -114,5 +121,11 @@
 			}
 			
 			return $parsed;
+		}
+		
+		public function deepClone(): static {
+			$clonedIdentifiers = $this->cloneArray($this->identifiers);
+			$clonedSearchString = $this->searchString->deepClone();
+			return new static($clonedIdentifiers, $clonedSearchString);
 		}
 	}

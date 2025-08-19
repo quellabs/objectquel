@@ -37,6 +37,9 @@
 			$this->left = $left;
 			$this->right = $right;
 			$this->operator = $operator;
+			
+			$this->left->setParent($this);
+			$this->right->setParent($this);
 		}
 		
 		/**
@@ -95,5 +98,15 @@
 		 */
 		public function getReturnType(): ?string {
 			return "boolean";
+		}
+		
+		public function deepClone(): static {
+			// Clone both operands
+			$clonedLeft = $this->left->deepClone();
+			$clonedRight = $this->right->deepClone();
+			
+			// Create new instance with cloned operands
+			// Parent relationships are already set by the constructor
+			return new static($clonedLeft, $clonedRight, $this->operator);
 		}
 	}

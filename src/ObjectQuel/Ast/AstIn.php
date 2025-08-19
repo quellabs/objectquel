@@ -18,6 +18,12 @@
 		public function __construct(AstIdentifier $identifier, array $parameterList) {
 			$this->identifier = $identifier;
 			$this->parameterList = $parameterList;
+			
+			$identifier->setParent($this);
+			
+			foreach($parameterList as $parameter) {
+				$parameter->setParent($this);
+			}
 		}
 		
 		/**
@@ -65,5 +71,11 @@
 		 */
 		public function getReturnType(): ?string {
 			return "boolean";
+		}
+		
+		public function deepClone(): static {
+			$clonedIdentifier = $this->identifier->deepClone();
+			$clonedParameterList = $this->cloneArray($this->parameterList);
+			return new static($clonedIdentifier, $clonedParameterList);
 		}
 	}

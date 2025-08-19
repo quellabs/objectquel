@@ -21,6 +21,7 @@
 		 */
 		public function __construct(AstInterface $entityOrIdentifier) {
 			$this->identifier = $entityOrIdentifier;
+			$this->identifier->setParent($this);
 		}
 		
 		/**
@@ -47,5 +48,23 @@
 		 */
 		public function setIdentifier(AstIdentifier $ast): void {
 			$this->identifier = $ast;
+		}
+		
+		/**
+		 * Clone this node
+		 * @return $this
+		 */
+		public function deepClone(): static {
+			// Clone the identifier
+			$clonedIdentifier = $this->identifier->deepClone();
+			
+			// Create new instance with cloned identifier
+			$clone = new static($clonedIdentifier);
+			
+			// Set the parent relationship
+			$clonedIdentifier->setParent($clone);
+			
+			// Return cloned node
+			return $clone;
 		}
 	}

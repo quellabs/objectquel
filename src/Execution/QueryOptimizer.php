@@ -2,16 +2,19 @@
 	
 	namespace Quellabs\ObjectQuel\Execution;
 	
+	use Execution\Visitors\VisitorRangeNotInAny;
 	use Quellabs\ObjectQuel\Annotations\Orm\ManyToOne;
 	use Quellabs\ObjectQuel\Annotations\Orm\OneToOne;
 	use Quellabs\ObjectQuel\Annotations\Orm\RequiredRelation;
 	use Quellabs\ObjectQuel\EntityManager;
 	use Quellabs\ObjectQuel\EntityStore;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\Ast;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstBinaryOperator;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstExists;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstExpression;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstFactor;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstIdentifier;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRange;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRangeDatabase;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRetrieve;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstTerm;
@@ -43,6 +46,7 @@
 			$this->setRangesRequiredThroughWhereClause($ast);
 			$this->setRangesNotRequiredThroughNullChecks($ast);
 			$this->processExistsOperators($ast);
+			$this->optimizeAnyFunctions($ast);
 		}
 		
 		/**
@@ -450,5 +454,23 @@
 				$item instanceof AstBinaryOperator ||
 				$item instanceof AstExpression ||
 				$item instanceof AstFactor;
+		}
+		
+		private function isRangeOnlyUsedInAny(AstRetrieve $retrieve, AstRange $range): bool {
+			try {
+				$visitor = new VisitorRangeNotInAny($range);
+				$retrieve->accept($visitor);
+				return true;
+			} catch (\Exception $e) {
+				return false;
+			}
+		}
+		
+		private function optimizeAnyFunctions(AstRetrieve $ast): void {
+			foreach ($ast->getRanges() as $range) {
+				if ($this->isRangeOnlyUsedInAny($ast, $range)) {
+					$range->setIncludeAsJoin(false);
+				}
+			}
 		}
 	}
