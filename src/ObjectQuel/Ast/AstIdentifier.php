@@ -149,6 +149,28 @@
 		}
 		
 		/**
+		 * Returns the first available range by traversing up the parent hierarchy.
+		 * Searches from the current node upward until it finds a node with a range,
+		 * or reaches the root node.
+		 * @return AstRange|null The first range found in the parent hierarchy, or null if none exists
+		 */
+		public function getBaseRange(): ?AstRange {
+			$current = $this;
+			
+			while ($current !== null) {
+				$range = $current->getRange();
+				
+				if ($range !== null) {
+					return $range;
+				}
+				
+				$current = $current->getParent();
+			}
+			
+			return null;
+		}
+		
+		/**
 		 * Sets or clears a range
 		 * @param AstRange|null $range
 		 * @return void
@@ -157,4 +179,22 @@
 			$this->range = $range;
 		}
 		
+		public function deepClone(): static {
+			// Create new instance with the same identifier
+			$clone = new static($this->identifier);
+			
+			// Clone the range if it exists
+			if ($this->range !== null) {
+				$clone->range = $this->range->deepClone();
+				$clone->range->setParent($clone);
+			}
+			
+			// Clone the next identifier in the chain if it exists
+			if ($this->next !== null) {
+				$clone->next = $this->next->deepClone();
+				$clone->next->setParent($clone);
+			}
+			
+			return $clone;
+		}
 	}

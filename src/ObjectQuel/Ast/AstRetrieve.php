@@ -97,6 +97,8 @@
 		 * @param AstInterface $ast The value to add.
 		 */
 		public function addValue(AstInterface $ast): void {
+			$ast->setParent($this);
+			
 			$this->values[] = $ast;
 		}
 		
@@ -114,6 +116,10 @@
 		 * @return void
 		 */
 		public function setValues(array $values): void {
+			foreach($values as $value) {
+				$value->setParent($this);
+			}
+			
 			$this->values = $values;
 		}
 		
@@ -131,42 +137,12 @@
 		 * @param AstInterface|null $ast The conditions.
 		 */
 		public function setConditions(?AstInterface $ast): void {
+			if ($ast !== null) {
+				$ast->setParent($this);
+			}
+			
 			$this->conditions = $ast;
 		}
-		
-		/**
-		 * Checks if a condition node involves a specific range.
-		 * @param AstInterface $condition The condition AST node
-		 * @param AstRange $range The range to check for
-		 * @return bool True if the condition involves the range
-		 */
-		protected function doesConditionInvolveRange(AstInterface $condition, AstRange $range): bool {
-			// For property access, check if the base entity matches our range
-			if ($condition instanceof AstIdentifier) {
-				return $condition->getRange()->getName() === $range->getName();
-			}
-			
-			// For unary operations (NOT, etc.)
-			if ($condition instanceof AstUnaryOperation) {
-				return $this->doesConditionInvolveRange($condition->getExpression(), $range);
-			}
-			
-			// For comparison operations, check each side
-			if (
-				$condition instanceof AstExpression ||
-				$condition instanceof AstBinaryOperator ||
-				$condition instanceof AstTerm ||
-				$condition instanceof AstFactor
-			) {
-				$leftInvolves = $this->doesConditionInvolveRange($condition->getLeft(), $range);
-				$rightInvolves = $this->doesConditionInvolveRange($condition->getRight(), $range);
-				return $leftInvolves || $rightInvolves;
-			}
-			
-			return false;
-		}
-		
-
 		
 		/**
 		 * Returns database ranges

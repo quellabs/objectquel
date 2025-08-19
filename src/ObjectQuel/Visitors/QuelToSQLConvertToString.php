@@ -32,6 +32,7 @@
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstNull;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstNumber;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstParameter;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRange;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRangeDatabase;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRangeJsonSource;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRegExp;
@@ -42,6 +43,7 @@
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstTerm;
 	use Quellabs\ObjectQuel\ObjectQuel\AstInterface;
 	use Quellabs\ObjectQuel\ObjectQuel\AstVisitorInterface;
+	use Quellabs\ObjectQuel\ObjectQuel\QuelException;
 	
 	/**
 	 * Class QuelToSQLConvertToString
@@ -740,6 +742,7 @@
 		 * @param string $aggregateFunction The SQL aggregate function name (COUNT, AVG, SUM, etc.)
 		 * @param bool $distinct Whether to use DISTINCT (ignored for ANY operations)
 		 * @return void
+		 * @throws QuelException
 		 */
 		private function handleAggregateOperation(
 			AstAny|AstCount|AstCountU|AstAvg|AstAvgU|AstMax|AstMin|AstSum|AstSumU $ast,
@@ -760,7 +763,6 @@
 			// Get the range name
 			$range = $identifier->getRange()->getName();
 			$entityName = $identifier->getEntityName();
-			$tableName = $this->entityStore->getOwningTable($entityName);
 			
 			// Determine the column to use
 			if ($this->identifierIsEntity($identifier)) {
@@ -778,18 +780,10 @@
 			// Generate the appropriate SQL based on operation type
 			switch ($aggregateFunction) {
 				case 'ANY':
-					$joinCondition = $identifier->getRange()->getJoinProperty();
-					
 					if (!$identifier->getRange()->includeAsJoin()) {
-						$this->result[] = "
-							CASE WHEN EXISTS (
-								SELECT 1 FROM `{$tableName}`
-								WHERE
-								LIMIT 1
-							) THEN 1 ELSE 0 END
-						";
+						$this->handleAnyWithExists($identifier, $identifier->getRange());
 					} elseif ($identifier->getRange()->isRequired()) {
-						$this->result[] = "1 = 1"; // Always exists with INNER JOIN
+						$this->result[] = "1"; // Always exists with INNER JOIN
 					} else {
 						$this->result[] = "CASE WHEN {$column} IS NOT NULL THEN 1 ELSE 0 END";
 					}
@@ -801,6 +795,56 @@
 					$distinctClause = $distinct ? 'DISTINCT ' : '';
 					$this->result[] = "{$aggregateFunction}({$distinctClause}{$column})";
 					break;
+			}
+		}
+		
+		/**
+		 * Handles the generation of SQL for ANY expressions with EXISTS conditions.
+		 * Generates a CASE WHEN EXISTS statement that returns 1 if any matching records
+		 * are found, 0 otherwise.
+		 * @param AstIdentifier $identifier The entity identifier being checked
+		 * @param AstRange $range The range specification for the query
+		 * @throws QuelException If there's an error processing the query elements
+		 */
+		private function handleAnyWithExists(AstIdentifier $identifier, AstRange $range): void {
+			// Extract the entity name from the identifier (e.g., "User", "Order")
+			$entityName = $identifier->getEntityName();
+			
+			// Get the corresponding database table name for this entity
+			$tableName = $this->entityStore->getOwningTable($entityName);
+			
+			// Get the alias to use for this range in the SQL query
+			$rangeAlias = $range->getName();
+			
+			// Check if there's a join property for relationship-based queries
+			$joinProperty = $range->getJoinProperty();
+			
+			if ($joinProperty) {
+				// Clone the join property to avoid modifying the original AST
+				$joinCondition = $joinProperty->deepClone();
+				
+				// Convert the join condition to SQL string format
+				$visitor = new QuelToSQLConvertToString($this->entityStore, $this->parameters, $this->partOfQuery);
+				$joinCondition->accept($visitor);
+				$joinColumn = $visitor->getResult();
+				
+				// Generate EXISTS query with join condition
+				$this->result[] = "
+		            CASE WHEN EXISTS (
+		                SELECT 1 FROM `{$tableName}` {$rangeAlias}
+		                WHERE {$joinColumn}
+		                LIMIT 1
+		            ) THEN 1 ELSE 0 END
+		        ";
+			} else {
+				// Single-range scenario: Simple existence check without joins
+				// Generate basic EXISTS query without additional conditions
+				$this->result[] = "
+		            CASE WHEN EXISTS (
+		                SELECT 1 FROM `{$tableName}` {$rangeAlias}
+		                LIMIT 1
+		            ) THEN 1 ELSE 0 END
+		        ";
 			}
 		}
 		
