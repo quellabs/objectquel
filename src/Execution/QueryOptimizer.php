@@ -2,13 +2,11 @@
 	
 	namespace Quellabs\ObjectQuel\Execution;
 	
-	use Execution\Visitors\VisitorRangeNotInAny;
 	use Quellabs\ObjectQuel\Annotations\Orm\ManyToOne;
 	use Quellabs\ObjectQuel\Annotations\Orm\OneToOne;
 	use Quellabs\ObjectQuel\Annotations\Orm\RequiredRelation;
 	use Quellabs\ObjectQuel\EntityManager;
 	use Quellabs\ObjectQuel\EntityStore;
-	use Quellabs\ObjectQuel\ObjectQuel\Ast\Ast;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstBinaryOperator;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstExists;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstExpression;
@@ -21,6 +19,7 @@
 	use Quellabs\ObjectQuel\ObjectQuel\AstInterface;
 	use Quellabs\ObjectQuel\ObjectQuel\Visitors\ContainsCheckIsNullForRange;
 	use Quellabs\ObjectQuel\ObjectQuel\Visitors\ContainsRange;
+	use Quellabs\ObjectQuel\Execution\Visitors\VisitorRangeNotInAny;
 	
 	class QueryOptimizer {
 		
@@ -459,7 +458,15 @@
 		private function isRangeOnlyUsedInAny(AstRetrieve $retrieve, AstRange $range): bool {
 			try {
 				$visitor = new VisitorRangeNotInAny($range);
-				$retrieve->accept($visitor);
+				
+				foreach($retrieve->getValues() as $value) {
+					$value->accept($visitor);
+				}
+
+				if ($retrieve->getConditions()) {
+					$retrieve->getConditions()->accept($visitor);
+				}
+				
 				return true;
 			} catch (\Exception $e) {
 				return false;

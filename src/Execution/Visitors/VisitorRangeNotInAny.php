@@ -1,11 +1,11 @@
 <?php
 	
-	namespace Execution\Visitors;
+	namespace Quellabs\ObjectQuel\Execution\Visitors;
 	
-	use Quellabs\ObjectQuel\ObjectQuel\Ast\Ast;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstAny;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstIdentifier;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRange;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRangeDatabase;
 	use Quellabs\ObjectQuel\ObjectQuel\AstInterface;
 	use Quellabs\ObjectQuel\ObjectQuel\AstVisitorInterface;
 	
@@ -41,8 +41,8 @@
 				// Check if this identifier's range matches our target range
 				// and verify it has the required ANY parent
 				if (
-					$node->getRange()->getName() === $this->targetRange->getName() &&
-					!$this->hasAnyParent($node->getRange())
+					$node->getBaseRange()->getName() === $this->targetRange->getName() &&
+					!$this->hasAnyParent($node)
 				) {
 					// Found non-ANY usage - throw exception to stop traversal
 					throw new \Exception("Range used outside of ANY function");
@@ -59,6 +59,11 @@
 		private function hasAnyParent(AstInterface $ast): bool {
 			// Start with the immediate parent
 			$parent = $ast->getParent();
+			
+			// If the parent is a range
+			if ($parent instanceof AstRangeDatabase) {
+				return true;
+			}
 			
 			// Traverse up the parent chain
 			while ($parent !== null) {

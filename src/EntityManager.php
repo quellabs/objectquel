@@ -171,7 +171,7 @@
 			// Emit debug signal with comprehensive query execution information
 			// Time is converted to milliseconds for easier readability
 			$this->debugQuerySignal->emit([
-				'driver' => 'objectquel',
+				'driver'            => 'objectquel',
 				'query'             => $query,
 				'bound_parameters'  => $parameters,
 				'execution_time_ms' => round(($end - $start) * 1000),

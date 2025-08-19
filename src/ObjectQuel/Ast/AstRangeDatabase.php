@@ -39,7 +39,9 @@
 			$this->joinProperty = $joinProperty;
 			$this->includeAsJoin = $includeAsJoin;
 			
-			$this->joinProperty->setParent($this);
+			if ($this->joinProperty) {
+				$this->joinProperty->setParent($this);
+			}
 		}
 		
 		/**
