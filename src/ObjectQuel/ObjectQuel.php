@@ -208,6 +208,7 @@
 		 */
 		private function runFinalProcessingPhase(AstRetrieve $ast): void {
 			$this->processWithVisitor($ast, AliasPlugAliasPattern::class);
+			$this->setOnlyRangeToRequired($ast);
 			$this->setRangesRequiredThroughAnnotations($ast);
 			$this->setRangesRequiredThroughWhereClause($ast);
 			$this->setRangesNotRequiredThroughNullChecks($ast);
@@ -446,6 +447,24 @@
 				// Apply the converter to the entire range to handle any other 'via' references
 				// This ensures all parts of the range definition are properly transformed
 				$range->accept($converter);
+			}
+		}
+		
+		/**
+		 * Sets the single range in an AST retrieve operation as required.
+		 * Only applies the required flag when exactly one range exists.
+		 * @param AstRetrieve $ast The AST retrieve object containing ranges
+		 * @return void
+		 */
+		private function setOnlyRangeToRequired(AstRetrieve $ast): void {
+			// Get all ranges from the AST retrieve object
+			$ranges = $ast->getRanges();
+			
+			// Only set as required if there's exactly one range
+			// This prevents ambiguity when multiple ranges exist
+			if (count($ranges) === 1) {
+				// Mark the single range as required
+				$ranges[0]->setRequired();
 			}
 		}
 		

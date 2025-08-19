@@ -8,6 +8,7 @@
 	use Quellabs\ObjectQuel\DatabaseAdapter\TypeMapper;
 	use Quellabs\ObjectQuel\EntityStore;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstAlias;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstAny;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstBinaryOperator;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstBool;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstCheckNotNull;
@@ -543,7 +544,7 @@
 		 * @return void
 		 */
 		protected function handleCount(AstCount $count): void {
-			$this->universalHandleAggregates($count, false, 'COUNT');
+			$this->handleAggregateOperation($count, 'COUNT');
 		}
 		
 		/**
@@ -552,7 +553,7 @@
 		 * @return void
 		 */
 		protected function handleUCount(AstCountU $count): void {
-			$this->universalHandleAggregates($count, true, 'COUNT');
+			$this->handleAggregateOperation($count, 'COUNT', true);
 		}
 		
 		/**
@@ -561,7 +562,7 @@
 		 * @return void
 		 */
 		protected function handleAvg(AstAvg $avg): void {
-			$this->universalHandleAggregates($avg, false, 'AVG');
+			$this->handleAggregateOperation($avg, 'AVG');
 		}
 		
 		/**
@@ -570,7 +571,7 @@
 		 * @return void
 		 */
 		protected function handleAvgU(AstAvgU $avg): void {
-			$this->universalHandleAggregates($avg, true, 'AVG');
+			$this->handleAggregateOperation($avg, 'AVG', true);
 		}
 		
 		/**
@@ -579,7 +580,7 @@
 		 * @return void
 		 */
 		protected function handleMax(AstMax $max): void {
-			$this->universalHandleAggregates($max, false, 'MAX');
+			$this->handleAggregateOperation($max, 'MAX');
 		}
 		
 		/**
@@ -588,7 +589,7 @@
 		 * @return void
 		 */
 		protected function handleMin(AstMin $min): void {
-			$this->universalHandleAggregates($min, false, 'MIN');
+			$this->handleAggregateOperation($min, 'MIN');
 		}
 		
 		/**
@@ -597,7 +598,7 @@
 		 * @return void
 		 */
 		protected function handleSum(AstSum $sum): void {
-			$this->universalHandleAggregates($sum, false, 'SUM');
+			$this->handleAggregateOperation($sum, 'SUM');
 		}
 		
 		/**
@@ -606,7 +607,19 @@
 		 * @return void
 		 */
 		protected function handleSumU(AstSumU $sum): void {
-			$this->universalHandleAggregates($sum, true, 'SUM');
+			$this->handleAggregateOperation($sum, "SUM", true);
+		}
+
+		protected function handleAny(AstAny $ast): void {
+			switch($this->partOfQuery) {
+				case "VALUES" :
+					$this->handleAggregateOperation($ast, "ANY");
+					break;
+					
+				case "WHERE" :
+					$this->handleAnyWhere($ast);
+					break;
+			}
 		}
 		
 		/**
@@ -722,64 +735,60 @@
 		}
 		
 		/**
-		 * Universal handler for aggregate functions (COUNT, AVG, SUM, etc.)
-		 * @param AstCount|AstCountU|AstAvg|AstAvgU|AstMax|AstMin|AstSum|AstSumU $ast The aggregate AST node
-		 * @param bool $distinct Whether to use DISTINCT
+		 * Universal handler for all aggregate functions including ANY values
+		 * @param AstAny|AstCount|AstCountU|AstAvg|AstAvgU|AstMax|AstMin|AstSum|AstSumU $ast The aggregate AST node
 		 * @param string $aggregateFunction The SQL aggregate function name (COUNT, AVG, SUM, etc.)
+		 * @param bool $distinct Whether to use DISTINCT (ignored for ANY operations)
 		 * @return void
 		 */
-		private function universalHandleAggregates(
-			AstCount|AstCountU|AstAvg|AstAvgU|AstMax|AstMin|AstSum|AstSumU $ast,
-			bool $distinct,
-			string $aggregateFunction
+		private function handleAggregateOperation(
+			AstAny|AstCount|AstCountU|AstAvg|AstAvgU|AstMax|AstMin|AstSum|AstSumU $ast,
+			string $aggregateFunction,
+			bool $distinct = false
 		): void {
 			// Get the identifier (entity or property) that needs to be aggregated.
 			$identifier = $ast->getIdentifier();
 			
 			// Early return if the expression is not an identifier
-			// This handles cases where the expression might be a subquery or other complex expression
 			if (!$identifier instanceof AstIdentifier) {
 				return;
 			}
 			
-			// If the identifier is an entity, we aggregate based on the primary identifier column
-			if ($this->identifierIsEntity($identifier)) {
-				// Add the entity to the list of visited nodes.
-				$this->addToVisitedNodes($identifier);
-				
-				// Get the range and name of the entity.
-				$range = $identifier->getRange()->getName();
-				$entityName = $identifier->getEntityName();
-				
-				// Get the column names that determine the identification of the entity.
-				$identifierColumns = $this->entityStore->getIdentifierColumnNames($entityName);
-				
-				// Add the aggregate operation to the result
-				if ($distinct) {
-					$this->result[] = "{$aggregateFunction}(DISTINCT {$range}.{$identifierColumns[0]})";
-				} else {
-					$this->result[] = "{$aggregateFunction}({$range}.{$identifierColumns[0]})";
-				}
-				
-				return;
-			}
-			
-			// If the identifier is a specific property within an entity, we aggregate that property
-			// Add the property and the associated entity to the list of visited nodes.
+			// Add the identifier to visited nodes
 			$this->addToVisitedNodes($identifier);
 			
-			// Get the range of the entity where the property is part of.
+			// Get the range name
 			$range = $identifier->getRange()->getName();
 			
-			// Get the property name and the corresponding column name in the database.
-			$property = $identifier->getNext()->getName();
-			$columnMap = $this->entityStore->getColumnMap($identifier->getEntityName());
-			
-			// Add the aggregate operation to the result
-			if ($distinct) {
-				$this->result[] = "{$aggregateFunction}(DISTINCT {$range}.{$columnMap[$property]})";
+			// Determine the column to use
+			if ($this->identifierIsEntity($identifier)) {
+				// For entities, use the primary identifier column
+				$entityName = $identifier->getEntityName();
+				$identifierColumns = $this->entityStore->getIdentifierColumnNames($entityName);
+				$column = "{$range}.{$identifierColumns[0]}";
 			} else {
-				$this->result[] = "{$aggregateFunction}({$range}.{$columnMap[$property]})";
+				// For properties, use the mapped column
+				$property = $identifier->getNext()->getName();
+				$columnMap = $this->entityStore->getColumnMap($identifier->getEntityName());
+				$column = "{$range}.{$columnMap[$property]}";
+			}
+			
+			// Generate the appropriate SQL based on operation type
+			switch ($aggregateFunction) {
+				case 'ANY':
+					if ($identifier->getRange()->isRequired()) {
+						$this->result[] = "1 = 1"; // Always exists with INNER JOIN
+					} else {
+						$this->result[] = "CASE WHEN {$column} IS NOT NULL THEN 1 ELSE 0 END";
+					}
+					
+					break;
+				
+				default:
+					// Handle regular aggregate operations
+					$distinctClause = $distinct ? 'DISTINCT ' : '';
+					$this->result[] = "{$aggregateFunction}({$distinctClause}{$column})";
+					break;
 			}
 		}
 		

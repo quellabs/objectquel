@@ -3,6 +3,7 @@
 	
 	namespace Quellabs\ObjectQuel\ObjectQuel\Rules;
 	
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstAny;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstAvg;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstAvgU;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstMax;
@@ -75,6 +76,7 @@
 				'min' => $this->parseMin(),
 				'sum' => $this->parseSum(),
 				'sumu' => $this->parseSumU(),
+				'any' => $this->parseAny(),
 				'concat' => $this->parseConcat(),
 				'search' => $this->parseSearch(),
 				'is_empty' => $this->parseIsEmpty(),
@@ -199,6 +201,19 @@
 		 */
 		protected function parseSumU(): AstSumU {
 			return $this->parseSingleParameter(AstSumU::class, true);
+		}
+		
+		/**
+		 * Parses the ANY aggregate function from the ObjectQuel query.
+		 * ANY is a specialized aggregate function that returns 1 if any matching records exist,
+		 * or 0 if no records exist. Unlike COUNT, ANY is optimized to stop execution as soon
+		 * as the first matching record is found, making it more efficient for existence checks.
+		 * @return AstAny The parsed ANY function AST node containing the field reference
+		 * @throws LexerException When the lexer encounters invalid tokens during parsing
+		 * @throws ParserException When the parser encounters invalid syntax or missing parameters
+		 */
+		protected function parseAny(): AstAny {
+			return $this->parseSingleParameter(AstAny::class, true);
 		}
 		
 		/**
