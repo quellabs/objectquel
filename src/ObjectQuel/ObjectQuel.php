@@ -15,7 +15,6 @@
 	 */
 	class ObjectQuel {
 		private EntityStore $entityStore;
-		private int $fullQueryResultCount;
 		private QueryTransformer $queryTransformer;
 		private QueryValidator $queryValidator;
 		
@@ -27,7 +26,6 @@
 			$this->entityStore = $entityManager->getEntityStore();
 			$this->queryTransformer = new QueryTransformer($this->entityStore);
 			$this->queryValidator = new QueryValidator($this->entityStore);
-			$this->fullQueryResultCount = 0;
 		}
 		
 		/**
@@ -41,8 +39,15 @@
 				// Convert the raw query string into an Abstract Syntax Tree
 				$ast = $this->parseQueryToAst($query);
 				
-				// Run the AST through a comprehensive validation and optimization pipeline
-				$this->processAstThroughValidationPipeline($ast);
+				// Processing phase - Transform and enhance the AST
+				$this->queryTransformer->transform($ast);
+				
+				// Validation phase - Ensure AST integrity and correctness
+				$this->queryValidator->validate($ast);
+				
+				// Final processing phase - Apply final transformations
+				$this->processWithVisitor($ast, AliasPlugAliasPattern::class);
+				$this->addReferencedValuesToQuery($ast);
 				
 				// The AST is now fully validated
 				return $ast;
@@ -53,14 +58,6 @@
 				// ParserException indicates issues in the parsing phase specifically
 				throw new QuelException("Query parsing failed: " . $e->getMessage(), 0, $e);
 			}
-		}
-		
-		/**
-		 * Returns the full query results count when paginating
-		 * @return int
-		 */
-		public function getFullQueryResultCount(): int {
-			return $this->fullQueryResultCount;
 		}
 		
 		// ========== PARSING METHODS ==========
@@ -98,24 +95,6 @@
 				// The original exception is chained for debugging purposes
 				throw new QuelException("Query parsing failed: " . $e->getMessage(), 0, $e);
 			}
-		}
-		
-		/**
-		 * Processes the AST through the complete validation and transformation pipeline.
-		 * @param AstRetrieve $ast The AST to process
-		 * @return void
-		 * @throws QuelException
-		 */
-		private function processAstThroughValidationPipeline(AstRetrieve $ast): void {
-			// Processing phase - Transform and enhance the AST
-			$this->queryTransformer->transform($ast);
-			
-			// Validation phase - Ensure AST integrity and correctness
-			$this->queryValidator->validate($ast);
-			
-			// Final processing phase - Apply final transformations
-			$this->processWithVisitor($ast, AliasPlugAliasPattern::class);
-			$this->addReferencedValuesToQuery($ast);
 		}
 		
 		// ========== PROCESSING METHODS ==========
