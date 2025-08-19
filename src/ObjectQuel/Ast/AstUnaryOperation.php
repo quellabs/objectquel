@@ -29,4 +29,11 @@
 			$this->expression->accept($visitor);
 		}
 		
+		public function deepClone(): static {
+			// Clone expression
+			$clonedExpression = $this->expression->deepClone();
+			
+			// Create new instance with cloned operands
+			return new static($clonedExpression, $this->operator);
+		}
 	}

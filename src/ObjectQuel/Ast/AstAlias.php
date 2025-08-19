@@ -28,6 +28,8 @@
 			$this->expression = $expression;
 			$this->aliasPattern = $aliasPattern;
 			$this->visibleInResult = true;
+			
+			$this->expression->setParent($this);
 		}
 		
 		/**
@@ -90,5 +92,22 @@
 			$this->visibleInResult = $visibleInResult;
 		}
 		
-		
+		/**
+		 * Clone this node
+		 * @return $this
+		 */
+		public function deepClone(): static {
+			// Create new instance with cloned expression
+			$clonedExpression = $this->expression->deepClone();
+			$clone = new static($this->name, $clonedExpression, $this->aliasPattern);
+			
+			// Set the parent relationship
+			$clonedExpression->setParent($clone);
+			
+			// Copy other primitive properties
+			$clone->visibleInResult = $this->visibleInResult;
+	
+			// Return the clone
+			return $clone;
+		}
 	}

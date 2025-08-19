@@ -38,4 +38,8 @@
 		public function getReturnType(): ?string {
 			return str_contains($this->number, ".") ? "float" : "integer";
 		}
+		
+		public function deepClone(): static {
+			return new static($this->number);
+		}
 	}

@@ -21,6 +21,7 @@
 		 */
 		public function __construct(AstIdentifier $identifier) {
 			$this->identifier = $identifier;
+			$this->identifier->setParent($this);
 		}
 		
 		/**
@@ -49,4 +50,15 @@
 			return "boolean";
 		}
 		
+		/**
+		 * Clone this node
+		 * @return $this
+		 */
+		public function deepClone(): static {
+			// Clone the identifier
+			$clonedIdentifier = $this->identifier->deepClone();
+			
+			// Return cloned node
+			return new static($clonedIdentifier);
+		}
 	}

@@ -38,6 +38,10 @@
 			$this->condition = $condition;
 			$this->true = $true;
 			$this->false = $false;
+			
+			$condition->setParent($this);
+			$true->setParent($this);
+			$false->setParent($this);
 		}
 		
 		/**
@@ -73,5 +77,16 @@
 		 */
 		public function getFalse(): AstInterface {
 			return $this->false;
+		}
+		
+		public function deepClone(): static {
+			// Clone both operands
+			$condition = $this->condition->deepClone();
+			$clonedTrue = $this->true->deepClone();
+			$clonedFalse = $this->false->deepClone();
+			
+			// Create new instance with cloned operands
+			// Parent relationships are already set by the constructor
+			return new static($condition, $clonedTrue, $clonedFalse);
 		}
 	}

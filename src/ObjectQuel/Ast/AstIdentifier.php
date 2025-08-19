@@ -2,6 +2,7 @@
 	
 	namespace Quellabs\ObjectQuel\ObjectQuel\Ast;
 	
+	use Quellabs\ObjectQuel\ObjectQuel\AstInterface;
 	use Quellabs\ObjectQuel\ObjectQuel\AstVisitorInterface;
 	
 	/**
@@ -156,17 +157,4 @@
 			$this->range = $range;
 		}
 		
-		/**
-		 * Deep clone the identifier
-		 * @return AstIdentifier|null
-		 */
-		public function deepClone(): ?AstIdentifier {
-			$clone = clone $this;
-			
-			if ($clone->hasNext()) {
-				$clone->setNext($this->getNext()->deepClone());
-			}
-			
-			return $clone;
-		}
 	}

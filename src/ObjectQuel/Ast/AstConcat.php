@@ -24,6 +24,10 @@
 		 */
 		public function __construct(array $parameterList) {
 			$this->parameterList = $parameterList;
+			
+			foreach($parameterList as $parameter) {
+				$parameter->setParent($this);
+			}
 		}
 		
 		/**
@@ -53,5 +57,10 @@
 		 */
 		public function getReturnType(): ?string {
 			return "string";
+		}
+		
+		public function deepClone(): static {
+			$clonedParameterList = $this->cloneArray($this->parameterList);
+			return new static($clonedParameterList);
 		}
 	}

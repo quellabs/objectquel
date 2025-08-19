@@ -49,4 +49,8 @@
 		public function getReturnType(): ?string {
 			return "string";
 		}
+		
+		public function deepClone(): static {
+			return new static($this->getValue(), $this->getEnclosingChar());
+		}
 	}

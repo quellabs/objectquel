@@ -759,6 +759,8 @@
 			
 			// Get the range name
 			$range = $identifier->getRange()->getName();
+			$entityName = $identifier->getEntityName();
+			$tableName = $this->entityStore->getOwningTable($entityName);
 			
 			// Determine the column to use
 			if ($this->identifierIsEntity($identifier)) {
@@ -776,7 +778,17 @@
 			// Generate the appropriate SQL based on operation type
 			switch ($aggregateFunction) {
 				case 'ANY':
-					if ($identifier->getRange()->isRequired()) {
+					$joinCondition = $identifier->getRange()->getJoinProperty();
+					
+					if (!$identifier->getRange()->includeAsJoin()) {
+						$this->result[] = "
+							CASE WHEN EXISTS (
+								SELECT 1 FROM `{$tableName}`
+								WHERE
+								LIMIT 1
+							) THEN 1 ELSE 0 END
+						";
+					} elseif ($identifier->getRange()->isRequired()) {
 						$this->result[] = "1 = 1"; // Always exists with INNER JOIN
 					} else {
 						$this->result[] = "CASE WHEN {$column} IS NOT NULL THEN 1 ELSE 0 END";

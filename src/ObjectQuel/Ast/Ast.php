@@ -57,4 +57,48 @@
 		public function setParent(?AstInterface $parent): void {
 			$this->parent = $parent;
 		}
+		
+		/**
+		 * Creates a deep clone of this AST node.
+		 * @return static A deep clone of this AST node
+		 */
+		abstract public function deepClone(): static;
+		
+		/**
+		 * Helper method for cloning arrays of AST nodes
+		 * @param array $array Array potentially containing AST nodes
+		 * @param Ast|null $newParent The parent for cloned nodes
+		 * @return array Cloned array
+		 */
+		protected function cloneArray(array $array, ?Ast $newParent = null): array {
+			$cloned = [];
+
+			foreach ($array as $key => $item) {
+				if ($item instanceof AstInterface) {
+					$clonedItem = $item->deepClone();
+					$clonedItem->setParent($newParent);
+					$cloned[$key] = $clonedItem;
+				} else {
+					$cloned[$key] = $item;
+				}
+			}
+			
+			return $cloned;
+		}
+		
+		/**
+		 * Helper method for cloning single AST nodes
+		 * @param AstInterface|null $node Node to clone
+		 * @param Ast|null $newParent The parent for the cloned node
+		 * @return AstInterface|null Cloned node or null
+		 */
+		protected function cloneNode(?AstInterface $node, ?Ast $newParent = null): ?AstInterface {
+			if ($node === null) {
+				return null;
+			}
+			
+			$cloned = $node->deepClone();
+			$cloned->setParent($newParent);
+			return $cloned;
+		}
 	}

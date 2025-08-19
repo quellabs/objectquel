@@ -38,6 +38,8 @@
 			$this->entityName = $entityName;
 			$this->joinProperty = $joinProperty;
 			$this->includeAsJoin = $includeAsJoin;
+			
+			$this->joinProperty->setParent($this);
 		}
 		
 		/**
@@ -117,5 +119,15 @@
 		 */
 		public function includeAsJoin(): bool {
 			return $this->includeAsJoin;
+		}
+		
+		public function deepClone(): static {
+			if ($this->joinProperty) {
+				$joinProperty = $this->joinProperty->deepClone();
+			} else {
+				$joinProperty = null;
+			}
+			
+			return new static($this->getName(), $this->getEntityName(), $joinProperty, $this->isRequired(), $this->includeAsJoin());
 		}
 	}

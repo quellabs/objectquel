@@ -7,8 +7,6 @@
 	use Quellabs\ObjectQuel\ObjectQuel\Visitors\FindIdentifier;
 	
 	/**
-	 * Class AstRange
-	 *
 	 * AstRange class is responsible for defining a range in the AST (Abstract Syntax Tree).
 	 * This class represents a data source or table reference that can be used in queries,
 	 * including information about how it should be joined with other ranges.
@@ -71,5 +69,9 @@
 		 */
 		public function isRequired(): bool {
 			return $this->required;
+		}
+		
+		public function deepClone(): static {
+			return new static($this->name, $this->required);
 		}
 	}

@@ -43,4 +43,8 @@
 		public function setExpression(?string $expression): void {
 			$this->expression = $expression;
 		}
+		
+		public function deepClone(): static {
+			return new static($this->getName(), $this->getExpression());
+		}
 	}
