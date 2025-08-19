@@ -7,9 +7,11 @@
 	use Quellabs\ObjectQuel\EntityManager;
 	use Quellabs\ObjectQuel\DatabaseAdapter\DatabaseAdapter;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRangeJsonSource;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRetrieve;
 	use Quellabs\ObjectQuel\ObjectQuel\ObjectQuel;
 	use Quellabs\ObjectQuel\ObjectQuel\QuelException;
 	use Quellabs\ObjectQuel\ObjectQuel\QuelResult;
+	use Quellabs\ObjectQuel\ObjectQuel\QuelToSQL;
 	
 	/**
 	 * Represents an Entity Manager.
@@ -20,6 +22,8 @@
 		private PlanExecutor $planExecutor;
 		private ObjectQuel $objectQuel;
 		private ConditionEvaluator $conditionEvaluator;
+		private QueryTransformer $queryTransformer;
+		private QueryOptimizer $queryOptimizer;
 		
 		/**
 		 * @param EntityManager $entityManager
@@ -30,6 +34,8 @@
 			$this->conditionEvaluator = new ConditionEvaluator();
 			$this->planExecutor = new PlanExecutor($this, $this->conditionEvaluator);
 			$this->objectQuel = new ObjectQuel($entityManager);
+			$this->queryTransformer = new QueryTransformer($this->entityManager);
+			$this->queryOptimizer = new QueryOptimizer($this->entityManager);
 		}
 		
 		/**
@@ -127,6 +133,17 @@
 		}
 		
 		/**
+		 * Convert AstRetrieve node to SQL
+		 * @param AstRetrieve $retrieve The AST to convert
+		 * @param array $parameters Query parameters (passed by reference)
+		 * @return string The generated SQL query
+		 */
+		public function convertToSQL(AstRetrieve $retrieve, array &$parameters): string {
+			$quelToSQL = new QuelToSQL($this->entityManager->getEntityStore(), $parameters);
+			return $quelToSQL->convertToSQL($retrieve);
+		}
+		
+		/**
 		 * Transforms a Quel query to SQL, executes the SQL and returns the result
 		 * @param ExecutionStage $stage The parsed query (AST)
 		 * @param array $initialParams Parameters for this query
@@ -134,8 +151,12 @@
 		 * @throws QuelException
 		 */
 		private function executeSimpleQueryDatabase(ExecutionStage $stage, array $initialParams = []): array {
+			// Transform and optimize the query
+			$this->queryTransformer->transform($stage->getQuery(), $initialParams);
+			$this->queryOptimizer->optimize($stage->getQuery());
+			
 			// Convert the query to SQL
-			$sql = $this->objectQuel->convertToSQL($stage->getQuery(), $initialParams);
+			$sql = $this->convertToSQL($stage->getQuery(), $initialParams);
 			
 			// Execute the SQL query
 			$rs = $this->connection->execute($sql, $initialParams);
