@@ -25,6 +25,7 @@
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRangeDatabase;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRetrieve;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstSum;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstSumU;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstTerm;
 	use Quellabs\ObjectQuel\ObjectQuel\Visitors\AddNamespacesToEntities;
 	use Quellabs\ObjectQuel\ObjectQuel\Visitors\AddRangeToEntityWhenItsMissing;
@@ -358,7 +359,8 @@
 				AstAvgU::class,     // AVG(DISTINCT) function
 				AstMin::class,      // MIN() function
 				AstMax::class,      // MAX() function
-				AstSum::class       // SUM() function
+				AstSum::class,      // SUM() function
+				AstSumU::class      // SUMU() function
 			];
 			
 			try {

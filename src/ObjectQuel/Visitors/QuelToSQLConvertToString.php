@@ -37,6 +37,7 @@
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstSearch;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstString;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstSum;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstSumU;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstTerm;
 	use Quellabs\ObjectQuel\ObjectQuel\AstInterface;
 	use Quellabs\ObjectQuel\ObjectQuel\AstVisitorInterface;
@@ -600,6 +601,15 @@
 		}
 		
 		/**
+		 * Processes the SUMU aggregate function within an abstract syntax tree (AST).
+		 * @param AstSumU $sum The SUM AST node to process
+		 * @return void
+		 */
+		protected function handleSumU(AstSumU $sum): void {
+			$this->universalHandleAggregates($sum, true, 'SUM');
+		}
+		
+		/**
 		 * Handles 'IS NULL'. The SQL equivalent is exactly the same.
 		 * @param AstCheckNull $ast
 		 * @return void
@@ -713,13 +723,13 @@
 		
 		/**
 		 * Universal handler for aggregate functions (COUNT, AVG, SUM, etc.)
-		 * @param AstCount|AstCountU|AstAvg|AstAvgU|AstMax|AstMin|AstSum $ast The aggregate AST node
+		 * @param AstCount|AstCountU|AstAvg|AstAvgU|AstMax|AstMin|AstSum|AstSumU $ast The aggregate AST node
 		 * @param bool $distinct Whether to use DISTINCT
 		 * @param string $aggregateFunction The SQL aggregate function name (COUNT, AVG, SUM, etc.)
 		 * @return void
 		 */
 		private function universalHandleAggregates(
-			AstCount|AstCountU|AstAvg|AstAvgU|AstMax|AstMin|AstSum $ast,
+			AstCount|AstCountU|AstAvg|AstAvgU|AstMax|AstMin|AstSum|AstSumU $ast,
 			bool $distinct,
 			string $aggregateFunction
 		): void {

@@ -20,6 +20,7 @@
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstString;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstCountU;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstSum;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstSumU;
 	use Quellabs\ObjectQuel\ObjectQuel\AstInterface;
 	use Quellabs\ObjectQuel\ObjectQuel\Lexer;
 	use Quellabs\ObjectQuel\ObjectQuel\LexerException;
@@ -73,6 +74,7 @@
 				'max' => $this->parseMax(),
 				'min' => $this->parseMin(),
 				'sum' => $this->parseSum(),
+				'sumu' => $this->parseSumU(),
 				'concat' => $this->parseConcat(),
 				'search' => $this->parseSearch(),
 				'is_empty' => $this->parseIsEmpty(),
@@ -186,6 +188,17 @@
 		 */
 		protected function parseSum(): AstSum {
 			return $this->parseSingleParameter(AstSum::class, true);
+		}
+		
+		/**
+		 * Parse SUMU() function - calculates the sum of unique numeric values
+		 * Returns the total of all non-null numeric values from the input.
+		 * @return AstSumU The AstSum AST node
+		 * @throws LexerException When token matching fails
+		 * @throws ParserException When parsing fails
+		 */
+		protected function parseSumU(): AstSumU {
+			return $this->parseSingleParameter(AstSumU::class, true);
 		}
 		
 		/**
