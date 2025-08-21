@@ -1,14 +1,12 @@
 <?php
 	
-	// Namespace declaration for structured code
 	namespace Quellabs\ObjectQuel\ObjectQuel\Visitors;
 	
-	// Import the required classes and interfaces
-	use Quellabs\ObjectQuel\Annotations\Orm\Column;
-	use Quellabs\ObjectQuel\DatabaseAdapter\TypeMapper;
 	use Quellabs\ObjectQuel\EntityStore;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstAlias;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstAny;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstAvg;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstAvgU;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstBinaryOperator;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstBool;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstCheckNotNull;
@@ -16,8 +14,6 @@
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstConcat;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstCount;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstCountU;
-	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstAvg;
-	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstAvgU;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstExpression;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstFactor;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstIdentifier;
@@ -32,11 +28,7 @@
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstNull;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstNumber;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstParameter;
-	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRange;
-	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRangeDatabase;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRangeJsonSource;
-	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRegExp;
-	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRetrieve;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstSearch;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstString;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstSum;
@@ -44,1236 +36,514 @@
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstTerm;
 	use Quellabs\ObjectQuel\ObjectQuel\AstInterface;
 	use Quellabs\ObjectQuel\ObjectQuel\AstVisitorInterface;
-	use Quellabs\ObjectQuel\ObjectQuel\QuelException;
+	use Quellabs\ObjectQuel\ObjectQuel\Visitors\Handlers\AggregateHandler;
+	use Quellabs\ObjectQuel\ObjectQuel\Visitors\Handlers\ExpressionHandler;
+	use Quellabs\ObjectQuel\ObjectQuel\Visitors\Handlers\SqlBuilderHelper;
+	use Quellabs\ObjectQuel\ObjectQuel\Visitors\Handlers\TypeInferenceHelper;
 	
 	/**
-	 * Class QuelToSQLConvertToString
-	 * Implements AstVisitor to collect entities from an AST.
+	 * QuelToSQLConvertToString - AST to SQL Converter
+	 * @package Quellabs\ObjectQuel\ObjectQuel\Visitors
+	 * @author Quellabs
 	 */
 	class QuelToSQLConvertToString implements AstVisitorInterface {
 		
-		// Wildcard character mappings for SQL LIKE patterns
-		private const array WILDCARD_MAPPINGS = [
-			'%' => '\\%',   // Escape existing SQL wildcards
-			'_' => '\\_',   // Escape existing SQL wildcards
-			'*' => '%',     // Convert asterisk to SQL any-sequence wildcard
-			'?' => '_'      // Convert question mark to SQL single-character wildcard
-		];
-		
-		// Regular expression patterns for type checking
-		private const array REGEX_PATTERNS = [
-			'NUMERIC' => '^-?[0-9]+(\\.[0-9]+)?$',  // Matches integers and floats
-			'INTEGER' => '^-?[0-9]+$',              // Matches only integers
-			'FLOAT'   => '^-?[0-9]+\\.[0-9]+$'        // Matches only floats with decimal point
-		];
-		
-		// The entity store for entity to table conversions
+		/** @var EntityStore Entity storage for metadata and schema information */
 		private EntityStore $entityStore;
 		
-		// Array to store collected entities
+		/** @var array SQL fragments that will be concatenated to form the final query */
 		private array $result;
+		
+		/** @var array Track visited nodes to prevent infinite recursion and duplicate processing */
 		private array $visitedNodes;
+		
+		/** @var array Reference to query parameters for parameterized queries */
 		private array $parameters;
+		
+		/** @var string Current part of the query being processed (e.g., "VALUES", "SORT", "WHERE") */
 		private string $partOfQuery;
 		
+		// Helper classes for specialized functionality
+		/** @var SqlBuilderHelper Handles SQL construction and column name generation */
+		private SqlBuilderHelper $sqlBuilder;
+		
+		/** @var TypeInferenceHelper Handles type inference and validation */
+		private TypeInferenceHelper $typeInference;
+		
+		/** @var AggregateHandler Handles aggregate functions like COUNT, SUM, AVG, etc. */
+		private AggregateHandler $aggregateHandler;
+		
+		/** @var ExpressionHandler Handles expressions, operators, and data types */
+		private ExpressionHandler $expressionHandler;
+		
 		/**
-		 * Constructor to initialize the entities array.
-		 * @param EntityStore $store
-		 * @param array $parameters
-		 * @param string $partOfQuery
+		 * Initialize the SQL converter with required dependencies
+		 * @param EntityStore $store Entity storage containing schema and metadata
+		 * @param array $parameters Reference to parameters array for parameterized queries
+		 * @param string $partOfQuery Current query part being processed (default: "VALUES")
 		 */
 		public function __construct(EntityStore $store, array &$parameters, string $partOfQuery = "VALUES") {
+			// Initialize core properties
 			$this->result = [];
 			$this->visitedNodes = [];
 			$this->entityStore = $store;
-			$this->parameters = &$parameters;
+			$this->parameters = &$parameters; // Use reference to allow parameter modification
 			$this->partOfQuery = $partOfQuery;
+			
+			// Initialize helper classes with proper dependencies and references
+			$this->sqlBuilder = new SqlBuilderHelper($this->entityStore, $this->parameters, $this->partOfQuery, $this);
+			$this->typeInference = new TypeInferenceHelper($this->entityStore);
+			$this->aggregateHandler = new AggregateHandler($this->entityStore, $this->parameters, $this->partOfQuery, $this->sqlBuilder);
+			$this->expressionHandler = new ExpressionHandler($this->sqlBuilder, $this->typeInference, $this->parameters, $this);
 		}
 		
 		/**
-		 * Visit a node in the AST.
-		 * @param AstInterface $node The node to visit.
-		 * @return void
+		 * Visit a node in the AST and process it
+		 * @param AstInterface $node The AST node to visit and process
 		 */
 		public function visitNode(AstInterface $node): void {
-			// Generate a unique hash for the object to prevent duplicates.
+			// Generate unique identifier for this node instance
 			$objectHash = spl_object_id($node);
 			
-			// If the object has already been visited, skip it to prevent infinite loops.
+			// Skip if already visited to prevent infinite recursion
 			if (isset($this->visitedNodes[$objectHash])) {
 				return;
 			}
 			
-			// Mark the object as visited.
+			// Mark this node as visited
 			$this->visitedNodes[$objectHash] = true;
 			
-			// Determine the name of the method that will handle this specific type of Ast node.
-			// The 'substr' function is used to get the relevant parts of the class name.
+			// Extract class name and determine handler method name
 			$className = $this->extractClassName($node);
-			$handleMethod = 'handle' . substr($className, 3);
+			$handleMethod = 'handle' . substr($className, 3); // Remove 'Ast' prefix
 			
-			// Check if the determined method exists and call it if that is the case.
+			// Call the appropriate handler method if it exists
 			if (method_exists($this, $handleMethod)) {
 				$this->{$handleMethod}($node);
 			}
 		}
 		
 		/**
-		 * Visit a node in the AST and return the SQL
-		 * @param AstInterface $node The node to visit.
-		 * @return string
+		 * Visit a node and return the generated SQL without adding to main result
+		 * @param AstInterface $node The AST node to process
+		 * @return string The generated SQL for this node
 		 */
 		public function visitNodeAndReturnSQL(AstInterface $node): string {
+			// Remember current position in result array
 			$pos = count($this->result);
 			
+			// Process the node (this adds to result array)
 			$this->visitNode($node);
 			
-			$slice = implode("", array_slice($this->result, $pos, 1));
+			// Extract the SQL that was just added
+			$slice = implode("", array_slice($this->result, $pos));
 			
+			// Restore result array to original state
 			$this->result = array_slice($this->result, 0, $pos);
 			
+			// Return slice
 			return $slice;
 		}
 		
 		/**
-		 * Get the collected entities.
-		 * @return string The produced string
+		 * Get the complete generated SQL query
+		 * @return string The final SQL query as a concatenated string
 		 */
 		public function getResult(): string {
 			return implode("", $this->result);
 		}
 		
+		// =========================
+		// AST NODE HANDLERS
+		// =========================
+		
 		/**
-		 * Returns true if the identifier is an entity, false if not
-		 * @param AstInterface $ast
-		 * @return bool
+		 * Process an AstAlias node
+		 * @param AstAlias $ast The alias node to process
 		 */
-		protected function identifierIsEntity(AstInterface $ast): bool {
-			return (
-				$ast instanceof AstIdentifier &&
-				$ast->getRange() instanceof AstRangeDatabase &&
-				!$ast->hasNext()
-			);
+		protected function handleAlias(AstAlias $ast): void {
+			// Fetch expression
+			$expression = $ast->getExpression();
+			
+			// Only process if the expression is an identifier
+			if (!$expression instanceof AstIdentifier) {
+				return;
+			}
+			
+			// Check if this identifier represents an entity
+			if ($this->sqlBuilder->identifierIsEntity($expression)) {
+				$this->addToVisitedNodes($expression);
+				$this->handleEntity($expression);
+				return;
+			}
+			
+			// Otherwise, process as a regular expression
+			$ast->getExpression()->accept($this);
 		}
 		
 		/**
-		 * Determines the return type of the identifier by checking its annotations
-		 * @param AstIdentifier $identifier Entity identifier to analyze
-		 * @return string|null Column type if found in annotations, null otherwise
+		 * Process an AstIdentifier node
+		 * @param AstIdentifier $ast The identifier node to process
 		 */
-		private function inferReturnTypeOfIdentifier(AstIdentifier $identifier): ?string {
-			// Get all annotations for the entity
-			$annotationList = $this->entityStore->getAnnotations($identifier->getEntityName());
+		protected function handleIdentifier(AstIdentifier $ast): void {
+			// Mark this identifier as visited
+			$this->addToVisitedNodes($ast);
 			
-			// Check if identifier has annotations
-			if (!isset($annotationList[$identifier->getName()])) {
-				return null;
+			// Skip JSON source ranges (handled differently)
+			if ($ast->getRange() instanceof AstRangeJsonSource) {
+				return;
 			}
 			
-			// Search for Column annotation to get type
-			foreach ($annotationList[$identifier->getName()] as $annotation) {
-				if ($annotation instanceof Column) {
-					return TypeMapper::phinxTypeToPhpType($annotation->getType());
-				}
+			// Generate appropriate SQL based on query context
+			if ($this->partOfQuery === "SORT") {
+				// For sorting, we need sortable column references
+				$this->result[] = $this->sqlBuilder->buildSortableColumn($ast);
+			} else {
+				// For other contexts, use regular column names
+				$this->result[] = $this->sqlBuilder->buildColumnName($ast);
 			}
-			
-			return null;
 		}
 		
 		/**
-		 * Recursively infers the return type of AST node and its children
-		 * @param AstInterface $ast Abstract syntax tree node
-		 * @return string|null Inferred return type or null if none found
+		 * Process an entity by generating SQL for all its columns
+		 * When an entity is referenced (typically through an alias), we need to
+		 * generate SQL that selects all columns belonging to that entity.
+		 * @param AstInterface $ast The entity identifier node
 		 */
-		public function inferReturnType(AstInterface $ast): ?string {
-			// Process identifiers
-			if ($ast instanceof AstIdentifier) {
-				return $this->inferReturnTypeOfIdentifier($ast);
+		protected function handleEntity(AstInterface $ast): void {
+			// Ensure we're dealing with an identifier
+			if (!$ast instanceof AstIdentifier) {
+				return;
 			}
 			
-			// Traverse down the parse tree
-			if ($ast instanceof AstTerm || $ast instanceof AstFactor) {
-				$left = $this->inferReturnType($ast->getLeft());
-				$right = $this->inferReturnType($ast->getRight());
-				
-				if (($left === "float") || ($right === "float")) {
-					return 'float';
-				} elseif (($left === "string") || ($right === "string")) {
-					return 'string';
-				} else {
-					return $left;
-				}
-			}
-			
-			// Default to node's declared return type
-			return $ast->getReturnType();
+			// Generate SQL for all columns of this entity
+			$this->result[] = $this->sqlBuilder->buildEntityColumns($ast);
 		}
 		
 		/**
-		 * Mark the object as visited.
-		 * @param AstInterface $ast
-		 * @return void
+		 * Process a generic expression node
+		 * Expressions are mathematical or logical operations that can contain
+		 * operators and operands.
+		 * @param AstExpression $ast The expression node to process
+		 */
+		protected function handleExpression(AstExpression $ast): void {
+			$this->result[] = $this->expressionHandler->handleGenericExpression($ast, $ast->getOperator());
+		}
+		
+		/**
+		 * Process a term node (part of mathematical expressions)
+		 * Terms typically represent multiplication, division, and similar operations
+		 * in the expression hierarchy.
+		 * @param AstTerm $ast The term node to process
+		 */
+		protected function handleTerm(AstTerm $ast): void {
+			$this->result[] = $this->expressionHandler->handleGenericExpression($ast, $ast->getOperator());
+		}
+		
+		/**
+		 * Process a factor node (atomic parts of expressions)
+		 * Factors are the most basic components of mathematical expressions,
+		 * such as numbers, variables, or parenthesized sub-expressions.
+		 * @param AstFactor $ast The factor node to process
+		 */
+		protected function handleFactor(AstFactor $ast): void {
+			$this->result[] = $this->expressionHandler->handleGenericExpression($ast, $ast->getOperator());
+		}
+		
+		/**
+		 * Process a binary operator node
+		 * Binary operators work on two operands (e.g., +, -, *, /, =, <, >).
+		 * @param AstBinaryOperator $ast The binary operator node to process
+		 */
+		protected function handleBinaryOperator(AstBinaryOperator $ast): void {
+			$this->result[] = $this->expressionHandler->handleGenericExpression($ast, $ast->getOperator());
+		}
+		
+		/**
+		 * Process a string concatenation operation
+		 * @param AstConcat $concat The concatenation node to process
+		 */
+		protected function handleConcat(AstConcat $concat): void {
+			$this->result[] = $this->expressionHandler->handleConcat($concat);
+		}
+		
+		/**
+		 * Process a logical NOT operation
+		 * @param AstNot $ast The NOT operation node to process
+		 */
+		protected function handleNot(AstNot $ast): void {
+			$this->result[] = $this->expressionHandler->handleNot($ast);
+		}
+		
+		/**
+		 * Process a NULL value
+		 * @param AstNull $ast The NULL value node to process
+		 */
+		protected function handleNull(AstNull $ast): void {
+			$this->result[] = $this->expressionHandler->handleNull($ast);
+		}
+		
+		/**
+		 * Process a boolean value (true/false)
+		 * @param AstBool $ast The boolean value node to process
+		 */
+		protected function handleBool(AstBool $ast): void {
+			$this->result[] = $this->expressionHandler->handleBool($ast);
+		}
+		
+		/**
+		 * Process a numeric value
+		 * @param AstNumber $ast The numeric value node to process
+		 */
+		protected function handleNumber(AstNumber $ast): void {
+			$this->result[] = $this->expressionHandler->handleNumber($ast);
+		}
+		
+		/**
+		 * Process a string literal value
+		 * @param AstString $ast The string literal node to process
+		 */
+		protected function handleString(AstString $ast): void {
+			$this->result[] = $this->expressionHandler->handleString($ast);
+		}
+		
+		/**
+		 * Process a query parameter placeholder
+		 * Parameters are used in parameterized queries for security and performance.
+		 * @param AstParameter $ast The parameter node to process
+		 */
+		protected function handleParameter(AstParameter $ast): void {
+			$this->result[] = $this->expressionHandler->handleParameter($ast);
+		}
+		
+		/**
+		 * Process an IN operation (value IN (list))
+		 * @param AstIn $ast The IN operation node to process
+		 */
+		protected function handleIn(AstIn $ast): void {
+			$this->result[] = $this->expressionHandler->handleIn($ast);
+		}
+		
+		/**
+		 * Process a NULL check operation (IS NULL)
+		 * @param AstCheckNull $ast The NULL check node to process
+		 */
+		protected function handleCheckNull(AstCheckNull $ast): void {
+			$this->result[] = $this->expressionHandler->handleCheckNull($ast);
+		}
+		
+		/**
+		 * Process a NOT NULL check operation (IS NOT NULL)
+		 * @param AstCheckNotNull $ast The NOT NULL check node to process
+		 */
+		protected function handleCheckNotNull(AstCheckNotNull $ast): void {
+			$this->result[] = $this->expressionHandler->handleCheckNotNull($ast);
+		}
+		
+		/**
+		 * Process an empty value check operation
+		 * @param AstIsEmpty $ast The empty check node to process
+		 */
+		protected function handleIsEmpty(AstIsEmpty $ast): void {
+			$this->result[] = $this->expressionHandler->handleIsEmpty($ast);
+		}
+		
+		/**
+		 * Process a numeric type check operation
+		 * @param AstIsNumeric $ast The numeric check node to process
+		 */
+		protected function handleIsNumeric(AstIsNumeric $ast): void {
+			$this->result[] = $this->expressionHandler->handleIsNumeric($ast);
+		}
+		
+		/**
+		 * Process an integer type check operation
+		 * @param AstIsInteger $ast The integer check node to process
+		 */
+		protected function handleIsInteger(AstIsInteger $ast): void {
+			$this->result[] = $this->expressionHandler->handleIsInteger($ast);
+		}
+		
+		/**
+		 * Process a float type check operation
+		 * @param AstIsFloat $ast The float check node to process
+		 */
+		protected function handleIsFloat(AstIsFloat $ast): void {
+			$this->result[] = $this->expressionHandler->handleIsFloat($ast);
+		}
+		
+		/**
+		 * Process a search operation (full-text search or pattern matching)
+		 * @param AstSearch $search The search operation node to process
+		 */
+		protected function handleSearch(AstSearch $search): void {
+			$this->result[] = $this->expressionHandler->handleSearch($search);
+		}
+		
+		/**
+		 * Process a COUNT aggregate function
+		 * COUNT returns the number of rows that match the criteria.
+		 * @param AstCount $count The COUNT function node to process
+		 */
+		protected function handleCount(AstCount $count): void {
+			// Mark the identifier as visited to prevent duplicate processing
+			$identifier = $count->getIdentifier();
+
+			if ($identifier instanceof AstIdentifier) {
+				$this->addToVisitedNodes($identifier);
+			}
+			
+			$this->result[] = $this->aggregateHandler->handleCount($count);
+		}
+		
+		/**
+		 * Process a COUNT UNIQUE (DISTINCT) aggregate function
+		 * COUNT UNIQUE returns the number of distinct values.
+		 * @param AstCountU $count The COUNT UNIQUE function node to process
+		 */
+		protected function handleCountU(AstCountU $count): void {
+			// Mark the identifier as visited to prevent duplicate processing
+			$identifier = $count->getIdentifier();
+
+			if ($identifier instanceof AstIdentifier) {
+				$this->addToVisitedNodes($identifier);
+			}
+			
+			$this->result[] = $this->aggregateHandler->handleCountU($count);
+		}
+		
+		/**
+		 * Process an AVG (average) aggregate function
+		 * AVG returns the average value of a numeric column.
+		 * @param AstAvg $avg The AVG function node to process
+		 */
+		protected function handleAvg(AstAvg $avg): void {
+			// Mark the identifier as visited to prevent duplicate processing
+			$identifier = $avg->getIdentifier();
+
+			if ($identifier instanceof AstIdentifier) {
+				$this->addToVisitedNodes($identifier);
+			}
+			
+			$this->result[] = $this->aggregateHandler->handleAvg($avg);
+		}
+		
+		/**
+		 * Process an AVG UNIQUE (average of distinct values) aggregate function
+		 * AVG UNIQUE returns the average of distinct values only.
+		 * @param AstAvgU $avg The AVG UNIQUE function node to process
+		 */
+		protected function handleAvgU(AstAvgU $avg): void {
+			// Mark the identifier as visited to prevent duplicate processing
+			$identifier = $avg->getIdentifier();
+
+			if ($identifier instanceof AstIdentifier) {
+				$this->addToVisitedNodes($identifier);
+			}
+			
+			$this->result[] = $this->aggregateHandler->handleAvgU($avg);
+		}
+		
+		/**
+		 * Process a MAX (maximum) aggregate function
+		 * MAX returns the largest value in a column.
+		 * @param AstMax $max The MAX function node to process
+		 */
+		protected function handleMax(AstMax $max): void {
+			// Mark the identifier as visited to prevent duplicate processing
+			$identifier = $max->getIdentifier();
+
+			if ($identifier instanceof AstIdentifier) {
+				$this->addToVisitedNodes($identifier);
+			}
+			
+			$this->result[] = $this->aggregateHandler->handleMax($max);
+		}
+		
+		/**
+		 * Process a MIN (minimum) aggregate function
+		 * MIN returns the smallest value in a column.
+		 * @param AstMin $min The MIN function node to process
+		 */
+		protected function handleMin(AstMin $min): void {
+			// Mark the identifier as visited to prevent duplicate processing
+			$identifier = $min->getIdentifier();
+
+			if ($identifier instanceof AstIdentifier) {
+				$this->addToVisitedNodes($identifier);
+			}
+			
+			$this->result[] = $this->aggregateHandler->handleMin($min);
+		}
+		
+		/**
+		 * Process a SUM aggregate function
+		 * SUM returns the total of all values in a numeric column.
+		 * @param AstSum $sum The SUM function node to process
+		 */
+		protected function handleSum(AstSum $sum): void {
+			// Mark the identifier as visited to prevent duplicate processing
+			$identifier = $sum->getIdentifier();
+
+			if ($identifier instanceof AstIdentifier) {
+				$this->addToVisitedNodes($identifier);
+			}
+			
+			$this->result[] = $this->aggregateHandler->handleSum($sum);
+		}
+		
+		/**
+		 * Process a SUM UNIQUE (sum of distinct values) aggregate function
+		 * SUM UNIQUE returns the sum of distinct values only.
+		 * @param AstSumU $sum The SUM UNIQUE function node to process
+		 */
+		protected function handleSumU(AstSumU $sum): void {
+			// Mark the identifier as visited to prevent duplicate processing
+			$identifier = $sum->getIdentifier();
+
+			if ($identifier instanceof AstIdentifier) {
+				$this->addToVisitedNodes($identifier);
+			}
+			
+			$this->result[] = $this->aggregateHandler->handleSumU($sum);
+		}
+		
+		/**
+		 * Process an ANY aggregate function
+		 * ANY returns true if any row matches the condition, similar to EXISTS.
+		 * @param AstAny $ast The ANY function node to process
+		 */
+		protected function handleAny(AstAny $ast): void {
+			// Mark the identifier as visited in the main visitor to prevent duplicate processing
+			$identifier = $ast->getIdentifier();
+
+			if ($identifier instanceof AstIdentifier) {
+				$this->addToVisitedNodes($identifier);
+			}
+			
+			$this->result[] = $this->aggregateHandler->handleAny($ast);
+		}
+		
+		/**
+		 * Mark an AST node and its chain as visited
+		 * @param AstInterface $ast The AST node to mark as visited
 		 */
 		protected function addToVisitedNodes(AstInterface $ast): void {
-			// Add node to the visited list
+			// Mark this node as visited using its unique object ID
 			$this->visitedNodes[spl_object_id($ast)] = true;
 			
-			// Also add all AstIdentifier child properties
+			// For chained identifiers (e.g., table.column.subfield), mark the entire chain
 			if ($ast instanceof AstIdentifier && $ast->hasNext()) {
 				$this->addToVisitedNodes($ast->getNext());
 			}
 		}
 		
 		/**
-		 * Convert search operator to SQL
-		 * @param AstSearch $search
-		 * @return void
-		 */
-		protected function handleSearch(AstSearch $search): void {
-			$searchKey = uniqid();
-			$parsed = $search->parseSearchData($this->parameters);
-			$conditions = $this->buildSearchConditions($search, $parsed, $searchKey);
-			
-			// Combine all field conditions with OR
-			$this->result[] = '(' . implode(" OR ", $conditions) . ')';
-		}
-		
-		
-		/**
-		 * Handles generic expression processing with support for special string cases.
-		 * Processes AST nodes for standard comparisons and delegates wildcard/regex handling to specialized methods.
-		 * @param AstInterface $ast The AST node to process
-		 * @param string $operator The comparison operator
-		 */
-		protected function genericHandleExpression(AstInterface $ast, string $operator): void {
-			// We can only call getLeft/getRight on these nodes
-			if (
-				!$ast instanceof AstTerm &&
-				!$ast instanceof AstBinaryOperator &&
-				!$ast instanceof AstExpression &&
-				!$ast instanceof AstFactor
-			) {
-				return;
-			}
-			
-			if (in_array($operator, ['=', '<>'], true)) {
-				$rightAst = $ast->getRight();
-				
-				if (
-					($rightAst instanceof AstString && $this->handleWildcardString($rightAst, $ast, $operator)) ||
-					($rightAst instanceof AstRegExp && $this->handleRegularExpression($rightAst, $ast, $operator))
-				) {
-					return;
-				}
-			}
-			
-			$ast->getLeft()->accept($this);
-			$this->result[] = " {$operator} ";
-			$ast->getRight()->accept($this);
-		}
-		
-		/**
-		 * Processes an AstConcat object and converts it to the SQL CONCAT function.
-		 * @param AstConcat $concat The AstConcat object with the parameters to process.
-		 * @return void
-		 */
-		protected function handleConcat(AstConcat $concat): void {
-			// Start the CONCAT function in SQL.
-			$this->result[] = "CONCAT(";
-			
-			// Loop through all parameters of the AstConcat object.
-			$counter = 0;
-			
-			foreach ($concat->getParameters() as $parameter) {
-				// If this is not the first item, add a comma.
-				if ($counter > 0) {
-					$this->result[] = ",";
-				}
-				
-				// Accept the current parameter object and process it.
-				$parameter->accept($this);
-				++$counter;
-			}
-			
-			// Close the CONCAT function in SQL.
-			$this->result[] = ")";
-		}
-		
-		/**
-		 * Processes an AstExpression object
-		 * @param AstExpression $ast The AstExpression object
-		 * @return void
-		 */
-		protected function handleExpression(AstExpression $ast): void {
-			$this->genericHandleExpression($ast, $ast->getOperator());
-		}
-		
-		/**
-		 * Processes an AstTerm object
-		 * @param AstTerm $ast The AstTerm object
-		 * @return void
-		 */
-		protected function handleTerm(AstTerm $ast): void {
-			$this->genericHandleExpression($ast, $ast->getOperator());
-		}
-		
-		/**
-		 * Processes an AstFactor object
-		 * @param AstFactor $ast The AstFactor object
-		 * @return void
-		 */
-		protected function handleFactor(AstFactor $ast): void {
-			$this->genericHandleExpression($ast, $ast->getOperator());
-		}
-		
-		/**
-		 * Processes an AstBinaryOperator object and converts it to SQL with an alias.
-		 * @param AstBinaryOperator $ast The AstBinaryOperator object
-		 * @return void
-		 */
-		protected function handleBinaryOperator(AstBinaryOperator $ast): void {
-			$this->genericHandleExpression($ast, $ast->getOperator());
-		}
-		
-		/**
-		 * Processes an AstAlias object and converts it to SQL with an alias.
-		 * @param AstAlias $ast The AstAlias object that contains an expression and an alias.
-		 * @return void
-		 */
-		protected function handleAlias(AstAlias $ast): void {
-			// Extract the expression part from the alias (e.g., in "users u", this gets "users")
-			$expression = $ast->getExpression();
-			
-			// Early return if the expression is not an identifier
-			// This handles cases where the expression might be a subquery or other complex expression
-			if (!$expression instanceof AstIdentifier) {
-				return;
-			}
-			
-			// Check if this identifier represents an entity (table/model reference)
-			// Entities need special handling compared to regular column references
-			if ($this->identifierIsEntity($expression)) {
-				// Mark this node as visited to prevent infinite recursion
-				// This is important for circular references in the AST
-				$this->addToVisitedNodes($expression);
-				
-				// Handle entity-specific processing (likely adds table name to FROM clause)
-				$this->handleEntity($expression);
-				return;
-			}
-			
-			// For non-entity identifiers (columns, functions, etc.),
-			// use the visitor pattern to process the expression normally
-			// This will handle the SQL generation for the expression part of the alias
-			$ast->getExpression()->accept($this);
-		}
-		
-		/**
-		 * Add NOT to the output stream
-		 * @param AstNot $ast
-		 * @return void
-		 */
-		protected function handleNot(AstNot $ast): void {
-			$this->result[] = " NOT ";
-		}
-		
-		/**
-		 * Processes an AstNull object
-		 * @param AstNull $ast The AstNull object
-		 * @return void
-		 */
-		protected function handleNull(AstNull $ast): void {
-			$this->result[] = 'null';
-		}
-		
-		/**
-		 * Processes an AstBool object
-		 * @param AstBool $ast The AstBool object
-		 * @return void
-		 */
-		protected function handleBool(AstBool $ast): void {
-			$this->result[] = $ast->getValue() ? "true" : "false";
-		}
-		
-		/**
-		 * Processes an AstNumber object
-		 * @param AstNumber $ast The AstNumber object
-		 * @return void
-		 */
-		protected function handleNumber(AstNumber $ast): void {
-			$this->result[] = $ast->getValue();
-		}
-		
-		/**
-		 * Processes an AstString object
-		 * @param AstString $ast The AstString object
-		 * @return void
-		 */
-		protected function handleString(AstString $ast): void {
-			$this->result[] = "\"" . addslashes($ast->getValue()) . "\"";
-		}
-		
-		/**
-		 * Processes an AstIdentifier object
-		 * @param AstIdentifier $ast The AstIdentifier object
-		 * @return void
-		 */
-		protected function handleIdentifier(AstIdentifier $ast): void {
-			// Add the identifier and all properties to the 'visited nodes' list
-			$this->addToVisitedNodes($ast);
-			
-			// Omit the information from the query if the range is not a database range
-			if ($ast->getRange() instanceof AstRangeJsonSource) {
-				return;
-			}
-			
-			// Get information from the identifier
-			$range = $ast->getRange();
-			$rangeName = $range->getName();
-			$entityName = $ast->getEntityName();
-			$propertyName = $ast->getNext()->getName();
-			$columnMap = $this->entityStore->getColumnMap($entityName);
-			
-			// If this is not the 'SORT BY' section, add the normalized property
-			if ($this->partOfQuery !== "SORT") {
-				$this->result[] = $rangeName . "." . $columnMap[$propertyName];
-				return;
-			}
-			
-			// If this is a 'SORT BY', then we may need to convert a NULL value to COALESCE.
-			// Without COALESCE, sorting will not be correct.
-			$annotations = $this->entityStore->getAnnotations($entityName);
-			
-			$annotationsOfProperty = array_values(array_filter(
-				$annotations[$propertyName]->toArray(),
-				function ($e) {
-					return $e instanceof Column;
-				}
-			));
-			
-			if (!$annotationsOfProperty[0]->isNullable()) {
-				$this->result[] = $rangeName . "." . $columnMap[$propertyName];
-			} elseif ($annotationsOfProperty[0]->getType() === "integer") {
-				$this->result[] = "COALESCE({$rangeName}.{$columnMap[$propertyName]}, 0)";
-			} else {
-				$this->result[] = "COALESCE({$rangeName}.{$columnMap[$propertyName]}, '')";
-			}
-		}
-		
-		/**
-		 * Processes an AstParameter object
-		 * @param AstParameter $ast The AstParameter object
-		 * @return void
-		 */
-		protected function handleParameter(AstParameter $ast): void {
-			$this->result[] = ":" . $ast->getName();
-		}
-		
-		/**
-		 * Processes an entity by generating SQL column selections with proper aliasing
-		 * @param AstInterface $ast The AST node to process
-		 * @return void
-		 */
-		protected function handleEntity(AstInterface $ast): void {
-			// Early return if the AST node is not an identifier
-			// Only AstIdentifier nodes represent entities that can be processed
-			if (!$ast instanceof AstIdentifier) {
-				return;
-			}
-			
-			// Initialize an array to store the generated column selections
-			$result = [];
-			
-			// Get the range object from the AST identifier
-			// The range typically represents a table or entity reference
-			$range = $ast->getRange();
-			
-			// Extract the name from the range (e.g., table alias or table name)
-			$rangeName = $range->getName();
-			
-			// Retrieve the column mapping for this entity from the entity store
-			// This maps logical column names to actual database column names
-			$columnMap = $this->entityStore->getColumnMap($ast->getEntityName());
-			
-			// Iterate through each column in the entity's column map
-			foreach ($columnMap as $item => $value) {
-				// Generate an SQL column selection with alias
-				// Format: "table_name.actual_column as `table_name.logical_column`"
-				// This creates properly aliased columns for the SELECT statement
-				$result[] = "{$rangeName}.{$value} as `{$rangeName}.{$item}`";
-			}
-			
-			// Join all column selections with commas and add to the main result array
-			// This builds the column list portion of the SQL SELECT statement
-			$this->result[] = implode(",", $result);
-		}
-		
-		/**
-		 * Processes the 'IN' condition of a SQL query.
-		 * The 'IN' condition is used to check if a value
-		 * matches a value in a list of values.
-		 * @param AstIn $ast An object that represents the 'IN' clause.
-		 * @return void
-		 */
-		protected function handleIn(AstIn $ast): void {
-			// flag the identifier node as processed
-			$this->visitNode($ast->getIdentifier());
-			
-			// Add the start of the 'IN' condition to the result.
-			$this->result[] = " IN(";
-			
-			// A flag to check if we are processing the first item.
-			$first = true;
-			
-			// Loop through each item that needs to be checked within the 'IN' condition.
-			foreach ($ast->getParameters() as $item) {
-				// If it's not the first item, add a comma for separation.
-				if (!$first) {
-					$this->result[] = ",";
-				}
-				
-				// Process the item and add it to the result.
-				$this->visitNode($item);
-				
-				// Set the flag to 'false' because we are no longer at the first item.
-				$first = false;
-			}
-			
-			// Add the closing bracket to the 'IN' condition.
-			$this->result[] = ")";
-		}
-		
-		/**
-		 * This function processes the 'count' command within an abstract syntax tree (AST).
-		 * @param AstCount $count
-		 * @return void
-		 * @throws QuelException
-		 */
-		protected function handleCount(AstCount $count): void {
-			$this->handleAggregateOperation($count, 'COUNT');
-		}
-		
-		/**
-		 * This function processes the 'count' command within an abstract syntax tree (AST).
-		 * @param AstCountU $count
-		 * @return void
-		 * @throws QuelException
-		 */
-		protected function handleCountU(AstCountU $count): void {
-			$this->handleAggregateOperation($count, 'COUNT', true);
-		}
-		
-		/**
-		 * This function processes the 'average' command within an abstract syntax tree (AST).
-		 * @param AstAvg $avg
-		 * @return void
-		 * @throws QuelException
-		 */
-		protected function handleAvg(AstAvg $avg): void {
-			$this->handleAggregateOperation($avg, 'AVG');
-		}
-		
-		/**
-		 * This function processes the 'average unique' command within an abstract syntax tree (AST).
-		 * @param AstAvgU $avg
-		 * @return void
-		 */
-		protected function handleAvgU(AstAvgU $avg): void {
-			$this->handleAggregateOperation($avg, 'AVG', true);
-		}
-		
-		/**
-		 * Processes the MAX aggregate function within an abstract syntax tree (AST).
-		 * @param AstMax $max The MAX AST node to process
-		 * @return void
-		 * @throws QuelException
-		 */
-		protected function handleMax(AstMax $max): void {
-			$this->handleAggregateOperation($max, 'MAX');
-		}
-		
-		/**
-		 * Processes the MIN aggregate function within an abstract syntax tree (AST).
-		 * @param AstMin $min The MIN AST node to process
-		 * @return void
-		 * @throws QuelException
-		 */
-		protected function handleMin(AstMin $min): void {
-			$this->handleAggregateOperation($min, 'MIN');
-		}
-		
-		/**
-		 * Processes the SUM aggregate function within an abstract syntax tree (AST).
-		 * @param AstSum $sum The SUM AST node to process
-		 * @return void
-		 * @throws QuelException
-		 */
-		protected function handleSum(AstSum $sum): void {
-			$this->handleAggregateOperation($sum, 'SUM');
-		}
-		
-		/**
-		 * Processes the SUMU aggregate function within an abstract syntax tree (AST).
-		 * @param AstSumU $sum The SUM AST node to process
-		 * @return void
-		 * @throws QuelException
-		 */
-		protected function handleSumU(AstSumU $sum): void {
-			$this->handleAggregateOperation($sum, "SUM", true);
-		}
-		
-		/**
-		 * Processes the ANY aggregate function within an abstract syntax tree (AST).
-		 * @throws QuelException
-		 */
-		protected function handleAny(AstAny $ast): void {
-			switch ($this->partOfQuery) {
-				case "VALUES":
-					$this->handleAggregateOperation($ast, "ANY");
-					break;
-				
-				case "WHERE":
-					$this->handleAnyWhere($ast);
-					break;
-			}
-		}
-		
-		/**
-		 * Handles 'IS NULL'. The SQL equivalent is exactly the same.
-		 * @param AstCheckNull $ast
-		 * @return void
-		 */
-		protected function handleCheckNull(AstCheckNull $ast): void {
-			$this->visitNode($ast->getExpression());
-			$this->result[] = " IS NULL ";
-		}
-		
-		/**
-		 * Handles 'IS NOT NULL'. The SQL equivalent is exactly the same.
-		 * @param AstCheckNotNull $ast
-		 * @return void
-		 */
-		protected function handleCheckNotNull(AstCheckNotNull $ast): void {
-			$this->visitNode($ast->getExpression());
-			$this->result[] = " IS NOT NULL ";
-		}
-		
-		/**
-		 * Handle is_empty function
-		 * @param AstIsEmpty $ast
-		 * @return void
-		 */
-		protected function handleIsEmpty(AstIsEmpty $ast): void {
-			$this->visitNode($ast);
-			
-			// Fetch the node value
-			$valueNode = $ast->getValue();
-			
-			// Special case for null
-			if ($valueNode instanceof AstNull) {
-				$this->addToVisitedNodes($valueNode);
-				$this->result[] = "1";
-				return;
-			}
-			
-			// Special case for numbers
-			if ($valueNode instanceof AstNumber) {
-				$this->addToVisitedNodes($valueNode);
-				$value = (int)$valueNode->getValue();
-				$this->result[] = $value == 0 ? "1" : "0";
-				return;
-			}
-			
-			// Special case for bool
-			if ($valueNode instanceof AstBool) {
-				$this->addToVisitedNodes($valueNode);
-				$this->result[] = !$valueNode->getValue() ? "1" : "0";
-				return;
-			}
-			
-			// Special case for strings
-			if ($valueNode instanceof AstString) {
-				$this->addToVisitedNodes($valueNode);
-				$this->result[] = $valueNode->getValue() === "" ? "1" : "0";
-				return;
-			}
-			
-			// Identifiers
-			$inferredType = $this->inferReturnType($valueNode);
-			$string = $this->visitNodeAndReturnSQL($valueNode);
-			
-			if (($inferredType === "integer") || ($inferredType === "float")) {
-				$this->result[] = "({$string} IS NULL OR {$string} = 0)";
-			} else {
-				$this->result[] = "({$string} IS NULL OR {$string} = '')";
-			}
-		}
-		
-		/**
-		 * Handle is_numeric function
-		 * @param AstIsNumeric $ast
-		 * @return void
-		 */
-		protected function handleIsNumeric(AstIsNumeric $ast): void {
-			$this->handleTypeCheckWithPattern($ast, 'NUMERIC');
-		}
-		
-		/**
-		 * Handles the is_integer type checking operation for different AST node types.
-		 * Determines whether a given AST node represents an integer value.
-		 *
-		 * The function handles these cases:
-		 * - String literals: checks if the string matches an integer pattern
-		 * - Numbers: checks if the number contains no decimal point
-		 * - Booleans: always returns false (0) as booleans are never integers
-		 * - Identifiers: checks based on inferred type or pattern matching
-		 * @param AstIsInteger $ast The AST node representing the is_integer check
-		 * @return void
-		 */
-		protected function handleIsInteger(AstIsInteger $ast): void {
-			$this->handleTypeCheckWithPattern($ast, 'INTEGER');
-		}
-		
-		/**
-		 * Handles the is_float type checking operation for different AST node types.
-		 * Determines whether a given AST node represents a floating point value.
-		 *
-		 * The function handles these cases:
-		 * - String literals: checks if the string matches a float pattern
-		 * - Numbers: checks if the number is not equal to its floor value
-		 * - Booleans: always returns false (0) as booleans are never floats
-		 * - Identifiers: checks based on inferred type or pattern matching
-		 * @param AstIsFloat $ast The AST node representing the is_float check
-		 * @return void
-		 */
-		protected function handleIsFloat(AstIsFloat $ast): void {
-			$this->handleTypeCheckWithPattern($ast, 'FLOAT');
-		}
-		
-		/**
-		 * Universal handler for all aggregate functions including ANY values
-		 * @param AstAny|AstCount|AstCountU|AstAvg|AstAvgU|AstMax|AstMin|AstSum|AstSumU $ast The aggregate AST node
-		 * @param string $aggregateFunction The SQL aggregate function name (COUNT, AVG, SUM, etc.)
-		 * @param bool $distinct Whether to use DISTINCT (ignored for ANY operations)
-		 * @return void
-		 * @throws QuelException
-		 */
-		private function handleAggregateOperation(
-			AstAny|AstCount|AstCountU|AstAvg|AstAvgU|AstMax|AstMin|AstSum|AstSumU $ast,
-			string                                                                $aggregateFunction,
-			bool                                                                  $distinct = false
-		): void {
-			// Get the identifier (entity or property) that needs to be aggregated.
-			$identifier = $ast->getIdentifier();
-			
-			// Early return if the expression is not an identifier
-			if (!$identifier instanceof AstIdentifier) {
-				return;
-			}
-			
-			// Add the identifier to visited nodes
-			$this->addToVisitedNodes($identifier);
-			
-			// Determine the column to use
-			$column = $this->buildColumnName($identifier);
-			
-			// Generate the appropriate SQL based on operation type
-			switch ($aggregateFunction) {
-				case 'ANY':
-					if (!$identifier->getRange()->includeAsJoin()) {
-						$this->result[] = $this->handleAnyWithExists($identifier, $identifier->getRange());
-					} elseif ($identifier->getRange()->isRequired()) {
-						$this->result[] = "1"; // Always exists with INNER JOIN
-					} else {
-						$this->result[] = "CASE WHEN {$column} IS NOT NULL THEN 1 ELSE 0 END";
-					}
-					
-					break;
-				
-				default:
-					// Handle regular aggregate operations
-					$distinctClause = $distinct ? 'DISTINCT ' : '';
-					$this->result[] = "{$aggregateFunction}({$distinctClause}{$column})";
-					break;
-			}
-		}
-		
-		/**
-		 * Builds the join condition SQL from the range's join property.
-		 * @param AstRange $range The range containing the join property
-		 * @return string The SQL join condition, or empty string if no join property
-		 */
-		private function buildJoinCondition(AstRange $range): string {
-			$joinProperty = $range->getJoinProperty();
-			
-			if (!$joinProperty) {
-				return '';
-			}
-			
-			// Clone to avoid modifying the original AST
-			$joinCondition = $joinProperty->deepClone();
-			
-			$visitor = new QuelToSQLConvertToString(
-				$this->entityStore,
-				$this->parameters,
-				$this->partOfQuery
-			);
-			
-			$joinCondition->accept($visitor);
-			
-			return $visitor->getResult();
-		}
-		
-		/**
-		 * Constructs the EXISTS subquery.
-		 * @param string $tableName The database table name
-		 * @param string $rangeAlias The alias for the table in the subquery
-		 * @param string $joinCondition The WHERE condition for the EXISTS query
-		 * @return string The complete EXISTS subquery
-		 */
-		private function buildExistsQuery(string $tableName, string $rangeAlias, string $joinCondition): string {
-			$whereClause = $joinCondition ? "WHERE {$joinCondition}" : '';
-			
-			return "
-				EXISTS (
-			        SELECT 1
-			        FROM `{$tableName}` {$rangeAlias}
-			        {$whereClause}
-			        LIMIT 1
-			    )
-		    ";
-		}
-		
-		/**
-		 * Extract the name of a class from the object
-		 * @param object $node
-		 * @return string
+		 * Extract the class name from a fully qualified class name
+		 * @param object $node The object whose class name to extract
+		 * @return string The simple class name without namespace
 		 */
 		private function extractClassName(object $node): string {
 			return ltrim(strrchr(get_class($node), '\\'), '\\');
-		}
-		
-		/**
-		 * Builds search conditions for multiple identifiers based on parsed search terms
-		 * @param AstSearch $search The search AST node containing identifiers to search
-		 * @param array $parsed Parsed search data containing or_terms, and_terms, and not_terms
-		 * @param string $searchKey Unique key for parameter naming to avoid conflicts
-		 * @return array Array of SQL condition strings
-		 */
-		private function buildSearchConditions(AstSearch $search, array $parsed, string $searchKey): array {
-			$conditions = [];
-			
-			foreach ($search->getIdentifiers() as $identifier) {
-				// Mark nodes as visited to prevent duplicate processing
-				$this->addToVisitedNodes($identifier);
-				
-				// Resolve the column name for this identifier
-				$columnName = $this->buildColumnName($identifier);
-				
-				// Build conditions for this specific identifier/column
-				$fieldConditions = $this->buildFieldConditions($columnName, $parsed, $searchKey);
-				
-				if (!empty($fieldConditions)) {
-					$conditions[] = '(' . implode(' AND ', $fieldConditions) . ')';
-				}
-			}
-			
-			return $conditions;
-		}
-		
-		/**
-		 * Builds field-specific conditions for different term types (OR, AND, NOT)
-		 * @param string $columnName The SQL column name to search in
-		 * @param array $parsed Parsed search terms organized by type
-		 * @param string $searchKey Unique key for parameter naming
-		 * @return array Array of condition strings for this field
-		 */
-		private function buildFieldConditions(string $columnName, array $parsed, string $searchKey): array {
-			$fieldConditions = [];
-			
-			// Define term types and their SQL operators
-			$termTypes = [
-				'or_terms'  => ['operator' => 'OR', 'comparison' => 'LIKE'],
-				'and_terms' => ['operator' => 'AND', 'comparison' => 'LIKE'],
-				'not_terms' => ['operator' => 'AND', 'comparison' => 'NOT LIKE']
-			];
-			
-			foreach ($termTypes as $termType => $config) {
-				$termConditions = $this->buildTermConditions(
-					$columnName,
-					$parsed[$termType],
-					$config,
-					$termType,
-					$searchKey
-				);
-				
-				if (!empty($termConditions)) {
-					$fieldConditions[] = '(' . implode(" {$config['operator']} ", $termConditions) . ')';
-				}
-			}
-			
-			return $fieldConditions;
-		}
-		
-		/**
-		 * Builds conditions for a specific term type (or_terms, and_terms, not_terms)
-		 * @param string $columnName The SQL column name
-		 * @param array $terms Array of search terms for this type
-		 * @param array $config Configuration containing operator and comparison type
-		 * @param string $termType The type of terms being processed
-		 * @param string $searchKey Unique key for parameter naming
-		 * @return array Array of individual term conditions
-		 */
-		private function buildTermConditions(
-			string $columnName,
-			array  $terms,
-			array  $config,
-			string $termType,
-			string $searchKey
-		): array {
-			$termConditions = [];
-			
-			foreach ($terms as $index => $term) {
-				$paramName = "{$termType}{$searchKey}{$index}";
-				$termConditions[] = "{$columnName} {$config['comparison']} :{$paramName}";
-				$this->parameters[$paramName] = "%{$term}%";
-			}
-			
-			return $termConditions;
-		}
-		
-		/**
-		 * Handles wildcard string patterns by converting them to SQL LIKE syntax.
-		 * Converts * (match any sequence) to % and ? (match single character) to _.
-		 * @param AstString $rightAst The right-hand side AST node to check
-		 * @param AstBinaryOperator|AstExpression|AstFactor|AstTerm $ast The full AST node
-		 * @param string $operator The comparison operator
-		 * @return bool True if wildcard string was handled, false otherwise
-		 */
-		private function handleWildcardString(AstString $rightAst, AstExpression|AstBinaryOperator|AstFactor|AstTerm $ast, string $operator): bool {
-			// Get the value
-			$stringValue = $rightAst->getValue();
-			
-			// Check if the string contains wildcard characters
-			if (!str_contains($stringValue, "*") && !str_contains($stringValue, "?")) {
-				return false;
-			}
-			
-			// Mark this node as visited to prevent duplicate processing
-			$this->addToVisitedNodes($rightAst);
-			
-			// Process the left-hand side of the comparison
-			$ast->getLeft()->accept($this);
-			
-			// Convert wildcards using the constant mapping
-			$stringValue = str_replace(
-				array_keys(self::WILDCARD_MAPPINGS),
-				array_values(self::WILDCARD_MAPPINGS),
-				$stringValue
-			);
-			
-			// Choose the appropriate LIKE operator based on the original operator
-			$likeOperator = $operator === "=" ? " LIKE " : " NOT LIKE ";
-			
-			// Add the SQL LIKE clause to the result
-			$this->result[] = "{$likeOperator}\"" . addslashes($stringValue) . "\"";
-			
-			return true;
-		}
-		
-		/**
-		 * Handle type checking operations using regex patterns from constants
-		 * @param AstIsNumeric|AstIsInteger|AstIsFloat $ast The type check AST node
-		 * @param string $patternKey The key for the regex pattern in REGEX_PATTERNS
-		 * @return void
-		 */
-		private function handleTypeCheckWithPattern(AstIsNumeric|AstIsInteger|AstIsFloat $ast, string $patternKey): void {
-			$this->visitNode($ast);
-			$valueNode = $ast->getValue();
-			
-			// Handle string literals - check if the string matches the pattern
-			if ($valueNode instanceof AstString) {
-				$this->addToVisitedNodes($valueNode);
-				$string = "'" . addslashes($valueNode->getValue()) . "'";
-				$pattern = self::REGEX_PATTERNS[$patternKey];
-				$this->result[] = "{$string} REGEXP '{$pattern}'";
-				return;
-			}
-			
-			// Handle numeric values
-			if ($valueNode instanceof AstNumber) {
-				$this->addToVisitedNodes($valueNode);
-				
-				$this->result[] = match ($patternKey) {
-					'NUMERIC' => "1",  // Numbers are always numeric
-					'INTEGER' => !str_contains($valueNode->getValue(), ".") ? "1" : "0",
-					'FLOAT' => str_contains($valueNode->getValue(), ".") ? "1" : "0",
-					default => "0"
-				};
-				
-				return;
-			}
-			
-			// Handle boolean and null values - they are never numeric/integer/float
-			if ($valueNode instanceof AstBool || $valueNode instanceof AstNull) {
-				$this->addToVisitedNodes($valueNode);
-				$this->result[] = "0";
-				return;
-			}
-			
-			// Handle identifiers based on inferred type
-			$inferredType = $this->inferReturnType($valueNode);
-			$string = $this->visitNodeAndReturnSQL($valueNode);
-			
-			$this->result[] = match ([$patternKey, $inferredType]) {
-				['NUMERIC', 'integer'], ['NUMERIC', 'float'] => "1",
-				['INTEGER', 'integer'] => "1",
-				['INTEGER', 'float'] => "0",
-				['FLOAT', 'float'] => "1",
-				['FLOAT', 'integer'] => "0",
-				default => "{$string} REGEXP '" . self::REGEX_PATTERNS[$patternKey] . "'"
-			};
-		}
-		
-		/**
-		 * Handles regular expression patterns by converting them to SQL REGEXP syntax.
-		 * @param AstRegExp $rightAst The right-hand side AST node to check
-		 * @param AstBinaryOperator|AstExpression|AstFactor|AstTerm $ast The full AST node
-		 * @param string $operator The comparison operator
-		 * @return bool True if regular expression was handled, false otherwise
-		 */
-		private function handleRegularExpression(AstRegExp $rightAst, AstExpression|AstBinaryOperator|AstFactor|AstTerm $ast, string $operator): bool {
-			// Extract the regex pattern from the AST node
-			$stringValue = $rightAst->getValue();
-			
-			// Mark this node as visited to prevent duplicate processing
-			$this->addToVisitedNodes($rightAst);
-			
-			// Process the left-hand side of the comparison
-			$ast->getLeft()->accept($this);
-			
-			// Choose appropriate REGEXP operator based on the original operator
-			$regexpOperator = $operator === "=" ? " REGEXP " : " NOT REGEXP ";
-			
-			// Add the SQL REGEXP clause to the result
-			$this->result[] = "{$regexpOperator}\"{$stringValue}\"";
-			
-			// Indicate that special case was handled
-			return true;
-		}
-		
-		/**
-		 * Finds the base AstRetrieve node by traversing up the AST hierarchy.
-		 * @param AstInterface $ast The starting AST node to search from
-		 * @return AstRetrieve|null Returns the found AstRetrieve node or null if none exists
-		 */
-		private function getBaseQuery(AstInterface $ast): ?AstRetrieve {
-			// Initialize current pointer to the starting node
-			$current = $ast;
-			
-			// Quick check: if the starting node is already an AstRetrieve, return it immediately
-			if ($current instanceof AstRetrieve) {
-				return $current;
-			}
-			
-			// Traverse up the parent hierarchy to find an AstRetrieve node
-			while ($parent = $current->getParent()) {
-				// Check if the current parent is an AstRetrieve node
-				if ($parent instanceof AstRetrieve) {
-					return $parent; // Found it - return the AstRetrieve node
-				}
-				// Move up one level in the hierarchy
-				$current = $parent;
-			}
-			
-			// No AstRetrieve node found in the entire ancestry chain
-			return null;
-		}
-		
-		/**
-		 * Determines if the given AST represents a single range query
-		 *
-		 * @param AstInterface $ast The AST node to analyze
-		 * @return bool True if this is a single range query, false otherwise
-		 */
-		private function isSingleRangeQuery(AstInterface $ast): bool {
-			// Get the base query node from the AST
-			$queryNode = $this->getBaseQuery($ast);
-			
-			// Delegate to the query node's own method to determine if it's single range
-			return $queryNode->isSingleRangeQuery();
-		}
-		
-		/**
-		 * Handles "ANY WHERE" clauses in the query AST
-		 * Generates appropriate SQL conditions based on whether the range should be joined
-		 * and whether it's a single or multi-range query
-		 *
-		 * @param AstAny $ast The ANY AST node containing the WHERE clause
-		 * @return void
-		 */
-		private function handleAnyWhere(AstAny $ast): void {
-			// Extract the identifier from the ANY clause
-			$identifier = $ast->getIdentifier();
-			
-			// Early return if identifier is not the expected type
-			if (!$identifier instanceof AstIdentifier) {
-				return;
-			}
-			
-			// Track this identifier as visited to avoid processing it again
-			$this->addToVisitedNodes($identifier);
-			
-			// Get the range information associated with this identifier
-			$range = $identifier->getRange();
-			
-			// Check if this range should be included as a JOIN rather than EXISTS
-			if (!$range->includeAsJoin()) {
-				// Range will be handled with EXISTS subquery
-				if ($this->isSingleRangeQuery($identifier)) {
-					// Single range query: if any row exists, condition is always true
-					// Use "1 = 1" as a tautology since existence is guaranteed by the query structure
-					$this->result[] = "1 = 1";
-				} else {
-					// Multi-range query: use EXISTS subquery to check for row existence
-					// No CASE wrapper needed since EXISTS returns boolean directly
-					$this->handleAnyWhereExists($identifier, $range);
-				}
-			} elseif ($range->isRequired()) {
-				// Range is joined with INNER JOIN and is required
-				// Condition is always true since INNER JOIN ensures row existence
-				$this->result[] = "1 = 1"; // Always true with INNER JOIN
-			} else {
-				// Range is joined with LEFT JOIN (optional)
-				// Check if the joined column has a value (row was found)
-				$column = $this->buildColumnName($identifier);
-				$this->result[] = "{$column} IS NOT NULL";
-			}
-		}
-		
-		/**
-		 * Builds a fully qualified column name for SQL queries based on an AST identifier.
-		 * @param AstIdentifier $identifier The AST identifier to process
-		 * @return string The fully qualified column name in format "alias.column_name"
-		 */
-		private function buildColumnName(AstIdentifier $identifier): string {
-			// Extract the table alias/range name from the identifier
-			$range = $identifier->getRange()->getName();
-			
-			// Get the entity name that this identifier refers to
-			$entityName = $identifier->getEntityName();
-			
-			// Check if this identifier represents an entity itself (not a property)
-			if ($this->identifierIsEntity($identifier)) {
-				// For entities, we need to reference the primary key column
-				// Get all identifier columns for this entity (typically primary keys)
-				$identifierColumns = $this->entityStore->getIdentifierColumnNames($entityName);
-				
-				// Use the first identifier column (primary key) with the table alias
-				return "{$range}.{$identifierColumns[0]}";
-			}
-			
-			// If not an entity, this identifier represents a property of an entity
-			// Get the property name from the next part of the identifier chain
-			$property = $identifier->getNext()->getName();
-			
-			// Retrieve the column mapping for this entity to find the database column
-			// that corresponds to the property name
-			$columnMap = $this->entityStore->getColumnMap($entityName);
-			
-			// Return the fully qualified column name using the mapped column
-			return "{$range}.{$columnMap[$property]}";
-		}
-		
-		/**
-		 * Common helper method that generates the core EXISTS subquery
-		 * @param AstIdentifier $identifier The entity identifier being checked
-		 * @param AstRange $range The range specification for the query
-		 * @return string The raw EXISTS subquery
-		 */
-		private function generateExistsSubquery(AstIdentifier $identifier, AstRange $range): string {
-			$entityName = $identifier->getEntityName();
-			$tableName = $this->entityStore->getOwningTable($entityName);
-			$rangeAlias = $range->getName();
-			
-			// Build the WHERE clause if a join condition exists
-			$whereClause = '';
-			$joinProperty = $range->getJoinProperty();
-			
-			if ($joinProperty) {
-				// Clone to avoid modifying the original AST
-				$joinCondition = $joinProperty->deepClone();
-				
-				$visitor = new QuelToSQLConvertToString(
-					$this->entityStore,
-					$this->parameters,
-					$this->partOfQuery
-				);
-				
-				$joinCondition->accept($visitor);
-				$joinConditionSql = $visitor->getResult();
-				$whereClause = "WHERE {$joinConditionSql}";
-			}
-			
-			return "EXISTS (
-        SELECT 1
-        FROM `{$tableName}` {$rangeAlias}
-        {$whereClause}
-        LIMIT 1
-    )";
-		}
-		
-		/**
-		 * Handles the generation of SQL for ANY expressions with EXISTS conditions.
-		 * Generates either a simple EXISTS clause (for WHERE contexts) or a
-		 * CASE WHEN EXISTS statement (for SELECT contexts) that returns 1 if any
-		 * matching records are found, 0 otherwise.
-		 * @param AstIdentifier $identifier The entity identifier being checked
-		 * @param AstRange $range The range specification for the query
-		 */
-		private function handleAnyWithExists(AstIdentifier $identifier, AstRange $range): string {
-			// Handle special case: single range query with ANY returns true if any rows exist
-			if ($this->isSingleRangeQuery($identifier)) {
-				return "1";
-			}
-			
-			$existsQuery = $this->generateExistsSubquery($identifier, $range);
-			
-			return $this->formatQueryForContext($existsQuery);
-		}
-		
-		/**
-		 * Generates an EXISTS subquery for ANY WHERE clauses that cannot be handled with JOINs
-		 * Creates a subquery that checks for the existence of rows in the related table
-		 * @param AstIdentifier $identifier The identifier referencing the entity
-		 * @param AstRange $range The range configuration containing join information
-		 * @return void
-		 */
-		private function handleAnyWhereExists(AstIdentifier $identifier, AstRange $range): void {
-			// Handle special case: single range query
-			if ($this->isSingleRangeQuery($identifier)) {
-				$this->result[] = "1 = 1";
-				return;
-			}
-			
-			$existsQuery = $this->generateExistsSubquery($identifier, $range);
-			
-			// In WHERE context, we want the raw EXISTS clause without CASE wrapping
-			$this->result[] = $existsQuery;
-		}
-		
-		/**
-		 * Formats the EXISTS query based on the current query context.
-		 * In WHERE contexts, returns the raw EXISTS clause.
-		 * In other contexts (like SELECT), wraps in a CASE statement to return 1/0.
-		 * @param string $existsQuery The EXISTS subquery
-		 * @return string The formatted query appropriate for the current context
-		 */
-		private function formatQueryForContext(string $existsQuery): string {
-			if ($this->partOfQuery === "WHERE") {
-				return $existsQuery;
-			}
-			
-			return "CASE WHEN {$existsQuery} THEN 1 ELSE 0 END";
 		}
 	}
