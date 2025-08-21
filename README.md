@@ -367,15 +367,17 @@ operations into elegant, readable code.
 
 ObjectQuel supports built-in aggregate functions for data analysis:
 
-| Function   | Description                          | Example                          |
-|------------|--------------------------------------|----------------------------------|
-| **COUNT**  | Returns the count of rows            | `retrieve (COUNT(p.productId))`  |
-| **COUNTU** | Returns the count of unique rows     | `retrieve (COUNTU(p.productId))` |
-| **MIN**    | Returns the minimum value            | `retrieve (MIN(p.price))`        |
-| **MAX**    | Returns the maximum value            | `retrieve (MAX(p.price))`        |
-| **AVG**    | Returns the average value            | `retrieve (AVG(p.price))`        |
-| **AVGU**   | Returns the average of unique values | `retrieve (AVGU(p.price))`       |
-| **SUM**    | Returns the sum of all values        | `retrieve (SUM(p.price))`        |
+| Function   | Description                                     | Example                          |
+|------------|-------------------------------------------------|----------------------------------|
+| **COUNT**  | Returns the count of rows                       | `retrieve (COUNT(p.productId))`  |
+| **COUNTU** | Returns the count of unique rows                | `retrieve (COUNTU(p.productId))` |
+| **MIN**    | Returns the minimum value                       | `retrieve (MIN(p.price))`        |
+| **MAX**    | Returns the maximum value                       | `retrieve (MAX(p.price))`        |
+| **AVG**    | Returns the average value                       | `retrieve (AVG(p.price))`        |
+| **AVGU**   | Returns the average of unique values            | `retrieve (AVGU(p.price))`       |
+| **SUM**    | Returns the sum of all values                   | `retrieve (SUM(p.price))`        |
+| **SUMU**   | Returns the sum of unique values                | `retrieve (SUMU(p.price))`       |
+| **ANY**    | Returns 1 if related records exist, 0 otherwise | `retrieve (ANY(o.orderId))`      |
 
 Example using aggregate functions:
 
@@ -394,6 +396,42 @@ $maxPrice = $results[0]['MAX(p.price)'];
 $avgPrice = $results[0]['AVG(p.price)'];
 $totalValue = $results[0]['SUM(p.price)'];
 ```
+
+#### ANY() - Existence Check
+
+The `ANY()` function is a powerful existence checker that returns 1 if related records exist, and 0 if they don't. It behaves differently depending on the query context:
+
+**In RETRIEVE clauses:**
+```php
+// Check which customers have orders
+$results = $entityManager->executeQuery("
+    range of c is App\\Entity\\CustomerEntity
+    range of o is App\\Entity\\OrderEntity via c.orders
+    retrieve (c.name, ANY(o.orderId))
+");
+
+foreach ($results as $row) {
+    $customerName = $row['c.name'];
+    $hasOrders = $row['ANY(o.orderId)'];  // 1 if customer has orders, 0 if not
+    echo "{$customerName}: " . ($hasOrders ? 'Has orders' : 'No orders') . "\n";
+}
+```
+
+**In WHERE clauses:**
+```php
+// Find all customers who have at least one order
+$results = $entityManager->executeQuery("
+    range of c is App\\Entity\\CustomerEntity
+    range of o is App\\Entity\\OrderEntity via c.orders
+    retrieve (c)
+    where ANY(o.orderId)
+");
+```
+
+The `ANY()` function intelligently optimizes its behavior:
+- For simple relationships, it uses efficient JOIN operations
+- For complex scenarios, it generates optimized EXISTS subqueries
+- Performance is automatically optimized based on relationship type (required vs optional)
 
 ### Pagination
 
