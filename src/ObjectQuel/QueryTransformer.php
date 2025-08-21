@@ -39,7 +39,7 @@
 		 * @param AstRetrieve $ast The parsed ObjectQuel query AST to transform
 		 * @return void Modifies the AST in-place
 		 */
-		public function transform(AstRetrieve $ast) {
+		public function transform(AstRetrieve $ast): void {
 			// Step 1: Plug macro placeholders into the AST structure
 			// This visitor finds macro references and creates placeholder nodes for later expansion
 			$this->processWithVisitor($ast, EntityPlugMacros::class, $ast->getMacros());
@@ -108,7 +108,7 @@
 			// Use a specialized visitor to traverse the AST and identify missing entity references
 			// AddRangeToEntityWhenItsMissing analyzes field references like "user.name"
 			// and determines if "user" table is properly joined in the query
-			$processor = $this->processWithVisitor($ast, AddRangeToEntityWhenItsMissing::class);
+			$processor = $this->processWithVisitor($ast, AddRangeToEntityWhenItsMissing::class, $this->entityStore);
 			
 			// Retrieve all the missing ranges that the visitor discovered during traversal
 			// Each range represents a table that needs to be joined to satisfy field references
