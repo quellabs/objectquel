@@ -36,6 +36,7 @@
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRangeDatabase;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRangeJsonSource;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRegExp;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRetrieve;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstSearch;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstString;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstSum;
@@ -63,7 +64,7 @@
 		private const array REGEX_PATTERNS = [
 			'NUMERIC' => '^-?[0-9]+(\\.[0-9]+)?$',  // Matches integers and floats
 			'INTEGER' => '^-?[0-9]+$',              // Matches only integers
-			'FLOAT' => '^-?[0-9]+\\.[0-9]+$'        // Matches only floats with decimal point
+			'FLOAT'   => '^-?[0-9]+\\.[0-9]+$'        // Matches only floats with decimal point
 		];
 		
 		// The entity store for entity to table conversions
@@ -81,14 +82,14 @@
 		 * @param array $parameters
 		 * @param string $partOfQuery
 		 */
-		public function __construct(EntityStore $store, array &$parameters, string $partOfQuery="VALUES") {
+		public function __construct(EntityStore $store, array &$parameters, string $partOfQuery = "VALUES") {
 			$this->result = [];
 			$this->visitedNodes = [];
 			$this->entityStore = $store;
 			$this->parameters = &$parameters;
 			$this->partOfQuery = $partOfQuery;
 		}
-
+		
 		/**
 		 * Visit a node in the AST.
 		 * @param AstInterface $node The node to visit.
@@ -236,7 +237,7 @@
 			// Combine all field conditions with OR
 			$this->result[] = '(' . implode(" OR ", $conditions) . ')';
 		}
-
+		
 		
 		/**
 		 * Handles generic expression processing with support for special string cases.
@@ -283,7 +284,7 @@
 			// Loop through all parameters of the AstConcat object.
 			$counter = 0;
 			
-			foreach($concat->getParameters() as $parameter) {
+			foreach ($concat->getParameters() as $parameter) {
 				// If this is not the first item, add a comma.
 				if ($counter > 0) {
 					$this->result[] = ",";
@@ -445,7 +446,9 @@
 			
 			$annotationsOfProperty = array_values(array_filter(
 				$annotations[$propertyName]->toArray(),
-				function($e) { return $e instanceof Column; }
+				function ($e) {
+					return $e instanceof Column;
+				}
 			));
 			
 			if (!$annotationsOfProperty[0]->isNullable()) {
@@ -493,7 +496,7 @@
 			$columnMap = $this->entityStore->getColumnMap($ast->getEntityName());
 			
 			// Iterate through each column in the entity's column map
-			foreach($columnMap as $item => $value) {
+			foreach ($columnMap as $item => $value) {
 				// Generate an SQL column selection with alias
 				// Format: "table_name.actual_column as `table_name.logical_column`"
 				// This creates properly aliased columns for the SELECT statement
@@ -523,7 +526,7 @@
 			$first = true;
 			
 			// Loop through each item that needs to be checked within the 'IN' condition.
-			foreach($ast->getParameters() as $item) {
+			foreach ($ast->getParameters() as $item) {
 				// If it's not the first item, add a comma for separation.
 				if (!$first) {
 					$this->result[] = ",";
@@ -544,6 +547,7 @@
 		 * This function processes the 'count' command within an abstract syntax tree (AST).
 		 * @param AstCount $count
 		 * @return void
+		 * @throws QuelException
 		 */
 		protected function handleCount(AstCount $count): void {
 			$this->handleAggregateOperation($count, 'COUNT');
@@ -553,8 +557,9 @@
 		 * This function processes the 'count' command within an abstract syntax tree (AST).
 		 * @param AstCountU $count
 		 * @return void
+		 * @throws QuelException
 		 */
-		protected function handleUCount(AstCountU $count): void {
+		protected function handleCountU(AstCountU $count): void {
 			$this->handleAggregateOperation($count, 'COUNT', true);
 		}
 		
@@ -562,6 +567,7 @@
 		 * This function processes the 'average' command within an abstract syntax tree (AST).
 		 * @param AstAvg $avg
 		 * @return void
+		 * @throws QuelException
 		 */
 		protected function handleAvg(AstAvg $avg): void {
 			$this->handleAggregateOperation($avg, 'AVG');
@@ -580,6 +586,7 @@
 		 * Processes the MAX aggregate function within an abstract syntax tree (AST).
 		 * @param AstMax $max The MAX AST node to process
 		 * @return void
+		 * @throws QuelException
 		 */
 		protected function handleMax(AstMax $max): void {
 			$this->handleAggregateOperation($max, 'MAX');
@@ -589,6 +596,7 @@
 		 * Processes the MIN aggregate function within an abstract syntax tree (AST).
 		 * @param AstMin $min The MIN AST node to process
 		 * @return void
+		 * @throws QuelException
 		 */
 		protected function handleMin(AstMin $min): void {
 			$this->handleAggregateOperation($min, 'MIN');
@@ -598,6 +606,7 @@
 		 * Processes the SUM aggregate function within an abstract syntax tree (AST).
 		 * @param AstSum $sum The SUM AST node to process
 		 * @return void
+		 * @throws QuelException
 		 */
 		protected function handleSum(AstSum $sum): void {
 			$this->handleAggregateOperation($sum, 'SUM');
@@ -607,18 +616,23 @@
 		 * Processes the SUMU aggregate function within an abstract syntax tree (AST).
 		 * @param AstSumU $sum The SUM AST node to process
 		 * @return void
+		 * @throws QuelException
 		 */
 		protected function handleSumU(AstSumU $sum): void {
 			$this->handleAggregateOperation($sum, "SUM", true);
 		}
-
+		
+		/**
+		 * Processes the ANY aggregate function within an abstract syntax tree (AST).
+		 * @throws QuelException
+		 */
 		protected function handleAny(AstAny $ast): void {
-			switch($this->partOfQuery) {
-				case "VALUES" :
+			switch ($this->partOfQuery) {
+				case "VALUES":
 					$this->handleAggregateOperation($ast, "ANY");
 					break;
-					
-				case "WHERE" :
+				
+				case "WHERE":
 					$this->handleAnyWhere($ast);
 					break;
 			}
@@ -629,20 +643,20 @@
 		 * @param AstCheckNull $ast
 		 * @return void
 		 */
-        protected function handleCheckNull(AstCheckNull $ast): void {
-            $this->visitNode($ast->getExpression());
-            $this->result[] = " IS NULL ";
-        }
-        
-        /**
-         * Handles 'IS NOT NULL'. The SQL equivalent is exactly the same.
-         * @param AstCheckNotNull $ast
-         * @return void
-         */
-        protected function handleCheckNotNull(AstCheckNotNull $ast): void {
-            $this->visitNode($ast->getExpression());
-            $this->result[] = " IS NOT NULL ";
-        }
+		protected function handleCheckNull(AstCheckNull $ast): void {
+			$this->visitNode($ast->getExpression());
+			$this->result[] = " IS NULL ";
+		}
+		
+		/**
+		 * Handles 'IS NOT NULL'. The SQL equivalent is exactly the same.
+		 * @param AstCheckNotNull $ast
+		 * @return void
+		 */
+		protected function handleCheckNotNull(AstCheckNotNull $ast): void {
+			$this->visitNode($ast->getExpression());
+			$this->result[] = " IS NOT NULL ";
+		}
 		
 		/**
 		 * Handle is_empty function
@@ -654,7 +668,7 @@
 			
 			// Fetch the node value
 			$valueNode = $ast->getValue();
-
+			
 			// Special case for null
 			if ($valueNode instanceof AstNull) {
 				$this->addToVisitedNodes($valueNode);
@@ -673,10 +687,10 @@
 			// Special case for bool
 			if ($valueNode instanceof AstBool) {
 				$this->addToVisitedNodes($valueNode);
-				$this->result[] = !$valueNode->getValue();
+				$this->result[] = !$valueNode->getValue() ? "1" : "0";
 				return;
 			}
-
+			
 			// Special case for strings
 			if ($valueNode instanceof AstString) {
 				$this->addToVisitedNodes($valueNode);
@@ -746,8 +760,8 @@
 		 */
 		private function handleAggregateOperation(
 			AstAny|AstCount|AstCountU|AstAvg|AstAvgU|AstMax|AstMin|AstSum|AstSumU $ast,
-			string $aggregateFunction,
-			bool $distinct = false
+			string                                                                $aggregateFunction,
+			bool                                                                  $distinct = false
 		): void {
 			// Get the identifier (entity or property) that needs to be aggregated.
 			$identifier = $ast->getIdentifier();
@@ -760,28 +774,14 @@
 			// Add the identifier to visited nodes
 			$this->addToVisitedNodes($identifier);
 			
-			// Get the range name
-			$range = $identifier->getRange()->getName();
-			$entityName = $identifier->getEntityName();
-			
 			// Determine the column to use
-			if ($this->identifierIsEntity($identifier)) {
-				// For entities, use the primary identifier column
-				$entityName = $identifier->getEntityName();
-				$identifierColumns = $this->entityStore->getIdentifierColumnNames($entityName);
-				$column = "{$range}.{$identifierColumns[0]}";
-			} else {
-				// For properties, use the mapped column
-				$property = $identifier->getNext()->getName();
-				$columnMap = $this->entityStore->getColumnMap($identifier->getEntityName());
-				$column = "{$range}.{$columnMap[$property]}";
-			}
+			$column = $this->buildColumnName($identifier);
 			
 			// Generate the appropriate SQL based on operation type
 			switch ($aggregateFunction) {
 				case 'ANY':
 					if (!$identifier->getRange()->includeAsJoin()) {
-						$this->handleAnyWithExists($identifier, $identifier->getRange());
+						$this->result[] = $this->handleAnyWithExists($identifier, $identifier->getRange());
 					} elseif ($identifier->getRange()->isRequired()) {
 						$this->result[] = "1"; // Always exists with INNER JOIN
 					} else {
@@ -799,53 +799,49 @@
 		}
 		
 		/**
-		 * Handles the generation of SQL for ANY expressions with EXISTS conditions.
-		 * Generates a CASE WHEN EXISTS statement that returns 1 if any matching records
-		 * are found, 0 otherwise.
-		 * @param AstIdentifier $identifier The entity identifier being checked
-		 * @param AstRange $range The range specification for the query
-		 * @throws QuelException If there's an error processing the query elements
+		 * Builds the join condition SQL from the range's join property.
+		 * @param AstRange $range The range containing the join property
+		 * @return string The SQL join condition, or empty string if no join property
 		 */
-		private function handleAnyWithExists(AstIdentifier $identifier, AstRange $range): void {
-			// Extract the entity name from the identifier (e.g., "User", "Order")
-			$entityName = $identifier->getEntityName();
-			
-			// Get the corresponding database table name for this entity
-			$tableName = $this->entityStore->getOwningTable($entityName);
-			
-			// Get the alias to use for this range in the SQL query
-			$rangeAlias = $range->getName();
-			
-			// Check if there's a join property for relationship-based queries
+		private function buildJoinCondition(AstRange $range): string {
 			$joinProperty = $range->getJoinProperty();
 			
-			if ($joinProperty) {
-				// Clone the join property to avoid modifying the original AST
-				$joinCondition = $joinProperty->deepClone();
-				
-				// Convert the join condition to SQL string format
-				$visitor = new QuelToSQLConvertToString($this->entityStore, $this->parameters, $this->partOfQuery);
-				$joinCondition->accept($visitor);
-				$joinColumn = $visitor->getResult();
-				
-				// Generate EXISTS query with join condition
-				$this->result[] = "
-		            CASE WHEN EXISTS (
-		                SELECT 1 FROM `{$tableName}` {$rangeAlias}
-		                WHERE {$joinColumn}
-		                LIMIT 1
-		            ) THEN 1 ELSE 0 END
-		        ";
-			} else {
-				// Single-range scenario: Simple existence check without joins
-				// Generate basic EXISTS query without additional conditions
-				$this->result[] = "
-		            CASE WHEN EXISTS (
-		                SELECT 1 FROM `{$tableName}` {$rangeAlias}
-		                LIMIT 1
-		            ) THEN 1 ELSE 0 END
-		        ";
+			if (!$joinProperty) {
+				return '';
 			}
+			
+			// Clone to avoid modifying the original AST
+			$joinCondition = $joinProperty->deepClone();
+			
+			$visitor = new QuelToSQLConvertToString(
+				$this->entityStore,
+				$this->parameters,
+				$this->partOfQuery
+			);
+			
+			$joinCondition->accept($visitor);
+			
+			return $visitor->getResult();
+		}
+		
+		/**
+		 * Constructs the EXISTS subquery.
+		 * @param string $tableName The database table name
+		 * @param string $rangeAlias The alias for the table in the subquery
+		 * @param string $joinCondition The WHERE condition for the EXISTS query
+		 * @return string The complete EXISTS subquery
+		 */
+		private function buildExistsQuery(string $tableName, string $rangeAlias, string $joinCondition): string {
+			$whereClause = $joinCondition ? "WHERE {$joinCondition}" : '';
+			
+			return "
+				EXISTS (
+			        SELECT 1
+			        FROM `{$tableName}` {$rangeAlias}
+			        {$whereClause}
+			        LIMIT 1
+			    )
+		    ";
 		}
 		
 		/**
@@ -872,7 +868,7 @@
 				$this->addToVisitedNodes($identifier);
 				
 				// Resolve the column name for this identifier
-				$columnName = $this->resolveSearchColumnName($identifier);
+				$columnName = $this->buildColumnName($identifier);
 				
 				// Build conditions for this specific identifier/column
 				$fieldConditions = $this->buildFieldConditions($columnName, $parsed, $searchKey);
@@ -883,20 +879,6 @@
 			}
 			
 			return $conditions;
-		}
-		
-		/**
-		 * Resolves the full SQL column name for a search identifier
-		 * @param AstIdentifier $identifier The identifier to resolve
-		 * @return string The resolved column name (e.g., "alias.column_name")
-		 */
-		private function resolveSearchColumnName(AstIdentifier $identifier): string {
-			$entityName = $identifier->getEntityName();
-			$rangeName = $identifier->getRange()->getName();
-			$propertyName = $identifier->getNext()->getName();
-			$columnMap = $this->entityStore->getColumnMap($entityName);
-			
-			return "{$rangeName}.{$columnMap[$propertyName]}";
 		}
 		
 		/**
@@ -944,8 +926,8 @@
 		 */
 		private function buildTermConditions(
 			string $columnName,
-			array $terms,
-			array $config,
+			array  $terms,
+			array  $config,
 			string $termType,
 			string $searchKey
 		): array {
@@ -995,7 +977,7 @@
 			
 			// Add the SQL LIKE clause to the result
 			$this->result[] = "{$likeOperator}\"" . addslashes($stringValue) . "\"";
-
+			
 			return true;
 		}
 		
@@ -1022,7 +1004,7 @@
 			if ($valueNode instanceof AstNumber) {
 				$this->addToVisitedNodes($valueNode);
 				
-				$this->result[] = match($patternKey) {
+				$this->result[] = match ($patternKey) {
 					'NUMERIC' => "1",  // Numbers are always numeric
 					'INTEGER' => !str_contains($valueNode->getValue(), ".") ? "1" : "0",
 					'FLOAT' => str_contains($valueNode->getValue(), ".") ? "1" : "0",
@@ -1043,7 +1025,7 @@
 			$inferredType = $this->inferReturnType($valueNode);
 			$string = $this->visitNodeAndReturnSQL($valueNode);
 			
-			$this->result[] = match([$patternKey, $inferredType]) {
+			$this->result[] = match ([$patternKey, $inferredType]) {
 				['NUMERIC', 'integer'], ['NUMERIC', 'float'] => "1",
 				['INTEGER', 'integer'] => "1",
 				['INTEGER', 'float'] => "0",
@@ -1078,5 +1060,220 @@
 			
 			// Indicate that special case was handled
 			return true;
+		}
+		
+		/**
+		 * Finds the base AstRetrieve node by traversing up the AST hierarchy.
+		 * @param AstInterface $ast The starting AST node to search from
+		 * @return AstRetrieve|null Returns the found AstRetrieve node or null if none exists
+		 */
+		private function getBaseQuery(AstInterface $ast): ?AstRetrieve {
+			// Initialize current pointer to the starting node
+			$current = $ast;
+			
+			// Quick check: if the starting node is already an AstRetrieve, return it immediately
+			if ($current instanceof AstRetrieve) {
+				return $current;
+			}
+			
+			// Traverse up the parent hierarchy to find an AstRetrieve node
+			while ($parent = $current->getParent()) {
+				// Check if the current parent is an AstRetrieve node
+				if ($parent instanceof AstRetrieve) {
+					return $parent; // Found it - return the AstRetrieve node
+				}
+				// Move up one level in the hierarchy
+				$current = $parent;
+			}
+			
+			// No AstRetrieve node found in the entire ancestry chain
+			return null;
+		}
+		
+		/**
+		 * Determines if the given AST represents a single range query
+		 *
+		 * @param AstInterface $ast The AST node to analyze
+		 * @return bool True if this is a single range query, false otherwise
+		 */
+		private function isSingleRangeQuery(AstInterface $ast): bool {
+			// Get the base query node from the AST
+			$queryNode = $this->getBaseQuery($ast);
+			
+			// Delegate to the query node's own method to determine if it's single range
+			return $queryNode->isSingleRangeQuery();
+		}
+		
+		/**
+		 * Handles "ANY WHERE" clauses in the query AST
+		 * Generates appropriate SQL conditions based on whether the range should be joined
+		 * and whether it's a single or multi-range query
+		 *
+		 * @param AstAny $ast The ANY AST node containing the WHERE clause
+		 * @return void
+		 */
+		private function handleAnyWhere(AstAny $ast): void {
+			// Extract the identifier from the ANY clause
+			$identifier = $ast->getIdentifier();
+			
+			// Early return if identifier is not the expected type
+			if (!$identifier instanceof AstIdentifier) {
+				return;
+			}
+			
+			// Track this identifier as visited to avoid processing it again
+			$this->addToVisitedNodes($identifier);
+			
+			// Get the range information associated with this identifier
+			$range = $identifier->getRange();
+			
+			// Check if this range should be included as a JOIN rather than EXISTS
+			if (!$range->includeAsJoin()) {
+				// Range will be handled with EXISTS subquery
+				if ($this->isSingleRangeQuery($identifier)) {
+					// Single range query: if any row exists, condition is always true
+					// Use "1 = 1" as a tautology since existence is guaranteed by the query structure
+					$this->result[] = "1 = 1";
+				} else {
+					// Multi-range query: use EXISTS subquery to check for row existence
+					// No CASE wrapper needed since EXISTS returns boolean directly
+					$this->handleAnyWhereExists($identifier, $range);
+				}
+			} elseif ($range->isRequired()) {
+				// Range is joined with INNER JOIN and is required
+				// Condition is always true since INNER JOIN ensures row existence
+				$this->result[] = "1 = 1"; // Always true with INNER JOIN
+			} else {
+				// Range is joined with LEFT JOIN (optional)
+				// Check if the joined column has a value (row was found)
+				$column = $this->buildColumnName($identifier);
+				$this->result[] = "{$column} IS NOT NULL";
+			}
+		}
+		
+		/**
+		 * Builds a fully qualified column name for SQL queries based on an AST identifier.
+		 * @param AstIdentifier $identifier The AST identifier to process
+		 * @return string The fully qualified column name in format "alias.column_name"
+		 */
+		private function buildColumnName(AstIdentifier $identifier): string {
+			// Extract the table alias/range name from the identifier
+			$range = $identifier->getRange()->getName();
+			
+			// Get the entity name that this identifier refers to
+			$entityName = $identifier->getEntityName();
+			
+			// Check if this identifier represents an entity itself (not a property)
+			if ($this->identifierIsEntity($identifier)) {
+				// For entities, we need to reference the primary key column
+				// Get all identifier columns for this entity (typically primary keys)
+				$identifierColumns = $this->entityStore->getIdentifierColumnNames($entityName);
+				
+				// Use the first identifier column (primary key) with the table alias
+				return "{$range}.{$identifierColumns[0]}";
+			}
+			
+			// If not an entity, this identifier represents a property of an entity
+			// Get the property name from the next part of the identifier chain
+			$property = $identifier->getNext()->getName();
+			
+			// Retrieve the column mapping for this entity to find the database column
+			// that corresponds to the property name
+			$columnMap = $this->entityStore->getColumnMap($entityName);
+			
+			// Return the fully qualified column name using the mapped column
+			return "{$range}.{$columnMap[$property]}";
+		}
+		
+		/**
+		 * Common helper method that generates the core EXISTS subquery
+		 * @param AstIdentifier $identifier The entity identifier being checked
+		 * @param AstRange $range The range specification for the query
+		 * @return string The raw EXISTS subquery
+		 */
+		private function generateExistsSubquery(AstIdentifier $identifier, AstRange $range): string {
+			$entityName = $identifier->getEntityName();
+			$tableName = $this->entityStore->getOwningTable($entityName);
+			$rangeAlias = $range->getName();
+			
+			// Build the WHERE clause if a join condition exists
+			$whereClause = '';
+			$joinProperty = $range->getJoinProperty();
+			
+			if ($joinProperty) {
+				// Clone to avoid modifying the original AST
+				$joinCondition = $joinProperty->deepClone();
+				
+				$visitor = new QuelToSQLConvertToString(
+					$this->entityStore,
+					$this->parameters,
+					$this->partOfQuery
+				);
+				
+				$joinCondition->accept($visitor);
+				$joinConditionSql = $visitor->getResult();
+				$whereClause = "WHERE {$joinConditionSql}";
+			}
+			
+			return "EXISTS (
+        SELECT 1
+        FROM `{$tableName}` {$rangeAlias}
+        {$whereClause}
+        LIMIT 1
+    )";
+		}
+		
+		/**
+		 * Handles the generation of SQL for ANY expressions with EXISTS conditions.
+		 * Generates either a simple EXISTS clause (for WHERE contexts) or a
+		 * CASE WHEN EXISTS statement (for SELECT contexts) that returns 1 if any
+		 * matching records are found, 0 otherwise.
+		 * @param AstIdentifier $identifier The entity identifier being checked
+		 * @param AstRange $range The range specification for the query
+		 */
+		private function handleAnyWithExists(AstIdentifier $identifier, AstRange $range): string {
+			// Handle special case: single range query with ANY returns true if any rows exist
+			if ($this->isSingleRangeQuery($identifier)) {
+				return "1";
+			}
+			
+			$existsQuery = $this->generateExistsSubquery($identifier, $range);
+			
+			return $this->formatQueryForContext($existsQuery);
+		}
+		
+		/**
+		 * Generates an EXISTS subquery for ANY WHERE clauses that cannot be handled with JOINs
+		 * Creates a subquery that checks for the existence of rows in the related table
+		 * @param AstIdentifier $identifier The identifier referencing the entity
+		 * @param AstRange $range The range configuration containing join information
+		 * @return void
+		 */
+		private function handleAnyWhereExists(AstIdentifier $identifier, AstRange $range): void {
+			// Handle special case: single range query
+			if ($this->isSingleRangeQuery($identifier)) {
+				$this->result[] = "1 = 1";
+				return;
+			}
+			
+			$existsQuery = $this->generateExistsSubquery($identifier, $range);
+			
+			// In WHERE context, we want the raw EXISTS clause without CASE wrapping
+			$this->result[] = $existsQuery;
+		}
+		
+		/**
+		 * Formats the EXISTS query based on the current query context.
+		 * In WHERE contexts, returns the raw EXISTS clause.
+		 * In other contexts (like SELECT), wraps in a CASE statement to return 1/0.
+		 * @param string $existsQuery The EXISTS subquery
+		 * @return string The formatted query appropriate for the current context
+		 */
+		private function formatQueryForContext(string $existsQuery): string {
+			if ($this->partOfQuery === "WHERE") {
+				return $existsQuery;
+			}
+			
+			return "CASE WHEN {$existsQuery} THEN 1 ELSE 0 END";
 		}
 	}

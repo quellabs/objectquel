@@ -345,6 +345,10 @@
 			$this->sort_in_application_logic = $setSort;
 		}
 		
+		public function isSingleRangeQuery(): bool {
+			return count($this->ranges) === 1;
+		}
+		
 		public function deepClone(): static {
 			// Clone all child arrays
 			$clonedRanges = $this->cloneArray($this->ranges);

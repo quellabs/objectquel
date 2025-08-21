@@ -183,16 +183,12 @@
 			// Create new instance with the same identifier
 			$clone = new static($this->identifier);
 			
-			// Clone the range if it exists
-			if ($this->range !== null) {
-				$clone->range = $this->range->deepClone();
-				$clone->range->setParent($clone);
-			}
+			// Set the range
+			$clone->range = $this->range;
 			
 			// Clone the next identifier in the chain if it exists
 			if ($this->next !== null) {
 				$clone->next = $this->next->deepClone();
-				$clone->next->setParent($clone);
 			}
 			
 			return $clone;
