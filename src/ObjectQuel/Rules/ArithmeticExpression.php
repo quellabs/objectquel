@@ -256,7 +256,8 @@
 					return $expression;
 					
 				default :
-					throw new ParserException("Unexpected token '{$tokenValue}' on line {$this->lexer->getLineNumber()}");
+					$tokenTypeName = Token::toString($tokenType);
+					throw new ParserException("Unexpected token '{$tokenTypeName}' on line {$this->lexer->getLineNumber()}");
 			}
 		}
 		
