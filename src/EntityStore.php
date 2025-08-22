@@ -20,8 +20,6 @@
 	
 	namespace Quellabs\ObjectQuel;
     
-    use Composer\Composer;
-    use Quellabs\AnnotationReader\AnnotationInterface;
     use Quellabs\AnnotationReader\AnnotationReader;
     use Quellabs\AnnotationReader\Collection\AnnotationCollection;
     use Quellabs\AnnotationReader\Exception\ParserException;
@@ -37,7 +35,6 @@
     use Quellabs\ObjectQuel\ProxyGenerator\ProxyGenerator;
     use Quellabs\ObjectQuel\ReflectionManagement\EntityLocator;
     use Quellabs\ObjectQuel\ReflectionManagement\ReflectionHandler;
-    use Quellabs\Support\ComposerUtils;
     use Quellabs\Support\NamespaceResolver;
     
     class EntityStore {
