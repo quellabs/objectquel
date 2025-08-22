@@ -38,9 +38,7 @@
 		 * @return bool
 		 */
 		public function hasParent(): bool {
-			return
-				$this->parent !== null &&
-				!is_a($this->parent, AstRetrieve::class);
+			return is_a($this->parent, AstIdentifier::class);
 		}
 		
 		/**
