@@ -2,7 +2,6 @@
 	
 	namespace Quellabs\ObjectQuel\ObjectQuel\Ast;
 	
-	use Quellabs\ObjectQuel\ObjectQuel\AstInterface;
 	use Quellabs\ObjectQuel\ObjectQuel\AstVisitorInterface;
 	
 	/**
@@ -35,8 +34,8 @@
 		}
 		
 		/**
-		 * Accepteer een bezoeker om de AST te verwerken.
-		 * @param AstVisitorInterface $visitor Bezoeker object voor AST-manipulatie.
+		 * Accept a visitor to process the AST.
+		 * @param AstVisitorInterface $visitor Visitor object for AST manipulation.
 		 */
 		public function accept(AstVisitorInterface $visitor): void {
 			parent::accept($visitor);
@@ -106,7 +105,7 @@
 		public function isRoot(): bool {
 			return !$this->hasParent();
 		}
-
+		
 		/**
 		 * Returns true if the identifier contains another entry
 		 * @return bool
@@ -157,23 +156,17 @@
 		}
 		
 		/**
-		 * Returns the first available range by traversing up the parent hierarchy.
-		 * Searches from the current node upward until it finds a node with a range,
-		 * or reaches the root node.
-		 * @return AstRange|null The first range found in the parent hierarchy, or null if none exists
+		 * Returns the first available identifier by traversing up the parent hierarchy.
+		 * @return $this
 		 */
-		public function getBaseRange(): ?AstRange {
+		public function getBaseIdentifier(): AstIdentifier {
 			$current = $this;
 			
-			while ($current !== null) {
-				if ($current->isBaseIdentifier()) {
-					return $current->getRange();
-				}
-
+			while (!$current->isBaseIdentifier()) {
 				$current = $current->getParent();
 			}
 			
-			return null;
+			return $current;
 		}
 		
 		/**
@@ -185,6 +178,10 @@
 			$this->range = $range;
 		}
 		
+		/**
+		 * Clone the node
+		 * @return $this
+		 */
 		public function deepClone(): static {
 			// Create new instance with the same identifier
 			$clone = new static($this->identifier);
