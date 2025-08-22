@@ -38,7 +38,7 @@
 		 * @return bool
 		 */
 		public function hasParent(): bool {
-			return is_a($this->parent, AstIdentifier::class);
+			return true;
 		}
 		
 		/**
