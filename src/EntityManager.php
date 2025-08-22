@@ -32,6 +32,7 @@
 	use Quellabs\SignalHub\Signal;
 	use Quellabs\SignalHub\SignalHub;
 	use Quellabs\SignalHub\SignalHubLocator;
+	use Quellabs\Support\NamespaceResolver;
 	
 	/**
 	 * Represents an Entity Manager.
@@ -150,7 +151,7 @@
 		public function detach(object $entity): void {
 			$this->unit_of_work->detach($entity);
 		}
-		
+
 		/**
 		 * Execute a decomposed query plan
 		 * @param string $query The query to execute

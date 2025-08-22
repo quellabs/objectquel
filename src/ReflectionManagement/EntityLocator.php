@@ -3,6 +3,7 @@
 	namespace Quellabs\ObjectQuel\ReflectionManagement;
 	
 	use Quellabs\AnnotationReader\AnnotationReader;
+	use Quellabs\AnnotationReader\Exception\AnnotationReaderException;
 	use Quellabs\AnnotationReader\Exception\ParserException;
 	use Quellabs\ObjectQuel\Annotations\Orm\Table;
 	use Quellabs\ObjectQuel\Configuration;
@@ -51,6 +52,7 @@
 		/**
 		 * Discover all entity classes in configured paths, including subdirectories
 		 * @return array List of discovered entity class names
+		 * @throws AnnotationReaderException
 		 */
 		public function discoverEntities(): array {
 			// Return cached entities
@@ -79,6 +81,7 @@
 		/**
 		 * Recursively process a directory and its subdirectories for entity files
 		 * @param string $directory The directory path to process
+		 * @throws AnnotationReaderException
 		 */
 		private function processDirectory(string $directory, array &$result): void {
 			// Get all PHP files in the current directory
@@ -146,6 +149,7 @@
 		 * Checks if the class is an ORM entity
 		 * @param string $entityName
 		 * @return bool
+		 * @throws AnnotationReaderException
 		 */
 		private function isEntity(string $entityName): bool {
 			try {

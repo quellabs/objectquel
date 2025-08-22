@@ -8,7 +8,7 @@
 	use Quellabs\Sculpt\Contracts\CommandBase;
 	use Quellabs\Sculpt\ConfigurationManager;
 	use Quellabs\Support\ComposerUtils;
-	use Quellabs\Support\FrameworkDetector;
+	use Quellabs\Support\FrameworkResolver;
 	
 	/**
 	 * PacGenerateCommand - CLI command for generating WakaPAC JavaScript abstractions from ObjectQuel entities
@@ -215,7 +215,7 @@ HELP;
 		 * @param EntityStore $entityStore
 		 */
 		private function generateControllerIfFrameworkDetected(string $entityName, string $fullEntityName, EntityStore $entityStore): void {
-			$framework = FrameworkDetector::detect();
+			$framework = FrameworkResolver::detect();
 			
 			if ($framework !== 'canvas') {
 				$this->output->warning("Skipped generating PAC controller because no framework detected");
