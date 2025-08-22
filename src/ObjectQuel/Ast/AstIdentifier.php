@@ -149,6 +149,14 @@
 		}
 		
 		/**
+		 * Returns true if this is a base identifier, false if not
+		 * @return bool
+		 */
+		public function isBaseIdentifier(): bool {
+			return !($this->getParent() instanceof AstIdentifier);
+		}
+		
+		/**
 		 * Returns the first available range by traversing up the parent hierarchy.
 		 * Searches from the current node upward until it finds a node with a range,
 		 * or reaches the root node.
@@ -158,12 +166,10 @@
 			$current = $this;
 			
 			while ($current !== null) {
-				$range = $current->getRange();
-				
-				if ($range !== null) {
-					return $range;
+				if ($current->isBaseIdentifier()) {
+					return $current->getRange();
 				}
-				
+
 				$current = $current->getParent();
 			}
 			
