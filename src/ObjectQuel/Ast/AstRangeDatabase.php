@@ -65,6 +65,15 @@
 		}
 		
 		/**
+		 * Sets a new entity name
+		 * @param string $entityName
+		 * @return void
+		 */
+		public function setEntityName(string $entityName): void {
+			$this->entityName = $entityName;
+		}
+		
+		/**
 		 * The via expression indicates on which fields to join
 		 * @return AstInterface|null
 		 */
@@ -101,7 +110,6 @@
 				return true;
 			}
 		}
-		
 		
 		/**
 		 * Controls whether this range should be included as a JOIN clause in the

@@ -5,6 +5,7 @@
 	use Quellabs\ObjectQuel\EntityStore;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRetrieve;
 	use Quellabs\ObjectQuel\ObjectQuel\Visitors\AddNamespacesToEntities;
+	use Quellabs\ObjectQuel\ObjectQuel\Visitors\AddNamespacesToRanges;
 	use Quellabs\ObjectQuel\ObjectQuel\Visitors\AddRangeToEntityWhenItsMissing;
 	use Quellabs\ObjectQuel\ObjectQuel\Visitors\EntityPlugMacros;
 	use Quellabs\ObjectQuel\ObjectQuel\Visitors\EntityProcessMacro;
@@ -44,23 +45,27 @@
 			// This visitor finds macro references and creates placeholder nodes for later expansion
 			$this->processWithVisitor($ast, EntityPlugMacros::class, $ast->getMacros());
 			
-			// Step 2: Process range definitions (table joins, aliases, and FROM clauses)
+			// Step 2: Add proper namespaces to all ranges
+			// Resolves entity names to their fully qualified forms using the entity store
+			$this->processWithVisitor($ast, AddNamespacesToRanges::class, $this->entityStore);
+			
+			// Step 3: Process range definitions (table joins, aliases, and FROM clauses)
 			// Converts range specifications into proper join conditions and table references
 			$this->processWithVisitor($ast, EntityProcessRange::class, $ast->getRanges());
 			
-			// Step 3: Expand macro definitions with their actual implementations
+			// Step 4: Expand macro definitions with their actual implementations
 			// Replaces macro placeholder nodes with the full macro body/logic
 			$this->processWithVisitor($ast, EntityProcessMacro::class, $ast->getMacros());
 			
-			// Step 4: Automatically add missing table ranges for referenced entities
+			// Step 5: Automatically add missing table ranges for referenced entities
 			// Analyzes field references and adds necessary JOIN clauses for tables not explicitly included
 			$this->plugMissingRanges($ast);
 			
-			// Step 5: Add proper namespaces to all entity references
+			// Step 6: Add proper namespaces to all entity references
 			// Resolves entity names to their fully qualified forms using the entity store
 			$this->processWithVisitor($ast, AddNamespacesToEntities::class, $this->entityStore, $ast->getRanges(), $ast->getMacros());
 			
-			// Step 6: Transform complex 'via' relationships into direct property lookups
+			// Step 7: Transform complex 'via' relationships into direct property lookups
 			// Converts indirect relationships through intermediate entities into direct SQL joins
 			$this->transformViaRelations($ast);
 		}
