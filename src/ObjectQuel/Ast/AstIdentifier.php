@@ -107,6 +107,14 @@
 		}
 		
 		/**
+		 * Returns true if the node has a parent, false if not
+		 * @return bool
+		 */
+		public function hasParent(): bool {
+			return is_a($this->getParent(), AstIdentifier::class);
+		}
+		
+		/**
 		 * Returns true if the identifier contains another entry
 		 * @return bool
 		 */
