@@ -57,15 +57,10 @@
 			}
 			
 			// If this is not a property, do nothing
-			if (!$node->hasParent() || !$node->getParent() instanceof AstIdentifier) {
+			if (!$node->getParent() instanceof AstIdentifier) {
 				return;
 			}
-			
-			// If there's no entity name, do nothing
-			if ($node->getParent()->getEntityName() === null) {
-				return;
-			}
-			
+
 			// Validate the property
 			$this->validateProperty($node->getParent()->getEntityName(), $node->getName());
 		}
