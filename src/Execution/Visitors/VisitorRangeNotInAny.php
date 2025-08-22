@@ -41,7 +41,7 @@
 				// Check if this identifier's range matches our target range
 				// and verify it has the required ANY parent
 				if (
-					$node->getBaseRange()->getName() === $this->targetRange->getName() &&
+					$node->getBaseIdentifier()->getRange()->getName() === $this->targetRange->getName() &&
 					!$this->hasAnyParent($node)
 				) {
 					// Found non-ANY usage - throw exception to stop traversal
