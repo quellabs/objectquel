@@ -32,6 +32,7 @@
 		}
 		
 		public function deepClone(): static {
+			// @phpstan-ignore-next-line new.static
 			return new static($this->name);
 		}
 	}

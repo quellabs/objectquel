@@ -27,7 +27,10 @@
 				return;
 			}
 			
-			if (empty($node->getBaseIdentifier()->getRange())) {
+			/** @var AstIdentifier $baseIdentifier */
+			$baseIdentifier = $node->getBaseIdentifier();
+			
+			if (empty($baseIdentifier->getRange())) {
 				throw new QuelException("The 'via' clause in the range '%s' directly refers to an entity. The 'via' clause must reference another range. Please review the query and ensure that the 'via' clause correctly represents the relationship between ranges.");
 			}
 		}

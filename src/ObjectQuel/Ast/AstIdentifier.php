@@ -2,6 +2,7 @@
 	
 	namespace Quellabs\ObjectQuel\ObjectQuel\Ast;
 	
+	use Quellabs\ObjectQuel\ObjectQuel\AstInterface;
 	use Quellabs\ObjectQuel\ObjectQuel\AstVisitorInterface;
 	
 	/**
@@ -165,11 +166,12 @@
 		
 		/**
 		 * Returns the first available identifier by traversing up the parent hierarchy.
-		 * @return $this
+		 * @return AstInterface|null
 		 */
-		public function getBaseIdentifier(): AstIdentifier {
+		public function getBaseIdentifier(): ?AstInterface {
 			$current = $this;
 			
+			// @phpstan-ignore-next-line method.notFound
 			while (!$current->isBaseIdentifier()) {
 				$current = $current->getParent();
 			}
@@ -188,10 +190,11 @@
 		
 		/**
 		 * Clone the node
-		 * @return $this
+		 * @return static
 		 */
 		public function deepClone(): static {
 			// Create new instance with the same identifier
+			// @phpstan-ignore-next-line new.static
 			$clone = new static($this->identifier);
 			
 			// Set the range

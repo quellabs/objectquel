@@ -23,7 +23,6 @@
 	
 	class QueryOptimizer {
 		
-		private EntityManager $entityManager;
 		private EntityStore $entityStore;
 		
 		/**
@@ -31,12 +30,12 @@
 		 * @param EntityManager $entityManager
 		 */
 		public function __construct(EntityManager $entityManager) {
-			$this->entityManager = $entityManager;
 			$this->entityStore = $entityManager->getEntityStore();
 		}
 		
 		/**
 		 * Optimize the query
+		 * @param AstRetrieve $ast
 		 * @return void
 		 */
 		public function optimize(AstRetrieve $ast): void {
@@ -92,12 +91,13 @@
 				// Get the join property that defines how this range connects to other tables
 				// This contains the left and right identifiers that form the join condition
 				$joinProperty = $range->getJoinProperty();
-				$left = $joinProperty->getLeft();
-				$right = $joinProperty->getRight();
+				$left = $this->getBinaryLeft($joinProperty);
+				$right = $this->getBinaryRight($joinProperty);
 				
 				// Normalize the join relationship so that $left always represents the current range
 				// Join conditions can be written as "A.id = B.id" or "B.id = A.id"
 				// We need consistent ordering to properly check annotations
+				// @phpstan-ignore-next-line method.notFound
 				if ($right->getEntityName() === $range->getEntityName()) {
 					// Swap left and right if right side matches current range
 					[$left, $right] = [$right, $left];
@@ -105,6 +105,7 @@
 				
 				// Verify that after normalization, left side actually belongs to current range
 				// This is a safety check to ensure our relationship mapping is correct
+				// @phpstan-ignore-next-line method.notFound
 				if ($left->getEntityName() === $range->getEntityName()) {
 					// Check entity annotations to determine if this relationship should be required
 					// This examines @RequiredRelation or similar annotations that force INNER JOINs
@@ -347,10 +348,10 @@
 		/**
 		 * Extracts EXISTS operators from conditions and handles different scenarios.
 		 * @param AstRetrieve $ast
-		 * @param $conditions
+		 * @param AstInterface $conditions
 		 * @return array
 		 */
-		private function extractExistsOperators(AstRetrieve $ast, $conditions): array {
+		private function extractExistsOperators(AstRetrieve $ast, AstInterface $conditions): array {
 			if ($conditions instanceof AstExists) {
 				$ast->setConditions(null);
 				return [$conditions];
@@ -374,22 +375,26 @@
 		 * @return void
 		 */
 		private function extractExistsFromBinaryOperator(?AstInterface $parent, AstInterface $item, array &$list, bool $parentLeft = false): void {
-			if (!$this->canProcessBinaryOperations($item)) {
+			if (!$this->isBinaryOperationNode($item)) {
 				return;
 			}
 			
+			// Handle left/right
+			$left = $this->getBinaryLeft($item);
+			$right = $this->getBinaryRight($item);
+			
 			// Process branches recursively
-			if ($item->getLeft() instanceof AstBinaryOperator) {
-				$this->extractExistsFromBinaryOperator($item, $item->getLeft(), $list, true);
+			if ($left instanceof AstBinaryOperator) {
+				$this->extractExistsFromBinaryOperator($item, $left, $list, true);
 			}
 			
-			if ($item->getRight() instanceof AstBinaryOperator) {
-				$this->extractExistsFromBinaryOperator($item, $item->getRight(), $list, false);
+			if ($right instanceof AstBinaryOperator) {
+				$this->extractExistsFromBinaryOperator($item, $right, $list, false);
 			}
 			
 			// Handle special case: exists AND/OR exists as only condition
-			$left = $item->getLeft();
-			$right = $item->getRight();
+			$left = $this->getBinaryLeft($item);
+			$right = $this->getBinaryRight($item);
 			
 			if ($parent instanceof AstRetrieve && $left instanceof AstExists && $right instanceof AstExists) {
 				$list[] = $left;
@@ -428,54 +433,161 @@
 			
 			// Check if the parent node supports binary operations (has left/right children)
 			// If not, we can't process it further
-			if (!$this->canProcessBinaryOperations($parent)) {
+			if (!$this->isBinaryOperationNode($parent)) {
 				return;
 			}
 			
 			// For binary operations, determine which side (left or right) to assign the item
 			if ($parentLeft) {
 				// Assign item as the left operand of the binary operation
-				$parent->setLeft($item);
+				$this->setBinaryLeft($parent, $item);
 			} else {
 				// Assign item as the right operand of the binary operation
-				$parent->setRight($item);
+				$this->setBinaryRight($parent, $item);
 			}
 		}
 		
 		/**
 		 * Checks if the item can be processed for binary operations.
-		 * @param AstInterface $item
+		 * @param AstInterface|null $item
 		 * @return bool
 		 */
-		private function canProcessBinaryOperations(AstInterface $item): bool {
-			return
-				$item instanceof AstTerm ||
+		private function isBinaryOperationNode(?AstInterface $item): bool {
+			if ($item === null) {
+				return false;
+			}
+			
+			return $item instanceof AstTerm ||
 				$item instanceof AstBinaryOperator ||
 				$item instanceof AstExpression ||
 				$item instanceof AstFactor;
 		}
 		
+		/**
+		 * Gets the left child from a binary operation node.
+		 * @param AstInterface $item
+		 * @return AstInterface
+		 */
+		private function getBinaryLeft(AstInterface $item): AstInterface {
+			if (
+				!$item instanceof AstTerm &&
+				!$item instanceof AstBinaryOperator &&
+				!$item instanceof AstExpression &&
+				!$item instanceof AstFactor
+			) {
+				throw new \InvalidArgumentException('Item does not support binary operations');
+			}
+
+			return $item->getLeft();
+		}
+		
+		/**
+		 * Gets the right child from a binary operation node.
+		 * @param AstInterface $item
+		 * @return AstInterface
+		 */
+		private function getBinaryRight(AstInterface $item): AstInterface {
+			if (
+				!$item instanceof AstTerm &&
+				!$item instanceof AstBinaryOperator &&
+				!$item instanceof AstExpression &&
+				!$item instanceof AstFactor
+			) {
+				throw new \InvalidArgumentException('Item does not support binary operations');
+			}
+			
+			return $item->getRight();
+		}
+		
+		/**
+		 * Sets the left child of a binary operation node.
+		 * @param AstInterface $item
+		 * @param AstInterface $left
+		 * @return void
+		 */
+		private function setBinaryLeft(AstInterface $item, AstInterface $left): void {
+			if (
+				!$item instanceof AstTerm &&
+				!$item instanceof AstBinaryOperator &&
+				!$item instanceof AstExpression &&
+				!$item instanceof AstFactor
+			) {
+				throw new \InvalidArgumentException('Item does not support binary operations');
+			}
+			
+			$item->setLeft($left);
+		}
+		
+		/**
+		 * Sets the right child of a binary operation node.
+		 * @param AstInterface $item
+		 * @param AstInterface $right
+		 * @return void
+		 */
+		private function setBinaryRight(AstInterface $item, AstInterface $right): void {
+			if (
+				!$item instanceof AstTerm &&
+				!$item instanceof AstBinaryOperator &&
+				!$item instanceof AstExpression &&
+				!$item instanceof AstFactor
+			) {
+				throw new \InvalidArgumentException('Item does not support binary operations');
+			}
+			
+			$item->setRight($right);
+		}
+		
+		/**
+		 * Checks if a range is only used within ANY() functions and not referenced elsewhere.
+		 * This is used to determine if a range can be optimized out of JOIN operations.
+		 * @param AstRetrieve $retrieve The retrieve operation to analyze
+		 * @param AstRange $range The range/table to check for ANY-only usage
+		 * @return bool True if range is only used in ANY functions, false otherwise
+		 */
 		private function isRangeOnlyUsedInAny(AstRetrieve $retrieve, AstRange $range): bool {
 			try {
+				// Create a visitor that will throw an exception if it finds the range
+				// being used outside of ANY() functions
 				$visitor = new VisitorRangeNotInAny($range);
 				
-				foreach($retrieve->getValues() as $value) {
+				// Check all SELECT values/expressions for non-ANY usage of this range
+				// If the range is referenced directly in SELECT clause (not in ANY), visitor throws exception
+				foreach ($retrieve->getValues() as $value) {
 					$value->accept($visitor);
 				}
-
+				
+				// Check WHERE conditions for non-ANY usage of this range
+				// If the range is used in filters outside of ANY functions, visitor throws exception
 				if ($retrieve->getConditions()) {
 					$retrieve->getConditions()->accept($visitor);
 				}
 				
+				// If we reach this point, no non-ANY usage was found
+				// The range is only used within ANY() functions
 				return true;
 			} catch (\Exception $e) {
+				// Exception indicates the range is used outside of ANY functions
+				// Therefore it cannot be optimized away from JOIN operations
 				return false;
 			}
 		}
 		
+		/**
+		 * Optimizes ranges that are only used in ANY() functions by excluding them from JOIN operations.
+		 * When a range is only referenced within ANY() functions, it doesn't need to be joined
+		 * as a regular table since ANY() can be handled more efficiently as a subquery.
+		 * @param AstRetrieve $ast The AST retrieve object to optimize
+		 * @return void
+		 */
 		private function optimizeAnyFunctions(AstRetrieve $ast): void {
+			// Examine each range/table in the query for ANY-only optimization opportunities
 			foreach ($ast->getRanges() as $range) {
+				// Check if this range is exclusively used within ANY() functions
+				// and not referenced in regular SELECT fields or WHERE conditions
 				if ($this->isRangeOnlyUsedInAny($ast, $range)) {
+					// Exclude this range from being included as a JOIN
+					// The ANY() function can handle this more efficiently as a subquery
+					// rather than requiring a full table join
 					$range->setIncludeAsJoin(false);
 				}
 			}

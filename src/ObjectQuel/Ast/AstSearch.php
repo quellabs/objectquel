@@ -126,6 +126,8 @@
 		public function deepClone(): static {
 			$clonedIdentifiers = $this->cloneArray($this->identifiers);
 			$clonedSearchString = $this->searchString->deepClone();
+			
+			// @phpstan-ignore-next-line new.static
 			return new static($clonedIdentifiers, $clonedSearchString);
 		}
 	}

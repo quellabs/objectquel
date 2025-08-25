@@ -126,24 +126,6 @@
 		}
 		
 		/**
-		 * Get the entity name from an identifier node.
-		 * @param AstIdentifier $node The identifier node
-		 * @return string The entity name
-		 * @throws QuelException If the identifier has no entity name
-		 */
-		private function getEntityName(AstIdentifier $node): string {
-			$entityName = $node->getEntityName();
-			
-			if ($entityName === null) {
-				throw new QuelException(
-					"Identifier '{$node->getName()}' is referenced but no range is defined for it"
-				);
-			}
-			
-			return $entityName;
-		}
-		
-		/**
 		 * Create a unique range for the given entity.
 		 * @param string $entityName The name of the entity
 		 * @return AstRangeDatabase The created range

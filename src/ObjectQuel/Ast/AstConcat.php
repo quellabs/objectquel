@@ -59,8 +59,13 @@
 			return "string";
 		}
 		
+		/**
+		 * @return static
+		 */
 		public function deepClone(): static {
 			$clonedParameterList = $this->cloneArray($this->parameterList);
+			
+			// @phpstan-ignore-next-line new.static
 			return new static($clonedParameterList);
 		}
 	}

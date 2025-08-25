@@ -360,6 +360,7 @@
 			$clonedConditions = $this->conditions?->deepClone();
 			
 			// Create new instance
+			// @phpstan-ignore-next-line new.static
 			$clone = new static($this->directives, $clonedRanges, $this->unique);
 			
 			// Set all the cloned properties

@@ -93,7 +93,7 @@
 			// Initialize helper classes with proper dependencies and references
 			$this->sqlBuilder = new SqlBuilderHelper($this->entityStore, $this->parameters, $this->partOfQuery, $this);
 			$this->typeInference = new TypeInferenceHelper($this->entityStore);
-			$this->aggregateHandler = new AggregateHandler($this->entityStore, $this->parameters, $this->partOfQuery, $this->sqlBuilder);
+			$this->aggregateHandler = new AggregateHandler($this->entityStore, $this->partOfQuery, $this->sqlBuilder);
 			$this->expressionHandler = new ExpressionHandler($this->sqlBuilder, $this->typeInference, $this->parameters, $this);
 		}
 		

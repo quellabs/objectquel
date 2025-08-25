@@ -117,6 +117,7 @@
 			
 			// Create new instance with cloned operands
 			// Parent relationships are already set by the constructor
+			// @phpstan-ignore-next-line new.static
 			return new static($clonedLeft, $clonedRight, $this->operator);
 		}
 	}

@@ -27,9 +27,6 @@
 		/** @var EntityStore Store for entity metadata and table mappings */
 		private EntityStore $entityStore;
 		
-		/** @var array Reference to query parameters array for parameterized queries */
-		private array $parameters;
-		
 		/** @var string Current part of the query being built (e.g., 'VALUES', 'WHERE') */
 		private string $partOfQuery;
 		
@@ -39,18 +36,15 @@
 		/**
 		 * Constructor - initializes the aggregate handler with required dependencies
 		 * @param EntityStore $entityStore Store containing entity-to-table mappings
-		 * @param array $parameters Reference to parameters array for the query
 		 * @param string $partOfQuery Which part of the query is being built
 		 * @param SqlBuilderHelper $sqlBuilder Helper for SQL construction
 		 */
 		public function __construct(
 			EntityStore      $entityStore,
-			array            &$parameters,
 			string           $partOfQuery,
 			SqlBuilderHelper $sqlBuilder
 		) {
 			$this->entityStore = $entityStore;
-			$this->parameters = &$parameters;  // Pass by reference to allow modification
 			$this->partOfQuery = $partOfQuery;
 			$this->sqlBuilder = $sqlBuilder;
 		}
@@ -180,6 +174,7 @@
 			switch ($aggregateFunction) {
 				case 'ANY':
 					// Handle ANY operations - check for existence of related records
+					// @phpstan-ignore method.notFound
 					if (!$identifier->getRange()->includeAsJoin()) {
 						// Use EXISTS subquery when not using JOINs
 						return $this->handleAnyWithExists($identifier, $identifier->getRange());
@@ -215,6 +210,7 @@
 			
 			$range = $identifier->getRange();
 			
+			// @phpstan-ignore method.notFound
 			if (!$range->includeAsJoin()) {
 				// Not using JOINs - need to handle with EXISTS or simple condition
 				if ($this->isSingleRangeQuery($identifier)) {
