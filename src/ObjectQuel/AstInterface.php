@@ -45,4 +45,10 @@
 		 * @return void
 		 */
 		public function setParent(?AstInterface $parent): void;
+		
+		/**
+		 * Make a deep clone of this node
+		 * @return $this
+		 */
+		public function deepClone(): static;
 	}

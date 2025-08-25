@@ -53,13 +53,14 @@
 		
 		/**
 		 * Clone this node
-		 * @return $this
+		 * @return static
 		 */
 		public function deepClone(): static {
 			// Clone the identifier
 			$clonedIdentifier = $this->identifierOrString->deepClone();
 			
 			// Return cloned node
+			// @phpstan-ignore-next-line new.static
 			return new static($clonedIdentifier);
 		}
 	}

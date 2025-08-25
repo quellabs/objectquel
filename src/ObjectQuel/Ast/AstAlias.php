@@ -94,11 +94,13 @@
 		
 		/**
 		 * Clone this node
-		 * @return $this
+		 * @return static
 		 */
 		public function deepClone(): static {
 			// Create new instance with cloned expression
 			$clonedExpression = $this->expression->deepClone();
+			
+			// @phpstan-ignore-next-line new.static
 			$clone = new static($this->name, $clonedExpression, $this->aliasPattern);
 			
 			// Set the parent relationship

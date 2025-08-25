@@ -76,6 +76,8 @@
 		public function deepClone(): static {
 			$clonedIdentifier = $this->identifier->deepClone();
 			$clonedParameterList = $this->cloneArray($this->parameterList);
+			
+			// @phpstan-ignore-next-line new.static
 			return new static($clonedIdentifier, $clonedParameterList);
 		}
 	}

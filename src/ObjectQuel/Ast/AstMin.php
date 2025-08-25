@@ -52,13 +52,14 @@
 		
 		/**
 		 * Clone this node
-		 * @return $this
+		 * @return static
 		 */
 		public function deepClone(): static {
 			// Clone the identifier
 			$clonedIdentifier = $this->identifier->deepClone();
 			
 			// Create new instance with cloned identifier
+			// @phpstan-ignore-next-line new.static
 			$clone = new static($clonedIdentifier);
 			
 			// Set the parent relationship

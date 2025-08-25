@@ -34,6 +34,7 @@
 			$clonedExpression = $this->expression->deepClone();
 			
 			// Create new instance with cloned operands
+			// @phpstan-ignore-next-line new.static
 			return new static($clonedExpression, $this->operator);
 		}
 	}

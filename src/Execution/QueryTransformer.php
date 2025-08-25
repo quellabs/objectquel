@@ -18,8 +18,6 @@
 	class QueryTransformer {
 		
 		private EntityStore $entityStore;
-		private int $fullQueryResultCount;
-		private EntityManager $entityManager;
 		private DatabaseAdapter $connection;
 		
 		/**
@@ -27,10 +25,8 @@
 		 * @param EntityManager $entityManager
 		 */
 		public function __construct(EntityManager $entityManager) {
-			$this->entityManager = $entityManager;
 			$this->entityStore = $entityManager->getEntityStore();
 			$this->connection = $entityManager->getConnection();
-			$this->fullQueryResultCount = 0;
 		}
 		
 		/**
@@ -118,7 +114,6 @@
 				
 			} catch (GetMainEntityInAstException $exception) {
 				$astObject = $exception->getAstObject();
-				$this->fullQueryResultCount = count($astObject->getParameters());
 				
 				$filteredParams = array_slice(
 					$astObject->getParameters(),
@@ -141,10 +136,6 @@
 			// First pass: Execute a lightweight query to fetch only the primary keys
 			// This avoids loading full records when we only need to determine pagination boundaries
 			$primaryKeys = $this->fetchAllPrimaryKeysForPagination($ast, $parameters, $primaryKeyInfo);
-			
-			// Store the total count of results before pagination for potential use elsewhere
-			// (e.g., displaying "showing X of Y results" to users)
-			$this->fullQueryResultCount = count($primaryKeys);
 			
 			// Early exit if no records match the query conditions
 			if (empty($primaryKeys)) {

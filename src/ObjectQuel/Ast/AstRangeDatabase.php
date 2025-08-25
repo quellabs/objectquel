@@ -138,6 +138,7 @@
 				$joinProperty = null;
 			}
 			
+			// @phpstan-ignore-next-line new.static
 			return new static($this->getName(), $this->getEntityName(), $joinProperty, $this->isRequired(), $this->includeAsJoin());
 		}
 	}
