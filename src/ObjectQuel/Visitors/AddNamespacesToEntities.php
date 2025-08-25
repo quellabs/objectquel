@@ -77,7 +77,7 @@
 			}
 			
 			// Checks that the node is not part of a chain
-			if (!$node->getParent() instanceof AstIdentifier) {
+			if ($node->getParent() instanceof AstIdentifier) {
 				return;
 			}
 			
