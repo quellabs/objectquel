@@ -6,6 +6,7 @@
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstAny;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstAvg;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstAvgU;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstIfnull;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstMax;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstMin;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstConcat;
@@ -83,6 +84,7 @@
 				'is_numeric' => $this->parseIsNumeric(),
 				'is_integer' => $this->parseIsInteger(),
 				'is_float' => $this->parseIsFloat(),
+				'ifnull' => $this->parseIfNull(),
 				'exists' => $this->parseExists(),
 				default => throw new ParserException("Command {$command} is not valid."),
 			};
@@ -262,6 +264,26 @@
 		 */
 		protected function parseIsFloat(): AstIsFloat {
 			return $this->parseSingleParameter(AstIsFloat::class);
+		}
+		
+		/**
+		 * Parse ifnull() function. This functions as a simple COALESCE in SQL
+		 * @return AstIfnull
+		 * @throws LexerException
+		 * @throws ParserException
+		 */
+		protected function parseIfNull(): AstIfNull {
+			$this->lexer->match(Token::ParenthesesOpen);
+			
+			$expression = $this->expressionRule->parse();
+			
+			$this->lexer->match(Token::Comma);
+			
+			$altValue = $this->expressionRule->parseSimpleValue();
+			
+			$this->lexer->match(Token::ParenthesesClose);
+
+			return new AstIfNull($expression, $altValue);
 		}
 		
 		/**

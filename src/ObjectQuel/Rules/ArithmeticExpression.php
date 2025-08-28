@@ -3,6 +3,7 @@
 	namespace Quellabs\ObjectQuel\ObjectQuel\Rules;
 	
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstBool;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstExpression;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstFactor;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstIdentifier;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstNull;
@@ -28,6 +29,189 @@
 		 */
 		public function __construct(Lexer $lexer) {
 			$this->lexer = $lexer;
+		}
+		
+		/**
+		 * Parse an expression, which can either be a simple term, a ternary
+		 * conditional expression, or a relational expression.
+		 * @return AstInterface The resulting AST node representing the parsed expression.
+		 * @throws LexerException
+		 * @throws ParserException
+		 */
+		public function parse(): AstInterface {
+			return $this->parseTerm();
+		}
+		
+		/**
+		 * Returns the lexer instance
+		 * @return Lexer
+		 */
+		public function getLexer(): Lexer {
+			return $this->lexer;
+		}
+		
+		/**
+		 * Parse a chain of properties with optional namespace in the first element
+		 * @return AstIdentifier The root identifier with linked chain
+		 */
+		public function parsePropertyChain(): AstIdentifier {
+			// Parse the first identifier in the chain, which may include namespace
+			$token = $this->lexer->match(Token::Identifier);
+			$tokenValue = $token->getValue();
+			
+			// Handle any namespace segments in the first identifier
+			while ($this->lexer->optionalMatch(Token::Backslash)) {
+				$namespaceToken = $this->lexer->match(Token::Identifier);
+				$tokenValue .= "\\" . $namespaceToken->getValue();
+			}
+			
+			// Create the root identifier with the full (potentially namespaced) value
+			$rootIdentifier = new AstIdentifier($tokenValue);
+			$currentIdentifier = $rootIdentifier;
+			
+			// Continue parsing the property chain with dot notation
+			while ($this->lexer->optionalMatch(Token::Dot)) {
+				// Parse the next property name
+				$token = $this->lexer->match(Token::Identifier);
+				$nextIdentifier = new AstIdentifier($token->getValue());
+				$nextIdentifier->setParent($currentIdentifier);
+				
+				// Link it to the current identifier
+				$currentIdentifier->setNext($nextIdentifier);
+				
+				// Move to the new current identifier for potential next iteration
+				$currentIdentifier = $nextIdentifier;
+			}
+			
+			return $rootIdentifier;
+		}
+		
+		/**
+		 * Parse a simple value (number, string, true, false)
+		 * @return AstInterface
+		 * @throws LexerException
+		 * @throws ParserException
+		 */
+		public function parseSimpleValue(): AstInterface {
+			$token = $this->lexer->peek();
+			$tokenType = $token->getType();
+			$tokenValue = $token->getValue();
+			$tokenExtraData = $token->getExtraData();
+			
+			switch ($tokenType) {
+				case Token::Number :
+					$this->lexer->match($tokenType);
+					return new AstNumber($tokenValue);
+				
+				case Token::String :
+					$this->lexer->match($tokenType);
+					return new AstString($tokenValue, $tokenExtraData['char'] ?? '"');
+				
+				case Token::False :
+					$this->lexer->match($tokenType);
+					return new AstBool(false);
+				
+				case Token::True :
+					$this->lexer->match($tokenType);
+					return new AstBool(true);
+				
+				default :
+					$tokenTypeName = Token::toString($tokenType);
+					throw new ParserException("Unexpected token '{$tokenTypeName}' on line {$this->lexer->getLineNumber()}");
+			}
+		}
+		
+		/**
+		 * Parses a constant
+		 * @return AstInterface
+		 * @throws LexerException
+		 * @throws ParserException
+		 */
+		public function parsePrimaryExpression(): AstInterface {
+			$token = $this->lexer->peek();
+			$tokenType = $token->getType();
+			$tokenValue = $token->getValue();
+			$tokenExtraData = $token->getExtraData();
+			
+			switch ($tokenType) {
+				case Token::Number :
+					$this->lexer->match($tokenType);
+					return new AstNumber($tokenValue);
+				
+				case Token::String :
+					$this->lexer->match($tokenType);
+					return new AstString($tokenValue, $tokenExtraData['char'] ?? '"');
+				
+				case Token::False :
+					$this->lexer->match($tokenType);
+					return new AstBool(false);
+				
+				case Token::True :
+					$this->lexer->match($tokenType);
+					return new AstBool(true);
+				
+				case Token::Null :
+					$this->lexer->match($tokenType);
+					return new AstNull();
+				
+				case Token::Parameter :
+					$this->lexer->match($tokenType);
+					return new AstParameter($tokenValue);
+				
+				case Token::Slash :
+					// In a primary expression context, a slash is always the start of a regex
+					// This is because division is handled at a higher level in parseFactor
+					return $this->parseRegExp();
+				
+				case Token::Identifier :
+					$node = $this->parsePropertyChain();
+					
+					// Kijk of het een commando is. Zo ja, parse dan het commando.
+					if ($this->lexer->lookahead() === Token::ParenthesesOpen) {
+						$queryFunctionRule = new QueryFunction($this);
+						return $queryFunctionRule->parse($node->getCompleteName());
+					}
+					
+					// Anders, retourneer de property keten
+					return $node;
+				
+				case Token::ParenthesesOpen:
+					// Handle parenthesized expressions
+					$this->lexer->match(Token::ParenthesesOpen);
+					$logicalExpression = new LogicalExpression($this->lexer);
+					$expression = $logicalExpression->parse();
+					$this->lexer->match(Token::ParenthesesClose);
+					return $expression;
+				
+				default :
+					$tokenTypeName = Token::toString($tokenType);
+					throw new ParserException("Unexpected token '{$tokenTypeName}' on line {$this->lexer->getLineNumber()}");
+			}
+		}
+
+		/**
+		 * Parse a term in an arithmetic expression. A term can either be a single
+		 * factor or an addition (+) or subtraction (-) operation between factors.
+		 * @return AstInterface The resulting AST node representing the parsed term.
+		 * @throws LexerException|ParserException
+		 */
+		protected function parseTerm(): AstInterface {
+			// Parse the first factor in the term
+			$factor = $this->parseFactor();
+			
+			// Check if the next token is either '+' or '-'
+			switch($this->lexer->lookahead()) {
+				case Token::Plus :
+					$this->lexer->match($this->lexer->lookahead());
+					return new AstTerm($factor, $this->parseTerm(), "+");
+				
+				case Token::Minus :
+					$this->lexer->match($this->lexer->lookahead());
+					return new AstTerm($factor, $this->parseTerm(), "-");
+				
+				default:
+					return $factor;
+			}
 		}
 		
 		/**
@@ -59,27 +243,34 @@
 		}
 		
 		/**
-		 * Parse a term in an arithmetic expression. A term can either be a single
-		 * factor or an addition (+) or subtraction (-) operation between factors.
-		 * @return AstInterface The resulting AST node representing the parsed term.
-		 * @throws LexerException|ParserException
+		 * Parse unary expressions (-, +, *, &, etc.)
+		 * @return AstInterface
+		 * @throws LexerException
+		 * @throws ParserException
 		 */
-		protected function parseTerm(): AstInterface {
-			// Parse the first factor in the term
-			$factor = $this->parseFactor();
+		protected function parseUnaryExpression(): AstInterface {
+			$token = $this->lexer->peek();
+			$tokenType = $token->getType();
+			$tokenValue = $token->getValue();
 			
-			// Check if the next token is either '+' or '-'
-			switch($this->lexer->lookahead()) {
-				case Token::Plus :
-					$this->lexer->match($this->lexer->lookahead());
-					return new AstTerm($factor, $this->parseTerm(), "+");
-
-				case Token::Minus :
-					$this->lexer->match($this->lexer->lookahead());
-					return new AstTerm($factor, $this->parseTerm(), "-");
+			switch ($tokenType) {
+				case Token::Plus:
+				case Token::Minus:
+					$this->lexer->match($tokenType);
 					
+					// Handle +/- followed by a number as a literal with sign
+					if ($this->lexer->optionalMatch(Token::Number, $resultToken)) {
+						$number = ($tokenValue == "-") ? 0 - $resultToken->getValue() : $resultToken->getValue();
+						return new AstNumber($number);
+					}
+					
+					// Otherwise, it's a unary operator applied to an expression
+					$operand = $this->parseUnaryExpression();
+					return new AstUnaryOperation($operand, $tokenValue);
+				
 				default:
-					return $factor;
+					// If not a unary operator, parse a primary expression
+					return $this->parsePrimaryExpression();
 			}
 		}
 		
@@ -146,160 +337,4 @@
 			// Return the regular expression
 			return new AstRegExp($pattern, $flags);
 		}
-		
-		/**
-		 * Returns the lexer instance
-		 * @return Lexer
-		 */
-		public function getLexer(): Lexer {
-			return $this->lexer;
-		}
-		
-		/**
-		 * Parse a chain of properties with optional namespace in the first element
-		 * @return AstIdentifier The root identifier with linked chain
-		 */
-		public function parsePropertyChain(): AstIdentifier {
-			// Parse the first identifier in the chain, which may include namespace
-			$token = $this->lexer->match(Token::Identifier);
-			$tokenValue = $token->getValue();
-			
-			// Handle any namespace segments in the first identifier
-			while ($this->lexer->optionalMatch(Token::Backslash)) {
-				$namespaceToken = $this->lexer->match(Token::Identifier);
-				$tokenValue .= "\\" . $namespaceToken->getValue();
-			}
-			
-			// Create the root identifier with the full (potentially namespaced) value
-			$rootIdentifier = new AstIdentifier($tokenValue);
-			$currentIdentifier = $rootIdentifier;
-			
-			// Continue parsing the property chain with dot notation
-			while ($this->lexer->optionalMatch(Token::Dot)) {
-				// Parse the next property name
-				$token = $this->lexer->match(Token::Identifier);
-				$nextIdentifier = new AstIdentifier($token->getValue());
-				$nextIdentifier->setParent($currentIdentifier);
-				
-				// Link it to the current identifier
-				$currentIdentifier->setNext($nextIdentifier);
-				
-				// Move to the new current identifier for potential next iteration
-				$currentIdentifier = $nextIdentifier;
-			}
-			
-			return $rootIdentifier;
-		}
-		
-		/**
-		 * Parses a constant
-		 * @return AstInterface
-		 * @throws LexerException
-		 * @throws ParserException
-		 */
-		public function parsePrimaryExpression(): AstInterface {
-			$token = $this->lexer->peek();
-			$tokenType = $token->getType();
-			$tokenValue = $token->getValue();
-			$tokenExtraData = $token->getExtraData();
-			
-			switch ($tokenType) {
-				case Token::Number :
-					$this->lexer->match($tokenType);
-					return new AstNumber($tokenValue);
-				
-				case Token::String :
-					$this->lexer->match($tokenType);
-					return new AstString($tokenValue, $tokenExtraData['char'] ?? '"');
-				
-				case Token::False :
-					$this->lexer->match($tokenType);
-					return new AstBool(false);
-				
-				case Token::True :
-					$this->lexer->match($tokenType);
-					return new AstBool(true);
-				
-				case Token::Null :
-					$this->lexer->match($tokenType);
-					return new AstNull();
-				
-				case Token::Parameter :
-					$this->lexer->match($tokenType);
-					return new AstParameter($tokenValue);
-				
-				case Token::Slash :
-					// In a primary expression context, a slash is always the start of a regex
-					// This is because division is handled at a higher level in parseFactor
-					return $this->parseRegExp();
-				
-				case Token::Identifier :
-					$node = $this->parsePropertyChain();
-					
-					// Kijk of het een commando is. Zo ja, parse dan het commando.
-					if ($this->lexer->lookahead() === Token::ParenthesesOpen) {
-						$queryFunctionRule = new QueryFunction($this);
-						return $queryFunctionRule->parse($node->getCompleteName());
-					}
-					
-					// Anders, retourneer de property keten
-					return $node;
-				
-				case Token::ParenthesesOpen:
-					// Handle parenthesized expressions
-					$this->lexer->match(Token::ParenthesesOpen);
-					$logicalExpression = new LogicalExpression($this->lexer);
-					$expression = $logicalExpression->parse();
-					$this->lexer->match(Token::ParenthesesClose);
-					return $expression;
-					
-				default :
-					$tokenTypeName = Token::toString($tokenType);
-					throw new ParserException("Unexpected token '{$tokenTypeName}' on line {$this->lexer->getLineNumber()}");
-			}
-		}
-		
-		/**
-		 * Parse unary expressions (-, +, *, &, etc.)
-		 * @return AstInterface
-		 * @throws LexerException
-		 * @throws ParserException
-		 */
-		protected function parseUnaryExpression(): AstInterface {
-			$token = $this->lexer->peek();
-			$tokenType = $token->getType();
-			$tokenValue = $token->getValue();
-			
-			switch ($tokenType) {
-				case Token::Plus:
-				case Token::Minus:
-					$this->lexer->match($tokenType);
-					
-					// Handle +/- followed by a number as a literal with sign
-					if ($this->lexer->optionalMatch(Token::Number, $resultToken)) {
-						$number = ($tokenValue == "-") ? 0 - $resultToken->getValue() : $resultToken->getValue();
-						return new AstNumber($number);
-					}
-					
-					// Otherwise, it's a unary operator applied to an expression
-					$operand = $this->parseUnaryExpression();
-					return new AstUnaryOperation($operand, $tokenValue);
-					
-				default:
-					// If not a unary operator, parse a primary expression
-					return $this->parsePrimaryExpression();
-			}
-		}
-		
-		/**
-		 * Parse an expression, which can either be a simple term, a ternary
-		 * conditional expression, or a relational expression.
-		 * @return AstInterface The resulting AST node representing the parsed expression.
-		 * @throws LexerException
-		 * @throws ParserException
-		 */
-		public function parse(): AstInterface {
-			return $this->parseTerm();
-		}
-		
 	}

@@ -9,6 +9,7 @@
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstConcat;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstExpression;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstFactor;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstIfnull;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstIn;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstIsEmpty;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstIsFloat;
@@ -398,6 +399,19 @@
 			
 			// Combine all conditions with OR logic
 			return '(' . implode(" OR ", $conditions) . ')';
+		}
+		
+		/**
+		 * IFNULL() serves as a simple COALESCE. If the expression returns NULL, use the alt value
+		 * @param AstIfnull $ast
+		 * @return string
+		 */
+		public function handleIfnull(AstIfNull $ast): string {
+			return sprintf(
+				"COALESCE(%s, %s)",
+				$this->visitNodeAndReturnSQL($ast->getExpression()),
+				$this->visitNodeAndReturnSQL($ast->getAltValue())
+			);
 		}
 		
 		/**

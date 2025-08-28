@@ -10,6 +10,7 @@
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstAvg;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstAvgU;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstExpression;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstIfnull;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstMax;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstMin;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstFactor;
@@ -389,7 +390,8 @@
 			// For aliases and AstUnaryOperations, check the matching identifier
 			if (
 				$condition instanceof AstAlias ||
-				$condition instanceof AstUnaryOperation
+				$condition instanceof AstUnaryOperation ||
+				$condition instanceof AstIfnull
 			) {
 				return $this->hasReferenceToRange($condition->getExpression(), $range);
 			}

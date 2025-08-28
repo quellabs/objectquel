@@ -32,14 +32,14 @@
 		 * @return string
 		 */
 		public function convertToSQL(AstRetrieve $retrieve): string {
-			return sprintf("SELECT %s%s%s %s %s%s",
+			return trim(sprintf("SELECT %s%s%s %s %s%s",
 				$this->getUnique($retrieve),
 				$this->getFieldNames($retrieve),
 				$this->getFrom($retrieve),
 				$this->getJoins($retrieve),
 				$this->getWhere($retrieve),
 				$this->getSort($retrieve)
-			);
+			));
 		}
 
 		/**
