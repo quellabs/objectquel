@@ -7,6 +7,7 @@
 	use Quellabs\ObjectQuel\Annotations\Orm\RequiredRelation;
 	use Quellabs\ObjectQuel\EntityManager;
 	use Quellabs\ObjectQuel\EntityStore;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstAlias;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstBinaryOperator;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstExists;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstExpression;
@@ -19,7 +20,8 @@
 	use Quellabs\ObjectQuel\ObjectQuel\AstInterface;
 	use Quellabs\ObjectQuel\ObjectQuel\Visitors\ContainsCheckIsNullForRange;
 	use Quellabs\ObjectQuel\ObjectQuel\Visitors\ContainsRange;
-	use Quellabs\ObjectQuel\Execution\Visitors\VisitorRangeNotInAny;
+	use Quellabs\ObjectQuel\Execution\Visitors\VisitorRangeNotInAggregates;
+	use Quellabs\ObjectQuel\ObjectQuel\Visitors\GatherReferenceJoinValues;
 	
 	class QueryOptimizer {
 		
@@ -44,7 +46,8 @@
 			$this->setRangesRequiredThroughWhereClause($ast);
 			$this->setRangesNotRequiredThroughNullChecks($ast);
 			$this->processExistsOperators($ast);
-			$this->optimizeAnyFunctions($ast);
+			$this->optimizeAggregateFunctions($ast);
+			$this->addReferencedValuesToQuery($ast);
 		}
 		
 		/**
@@ -544,16 +547,18 @@
 		 * @param AstRange $range The range/table to check for ANY-only usage
 		 * @return bool True if range is only used in ANY functions, false otherwise
 		 */
-		private function isRangeOnlyUsedInAny(AstRetrieve $retrieve, AstRange $range): bool {
+		private function isRangeOnlyUsedInAggregates(AstRetrieve $retrieve, AstRange $range): bool {
 			try {
 				// Create a visitor that will throw an exception if it finds the range
 				// being used outside of ANY() functions
-				$visitor = new VisitorRangeNotInAny($range);
+				$visitor = new VisitorRangeNotInAggregates($range);
 				
-				// Check all SELECT values/expressions for non-ANY usage of this range
+				// Check all SELECT values/expressions for non-aggregate usage of this range
 				// If the range is referenced directly in SELECT clause (not in ANY), visitor throws exception
 				foreach ($retrieve->getValues() as $value) {
-					$value->accept($visitor);
+					if ($value->isVisibleInResult()) {
+						$value->accept($visitor);
+					}
 				}
 				
 				// Check WHERE conditions for non-ANY usage of this range
@@ -579,17 +584,68 @@
 		 * @param AstRetrieve $ast The AST retrieve object to optimize
 		 * @return void
 		 */
-		private function optimizeAnyFunctions(AstRetrieve $ast): void {
+		private function optimizeAggregateFunctions(AstRetrieve $ast): void {
 			// Examine each range/table in the query for ANY-only optimization opportunities
 			foreach ($ast->getRanges() as $range) {
 				// Check if this range is exclusively used within ANY() functions
 				// and not referenced in regular SELECT fields or WHERE conditions
-				if ($this->isRangeOnlyUsedInAny($ast, $range)) {
+				if ($this->isRangeOnlyUsedInAggregates($ast, $range)) {
 					// Exclude this range from being included as a JOIN
 					// The ANY() function can handle this more efficiently as a subquery
 					// rather than requiring a full table join
 					$range->setIncludeAsJoin(false);
 				}
 			}
+		}
+		
+		/**
+		 * Adds referenced field values to the query's value list for join conditions.
+		 * @param AstRetrieve $ast
+		 * @return void
+		 */
+		private function addReferencedValuesToQuery(AstRetrieve $ast): void {
+			// Early exit if there are no conditions to process
+			// Without conditions, there won't be any referenced fields to gather
+			if ($ast->getConditions() === null) {
+				return;
+			}
+			
+			// Use a visitor pattern to traverse the AST and collect all identifiers
+			// that are referenced in join conditions but not already in the SELECT list
+			// GatherReferenceJoinValues is a specialized visitor that finds these missing references
+			$visitor = $this->processWithVisitor($ast, GatherReferenceJoinValues::class);
+			
+			// Process each identifier that was found by the visitor
+			foreach ($visitor->getIdentifiers() as $identifier) {
+				// Create a deep copy of the identifier to avoid modifying the original
+				// This ensures we don't accidentally affect other parts of the query tree
+				$clonedIdentifier = $identifier->deepClone();
+				
+				// Wrap the cloned identifier in an alias using its complete name
+				// This creates a proper SELECT field that can be referenced in joins
+				$alias = new AstAlias($identifier->getCompleteName(), $clonedIdentifier);
+				
+				// Mark this field as invisible in the final result set
+				// These are technical fields needed for joins, not user-requested data
+				// This prevents them from appearing in the output while still being available for JOIN conditions
+				$alias->setVisibleInResult(false);
+				
+				// Add the aliased field to the query's value list (SELECT clause)
+				// This ensures the field is available for join processing even though it's not visible to users
+				$ast->addValue($alias);
+			}
+		}
+		
+		/**
+		 * Generic method to process AST with a visitor pattern.
+		 * @param AstRetrieve $ast The AST to process
+		 * @param string $visitorClass The visitor class name
+		 * @param mixed ...$args Arguments to pass to visitor constructor
+		 * @return object The visitor instance after processing
+		 */
+		private function processWithVisitor(AstRetrieve $ast, string $visitorClass, ...$args): object {
+			$visitor = new $visitorClass(...$args);
+			$ast->accept($visitor);
+			return $visitor;
 		}
 	}

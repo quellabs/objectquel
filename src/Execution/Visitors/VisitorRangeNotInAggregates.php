@@ -3,9 +3,17 @@
 	namespace Quellabs\ObjectQuel\Execution\Visitors;
 	
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstAny;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstAvg;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstAvgU;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstCount;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstCountU;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstIdentifier;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstMax;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstMin;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRange;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRangeDatabase;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstSum;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstSumU;
 	use Quellabs\ObjectQuel\ObjectQuel\AstInterface;
 	use Quellabs\ObjectQuel\ObjectQuel\AstVisitorInterface;
 	
@@ -14,7 +22,7 @@
 	 * specific range nodes have appropriate ANY parent nodes in the hierarchy.
 	 * Throws an exception if a matching range is found without the required ANY parent.
 	 */
-	class VisitorRangeNotInAny implements AstVisitorInterface {
+	class VisitorRangeNotInAggregates implements AstVisitorInterface {
 		
 		/**
 		 * The specific range that this visitor is checking for
@@ -45,7 +53,7 @@
 				// and verify it has the required ANY parent
 				if (
 					$baseIdentifier->getRange()->getName() === $this->targetRange->getName() &&
-					!$this->hasAnyParent($node)
+					!$this->hasAggregateParent($node)
 				) {
 					// Found non-ANY usage - throw exception to stop traversal
 					throw new \Exception("Range used outside of ANY function");
@@ -59,7 +67,7 @@
 		 * @param AstInterface $ast The starting node to check parents for
 		 * @return bool True if an ANY parent is found, false otherwise
 		 */
-		private function hasAnyParent(AstInterface $ast): bool {
+		private function hasAggregateParent(AstInterface $ast): bool {
 			// Start with the immediate parent
 			$parent = $ast->getParent();
 			
@@ -71,7 +79,17 @@
 			// Traverse up the parent chain
 			while ($parent !== null) {
 				// Check if current parent is an ANY node
-				if ($parent instanceof AstAny) {
+				if (
+					$parent instanceof AstAny ||
+					$parent instanceof AstMin ||
+					$parent instanceof AstMax ||
+					$parent instanceof AstCount ||
+					$parent instanceof AstCountU ||
+					$parent instanceof AstAvg ||
+					$parent instanceof AstAvgU ||
+					$parent instanceof AstSum ||
+					$parent instanceof AstSumU
+				) {
 					return true;
 				}
 				
@@ -79,7 +97,7 @@
 				$parent = $parent->getParent();
 			}
 			
-			// Reached root without finding ANY parent
+			// Reached root without finding any aggregation parent
 			return false;
 		}
 	}

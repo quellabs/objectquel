@@ -60,12 +60,6 @@
 			
 			// Create new instance with cloned identifier
 			// @phpstan-ignore-next-line new.static
-			$clone = new static($clonedIdentifier);
-			
-			// Set the parent relationship
-			$clonedIdentifier->setParent($clone);
-			
-			// Return cloned node
-			return $clone;
+			return new static($clonedIdentifier);
 		}
 	}

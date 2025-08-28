@@ -16,6 +16,8 @@
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstSum;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstSumU;
 	use Quellabs\ObjectQuel\ObjectQuel\AstInterface;
+	use Quellabs\ObjectQuel\ObjectQuel\Visitors\CollectNodes;
+	use Quellabs\ObjectQuel\ObjectQuel\Visitors\QuelToSQLConvertToString;
 	
 	/**
 	 * This class is responsible for converting ObjectQuel aggregate AST nodes
@@ -32,6 +34,7 @@
 		
 		/** @var SqlBuilderHelper Helper for building SQL components */
 		private SqlBuilderHelper $sqlBuilder;
+		private QuelToSQLConvertToString $convertToString;
 		
 		/**
 		 * Constructor - initializes the aggregate handler with required dependencies
@@ -40,13 +43,15 @@
 		 * @param SqlBuilderHelper $sqlBuilder Helper for SQL construction
 		 */
 		public function __construct(
-			EntityStore      $entityStore,
-			string           $partOfQuery,
-			SqlBuilderHelper $sqlBuilder
+			EntityStore              $entityStore,
+			string                   $partOfQuery,
+			SqlBuilderHelper         $sqlBuilder,
+			QuelToSQLConvertToString $convertToString,
 		) {
 			$this->entityStore = $entityStore;
 			$this->partOfQuery = $partOfQuery;
 			$this->sqlBuilder = $sqlBuilder;
+			$this->convertToString = $convertToString;
 		}
 		
 		/**
@@ -147,6 +152,71 @@
 		}
 		
 		/**
+		 * Returns all identifier nodes
+		 * @param AstInterface $ast
+		 * @return array
+		 */
+		private function collectNodes(AstInterface $ast): array {
+			$visitor = new CollectNodes(AstIdentifier::class);
+			$ast->accept($visitor);
+			return $visitor->getCollectedNodes();
+		}
+		
+		/**
+		 * @param AstIdentifier[] $identifiers
+		 * @return AstRange[]
+		 */
+		private function getAllRanges(array $identifiers): array {
+			$result = [];
+			$seen = []; // Track range names to avoid duplicates
+			
+			foreach ($identifiers as $identifier) {
+				$range = $identifier->getRange();
+				
+				if ($range === null) {
+					continue;
+				}
+				
+				$rangeName = $range->getName();
+				
+				if (!isset($seen[$rangeName])) {
+					$seen[$rangeName] = true;
+					$result[] = $range;
+				}
+			}
+			
+			return $result;
+		}
+		
+		/**
+		 * @param AstRange[] $ranges
+		 * @return bool
+		 */
+		private function allIdentifiersIncludedAsJoin(array $ranges): bool {
+			foreach ($ranges as $range) {
+				if ($range->includeAsJoin()) {
+					return true;
+				}
+			}
+			
+			return false;
+		}
+		
+		/**
+		 * @param AstRange[] $ranges
+		 * @return bool
+		 */
+		private function allRangesRequired(array $ranges): bool {
+			foreach ($ranges as $range) {
+				if (!$range->isRequired()) {
+					return false;
+				}
+			}
+			
+			return true;
+		}
+		
+		/**
 		 * Universal handler for all aggregate functions including ANY values
 		 * This method handles the core logic for converting aggregate operations
 		 * into SQL. It supports both regular and DISTINCT variants.
@@ -160,169 +230,164 @@
 			string                                                                $aggregateFunction,
 			bool                                                                  $distinct = false
 		): string {
-			// Extract the identifier (field/column reference) from the AST node
-			$identifier = $ast->getIdentifier();
+			$expression = $ast->getIdentifier();
 			
-			// Validate that we have a proper identifier
-			if (!$identifier instanceof AstIdentifier) {
-				return '';  // Return empty string for invalid identifiers
+			// Handle ANY first (it has special logic)
+			if ($aggregateFunction === 'ANY') {
+				return $this->handleAnyOptimized($expression);
 			}
 			
-			// Build the column name/reference for this identifier
-			$column = $this->sqlBuilder->buildColumnName($identifier);
+			// Try to optimize other aggregates to subquery
+			if ($this->canOptimizeToSubquery($expression)) {
+				return $this->buildAggregateSubquery($expression, $aggregateFunction, $distinct);
+			}
 			
-			switch ($aggregateFunction) {
-				case 'ANY':
-					// Handle ANY operations - check for existence of related records
-					// @phpstan-ignore method.notFound
-					if (!$identifier->getRange()->includeAsJoin()) {
-						// Use EXISTS subquery when not using JOINs
-						return $this->handleAnyWithExists($identifier, $identifier->getRange());
-					} elseif (!$identifier->getRange()->isRequired()) {
-						// LEFT JOIN - check if column has value
-						return "CASE WHEN {$column} IS NOT NULL THEN 1 ELSE 0 END";
-					} else {
-						// INNER JOIN guarantees existence
-						return "1";
-					}
+			// Regular JOIN-based approach
+			$sqlExpression = $this->convertToString->visitNodeAndReturnSQL($expression);
+			$distinctClause = $distinct ? 'DISTINCT ' : '';
+			
+			return match ($aggregateFunction) {
+				'SUM' => "COALESCE({$aggregateFunction}({$distinctClause}{$sqlExpression}), 0)",
+				default => "{$aggregateFunction}({$distinctClause}{$sqlExpression})"
+			};
+		}
+		
+		private function handleAnyOptimized(AstInterface $expression): string {
+			$allIdentifiers = $this->collectNodes($expression);
+			$allRanges = $this->getAllRanges($allIdentifiers);
+			$allIdentifiersIncludedAsJoin = $this->allIdentifiersIncludedAsJoin($allRanges);
+			$allRangesRequired = $this->allRangesRequired($allRanges);
+			
+			if (!$allIdentifiersIncludedAsJoin) {
+				// Use EXISTS subquery when not using JOINs
+				return $this->buildAnyExistsSubquery($expression);
+			} elseif (!$allRangesRequired) {
+				// LEFT JOIN - check if expression has value
+				$sqlExpression = $this->convertToString->visitNodeAndReturnSQL($expression);
+				return "CASE WHEN {$sqlExpression} IS NOT NULL THEN 1 ELSE 0 END";
+			} else {
+				// INNER JOIN guarantees existence
+				return "1";
+			}
+		}
+		
+		private function buildAggregateSubquery(AstInterface $expression, string $aggregateFunction, bool $distinct): string {
+			$allIdentifiers = $this->collectNodes($expression);
+			$allRanges = $this->getAllRanges($allIdentifiers);
+			
+			$sqlExpression = $this->convertToString->visitNodeAndReturnSQL($expression);
+			$distinctClause = $distinct ? 'DISTINCT ' : '';
+			
+			// Build FROM clause with all needed tables
+			$fromClause = $this->buildFromClauseForRanges($allRanges);
+			
+			// Build WHERE clause with all join conditions
+			$whereClause = $this->buildWhereClauseForRanges($allRanges);
+			
+			$subquery = "(SELECT {$aggregateFunction}({$distinctClause}{$sqlExpression}) FROM {$fromClause} {$whereClause})";
+			
+			return match ($aggregateFunction) {
+				'SUM' => "COALESCE({$subquery}, 0)",
+				default => $subquery
+			};
+		}
+		
+		private function buildFromClauseForRanges(array $ranges): string {
+			$tables = [];
+			
+			foreach ($ranges as $range) {
+				$entityName = $range->getEntityName(); // You'll need this method
+				$tableName = $this->entityStore->getOwningTable($entityName);
+				$rangeAlias = $range->getName();
 				
-				default:
-					// Handle standard aggregate functions (COUNT, SUM, AVG, MIN, MAX)
-					$distinctClause = $distinct ? 'DISTINCT ' : '';
-					return "{$aggregateFunction}({$distinctClause}{$column})";
+				$tables[] = "`{$tableName}` {$rangeAlias}";
 			}
+			
+			return implode(', ', $tables);
+		}
+		
+		private function buildWhereClauseForRanges(array $ranges): string {
+			$conditions = [];
+			
+			foreach ($ranges as $range) {
+				if ($joinProperty = $range->getJoinProperty()) {
+					$joinConditionSql = $this->sqlBuilder->buildJoinCondition($joinProperty->deepClone());
+					if (!empty(trim($joinConditionSql))) {
+						$conditions[] = $joinConditionSql;
+					}
+				}
+			}
+			
+			if (empty($conditions)) {
+				return '';
+			}
+			
+			return 'WHERE ' . implode(' AND ', $conditions);
+		}
+		
+		private function buildAnyExistsSubquery(AstInterface $expression): string {
+			$allIdentifiers = $this->collectNodes($expression);
+			$allRanges = $this->getAllRanges($allIdentifiers);
+			
+			if ($this->isSingleRangeQuery($allIdentifiers[0])) {
+				return "1";
+			}
+			
+			// Build FROM clause with all needed tables
+			$fromClause = $this->buildFromClauseForRanges($allRanges);
+			
+			// Build WHERE clause with all join conditions
+			$whereClause = $this->buildWhereClauseForRanges($allRanges);
+			
+			$existsQuery = "EXISTS (SELECT 1 FROM {$fromClause} {$whereClause} LIMIT 1)";
+			
+			// Format for context (WHERE vs SELECT)
+			if ($this->partOfQuery === "WHERE") {
+				return $existsQuery;
+			}
+			
+			return "CASE WHEN {$existsQuery} THEN 1 ELSE 0 END";
 		}
 		
 		/**
 		 * Handles "ANY WHERE" clauses in the query AST
-		 * When ANY is used in a WHERE clause, it needs to return a boolean
-		 * condition rather than a 1/0 value.
+		 * When ANY is used in a WHERE clause, it needs to return a boolean condition
 		 * @param AstAny $ast The ANY AST node in WHERE context
 		 * @return string Generated SQL boolean condition
 		 */
 		private function handleAnyWhere(AstAny $ast): string {
-			// Extract identifier from the ANY operation
-			$identifier = $ast->getIdentifier();
+			$expression = $ast->getIdentifier();
 			
-			if (!$identifier instanceof AstIdentifier) {
-				return '';  // Invalid identifier
+			$sqlExpression = $this->convertToString->visitNodeAndReturnSQL($expression);
+			
+			// Check if we can optimize to EXISTS subquery
+			if ($this->canOptimizeToSubquery($expression)) {
+				return $this->buildAnyExistsSubquery($expression);
 			}
 			
-			$range = $identifier->getRange();
+			// Fall back to JOIN-based approach
+			$allIdentifiers = $this->collectNodes($expression);
+			$allRanges = $this->getAllRanges($allIdentifiers);
+			$allIdentifiersIncludedAsJoin = $this->allIdentifiersIncludedAsJoin($allRanges);
+			$allRangesRequired = $this->allRangesRequired($allRanges);
 			
-			// @phpstan-ignore method.notFound
-			if (!$range->includeAsJoin()) {
-				// Not using JOINs - need to handle with EXISTS or simple condition
-				if ($this->isSingleRangeQuery($identifier)) {
-					// Single range query - always true
+			// Single range query - always true
+			if (!$allIdentifiersIncludedAsJoin) {
+				if ($this->isSingleRangeQuery($allIdentifiers[0] ?? null)) {
 					return "1 = 1";
-				} else {
-					// Multi-range query - use EXISTS subquery
-					return $this->handleAnyWhereExists($identifier, $range);
 				}
-			} elseif (!$range->isRequired()) {
-				// LEFT JOIN - check if the joined column has a value
-				$column = $this->sqlBuilder->buildColumnName($identifier);
-				return "{$column} IS NOT NULL";
-			} else {
-				// INNER JOIN - relationship always exists
-				return "1 = 1"; // Always true with INNER JOIN
-			}
-		}
-		
-		/**
-		 * Handles ANY operations with EXISTS subqueries
-		 * When relationships aren't handled via JOINs, we need to use
-		 * EXISTS subqueries to check for related record existence.
-		 * @param AstIdentifier $identifier The identifier referencing related data
-		 * @param AstRange $range The range defining the relationship
-		 * @return string Generated SQL with EXISTS subquery or simple value
-		 */
-		private function handleAnyWithExists(AstIdentifier $identifier, AstRange $range): string {
-			if ($this->isSingleRangeQuery($identifier)) {
-				// Single range query - simplified logic
-				return "1";
-			}
-			
-			// Generate EXISTS subquery and format for current context
-			$existsQuery = $this->generateExistsSubquery($identifier, $range);
-			return $this->formatQueryForContext($existsQuery);
-		}
-		
-		/**
-		 * Generates an EXISTS subquery for ANY WHERE clauses
-		 * Similar to handleAnyWithExists but specifically for WHERE clause context.
-		 * @param AstIdentifier $identifier The identifier for the relationship
-		 * @param AstRange $range The range defining how to join
-		 * @return string Generated EXISTS subquery or simple condition
-		 */
-		private function handleAnyWhereExists(AstIdentifier $identifier, AstRange $range): string {
-			// Single range - always true in WHERE context
-			if ($this->isSingleRangeQuery($identifier)) {
-				return "1 = 1";
-			}
-			
-			// Generate the EXISTS subquery
-			return $this->generateExistsSubquery($identifier, $range);
-		}
-		
-		/**
-		 * Generates the core EXISTS subquery
-		 * Creates a subquery that checks for the existence of related records
-		 * based on the relationship defined in the range.
-		 * @param AstIdentifier $identifier The field identifier
-		 * @param AstRange $range The range defining the relationship
-		 * @return string Complete EXISTS subquery
-		 */
-		private function generateExistsSubquery(AstIdentifier $identifier, AstRange $range): string {
-			// Get entity and table information
-			$entityName = $identifier->getEntityName();
-			$tableName = $this->entityStore->getOwningTable($entityName);
-			$rangeAlias = $range->getName();  // Table alias for the subquery
-			
-			// Initialize WHERE clause
-			$whereClause = '';
-			$joinProperty = $range->getJoinProperty();
-			
-			if ($joinProperty) {
-				// Build the join condition for relating records
-				$joinCondition = $joinProperty->deepClone();  // Clone to avoid side effects
-				$joinConditionSql = $this->sqlBuilder->buildJoinCondition($joinCondition);
 				
-				// Only add WHERE clause if we have a valid join condition
-				if (!empty($joinConditionSql) && trim($joinConditionSql) !== '') {
-					$whereClause = "WHERE {$joinConditionSql}";
-				}
+				// This shouldn't happen if canOptimizeToSubquery works correctly
+				return $this->buildAnyExistsSubquery($expression);
 			}
 			
-			// Return the complete EXISTS subquery
-			// LIMIT 1 optimizes performance since we only care about existence
-			return "EXISTS (
-		        SELECT 1
-		        FROM `{$tableName}` {$rangeAlias}
-		        {$whereClause}
-		        LIMIT 1
-		    )";
-		}
-		
-		/**
-		 * Formats the EXISTS query based on the current query context
-		 *
-		 * Different parts of a SQL query expect different formats:
-		 * - WHERE clauses expect boolean conditions
-		 * - SELECT clauses expect values (1/0)
-		 *
-		 * @param string $existsQuery The EXISTS subquery to format
-		 * @return string Properly formatted query for the current context
-		 */
-		private function formatQueryForContext(string $existsQuery): string {
-			if ($this->partOfQuery === "WHERE") {
-				// WHERE context - return the EXISTS query directly as boolean condition
-				return $existsQuery;
+			// LEFT JOIN - check if expression has value
+			if (!$allRangesRequired) {
+				return "{$sqlExpression} IS NOT NULL";
 			}
 			
-			// Other contexts (like SELECT) - convert to 1/0 value
-			return "CASE WHEN {$existsQuery} THEN 1 ELSE 0 END";
+			// INNER JOIN - relationship always exists
+			return "1 = 1";
 		}
 		
 		/**
@@ -345,10 +410,11 @@
 				if ($parent instanceof AstRetrieve) {
 					return $parent;
 				}
+				
 				$current = $parent;
 			}
 			
-			return null;  // No AstRetrieve found in the hierarchy
+			return null;
 		}
 		
 		/**
@@ -364,5 +430,27 @@
 			
 			// Check if it's a single range query (null-safe with ?? operator)
 			return $queryNode?->isSingleRangeQuery() ?? false;
+		}
+		
+		/**
+		 * Checks if we can optimize this aggregate to use a subquery instead of JOIN
+		 */
+		private function canOptimizeToSubquery(AstInterface $expression): bool {
+			$allIdentifiers = $this->collectNodes($expression);
+			$allRanges = $this->getAllRanges($allIdentifiers);
+			$allRangesRequired = $this->allRangesRequired($allRanges);
+			$allIdentifiersIncludedAsJoin = $this->allIdentifiersIncludedAsJoin($allRanges);
+			
+			// Must be mandatory ranges only
+			if (!$allRangesRequired) {
+				return false;
+			}
+			
+			// Must not be included as JOIN (meaning they're not used elsewhere)
+			if ($allIdentifiersIncludedAsJoin) {
+				return false;
+			}
+			
+			return true;
 		}
 	}
