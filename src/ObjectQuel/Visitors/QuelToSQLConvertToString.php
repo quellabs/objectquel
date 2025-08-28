@@ -17,6 +17,7 @@
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstExpression;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstFactor;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstIdentifier;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstIfnull;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstIn;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstIsEmpty;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstIsFloat;
@@ -522,6 +523,15 @@
 			}
 			
 			$this->result[] = $this->aggregateHandler->handleAny($ast);
+		}
+		
+		/**
+		 * Handle IFNULL function
+		 * @param AstIfnull $ast
+		 * @return void
+		 */
+		protected function handleIfnull(AstIfnull $ast): void {
+			$this->result[] = $this->expressionHandler->handleIfnull($ast);
 		}
 		
 		/**
