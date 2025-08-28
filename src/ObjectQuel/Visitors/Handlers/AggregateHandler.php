@@ -152,11 +152,7 @@
 		 * @return string Generated SQL expression for existence check
 		 */
 		public function handleAny(AstAny $ast): string {
-			if ($this->partOfQuery === "WHERE") {
-				return $this->handleAnyInWhereClause($ast);
-			} else {
-				return $this->handleAggregateOperation($ast, "ANY");
-			}
+			return $this->handleAnyOptimized($ast->getIdentifier());
 		}
 		
 		// ============================================================================
@@ -177,6 +173,9 @@
 		): string {
 			// Fetch the expression
 			$expression = $ast->getIdentifier();
+			
+			// Convert to SQL. This only serves to mark the nodes as handled
+			$this->convertExpressionToSql($expression);
 			
 			// Handle ANY operations with specialized logic
 			if ($aggregateFunction === 'ANY') {
@@ -222,71 +221,66 @@
 		 * @return string Optimized SQL existence check
 		 */
 		private function handleAnyOptimized(AstInterface $expression): string {
-			// Analyze the current query structure to understand JOIN patterns,
-			// table relationships, and constraint requirements
+			$identifiers = $this->collectIdentifierNodes($expression);
+			$ranges = $this->extractAllRanges($expression);
+			
+			$sqlExpression = $this->convertExpressionToSql($expression);
+			// Check for optimizations
+			if (!empty($identifiers)) {
+				$isSingleRange = $this->isSingleRangeQuery($identifiers[0]);
+				$isEquivalent = $this->isEquivalentRangeScenario($expression);
+				
+				// NEW: Direct check without counting identifiers
+				$isSameEntitySelfJoin = false;
+				if (count($ranges) === 1) {
+					$range = $ranges[0];
+					$joinProp = $range->getJoinProperty();
+					
+					if ($joinProp) {
+						// Convert join to SQL and check if it's a simple same-entity equality
+						$joinSQL = $this->convertExpressionToSql($joinProp);
+						
+						// Check if the current range entity matches other ranges in query
+						$currentEntity = $range->getEntityName();
+						
+						// Get all ranges from the base query
+						$baseQuery = $this->getBaseQuery($expression);
+						if ($baseQuery) {
+							$allRanges = $this->extractAllRanges($baseQuery);
+							
+							// Look for another range with same entity
+							foreach ($allRanges as $otherRange) {
+								if ($otherRange->getName() !== $range->getName() &&
+									$otherRange->getEntityName() === $currentEntity) {
+									// Found same entity - this is likely a self-join
+									$isSameEntitySelfJoin = true;
+									break;
+								}
+							}
+						}
+					}
+				}
+				
+				// Apply optimizations
+				if ($isSingleRange || $isEquivalent || $isSameEntitySelfJoin) {
+					return "1";
+				}
+			}
+			
+			// Fall back to existing logic
 			$queryAnalysis = $this->analyzeQueryStructure($expression);
 			
-			// Strategy 1: No JOINs available - use EXISTS subquery
-			// When no JOINs are present, we need an explicit subquery to check
-			// if any matching records exist in the related tables
 			if (!$queryAnalysis['hasJoins']) {
 				return $this->buildAnyExistsSubquery($expression);
 			}
 			
-			// Strategy 2: LEFT JOINs present - check for NULL values
-			// LEFT JOINs may return NULL when no matching records exist,
-			// so we need to explicitly check for non-NULL values to confirm existence
 			if (!$queryAnalysis['allRangesRequired']) {
-				$sqlExpression = $this->convertExpressionToSql($expression);
 				return "CASE WHEN {$sqlExpression} IS NOT NULL THEN 1 ELSE 0 END";
 			}
 			
-			// Strategy 3: INNER JOINs guarantee existence
-			// When all JOINs are INNER JOINs, the presence of any row in the result set
-			// already guarantees that matching records exist, so we can simply return 1
 			return "1";
 		}
-		
-		/**
-		 * Handles ANY operations specifically within WHERE clauses.
-		 * @param AstAny $ast The ANY AST node in WHERE context
-		 * @return string SQL boolean condition for WHERE clause
-		 */
-		private function handleAnyInWhereClause(AstAny $ast): string {
-			// Fetch the expression
-			$expression = $ast->getIdentifier();
-			
-			// Convert the expression to SQL
-			$sqlExpression = $this->convertExpressionToSql($expression);
-			
-			// Attempt subquery optimization first
-			if ($this->canOptimizeToSubquery($expression)) {
-				return $this->buildAnyExistsSubquery($expression);
-			}
-			
-			// Analyze existing query structure for JOIN-based approach
-			$queryAnalysis = $this->analyzeQueryStructure($expression);
-			
-			// Handle single-range queries (always true)
-			if ($queryAnalysis['isSingleRange']) {
-				return "1 = 1";
-			}
-			
-			// Handle based on JOIN type
-			// Fallback to EXISTS if no JOINs available
-			if (!$queryAnalysis['hasJoins']) {
-				return $this->buildAnyExistsSubquery($expression);
-			}
-			
-			// LEFT JOIN - check for non-NULL values
-			if (!$queryAnalysis['allRangesRequired']) {
-				return "{$sqlExpression} IS NOT NULL";
-			}
-			
-			// INNER JOIN - relationship always exists
-			return "1 = 1";
-		}
-		
+
 		// ============================================================================
 		// SUBQUERY BUILDERS
 		// ============================================================================
@@ -329,15 +323,7 @@
 			$subquery = "(SELECT {$aggregateFunction}({$distinctClause}{$sqlExpression}) FROM {$fromClause} {$whereClause})";
 			
 			// Step 7: Apply function-specific NULL handling and optimizations
-			if ($aggregateFunction === 'SUM') {
-				// SUM: Convert NULL results to 0 for mathematical consistency
-				// This prevents NULL propagation in arithmetic operations
-				return "COALESCE({$subquery}, 0)";
-			} else {
-				// Other functions: Return subquery as-is
-				// COUNT already returns 0 for empty sets, AVG/MIN/MAX handle NULLs appropriately
-				return $subquery;
-			}
+			return $aggregateFunction === 'SUM' ? "COALESCE({$subquery}, 0)" : $subquery;
 		}
 		
 		/**
@@ -346,43 +332,14 @@
 		 * @return string SQL fragment representing the existence check
 		 */
 		private function buildAnyExistsSubquery(AstInterface $expression): string {
-			// Extract all identifier nodes from the expression tree
-			// These typically represent field references or table aliases
-			$identifiers = $this->collectIdentifierNodes($expression);
-			
-			// Optimization: Handle simple single-range queries with a shortcut
-			// For basic queries involving only one range/table, we can avoid complex EXISTS logic
-			if (!empty($identifiers) && $this->isSingleRangeQuery($identifiers[0])) {
-				// Return appropriate boolean value based on query context:
-				// - WHERE clause: return "1 = 1" (always true condition)
-				// - SELECT clause: return "1" (numeric true value)
-				return $this->partOfQuery === "WHERE" ? "1 = 1" : "1";
-			}
-			
-			// Complex case: Build a proper EXISTS subquery for multi-range or complex expressions
-			// Step 1: Extract all table ranges/aliases referenced in the expression
 			$ranges = $this->extractAllRanges($expression);
-			
-			// Step 2: Build the FROM clause with all necessary table joins
-			// This ensures all referenced tables are available for the subquery
 			$fromClause = $this->buildFromClauseForRanges($ranges);
-			
-			// Step 3: Build the WHERE clause that applies the original expression conditions
-			// This translates the AST expression into SQL WHERE conditions
 			$whereClause = $this->buildWhereClauseForRanges($ranges);
 			
-			// Step 4: Construct the EXISTS subquery
-			// SELECT 1 is used for efficiency (we only care about existence, not actual data)
-			// LIMIT 1 optimizes performance by stopping after finding the first match
 			$existsQuery = "EXISTS (SELECT 1 FROM {$fromClause} {$whereClause} LIMIT 1)";
 			
-			// Step 5: Format the final result based on the SQL context where this will be used
 			return match ($this->partOfQuery) {
-				// In WHERE clauses, return the EXISTS expression directly
 				"WHERE" => $existsQuery,
-				
-				// In other contexts (like SELECT), wrap in CASE to return 1/0 for true/false
-				// This ensures consistent numeric boolean representation
 				default => "CASE WHEN {$existsQuery} THEN 1 ELSE 0 END"
 			};
 		}
@@ -635,8 +592,132 @@
 			// Find the base query node
 			$queryNode = $this->getBaseQuery($ast);
 			
-			// Check if it's a single range query (null-safe check)
-			return $queryNode?->isSingleRangeQuery() ?? false;
+			if ($queryNode === null) {
+				return false;
+			}
+			
+			// NEW: Check if this is effectively a single-range query
+			// This includes cases where multiple ranges refer to the same entity
+			// with simple equality joins (like d.id = c.id)
+			if ($queryNode->isSingleRangeQuery()) {
+				return true;
+			}
+			
+			// NEW: Additional check for equivalent range scenarios
+			return $this->isEquivalentRangeScenario($ast);
+		}
+		
+		/**
+		 * Checks if ranges are equivalent (same entity, simple joins)
+		 * @param AstInterface $ast The AST to analyze
+		 * @return bool True if ranges are effectively equivalent
+		 */
+		private function isEquivalentRangeScenario(AstInterface $ast): bool {
+			$ranges = $this->extractAllRanges($ast);
+			
+			// Original logic: multiple ranges within the expression
+			if (count($ranges) >= 2) {
+				$firstEntityName = null;
+				
+				foreach ($ranges as $range) {
+					$entityName = $range->getEntityName();
+					
+					if ($firstEntityName === null) {
+						$firstEntityName = $entityName;
+					} elseif ($firstEntityName !== $entityName) {
+						return false;
+					}
+					
+					$joinProperty = $range->getJoinProperty();
+					if ($joinProperty !== null && !$this->isSimpleEqualityJoin($joinProperty)) {
+						return false;
+					}
+				}
+				
+				return true;
+			}
+			
+			// NEW: Single range - check if equivalent to other ranges in broader query
+			if (count($ranges) === 1) {
+				$singleRange = $ranges[0];
+				
+				// Must have a join property to be equivalent to something else
+				$joinProperty = $singleRange->getJoinProperty();
+				if (!$joinProperty) {
+					return false;
+				}
+				
+				// Must be a simple equality join
+				if (!$this->isSimpleEqualityJoin($joinProperty)) {
+					return false;
+				}
+				
+				// Get all identifiers in the join to find the "other" range
+				$joinIdentifiers = $this->collectIdentifierNodes($joinProperty);
+				if (count($joinIdentifiers) !== 2) {
+					return false;
+				}
+				
+				// Find the range that's NOT the single range we're analyzing
+				$otherRange = null;
+				foreach ($joinIdentifiers as $identifier) {
+					$range = $identifier->getRange();
+					if ($range && $range->getName() !== $singleRange->getName()) {
+						$otherRange = $range;
+						break;
+					}
+				}
+				
+				if (!$otherRange) {
+					return false;
+				}
+				
+				// Check if both ranges are the same entity type
+				return $otherRange->getEntityName() === $singleRange->getEntityName();
+			}
+			
+			return false;
+		}
+		
+		/**
+		 * NEW METHOD: Determines if a join is a simple equality join between same entity types
+		 * @param AstInterface $joinProperty The join property to analyze
+		 * @return bool True if it's a simple equality join between same entities
+		 */
+		private function isSimpleEqualityJoin(AstInterface $joinProperty): bool {
+			// Collect all identifier nodes from the join condition
+			$identifiers = $this->collectIdentifierNodes($joinProperty);
+			
+			// Must have exactly 2 identifiers for a simple equality join (left = right)
+			if (count($identifiers) !== 2) {
+				return false;
+			}
+			
+			$leftIdentifier = $identifiers[0];
+			$rightIdentifier = $identifiers[1];
+			
+			// Both identifiers must have ranges
+			$leftRange = $leftIdentifier->getRange();
+			$rightRange = $rightIdentifier->getRange();
+			
+			if ($leftRange === null || $rightRange === null) {
+				return false;
+			}
+			
+			// Check if both ranges reference the same entity type
+			$leftEntity = $leftRange->getEntityName();
+			$rightEntity = $rightRange->getEntityName();
+			
+			if ($leftEntity !== $rightEntity) {
+				return false;
+			}
+			
+			// Optional: Check if they're comparing the same field name
+			// This catches patterns like c.id = d.id (same field on same entity type)
+			$leftField = $leftIdentifier->getName();
+			$rightField = $rightIdentifier->getName();
+			
+			return $leftField === $rightField;
 		}
 		
 		// ============================================================================
