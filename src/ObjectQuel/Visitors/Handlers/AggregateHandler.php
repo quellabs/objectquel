@@ -174,9 +174,6 @@
 			// Fetch the expression
 			$expression = $ast->getIdentifier();
 			
-			// Convert to SQL. This only serves to mark the nodes as handled
-			$this->convertExpressionToSql($expression);
-			
 			// Handle ANY operations with specialized logic
 			if ($aggregateFunction === 'ANY') {
 				return $this->handleAnyOptimized($expression);
@@ -199,13 +196,22 @@
 		 * @return string SQL aggregate expression using JOINs
 		 */
 		private function buildJoinBasedAggregate(AstInterface $expression, string $aggregateFunction, bool $distinct): string {
+			// Convert the AST expression into its SQL string representation
 			$sqlExpression = $this->convertExpressionToSql($expression);
+			
+			// Prepare DISTINCT clause if needed - adds "DISTINCT " with trailing space
 			$distinctClause = $distinct ? 'DISTINCT ' : '';
 			
 			// Apply function-specific formatting and NULL handling
 			if ($aggregateFunction === 'SUM') {
+				// For SUM operations, wrap with COALESCE to convert NULL results to 0
+				// This ensures SUM always returns a numeric value instead of NULL
+				// when there are no matching rows or all values are NULL
 				return "COALESCE({$aggregateFunction}({$distinctClause}{$sqlExpression}), 0)";
 			} else {
+				// For other aggregate functions (COUNT, AVG, MAX, MIN, etc.),
+				// use standard formatting without NULL coalescing
+				// COUNT typically returns 0 for empty sets, while AVG/MAX/MIN return NULL
 				return "{$aggregateFunction}({$distinctClause}{$sqlExpression})";
 			}
 		}
@@ -221,66 +227,279 @@
 		 * @return string Optimized SQL existence check
 		 */
 		private function handleAnyOptimized(AstInterface $expression): string {
+			// Collect all identifier nodes (table/column references) from the AST expression
+			// This helps understand what entities are being referenced in the query
 			$identifiers = $this->collectIdentifierNodes($expression);
+			
+			// Extract all range specifications (table sources, subqueries, etc.)
+			// These define the data sources that the expression operates on
 			$ranges = $this->extractAllRanges($expression);
 			
+			// Convert the abstract syntax tree expression into executable SQL
+			// This creates the base SQL that would be used if no optimizations apply
 			$sqlExpression = $this->convertExpressionToSql($expression);
-			// Check for optimizations
+			
+			// Apply optimization rules if identifiers are present
 			if (!empty($identifiers)) {
-				$isSingleRange = $this->isSingleRangeQuery($identifiers[0]);
-				$isEquivalent = $this->isEquivalentRangeScenario($expression);
-				
-				// NEW: Direct check without counting identifiers
-				$isSameEntitySelfJoin = false;
-				if (count($ranges) === 1) {
-					$range = $ranges[0];
-					$joinProp = $range->getJoinProperty();
-					
-					if ($joinProp) {
-						// Convert join to SQL and check if it's a simple same-entity equality
-						$joinSQL = $this->convertExpressionToSql($joinProp);
-						
-						// Check if the current range entity matches other ranges in query
-						$currentEntity = $range->getEntityName();
-						
-						// Get all ranges from the base query
-						$baseQuery = $this->getBaseQuery($expression);
-						if ($baseQuery) {
-							$allRanges = $this->extractAllRanges($baseQuery);
-							
-							// Look for another range with same entity
-							foreach ($allRanges as $otherRange) {
-								if ($otherRange->getName() !== $range->getName() &&
-									$otherRange->getEntityName() === $currentEntity) {
-									// Found same entity - this is likely a self-join
-									$isSameEntitySelfJoin = true;
-									break;
-								}
-							}
-						}
-					}
-				}
-				
-				// Apply optimizations
-				if ($isSingleRange || $isEquivalent || $isSameEntitySelfJoin) {
+				// Check if this expression can be optimized to a constant true condition
+				// This happens when the query structure guarantees the existence check will always pass
+				// For example, when checking existence on a table that's already JOINed in the main query
+				if ($this->canOptimizeToConstantTrue($expression, $identifiers, $ranges)) {
+					// Return "1" as a SQL constant true value - this is much more efficient
+					// than executing a complex EXISTS subquery
 					return "1";
 				}
 			}
 			
-			// Fall back to existing logic
+			// Fall back to complex query analysis
+			// If no simple optimizations apply, use the full complex query handling
+			// This will generate a proper EXISTS subquery or similar construct
+			return $this->handleComplexQueryScenario($expression, $sqlExpression);
+		}
+		
+		/**
+		 * Determines if the query can be optimized to return constant true (1)
+		 * based on various optimization scenarios.
+		 * @param AstInterface $expression The full expression being analyzed
+		 * @param array $identifiers Array of identifier nodes found in expression
+		 * @param array $ranges Array of ranges extracted from expression
+		 * @return bool True if query can be optimized to constant true
+		 */
+		private function canOptimizeToConstantTrue(AstInterface $expression, array $identifiers, array $ranges): bool {
+			// 1. Single range queries - if only one range involved, existence is guaranteed
+			$isSingleRange = !empty($identifiers) && $this->isSingleRangeQuery($identifiers[0]);
+			
+			// 2. Equivalent range scenarios (same entity with simple equality joins)
+			$isEquivalentRange = $this->isEquivalentRangeScenario($expression);
+			
+			// 3. Base range references (no joins) - always exist in query context
+			$isBaseRangeReference = $this->isBaseRangeReference($ranges);
+			
+			// 4. Same entity self-joins with simple equality conditions
+			$isSameEntitySelfJoin = $this->isSameEntitySelfJoin($expression, $ranges);
+			
+			// 5. NEW: All ranges are required AND already joined in main query
+			$rangesAlreadyRequiredJoined = $this->areRangesAlreadyRequiredJoined($ranges);
+			
+			// 6. NEW: Expression references only required relationships
+			// This catches cases where all join conditions are INNER JOINs
+			$allRelationshipsRequired = $this->allRelationshipsAreRequired($expression, $ranges);
+			
+			return $isSingleRange
+				|| $isEquivalentRange
+				|| $isBaseRangeReference
+				|| $isSameEntitySelfJoin
+				|| $rangesAlreadyRequiredJoined
+				|| $allRelationshipsRequired;
+		}
+		
+		/**
+		 * NEW METHOD: Checks if all relationships in the expression are required (INNER JOIN)
+		 * @param AstInterface $expression The expression to analyze
+		 * @param array $ranges Array of ranges to check
+		 * @return bool True if all relationships are required
+		 */
+		private function allRelationshipsAreRequired(AstInterface $expression, array $ranges): bool {
+			// If no ranges, nothing to check
+			if (empty($ranges)) {
+				return false;
+			}
+			
+			// Check if ALL ranges are either:
+			// 1. Base ranges (no join property) - always required
+			// 2. Required joins (inner joins)
+			foreach ($ranges as $range) {
+				$joinProperty = $range->getJoinProperty();
+				
+				// Base range - always required
+				if ($joinProperty === null) {
+					continue;
+				}
+				
+				// Must be a required join
+				if (!$range->isRequired()) {
+					return false;
+				}
+			}
+			
+			// Additionally check if these required ranges create a path that guarantees existence
+			return $this->requiredRangesGuaranteeExistence($expression, $ranges);
+		}
+		
+		/**
+		 * NEW METHOD: Checks if required ranges form a chain that guarantees existence
+		 * @param AstInterface $expression The expression being analyzed
+		 * @param array $ranges Array of required ranges
+		 * @return bool True if the required chain guarantees existence
+		 */
+		private function requiredRangesGuaranteeExistence(AstInterface $expression, array $ranges): bool {
+			// Get the base query to understand the full context
+			$baseQuery = $this->getBaseQuery($expression);
+			if (!$baseQuery) {
+				return false;
+			}
+			
+			// Check if all ranges in the expression are either:
+			// 1. Already present in the base query as required joins
+			// 2. Form a connected chain of required relationships
+			
+			foreach ($ranges as $range) {
+				if (!$this->isRangeRequiredInBaseQuery($baseQuery, $range)) {
+					return false;
+				}
+			}
+			
+			return true;
+		}
+		
+		/**
+		 * NEW METHOD: Checks if ranges are already required in the base query
+		 * @param AstRetrieve $baseQuery The base query to check against
+		 * @param AstRange $range The range to look for
+		 * @return bool True if range is required in base query
+		 */
+		private function isRangeRequiredInBaseQuery(AstRetrieve $baseQuery, AstRange $range): bool {
+			$baseRanges = $this->extractAllRanges($baseQuery);
+			
+			foreach ($baseRanges as $baseRange) {
+				if ($baseRange->getName() === $range->getName() && $baseRange->isRequired()) {
+					return true;
+				}
+			}
+			
+			return false;
+		}
+		
+		/**
+		 * Checks if the ranges are already included as REQUIRED joins in the main query
+		 * For optimization to constant true, we need both:
+		 * 1. The range to be already joined in main query
+		 * 2. AND it must be a required join (INNER JOIN)
+		 * @param array $ranges Array of ranges to check
+		 * @return bool True if ranges are already joined as REQUIRED joins in main query
+		 */
+		private function areRangesAlreadyRequiredJoined(array $ranges): bool {
+			foreach ($ranges as $range) {
+				// Must be already joined in main query
+				if (!$this->isJoinAlreadyInMainQuery($range)) {
+					return false;
+				}
+				
+				// AND must be a required join (INNER JOIN)
+				// Optional joins (LEFT JOIN) can return NULL, so we can't optimize to constant true
+				if (!$range->isRequired()) {
+					return false;
+				}
+			}
+			return true;
+		}
+		
+		/**
+		 * Checks if the expression references only the base range (root range with no joins).
+		 * Base range references can be optimized since they always exist in the context.
+		 * @param array $ranges Array of ranges to analyze
+		 * @return bool True if expression only references base range
+		 */
+		private function isBaseRangeReference(array $ranges): bool {
+			// Must have exactly one range
+			if (count($ranges) !== 1) {
+				return false;
+			}
+			
+			// Fetch the range
+			$range = $ranges[0];
+			
+			// Base range has no join property - it's the root range of the query
+			return $range->getJoinProperty() === null;
+		}
+		
+		/**
+		 * Detects same-entity self-join scenarios where a range joins to another range
+		 * of the same entity type. These can often be optimized.
+		 * @param AstInterface $expression The full expression being analyzed
+		 * @param array $ranges Array of ranges to check
+		 * @return bool True if this is a same-entity self-join scenario
+		 */
+		private function isSameEntitySelfJoin(AstInterface $expression, array $ranges): bool {
+			// Must have exactly one range that is not a base range reference
+			if (count($ranges) !== 1 || $this->isBaseRangeReference($ranges)) {
+				return false;
+			}
+			
+			// Must have a join property to be a joined range
+			$range = $ranges[0];
+			
+			if (!$range->getJoinProperty()) {
+				return false;
+			}
+			
+			return $this->checkForSameEntityInBaseQuery($expression, $range);
+		}
+		
+		/**
+		 * Searches the base query for another range with the same entity type
+		 * as the given range, indicating a self-join scenario.
+		 * @param AstInterface $expression The expression to get base query from
+		 * @param object $targetRange The range to compare against other ranges
+		 * @return bool True if another range with same entity is found
+		 */
+		private function checkForSameEntityInBaseQuery(AstInterface $expression, object $targetRange): bool {
+			$currentEntity = $targetRange->getEntityName();
+			
+			// Get base query to analyze all ranges
+			$baseQuery = $this->getBaseQuery($expression);
+			
+			if (!$baseQuery) {
+				return false;
+			}
+			
+			// Look for another range with same entity but different name
+			foreach ($this->extractAllRanges($baseQuery) as $otherRange) {
+				if ($this->isSameEntityDifferentRange($otherRange, $targetRange, $currentEntity)) {
+					return true;
+				}
+			}
+			
+			return false;
+		}
+		
+		/**
+		 * Checks if two ranges represent the same entity but are different range instances.
+		 * @param object $otherRange Range to compare
+		 * @param object $targetRange Original range being checked
+		 * @param string $currentEntity Entity name to match
+		 * @return bool True if ranges are same entity but different instances
+		 */
+		private function isSameEntityDifferentRange(object $otherRange, object $targetRange, string $currentEntity): bool {
+			return $otherRange->getName() !== $targetRange->getName()
+				&& $otherRange->getEntityName() === $currentEntity;
+		}
+		
+		/**
+		 * Handles complex query scenarios that cannot be optimized to constant true.
+		 * Analyzes query structure and applies appropriate existence check strategy.
+		 * @param AstInterface $expression The expression to analyze
+		 * @param string $sqlExpression The SQL representation of the expression
+		 * @return string Appropriate SQL existence check
+		 */
+		private function handleComplexQueryScenario(AstInterface $expression, string $sqlExpression): string {
 			$queryAnalysis = $this->analyzeQueryStructure($expression);
 			
+			// Simple case: no joins required, use subquery approach
 			if (!$queryAnalysis['hasJoins']) {
 				return $this->buildAnyExistsSubquery($expression);
 			}
 			
+			// Complex case: joins present but not all ranges required
+			// Use conditional check for null values
 			if (!$queryAnalysis['allRangesRequired']) {
 				return "CASE WHEN {$sqlExpression} IS NOT NULL THEN 1 ELSE 0 END";
 			}
 			
+			// Most complex case: all joins required, existence guaranteed
 			return "1";
 		}
-
+		
 		// ============================================================================
 		// SUBQUERY BUILDERS
 		// ============================================================================
@@ -332,16 +551,30 @@
 		 * @return string SQL fragment representing the existence check
 		 */
 		private function buildAnyExistsSubquery(AstInterface $expression): string {
+			// Extract all table/column ranges referenced in the expression
+			// This analyzes the AST to determine what tables and columns are needed
 			$ranges = $this->extractAllRanges($expression);
+			
+			// Build the FROM clause by joining all necessary tables
+			// This creates the table joins needed to access the referenced data
 			$fromClause = $this->buildFromClauseForRanges($ranges);
+			
+			// Build the WHERE clause to filter records based on the ranges
+			// This applies the conditions from the expression to limit results
 			$whereClause = $this->buildWhereClauseForRanges($ranges);
 			
+			// Construct the EXISTS subquery with SELECT 1 for efficiency
+			// LIMIT 1 optimizes performance since we only need to know if ANY record exists
 			$existsQuery = "EXISTS (SELECT 1 FROM {$fromClause} {$whereClause} LIMIT 1)";
 			
-			return match ($this->partOfQuery) {
-				"WHERE" => $existsQuery,
-				default => "CASE WHEN {$existsQuery} THEN 1 ELSE 0 END"
-			};
+			// Return different formats based on where this subquery will be used
+			if ($this->partOfQuery !== "WHERE") {
+				// If used in SELECT or other contexts, wrap in CASE to return 1/0
+				return "CASE WHEN {$existsQuery} THEN 1 ELSE 0 END";
+			} else {
+				// If used in WHERE clause, return boolean EXISTS directly
+				return $existsQuery;
+			}
 		}
 		
 		// ============================================================================
@@ -514,6 +747,52 @@
 					return true;
 				}
 			}
+			
+			return false;
+		}
+		
+		/**
+		 * Determines if the aggregate should be calculated in the main query
+		 * rather than a subquery.
+		 */
+		private function aggregateBelongsInMainQuery(AstInterface $expression, array $ranges): bool {
+			// Check if all ranges are simple references without complex join conditions
+			foreach ($ranges as $range) {
+				$joinProperty = $range->getJoinProperty();
+				
+				// If there are no join conditions or they're simple,
+				// the aggregate can stay in main query
+				if ($joinProperty === null) {
+					continue;
+				}
+				
+				// For complex joins that aren't already established in main query,
+				// use subquery approach
+				if (!$this->isJoinAlreadyInMainQuery($range)) {
+					return false;
+				}
+			}
+			
+			return true;
+		}
+		
+		/**
+		 * Determines if a range's join is already established in the main query.
+		 * @param AstRange $range The range to check for existing joins
+		 * @return bool True if the join is already available in main query
+		 */
+		private function isJoinAlreadyInMainQuery(AstRange $range): bool {
+			// Base ranges (no join property) are always in main query
+			if ($range->getJoinProperty() === null) {
+				return true;
+			}
+			
+			// If explicitly configured to be included as JOIN
+			if ($range->includeAsJoin()) {
+				return true;
+			}
+			
+			// Otherwise, assume it needs a subquery
 			return false;
 		}
 		
@@ -542,9 +821,15 @@
 		private function canOptimizeToSubquery(AstInterface $expression): bool {
 			$ranges = $this->extractAllRanges($expression);
 			
-			// Must have required ranges only (no LEFT JOINs)
-			if (!$this->allRangesRequired($ranges)) {
+			// Don't use subquery if the aggregate can be calculated in main query
+			// This happens when the expression only uses ranges already available in main query
+			if ($this->aggregateBelongsInMainQuery($expression, $ranges)) {
 				return false;
+			}
+			
+			// Must have required ranges only (no LEFT JOINs)
+			if ($this->allRangesRequired($ranges)) {
+				return true;
 			}
 			
 			// Must not be included as JOIN in main query
