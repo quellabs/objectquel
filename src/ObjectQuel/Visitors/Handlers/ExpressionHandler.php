@@ -81,7 +81,7 @@
 		private array $parameters;
 		
 		/** @var mixed Reference to the main visitor to avoid circular dependencies */
-		private $mainVisitor; // Reference to main visitor instead of interface
+		private mixed $mainVisitor; // Reference to main visitor instead of interface
 		
 		/** @var string Temporary storage for the last processed result */
 		private string $lastResult = '';

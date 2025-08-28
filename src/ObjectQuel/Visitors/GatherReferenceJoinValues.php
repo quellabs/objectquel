@@ -40,6 +40,13 @@
 				return;
 			}
 			
+			/**
+			 * Do not use if we optimized the range anyway using a subquery
+			 */
+			if (!$node->getRange()->includeAsJoin()) {
+				return;
+			}
+			
 			// If we reached here, we found a reference
 			// Throw an exception to signal this to the calling method
 			$this->identifiers[] = $node;

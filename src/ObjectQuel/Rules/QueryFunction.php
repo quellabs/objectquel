@@ -94,23 +94,18 @@
 		 * Generic parser for simple single-parameter functions
 		 * @template T of AstInterface
 		 * @param class-string<T> $astClass The fully qualified AST class name to instantiate
-		 * @param bool $usePropertyChain Whether to parse as property chain (entity.property) or as general expression
 		 * @return T The instantiated AST node
 		 * @throws LexerException When token matching fails
 		 * @throws ParserException When parsing fails
 		 */
-		private function parseSingleParameter(string $astClass, bool $usePropertyChain = false): AstInterface {
-			// Match opening parenthesis: function(
+		private function parseSingleParameter(string $astClass,): AstInterface {
+			// Match opening parenthesis
 			$this->lexer->match(Token::ParenthesesOpen);
 			
 			// Parse the parameter - either as property chain (entity.field) or general expression
-			if ($usePropertyChain) {
-				$parameter = $this->expressionRule->parsePropertyChain();
-			} else {
-				$parameter = $this->expressionRule->parse();
-			}
+			$parameter = $this->expressionRule->parse();
 			
-			// Match closing parenthesis: )
+			// Match closing parenthesis
 			$this->lexer->match(Token::ParenthesesClose);
 			
 			// Create and return the appropriate AST node
@@ -125,7 +120,7 @@
 		 * @throws ParserException When parsing fails
 		 */
 		protected function parseCount(): AstCount {
-			return $this->parseSingleParameter(AstCount::class, true);
+			return $this->parseSingleParameter(AstCount::class);
 		}
 		
 		/**
@@ -136,7 +131,7 @@
 		 * @throws ParserException When parsing fails
 		 */
 		protected function parseCountU(): AstCountU {
-			return $this->parseSingleParameter(AstCountU::class, true);
+			return $this->parseSingleParameter(AstCountU::class);
 		}
 		
 		/**
@@ -147,7 +142,7 @@
 		 * @throws ParserException When parsing fails
 		 */
 		protected function parseAvg(): AstAvg {
-			return $this->parseSingleParameter(AstAvg::class, true);
+			return $this->parseSingleParameter(AstAvg::class);
 		}
 		
 		/**
@@ -158,7 +153,7 @@
 		 * @throws ParserException When parsing fails
 		 */
 		protected function parseAvgU(): AstAvgU {
-			return $this->parseSingleParameter(AstAvgU::class, true);
+			return $this->parseSingleParameter(AstAvgU::class);
 		}
 		
 		/**
@@ -169,7 +164,7 @@
 		 * @throws ParserException When parsing fails
 		 */
 		protected function parseMax(): AstMax {
-			return $this->parseSingleParameter(AstMax::class, true);
+			return $this->parseSingleParameter(AstMax::class);
 		}
 		
 		/**
@@ -180,7 +175,7 @@
 		 * @throws ParserException When parsing fails
 		 */
 		protected function parseMin(): AstMin {
-			return $this->parseSingleParameter(AstMin::class, true);
+			return $this->parseSingleParameter(AstMin::class);
 		}
 		
 		/**
@@ -191,7 +186,7 @@
 		 * @throws ParserException When parsing fails
 		 */
 		protected function parseSum(): AstSum {
-			return $this->parseSingleParameter(AstSum::class, true);
+			return $this->parseSingleParameter(AstSum::class);
 		}
 		
 		/**
@@ -202,7 +197,7 @@
 		 * @throws ParserException When parsing fails
 		 */
 		protected function parseSumU(): AstSumU {
-			return $this->parseSingleParameter(AstSumU::class, true);
+			return $this->parseSingleParameter(AstSumU::class);
 		}
 		
 		/**
@@ -215,7 +210,7 @@
 		 * @throws ParserException When the parser encounters invalid syntax or missing parameters
 		 */
 		protected function parseAny(): AstAny {
-			return $this->parseSingleParameter(AstAny::class, true);
+			return $this->parseSingleParameter(AstAny::class);
 		}
 		
 		/**
@@ -251,7 +246,7 @@
 		 * @throws ParserException When parsing fails
 		 */
 		protected function parseIsInteger(): AstIsInteger {
-			return $this->parseSingleParameter(AstIsInteger::class, true);
+			return $this->parseSingleParameter(AstIsInteger::class);
 		}
 		
 		/**

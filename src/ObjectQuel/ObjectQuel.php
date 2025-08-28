@@ -47,7 +47,6 @@
 				
 				// Final processing phase - Apply final transformations
 				$this->processWithVisitor($ast, AliasPlugAliasPattern::class);
-				$this->addReferencedValuesToQuery($ast);
 				
 				// The AST is now fully validated
 				return $ast;
@@ -110,43 +109,5 @@
 			$visitor = new $visitorClass(...$args);
 			$ast->accept($visitor);
 			return $visitor;
-		}
-
-		/**
-		 * Adds referenced field values to the query's value list for join conditions.
-		 * @param AstRetrieve $ast
-		 * @return void
-		 */
-		private function addReferencedValuesToQuery(AstRetrieve $ast): void {
-			// Early exit if there are no conditions to process
-			// Without conditions, there won't be any referenced fields to gather
-			if ($ast->getConditions() === null) {
-				return;
-			}
-			
-			// Use a visitor pattern to traverse the AST and collect all identifiers
-			// that are referenced in join conditions but not already in the SELECT list
-			// GatherReferenceJoinValues is a specialized visitor that finds these missing references
-			$visitor = $this->processWithVisitor($ast, GatherReferenceJoinValues::class);
-			
-			// Process each identifier that was found by the visitor
-			foreach ($visitor->getIdentifiers() as $identifier) {
-				// Create a deep copy of the identifier to avoid modifying the original
-				// This ensures we don't accidentally affect other parts of the query tree
-				$clonedIdentifier = $identifier->deepClone();
-				
-				// Wrap the cloned identifier in an alias using its complete name
-				// This creates a proper SELECT field that can be referenced in joins
-				$alias = new AstAlias($identifier->getCompleteName(), $clonedIdentifier);
-				
-				// Mark this field as invisible in the final result set
-				// These are technical fields needed for joins, not user-requested data
-				// This prevents them from appearing in the output while still being available for JOIN conditions
-				$alias->setVisibleInResult(false);
-				
-				// Add the aliased field to the query's value list (SELECT clause)
-				// This ensures the field is available for join processing even though it's not visible to users
-				$ast->addValue($alias);
-			}
 		}
 	}
