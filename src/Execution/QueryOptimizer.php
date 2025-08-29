@@ -19,6 +19,7 @@
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstTerm;
 	use Quellabs\ObjectQuel\ObjectQuel\AstInterface;
 	use Quellabs\ObjectQuel\ObjectQuel\Visitors\ContainsCheckIsNullForRange;
+	use Quellabs\ObjectQuel\ObjectQuel\Visitors\ContainsNonNullableFieldForRange;
 	use Quellabs\ObjectQuel\ObjectQuel\Visitors\ContainsRange;
 	use Quellabs\ObjectQuel\Execution\Visitors\VisitorRangeNotInAggregates;
 	use Quellabs\ObjectQuel\ObjectQuel\Visitors\GatherReferenceJoinValues;
@@ -43,8 +44,7 @@
 		public function optimize(AstRetrieve $ast): void {
 			$this->setOnlyRangeToRequired($ast);
 			$this->setRangesRequiredThroughAnnotations($ast);
-			$this->setRangesRequiredThroughWhereClause($ast);
-			$this->setRangesNotRequiredThroughNullChecks($ast);
+			$this->optimizeJoinTypesFromWhereClause($ast);
 			$this->processExistsOperators($ast);
 			$this->optimizeAggregateFunctions($ast);
 			$this->addReferencedValuesToQuery($ast);
@@ -118,87 +118,73 @@
 		}
 		
 		/**
-		 * Sets ranges as required when they're used in WHERE clause conditions.
+		 * Optimizes JOIN types based on WHERE clause analysis.
+		 * Converts LEFT JOINs to INNER JOINs when safe, and vice versa.
 		 * @param AstRetrieve $ast
 		 * @return void
 		 */
-		private function setRangesRequiredThroughWhereClause(AstRetrieve $ast): void {
-			// Early exit if there are no WHERE conditions to analyze
-			// Without conditions, there are no references to examine
+		private function optimizeJoinTypesFromWhereClause(AstRetrieve $ast): void {
 			if ($ast->getConditions() === null) {
 				return;
 			}
 			
-			// Examine each table/range involved in the query
 			foreach ($ast->getRanges() as $range) {
-				try {
-					// Only process ranges that are currently marked as NOT required (optional)
-					// Required ranges don't need this check since they're already marked as needed
-					if ($range->isRequired()) {
-						continue;
-					}
-					
-					// Create a visitor to search for any references to this specific range/table
-					// in the WHERE clause conditions
-					$visitor = new ContainsRange($range->getName());
-					
-					// Traverse the condition tree looking for references to this range
-					// The visitor will detect patterns like "table.field = value" or "table.id IN (...)"
-					$ast->getConditions()->accept($visitor);
-					
-					// If we reach this point, no references to this range were found in WHERE clause
-					// The range remains optional (no action needed)
-					
-				} catch (\Exception $e) {
-					// Exception indicates that references to this range were found in WHERE conditions
-					// When a table/range is referenced in WHERE clause, it must be required
-					// because filtering on a field requires the record to exist (INNER JOIN behavior)
-					// Mark this range as required, converting it from LEFT JOIN to INNER JOIN
-					$range->setRequired();
-				}
+				$this->analyzeRangeForJoinOptimization($ast, $range);
 			}
 		}
 		
 		/**
-		 * Sets ranges as not required when NULL checks are used in WHERE clause.
-		 * @param AstRetrieve $ast
-		 * @return void
+		 * Analyzes a specific range to determine the optimal JOIN type based on WHERE clause conditions.
+		 *
+		 * This method implements a sophisticated JOIN optimization strategy:
+		 *
+		 * 1. **NULL Check Priority**: If the range has explicit NULL checks (IS NULL conditions),
+		 *    it must remain as LEFT JOIN regardless of other factors, since NULL checks
+		 *    specifically require the ability to match records that don't exist.
+		 *
+		 * 2. **Field Reference Analysis**: When a range is referenced in WHERE conditions
+		 *    without NULL checks, we analyze whether those references are safe to convert
+		 *    to INNER JOIN by examining column nullability.
+		 *
+		 * 3. **Nullability-Based Conversion**: Only convert LEFT JOIN to INNER JOIN when
+		 *    the referenced fields are non-nullable, ensuring the optimization doesn't
+		 *    change query semantics or filter out valid results.
+		 *
+		 * The optimization logic follows this decision tree:
+		 * - Has NULL checks? → Keep as LEFT JOIN (exit early)
+		 * - Has field references + no NULL checks + non-nullable fields? → Convert to INNER JOIN
+		 * - Otherwise → Leave unchanged
+		 *
+		 * This ensures we only perform safe optimizations that maintain query correctness
+		 * while potentially improving performance by reducing the result set size.
+		 *
+		 * @param AstRetrieve $ast The query AST containing WHERE conditions to analyze
+		 * @param AstRange $range The specific range/table to optimize JOIN type for
+		 * @return void Modifies the range's required flag in-place
 		 */
-		private function setRangesNotRequiredThroughNullChecks(AstRetrieve $ast): void {
-			// Early exit if there are no WHERE conditions to analyze
-			// Without conditions, there can't be any NULL checks to process
-			if ($ast->getConditions() === null) {
+		private function analyzeRangeForJoinOptimization(AstRetrieve $ast, AstRange $range): void {
+			// Check for NULL checks first (these keep ranges as LEFT JOIN)
+			$hasNullChecks = $this->rangeHasNullChecks($ast, $range);
+			
+			// Check for field references
+			$hasFieldReferences = $this->conditionsListHasFieldReferences($ast, $range);
+			
+			// If currently required but has NULL checks, make it optional
+			if ($range->isRequired() && $hasNullChecks) {
+				$range->setRequired(false);
 				return;
 			}
 			
-			// Examine each table/range involved in the query
-			foreach ($ast->getRanges() as $range) {
-				// Only process ranges that are currently marked as required
-				// Non-required ranges don't need this optimization check
-				if ($range->isRequired()) {
-					try {
-						// Create a specialized visitor to check if there are IS NULL conditions
-						// for fields belonging to this specific range/table
-						$visitor = new ContainsCheckIsNullForRange($range->getName());
-						
-						// Traverse the condition tree to look for NULL checks on this range
-						// The visitor will examine all conditions and detect patterns like "table.field IS NULL"
-						$ast->getConditions()->accept($visitor);
-						
-						// If we reach this point, no NULL checks were found for this range
-						// The range remains required (no action needed)
-						
-					} catch (\Exception $e) {
-						// Exception indicates that IS NULL checks were found for this range
-						// When a field is checked for NULL, the associated table/range becomes optional
-						// because NULL checks imply the record might not exist (LEFT JOIN scenario)
-						// Mark this range as not required, converting it from INNER JOIN to LEFT JOIN
-						$range->setRequired(false);
-					}
+			// If currently optional but has field references, check nullability
+			if (!$range->isRequired() && $hasFieldReferences && !$hasNullChecks) {
+				$hasNonNullableReferences = $this->conditionListHasNonNullableReferences($ast, $range);
+				
+				if ($hasNonNullableReferences) {
+					$range->setRequired();
 				}
 			}
 		}
-		
+
 		// ========== HELPER METHODS ==========
 		
 		/**
@@ -419,7 +405,6 @@
 			}
 		}
 		
-		
 		/**
 		 * Sets the appropriate child relationship between parent and item nodes.
 		 * @param AstInterface|null $parent
@@ -562,7 +547,7 @@
 				}
 				
 				// Check WHERE conditions for non-ANY usage of this range
-				// If the range is used in filters outside of ANY functions, visitor throws exception
+				// If the range is used in filters outside ANY functions, visitor throws exception
 				if ($retrieve->getConditions()) {
 					$retrieve->getConditions()->accept($visitor);
 				}
@@ -647,5 +632,53 @@
 			$visitor = new $visitorClass(...$args);
 			$ast->accept($visitor);
 			return $visitor;
+		}
+		
+		/**
+		 * Checks if a range has explicit NULL checks in the WHERE clause conditions.
+		 * @param AstRetrieve $ast The query AST containing conditions to check
+		 * @param AstRange $range The range to check for NULL conditions
+		 * @return bool True if NULL checks are found, false otherwise
+		 */
+		private function rangeHasNullChecks(AstRetrieve $ast, AstRange $range): bool {
+			try {
+				$visitor = new ContainsCheckIsNullForRange($range->getName());
+				$ast->getConditions()->accept($visitor);
+				return false;
+			} catch (\Exception $e) {
+				return true;
+			}
+		}
+		
+		/**
+		 * Checks if a range has any field references in the WHERE clause conditions.
+		 * @param AstRetrieve $ast The query AST containing conditions to check
+		 * @param AstRange $range The range to check for field references
+		 * @return bool True if field references are found, false otherwise
+		 */
+		private function conditionsListHasFieldReferences(AstRetrieve $ast, AstRange $range): bool {
+			try {
+				$visitor = new ContainsRange($range->getName());
+				$ast->getConditions()->accept($visitor);
+				return false;
+			} catch (\Exception $e) {
+				return true;
+			}
+		}
+		
+		/**
+		 * Checks if a range has references to non-nullable fields in WHERE conditions.
+		 * @param AstRetrieve $ast The query AST containing conditions to analyze
+		 * @param AstRange $range The range to check for non-nullable field usage
+		 * @return bool True if non-nullable fields are referenced, false otherwise
+		 */
+		private function conditionListHasNonNullableReferences(AstRetrieve $ast, AstRange $range): bool {
+			try {
+				$visitor = new ContainsNonNullableFieldForRange($range->getName(), $this->entityStore);
+				$ast->getConditions()->accept($visitor);
+				return false;
+			} catch (\Exception $e) {
+				return true;
+			}
 		}
 	}
