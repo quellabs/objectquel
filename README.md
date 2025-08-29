@@ -363,6 +363,38 @@ operations into elegant, readable code.
 | Regex       | `main.name = /^a/`                                | Regular expression support         |
 | Full-text   | `search(main.name, "banana cherry +pear -apple")` | Full-text search with weights      |
 
+### NULL Handling with IFNULL
+
+ObjectQuel provides the `IFNULL()` function for handling NULL values in your queries.
+
+#### Syntax
+
+```
+IFNULL(expression, default_value)
+```
+
+- **expression**: The value to test for NULL
+- **default_value**: The value to return if expression is NULL
+
+#### Example
+
+```php
+// Use a default name when description is NULL
+$results = $entityManager->executeQuery("
+    range of p is App\\Entity\\ProductEntity
+    retrieve (p.name, IFNULL(p.description, 'No description available'))
+    where p.category = :category
+", [
+    'category' => 'Electronics'
+]);
+```
+
+The `IFNULL()` function is particularly useful for:
+- Providing user-friendly default values for display
+- Ensuring calculations don't break due to NULL values
+- Creating fallback chains when multiple columns might contain the desired data
+- Standardizing data output format in reports
+
 ### Aggregate Functions
 
 ObjectQuel supports built-in aggregate functions for data analysis:
