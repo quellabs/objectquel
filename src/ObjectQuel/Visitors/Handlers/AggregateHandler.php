@@ -150,79 +150,32 @@
 		 * @return string Generated SQL expression for existence check
 		 */
 		public function handleAny(AstAny $ast): string {
-			return $this->handleAnyOptimized($ast->getIdentifier());
+			$queryAnalyzer = new QueryAnalyzer($ast->getIdentifier(), $this->entityStore);
+			$strategy = $queryAnalyzer->getOptimizationStrategy();
+			
+			switch ($strategy->getType()) {
+				case OptimizationStrategy::JOIN_BASED:
+				case OptimizationStrategy::CONSTANT_TRUE:
+					$this->markExpressionAsHandled($queryAnalyzer->getExpression());
+					return "1";
+				
+				case OptimizationStrategy::SIMPLE_EXISTS:
+					return $this->buildSimpleExistsQuery($queryAnalyzer);
+				
+				case OptimizationStrategy::NULL_CHECK:
+					return $this->buildNullCheckQuery($queryAnalyzer);
+				
+				case OptimizationStrategy::SUBQUERY:
+					return $this->buildComplexExistsQuery($queryAnalyzer);
+				
+				default:
+					throw new \InvalidArgumentException("Unknown optimization strategy: " . $strategy->getType());
+			}
 		}
 		
 		// ============================================================================
 		// CORE PROCESSING METHODS - LINEAR FLOW APPROACH
 		// ============================================================================
-		
-		/**
-		 * Simplified linear flow for ANY operations - eliminates all nested conditions.
-		 *
-		 * This method replaces the complex nested conditional logic with a clear
-		 * sequential flow of optimization checks. Each check gets one simple condition
-		 * with an early return, making the decision path easy to follow and modify.
-		 *
-		 * The optimization checks are ordered from most specific to most general:
-		 * 1. Single range queries (guaranteed existence)
-		 * 2. Equivalent ranges (same entity with simple joins)
-		 * 3. Base range references (no joins required)
-		 * 4. Simple queries without joins
-		 * 5. Queries with optional ranges (need NULL checks)
-		 * 6. Queries with required ranges already joined
-		 * 7. Default fallback for complex scenarios
-		 *
-		 * @param AstInterface $expression The expression to check for existence
-		 * @return string Optimized SQL existence check
-		 */
-		private function handleAnyOptimized(AstInterface $expression): string {
-			// Analyze the query
-			$queryAnalyzer = new QueryAnalyzer($expression, $this->entityStore);
-			
-			// Convert expression to SQL
-			$sqlExpression = $this->convertExpressionToSql($queryAnalyzer->getExpression());
-			
-			// 1. Single range optimization: If query operates on only one entity,
-			//    existence is guaranteed since the main query already filters to valid rows
-			if ($queryAnalyzer->isSingleRange()) {
-				return "1";
-			}
-			
-			// 2. Equivalent range optimization: If ranges are same entity with simple equality joins,
-			//    the join conditions will always match for valid main query rows
-			if ($queryAnalyzer->isEquivalentRange()) {
-				return "1";
-			}
-			
-			// 3. Base range optimization: If expression only references the root table,
-			//    no additional existence checks are needed since base range always exists
-			if ($queryAnalyzer->isBaseRangeReference()) {
-				return "1";
-			}
-			
-			// 4. No-join optimization: If no join operations are required,
-			//    use simple existence query against individual table
-			if ($queryAnalyzer->hasNoJoins()) {
-				return $this->buildSimpleExistsQuery($queryAnalyzer);
-			}
-			
-			// 5. Optional range handling: If any ranges use LEFT JOIN (optional),
-			//    need to check for NULL values since joins might not match
-			if ($queryAnalyzer->hasOptionalRanges()) {
-				return "CASE WHEN {$sqlExpression} IS NOT NULL THEN 1 ELSE 0 END";
-			}
-			
-			// 6. Required and joined optimization: If all ranges are INNER JOIN
-			//    and already established in main query, existence is guaranteed
-			if ($queryAnalyzer->allRangesRequiredAndJoined()) {
-				return "1";
-			}
-			
-			// 7. Default fallback: For complex scenarios that don't match above patterns,
-			//    build full EXISTS subquery with proper join conditions
-			return $this->buildComplexExistsQuery($queryAnalyzer);
-		}
 		
 		/**
 		 * Replaces complex branching logic with simple two-path decision:
@@ -235,21 +188,16 @@
 		 */
 		private function handleAggregateOperation(
 			AstAny|AstCount|AstCountU|AstAvg|AstAvgU|AstMax|AstMin|AstSum|AstSumU $ast,
-			string $aggregateFunction,
-			bool $distinct = false
+			string                                                                $aggregateFunction,
+			bool                                                                  $distinct = false
 		): string {
-			// Analyze the query
 			$queryAnalyzer = new QueryAnalyzer($ast->getIdentifier(), $this->entityStore);
 			
-			// Path 1: Calculate aggregate in main query when joins are already available
-			// This is more efficient as it avoids subquery overhead
-			if ($this->canCalculateInMainQuery($queryAnalyzer)) {
+			if ($queryAnalyzer->getOptimizationStrategy()->canUseMainQuery()) {
 				return $this->buildJoinBasedAggregate($ast->getIdentifier(), $aggregateFunction, $distinct);
+			} else {
+				return $this->buildAggregateSubquery($ast->getIdentifier(), $aggregateFunction, $distinct);
 			}
-			
-			// Path 2: Use subquery for all other cases
-			// This handles complex join scenarios that need isolation from main query
-			return $this->buildAggregateSubquery($ast->getIdentifier(), $aggregateFunction, $distinct);
 		}
 		
 		// ============================================================================
@@ -300,6 +248,9 @@
 			// Fetch all ranges
 			$ranges = $queryAnalyzer->getRanges();
 			
+			// Mark the expression as handled. Otherwise, parts may wrongly reemerge in the query
+			$this->markExpressionAsHandled($queryAnalyzer->getExpression());
+			
 			// Build complete subquery with all necessary table joins
 			$fromClause = $this->buildFromClauseForRanges($ranges);
 			$whereClause = $this->buildWhereClauseForRanges($ranges);
@@ -315,16 +266,6 @@
 			
 			// In WHERE context, return boolean EXISTS directly
 			return $existsQuery;
-		}
-		
-		/**
-		 * Determines if aggregate can be calculated directly in the main query.
-		 * @param QueryAnalyzer $queryAnalyzer Analysis of the expression and its requirements
-		 * @return bool True if aggregate can be calculated in main query
-		 */
-		private function canCalculateInMainQuery(QueryAnalyzer $queryAnalyzer): bool {
-			// Simple heuristic: if no complex joins needed, calculate in main query
-			return $queryAnalyzer->hasNoJoins() || $queryAnalyzer->allRangesRequiredAndJoined();
 		}
 		
 		// ============================================================================
@@ -413,6 +354,16 @@
 		 */
 		private function convertExpressionToSql(AstInterface $expression): string {
 			return $this->convertToString->visitNodeAndReturnSQL($expression);
+		}
+		
+		/**
+		 * Marks the expression as handled
+		 * @param AstInterface $expression The AST expression to convert
+		 * @return void
+		 */
+		private function markExpressionAsHandled(AstInterface $expression): void {
+			// Convert but ignore result - we just need the side effect
+			$this->convertToString->visitNodeAndReturnSQL($expression);
 		}
 		
 		/**
