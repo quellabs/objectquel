@@ -75,7 +75,7 @@
 		public function getExpression(): AstInterface {
 			return $this->expression;
 		}
-
+		
 		/**
 		 * Determines the optimal execution strategy for this query.
 		 * Replaces the multiple boolean methods with a single, clear decision.
@@ -84,13 +84,13 @@
 			if ($this->optimizationStrategy === null) {
 				$this->optimizationStrategy = $this->computeOptimizationStrategy();
 			}
-
+			
 			return $this->optimizationStrategy;
 		}
-
+		
 		/**
-		 * Computes the optimization strategy using the same linear flow logic,
-		 * but returns explicit strategy objects instead of relying on boolean flags.
+		 * Computes the optimization strategy using corrected linear flow logic.
+		 * FIXED: Reordered conditions and added debug output.
 		 */
 		private function computeOptimizationStrategy(): OptimizationStrategy {
 			// 1. Single range optimization
@@ -113,9 +113,9 @@
 				return OptimizationStrategy::simpleExists();
 			}
 			
-			// 5. Optional range handling
-			if ($this->hasOptionalRanges()) {
-				return OptimizationStrategy::nullCheck();
+			// 5. Cross-entity join check
+			if ($this->requiresCrossEntityJoins()) {
+				return OptimizationStrategy::subquery();
 			}
 			
 			// 6. Required and joined optimization
@@ -123,8 +123,52 @@
 				return OptimizationStrategy::joinBased();
 			}
 			
-			// 7. Default fallback
+			// 7. Optional range handling
+			if ($this->hasOptionalRanges()) {
+				return OptimizationStrategy::nullCheck();
+			}
+			
+			// 8. Default fallback
 			return OptimizationStrategy::subquery();
+		}
+		
+		/**
+		 * Determines if the query requires joins between different entity types
+		 * that aren't already established in the main query.
+		 * @return bool True if cross-entity joins are needed
+		 */
+		private function requiresCrossEntityJoins(): bool {
+			// Early exit: if we have fewer than 2 ranges, no joins are possible
+			if (count($this->ranges) < 2) {
+				return false;
+			}
+			
+			// Check if we have different entity types by collecting unique entity names
+			$entityTypes = [];
+			foreach ($this->ranges as $range) {
+				// Use entity name as key to automatically deduplicate
+				$entityTypes[$range->getEntityName()] = true;
+			}
+			
+			// If all ranges are the same entity type, this isn't a cross-entity join
+			// (would be self-joins or simple queries on single entity)
+			if (count($entityTypes) <= 1) {
+				return false;
+			}
+			
+			// Now we know we have multiple entity types - check if any require new joins
+			// Loop through each range to see if it needs a join that's not already established
+			foreach ($this->ranges as $range) {
+				// If this range has a join property defined (meaning it needs to be joined)
+				// AND that join isn't already present in the main query structure
+				if ($range->getJoinProperty() !== null && !$this->isJoinAlreadyInMainQuery($range)) {
+					// We found at least one range that needs a new cross-entity join
+					return true;
+				}
+			}
+			
+			// All cross-entity relationships are already handled in the main query
+			return false;
 		}
 		
 		/**
@@ -136,6 +180,7 @@
 			if ($this->isSingleRange === null) {
 				$this->isSingleRange = $this->computeIsSingleRange();
 			}
+			
 			return $this->isSingleRange;
 		}
 		
@@ -148,6 +193,7 @@
 			if ($this->isEquivalentRange === null) {
 				$this->isEquivalentRange = $this->computeIsEquivalentRange();
 			}
+			
 			return $this->isEquivalentRange;
 		}
 		
@@ -160,6 +206,7 @@
 			if ($this->isBaseRangeReference === null) {
 				$this->isBaseRangeReference = $this->computeIsBaseRangeReference();
 			}
+			
 			return $this->isBaseRangeReference;
 		}
 		
@@ -172,6 +219,7 @@
 			if ($this->hasNoJoins === null) {
 				$this->hasNoJoins = $this->computeHasNoJoins();
 			}
+			
 			return $this->hasNoJoins;
 		}
 		
@@ -184,6 +232,7 @@
 			if ($this->hasOptionalRanges === null) {
 				$this->hasOptionalRanges = $this->computeHasOptionalRanges();
 			}
+			
 			return $this->hasOptionalRanges;
 		}
 		
@@ -196,6 +245,7 @@
 			if ($this->allRangesRequiredAndJoined === null) {
 				$this->allRangesRequiredAndJoined = $this->computeAllRangesRequiredAndJoined();
 			}
+			
 			return $this->allRangesRequiredAndJoined;
 		}
 		
@@ -214,7 +264,7 @@
 			}
 			
 			$queryNode = $this->getBaseQuery($this->expression);
-			return $queryNode && $queryNode->isSingleRangeQuery();
+			return $queryNode->isSingleRangeQuery();
 		}
 		
 		/**
@@ -300,23 +350,37 @@
 		 * @return bool True if all ranges are equivalent
 		 */
 		private function checkMultipleRangeEquivalence(): bool {
+			// Track the entity name from the first range to compare against all others
 			$firstEntityName = null;
 			
+			// Iterate through all ranges to verify they meet equivalence criteria
 			foreach ($this->ranges as $range) {
+				// Get the current range's entity name for comparison
 				$entityName = $range->getEntityName();
 				
+				// On first iteration, store the entity name as our baseline
 				if ($firstEntityName === null) {
 					$firstEntityName = $entityName;
 				} elseif ($firstEntityName !== $entityName) {
+					// If any range has a different entity type, ranges are not equivalent
+					// This ensures all ranges operate on the same database table/entity
 					return false;
 				}
 				
+				// Check if this range requires a join operation
 				$joinProperty = $range->getJoinProperty();
+				
 				if ($joinProperty !== null && !$this->isSimpleEqualityJoin($joinProperty)) {
+					// If a join exists but isn't a simple equality join (e.g., complex conditions,
+					// subqueries, or non-equality operators), the ranges are not equivalent
+					// Only simple equality joins (like id = foreign_id) maintain equivalence
 					return false;
 				}
 			}
 			
+			// All ranges passed the equivalence tests:
+			// 1. Same entity type across all ranges
+			// 2. All joins (if any) are simple equality operations
 			return true;
 		}
 		
@@ -326,25 +390,37 @@
 		 * @return bool True if single range is equivalent to its join target
 		 */
 		private function checkSingleRangeEquivalence(): bool {
+			// Get the single range we're analyzing
 			$singleRange = $this->ranges[0];
 			$joinProperty = $singleRange->getJoinProperty();
 			
+			// Must have a join property, and it must be a simple equality join
 			if (!$joinProperty || !$this->isSimpleEqualityJoin($joinProperty)) {
 				return false;
 			}
 			
+			// Extract all identifier nodes from the join condition (e.g., "c.id = d.id" gives us c and d)
 			$joinIdentifiers = $this->collectIdentifierNodes($joinProperty);
+			
 			if (count($joinIdentifiers) !== 2) {
+				// Simple equality joins should have exactly 2 identifiers (left and right side)
 				return false;
 			}
 			
+			// Look for the other range that this single range is joining to
 			foreach ($joinIdentifiers as $identifier) {
+				// Fetch the range
 				$range = $identifier->getRange();
+				
+				// If we find a range that's different from our single range
 				if ($range && $range->getName() !== $singleRange->getName()) {
+					// Check if the join target has the same entity type as our single range
+					// This ensures we're joining the same entity to itself (self-join equivalence)
 					return $range->getEntityName() === $singleRange->getEntityName();
 				}
 			}
 			
+			// No valid join target found
 			return false;
 		}
 		
@@ -355,19 +431,27 @@
 		 * @return bool True if this is a simple equality join between same entities
 		 */
 		private function isSimpleEqualityJoin(AstInterface $joinProperty): bool {
+			// Collect all identifier nodes from the join expression (e.g., c.id, d.id from "c.id = d.id")
 			$identifiers = $this->collectIdentifierNodes($joinProperty);
 			
+			// Simple equality joins should have exactly 2 identifiers (left side = right side)
 			if (count($identifiers) !== 2) {
 				return false;
 			}
 			
+			// Get the range objects for both sides of the join
 			$leftRange = $identifiers[0]->getRange();
 			$rightRange = $identifiers[1]->getRange();
 			
+			// Both sides must have valid range references
 			if ($leftRange === null || $rightRange === null) {
 				return false;
 			}
 			
+			// For a simple equality join between same entities:
+			// 1. Both ranges must reference the same entity type (same table/class)
+			// 2. Both identifiers must reference the same field name (e.g., both "id")
+			// This pattern like "user1.id = user2.id" indicates equivalent data access
 			return $leftRange->getEntityName() === $rightRange->getEntityName() &&
 				$identifiers[0]->getName() === $identifiers[1]->getName();
 		}
@@ -401,13 +485,50 @@
 		
 		/**
 		 * Extracts all unique ranges from the expression by analyzing identifier nodes.
-		 * Ranges represent table/entity references needed for the query.
+		 * FIXED: Also extracts ranges from join properties to get complete range set.
 		 * @param AstInterface $expression Expression to extract ranges from
 		 * @return AstRange[] Array of unique range objects
 		 */
 		private function extractAllRanges(AstInterface $expression): array {
 			$identifiers = $this->collectIdentifierNodes($expression);
-			return $this->getAllRanges($identifiers);
+			$allRanges = $this->getAllRanges($identifiers);
+			
+			// FIXED: Also collect ranges from join properties
+			$additionalRanges = [];
+			
+			foreach ($allRanges as $range) {
+				$joinProperty = $range->getJoinProperty();
+				
+				if ($joinProperty !== null) {
+					$joinIdentifiers = $this->collectIdentifierNodes($joinProperty);
+					$joinRanges = $this->getAllRanges($joinIdentifiers);
+					$additionalRanges = array_merge($additionalRanges, $joinRanges);
+				}
+			}
+			
+			// Merge and deduplicate all ranges
+			return $this->deduplicateRanges(array_merge($allRanges, $additionalRanges));
+		}
+		
+		/**
+		 * Removes duplicate ranges based on range name.
+		 * @param AstRange[] $ranges Array of ranges that may contain duplicates
+		 * @return AstRange[] Array of unique ranges
+		 */
+		private function deduplicateRanges(array $ranges): array {
+			$result = [];
+			$seen = [];
+			
+			foreach ($ranges as $range) {
+				$rangeName = $range->getName();
+				
+				if (!isset($seen[$rangeName])) {
+					$seen[$rangeName] = true;
+					$result[] = $range;
+				}
+			}
+			
+			return $result;
 		}
 		
 		/**
@@ -423,7 +544,7 @@
 			foreach ($identifiers as $identifier) {
 				$range = $identifier->getRange();
 				
-				if ($range === null || !$range instanceof AstRangeDatabase) {
+				if (!$range instanceof AstRangeDatabase) {
 					continue;
 				}
 				
@@ -441,10 +562,11 @@
 		/**
 		 * Finds the root AstRetrieve node by traversing up the AST hierarchy.
 		 * The retrieve node represents the main query structure.
+		 * Assumes that there is always an AstRetrieve parent in the hierarchy.
 		 * @param AstInterface $ast Starting AST node
-		 * @return AstRetrieve|null The root retrieve node or null if not found
+		 * @return AstRetrieve The root retrieve node
 		 */
-		private function getBaseQuery(AstInterface $ast): ?AstRetrieve {
+		private function getBaseQuery(AstInterface $ast): AstRetrieve {
 			$current = $ast;
 			
 			if ($current instanceof AstRetrieve) {
@@ -455,9 +577,11 @@
 				if ($parent instanceof AstRetrieve) {
 					return $parent;
 				}
+				
 				$current = $parent;
 			}
 			
-			return null;
+			// This should never be reached given the assumption
+			throw new \RuntimeException('No AstRetrieve parent found in AST hierarchy');
 		}
 	}
