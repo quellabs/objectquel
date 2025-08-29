@@ -45,6 +45,9 @@
 		/** @var bool|null Whether all ranges are required and already joined in main query (cached) */
 		private ?bool $allRangesRequiredAndJoined = null;
 		
+		/** @var OptimizationStrategy|null Cache the strategy once computed */
+		private ?OptimizationStrategy $optimizationStrategy;
+		
 		/**
 		 * Initializes the query analysis by extracting ranges and identifiers from the expression.
 		 * @param AstInterface $expression The AST expression to analyze
@@ -54,78 +57,7 @@
 			$this->expression = $expression;
 			$this->ranges = $this->extractAllRanges($expression);
 			$this->identifiers = $this->collectIdentifierNodes($expression);
-		}
-		
-		/**
-		 * Determines if this is a single range query that can be optimized to constant true.
-		 * Single range queries are those where the base query only operates on one entity.
-		 * @return bool True if this is a single range query
-		 */
-		public function isSingleRange(): bool {
-			if ($this->isSingleRange === null) {
-				$this->isSingleRange = $this->computeIsSingleRange();
-			}
-			return $this->isSingleRange;
-		}
-		
-		/**
-		 * Determines if ranges are equivalent (same entity type with simple equality joins).
-		 * Equivalent ranges can be optimized because the join conditions are guaranteed to match.
-		 * @return bool True if ranges are equivalent
-		 */
-		public function isEquivalentRange(): bool {
-			if ($this->isEquivalentRange === null) {
-				$this->isEquivalentRange = $this->computeIsEquivalentRange();
-			}
-			return $this->isEquivalentRange;
-		}
-		
-		/**
-		 * Determines if the expression only references the base range (no joins required).
-		 * Base range references always exist in the query context and can be optimized.
-		 * @return bool True if expression only references base range
-		 */
-		public function isBaseRangeReference(): bool {
-			if ($this->isBaseRangeReference === null) {
-				$this->isBaseRangeReference = $this->computeIsBaseRangeReference();
-			}
-			return $this->isBaseRangeReference;
-		}
-		
-		/**
-		 * Determines if the expression has no join conditions.
-		 * No-join expressions can use simpler existence checks.
-		 * @return bool True if no joins are required
-		 */
-		public function hasNoJoins(): bool {
-			if ($this->hasNoJoins === null) {
-				$this->hasNoJoins = $this->computeHasNoJoins();
-			}
-			return $this->hasNoJoins;
-		}
-		
-		/**
-		 * Determines if any ranges are optional (LEFT JOIN vs INNER JOIN).
-		 * Optional ranges can produce NULL values and need special handling.
-		 * @return bool True if any ranges are optional
-		 */
-		public function hasOptionalRanges(): bool {
-			if ($this->hasOptionalRanges === null) {
-				$this->hasOptionalRanges = $this->computeHasOptionalRanges();
-			}
-			return $this->hasOptionalRanges;
-		}
-		
-		/**
-		 * Determines if all ranges are required AND already joined in the main query.
-		 * This optimization applies when the main query has already established all needed joins.
-		 * @return bool True if all ranges are required and already joined
-		 */
-		public function allRangesRequiredAndJoined(): bool {
-			if ($this->allRangesRequiredAndJoined === null) {
-				$this->allRangesRequiredAndJoined = $this->computeAllRangesRequiredAndJoined();
-			}
-			return $this->allRangesRequiredAndJoined;
+			$this->optimizationStrategy = null;
 		}
 		
 		/**
@@ -142,6 +74,129 @@
 		 */
 		public function getExpression(): AstInterface {
 			return $this->expression;
+		}
+
+		/**
+		 * Determines the optimal execution strategy for this query.
+		 * Replaces the multiple boolean methods with a single, clear decision.
+		 */
+		public function getOptimizationStrategy(): OptimizationStrategy {
+			if ($this->optimizationStrategy === null) {
+				$this->optimizationStrategy = $this->computeOptimizationStrategy();
+			}
+
+			return $this->optimizationStrategy;
+		}
+
+		/**
+		 * Computes the optimization strategy using the same linear flow logic,
+		 * but returns explicit strategy objects instead of relying on boolean flags.
+		 */
+		private function computeOptimizationStrategy(): OptimizationStrategy {
+			// 1. Single range optimization
+			if ($this->isSingleRange()) {
+				return OptimizationStrategy::constantTrue('Single range query - existence guaranteed');
+			}
+			
+			// 2. Equivalent range optimization
+			if ($this->isEquivalentRange()) {
+				return OptimizationStrategy::constantTrue('Equivalent ranges with simple equality joins');
+			}
+			
+			// 3. Base range optimization
+			if ($this->isBaseRangeReference()) {
+				return OptimizationStrategy::constantTrue('Base range reference - always exists');
+			}
+			
+			// 4. No-join optimization
+			if ($this->hasNoJoins()) {
+				return OptimizationStrategy::simpleExists();
+			}
+			
+			// 5. Optional range handling
+			if ($this->hasOptionalRanges()) {
+				return OptimizationStrategy::nullCheck();
+			}
+			
+			// 6. Required and joined optimization
+			if ($this->allRangesRequiredAndJoined()) {
+				return OptimizationStrategy::joinBased();
+			}
+			
+			// 7. Default fallback
+			return OptimizationStrategy::subquery();
+		}
+		
+		/**
+		 * Determines if this is a single range query that can be optimized to constant true.
+		 * Single range queries are those where the base query only operates on one entity.
+		 * @return bool True if this is a single range query
+		 */
+		private function isSingleRange(): bool {
+			if ($this->isSingleRange === null) {
+				$this->isSingleRange = $this->computeIsSingleRange();
+			}
+			return $this->isSingleRange;
+		}
+		
+		/**
+		 * Determines if ranges are equivalent (same entity type with simple equality joins).
+		 * Equivalent ranges can be optimized because the join conditions are guaranteed to match.
+		 * @return bool True if ranges are equivalent
+		 */
+		private function isEquivalentRange(): bool {
+			if ($this->isEquivalentRange === null) {
+				$this->isEquivalentRange = $this->computeIsEquivalentRange();
+			}
+			return $this->isEquivalentRange;
+		}
+		
+		/**
+		 * Determines if the expression only references the base range (no joins required).
+		 * Base range references always exist in the query context and can be optimized.
+		 * @return bool True if expression only references base range
+		 */
+		private function isBaseRangeReference(): bool {
+			if ($this->isBaseRangeReference === null) {
+				$this->isBaseRangeReference = $this->computeIsBaseRangeReference();
+			}
+			return $this->isBaseRangeReference;
+		}
+		
+		/**
+		 * Determines if the expression has no join conditions.
+		 * No-join expressions can use simpler existence checks.
+		 * @return bool True if no joins are required
+		 */
+		private function hasNoJoins(): bool {
+			if ($this->hasNoJoins === null) {
+				$this->hasNoJoins = $this->computeHasNoJoins();
+			}
+			return $this->hasNoJoins;
+		}
+		
+		/**
+		 * Determines if any ranges are optional (LEFT JOIN vs INNER JOIN).
+		 * Optional ranges can produce NULL values and need special handling.
+		 * @return bool True if any ranges are optional
+		 */
+		private function hasOptionalRanges(): bool {
+			if ($this->hasOptionalRanges === null) {
+				$this->hasOptionalRanges = $this->computeHasOptionalRanges();
+			}
+			return $this->hasOptionalRanges;
+		}
+		
+		/**
+		 * Determines if all ranges are required AND already joined in the main query.
+		 * This optimization applies when the main query has already established all needed joins.
+		 * @return bool True if all ranges are required and already joined
+		 */
+		private function allRangesRequiredAndJoined(): bool {
+			if ($this->allRangesRequiredAndJoined === null) {
+				$this->allRangesRequiredAndJoined = $this->computeAllRangesRequiredAndJoined();
+			}
+			return $this->allRangesRequiredAndJoined;
 		}
 		
 		// ============================================================================
