@@ -5,13 +5,26 @@
 	use Quellabs\ObjectQuel\DatabaseAdapter\DatabaseAdapter;
 	use Quellabs\ObjectQuel\EntityManager;
 	use Quellabs\ObjectQuel\EntityStore;
+	use Quellabs\ObjectQuel\Execution\Visitors\VisitorAddRangeReferences;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstAlias;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstAny;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstAvg;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstAvgU;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstBinaryOperator;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstCount;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstCountU;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstIdentifier;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstIn;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstMax;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstMin;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstNumber;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRetrieve;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstSum;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstSumU;
+	use Quellabs\ObjectQuel\ObjectQuel\AstInterface;
 	use Quellabs\ObjectQuel\ObjectQuel\QuelToSQL;
+	use Quellabs\ObjectQuel\ObjectQuel\Visitors\CollectNodes;
+	use Quellabs\ObjectQuel\ObjectQuel\Visitors\FindIdentifier;
 	use Quellabs\ObjectQuel\ObjectQuel\Visitors\GetMainEntityInAst;
 	use Quellabs\ObjectQuel\ObjectQuel\Visitors\GetMainEntityInAstException;
 	
@@ -36,6 +49,9 @@
 		 * @return void
 		 */
 		public function transform(AstRetrieve $ast, array $parameters): void {
+			// Set range references
+			$this->setRangeReferences($ast);
+			
 			// Check if the query requires pagination (has window clauses)
 			if (!$this->requiresPagination($ast)) {
 				return;
@@ -45,6 +61,91 @@
 			// This may involve primary key fetching, result counting, and query modification
 			// Parameters are needed for pagination to work with bound values in conditions
 			$this->processPagination($ast, $parameters);
+		}
+		
+		// ========== RANGE SETTER ==========
+		
+		/**
+		 * Walk through the AST and collect all references to ranges
+		 * @param AstRetrieve $retrieve The root AST node containing the query structure
+		 * @return void
+		 */
+		private function setRangeReferences(AstRetrieve $retrieve): void {
+			// Iterate through each range variable defined in the query
+			foreach($retrieve->getRanges() as $range) {
+				// Clear the visited nodes cache to prevent duplicate processing
+				VisitorAddRangeReferences::resetVisitedNodes();
+				
+				// Pass 1: Aggregate WHERE clauses
+				// Process conditions within aggregate functions (e.g., SUM(x WHERE condition))
+				// These need special handling as they create nested scopes
+				foreach ($this->findAggregates($retrieve) as $aggregate) {
+					// Check if this aggregate has its own WHERE condition
+					if ($aggregate->getConditions() !== null) {
+						// Create a visitor specifically for aggregate WHERE clauses
+						// The 'AGGREGATE_WHERE' context helps track the reference location
+						$collector = new VisitorAddRangeReferences($range, 'AGGREGATE_WHERE');
+						
+						// Traverse the condition AST to find range references
+						$aggregate->getConditions()->accept($collector);
+					}
+				}
+				
+				// Pass 2: Main query WHERE clause
+				if ($retrieve->getConditions() !== null) {
+					// Create visitor for main WHERE clause context
+					$visitor = new VisitorAddRangeReferences($range, 'WHERE');
+					
+					// Walk through the WHERE clause AST to collect range references
+					$retrieve->getConditions()->accept($visitor);
+				}
+				
+				// Pass 3: SELECT values
+				foreach ($retrieve->getValues() as $value) {
+					// Create visitor for SELECT clause context
+					$visitor = new VisitorAddRangeReferences($range, 'SELECT');
+					
+					// Analyze each SELECT expression for range usage
+					$value->accept($visitor);
+				}
+				
+				// Pass 4: ORDER BY clause (if you add that later)
+				foreach ($retrieve->getSort() as $sort) {
+					// Create visitor for ORDER BY clause context
+					$visitor = new VisitorAddRangeReferences($range, 'ORDER_BY');
+					
+					// The sort array contains an 'ast' key with the sorting expression
+					$sort['ast']->accept($visitor);
+				}
+			}
+		}
+		
+		/**
+		 * Collect all aggregates in the AST tree
+		 * @param AstInterface $ast The root AST node to search for aggregates
+		 * @return array An array of aggregate AST nodes found in the tree
+		 */
+		private function findAggregates(AstInterface $ast): array {
+			// Create a visitor that collects nodes of specific aggregate types
+			// The array contains all supported aggregate function classes:
+			$visitor = new CollectNodes([
+				AstSum::class,    // Standard SUM aggregate
+				AstSumU::class,   // SUM with UNIQUE modifier (likely SUM DISTINCT)
+				AstCount::class,  // Standard COUNT aggregate
+				AstCountU::class, // COUNT with UNIQUE modifier (likely COUNT DISTINCT)
+				AstAvg::class,    // Standard AVERAGE aggregate
+				AstAvgU::class,   // AVERAGE with UNIQUE modifier (likely AVG DISTINCT)
+				AstAny::class,    // ANY aggregate (existential quantifier)
+				AstMin::class,    // MINIMUM aggregate
+				AstMax::class     // MAXIMUM aggregate
+			]);
+			
+			// Traverse the AST starting from the root node
+			// The visitor will collect all matching aggregate nodes during traversal
+			$ast->accept($visitor);
+			
+			// Return the collected aggregate nodes
+			return $visitor->getCollectedNodes();
 		}
 		
 		// ========== PAGINATION METHODS ==========

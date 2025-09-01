@@ -59,6 +59,24 @@
 		}
 		
 		/**
+		 * Returns the parent AST path from root to the immediate parent of this node.
+		 * The path is built by walking up the parent chain and is ordered from
+		 * root (index 0) to immediate parent (last index).
+		 * @return AstInterface[]
+		 */
+		public function getParentPath(): array {
+			$path = [];
+			$current = $this->parent;
+			
+			while ($current !== null) {
+				array_unshift($path, $current);
+				$current = $current->getParent();
+			}
+			
+			return $path;
+		}
+		
+		/**
 		 * Creates a deep clone of this AST node.
 		 * @return static A deep clone of this AST node
 		 */

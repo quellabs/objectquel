@@ -113,6 +113,35 @@
 		}
 		
 		/**
+		 * Generic parser for aggregates
+		 * @template T of AstInterface
+		 * @param class-string<T> $astClass The fully qualified AST class name to instantiate
+		 * @return T The instantiated AST node
+		 * @throws LexerException When token matching fails
+		 * @throws ParserException When parsing fails
+		 */
+		private function parseAggregateFunction(string $astClass,): AstInterface {
+			// Match opening parenthesis
+			$this->lexer->match(Token::ParenthesesOpen);
+			
+			// Parse the parameter - either as property chain (entity.field) or general expression
+			$parameter = $this->expressionRule->parse();
+			
+			// Optional WHERE statement
+			$expression = null;
+			if ($this->lexer->optionalMatch(TOKEN::Where)) {
+				$logicalExpression = new LogicalExpression($this->lexer);
+				$expression = $logicalExpression->parse();
+			}
+			
+			// Match closing parenthesis
+			$this->lexer->match(Token::ParenthesesClose);
+			
+			// Create and return the appropriate AST node
+			return new $astClass($parameter, $expression);
+		}
+		
+		/**
 		 * Parse COUNT() function - counts rows/elements in a collection
 		 * Returns the number of elements in the specified collection or entity.
 		 * @return AstCount The COUNT AST node
@@ -120,7 +149,7 @@
 		 * @throws ParserException When parsing fails
 		 */
 		protected function parseCount(): AstCount {
-			return $this->parseSingleParameter(AstCount::class);
+			return $this->parseAggregateFunction(AstCount::class);
 		}
 		
 		/**
@@ -131,7 +160,7 @@
 		 * @throws ParserException When parsing fails
 		 */
 		protected function parseCountU(): AstCountU {
-			return $this->parseSingleParameter(AstCountU::class);
+			return $this->parseAggregateFunction(AstCountU::class);
 		}
 		
 		/**
@@ -142,7 +171,7 @@
 		 * @throws ParserException When parsing fails
 		 */
 		protected function parseAvg(): AstAvg {
-			return $this->parseSingleParameter(AstAvg::class);
+			return $this->parseAggregateFunction(AstAvg::class);
 		}
 		
 		/**
@@ -153,7 +182,7 @@
 		 * @throws ParserException When parsing fails
 		 */
 		protected function parseAvgU(): AstAvgU {
-			return $this->parseSingleParameter(AstAvgU::class);
+			return $this->parseAggregateFunction(AstAvgU::class);
 		}
 		
 		/**
@@ -164,7 +193,7 @@
 		 * @throws ParserException When parsing fails
 		 */
 		protected function parseMax(): AstMax {
-			return $this->parseSingleParameter(AstMax::class);
+			return $this->parseAggregateFunction(AstMax::class);
 		}
 		
 		/**
@@ -175,7 +204,7 @@
 		 * @throws ParserException When parsing fails
 		 */
 		protected function parseMin(): AstMin {
-			return $this->parseSingleParameter(AstMin::class);
+			return $this->parseAggregateFunction(AstMin::class);
 		}
 		
 		/**
@@ -186,7 +215,7 @@
 		 * @throws ParserException When parsing fails
 		 */
 		protected function parseSum(): AstSum {
-			return $this->parseSingleParameter(AstSum::class);
+			return $this->parseAggregateFunction(AstSum::class);
 		}
 		
 		/**
@@ -197,7 +226,7 @@
 		 * @throws ParserException When parsing fails
 		 */
 		protected function parseSumU(): AstSumU {
-			return $this->parseSingleParameter(AstSumU::class);
+			return $this->parseAggregateFunction(AstSumU::class);
 		}
 		
 		/**
@@ -210,7 +239,7 @@
 		 * @throws ParserException When the parser encounters invalid syntax or missing parameters
 		 */
 		protected function parseAny(): AstAny {
-			return $this->parseSingleParameter(AstAny::class);
+			return $this->parseAggregateFunction(AstAny::class);
 		}
 		
 		/**
