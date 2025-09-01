@@ -11,17 +11,26 @@
 	class AstAny extends Ast {
 		
 		/**
-		 * @var AstInterface The right-hand operand of the AND expression.
+		 * @var AstInterface The conditions ANY works on
 		 */
 		protected AstInterface $identifier;
 		
 		/**
+		 * @var AstInterface|null The conditions for this aggregator
+		 */
+		private ?AstInterface $conditions;
+		
+		/**
 		 * AstAny constructor.
 		 * @param AstInterface $entityOrIdentifier
+		 * @param AstInterface|null $conditions
 		 */
-		public function __construct(AstInterface $entityOrIdentifier) {
+		public function __construct(AstInterface $entityOrIdentifier, ?AstInterface $conditions = null) {
 			$this->identifier = $entityOrIdentifier;
+			$this->conditions = $conditions;
+			
 			$this->identifier->setParent($this);
+			$conditions?->setParent($this);
 		}
 		
 		/**
@@ -31,6 +40,7 @@
 		public function accept(AstVisitorInterface $visitor): void {
 			parent::accept($visitor);
 			$this->identifier->accept($visitor);
+			$this->conditions?->accept($visitor);
 		}
 		
 		/**
@@ -51,15 +61,25 @@
 		}
 		
 		/**
+		 * Returns the conditions for this aggregator
+		 * @return AstInterface|null
+		 */
+		public function getConditions(): ?AstInterface {
+			return $this->conditions;
+		}
+		
+		/**
 		 * Clone this node
 		 * @return static
 		 */
 		public function deepClone(): static {
 			// Clone the identifier
 			$clonedIdentifier = $this->identifier->deepClone();
+			$clonedConditions = $this->conditions?->deepClone();
 			
 			// Create new instance with cloned identifier
 			// @phpstan-ignore-next-line new.static
-			return new static($clonedIdentifier);
+			// Return cloned node
+			return new static($clonedIdentifier, $clonedConditions);
 		}
 	}

@@ -163,7 +163,7 @@
 		private function isInAggregateWhere(AstIdentifier $identifier, AstInterface $aggregate): bool {
 			// Check if the aggregate has a WHERE clause and if the identifier is within it
 			return
-				$aggregate->getWhereClause() &&
+				$aggregate->getConditions() &&
 				$this->isDescendantOf($identifier, $aggregate->getWhereClause());
 		}
 		
