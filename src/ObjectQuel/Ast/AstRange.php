@@ -27,6 +27,11 @@
 		private bool $required;
 		
 		/**
+		 * @var array
+		 */
+		private array $references;
+		
+		/**
 		 * AstRange constructor.
 		 * @param string $name The name/alias for this range (used as table alias)
 		 * @param bool $required Whether this is a required join (INNER) or optional (LEFT)
@@ -69,6 +74,14 @@
 		 */
 		public function isRequired(): bool {
 			return $this->required;
+		}
+		
+		public function getReferences(): array {
+			return $this->references;
+		}
+		
+		public function addReference($reference): void {
+			$this->references[] = $reference;
 		}
 		
 		public function deepClone(): static {
