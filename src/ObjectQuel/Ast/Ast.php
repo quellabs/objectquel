@@ -77,6 +77,46 @@
 		}
 		
 		/**
+		 * Returns true if one the parents is $className
+		 * @param string $className
+		 * @return bool
+		 */
+		public function parentContains(string $className): bool {
+			$current = $this->parent;
+			
+			while ($current !== null) {
+				if (is_a($current, $className)) {
+					return true;
+				}
+				
+				$current = $current->getParent();
+			}
+			
+			return false;
+		}
+		
+		/**
+		 * Returns true if one the parents is $className
+		 * @param array $classNames
+		 * @return bool
+		 */
+		public function parentIsOneOf(array $classNames): bool {
+			$current = $this->parent;
+			
+			while ($current !== null) {
+				foreach ($classNames as $className) {
+					if (is_a($current, $className)) {
+						return true;
+					}
+				}
+				
+				$current = $current->getParent();
+			}
+			
+			return false;
+		}
+		
+		/**
 		 * Creates a deep clone of this AST node.
 		 * @return static A deep clone of this AST node
 		 */

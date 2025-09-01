@@ -54,6 +54,12 @@
 		private string $context;
 		
 		/**
+		 * The parent context for aggregation contexts
+		 * @var string|null
+		 */
+		private ?string $parentContext;
+
+		/**
 		 * List of nodes we already visited
 		 * @var array
 		 */
@@ -63,10 +69,12 @@
 		 * Initializes the visitor with the target range and default context.
 		 * @param AstRange $range The range node to collect references for
 		 * @param string $context Default context to use when context cannot be determined from AST
+		 * @param string|null $parentContext Parent context
 		 */
-		public function __construct(AstRange $range, string $context) {
+		public function __construct(AstRange $range, string $context, ?string $parentContext=null) {
 			$this->targetRange = $range;
 			$this->context = $context;
+			$this->parentContext = $parentContext;
 		}
 		
 		/**
@@ -97,14 +105,34 @@
 				return;
 			}
 			
-			// Only process base identifiers (not derived or computed identifiers)
-			// Base identifiers represent direct field/column references
+			// Only process base identifiers
 			if (!$node->isBaseIdentifier()) {
 				return;
 			}
 			
 			// Create and add a reference object based on the identifier's context
-			$reference = $this->createReference($node);
+			if ($this->context === 'AGGREGATE_WHERE') {
+				// Special case for AGGREGATE_WHERE
+				$reference = $this->createReference($node, $this->context, $this->parentContext);
+				$this->targetRange->addReference($reference);
+				
+				// Add node to visitedNodes list
+				self::$visitedNodes[$nodeId] = true;
+				return;
+			}
+			
+			if ($node->parentIsOneOf([
+				AstMin::class, AstMax::class,
+				AstAvg::class, AstAvgU::class,
+				AstCount::class, AstCountU::class,
+				AstSum::class, AstSumU::class,
+			])) {
+				$reference = $this->createReference($node, "AGGREGATE", $this->context);
+			} else {
+				$reference = $this->createReference($node, $this->context);
+			}
+			
+			// Add the reference
 			$this->targetRange->addReference($reference);
 			
 			// Add node to visitedNodes list
@@ -118,15 +146,17 @@
 		/**
 		 * Creates a Reference object of the appropriate type based on the identifier's context.
 		 * @param AstIdentifier $node The identifier node to create a reference for
+		 * @param string $type
+		 * @param string|null $parentContext
 		 * @return Reference A Reference object of the appropriate subtype
 		 * @throws \InvalidArgumentException If an unknown context is determined
 		 */
-		private function createReference(AstIdentifier $node): Reference {
-			return match($this->context) {
+		private function createReference(AstIdentifier $node, string $type, ?string $parentContext = null): Reference {
+			return match ($type) {
 				'SELECT' => new ReferenceSelect($node),
 				'WHERE' => new ReferenceWhere($node),
-				'AGGREGATE' => new ReferenceAggregate($node),
-				'AGGREGATE_WHERE' => new ReferenceAggregateWhere($node),
+				'AGGREGATE' => new ReferenceAggregate($node, $parentContext),
+				'AGGREGATE_WHERE' => new ReferenceAggregateWhere($node, $parentContext),
 				'ORDER_BY' => new ReferenceOrderBy($node),
 			};
 		}

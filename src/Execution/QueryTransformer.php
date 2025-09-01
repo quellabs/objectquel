@@ -5,6 +5,7 @@
 	use Quellabs\ObjectQuel\DatabaseAdapter\DatabaseAdapter;
 	use Quellabs\ObjectQuel\EntityManager;
 	use Quellabs\ObjectQuel\EntityStore;
+	use Quellabs\ObjectQuel\Execution\RangeReferences\ReferenceAggregateWhere;
 	use Quellabs\ObjectQuel\Execution\Visitors\VisitorAddRangeReferences;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstAlias;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstAny;
@@ -18,6 +19,7 @@
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstMax;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstMin;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstNumber;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRange;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRetrieve;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstSum;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstSumU;
@@ -66,57 +68,108 @@
 		// ========== RANGE REFERENCE SETTER ==========
 		
 		/**
-		 * Walk through the AST and collect all references to ranges
-		 * @param AstRetrieve $retrieve The root AST node containing the query structure
+		 * Walk through the AST and collect all references to ranges across all query clauses.
+		 * @param AstRetrieve $retrieve The root AST node containing the complete query structure
 		 * @return void
 		 */
 		private function setRangeReferences(AstRetrieve $retrieve): void {
-			// Iterate through each range variable defined in the query
 			foreach($retrieve->getRanges() as $range) {
-				// Clear the visited nodes cache to prevent duplicate processing
+				// Reset visitor state once per range to prevent cross-contamination
+				// This ensures each range's references are tracked independently
 				VisitorAddRangeReferences::resetVisitedNodes();
 				
-				// Pass 1: Aggregate WHERE clauses
-				// Process conditions within aggregate functions (e.g., SUM(x WHERE condition))
-				// These need special handling as they create nested scopes
-				foreach ($this->findAggregates($retrieve) as $aggregate) {
-					// Check if this aggregate has its own WHERE condition
-					if ($aggregate->getConditions() !== null) {
-						// Create a visitor specifically for aggregate WHERE clauses
-						// The 'AGGREGATE_WHERE' context helps track the reference location
-						$collector = new VisitorAddRangeReferences($range, 'AGGREGATE_WHERE');
-						
-						// Traverse the condition AST to find range references
-						$aggregate->getConditions()->accept($collector);
-					}
+				// Pre-collect all aggregate functions to minimize AST traversals
+				// This optimization reduces O(n²) traversals to O(n) by collecting once
+				$selectAggregates = $this->collectAggregatesFromValues($retrieve->getValues());
+				$whereAggregates = $retrieve->getConditions() ? $this->findAggregates($retrieve->getConditions()) : [];
+				$sortAggregates = $this->collectAggregatesFromSort($retrieve->getSort());
+				
+				// Process aggregate WHERE clauses first - these create nested scopes
+				// Example: SUM(field WHERE range.condition) needs special handling
+				$this->processAggregateConditions($selectAggregates, $range, 'SELECT');
+				$this->processAggregateConditions($whereAggregates, $range, 'WHERE');
+				$this->processAggregateConditions($sortAggregates, $range, 'ORDER_BY');
+				
+				// Process main query clauses after aggregates to maintain proper scope hierarchy
+				$this->processClauseExpressions($retrieve->getValues(), $range, 'SELECT');
+				$this->processClauseExpressions([$retrieve->getConditions()], $range, 'WHERE');
+				$this->processClauseExpressions(array_column($retrieve->getSort(), 'ast'), $range, 'ORDER_BY');
+			}
+		}
+		
+		/**
+		 * Collect aggregate functions from multiple SELECT value expressions.
+		 * @param array $values Array of AST nodes representing SELECT expressions
+		 * @return array Flat array of all aggregate function nodes found
+		 */
+		private function collectAggregatesFromValues(array $values): array {
+			$aggregates = [];
+			
+			foreach ($values as $value) {
+				$aggregates = array_merge($aggregates, $this->findAggregates($value));
+			}
+			
+			return $aggregates;
+		}
+		
+		/**
+		 * Extracts aggregate functions from sorting expressions, which may contain
+		 * complex calculations like SUM(field) or COUNT(*) in ORDER BY clauses.
+		 * @param array $sortExpressions Array of sort definitions, each containing an 'ast' key
+		 * @return array Flat array of all aggregate function nodes found in sort expressions
+		 */
+		private function collectAggregatesFromSort(array $sortExpressions): array {
+			$aggregates = [];
+			
+			foreach ($sortExpressions as $sort) {
+				$aggregates = array_merge($aggregates, $this->findAggregates($sort['ast']));
+			}
+			
+			return $aggregates;
+		}
+		
+		/**
+		 * Process WHERE conditions within aggregate functions for range references.
+		 * @param array $aggregates Array of aggregate function AST nodes
+		 * @param mixed $range The range variable being tracked for references
+		 * @param string $context The parent clause context ('SELECT', 'WHERE', 'ORDER_BY')
+		 * @return void
+		 */
+		private function processAggregateConditions(array $aggregates, $range, string $context): void {
+			foreach ($aggregates as $aggregate) {
+				// Only process aggregates that have their own filtering conditions
+				if ($aggregate->getConditions() === null) {
+					continue;
 				}
 				
-				// Pass 2: Main query WHERE clause
-				if ($retrieve->getConditions() !== null) {
-					// Create visitor for main WHERE clause context
-					$visitor = new VisitorAddRangeReferences($range, 'WHERE');
-					
-					// Walk through the WHERE clause AST to collect range references
-					$retrieve->getConditions()->accept($visitor);
+				// Create specialized visitor for aggregate WHERE context
+				// The 'AGGREGATE_WHERE' type distinguishes from main query WHERE clauses
+				$visitor = new VisitorAddRangeReferences($range, 'AGGREGATE_WHERE', $context);
+				
+				// Traverse the nested condition AST to collect range references
+				$aggregate->getConditions()->accept($visitor);
+			}
+		}
+		
+		/**
+		 * Process expressions from any query clause (SELECT, WHERE, ORDER BY) for range references.
+		 * @param array $expressions Array of AST expression nodes to process
+		 * @param AstRange $range The range variable being tracked for references
+		 * @param string $context The clause context ('SELECT', 'WHERE', 'ORDER_BY')
+		 * @return void
+		 */
+		private function processClauseExpressions(array $expressions, AstRange $range, string $context): void {
+			foreach ($expressions as $expression) {
+				// Skip null expressions (e.g., queries without WHERE clauses)
+				if ($expression === null) {
+					continue;
 				}
 				
-				// Pass 3: SELECT values
-				foreach ($retrieve->getValues() as $value) {
-					// Create visitor for SELECT clause context
-					$visitor = new VisitorAddRangeReferences($range, 'SELECT');
-					
-					// Analyze each SELECT expression for range usage
-					$value->accept($visitor);
-				}
+				// Create visitor for this clause context
+				$visitor = new VisitorAddRangeReferences($range, $context);
 				
-				// Pass 4: ORDER BY clause (if you add that later)
-				foreach ($retrieve->getSort() as $sort) {
-					// Create visitor for ORDER BY clause context
-					$visitor = new VisitorAddRangeReferences($range, 'ORDER_BY');
-					
-					// The sort array contains an 'ast' key with the sorting expression
-					$sort['ast']->accept($visitor);
-				}
+				// Apply visitor pattern to traverse expression AST and collect range references
+				$expression->accept($visitor);
 			}
 		}
 		
