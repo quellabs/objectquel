@@ -5,6 +5,7 @@
 	use Quellabs\ObjectQuel\Execution\RangeReferences\Reference;
 	use Quellabs\ObjectQuel\Execution\RangeReferences\ReferenceAggregate;
 	use Quellabs\ObjectQuel\Execution\RangeReferences\ReferenceAggregateWhere;
+	use Quellabs\ObjectQuel\Execution\RangeReferences\ReferenceOrderBy;
 	use Quellabs\ObjectQuel\Execution\RangeReferences\ReferenceSelect;
 	use Quellabs\ObjectQuel\Execution\RangeReferences\ReferenceWhere;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstAny;
@@ -53,6 +54,12 @@
 		private string $context;
 		
 		/**
+		 * List of nodes we already visited
+		 * @var array
+		 */
+		private static array $visitedNodes = [];
+		
+		/**
 		 * Initializes the visitor with the target range and default context.
 		 * @param AstRange $range The range node to collect references for
 		 * @param string $context Default context to use when context cannot be determined from AST
@@ -67,6 +74,14 @@
 		 * @param AstInterface $node The current AST node being visited
 		 */
 		public function visitNode(AstInterface $node): void {
+			// Get object ID
+			$nodeId = spl_object_id($node);
+			
+			// Already processed this node
+			if (isset(self::$visitedNodes[$nodeId])) {
+				return;
+			}
+			
 			// Only process identifier nodes - other node types don't represent data references
 			if (!$node instanceof AstIdentifier) {
 				return;
@@ -89,7 +104,15 @@
 			}
 			
 			// Create and add a reference object based on the identifier's context
-			$this->targetRange->addReference($this->createReference($node));
+			$reference = $this->createReference($node);
+			$this->targetRange->addReference($reference);
+			
+			// Add node to visitedNodes list
+			self::$visitedNodes[$nodeId] = true;
+		}
+		
+		public static function resetVisitedNodes(): void {
+			self::$visitedNodes = [];
 		}
 		
 		/**
@@ -104,24 +127,7 @@
 				'WHERE' => new ReferenceWhere($node),
 				'AGGREGATE' => new ReferenceAggregate($node),
 				'AGGREGATE_WHERE' => new ReferenceAggregateWhere($node),
+				'ORDER_BY' => new ReferenceOrderBy($node),
 			};
-		}
-		
-		/**
-		 * Checks if a given AST node represents an aggregate function.
-		 * @param AstInterface $node The node to check
-		 * @return bool True if the node is an aggregate function, false otherwise
-		 */
-		private function isAggregateNode(AstInterface $node): bool {
-			return
-				$node instanceof AstAvg ||      // Average function
-				$node instanceof AstAvgU ||     // Unsigned average function
-				$node instanceof AstCount ||    // Count function
-				$node instanceof AstCountU ||   // Unsigned count function
-				$node instanceof AstSum ||      // Sum function
-				$node instanceof AstSumU ||     // Unsigned sum function
-				$node instanceof AstMax ||      // Maximum function
-				$node instanceof AstMin ||      // Minimum function
-				$node instanceof AstAny;        // Existential (ANY) function
 		}
 	}
