@@ -99,41 +99,12 @@
 		 * @throws \InvalidArgumentException If an unknown context is determined
 		 */
 		private function createReference(AstIdentifier $node): Reference {
-			$context = $this->determineContext($node);
-			
-			return match($context) {
+			return match($this->context) {
 				'SELECT' => new ReferenceSelect($node),
 				'WHERE' => new ReferenceWhere($node),
 				'AGGREGATE' => new ReferenceAggregate($node),
 				'AGGREGATE_WHERE' => new ReferenceAggregateWhere($node),
-				default => throw new \InvalidArgumentException("Unknown context: $context")
 			};
-		}
-		
-		/**
-		 * Determines the context of an identifier by examining its position in the AST hierarchy.
-		 *
-		 * This method walks up the parent chain from the identifier to find contextual clues:
-		 * - If it finds an aggregate function ancestor, it determines whether the identifier
-		 *   is in the aggregate's main expression or its WHERE clause
-		 * - If no aggregate is found, it uses the default context provided to the visitor
-		 *
-		 * @param AstIdentifier $node The identifier to analyze
-		 * @return string The determined context ('SELECT', 'WHERE', 'AGGREGATE', or 'AGGREGATE_WHERE')
-		 */
-		private function determineContext(AstIdentifier $node): string {
-			$current = $node;
-			
-			// Walk up the parent chain looking for aggregate nodes
-			while ($current = $current->getParent()) {
-				if ($this->isAggregateNode($current)) {
-					// Found an aggregate - check if identifier is in its WHERE clause
-					return $this->isInAggregateWhere($node, $current) ? 'AGGREGATE_WHERE' : 'AGGREGATE';
-				}
-			}
-			
-			// No aggregate found - use the default context
-			return $this->context;
 		}
 		
 		/**
@@ -152,38 +123,5 @@
 				$node instanceof AstMax ||      // Maximum function
 				$node instanceof AstMin ||      // Minimum function
 				$node instanceof AstAny;        // Existential (ANY) function
-		}
-		
-		/**
-		 * Determines if an identifier is located within the WHERE clause of an aggregate function.
-		 * @param AstIdentifier $identifier The identifier to check
-		 * @param AstInterface $aggregate The aggregate node that potentially contains the identifier
-		 * @return bool True if the identifier is in the aggregate's WHERE clause, false otherwise
-		 */
-		private function isInAggregateWhere(AstIdentifier $identifier, AstInterface $aggregate): bool {
-			// Check if the aggregate has a WHERE clause and if the identifier is within it
-			return
-				$aggregate->getConditions() &&
-				$this->isDescendantOf($identifier, $aggregate->getWhereClause());
-		}
-		
-		/**
-		 * Checks if one AST node is a descendant of another in the tree hierarchy.
-		 * @param AstInterface $potentialDescendant The node that might be a descendant
-		 * @param AstInterface $potentialAncestor The node that might be an ancestor
-		 * @return bool True if potentialDescendant is a descendant of potentialAncestor, false otherwise
-		 */
-		private function isDescendantOf(AstInterface $potentialDescendant, AstInterface $potentialAncestor): bool {
-			$current = $potentialDescendant;
-			
-			// Walk up the parent chain looking for the potential ancestor
-			while ($current = $current->getParent()) {
-				if ($current === $potentialAncestor) {
-					return true;
-				}
-			}
-			
-			// Reached the root without finding the ancestor
-			return false;
 		}
 	}
