@@ -63,7 +63,7 @@
 			$this->processPagination($ast, $parameters);
 		}
 		
-		// ========== RANGE SETTER ==========
+		// ========== RANGE REFERENCE SETTER ==========
 		
 		/**
 		 * Walk through the AST and collect all references to ranges

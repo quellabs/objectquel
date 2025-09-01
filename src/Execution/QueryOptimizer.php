@@ -7,6 +7,9 @@
 	use Quellabs\ObjectQuel\Annotations\Orm\RequiredRelation;
 	use Quellabs\ObjectQuel\EntityManager;
 	use Quellabs\ObjectQuel\EntityStore;
+	use Quellabs\ObjectQuel\Execution\RangeReferences\Reference;
+	use Quellabs\ObjectQuel\Execution\RangeReferences\ReferenceAggregate;
+	use Quellabs\ObjectQuel\Execution\RangeReferences\ReferenceAggregateWhere;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstAlias;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstBinaryOperator;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstExists;
@@ -21,11 +24,13 @@
 	use Quellabs\ObjectQuel\ObjectQuel\Visitors\ContainsCheckIsNullForRange;
 	use Quellabs\ObjectQuel\ObjectQuel\Visitors\ContainsNonNullableFieldForRange;
 	use Quellabs\ObjectQuel\ObjectQuel\Visitors\ContainsRange;
-	use Quellabs\ObjectQuel\Execution\Visitors\VisitorRangeNotInAggregates;
 	use Quellabs\ObjectQuel\ObjectQuel\Visitors\GatherReferenceJoinValues;
 	
 	class QueryOptimizer {
 		
+		/**
+		 * @var EntityStore
+		 */
 		private EntityStore $entityStore;
 		
 		/**
@@ -526,40 +531,38 @@
 		}
 		
 		/**
-		 * Checks if a range is only used within ANY() functions and not referenced elsewhere.
-		 * This is used to determine if a range can be optimized out of JOIN operations.
-		 * @param AstRetrieve $retrieve The retrieve operation to analyze
-		 * @param AstRange $range The range/table to check for ANY-only usage
-		 * @return bool True if range is only used in ANY functions, false otherwise
+		 * Checks if a range is only used within aggregates and not referenced elsewhere.
+		 * @param AstRange $range The range to check
+		 * @return bool True if range is only used in aggregate functions, false otherwise
 		 */
-		private function isRangeOnlyUsedInAggregates(AstRetrieve $retrieve, AstRange $range): bool {
-			try {
-				// Create a visitor that will throw an exception if it finds the range
-				// being used outside of ANY() functions
-				$visitor = new VisitorRangeNotInAggregates($range);
-				
-				// Check all SELECT values/expressions for non-aggregate usage of this range
-				// If the range is referenced directly in SELECT clause (not in ANY), visitor throws exception
-				foreach ($retrieve->getValues() as $value) {
-					if ($value->isVisibleInResult()) {
-						$value->accept($visitor);
-					}
-				}
-				
-				// Check WHERE conditions for non-ANY usage of this range
-				// If the range is used in filters outside ANY functions, visitor throws exception
-				if ($retrieve->getConditions()) {
-					$retrieve->getConditions()->accept($visitor);
-				}
-				
-				// If we reach this point, no non-ANY usage was found
-				// The range is only used within ANY() functions
-				return true;
-			} catch (\Exception $e) {
-				// Exception indicates the range is used outside of ANY functions
-				// Therefore it cannot be optimized away from JOIN operations
+		private function isRangeOnlyUsedInAggregates(AstRange $range): bool {
+			$references = $range->getReferences();
+			
+			// If no references at all, it's not used anywhere
+			if (empty($references)) {
 				return false;
 			}
+			
+			// Check if ALL references are aggregate-related
+			foreach ($references as $reference) {
+				if (!$this->isAggregateReference($reference)) {
+					return false; // Found non-aggregate usage
+				}
+			}
+			
+			// All references are aggregate-only
+			return true;
+		}
+		
+		/**
+		 * Determines if a reference is aggregate-related
+		 * @param Reference $reference
+		 * @return bool
+		 */
+		private function isAggregateReference(Reference $reference): bool {
+			return
+				$reference instanceof ReferenceAggregate ||
+				$reference instanceof ReferenceAggregateWhere;
 		}
 		
 		/**
@@ -574,7 +577,7 @@
 			foreach ($ast->getRanges() as $range) {
 				// Check if this range is exclusively used within ANY() functions
 				// and not referenced in regular SELECT fields or WHERE conditions
-				if ($this->isRangeOnlyUsedInAggregates($ast, $range)) {
+				if ($this->isRangeOnlyUsedInAggregates($range)) {
 					// Exclude this range from being included as a JOIN
 					// The ANY() function can handle this more efficiently as a subquery
 					// rather than requiring a full table join
