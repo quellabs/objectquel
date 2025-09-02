@@ -84,6 +84,7 @@
 		public function optimize(AstRetrieve $ast): void {
 			$this->setOnlyRangeToRequired($ast);
 			$this->setRangesRequiredThroughAnnotations($ast);
+			$this->eliminateRedundantSelfJoins($ast);
 			$this->optimizeJoinTypesFromWhereClause($ast);
 			$this->processExistsOperators($ast);
 			$this->removeUnusedLeftJoinRanges($ast);
@@ -1002,6 +1003,134 @@
 				return false;
 			} catch (\Exception $e) {
 				return true;
+			}
+		}
+		
+		/**
+		 * Detects and eliminates redundant self-joins where ranges are functionally equivalent
+		 */
+		private function eliminateRedundantSelfJoins(AstRetrieve $ast): void {
+			$ranges = $ast->getRanges();
+			
+			foreach ($ranges as $i => $range1) {
+				foreach ($ranges as $j => $range2) {
+					if ($i >= $j) continue; // Avoid comparing same range or duplicates
+					
+					if ($this->areRangesFunctionallyEquivalent($range1, $range2)) {
+						$this->mergeRedundantRange($ast, $range1, $range2);
+					}
+				}
+			}
+		}
+		
+		private function areRangesFunctionallyEquivalent(AstRange $range1, AstRange $range2): bool {
+			// Same entity type
+			if ($range1->getEntityName() !== $range2->getEntityName()) {
+				return false;
+			}
+			
+			// Check join condition creates equivalence (e.g., c.id = d.id)
+			$joinProperty = $range2->getJoinProperty();
+			if (!$this->isIdentityJoin($joinProperty, $range1, $range2)) {
+				return false;
+			}
+			
+			return true;
+		}
+		
+		private function isIdentityJoin($joinProperty, AstRange $range1, AstRange $range2): bool {
+			if (!($joinProperty instanceof AstExpression)) {
+				return false;
+			}
+			
+			$left = $this->getBinaryLeft($joinProperty);
+			$right = $this->getBinaryRight($joinProperty);
+			
+			// Get field names using the correct method
+			$leftFieldName = $left->getNext() ? $left->getNext()->getName() : null;
+			$rightFieldName = $right->getNext() ? $right->getNext()->getName() : null;
+			
+			// Check if it's range1.field = range2.field with same field name
+			return ($left->getRange()->getName() === $range1->getName() &&
+					$right->getRange()->getName() === $range2->getName() &&
+					$leftFieldName === $rightFieldName) ||
+				($left->getRange()->getName() === $range2->getName() &&
+					$right->getRange()->getName() === $range1->getName() &&
+					$leftFieldName === $rightFieldName);
+		}
+		
+		private function mergeRedundantRange(AstRetrieve $ast, AstRange $keepRange, AstRange $removeRange): void {
+			// Replace all references to removeRange with keepRange
+			$this->replaceRangeReferences($ast, $removeRange, $keepRange);
+			
+			// Remove the redundant range
+			$removeRange->setIncludeAsJoin(false);
+		}
+		
+		/**
+		 * Replaces all references to oldRange with newRange throughout the AST
+		 */
+		private function replaceRangeReferences(AstRetrieve $ast, AstRange $oldRange, AstRange $newRange): void {
+			// Get all identifiers that reference the old range
+			$identifiers = $ast->getAllIdentifiers($oldRange);
+			
+			foreach ($identifiers as $identifier) {
+				// Update the identifier to reference the new range instead
+				$identifier->setRange($newRange);
+			}
+			
+			// Also need to update any join conditions that reference the old range
+			$this->updateJoinConditionsForRange($ast, $oldRange, $newRange);
+		}
+		
+		/**
+		 * Updates join conditions when a range is being replaced
+		 */
+		private function updateJoinConditionsForRange(AstRetrieve $ast, AstRange $oldRange, AstRange $newRange): void {
+			foreach ($ast->getRanges() as $range) {
+				$joinProperty = $range->getJoinProperty();
+				
+				if ($joinProperty === null) {
+					continue;
+				}
+				
+				// Update identifiers within join conditions
+				$this->updateIdentifiersInExpression($joinProperty, $oldRange, $newRange);
+			}
+			
+			// Also update main WHERE conditions if they exist
+			if ($ast->getConditions() !== null) {
+				$this->updateIdentifiersInExpression($ast->getConditions(), $oldRange, $newRange);
+			}
+		}
+		
+		/**
+		 * Recursively updates identifiers within an expression tree
+		 */
+		private function updateIdentifiersInExpression(AstInterface $expression, AstRange $oldRange, AstRange $newRange): void {
+			if ($expression instanceof AstIdentifier && $expression->getRange() === $oldRange) {
+				$expression->setRange($newRange);
+				return;
+			}
+			
+			// Handle binary operations recursively
+			if ($this->isBinaryOperationNode($expression)) {
+				$this->updateIdentifiersInExpression($this->getBinaryLeft($expression), $oldRange, $newRange);
+				$this->updateIdentifiersInExpression($this->getBinaryRight($expression), $oldRange, $newRange);
+				return;
+			}
+			
+			// Handle other node types that might contain identifiers
+			if (method_exists($expression, 'getIdentifier')) {
+				$identifier = $expression->getIdentifier();
+				if ($identifier instanceof AstIdentifier && $identifier->getRange() === $oldRange) {
+					$identifier->setRange($newRange);
+				}
+			}
+			
+			// Handle aggregate functions that might have conditions
+			if (method_exists($expression, 'getConditions') && $expression->getConditions() !== null) {
+				$this->updateIdentifiersInExpression($expression->getConditions(), $oldRange, $newRange);
 			}
 		}
 	}
