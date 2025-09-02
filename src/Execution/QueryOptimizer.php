@@ -959,77 +959,124 @@
 		}
 		
 		/**
-		 * Checks if a range has explicit NULL checks in the WHERE clause conditions.
+		 * This method uses a visitor pattern to traverse the AST conditions and detect
+		 * if there are explicit IS NULL or IS NOT NULL checks for fields belonging to
+		 * the specified range. The visitor throws an exception when a match is found
+		 * (visitor pattern convention for early termination).
 		 * @param AstRetrieve $ast The query AST containing conditions to check
 		 * @param AstRange $range The range to check for NULL conditions
 		 * @return bool True if NULL checks are found, false otherwise
 		 */
 		private function rangeHasNullChecks(AstRetrieve $ast, AstRange $range): bool {
 			try {
+				// Create visitor to search for NULL checks on the specified range
 				$visitor = new ContainsCheckIsNullForRange($range->getName());
 				$ast->getConditions()->accept($visitor);
+				
+				// If visitor completes without throwing, no NULL checks were found
 				return false;
 			} catch (\Exception $e) {
+				// Exception indicates NULL checks were found (visitor pattern convention)
 				return true;
 			}
 		}
 		
 		/**
-		 * Checks if a range has any field references in the WHERE clause conditions.
+		 * This method determines if any fields from the specified range are referenced
+		 * in the WHERE clause. Uses visitor pattern where the visitor throws an exception
+		 * upon finding the first match, allowing for efficient early termination.
 		 * @param AstRetrieve $ast The query AST containing conditions to check
 		 * @param AstRange $range The range to check for field references
 		 * @return bool True if field references are found, false otherwise
 		 */
 		private function conditionsListHasFieldReferences(AstRetrieve $ast, AstRange $range): bool {
 			try {
+				// Create visitor to search for any references to the specified range
 				$visitor = new ContainsRange($range->getName());
 				$ast->getConditions()->accept($visitor);
+				
+				// If visitor completes without throwing, no references were found
 				return false;
 			} catch (\Exception $e) {
+				// Exception indicates references were found (visitor pattern convention)
 				return true;
 			}
 		}
 		
 		/**
-		 * Checks if a range has references to non-nullable fields in WHERE conditions.
+		 * This method identifies whether the WHERE conditions reference fields that are
+		 * marked as non-nullable in the entity definition. Non-nullable field references
+		 * can affect join elimination since they implicitly filter out NULL values.
+		 * Uses visitor pattern with exception-based early termination.
 		 * @param AstRetrieve $ast The query AST containing conditions to analyze
 		 * @param AstRange $range The range to check for non-nullable field usage
 		 * @return bool True if non-nullable fields are referenced, false otherwise
 		 */
 		private function conditionListHasNonNullableReferences(AstRetrieve $ast, AstRange $range): bool {
 			try {
+				// Create visitor to search for non-nullable field references
 				$visitor = new ContainsNonNullableFieldForRange($range->getName(), $this->entityStore);
 				$ast->getConditions()->accept($visitor);
+				
+				// If visitor completes without throwing, no non-nullable references found
 				return false;
 			} catch (\Exception $e) {
+				// Exception indicates non-nullable references were found
 				return true;
 			}
 		}
 		
 		/**
-		 * Detects and eliminates redundant self-joins where ranges are functionally equivalent
+		 * Detects and eliminates redundant self-joins where ranges are functionally equivalent.
+		 *
+		 * This optimization identifies cases where multiple ranges reference the same entity
+		 * with equivalent join conditions (e.g., c.id = d.id where both c and d reference
+		 * the same table). Such redundant joins can be safely eliminated by merging the
+		 * ranges and updating all references.
+		 *
+		 * Example transformation:
+		 * FROM Customer c, Customer d WHERE c.id = d.id
+		 * becomes:
+		 * FROM Customer c
+		 *
+		 * @param AstRetrieve $ast The query AST to optimize
 		 */
 		private function eliminateRedundantSelfJoins(AstRetrieve $ast): void {
 			$ranges = $ast->getRanges();
 			
+			// Compare each pair of ranges to identify redundant self-joins
 			foreach ($ranges as $i => $range1) {
 				foreach ($ranges as $j => $range2) {
-					if ($i >= $j) continue; // Avoid comparing same range or duplicates
+					// Skip comparing same range or avoid duplicate comparisons
+					if ($i >= $j) continue;
 					
+					// Check if ranges are functionally equivalent (same entity + identity join)
 					if ($this->areRangesFunctionallyEquivalent($range1, $range2)) {
+						// Merge the redundant range into the first one
 						$this->mergeRedundantRange($ast, $range1, $range2);
 					}
 				}
 			}
 		}
 		
+		/**
+		 * Determines if two ranges are functionally equivalent for optimization purposes.
+		 *
+		 * Two ranges are considered equivalent if:
+		 * 1. They reference the same entity type
+		 * 2. They are joined by an identity condition (e.g., range1.id = range2.id)
+		 *
+		 * @param AstRange $range1 The first range to compare
+		 * @param AstRange $range2 The second range to compare
+		 * @return bool True if ranges are functionally equivalent, false otherwise
+		 */
 		private function areRangesFunctionallyEquivalent(AstRange $range1, AstRange $range2): bool {
-			// Same entity type
+			// Must reference the same entity type
 			if ($range1->getEntityName() !== $range2->getEntityName()) {
 				return false;
 			}
 			
-			// Check join condition creates equivalence (e.g., c.id = d.id)
+			// Check if join condition creates equivalence (e.g., c.id = d.id)
 			$joinProperty = $range2->getJoinProperty();
 			if (!$this->isIdentityJoin($joinProperty, $range1, $range2)) {
 				return false;
@@ -1038,19 +1085,33 @@
 			return true;
 		}
 		
+		/**
+		 * Checks if a join property represents an identity join between two ranges.
+		 *
+		 * An identity join is one where the same field from both ranges is compared
+		 * for equality (e.g., range1.id = range2.id). This creates a functional
+		 * equivalence that allows for range elimination.
+		 *
+		 * @param mixed $joinProperty The join expression to analyze
+		 * @param AstRange $range1 The first range in the comparison
+		 * @param AstRange $range2 The second range in the comparison
+		 * @return bool True if this is an identity join, false otherwise
+		 */
 		private function isIdentityJoin($joinProperty, AstRange $range1, AstRange $range2): bool {
+			// Join property must be a binary expression (e.g., A = B)
 			if (!($joinProperty instanceof AstExpression)) {
 				return false;
 			}
 			
+			// Extract left and right sides of the binary operation
 			$left = $this->getBinaryLeft($joinProperty);
 			$right = $this->getBinaryRight($joinProperty);
 			
-			// Get field names using the correct method
+			// Get field names from both sides of the comparison
 			$leftFieldName = $left->getNext() ? $left->getNext()->getName() : null;
 			$rightFieldName = $right->getNext() ? $right->getNext()->getName() : null;
 			
-			// Check if it's range1.field = range2.field with same field name
+			// Verify this is an identity join: range1.field = range2.field with same field name
 			return ($left->getRange()->getName() === $range1->getName() &&
 					$right->getRange()->getName() === $range2->getName() &&
 					$leftFieldName === $rightFieldName) ||
@@ -1059,34 +1120,52 @@
 					$leftFieldName === $rightFieldName);
 		}
 		
+		/**
+		 * Merges a redundant range into the kept range and removes it from the query.
+		 * @param AstRetrieve $ast The query AST being optimized
+		 * @param AstRange $keepRange The range to retain (target of merge)
+		 * @param AstRange $removeRange The redundant range to eliminate
+		 *
+		 * @throws \RuntimeException If range replacement fails
+		 */
 		private function mergeRedundantRange(AstRetrieve $ast, AstRange $keepRange, AstRange $removeRange): void {
-			// Replace all references to removeRange with keepRange
+			// Replace all references to removeRange with keepRange throughout the AST
 			$this->replaceRangeReferences($ast, $removeRange, $keepRange);
 			
-			// Remove the redundant range
+			// Mark the redundant range as excluded from join generation
 			$removeRange->setIncludeAsJoin(false);
 		}
 		
 		/**
-		 * Replaces all references to oldRange with newRange throughout the AST
+		 * Replaces all references to oldRange with newRange throughout the AST.
+		 * @param AstRetrieve $ast The query AST to update
+		 * @param AstRange $oldRange The range being replaced
+		 * @param AstRange $newRange The replacement range
+		 * @throws \RuntimeException If reference replacement fails
 		 */
 		private function replaceRangeReferences(AstRetrieve $ast, AstRange $oldRange, AstRange $newRange): void {
 			// Get all identifiers that reference the old range
 			$identifiers = $ast->getAllIdentifiers($oldRange);
 			
+			// Update each identifier to reference the new range instead
 			foreach ($identifiers as $identifier) {
-				// Update the identifier to reference the new range instead
 				$identifier->setRange($newRange);
 			}
 			
-			// Also need to update any join conditions that reference the old range
+			// Update join conditions that may reference the old range
 			$this->updateJoinConditionsForRange($ast, $oldRange, $newRange);
 		}
 		
 		/**
-		 * Updates join conditions when a range is being replaced
+		 * This method ensures that all join expressions are updated when a range
+		 * reference changes, maintaining the semantic correctness of the query
+		 * after optimization.
+		 * @param AstRetrieve $ast The query AST being updated
+		 * @param AstRange $oldRange The range being replaced
+		 * @param AstRange $newRange The replacement range
 		 */
 		private function updateJoinConditionsForRange(AstRetrieve $ast, AstRange $oldRange, AstRange $newRange): void {
+			// Update join conditions for each range in the query
 			foreach ($ast->getRanges() as $range) {
 				$joinProperty = $range->getJoinProperty();
 				
@@ -1094,7 +1173,7 @@
 					continue;
 				}
 				
-				// Update identifiers within join conditions
+				// Recursively update identifiers within join conditions
 				$this->updateIdentifiersInExpression($joinProperty, $oldRange, $newRange);
 			}
 			
@@ -1105,15 +1184,22 @@
 		}
 		
 		/**
-		 * Recursively updates identifiers within an expression tree
+		 * This method traverses the AST expression tree and updates any identifier
+		 * nodes that reference the old range to use the new range instead. It handles
+		 * various expression types including binary operations, function calls, and
+		 * aggregate expressions.
+		 * @param AstInterface $expression The expression tree to update
+		 * @param AstRange $oldRange The range being replaced
+		 * @param AstRange $newRange The replacement range
 		 */
 		private function updateIdentifiersInExpression(AstInterface $expression, AstRange $oldRange, AstRange $newRange): void {
+			// Handle direct identifier references
 			if ($expression instanceof AstIdentifier && $expression->getRange() === $oldRange) {
 				$expression->setRange($newRange);
 				return;
 			}
 			
-			// Handle binary operations recursively
+			// Handle binary operations recursively (AND, OR, =, <>, etc.)
 			if ($this->isBinaryOperationNode($expression)) {
 				$this->updateIdentifiersInExpression($this->getBinaryLeft($expression), $oldRange, $newRange);
 				$this->updateIdentifiersInExpression($this->getBinaryRight($expression), $oldRange, $newRange);
@@ -1128,7 +1214,7 @@
 				}
 			}
 			
-			// Handle aggregate functions that might have conditions
+			// Handle aggregate functions that might have conditions (HAVING clauses)
 			if (method_exists($expression, 'getConditions') && $expression->getConditions() !== null) {
 				$this->updateIdentifiersInExpression($expression->getConditions(), $oldRange, $newRange);
 			}
