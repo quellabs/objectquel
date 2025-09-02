@@ -597,6 +597,29 @@
 			return true;
 		}
 		
+		private function isAggregateNode(AstInterface $item): bool {
+			return
+				$item instanceof AstCount ||
+				$item instanceof AstCountU ||
+				$item instanceof AstAvg ||
+				$item instanceof AstAvgU ||
+				$item instanceof AstSum ||
+				$item instanceof AstSumU ||
+				$item instanceof AstMin ||
+				$item instanceof AstMax ||
+				$item instanceof AstAny;
+		}
+		
+		private function valuesOnlyAggregates(AstRetrieve $ast): bool {
+			foreach($ast->getValues() as $value) {
+				if (!$this->isAggregateNode($value->getExpression())) {
+					return false;
+				}
+			}
+			
+			return true;
+		}
+		
 		/**
 		 * Optimizes ranges that are only used in ANY() functions by excluding them from JOIN operations.
 		 * When a range is only referenced within ANY() functions, it doesn't need to be joined
@@ -607,6 +630,14 @@
 		private function optimizeAggregateFunctions(AstRetrieve $ast): void {
 			// Do not optimize single range queries
 			if ($ast->isSingleRangeQuery()) {
+				return;
+			}
+			
+			// If all the retrievals are aggregates, do not wrap
+			if (
+				$ast->getConditions() === null &&
+				$this->valuesOnlyAggregates($ast)
+			) {
 				return;
 			}
 			
@@ -726,6 +757,15 @@
 		 * @return void
 		 */
 		private function markSubqueryRanges(AstRetrieve $ast): void {
+			// If all the retrievals are aggregates, do not wrap
+			if (
+				$ast->getConditions() === null &&
+				$this->valuesOnlyAggregates($ast)
+			) {
+				return;
+			}
+			
+			// Check all ranges. If any of them is only used in aggregates, skip joins
 			$mainRange = $this->getMainRange($ast);
 			
 			foreach ($ast->getRanges() as $range) {
