@@ -4,6 +4,7 @@
 	
 	use Quellabs\ObjectQuel\ObjectQuel\AstInterface;
 	use Quellabs\ObjectQuel\ObjectQuel\AstVisitorInterface;
+	use Quellabs\ObjectQuel\ObjectQuel\Visitors\CollectIdentifiers;
 	use Quellabs\ObjectQuel\ObjectQuel\Visitors\ContainsJsonIdentifier;
 	
 	/**
@@ -347,6 +348,50 @@
 		
 		public function isSingleRangeQuery(): bool {
 			return count($this->ranges) === 1;
+		}
+		
+		public function getAllIdentifiers(?AstRange $range=null): array {
+			$visitor = new CollectIdentifiers();
+			
+			foreach($this->values as $value) {
+				$value->accept($visitor);
+			}
+			
+			if ($this->conditions !== null) {
+				$this->conditions->accept($visitor);
+			}
+			
+			$result = $visitor->getCollectedNodes();
+			
+			if ($range !== null) {
+				return array_filter($result, function($value) use ($range) {
+					return $value->getRange() === $range;
+				});
+			}
+			
+			return $result;
+		}
+		
+		public function getLocationOfChild(AstInterface $ast): ?string {
+			foreach($this->values as $value) {
+				if ($value->containsChild($ast)) {
+					return "select";
+				}
+			}
+			
+			if ($this->conditions !== null) {
+				if ($ast->isAncestorOf($this->conditions)) {
+					return "conditions";
+				}
+			}
+			
+			foreach($this->sort as $value) {
+				if ($ast['ast']->isAncestorOf($value)) {
+					return "order_by";
+				}
+			}
+			
+			return null;
 		}
 		
 		public function deepClone(): static {

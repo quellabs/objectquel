@@ -32,6 +32,7 @@
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRangeJsonSource;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstSearch;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstString;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstSubquery;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstSum;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstSumU;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstTerm;
@@ -379,6 +380,14 @@
 		 */
 		protected function handleSearch(AstSearch $search): void {
 			$this->result[] = $this->expressionHandler->handleSearch($search);
+		}
+		
+		/**
+		 * Process a subquery
+		 * @param AstSubquery $subquery
+		 */
+		protected function handleSubquery(AstSubquery $subquery): void {
+			$this->result[] = $this->aggregateHandler->handleSubquery($subquery);
 		}
 		
 		/**

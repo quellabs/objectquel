@@ -158,6 +158,9 @@
 			// Convert the query to SQL
 			$sql = $this->convertToSQL($stage->getQuery(), $initialParams);
 			
+			
+			dd($sql);
+			
 			// Execute the SQL query
 			$rs = $this->connection->execute($sql, $initialParams);
 			

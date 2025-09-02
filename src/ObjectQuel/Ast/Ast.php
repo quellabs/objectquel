@@ -4,6 +4,8 @@
 	
 	use Quellabs\ObjectQuel\ObjectQuel\AstInterface;
 	use Quellabs\ObjectQuel\ObjectQuel\AstVisitorInterface;
+	use Quellabs\ObjectQuel\ObjectQuel\Visitors\ContainsNode;
+	use Quellabs\ObjectQuel\ObjectQuel\Visitors\ContainsNodeObject;
 	
 	/**
 	 * Class Ast
@@ -114,6 +116,16 @@
 			}
 			
 			return false;
+		}
+	
+		public function isAncestorOf(AstInterface $node): bool {
+			try {
+				$visitor = new ContainsNodeObject($this);
+				$node->accept($visitor);
+				return false;
+			} catch (\Exception $exception) {
+				return true;
+			}
 		}
 		
 		/**
