@@ -131,11 +131,11 @@
 		/**
 		 * Process WHERE conditions within aggregate functions for range references.
 		 * @param array $aggregates Array of aggregate function AST nodes
-		 * @param mixed $range The range variable being tracked for references
+		 * @param AstRange $range The range variable being tracked for references
 		 * @param string $context The parent clause context ('SELECT', 'WHERE', 'ORDER_BY')
 		 * @return void
 		 */
-		private function processAggregateConditions(array $aggregates, $range, string $context): void {
+		private function processAggregateConditions(array $aggregates, AstRange $range, string $context): void {
 			foreach ($aggregates as $aggregate) {
 				// Only process aggregates that have their own filtering conditions
 				if ($aggregate->getConditions() === null) {
