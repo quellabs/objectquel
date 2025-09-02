@@ -2,40 +2,18 @@
 	
 	namespace Quellabs\ObjectQuel\Execution\Visitors;
 	
-	use Quellabs\ObjectQuel\Execution\RangeReferences\Reference;
 	use Quellabs\ObjectQuel\Execution\RangeReferences\ReferenceAggregate;
 	use Quellabs\ObjectQuel\Execution\RangeReferences\ReferenceAggregateWhere;
 	use Quellabs\ObjectQuel\Execution\RangeReferences\ReferenceOrderBy;
 	use Quellabs\ObjectQuel\Execution\RangeReferences\ReferenceSelect;
 	use Quellabs\ObjectQuel\Execution\RangeReferences\ReferenceWhere;
-	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstAny;
-	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstAvg;
-	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstAvgU;
-	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstCount;
-	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstCountU;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstIdentifier;
-	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstMax;
-	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstMin;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRange;
-	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstSum;
-	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstSumU;
-	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstWhere;
 	use Quellabs\ObjectQuel\ObjectQuel\AstInterface;
 	use Quellabs\ObjectQuel\ObjectQuel\AstVisitorInterface;
 	
 	/**
 	 * AST visitor that collects and categorizes range references for query execution planning.
-	 *
-	 * This visitor implements the visitor pattern to traverse an Abstract Syntax Tree (AST)
-	 * and identify all identifiers that reference a specific range. It categorizes these
-	 * references based on their context (SELECT, WHERE, aggregates, etc.) to help with
-	 * query optimization and execution planning.
-	 *
-	 * The visitor distinguishes between different contexts:
-	 * - SELECT: Identifiers used in selection clauses
-	 * - WHERE: Identifiers used in filtering conditions
-	 * - AGGREGATE: Identifiers used within aggregate functions
-	 * - AGGREGATE_WHERE: Identifiers used in WHERE clauses within aggregate functions
 	 */
 	class VisitorAddRangeReferences implements AstVisitorInterface {
 		
@@ -71,7 +49,7 @@
 		 * @param string $context Default context to use when context cannot be determined from AST
 		 * @param string|null $parentContext Parent context
 		 */
-		public function __construct(AstRange $range, string $context, ?string $parentContext=null) {
+		public function __construct(AstRange $range, string $context, ?string $parentContext = null) {
 			$this->targetRange = $range;
 			$this->context = $context;
 			$this->parentContext = $parentContext;
@@ -110,27 +88,26 @@
 				return;
 			}
 			
-			// Create and add a reference object based on the identifier's context
-			if ($this->context === 'AGGREGATE_WHERE') {
-				// Special case for AGGREGATE_WHERE
-				$reference = $this->createReference($node, $this->context, $this->parentContext);
-				$this->targetRange->addReference($reference);
-				
-				// Add node to visitedNodes list
-				self::$visitedNodes[$nodeId] = true;
-				return;
+			// Fetch the parent aggregate
+			$parentAggregate = $node->getParentAggregate();
+
+			// Determine context based on explicit context and AST structure
+			if ($this->context === "AGGREGATE_WHERE") {
+				$context = "AGGREGATE_WHERE";
+			} elseif ($parentAggregate !== null) {
+				$context = "AGGREGATE";
+			} else {
+				$context = $this->context;
 			}
 			
-			if ($node->parentIsOneOf([
-				AstMin::class, AstMax::class,
-				AstAvg::class, AstAvgU::class,
-				AstCount::class, AstCountU::class,
-				AstSum::class, AstSumU::class,
-			])) {
-				$reference = $this->createReference($node, "AGGREGATE", $this->context);
-			} else {
-				$reference = $this->createReference($node, $this->context);
-			}
+			// Create the reference
+			$reference = match ($context) {
+				'SELECT' => new ReferenceSelect($node),
+				'WHERE' => new ReferenceWhere($node),
+				'ORDER_BY' => new ReferenceOrderBy($node),
+				'AGGREGATE' => new ReferenceAggregate($node, $this->context, $parentAggregate),
+				'AGGREGATE_WHERE' => new ReferenceAggregateWhere($node, $this->parentContext, $parentAggregate),
+			};
 			
 			// Add the reference
 			$this->targetRange->addReference($reference);
@@ -139,25 +116,11 @@
 			self::$visitedNodes[$nodeId] = true;
 		}
 		
+		/**
+		 * Clear visited nodes list
+		 * @return void
+		 */
 		public static function resetVisitedNodes(): void {
 			self::$visitedNodes = [];
-		}
-		
-		/**
-		 * Creates a Reference object of the appropriate type based on the identifier's context.
-		 * @param AstIdentifier $node The identifier node to create a reference for
-		 * @param string $type
-		 * @param string|null $parentContext
-		 * @return Reference A Reference object of the appropriate subtype
-		 * @throws \InvalidArgumentException If an unknown context is determined
-		 */
-		private function createReference(AstIdentifier $node, string $type, ?string $parentContext = null): Reference {
-			return match ($type) {
-				'SELECT' => new ReferenceSelect($node),
-				'WHERE' => new ReferenceWhere($node),
-				'AGGREGATE' => new ReferenceAggregate($node, $parentContext),
-				'AGGREGATE_WHERE' => new ReferenceAggregateWhere($node, $parentContext),
-				'ORDER_BY' => new ReferenceOrderBy($node),
-			};
 		}
 	}
