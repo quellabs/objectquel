@@ -346,7 +346,12 @@
 			$this->sort_in_application_logic = $setSort;
 		}
 		
-		public function isSingleRangeQuery(): bool {
+		public function isSingleRangeQuery(bool $useIncludedTag=false): bool {
+			if ($useIncludedTag) {
+				$filter = array_filter($this->ranges, function($range) { return $range->includeAsJoin(); });
+				return count($filter) === 1;
+			}
+			
 			return count($this->ranges) === 1;
 		}
 		

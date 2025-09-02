@@ -12,6 +12,7 @@
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstAvg;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstAvgU;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstBinaryOperator;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstCase;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstCount;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstCountU;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstExists;
@@ -85,9 +86,8 @@
 			$this->setRangesRequiredThroughAnnotations($ast);
 			$this->optimizeJoinTypesFromWhereClause($ast);
 			$this->processExistsOperators($ast);
-			$this->optimizeAggregateFunctions($ast);
-			$this->markSubqueryRanges($ast);
 			$this->removeUnusedLeftJoinRanges($ast);
+			$this->optimizeAggregateFunctions($ast);
 			$this->addReferencedValuesToQuery($ast);
 		}
 		
@@ -225,7 +225,7 @@
 				}
 			}
 		}
-
+		
 		// ========== HELPER METHODS ==========
 		
 		/**
@@ -506,7 +506,7 @@
 			) {
 				throw new \InvalidArgumentException('Item does not support binary operations');
 			}
-
+			
 			return $item->getLeft();
 		}
 		
@@ -611,7 +611,7 @@
 		}
 		
 		private function valuesOnlyAggregates(AstRetrieve $ast): bool {
-			foreach($ast->getValues() as $value) {
+			foreach ($ast->getValues() as $value) {
 				if (!$this->isAggregateNode($value->getExpression())) {
 					return false;
 				}
@@ -619,53 +619,180 @@
 			
 			return true;
 		}
-		
+	
 		/**
-		 * Optimizes ranges that are only used in ANY() functions by excluding them from JOIN operations.
-		 * When a range is only referenced within ANY() functions, it doesn't need to be joined
-		 * as a regular table since ANY() can be handled more efficiently as a subquery.
+		 * Optimizes aggregate functions in AST queries by choosing the most efficient execution strategy.
+		 *
+		 * This method handles two main optimization scenarios:
+		 * 1. Single-range queries: Direct optimization within the main query
+		 * 2. Multi-range queries: Decides between subqueries vs CASE WHEN transformations
+		 *
 		 * @param AstRetrieve $ast The AST retrieve object to optimize
 		 * @return void
 		 */
 		private function optimizeAggregateFunctions(AstRetrieve $ast): void {
-			// Do not optimize single range queries
-			if ($ast->isSingleRangeQuery()) {
+			// Handle the simple case: single range queries
+			if ($ast->isSingleRangeQuery(true)) {
+				$this->optimizeSingleRangeAggregates($ast);
 				return;
 			}
 			
-			// If all the retrievals are aggregates, do not wrap
-			if (
-				$ast->getConditions() === null &&
-				$this->valuesOnlyAggregates($ast)
-			) {
-				return;
+			// Handle complex case: multi-range queries
+			$this->optimizeMultiRangeAggregates($ast);
+		}
+		
+		/**
+		 * Optimizes aggregate functions in single-range queries.
+		 *
+		 * For single-range queries, we can apply more aggressive optimizations:
+		 * - Move aggregate conditions to the main WHERE clause when possible
+		 * - Transform remaining conditional aggregates to CASE WHEN expressions
+		 *
+		 * @param AstRetrieve $ast The single-range AST to optimize
+		 * @return void
+		 */
+		private function optimizeSingleRangeAggregates(AstRetrieve $ast): void {
+			// Special optimization: if we're selecting only one aggregate with a condition,
+			// and there's no existing WHERE clause, move the aggregate condition up
+			$canPromoteCondition = (
+				count($ast->getValues()) === 1 &&
+				$this->isAggregateNode($ast->getValues()[0]->getExpression()) &&
+				$ast->getValues()[0]->getExpression()->getConditions() !== null &&
+				$ast->getConditions() === null
+			);
+			
+			if ($canPromoteCondition) {
+				// Move: SELECT SUM(value WHERE condition) → SELECT SUM(value) WHERE condition
+				$aggregateCondition = $ast->getValues()[0]->getExpression()->getConditions();
+				$ast->setConditions($aggregateCondition);
+				$ast->getValues()[0]->getExpression()->setConditions(null);
 			}
 			
-			// Fetch all aggregates to see if they should be wrapped into a subquery
-			$aggregationNodesValues = $this->findAggregatesForValues($ast->getValues());
-			$aggregationNodesConditions = $this->findAggregatesForConditions($ast->getConditions());
-			$aggregationNodes = array_merge($aggregationNodesValues, $aggregationNodesConditions);
+			// Transform any remaining conditional aggregates to CASE WHEN
+			$this->transformAggregatesToCaseWhen($ast);
+		}
+		
+		/**
+		 * Optimizes aggregate functions in multi-range queries.
+		 * @param AstRetrieve $ast The multi-range AST to optimize
+		 * @return void
+		 */
+		private function optimizeMultiRangeAggregates(AstRetrieve $ast): void {
+			// Find all aggregate nodes that need optimization
+			$valueAggregates = $this->findAggregatesForValues($ast->getValues());
+			$conditionAggregates = $this->findAggregatesForConditions($ast->getConditions());
+			$allAggregates = array_merge($valueAggregates, $conditionAggregates);
 			
-			foreach($aggregationNodes as $aggregation) {
-				if ($this->shouldWrapAggregation($ast, $aggregation)) {
-					$parent = $aggregation->getParent();
-					
-					if (!$aggregation instanceof AstAny) {
-						// (SELECT SUM(...))
-						$subquery = new AstSubquery($aggregation, AstSubquery::TYPE_SCALAR);
-					} elseif ($aggregation->isAncestorOf($ast->getConditions())) {
-						// WHERE/HAVING context - use EXISTS
-						$subquery = new AstSubquery($aggregation, AstSubquery::TYPE_EXISTS);
-					} else {
-						// SELECT context - use CASE WHEN EXISTS
-						$subquery = new AstSubquery($aggregation, AstSubquery::TYPE_CASE_WHEN);
-					}
-					
-					$this->astNodeReplacer->replaceChild($parent, $aggregation, $subquery);
+			// Process each aggregate and choose the best optimization strategy
+			foreach ($allAggregates as $aggregateNode) {
+				if (!$this->shouldWrapAggregation($ast, $aggregateNode)) {
+					continue;
+				}
+				
+				if ($this->isSubqueryMoreEfficient($ast, $aggregateNode)) {
+					$this->convertAggregateToSubquery($ast, $aggregateNode);
+				} else {
+					$this->transformAggregateToCase($aggregateNode);
 				}
 			}
 		}
-	
+		
+		/**
+		 * Converts an aggregate node to an appropriate subquery type.
+		 *
+		 * The subquery type depends on the context where the aggregate appears:
+		 * - Scalar subquery: For non-ANY aggregates (e.g., SUM, COUNT)
+		 * - EXISTS subquery: For ANY aggregates in WHERE/HAVING clauses
+		 * - CASE WHEN subquery: For ANY aggregates in SELECT clauses
+		 *
+		 * @param AstRetrieve $ast The main query AST
+		 * @param AstInterface $aggregateNode The aggregate to convert
+		 * @return void
+		 */
+		private function convertAggregateToSubquery(AstRetrieve $ast, AstInterface $aggregateNode): void {
+			$parentNode = $aggregateNode->getParent();
+			
+			// Regular aggregates (SUM, COUNT, etc.) become scalar subqueries
+			// Example: SUM(table.value WHERE condition) → (SELECT SUM(table.value) WHERE condition)
+			if (!$aggregateNode instanceof AstAny) {
+				$subquery = new AstSubquery($aggregateNode, AstSubquery::TYPE_SCALAR);
+				$this->astNodeReplacer->replaceChild($parentNode, $aggregateNode, $subquery);
+				return;
+			}
+			
+			// ANY aggregates in WHERE/HAVING become EXISTS subqueries
+			// Example: WHERE ANY(table.value > 10) → WHERE EXISTS(SELECT 1 WHERE table.value > 10)
+			if ($aggregateNode->isAncestorOf($ast->getConditions())) {
+				$subquery = new AstSubquery($aggregateNode, AstSubquery::TYPE_EXISTS);
+				$this->astNodeReplacer->replaceChild($parentNode, $aggregateNode, $subquery);
+				return;
+			}
+			
+			// ANY aggregates in SELECT become CASE WHEN EXISTS subqueries
+			// Example: SELECT ANY(table.value > 10) → SELECT CASE WHEN EXISTS(...) THEN 1 ELSE 0 END
+			$subquery = new AstSubquery($aggregateNode, AstSubquery::TYPE_CASE_WHEN);
+			$this->astNodeReplacer->replaceChild($parentNode, $aggregateNode, $subquery);
+		}
+		
+		/**
+		 * Determines if a subquery approach would be more efficient than CASE WHEN.
+		 * @param AstRetrieve $ast The main query AST
+		 * @param AstInterface $aggregation The aggregate node to evaluate
+		 * @return bool True if subquery is more efficient, false for CASE WHEN
+		 */
+		private function isSubqueryMoreEfficient(AstRetrieve $ast, AstInterface $aggregation): bool {
+			// TODO: Implement cost-based analysis
+			// For now, conservatively prefer CASE WHEN transformations
+			return false;
+		}
+		
+		/**
+		 * Transforms a conditional aggregate to use CASE WHEN instead of WHERE clauses.
+		 * Before: SUM(expression WHERE condition)
+		 * After:  SUM(CASE WHEN condition THEN expression ELSE NULL END)
+		 * @param AstInterface $aggregation The aggregate node to transform
+		 * @return void
+		 */
+		private function transformAggregateToCase(AstInterface $aggregation): void {
+			// Only process aggregates that have conditions
+			$condition = $aggregation->getConditions();
+			
+			if ($condition === null) {
+				return;
+			}
+			
+			// Get the current expression being aggregated
+			$expression = $aggregation->getIdentifier();
+			
+			// Create the CASE WHEN structure: CASE WHEN condition THEN expression END
+			// The implicit ELSE NULL ensures that rows not meeting the condition
+			// don't contribute to the aggregate (which is the desired behavior)
+			$caseWhenExpression = new AstCase($condition, $expression);
+			
+			// Update the aggregate: replace expression and remove the separate condition
+			$aggregation->setIdentifier($caseWhenExpression);
+			$aggregation->setConditions(null);
+		}
+		
+		private function transformAggregatesToCaseWhen(AstRetrieve $ast): void {
+			$aggregationNodes = $this->findAggregatesForValues($ast->getValues());
+			
+			foreach ($aggregationNodes as $aggregate) {
+				if ($aggregate->getConditions() !== null) {
+					// Transform: SUM(expr WHERE condition) → SUM(CASE WHEN condition THEN expr END)
+					$condition = $aggregate->getConditions();
+					$expression = $aggregate->getExpression();
+					
+					// Create CASE WHEN structure (you'll need to implement AstCase class)
+					$caseWhen = new AstCase($condition, $expression); // CASE WHEN condition THEN expr END
+					
+					// Replace the aggregate's expression with the CASE WHEN
+					$aggregate->setExpression($caseWhen);
+					$aggregate->setConditions(null);
+				}
+			}
+		}
+		
 		/**
 		 * Returns true if the aggregation should be wrapped inside a subquery node
 		 * @param AstRetrieve $ast
@@ -673,30 +800,17 @@
 		 * @return bool
 		 */
 		private function shouldWrapAggregation(AstRetrieve $ast, AstInterface $aggregate): bool {
-			// Step 1: Find ranges used by THIS aggregation
-			$mainRange = $this->getMainRange($ast);
-			$rangesInThisAggregation = $this->extractRanges($aggregate);
-			
-			// Step 2: Filter out main range to get only "additional" ranges
-			$additionalRanges = array_filter($rangesInThisAggregation, function($range) use ($mainRange) {
-				return $range !== $mainRange;
-			});
-			
-			// Step 3: If no additional ranges, don't wrap (main range aggregations stay in main query)
-			if (empty($additionalRanges)) {
+			// Only wrap if it has conditions AND it's not a simple single-range case
+			if ($aggregate->getConditions() === null) {
 				return false;
 			}
 			
-			// Step 4: Check if all additional ranges are aggregation-only
-			foreach ($additionalRanges as $range) {
-				// This range is used outside aggregations
-				if (!$this->isRangeOnlyUsedInAggregates($ast, $range)) {
-					return false;
-				}
+			// For single range queries, we can use CASE WHEN instead of subqueries
+			if ($ast->isSingleRangeQuery(true)) {
+				return false; // Don't wrap - we'll transform to CASE WHEN
 			}
 			
-			// All additional ranges are aggregation-only
-			return true;
+			return true; // Multi-range queries still need subqueries
 		}
 		
 		/**
@@ -724,7 +838,7 @@
 			$visitor = new CollectNodes($this->aggregateTypes);
 			
 			// Visit each value expression to collect aggregate functions
-			foreach($values as $value) {
+			foreach ($values as $value) {
 				$value->accept($visitor);
 			}
 			
@@ -748,37 +862,6 @@
 			$visitor = new CollectNodes($this->aggregateTypes);
 			$conditions->accept($visitor);
 			return $visitor->getCollectedNodes();
-		}
-		
-		/**
-		 * Marks ranges that have been moved into subqueries and should not appear
-		 * in the main query's FROM/JOIN clauses.
-		 * @param AstRetrieve $ast
-		 * @return void
-		 */
-		private function markSubqueryRanges(AstRetrieve $ast): void {
-			// If all the retrievals are aggregates, do not wrap
-			if (
-				$ast->getConditions() === null &&
-				$this->valuesOnlyAggregates($ast)
-			) {
-				return;
-			}
-			
-			// Check all ranges. If any of them is only used in aggregates, skip joins
-			$mainRange = $this->getMainRange($ast);
-			
-			foreach ($ast->getRanges() as $range) {
-				// Skip main range
-				if ($range === $mainRange) {
-					continue;
-				}
-				
-				// If range is only used in aggregates, mark it as subquery
-				if ($this->isRangeOnlyUsedInAggregates($ast, $range)) {
-					$range->setIncludeAsJoin(false);
-				}
-			}
 		}
 		
 		/**
