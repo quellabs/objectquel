@@ -11,6 +11,7 @@
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstMax;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstMin;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRange;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstSubquery;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstSum;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstSumU;
 	use Quellabs\ObjectQuel\ObjectQuel\AstInterface;
@@ -64,6 +65,129 @@
 		// ============================================================================
 		// PUBLIC AGGREGATE HANDLERS
 		// ============================================================================
+		
+		/**
+		 * Converts AstSubquery to SQL
+		 * @param AstSubquery $subquery
+		 * @return string
+		 */
+		public function handleSubquery(AstSubquery $subquery): string {
+			switch ($subquery->getType()) {
+				case AstSubquery::TYPE_SCALAR:
+					return $this->buildScalarSubquery($subquery);
+				
+				case AstSubquery::TYPE_EXISTS:
+					return $this->buildExistsSubquery($aggregation);
+				
+				case AstSubquery::TYPE_CASE_WHEN:
+					return $this->buildCaseWhenExistsSubquery($aggregation);
+				
+				default:
+					throw new \InvalidArgumentException("Unknown subquery type: " . $subquery->getType());
+			}
+		}
+		
+		/**
+		 * Builds a scalar subquery for SQL aggregation functions.
+		 * @param AstSubquery $subquery
+		 * @return string The complete SQL subquery string wrapped in parentheses
+		 */
+		private function buildScalarSubquery(AstSubquery $subquery): string {
+			// Mark the inner aggregation as visited to prevent duplicate processing
+			$this->markExpressionAsHandled($subquery->getAggregation());
+			
+			// Convert the aggregation type to its SQL function name (COUNT, AVG, etc.)
+			$aggregateString = $this->aggregateToString($subquery->getAggregation());
+			
+			// Add DISTINCT keyword for unique aggregation types (CountU, AvgU, SumU)
+			$distinct = $this->isDistinct($subquery->getAggregation()) ? "DISTINCT " : "";
+			
+			// Convert the field identifier to SQL expression
+			$aggregateExpression = $this->convertExpressionToSql($subquery->getAggregation()->getIdentifier()->deepClone());
+			
+			// Convert the WHERE conditions to SQL expression
+			if ($subquery->getConditions() !== null) {
+				$whereExpression = $this->convertExpressionToSql($subquery->getConditions());
+			} else {
+				$whereExpression = "";
+			}
+			
+			// Get the main table range for the query, and the join ranges
+			$mainRange = $subquery->getMainRange();
+			$mainRangeName = $mainRange->getName();
+			
+			// Generate the joins
+			$joinRanges = [];
+			
+			foreach($subquery->getJoinRanges() as $joinRange) {
+				$joinName = $joinRange->getName();
+				$tableName = $this->entityStore->getOwningTable($joinRange->getEntityName());
+				$joinType = $joinRange->isRequired() ? "INNER" : "LEFT";
+				$conditions = $joinRange->getJoinProperty()->deepClone();
+				$joinExpression = $this->convertExpressionToSql($conditions);
+				
+				$joinRanges[] = "{$joinType} JOIN `{$tableName}` {$joinName} ON {$joinExpression}";
+			}
+			
+			// Look up the actual database table name for the entity
+			$tableName = $this->entityStore->getOwningTable($mainRange->getEntityName());
+			$aggregateExpressionComplete = "{$aggregateString}({$distinct}{$aggregateExpression})";
+			$joins = implode("\n", $joinRanges);
+			
+			if ($aggregateString === 'SUM') {
+				$aggregateExpressionComplete = "COALESCE({$aggregateExpressionComplete}, 0)";
+			}
+			
+			// Build and return the complete subquery
+			if ($whereExpression) {
+				return "(
+					SELECT
+						{$aggregateExpressionComplete}
+					FROM `{$tableName}` {$mainRangeName}
+					{$joins}
+					WHERE {$whereExpression}
+				)";
+			} else {
+				return "(
+					SELECT
+						{$aggregateExpressionComplete}
+					FROM `{$tableName}` {$mainRangeName}
+					{$joins}
+				)";
+			}
+		}
+		
+		/**
+		 * Converts an aggregation AST node type to its corresponding SQL function name.
+		 * @param AstSubquery|AstCount|AstCountU|AstAvg|AstAvgU|AstMax|AstMin|AstSum|AstSumU $type The aggregation AST node
+		 * @return string The SQL aggregation function name (uppercase)
+		 */
+		private function aggregateToString(
+			AstSubquery|AstCount|AstCountU|AstAvg|AstAvgU|AstMax|AstMin|AstSum|AstSumU $type
+		): string {
+			return match(get_class($type)) {
+				AstCount::class, AstCountU::class => "COUNT",
+				AstAvg::class, AstAvgU::class => "AVG",
+				AstSum::class, AstSumU::class => "SUM",
+				AstMin::class => "MIN",
+				AstMax::class => "MAX",
+				AstSubquery::class => "UNKNOWN",
+			};
+		}
+		
+		/**
+		 * Determines if an aggregation should use the DISTINCT keyword.
+		 * @param AstCount|AstCountU|AstAvg|AstAvgU|AstMax|AstMin|AstSum|AstSumU $type The aggregation AST node
+		 * @return bool True if DISTINCT should be used, false otherwise
+		 */
+		private function isDistinct(
+			AstSubquery|AstCount|AstCountU|AstAvg|AstAvgU|AstMax|AstMin|AstSum|AstSumU $type
+		): bool {
+			return
+				$type instanceof AstCountU ||
+				$type instanceof AstAvgU ||
+				$type instanceof AstSumU;
+		}
 		
 		/**
 		 * Converts AstCount nodes to SQL COUNT() functions.
@@ -181,22 +305,33 @@
 		 * Replaces complex branching logic with simple two-path decision:
 		 * either calculate in main query (when joins already exist) or use subquery.
 		 * This eliminates the need for complex optimization analysis in aggregate functions.
-		 * @param AstAny|AstCount|AstCountU|AstAvg|AstAvgU|AstMax|AstMin|AstSum|AstSumU $ast The aggregate AST node
+		 * @param AstCount|AstCountU|AstAvg|AstAvgU|AstMax|AstMin|AstSum|AstSumU $ast The aggregate AST node
 		 * @param string $aggregateFunction The SQL aggregate function name (COUNT, SUM, etc.)
 		 * @param bool $distinct Whether to add DISTINCT clause for unique operations
 		 * @return string Generated SQL aggregate expression
 		 */
 		private function handleAggregateOperation(
-			AstAny|AstCount|AstCountU|AstAvg|AstAvgU|AstMax|AstMin|AstSum|AstSumU $ast,
-			string                                                                $aggregateFunction,
-			bool                                                                  $distinct = false
+			AstCount|AstCountU|AstAvg|AstAvgU|AstMax|AstMin|AstSum|AstSumU $ast,
+			string                                                         $aggregateFunction,
+			bool                                                           $distinct = false
 		): string {
-			$queryAnalyzer = new QueryAnalyzer($ast->getIdentifier(), $this->entityStore);
+			// Convert the AST expression into its SQL string representation
+			$sqlExpression = $this->convertExpressionToSql($ast->getIdentifier());
 			
-			if ($queryAnalyzer->getOptimizationStrategy()->canUseMainQuery()) {
-				return $this->buildJoinBasedAggregate($ast->getIdentifier(), $aggregateFunction, $distinct);
+			// Prepare DISTINCT clause if needed - adds "DISTINCT " with trailing space
+			$distinctClause = $distinct ? 'DISTINCT ' : '';
+			
+			// Apply function-specific formatting and NULL handling
+			if ($aggregateFunction === 'SUM') {
+				// For SUM operations, wrap with COALESCE to convert NULL results to 0
+				// This ensures SUM always returns a numeric value instead of NULL
+				// when there are no matching rows or all values are NULL
+				return "COALESCE({$aggregateFunction}({$distinctClause}{$sqlExpression}), 0)";
 			} else {
-				return $this->buildAggregateSubquery($ast->getIdentifier(), $aggregateFunction, $distinct);
+				// For other aggregate functions (COUNT, AVG, MAX, MIN, etc.),
+				// use standard formatting without NULL coalescing
+				// COUNT typically returns 0 for empty sets, while AVG/MAX/MIN return NULL
+				return "{$aggregateFunction}({$distinctClause}{$sqlExpression})";
 			}
 		}
 		
@@ -281,24 +416,6 @@
 		 * @return string SQL aggregate expression using main query JOINs
 		 */
 		private function buildJoinBasedAggregate(AstInterface $expression, string $aggregateFunction, bool $distinct): string {
-			// Convert the AST expression into its SQL string representation
-			$sqlExpression = $this->convertExpressionToSql($expression);
-			
-			// Prepare DISTINCT clause if needed - adds "DISTINCT " with trailing space
-			$distinctClause = $distinct ? 'DISTINCT ' : '';
-			
-			// Apply function-specific formatting and NULL handling
-			if ($aggregateFunction === 'SUM') {
-				// For SUM operations, wrap with COALESCE to convert NULL results to 0
-				// This ensures SUM always returns a numeric value instead of NULL
-				// when there are no matching rows or all values are NULL
-				return "COALESCE({$aggregateFunction}({$distinctClause}{$sqlExpression}), 0)";
-			} else {
-				// For other aggregate functions (COUNT, AVG, MAX, MIN, etc.),
-				// use standard formatting without NULL coalescing
-				// COUNT typically returns 0 for empty sets, while AVG/MAX/MIN return NULL
-				return "{$aggregateFunction}({$distinctClause}{$sqlExpression})";
-			}
 		}
 		
 		/**

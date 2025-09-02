@@ -7,20 +7,29 @@
 	use Quellabs\ObjectQuel\Annotations\Orm\RequiredRelation;
 	use Quellabs\ObjectQuel\EntityManager;
 	use Quellabs\ObjectQuel\EntityStore;
-	use Quellabs\ObjectQuel\Execution\RangeReferences\Reference;
-	use Quellabs\ObjectQuel\Execution\RangeReferences\ReferenceAggregate;
-	use Quellabs\ObjectQuel\Execution\RangeReferences\ReferenceAggregateWhere;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstAlias;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstAny;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstAvg;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstAvgU;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstBinaryOperator;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstCount;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstCountU;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstExists;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstExpression;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstFactor;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstIdentifier;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstMax;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstMin;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRange;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRangeDatabase;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRetrieve;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstSubquery;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstSum;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstSumU;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstTerm;
 	use Quellabs\ObjectQuel\ObjectQuel\AstInterface;
+	use Quellabs\ObjectQuel\ObjectQuel\Visitors\CollectNodes;
+	use Quellabs\ObjectQuel\ObjectQuel\Visitors\CollectRanges;
 	use Quellabs\ObjectQuel\ObjectQuel\Visitors\ContainsCheckIsNullForRange;
 	use Quellabs\ObjectQuel\ObjectQuel\Visitors\ContainsNonNullableFieldForRange;
 	use Quellabs\ObjectQuel\ObjectQuel\Visitors\ContainsRange;
@@ -34,11 +43,36 @@
 		private EntityStore $entityStore;
 		
 		/**
+		 * @var array|string[]
+		 */
+		private array $aggregateTypes;
+		
+		/**
+		 * @var AstNodeReplacer
+		 */
+		private AstNodeReplacer $astNodeReplacer;
+		
+		/**
 		 * QueryBuilder constructor
 		 * @param EntityManager $entityManager
 		 */
 		public function __construct(EntityManager $entityManager) {
 			$this->entityStore = $entityManager->getEntityStore();
+			$this->astNodeReplacer = new AstNodeReplacer();
+			
+			// Define all aggregate function AST node types that are prohibited in WHERE clauses
+			// This covers standard SQL aggregate functions and their variations
+			$this->aggregateTypes = [
+				AstCount::class,    // COUNT() function
+				AstCountU::class,   // COUNT(DISTINCT) function
+				AstAvg::class,      // AVG() function
+				AstAvgU::class,     // AVG(DISTINCT) function
+				AstSum::class,      // SUM() function
+				AstSumU::class,     // SUM(DISTINCT) function,
+				AstMin::class,      // MIN() function
+				AstMax::class,      // MAX() function
+				AstAny::class       // ANY() function
+			];
 		}
 		
 		/**
@@ -52,6 +86,8 @@
 			$this->optimizeJoinTypesFromWhereClause($ast);
 			$this->processExistsOperators($ast);
 			$this->optimizeAggregateFunctions($ast);
+			$this->markSubqueryRanges($ast);
+			$this->removeUnusedLeftJoinRanges($ast);
 			$this->addReferencedValuesToQuery($ast);
 		}
 		
@@ -531,38 +567,34 @@
 		}
 		
 		/**
-		 * Checks if a range is only used within aggregates and not referenced elsewhere.
-		 * @param AstRange $range The range to check
-		 * @return bool True if range is only used in aggregate functions, false otherwise
+		 * Checks if a range is only used within ANY() functions and not referenced elsewhere.
+		 * This is used to determine if a range can be optimized out of JOIN operations.
+		 * @param AstRetrieve $retrieve The retrieve operation to analyze
+		 * @param AstRange $range The range/table to check for ANY-only usage
+		 * @return bool True if range is only used in ANY functions, false otherwise
 		 */
-		private function isRangeOnlyUsedInAggregates(AstRange $range): bool {
-			$references = $range->getReferences();
+		private function isRangeOnlyUsedInAggregates(AstRetrieve $retrieve, AstRange $range): bool {
+			// Get list of all identifiers
+			$allIdentifiers = $retrieve->getAllIdentifiers($range);
 			
-			// If no references at all, it's not used anywhere
-			if (empty($references)) {
+			// Range not used at all
+			if (empty($allIdentifiers)) {
 				return false;
 			}
 			
-			// Check if ALL references are aggregate-related
-			foreach ($references as $reference) {
-				if (!$this->isAggregateReference($reference)) {
-					return false; // Found non-aggregate usage
+			// Check if ALL identifiers are inside aggregate nodes
+			foreach ($allIdentifiers as $identifier) {
+				// Fetch the parent aggregate (if any)
+				$parentAggregate = $identifier->getParentAggregate();
+				
+				// Found usage outside aggregate
+				if ($parentAggregate === null) {
+					return false;
 				}
 			}
 			
-			// All references are aggregate-only
+			// All usages are inside aggregates
 			return true;
-		}
-		
-		/**
-		 * Determines if a reference is aggregate-related
-		 * @param Reference $reference
-		 * @return bool
-		 */
-		private function isAggregateReference(Reference $reference): bool {
-			return
-				$reference instanceof ReferenceAggregate ||
-				$reference instanceof ReferenceAggregateWhere;
 		}
 		
 		/**
@@ -573,17 +605,182 @@
 		 * @return void
 		 */
 		private function optimizeAggregateFunctions(AstRetrieve $ast): void {
-			// Examine each range/table in the query for ANY-only optimization opportunities
+			// Do not optimize single range queries
+			if ($ast->isSingleRangeQuery()) {
+				return;
+			}
+			
+			// Fetch all aggregates to see if they should be wrapped into a subquery
+			$aggregationNodesValues = $this->findAggregatesForValues($ast->getValues());
+			$aggregationNodesConditions = $this->findAggregatesForConditions($ast->getConditions());
+			$aggregationNodes = array_merge($aggregationNodesValues, $aggregationNodesConditions);
+			
+			foreach($aggregationNodes as $aggregation) {
+				if ($this->shouldWrapAggregation($ast, $aggregation)) {
+					$parent = $aggregation->getParent();
+					
+					if (!$aggregation instanceof AstAny) {
+						// (SELECT SUM(...))
+						$subquery = new AstSubquery($aggregation, AstSubquery::TYPE_SCALAR);
+					} elseif ($aggregation->isAncestorOf($ast->getConditions())) {
+						// WHERE/HAVING context - use EXISTS
+						$subquery = new AstSubquery($aggregation, AstSubquery::TYPE_EXISTS);
+					} else {
+						// SELECT context - use CASE WHEN EXISTS
+						$subquery = new AstSubquery($aggregation, AstSubquery::TYPE_CASE_WHEN);
+					}
+					
+					$this->astNodeReplacer->replaceChild($parent, $aggregation, $subquery);
+				}
+			}
+		}
+	
+		/**
+		 * Returns true if the aggregation should be wrapped inside a subquery node
+		 * @param AstRetrieve $ast
+		 * @param AstInterface $aggregate
+		 * @return bool
+		 */
+		private function shouldWrapAggregation(AstRetrieve $ast, AstInterface $aggregate): bool {
+			// Step 1: Find ranges used by THIS aggregation
+			$mainRange = $this->getMainRange($ast);
+			$rangesInThisAggregation = $this->extractRanges($aggregate);
+			
+			// Step 2: Filter out main range to get only "additional" ranges
+			$additionalRanges = array_filter($rangesInThisAggregation, function($range) use ($mainRange) {
+				return $range !== $mainRange;
+			});
+			
+			// Step 3: If no additional ranges, don't wrap (main range aggregations stay in main query)
+			if (empty($additionalRanges)) {
+				return false;
+			}
+			
+			// Step 4: Check if all additional ranges are aggregation-only
+			foreach ($additionalRanges as $range) {
+				// This range is used outside aggregations
+				if (!$this->isRangeOnlyUsedInAggregates($ast, $range)) {
+					return false;
+				}
+			}
+			
+			// All additional ranges are aggregation-only
+			return true;
+		}
+		
+		/**
+		 * Extracts all used ranges from the AST and returns them as a list.
+		 * Traverses the entire AST structure using the visitor pattern to collect
+		 * all range references that are used in expressions.
+		 * @param AstInterface $ast The abstract syntax tree to analyze
+		 * @return array List of range nodes found in the AST
+		 */
+		private function extractRanges(AstInterface $ast): array {
+			$visitor = new CollectRanges();
+			$ast->accept($visitor);
+			return $visitor->getCollectedNodes();
+		}
+		
+		/**
+		 * Finds all aggregation function nodes within the provided value expressions.
+		 * Scans through an array of AST nodes to identify aggregate functions like
+		 * SUM, COUNT, AVG, etc. that will need special handling during query processing.
+		 * @param array $values Array of AST nodes representing value expressions to analyze
+		 * @return array Collection of aggregate function nodes found across all values
+		 */
+		private function findAggregatesForValues(array $values): array {
+			// Create the visitor to collect aggregate nodes
+			$visitor = new CollectNodes($this->aggregateTypes);
+			
+			// Visit each value expression to collect aggregate functions
+			foreach($values as $value) {
+				$value->accept($visitor);
+			}
+			
+			// Return the gathered list
+			return $visitor->getCollectedNodes();
+		}
+		
+		/**
+		 * Searches for aggregation functions within conditional expressions (WHERE clauses).
+		 * Returns empty array if no conditions are provided. Otherwise traverses the
+		 * condition AST to find any aggregate functions that appear in filtering logic.
+		 * @param AstInterface|null $conditions Optional condition AST to analyze, null if no WHERE clause
+		 * @return array List of aggregate function nodes found in conditions, empty if no conditions
+		 */
+		private function findAggregatesForConditions(?AstInterface $conditions = null): array {
+			// Early return for queries without WHERE clauses
+			if ($conditions === null) {
+				return [];
+			}
+			
+			$visitor = new CollectNodes($this->aggregateTypes);
+			$conditions->accept($visitor);
+			return $visitor->getCollectedNodes();
+		}
+		
+		/**
+		 * Marks ranges that have been moved into subqueries and should not appear
+		 * in the main query's FROM/JOIN clauses.
+		 * @param AstRetrieve $ast
+		 * @return void
+		 */
+		private function markSubqueryRanges(AstRetrieve $ast): void {
+			$mainRange = $this->getMainRange($ast);
+			
 			foreach ($ast->getRanges() as $range) {
-				// Check if this range is exclusively used within ANY() functions
-				// and not referenced in regular SELECT fields or WHERE conditions
-				if ($this->isRangeOnlyUsedInAggregates($range)) {
-					// Exclude this range from being included as a JOIN
-					// The ANY() function can handle this more efficiently as a subquery
-					// rather than requiring a full table join
+				// Skip main range
+				if ($range === $mainRange) {
+					continue;
+				}
+				
+				// If range is only used in aggregates, mark it as subquery
+				if ($this->isRangeOnlyUsedInAggregates($ast, $range)) {
 					$range->setIncludeAsJoin(false);
 				}
 			}
+		}
+		
+		/**
+		 * Removes LEFT JOIN ranges that are not referenced anywhere in the query.
+		 * This optimization eliminates unnecessary joins that don't contribute to the result.
+		 * @param AstRetrieve $ast
+		 * @return void
+		 */
+		private function removeUnusedLeftJoinRanges(AstRetrieve $ast): void {
+			$mainRange = $this->getMainRange($ast);
+			
+			foreach ($ast->getRanges() as $range) {
+				// Skip main range - it's always needed
+				if ($range === $mainRange) {
+					continue;
+				}
+				
+				// Skip required ranges (INNER JOINs) - they affect row count
+				if ($range->isRequired()) {
+					continue;
+				}
+				
+				// Check if Range is unused
+				if ($this->isRangeCompletelyUnused($ast, $range)) {
+					$range->setIncludeAsJoin(false);
+				}
+			}
+		}
+		
+		/**
+		 * Checks if a range is completely unused in the entire query.
+		 * A range is unused if it has no identifiers referencing it in any part of the AST.
+		 * @param AstRetrieve $ast The query AST to check
+		 * @param AstRange $range The range to check for usage
+		 * @return bool True if range is completely unused, false otherwise
+		 */
+		private function isRangeCompletelyUnused(AstRetrieve $ast, AstRange $range): bool {
+			// Get all identifiers that reference this range
+			$allIdentifiers = $ast->getAllIdentifiers($range);
+			
+			// If no identifiers reference this range, it's completely unused
+			return empty($allIdentifiers);
 		}
 		
 		/**

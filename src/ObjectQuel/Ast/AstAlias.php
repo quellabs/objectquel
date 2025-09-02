@@ -59,6 +59,15 @@
 		}
 		
 		/**
+		 * Retrieves the associated expression stored in this AST node.
+		 * @param AstInterface $expression
+		 * @return void
+		 */
+		public function setExpression(AstInterface $expression): void {
+			$this->expression = $expression;
+		}
+		
+		/**
 		 * Returns the pattern used to find the information in the SQL result
 		 * @return string|null
 		 */

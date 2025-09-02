@@ -52,10 +52,10 @@
 		
 		/**
 		 * Updates the identifier with a new AST
-		 * @param AstIdentifier $ast
+		 * @param AstInterface $ast
 		 * @return void
 		 */
-		public function setIdentifier(AstIdentifier $ast): void {
+		public function setIdentifier(AstInterface $ast): void {
 			$this->identifier = $ast;
 		}
 		
@@ -65,6 +65,15 @@
 		 */
 		public function getConditions(): ?AstInterface {
 			return $this->conditions;
+		}
+		
+		/**
+		 * Updates the conditions for this aggregator
+		 * @param AstInterface|null $conditions
+		 * @return void
+		 */
+		public function setConditions(?AstInterface $conditions): void {
+			$this->conditions = $conditions;
 		}
 		
 		/**
