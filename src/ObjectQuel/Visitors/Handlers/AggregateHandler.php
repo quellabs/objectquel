@@ -6,6 +6,7 @@
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstAny;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstAvg;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstAvgU;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstCase;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstCount;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstCountU;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstMax;
@@ -85,6 +86,18 @@
 				default:
 					throw new \InvalidArgumentException("Unknown subquery type: " . $subquery->getType());
 			}
+		}
+		
+		/**
+		 * Handles CASE WHEN expressions for conditional aggregation.
+		 * Converts: SUM(expr WHERE condition) → SUM(CASE WHEN condition THEN expr END)
+		 * @param AstCase $case The CASE AST node to process
+		 * @return string Generated SQL CASE expression
+		 */
+		public function handleCase(AstCase $case): string {
+			$condition = $this->convertExpressionToSql($case->getConditions());
+			$thenExpression = $this->convertExpressionToSql($case->getExpression());
+			return "CASE WHEN {$condition} THEN {$thenExpression} END";
 		}
 		
 		/**
@@ -315,6 +328,23 @@
 			string                                                         $aggregateFunction,
 			bool                                                           $distinct = false
 		): string {
+			// Check if aggregate has WHERE conditions that need CASE WHEN transformation
+			if ($ast->getConditions() !== null) {
+				// Transform to CASE WHEN expression
+				$condition = $this->convertExpressionToSql($ast->getConditions());
+				$expression = $this->convertExpressionToSql($ast->getIdentifier());
+				$caseExpression = "CASE WHEN {$condition} THEN {$expression} END";
+				
+				// Build aggregate with CASE WHEN
+				$distinctClause = $distinct ? 'DISTINCT ' : '';
+				
+				if ($aggregateFunction === 'SUM') {
+					return "COALESCE({$aggregateFunction}({$distinctClause}{$caseExpression}), 0)";
+				} else {
+					return "{$aggregateFunction}({$distinctClause}{$caseExpression})";
+				}
+			}
+			
 			// Convert the AST expression into its SQL string representation
 			$sqlExpression = $this->convertExpressionToSql($ast->getIdentifier());
 			

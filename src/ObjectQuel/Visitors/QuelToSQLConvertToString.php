@@ -9,6 +9,7 @@
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstAvgU;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstBinaryOperator;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstBool;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstCase;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstCheckNotNull;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstCheckNull;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstConcat;
@@ -388,6 +389,14 @@
 		 */
 		protected function handleSubquery(AstSubquery $subquery): void {
 			$this->result[] = $this->aggregateHandler->handleSubquery($subquery);
+		}
+		
+		/**
+		 * Process an IN operation (value IN (list))
+		 * @param AstCase $ast The IN operation node to process
+		 */
+		protected function handleCase(AstCase $ast): void {
+			$this->result[] = $this->aggregateHandler->handleCase($ast);
 		}
 		
 		/**
