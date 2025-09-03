@@ -23,6 +23,7 @@
 		protected string $last_error_message;
 		protected int $transaction_depth;
 		protected array $indexes;
+		private ?bool $supportsWindowFunctionsCache;
 		
 		/**
 		 * Database Adapter constructor.
@@ -32,7 +33,7 @@
 		public function __construct(Configuration $configuration) {
 			// Store configuration object
 			$this->configuration = $configuration;
-
+			
 			// setup ORM
 			$this->descriptions = [];
 			$this->columns_ex_descriptions = [];
@@ -40,7 +41,8 @@
 			$this->last_error = 0;
 			$this->last_error_message = '';
 			$this->transaction_depth = 0;
-
+			$this->supportsWindowFunctionsCache = null;
+			
 			// Check if connection already exists and drop it if needed
 			if (ConnectionManager::getConfig('default')) {
 				ConnectionManager::drop('default');
@@ -119,38 +121,38 @@
 				
 				$result[$column->getName()] = [
 					// Basic column type (integer, string, decimal, etc.)
-					'type'           => $columnType,
+					'type'        => $columnType,
 					
 					// PHP type of this column
-					'php_type'       => TypeMapper::phinxTypeToPhpType($columnType),
+					'php_type'    => TypeMapper::phinxTypeToPhpType($columnType),
 					
 					// Maximum length for string types or display width for numeric types
 					// Only apply if the column type supports limits
-					'limit'          => $column->getLimit() ?? TypeMapper::getDefaultLimit($columnType),
+					'limit'       => $column->getLimit() ?? TypeMapper::getDefaultLimit($columnType),
 					
 					// Default value for the column if not specified during insert
-					'default'        => $column->getDefault(),
+					'default'     => $column->getDefault(),
 					
 					// Whether NULL values are allowed in this column
-					'nullable'       => $column->getNull(),
+					'nullable'    => $column->getNull(),
 					
 					// For numeric types: total number of digits (precision)
-					'precision'      => $isOfDecimalType ? $column->getPrecision() : null,
+					'precision'   => $isOfDecimalType ? $column->getPrecision() : null,
 					
 					// For decimal types: number of digits after decimal point
-					'scale'          => $isOfDecimalType ? $column->getScale() : null,
+					'scale'       => $isOfDecimalType ? $column->getScale() : null,
 					
 					// Whether column allows negative values (converted from signed to unsigned)
-					'unsigned'       => !$column->getSigned(),
+					'unsigned'    => !$column->getSigned(),
 					
 					// For generated columns (computed values based on expressions)
-					'generated'      => $column->getGenerated(),
+					'generated'   => $column->getGenerated(),
 					
 					// Whether column auto-increments (typically for primary keys)
-					'identity'       => $column->getIdentity(),
+					'identity'    => $column->getIdentity(),
 					
 					// Whether this column is part of the primary key
-					'primary_key'    => in_array($column->getName(), $primaryKey),
+					'primary_key' => in_array($column->getName(), $primaryKey),
 				];
 			}
 			
@@ -249,11 +251,11 @@
 		
 		/**
 		 * Fetches a single value from the database using the provided query and parameters
-		 * @param string $query      The SQL query to execute
-		 * @param array $parameters  Optional array of parameters to bind to the query
+		 * @param string $query The SQL query to execute
+		 * @param array $parameters Optional array of parameters to bind to the query
 		 * @return mixed            Returns the first column of the first row if found, false if no results
 		 */
-		public function getOne(string $query, array $parameters=[]): mixed {
+		public function getOne(string $query, array $parameters = []): mixed {
 			// Execute the query with provided parameters
 			$rs = $this->execute($query, $parameters);
 			
@@ -276,11 +278,11 @@
 		
 		/**
 		 * Fetches a single row from the database using the provided query and parameters
-		 * @param string $query      The SQL query to execute
-		 * @param array $parameters  Optional array of parameters to bind to the query
+		 * @param string $query The SQL query to execute
+		 * @param array $parameters Optional array of parameters to bind to the query
 		 * @return array             Returns the first row as an associative array if found, empty array if no results
 		 */
-		public function getRow(string $query, array $parameters=[]): array {
+		public function getRow(string $query, array $parameters = []): array {
 			// Execute the query with provided parameters
 			$rs = $this->execute($query, $parameters);
 			
@@ -296,11 +298,11 @@
 		
 		/**
 		 * Fetches a column from the database using the provided query and parameters
-		 * @param string $query      The SQL query to execute
-		 * @param array $parameters  Optional array of parameters to bind to the query
+		 * @param string $query The SQL query to execute
+		 * @param array $parameters Optional array of parameters to bind to the query
 		 * @return array             Returns the values from the first column as an array
 		 */
-		public function getCol(string $query, array $parameters=[]): array {
+		public function getCol(string $query, array $parameters = []): array {
 			// Execute the query with provided parameters
 			$rs = $this->execute($query, $parameters);
 			
@@ -326,11 +328,11 @@
 		
 		/**
 		 * Fetches all rows from the database using the provided query and parameters
-		 * @param string $query      The SQL query to execute
-		 * @param array $parameters  Optional array of parameters to bind to the query
+		 * @param string $query The SQL query to execute
+		 * @param array $parameters Optional array of parameters to bind to the query
 		 * @return array             Returns all rows as an array of associative arrays
 		 */
-		public function getAll(string $query, array $parameters=[]): array {
+		public function getAll(string $query, array $parameters = []): array {
 			// Execute the query with provided parameters
 			$rs = $this->execute($query, $parameters);
 			
@@ -371,9 +373,9 @@
 						// Build the foreign key information array to match the original format
 						foreach ($constraintData['columns'] as $index => $column) {
 							$foreignKeys[] = [
-								'COLUMN_NAME' => $column,
-								'CONSTRAINT_NAME' => $constraint,
-								'REFERENCED_TABLE_NAME' => $constraintData['references'][0] ?? null,
+								'COLUMN_NAME'            => $column,
+								'CONSTRAINT_NAME'        => $constraint,
+								'REFERENCED_TABLE_NAME'  => $constraintData['references'][0] ?? null,
 								'REFERENCED_COLUMN_NAME' => $constraintData['references'][1][$index] ?? null
 							];
 						}
@@ -420,8 +422,8 @@
 			
 			// Iterate through each index name and retrieve its detailed configuration
 			$result = [];
-
-			foreach($indexes as $index) {
+			
+			foreach ($indexes as $index) {
 				// Store the index details in the result array, using the index name as key
 				// Index details include columns, type (PRIMARY, UNIQUE, INDEX), and other properties
 				$result[$index] = $tableSchema->getIndex($index);
@@ -440,18 +442,18 @@
 			
 			// Get the CakePHP connection config
 			$config = $connection->config();
-
+			
 			// Map CakePHP driver to Phinx adapter name
 			$driverMap = [
-				'Cake\Database\Driver\Mysql' => 'mysql',
-				'Cake\Database\Driver\Postgres' => 'pgsql',
-				'Cake\Database\Driver\Sqlite' => 'sqlite',
+				'Cake\Database\Driver\Mysql'     => 'mysql',
+				'Cake\Database\Driver\Postgres'  => 'pgsql',
+				'Cake\Database\Driver\Sqlite'    => 'sqlite',
 				'Cake\Database\Driver\Sqlserver' => 'sqlsrv'
 			];
-
+			
 			// Get the appropriate adapter name
 			$adapter = $driverMap[$config['driver']] ?? 'mysql';
-
+			
 			// Convert CakePHP connection config to Phinx format
 			$phinxConfig = [
 				'adapter' => $adapter,
@@ -465,5 +467,34 @@
 			
 			// Create and return the adapter
 			return AdapterFactory::instance()->getAdapter($phinxConfig['adapter'], $phinxConfig);
+		}
+
+		/**
+		 * Detects support for SQL window functions (OVER()) by feature probing.
+		 * Uses a portable query that should work across vendors that implement windows.
+		 * Result is cached for the lifetime of this adapter.
+		 */
+		public function supportsWindowFunctions(): bool {
+			if ($this->supportsWindowFunctionsCache !== null) {
+				return $this->supportsWindowFunctionsCache;
+			}
+			
+			// Portable probe: COUNT(...) OVER () over a single-row derived table.
+			// If window functions aren't supported, this will raise a syntax error.
+			$probeSql = 'SELECT COUNT(1) OVER () AS __wf FROM (SELECT 1) t';
+			
+			try {
+				// Bypass our execute() wrapper so we don't set last_error on capability checks
+				$stmt = $this->connection->execute($probeSql);
+				
+				// Some drivers need an explicit close to free the cursor
+				if ($stmt instanceof \Cake\Database\StatementInterface) {
+					$stmt->closeCursor();
+				}
+				return $this->supportsWindowFunctionsCache = true;
+			} catch (\Throwable $e) {
+				// Window functions not supported (or extremely old engine quirks) → treat as false
+				return $this->supportsWindowFunctionsCache = false;
+			}
 		}
 	}

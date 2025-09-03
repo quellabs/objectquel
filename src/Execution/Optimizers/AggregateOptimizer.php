@@ -40,6 +40,7 @@
 	 *
 	 */
 	class AggregateOptimizer {
+		private EntityManager $entityManager;
 		private AstNodeReplacer $nodeReplacer;
 		private AstUtilities $astUtilities;
 		private RangeUsageAnalyzer $analyzer;
@@ -72,6 +73,7 @@
 		 * @param EntityManager $entityManager Provides access to entity metadata and storage layer
 		 */
 		public function __construct(EntityManager $entityManager) {
+			$this->entityManager = $entityManager;
 			$this->astUtilities = new AstUtilities();
 			$this->nodeReplacer = new AstNodeReplacer();
 			$this->analyzer = new RangeUsageAnalyzer($entityManager->getEntityStore());
@@ -176,6 +178,20 @@
 				$hasIsNullInCond,
 				$nonNullableUse
 			);
+			
+			if ($this->canFlattenToWindow($ast, $agg)) {
+				$aggregationNode = $this->deepCloneAggregateWithoutConditions($agg);
+				
+				$window = new AstSubquery(
+					AstSubquery::TYPE_WINDOW,
+					$aggregationNode,
+					[],                  // no correlated ranges needed for OVER ()
+					null        // no WHERE
+				);
+				
+				$this->nodeReplacer->replaceChild($agg->getParent(), $agg, $window);
+				return; // done
+			}
 			
 			// STEP 9: Construct the optimized subquery and perform AST replacement
 			// Create clean aggregate node without embedded conditions (moved to subquery WHERE)
@@ -370,5 +386,57 @@
 		 */
 		private function getConditionsIfAny(AstInterface $node): ?AstInterface {
 			return method_exists($node, 'getConditions') ? $node->getConditions() : null;
+		}
+		
+		/**
+		 * Determines if an aggregate function can be optimized using SQL window functions
+		 * instead of a correlated subquery.
+		 * @param AstRetrieve $root The root query AST node
+		 * @param AstInterface $agg The aggregate function AST node to evaluate
+		 * @return bool True if the aggregate can be flattened to a window function
+		 */
+		private function canFlattenToWindow(AstRetrieve $root, AstInterface $agg): bool {
+			// Aggregates with their own WHERE clauses can't be converted to simple window functions
+			// because window functions apply AFTER the WHERE clause, not within the aggregate
+			if ($this->getConditionsIfAny($agg) !== null) {
+				return false;
+			}
+			
+			// DISTINCT aggregates (SUMU/AVGU/COUNTU) require special handling that
+			// standard window functions don't support cleanly - safer to keep as subqueries
+			$distinctClasses = [AstSumU::class, AstAvgU::class, AstCountU::class,];
+			
+			if (in_array(get_class($agg), $distinctClasses, true)) {
+				return false;
+			}
+			
+			// Window functions were introduced in MySQL 8.0 - older versions don't support them
+			if (!$this->entityManager->getConnection()->supportsWindowFunctions()) {
+				return false;
+			}
+			
+			// Extract all identifiers from the aggregate expression to determine
+			// which table ranges (aliases) it references
+			$ids = $this->astUtilities->collectIdentifiersFromAst($this->getIdentifierIfAny($agg));
+			$rangeNames = array_values(array_unique(array_map(static fn($id) => $id->getRange()->getName(), $ids)));
+			
+			// Window functions work best when the aggregate references exactly one table
+			// Multiple tables would require complex partitioning logic
+			if (count($rangeNames) !== 1) {
+				return false;
+			}
+			
+			// The referenced table must exist in the outer query with the same alias
+			// This ensures the window function will have the correct context
+			$name = $rangeNames[0];
+			
+			foreach ($root->getRanges() as $outer) {
+				if ($outer->getName() === $name) {
+					return true; // Safe to convert: AGG(expr) OVER () will work correctly
+				}
+			}
+			
+			// The aggregate references a table not available in the outer query scope
+			return false;
 		}
 	}

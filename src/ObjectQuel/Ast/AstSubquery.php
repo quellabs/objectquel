@@ -4,7 +4,6 @@
 	
 	use Quellabs\ObjectQuel\ObjectQuel\AstInterface;
 	use Quellabs\ObjectQuel\ObjectQuel\AstVisitorInterface;
-	use Quellabs\ObjectQuel\ObjectQuel\Visitors\CollectRanges;
 	
 	/**
 	 * Class AstSubquery
@@ -14,6 +13,7 @@
 		public const string TYPE_SCALAR = 'scalar';        // (SELECT SUM(...))
 		public const string TYPE_EXISTS = 'exists';        // EXISTS(SELECT 1 ...)
 		public const string TYPE_CASE_WHEN = 'case_when';  // CASE WHEN EXISTS(...) THEN 1 ELSE 0 END
+		public const string TYPE_WINDOW = 'window';
 		
 		/**
 		 * @var AstInterface

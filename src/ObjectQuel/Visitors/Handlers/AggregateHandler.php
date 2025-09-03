@@ -98,6 +98,9 @@
 				case AstSubquery::TYPE_CASE_WHEN:
 					return $this->buildCaseWhenExistsSubquery($subquery);
 				
+				case AstSubquery::TYPE_WINDOW: // ← add
+					return $this->buildWindowAggregate($subquery);
+				
 				default:
 					throw new \InvalidArgumentException("Unknown subquery type: " . $subquery->getType());
 			}
@@ -358,6 +361,27 @@
 			// Wrap in CASE WHEN to return numeric 1/0 instead of boolean true/false
 			return "CASE WHEN {$existsQuery} THEN 1 ELSE 0 END";
 		}
+		
+		/**
+		 * Builds a window aggregate: AGG([DISTINCT] expr) OVER ()
+		 * SUM is wrapped in COALESCE(..., 0) to keep your current NULL behavior.
+		 */
+		private function buildWindowAggregate(AstSubquery $subquery): string {
+			$this->markExpressionAsHandled($subquery->getAggregation());
+			
+			$aggNode = $subquery->getAggregation();
+			$fn = $this->aggregateToString($aggNode);
+			$distinct = $this->isDistinct($aggNode) ? 'DISTINCT ' : '';
+			$argSql = $this->convertExpressionToSql($aggNode->getIdentifier()->deepClone());
+			
+			if ($fn === 'SUM') {
+				// ✅ OVER() attaches to SUM, COALESCE wraps the whole window result
+				return "COALESCE({$fn}({$distinct}{$argSql}) OVER (), 0)";
+			}
+			
+			return "{$fn}({$distinct}{$argSql}) OVER ()";
+		}
+		
 		
 		/**
 		 * Builds EXISTS subqueries for ANY functions in WHERE clauses.

@@ -217,6 +217,7 @@
 		 * @param string $query The ObjectQuel query to execute.
 		 * @param array $parameters Optional parameters for the query.
 		 * @return array An array of unique objects from the first column of query results.
+		 * @throws QuelException
 		 */
 		public function getCol(string $query, array $parameters = []): array {
 			// Execute the ObjectQuel query with the provided parameters
