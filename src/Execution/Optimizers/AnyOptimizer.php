@@ -179,44 +179,11 @@
 			);
 			
 			// ── Step 9: Replace ANY(...) with the chosen subquery form.
-			// Optimization: simplify a bare top-level ANY(...) in SELECT.
-			// Normally ANY(...) is emitted as
-			//   SELECT CASE WHEN EXISTS(SELECT 1 ... ) THEN 1 ELSE 0 END
-			// which wraps the existence check in a subquery.
-			//
-			// But if there is:
-			//   • no WHERE condition ($finalWhere === null),
-			//   • exactly one kept range (count($kept) === 1),
-			//   • and the ANY(...) is a top-level projection (isTopLevelAny),
-			// then we can inline it directly as
-			//   SELECT 1 AS ANY(...)
-			// with a LIMIT/WINDOW of 1 row.
-			//
-			// This avoids generating the unnecessary EXISTS subselect and
-			// makes the SQL shorter and faster to evaluate.
-			if (
-				$subQueryType === AstSubquery::TYPE_CASE_WHEN &&
-				$finalWhere === null &&
-				count($kept) === 1 &&
-				$this->isTopLevelAny($ast, $node)
-			) {
-				$this->nodeReplacer->replaceChild(
-					$node->getParent(),
-					$node,
-					new AstNumber(1)
-				);
-				
-				if ($ast->getWindow() === null) {
-					$ast->setWindow(0);
-					$ast->setWindowSize(1);
-				}
-				
-				return;
+			if ($this->shouldInlineAnyFastPath($subQueryType, $finalWhere, $kept, $ast, $node)) {
+				$this->applyInlineAnyFastPath($ast, $node);
+			} else {
+				$this->applyRegularAnyPath($subQueryType, $kept, $finalWhere, $node);
 			}
-			
-			// (keep your existing AstSubquery path below)
-			$subQuery = new AstSubquery($subQueryType, null, $kept, $finalWhere);
-			$this->nodeReplacer->replaceChild($node->getParent(), $node, $subQuery);
 		}
 		
 		// ──────────────────────────────────────────────────────────────────────────
@@ -781,5 +748,54 @@
 		 */
 		private function isTopLevelAny(AstRetrieve $ast, AstAny $node): bool {
 			return $ast->getLocationOfChild($node) === 'select';
+		}
+
+		/**
+		 * Decide if we can inline ANY(...) as a literal without a subselect.
+		 * @param $subQueryType
+		 * @param $finalWhere
+		 * @param array $kept
+		 * @param AstRetrieve $ast
+		 * @param AstAny $node
+		 * @return bool
+		 */
+		private function shouldInlineAnyFastPath($subQueryType, $finalWhere, array $kept, AstRetrieve $ast, AstAny $node): bool {
+			return
+				$subQueryType === AstSubquery::TYPE_CASE_WHEN
+				&& $finalWhere === null
+				&& count($kept) === 1
+				&& $this->isTopLevelAny($ast, $node);
+		}
+		
+		/**
+		 * Apply the optimized inlining: ANY(...) → 1, and cap to a single row.
+		 * @param AstRetrieve $ast
+		 * @param AstAny $node
+		 * @return void
+		 */
+		private function applyInlineAnyFastPath(AstRetrieve $ast, AstAny $node): void {
+			$this->nodeReplacer->replaceChild(
+				$node->getParent(),
+				$node,
+				new AstNumber(1)
+			);
+			
+			if ($ast->getWindow() === null) {
+				$ast->setWindow(0);
+				$ast->setWindowSize(1);
+			}
+		}
+		
+		/**
+		 * Fallback to the regular subquery form.
+		 * @param $subQueryType
+		 * @param array $kept
+		 * @param $finalWhere
+		 * @param $node
+		 * @return void
+		 */
+		private function applyRegularAnyPath($subQueryType, array $kept, $finalWhere, $node): void {
+			$subQuery = new AstSubquery($subQueryType, null, $kept, $finalWhere);
+			$this->nodeReplacer->replaceChild($node->getParent(), $node, $subQuery);
 		}
 	}
