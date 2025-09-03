@@ -64,13 +64,21 @@
 		 * @param AstRetrieve $ast The query AST to optimize
 		 */
 		public function optimize(AstRetrieve $ast): void {
-			// Single-range queries can use more aggressive optimizations
-			if ($ast->isSingleRangeQuery(true)) {
+			if ($this->shouldUseSingleRangeOptimization($ast)) {
 				$this->optimizeSingleRangeAggregates($ast);
 			} else {
-				// Multi-range queries need more careful handling to avoid conflicts
 				$this->optimizeMultiRangeAggregates($ast);
 			}
+		}
+		
+		private function shouldUseSingleRangeOptimization(AstRetrieve $ast): bool {
+			// Don't use single-range optimization if there are multiple ranges
+			if (count($ast->getRanges()) > 1) {
+				return false;
+			}
+			
+			// If truly single range, safe to use single-range optimization
+			return true;
 		}
 		
 		/**
@@ -80,22 +88,9 @@
 		 */
 		private function optimizeSingleRangeAggregates(AstRetrieve $ast): void {
 			// Check if we can promote an aggregate condition to the main WHERE clause
-			// This is only safe when:
-			// 1. There's exactly one value being selected
-			// 2. That value is an aggregate function
-			// 3. The aggregate has conditions
-			// 4. There's no existing WHERE clause to conflict with
-			$canPromoteCondition = (
-				count($ast->getValues()) === 1 &&
-				$this->isAggregateNode($ast->getValues()[0]->getExpression()) &&
-				$ast->getValues()[0]->getExpression()->getConditions() !== null &&
-				$ast->getConditions() === null
-			);
+			$canPromoteCondition = $this->canPromoteAggregateCondition($ast);
 			
 			if ($canPromoteCondition) {
-				// Transform: SELECT SUM(value WHERE condition)
-				// Into:      SELECT SUM(value) WHERE condition
-				// This is more efficient as it filters rows before aggregation
 				$aggregateCondition = $ast->getValues()[0]->getExpression()->getConditions();
 				$ast->setConditions($aggregateCondition);
 				$ast->getValues()[0]->getExpression()->setConditions(null);
@@ -132,6 +127,175 @@
 					$this->transformAggregateToCase($aggregateNode);
 				}
 			}
+		}
+		
+		private function canPromoteAggregateCondition(AstRetrieve $ast): bool {
+			// Basic structural requirements
+			if (count($ast->getValues()) !== 1) {
+				return false;
+			}
+			
+			$aggregateExpression = $ast->getValues()[0]->getExpression();
+			
+			if (!$this->isAggregateNode($aggregateExpression)) {
+				return false;
+			}
+			
+			if ($aggregateExpression->getConditions() === null) {
+				return false;
+			}
+			
+			if ($ast->getConditions() !== null) {
+				return false;
+			}
+			
+			// CRITICAL FIX 1: Check if aggregate references ranges that would be eliminated
+			if (!$this->isAggregateSafeForConditionPromotion($ast, $aggregateExpression)) {
+				return false;
+			}
+			
+			// CRITICAL FIX 2: Verify that promoting conditions won't break range dependencies
+			if ($this->wouldPromotionBreakRangeDependencies($ast, $aggregateExpression)) {
+				return false;
+			}
+			
+			return true;
+		}
+		
+		private function isAggregateSafeForConditionPromotion(AstRetrieve $ast, AstInterface $aggregate): bool {
+			// Get all ranges referenced by the aggregate
+			$referencedRanges = $this->getAggregateReferencedRanges($aggregate);
+			
+			// If aggregate references multiple ranges, condition promotion is unsafe
+			// because it could eliminate necessary joins
+			if (count($referencedRanges) > 1) {
+				return false;
+			}
+			
+			// If aggregate references a range other than the main range, promotion is unsafe
+			$mainRange = $this->getMainRange($ast);
+			if (count($referencedRanges) === 1 && $referencedRanges[0] !== $mainRange) {
+				return false;
+			}
+			
+			// ANY functions specifically require range preservation
+			if ($aggregate instanceof AstAny) {
+				$identifier = $aggregate->getIdentifier();
+				if ($identifier instanceof AstIdentifier && $identifier->getRange() !== $mainRange) {
+					return false;
+				}
+			}
+			
+			return true;
+		}
+		
+		private function wouldPromotionBreakRangeDependencies(AstRetrieve $ast, AstInterface $aggregate): bool {
+			// Get ranges that have join conditions
+			$joinedRanges = [];
+			foreach ($ast->getRanges() as $range) {
+				if ($range->getJoinProperty() !== null) {
+					$joinedRanges[] = $range;
+				}
+			}
+			
+			// If there are joined ranges, we need to ensure the aggregate
+			// doesn't depend on them in a way that would break with promotion
+			foreach ($joinedRanges as $range) {
+				if ($this->aggregateReferencesRange($aggregate, $range)) {
+					return true;
+				}
+			}
+			
+			return false;
+		}
+		
+		private function getAggregateReferencedRanges(AstInterface $aggregate): array {
+			$ranges = [];
+			
+			// Check identifier reference
+			if (method_exists($aggregate, 'getIdentifier')) {
+				$identifier = $aggregate->getIdentifier();
+				if ($identifier instanceof AstIdentifier) {
+					$ranges[] = $identifier->getRange();
+				}
+			}
+			
+			// Check conditions for range references
+			if (method_exists($aggregate, 'getConditions') && $aggregate->getConditions() !== null) {
+				$conditionRanges = $this->extractRangesFromExpression($aggregate->getConditions());
+				$ranges = array_merge($ranges, $conditionRanges);
+			}
+			
+			return array_unique($ranges, SORT_REGULAR);
+		}
+		
+		private function aggregateReferencesRange(AstInterface $aggregate, AstRange $targetRange): bool {
+			$referencedRanges = $this->getAggregateReferencedRanges($aggregate);
+			
+			foreach ($referencedRanges as $range) {
+				if ($range === $targetRange) {
+					return true;
+				}
+			}
+			
+			return false;
+		}
+		
+		private function extractRangesFromExpression(AstInterface $expression): array {
+			$ranges = [];
+			
+			if ($expression instanceof AstIdentifier) {
+				$ranges[] = $expression->getRange();
+			}
+			
+			// Recursively check binary operations
+			if (method_exists($expression, 'getLeft') && method_exists($expression, 'getRight')) {
+				$leftRanges = $this->extractRangesFromExpression($expression->getLeft());
+				$rightRanges = $this->extractRangesFromExpression($expression->getRight());
+				$ranges = array_merge($ranges, $leftRanges, $rightRanges);
+			}
+			
+			// Check other expression types
+			if (method_exists($expression, 'getExpression') && $expression->getExpression() !== null) {
+				$subRanges = $this->extractRangesFromExpression($expression->getExpression());
+				$ranges = array_merge($ranges, $subRanges);
+			}
+			
+			return $ranges;
+		}
+		
+		private function getMainRange(AstRetrieve $ast): ?AstRange {
+			foreach ($ast->getRanges() as $range) {
+				if ($range->getJoinProperty() === null) {
+					return $range;
+				}
+			}
+			return null;
+		}
+		
+		private function isTrulySingleRange(AstRetrieve $ast): bool {
+			// Check if query structurally has only one range
+			if (count($ast->getRanges()) === 1) {
+				return true;
+			}
+			
+			// Check if additional ranges are actually needed for aggregates
+			$aggregates = $this->findAllAggregates($ast);
+			
+			foreach ($aggregates as $aggregate) {
+				$referencedRanges = $this->getAggregateReferencedRanges($aggregate);
+				if (count($referencedRanges) > 1) {
+					return false; // Multi-range dependencies exist
+				}
+			}
+			
+			return false; // Conservative: if multiple ranges exist, treat as multi-range
+		}
+		
+		private function findAllAggregates(AstRetrieve $ast): array {
+			$valueAggregates = $this->findAggregatesForValues($ast->getValues());
+			$conditionAggregates = $this->findAggregatesForConditions($ast->getConditions());
+			return array_merge($valueAggregates, $conditionAggregates);
 		}
 		
 		/**
@@ -256,12 +420,17 @@
 		 * @return bool True if the aggregate should be optimized
 		 */
 		private function shouldWrapAggregation(AstRetrieve $ast, AstInterface $aggregate): bool {
-			// No conditions means no optimization needed
+			// ANY aggregates always need processing, even without conditions
+			if ($aggregate instanceof AstAny) {
+				return true;
+			}
+			
+			// Other aggregates only need processing if they have conditions
 			if ($aggregate->getConditions() === null) {
 				return false;
 			}
 			
-			// Single-range queries use CASE WHEN instead of wrapping
+			// Single range queries should not wrap
 			if ($ast->isSingleRangeQuery(true)) {
 				return false;
 			}
