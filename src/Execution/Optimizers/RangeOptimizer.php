@@ -12,8 +12,7 @@
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRange;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRangeDatabase;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRetrieve;
-	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstSubquery;
-	use Quellabs\ObjectQuel\ObjectQuel\AstInterface;
+	use Quellabs\ObjectQuel\ObjectQuel\Visitors\CollectRanges;
 	
 	/**
 	 * Handles range-specific optimizations including required annotations
@@ -150,116 +149,66 @@
 		}
 		
 		/**
-		 * Removes LEFT JOIN ranges that are not referenced anywhere in the query.
-		 *
-		 * This is a "dead code elimination" optimization for SQL queries.
-		 *
-		 * Why This Matters:
-		 * - JOINs are expensive operations (require index lookups and memory)
-		 * - Unused JOINs provide no value but still consume resources
-		 * - Query planners can't always detect unused JOINs automatically
-		 *
-		 * Safety Constraints:
-		 * - Only removes LEFT JOINs (INNER JOINs affect result set even if unused)
-		 * - Never removes ranges marked as required
-		 * - Only removes ranges with zero references in outer scope
-		 *
-		 * Scope Handling:
-		 * - Ignores references inside subqueries (different execution context)
-		 * - Ignores self-references in the JOIN condition itself
-		 *
-		 * @param AstRetrieve $ast The AST to optimize
+		 * Collects all ranges (table references) that are actually used in the query
+		 * by traversing the AST nodes for SELECT values, ORDER BY clauses, and WHERE conditions
+		 * @param AstRetrieve $ast The query AST to analyze
+		 * @param bool $traverseSubQueries
+		 * @return array Array of range nodes that are referenced in the query
 		 */
-		public function removeUnusedLeftJoinRanges(AstRetrieve $ast): void {
+		private function getUsedRanges(AstRetrieve $ast, bool $traverseSubQueries=true): array {
+			// Initialize visitor pattern to collect range references
+			$visitor = new CollectRanges($traverseSubQueries);
+			
+			// Traverse all SELECT clause values to find referenced ranges
+			foreach ($ast->getValues() as $value) {
+				$value->accept($visitor);
+			}
+			
+			// Traverse all ORDER BY clause expressions to find referenced ranges
+			foreach ($ast->getSort() as $value) {
+				$value['ast']->accept($visitor);
+			}
+			
+			// Traverse WHERE clause conditions to find referenced ranges
+			$ast->getConditions()?->accept($visitor);
+			
+			// Return collected range references
+			return $visitor->getCollectedNodes();
+		}
+		
+		/**
+		 * Removes unused LEFT JOIN ranges from the query AST to optimize the query.
+		 * Keeps the main range, required joins, and any ranges actually referenced
+		 * in SELECT, WHERE, or ORDER BY clauses.
+		 * @param AstRetrieve $ast The query AST to optimize
+		 * @param bool $traverseSubqueries
+		 * @return void Modifies the AST in place
+		 */
+		public function removeUnusedLeftJoinRanges(AstRetrieve $ast, bool $traverseSubqueries=true): void {
+			$result = [];
 			$mainRange = $ast->getMainDatabaseRange();
+			$usedRanges = $this->getUsedRanges($ast, $traverseSubqueries);
 			
-			if ($mainRange === null) {
-				return;
-			}
-			
+			// Filter ranges to keep only necessary ones
 			foreach ($ast->getRanges() as $range) {
+				// Always preserve the main table range and explicitly required joins
 				if ($range === $mainRange || $range->isRequired()) {
+					$result[] = $range;
 					continue;
 				}
 				
-				if ($this->isRangeCompletelyUnused($ast, $range, [])) {
-					$range->setIncludeAsJoin(false);
-				}
-			}
-		}
-		
-		/**
-		 * Determine if a range is unused in OUTER scope.
-		 * @param AstRetrieve $ast The complete AST context
-		 * @param AstRange $range The range being analyzed
-		 * @return bool True if range can be safely removed
-		 */
-		private function isRangeCompletelyUnused(AstRetrieve $ast, AstRange $range): bool {
-			// If the alias does NOT appear anywhere in OUTER scope
-			// EXCEPT its own join predicate, it’s unused.
-			return $this->countAliasOutsideOwnJoin($ast, $range) === 0;
-		}
-		
-		/**
-		 * Counts how many times a range alias is referenced outside of its own join predicate.
-		 * This is used to determine if a range can be safely removed from a query - if the count
-		 * is 0, the range is only used in its join condition and nowhere else in the query.
-		 * @param AstRetrieve $ast   The root AST node to search within
-		 * @param AstRange    $range The range whose alias usage we're counting
-		 * @return int Number of times the alias is referenced outside its join predicate
-		 */
-		private function countAliasOutsideOwnJoin(AstRetrieve $ast, AstRange $range): int {
-			// Get the alias name we're looking for
-			$alias = $range->getName();
-			
-			// Get this range's join property/predicate if it exists
-			// This represents the JOIN condition for this range (e.g., "user.id = order.user_id")
-			$joinProp = method_exists($range, 'getJoinProperty') ? $range->getJoinProperty() : null;
-			
-			// Use a stack for iterative depth-first traversal to avoid recursion limits
-			$count = 0;
-			$stack = [$ast];
-			
-			while ($stack) {
-				/** @var mixed $node */
-				$node = array_pop($stack);
-				
-				// CRITICAL: Skip the join predicate subtree for this specific range
-				// We don't want to count alias references within the range's own JOIN condition
-				// because those are definitional, not actual usage of the joined data
-				if ($joinProp !== null && $node === $joinProp) {
-					continue;
-				}
-				
-				// SCOPE BOUNDARY: Do not descend into subqueries at all
-				// Subqueries have their own alias scope - an alias "u" in a subquery
-				// is completely separate from an alias "u" in the parent query
-				if ($node instanceof AstSubquery) {
-					continue;
-				}
-				
-				// CHECK FOR ALIAS USAGE: Only count direct identifier references
-				// We perform a "shallow" check - we only care if THIS node itself
-				// is an identifier that references our target alias
-				if ($node instanceof AstIdentifier) {
-					if ($node->getRange()->getName() === $alias) {
-						$count++;
-					}
-				}
-				
-				// TRAVERSAL: Add all children to the stack for continued processing
-				// The subquery guard above ensures we never traverse into subquery children
-				// The join predicate guard above ensures we skip the range's own join condition
-				if ($node instanceof AstInterface && method_exists($node, 'getChildren')) {
-					foreach ($node->getChildren() as $child) {
-						if ($child instanceof AstInterface) {
-							$stack[] = $child;
-						}
+				// Check if this range is referenced anywhere in the query
+				// (SELECT values, WHERE conditions, ORDER BY clauses)
+				foreach ($usedRanges as $usedRange) {
+					if ($usedRange->getName() === $range->getName()) {
+						$result[] = $range;
+						break;
 					}
 				}
 			}
 			
-			return $count;
+			// Update the AST with the filtered ranges (removing unused LEFT JOINs)
+			$ast->setRanges($result);
 		}
 		
 		/**
@@ -281,10 +230,12 @@
 		 * @return bool True if the range should be checked for requirements
 		 */
 		private function shouldSetRangeRequired(AstRange $range): bool {
+			// Fetch join property
 			$joinProperty = $range->getJoinProperty();
 			
 			// Check for the standard equi-join pattern: table1.column = table2.column
-			return $joinProperty instanceof AstExpression &&
+			return
+				$joinProperty instanceof AstExpression &&
 				$joinProperty->getLeft() instanceof AstIdentifier &&
 				$joinProperty->getRight() instanceof AstIdentifier;
 		}

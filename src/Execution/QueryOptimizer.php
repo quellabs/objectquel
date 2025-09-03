@@ -44,6 +44,9 @@
 			// Apply filtering early to reduce dataset size for subsequent operations
 			$this->rangeOptimizer->optimize($ast);
 			
+			// Phase 2: Remove left joins that are not referenced in the query
+			$this->rangeOptimizer->removeUnusedLeftJoinRanges($ast);
+			
 			// Phase 2: Optimize joins
 			$this->joinOptimizer->optimize($ast);
 			
@@ -55,10 +58,9 @@
 			$this->aggregateOptimizer->optimize($ast);
 			
 			// Phase 4: Final cleanup
-			// Remove any LEFT JOINs that became unused after previous optimizations
 			// Optimize constant values and references last when structure is stable
-			$this->rangeOptimizer->removeUnusedLeftJoinRanges($ast);
 			$this->joinOptimizer->optimize($ast);
 			$this->valueReferenceOptimizer->optimize($ast);
+			$this->rangeOptimizer->removeUnusedLeftJoinRanges($ast, false);
 		}
 	}
