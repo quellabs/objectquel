@@ -24,6 +24,7 @@
 		protected bool $unique;
 		protected ?int $window;
 		protected ?int $window_size;
+		protected array $group_by;
 		
 		/**
 		 * AstRetrieve constructor.
@@ -42,6 +43,7 @@
 			$this->sort_in_application_logic = false;
 			$this->window = null;
 			$this->window_size = null;
+			$this->group_by = [];
 		}
 		
 		/**
@@ -177,6 +179,18 @@
 		 */
 		public function addRange(AstRangeDatabase $range): void {
 			$this->ranges[] = $range;
+		}
+		
+		public function removeRange(AstRange $rangeToRemove): void {
+			$result = [];
+			
+			foreach($this->ranges as $range) {
+				if ($range->getName() !== $rangeToRemove->getName()) {
+					$result[] = $range;
+				}
+			}
+			
+			$this->ranges = $result;
 		}
 		
 		/**
@@ -416,6 +430,14 @@
 			}
 			
 			return null;
+		}
+	
+		public function getGroupBy(): array {
+			return $this->group_by;
+		}
+		
+		public function setGroupBy(array $groups): void {
+			$this->group_by = $groups;
 		}
 		
 		public function deepClone(): static {
