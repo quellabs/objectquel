@@ -3,6 +3,7 @@
 	namespace Quellabs\ObjectQuel\ObjectQuel\Visitors;
 	
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstIdentifier;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstSubquery;
 	use Quellabs\ObjectQuel\ObjectQuel\AstInterface;
 	use Quellabs\ObjectQuel\ObjectQuel\AstVisitorInterface;
 	
@@ -15,11 +16,17 @@
 		private array $handledRanges;
 		
 		/**
+		 * @var bool Should we traverse into subqueries
+		 */
+		private bool $traverseSubqueries;
+		
+		/**
 		 * CollectIdentifiers constructor
 		 */
-		public function __construct() {
+		public function __construct(bool $traverseSubqueries = true) {
 			$this->collectedNodes = [];
 			$this->handledRanges = [];
+			$this->traverseSubqueries = $traverseSubqueries;
 		}
 		
 		/**
@@ -28,6 +35,10 @@
 		 */
 		public function visitNode(AstInterface $node): void {
 			if (!$node instanceof AstIdentifier) {
+				return;
+			}
+			
+			if (!$this->traverseSubqueries && $node->parentIsOneOf([AstSubquery::class])) {
 				return;
 			}
 			
