@@ -32,13 +32,14 @@
 		 * @return string
 		 */
 		public function convertToSQL(AstRetrieve $retrieve): string {
-			return trim(sprintf("SELECT %s%s%s %s %s%s",
+			return trim(sprintf("SELECT %s%s%s %s %s%s%s",
 				$this->getUnique($retrieve),
 				$this->getFieldNames($retrieve),
 				$this->getFrom($retrieve),
 				$this->getJoins($retrieve),
 				$this->getWhere($retrieve),
-				$this->getSort($retrieve)
+				$this->getSort($retrieve),
+				$this->getGroupBy($retrieve),
 			));
 		}
 
@@ -271,6 +272,28 @@
 			} else {
 				return "";
 			}
+		}
+		
+		/**
+		 * @param AstRetrieve $retrieve
+		 * @return string
+		 */
+		protected function getGroupBy(AstRetrieve $retrieve): string {
+			$groupBy = $retrieve->getGroupBy();
+			
+			if (empty($groupBy)) {
+				return "";
+			}
+			
+			$groupSQL = [];
+			$visitor = new QuelToSQLConvertToString($this->entityStore, $this->parameters, "CONDITION");
+
+			foreach($groupBy as $group) {
+				$group->accept($visitor);
+				$groupSQL[] = $visitor->getResult();
+			}
+			
+			return "GROUP BY " . implode(",", $groupSQL);
 		}
 		
 		/**
