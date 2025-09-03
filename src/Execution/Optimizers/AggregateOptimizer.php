@@ -451,9 +451,13 @@
 		// ---------------------------------------------------------------------
 		
 		/**
-		 * Aggregate-only SELECT: remove FROM ranges not referenced by SELECT/WHERE
-		 * or by join dependency closure. If a single range remains and its join
-		 * predicate references only itself, fold predicate into WHERE and clear join.
+		 * Removes unused FROM ranges in aggregate-only SELECT queries.
+		 *
+		 * Algorithm:
+		 * 1. Find ranges referenced in SELECT, WHERE, or JOIN predicates
+		 * 2. Expand the set with join dependencies (transitively)
+		 * 3. Remove any ranges not in the final set
+		 * 4. Optimize single-range case: fold self-referencing joins into WHERE
 		 *
 		 * @param AstRetrieve $root Query to mutate
 		 * @return void
@@ -464,52 +468,130 @@
 			}
 			
 			$allRanges = $root->getRanges();
-			$usedInSelect = $this->collectRangesUsedInSelect($root);
 			
+			// Collect all directly referenced ranges
+			$directlyUsed = $this->collectDirectlyUsedRanges($root, $allRanges);
+			
+			// Expand to include join dependencies
+			$requiredRanges = $this->expandWithAllJoinDependencies($directlyUsed, $allRanges);
+			
+			// Remove unused ranges
+			$this->removeRangesNotInSet($root, $allRanges, $requiredRanges);
+			
+			// Optimize single-range case
+			$this->optimizeSingleRangeQuery($root);
+		}
+		
+		/**
+		 * Collects ranges directly referenced in SELECT, WHERE, and JOIN predicates.
+		 */
+		private function collectDirectlyUsedRanges(AstRetrieve $root, array $allRanges): array {
+			$used = [];
+			
+			// Ranges used in SELECT clause
+			$used = array_merge($used, $this->collectRangesUsedInSelect($root));
+			
+			// Ranges used in WHERE clause
 			$outerWhere = $root->getConditions();
-			$usedInWhere = $outerWhere ? $this->collectRangesFromNode($outerWhere) : [];
+			if ($outerWhere) {
+				$used = array_merge($used, $this->collectRangesFromNode($outerWhere));
+			}
 			
-			$usedInJoins = [];
-			foreach ($allRanges as $r) {
-				$jp = $r->getJoinProperty();
-				if ($jp !== null) {
-					$usedInJoins = array_merge($usedInJoins, $this->collectRangesFromNode($jp));
+			// Ranges used in JOIN predicates
+			foreach ($allRanges as $range) {
+				$joinPredicate = $range->getJoinProperty();
+				if ($joinPredicate) {
+					$used = array_merge($used, $this->collectRangesFromNode($joinPredicate));
 				}
 			}
 			
-			$keep = [];
-			foreach (array_unique(array_merge($usedInSelect, $usedInWhere, $usedInJoins), SORT_REGULAR) as $r) {
-				$keep[spl_object_hash($r)] = $r;
-				$processed = [];
-				$this->expandWithJoinDependencies($r, $allRanges, $keep, $processed);
+			return array_unique($used, SORT_REGULAR);
+		}
+		
+		/**
+		 * Expands the set of ranges to include all join dependencies transitively.
+		 */
+		private function expandWithAllJoinDependencies(array $directlyUsed, array $allRanges): array {
+			$required = [];
+			$processed = [];
+			
+			foreach ($directlyUsed as $range) {
+				$required[spl_object_hash($range)] = $range;
+				$this->expandWithJoinDependencies($range, $allRanges, $required, $processed);
 			}
 			
+			return $required;
+		}
+		
+		/**
+		 * Removes ranges that are not in the required set.
+		 */
+		private function removeRangesNotInSet(AstRetrieve $root, array $allRanges, array $requiredRanges): void {
 			foreach ($allRanges as $range) {
-				if (!isset($keep[spl_object_hash($range)])) {
+				if (!isset($requiredRanges[spl_object_hash($range)])) {
 					$root->removeRange($range);
 				}
 			}
+		}
+		
+		/**
+		 * Optimizes queries with a single range by folding self-referencing joins into WHERE.
+		 */
+		private function optimizeSingleRangeQuery(AstRetrieve $root): void {
+			$remainingRanges = $root->getRanges();
 			
-			if (count($root->getRanges()) === 1) {
-				$only = $root->getRanges()[0];
-				$jp = $only->getJoinProperty();
-				if ($jp !== null) {
-					$refs = $this->collectRangesFromNode($jp);
-					$selfOnly = true;
-					foreach ($refs as $ref) {
-						if ($ref !== $only) {
-							$selfOnly = false;
-							break;
-						}
-					}
-					
-					if ($selfOnly) {
-						$where = $root->getConditions();
-						$root->setConditions($where ? new AstBinaryOperator($where, $jp, 'AND') : $jp);
-						$only->setJoinProperty(null);
-					}
+			if (count($remainingRanges) !== 1) {
+				return;
+			}
+			
+			$singleRange = $remainingRanges[0];
+			$joinPredicate = $singleRange->getJoinProperty();
+			
+			if (!$joinPredicate) {
+				return;
+			}
+			
+			// Check if join predicate only references the single range
+			if ($this->joinPredicateReferencesOnlySelf($joinPredicate, $singleRange)) {
+				$this->foldJoinPredicateIntoWhere($root, $joinPredicate);
+				$singleRange->setJoinProperty(null);
+			}
+		}
+		
+		/**
+		 * Checks if a join predicate only references the given range.
+		 * @param $joinPredicate
+		 * @param $targetRange
+		 * @return bool
+		 */
+		private function joinPredicateReferencesOnlySelf($joinPredicate, $targetRange): bool {
+			$referencedRanges = $this->collectRangesFromNode($joinPredicate);
+			
+			foreach ($referencedRanges as $range) {
+				if ($range !== $targetRange) {
+					return false;
 				}
 			}
+			
+			return true;
+		}
+		
+		/**
+		 * Folds a join predicate into the WHERE clause using AND.
+		 * @param AstRetrieve $root
+		 * @param $joinPredicate
+		 * @return void
+		 */
+		private function foldJoinPredicateIntoWhere(AstRetrieve $root, $joinPredicate): void {
+			$existingWhere = $root->getConditions();
+			
+			if ($existingWhere) {
+				$newWhere = new AstBinaryOperator($existingWhere, $joinPredicate, 'AND');
+			} else {
+				$newWhere = $joinPredicate;
+			}
+			
+			$root->setConditions($newWhere);
 		}
 		
 		/**
@@ -633,142 +715,242 @@
 		/**
 		 * Recursively traverse an AND-tree and simplify eligible EXISTS nodes.
 		 *
-		 * @param AstInterface $node Root of the subtree
-		 * @param bool $includeNulls If true, replace with TRUE predicate
-		 * @return AstInterface Possibly rewritten node
+		 * This function performs a depth-first traversal of an AST subtree rooted at an AND operator,
+		 * looking for EXISTS subqueries that can be optimized. The optimization typically converts
+		 * self-join EXISTS patterns into simpler predicates.
+		 *
+		 * @param AstInterface $node Root of the subtree to process
+		 * @param bool $includeNulls If true, replace simplified EXISTS with TRUE predicate;
+		 *                           if false, replace with more restrictive predicate that excludes nulls
+		 * @return AstInterface Possibly rewritten node (new instance if changes made, original if unchanged)
 		 */
 		private function rewriteExistsNodesWithinAndTree(AstInterface $node, bool $includeNulls): AstInterface {
+			// Handle AND nodes: recursively process both sides of the binary operator
 			if ($node instanceof AstBinaryOperator && $node->getOperator() === 'AND') {
+				// Recursively rewrite left and right subtrees
 				$l = $this->rewriteExistsNodesWithinAndTree($node->getLeft(), $includeNulls);
 				$r = $this->rewriteExistsNodesWithinAndTree($node->getRight(), $includeNulls);
+				
+				// Optimization: only create new node if children actually changed
+				// This preserves object identity when no rewriting occurred
 				if ($l === $node->getLeft() && $r === $node->getRight()) {
 					return $node;
 				}
+				
+				// Create new AND node with potentially rewritten children
 				return new AstBinaryOperator($l, $r, 'AND');
 			}
 			
+			// Handle EXISTS subqueries: attempt to simplify self-join patterns
 			if ($node instanceof AstSubquery && $node->getType() === AstSubquery::TYPE_EXISTS) {
+				// Delegate to specialized method that analyzes the EXISTS subquery structure
+				// Returns null if no simplification is possible, otherwise returns replacement predicate
 				$replacement = $this->simplifySingleExistsNodeIfSelfJoin($node, $includeNulls);
+				
+				// Successfully simplified: return the replacement predicate
 				if ($replacement !== null) {
 					return $replacement;
 				}
+				
+				// No simplification possible: fall through to return original node
 			}
 			
+			// Base case: node is not an AND operator or EXISTS subquery, or couldn't be simplified
+			// Return unchanged (this includes other operators like OR, comparison operators, literals, etc.)
 			return $node;
 		}
 		
 		/**
-		 * Attempt to turn a single EXISTS(subquery) into a NOT NULL chain if it is a
-		 * trivial self-join of the same entity on the same column(s).
+		 * Simplifies EXISTS(subquery) to NOT NULL checks when it represents a trivial self-join.
 		 *
-		 * @param AstSubquery $existsNode EXISTS node to analyze
-		 * @param bool $includeNulls If true, return TRUE predicate
-		 * @return AstInterface|null Replacement node or null to keep original
+		 * A self-join is considered trivial when:
+		 * - The subquery joins the same entity on identical columns
+		 * - The join condition only compares outer.col = inner.col patterns
+		 * - No additional WHERE conditions exist beyond the join predicates
+		 *
+		 * Example transformation:
+		 * EXISTS(SELECT 1 FROM users u2 WHERE u1.id = u2.id AND u1.name = u2.name)
+		 * becomes: u1.id IS NOT NULL AND u1.name IS NOT NULL
+		 *
+		 * @param AstSubquery $existsNode The EXISTS subquery to analyze
+		 * @param bool $includeNulls When true, returns TRUE predicate (includes NULL values)
+		 *                           When false, generates NOT NULL checks for join columns
+		 * @return AstInterface|null Simplified predicate, or null if optimization not applicable
+		 * @throws \InvalidArgumentException If subquery structure is malformed
 		 */
 		private function simplifySingleExistsNodeIfSelfJoin(AstSubquery $existsNode, bool $includeNulls): ?AstInterface {
-			$innerRanges = $existsNode->getCorrelatedRanges();
-			if (empty($innerRanges)) {
-				return null;
-			}
-			$innerSet = [];
-			foreach ($innerRanges as $ir) {
-				$innerSet[spl_object_hash($ir)] = true;
-			}
-			
-			$cond = $existsNode->getConditions();
-			if ($cond === null) {
+			// Early exit: self-join optimization requires correlated ranges
+			// Non-correlated subqueries cannot be simplified to column checks
+			$correlatedRanges = $existsNode->getCorrelatedRanges();
+			if (empty($correlatedRanges)) {
 				return null;
 			}
 			
-			$pairs = [];
-			if (!$this->collectOuterInnerIdPairs($cond, $innerSet, $pairs) || empty($pairs)) {
+			// Build hash-based lookup for O(1) correlated range identification
+			// Used later to distinguish outer vs inner table references in join conditions
+			$correlatedRangeSet = [];
+			foreach ($correlatedRanges as $range) {
+				$correlatedRangeSet[spl_object_hash($range)] = true;
+			}
+			
+			// Extract WHERE clause conditions from the subquery
+			// These must contain only equality joins for the optimization to apply
+			$conditions = $existsNode->getConditions();
+			if ($conditions === null) {
 				return null;
 			}
 			
-			// Validate self-join semantics: same entity + same property on both sides.
-			foreach ($pairs as [$outerId, $innerId]) {
-				/** @var AstIdentifier $outerBase */
-				$outerBase = $outerId->getBaseIdentifier();
-				/** @var AstIdentifier $innerBase */
-				$innerBase = $innerId->getBaseIdentifier();
-				
-				$outerRange = $outerBase->getRange();
-				$innerRange = $innerBase->getRange();
-				if ($outerRange === null || $innerRange === null) {
-					return null;
-				}
-				if ($outerRange->getEntityName() !== $innerRange->getEntityName()) {
-					return null;
-				}
-				
-				$outerProp = method_exists($outerId, 'getPropertyName') ? $outerId->getPropertyName() : $outerId->getName();
-				$innerProp = method_exists($innerId, 'getPropertyName') ? $innerId->getPropertyName() : $innerId->getName();
-				if ($outerProp === '' || $innerProp === '' || $outerProp !== $innerProp) {
-					return null;
-				}
+			// Parse join conditions into outer/inner column pairs
+			// Only simple equality conditions (outer.col = inner.col) are supported
+			$joinPairs = [];
+			if (!$this->collectOuterInnerIdPairs($conditions, $correlatedRangeSet, $joinPairs) || empty($joinPairs)) {
+				return null;
 			}
 			
+			// Verify structural requirements for self-join optimization:
+			// - Same underlying table/entity for outer and inner references
+			// - Identical column sets being compared
+			// - No complex expressions or transformations in join predicates
+			if (!$this->isValidSelfJoin($joinPairs)) {
+				return null;
+			}
+			
+			// Special optimization case: when includeNulls=true, the EXISTS becomes trivial
+			// Since we're checking if a row exists in the same table with same values,
+			// and NULLs are included, this is always true (assuming the outer row exists)
 			if ($includeNulls) {
+				// Return literal TRUE condition (1=1)
 				return new AstExpression(new AstNumber(1), new AstNumber(1), '=');
 			}
 			
-			// Replace EXISTS with: outer.col IS NOT NULL AND ...
-			$chain = null;
-			
-			foreach ($pairs as [$outerId, $_innerId]) {
-				$pred = new AstCheckNotNull($outerId->deepClone());
-				$chain = $chain ? new AstBinaryOperator($chain, $pred, 'AND') : $pred;
-			}
-			return $chain;
+			// Standard case: transform EXISTS to conjunction of NOT NULL checks
+			// Logic: EXISTS(SELECT ... WHERE outer.a=inner.a AND outer.b=inner.b)
+			// is equivalent to (outer.a IS NOT NULL AND outer.b IS NOT NULL)
+			// because if outer columns are non-null, the self-join will always find the same row
+			return $this->buildNotNullChain($joinPairs);
 		}
 		
 		/**
-		 * Collect pairs [outerId, innerId] for simple equality leaves (id = id)
-		 * where exactly one side belongs to an inner range.
-		 * @param AstInterface $expr Predicate subtree to scan
-		 * @param array<string,bool> $innerSet map: spl_object_hash(AstRange) => true
-		 * @param array<int,array{0:AstIdentifier,1:AstIdentifier}> $pairs Output pairs
-		 * @return bool False if a non-eligible leaf is encountered
+		 * Validates that all join pairs represent a self-join on the same entity and properties.
+		 * @param array $joinPairs
+		 * @return bool
 		 */
-		private function collectOuterInnerIdPairs(AstInterface $expr, array $innerSet, array &$pairs): bool {
-			if ($expr instanceof AstBinaryOperator && $expr->getOperator() === 'AND') {
-				return $this->collectOuterInnerIdPairs($expr->getLeft(), $innerSet, $pairs)
-					&& $this->collectOuterInnerIdPairs($expr->getRight(), $innerSet, $pairs);
+		private function isValidSelfJoin(array $joinPairs): bool {
+			foreach ($joinPairs as [$outerIdentifier, $innerIdentifier]) {
+				if (!$this->isSameEntityAndProperty($outerIdentifier, $innerIdentifier)) {
+					return false;
+				}
 			}
 			
+			return true;
+		}
+		
+		/**
+		 * Checks if two identifiers reference the same entity and property.
+		 * @param AstIdentifier $outer
+		 * @param AstIdentifier $inner
+		 * @return bool
+		 */
+		private function isSameEntityAndProperty(AstIdentifier $outer, AstIdentifier $inner): bool {
+			// Verify both identifiers have valid ranges
+			$outerRange = $outer->getBaseIdentifier()->getRange();
+			$innerRange = $inner->getBaseIdentifier()->getRange();
+			
+			if ($outerRange === null || $innerRange === null) {
+				return false;
+			}
+			
+			// Must be the same entity
+			if ($outerRange->getEntityName() !== $innerRange->getEntityName()) {
+				return false;
+			}
+			
+			// Must reference the same property
+			$outerProperty = $outer->getPropertyName();
+			$innerProperty = $inner->getPropertyName();
+			
+			return
+				$outerProperty !== '' &&
+				$innerProperty !== '' &&
+				$outerProperty === $innerProperty;
+		}
+		
+		/**
+		 * Builds a chain of IS NOT NULL conditions connected by AND operators.
+		 */
+		private function buildNotNullChain(array $joinPairs): ?AstInterface {
+			$notNullChain = null;
+			
+			foreach ($joinPairs as [$outerIdentifier, $_innerIdentifier]) {
+				$notNullCheck = new AstCheckNotNull($outerIdentifier->deepClone());
+				
+				$notNullChain = $notNullChain === null
+					? $notNullCheck
+					: new AstBinaryOperator($notNullChain, $notNullCheck, 'AND');
+			}
+			
+			return $notNullChain;
+		}
+		
+		/**
+		 * Scans a predicate tree for simple equality comparisons (id = id) where
+		 * exactly one identifier belongs to an inner range and one to an outer range.
+		 * Only processes AND operations and equality expressions.
+		 * @param AstInterface $expr The predicate subtree to analyze
+		 * @param array<string,bool> $innerSet Hash map of inner ranges (spl_object_hash => true)
+		 * @param array<int,array{0:AstIdentifier,1:AstIdentifier}> &$pairs Output array of [outer, inner] pairs
+		 * @return bool True if all leaves are eligible equality comparisons, false otherwise
+		 */
+		private function collectOuterInnerIdPairs(AstInterface $expr, array $innerSet, array &$pairs): bool {
+			// Recursively process AND operations
+			if ($expr instanceof AstBinaryOperator && $expr->getOperator() === 'AND') {
+				return
+					$this->collectOuterInnerIdPairs($expr->getLeft(), $innerSet, $pairs) &&
+					$this->collectOuterInnerIdPairs($expr->getRight(), $innerSet, $pairs);
+			}
+			
+			// Process equality expressions
 			if ($expr instanceof AstExpression && $expr->getOperator() === '=') {
-				$L = $expr->getLeft();
-				$R = $expr->getRight();
+				$leftOperand = $expr->getLeft();
+				$rightOperand = $expr->getRight();
 				
-				if (!($L instanceof AstIdentifier) || !($R instanceof AstIdentifier)) {
+				// Both operands must be identifiers
+				if (!($leftOperand instanceof AstIdentifier) || !($rightOperand instanceof AstIdentifier)) {
 					return false;
 				}
 				
-				/** @var AstIdentifier $Lb */
-				$Lb = $L->getBaseIdentifier();
-				/** @var AstIdentifier $Rb */
-				$Rb = $R->getBaseIdentifier();
+				// Get base identifiers and their ranges
+				$leftBase = $leftOperand->getBaseIdentifier();
+				$rightBase = $rightOperand->getBaseIdentifier();
+				$leftRange = $leftBase->getRange();
+				$rightRange = $rightBase->getRange();
 				
-				$Lr = $Lb->getRange();
-				$Rr = $Rb->getRange();
-				
-				if ($Lr === null || $Rr === null) {
+				// Both identifiers must have valid ranges
+				if ($leftRange === null || $rightRange === null) {
 					return false;
 				}
 				
-				$Linner = isset($innerSet[spl_object_hash($Lr)]);
-				$Rinner = isset($innerSet[spl_object_hash($Rr)]);
+				// Check which identifiers belong to inner ranges
+				$leftIsInner = isset($innerSet[spl_object_hash($leftRange)]);
+				$rightIsInner = isset($innerSet[spl_object_hash($rightRange)]);
 				
-				if ($Linner === $Rinner) { // both inner or both outer
-					return false;
+				// Exactly one identifier must be inner, one outer
+				if ($leftIsInner === $rightIsInner) {
+					return false; // Both inner or both outer - not eligible
 				}
 				
-				// Canonical order: [outerId, innerId]
-				$pairs[] = $Linner ? [$R, $L] : [$L, $R];
+				// Store in canonical order: [outer identifier, inner identifier]
+				if ($leftIsInner) {
+					$pairs[] = [$rightOperand, $leftOperand]; // right=outer, left=inner
+				} else {
+					$pairs[] = [$leftOperand, $rightOperand]; // left=outer, right=inner
+				}
+				
 				return true;
 			}
 			
-			return false; // other node types are not eligible
+			// All other expression types are ineligible
+			return false;
 		}
 		
 		// ---------------------------------------------------------------------
@@ -781,49 +963,116 @@
 		 */
 		private function collectRangesUsedInSelect(AstRetrieve $root): array {
 			$collector = new CollectRanges();
-
+			
 			foreach ($root->getValues() as $value) {
 				$value->accept($collector);
 			}
-
+			
 			return $collector->getCollectedNodes();
 		}
 		
 		/**
 		 * Check if we can safely rewrite the aggregate to a window function.
-		 * @param AstRetrieve $root Query root
-		 * @param AstInterface $aggregate Aggregate under analysis
-		 * @return bool True if rewrite is permitted
+		 *
+		 * Window functions operate over a set of rows related to the current row, making them
+		 * suitable replacements for aggregates in certain scenarios. However, this transformation
+		 * is only valid under specific conditions to maintain query correctness.
+		 *
+		 * Rewriting requirements:
+		 * 1. Basic compatibility - The aggregate function itself must support window syntax
+		 * 2. Single table query - Window functions work on row sets from a single source
+		 * 3. Consistent references - The aggregate must reference the same table as the query
+		 * 4. Uniform select items - All selected expressions must reference the same table
+		 *
+		 * Why these restrictions matter:
+		 * - Multi-table queries would require complex partitioning logic
+		 * - Cross-table references in aggregates would break window semantics
+		 * - Mixed table references in select items would produce inconsistent row counts
+		 *
+		 * @param AstRetrieve $root Query root containing the complete SELECT statement
+		 * @param AstInterface $aggregate Specific aggregate function being analyzed for rewriting
+		 * @return bool True if the aggregate can be safely rewritten as a window function
 		 */
 		private function canRewriteAsWindowFunction(AstRetrieve $root, AstInterface $aggregate): bool {
+			// VALIDATION 1: Basic Window Function Compatibility
+			// ================================================
+			// Check if this aggregate function type (SUM, COUNT, etc.) can be expressed
+			// as a window function. Some aggregates have no window equivalent or require
+			// special handling that makes them unsuitable for automatic rewriting.
 			if (!$this->passesWindowFunctionBasics($aggregate)) {
 				return false;
 			}
 			
-			$ranges = $root->getRanges();
+			// Extract all table/view references from the main query
+			$queryRanges = $root->getRanges();
 			
-			if (count($ranges) !== 1) {
-				return false; // must be single-table
+			// VALIDATION 2: Single Table Requirement
+			// ======================================
+			// Window functions work best with single-table queries. Multi-table queries
+			// introduce complexity around partitioning, ordering, and result set boundaries
+			// that can lead to incorrect results after rewriting.
+			//
+			// Example of why this matters:
+			//   SELECT a.id, SUM(b.amount) FROM users a JOIN orders b ON a.id = b.user_id
+			//
+			// Rewriting SUM(b.amount) as a window function would change the semantics
+			// because window functions don't respect JOIN boundaries the same way.
+			if (count($queryRanges) !== 1) {
+				return false;
 			}
 			
-			$aggRanges = $this->collectRangesFromNode($aggregate);
+			// Store the single table reference for consistency checking
+			$singleRange = $queryRanges[0];
 			
-			if (count($aggRanges) !== 1 || $aggRanges[0] !== $ranges[0]) {
-				return false; // aggregate must reference exactly that single range
+			// VALIDATION 3: Aggregate Table Reference Consistency
+			// ===================================================
+			// The aggregate function must reference exactly the same table as the main query.
+			// This prevents scenarios where the aggregate operates on a different data source
+			// than the rest of the query, which would break window function semantics.
+			//
+			// Example of invalid case:
+			//   SELECT users.name, (SELECT COUNT(*) FROM orders) FROM users
+			//
+			// The COUNT(*) references 'orders' while the main query uses 'users'.
+			// This can't be rewritten as a window function because window functions
+			// operate on the same row set as their containing query.
+			$aggregateRanges = $this->collectRangesFromNode($aggregate);
+			
+			if (count($aggregateRanges) !== 1 || $aggregateRanges[0] !== $singleRange) {
+				return false;
 			}
 			
-			foreach ($root->getValues() as $item) {
-				if ($item->getExpression() === $aggregate) {
-					continue; // skip the aggregate under analysis
+			// VALIDATION 4: Uniform Select Item References
+			// ============================================
+			// All expressions in the SELECT clause must reference the same single table.
+			// Mixed references would create inconsistent row counts after window function
+			// rewriting, since window functions operate row-by-row on a consistent dataset.
+			//
+			// Example of invalid case:
+			//   SELECT users.name, departments.budget, SUM(users.salary)
+			//   FROM users, departments
+			//
+			// After rewriting SUM(users.salary) to a window function, each row would
+			// show the total salary, but departments.budget would create a Cartesian
+			// product that doesn't match the intended aggregation scope.
+			foreach ($root->getValues() as $selectItem) {
+				// Skip the aggregate we're analyzing - we already validated it above
+				if ($selectItem->getExpression() === $aggregate) {
+					continue; // This is our target aggregate, already checked
 				}
-
-				$itemRanges = $this->collectRangesFromNode($item->getExpression());
-
-				if (count($itemRanges) !== 1 || $itemRanges[0] !== $ranges[0]) {
-					return false; // all items must reference the same single range
+				
+				// Check what tables/views this select item references
+				$itemRanges = $this->collectRangesFromNode($selectItem->getExpression());
+				
+				// Each select item must reference exactly the same single table
+				if (count($itemRanges) !== 1 || $itemRanges[0] !== $singleRange) {
+					return false; // Select item references different/multiple tables
 				}
 			}
 			
+			// All validations passed - the aggregate can be safely rewritten as a window function
+			// The rewrite will preserve query semantics while potentially improving performance
+			// by eliminating grouping operations in favor of analytical window processing.
 			return true;
 		}
 		
@@ -834,18 +1083,22 @@
 		 * @return bool True if basic constraints are satisfied
 		 */
 		private function passesWindowFunctionBasics(AstInterface $aggregate): bool {
+			// Window functions can't have their own filters
 			if ($aggregate->getConditions() !== null) {
-				return false; // window functions can't have their own filters
+				return false;
 			}
 			
+			// DISTINCT variants commonly unsupported for window context
 			if (in_array(get_class($aggregate), $this->distinctAggregateTypes, true)) {
-				return false; // DISTINCT variants commonly unsupported for window context
+				return false;
 			}
 			
+			// Database capability
 			if (!$this->entityManager->getConnection()->supportsWindowFunctions()) {
-				return false; // database capability
+				return false;
 			}
 			
+			// ??
 			return $this->isSupportedWindowAggregate($aggregate);
 		}
 		

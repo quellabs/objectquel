@@ -78,11 +78,11 @@
 		}
 		
 		public function getPropertyName(): string {
-			if ($this->getNext() === null) {
-				return '';
+			if ($this->getNext() !== null) {
+				return $this->getNext()->getName();
 			}
 			
-			return $this->getNext()->getName();
+			return $this->getName();
 		}
 		
 		/**
