@@ -95,4 +95,6 @@
 			$ast->accept($visitor);
 			return $visitor->getCollectedNodes();
 		}
+		
+		
 	}

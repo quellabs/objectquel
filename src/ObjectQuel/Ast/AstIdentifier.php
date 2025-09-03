@@ -77,6 +77,14 @@
 			$this->identifier = $name;
 		}
 		
+		public function getPropertyName(): string {
+			if ($this->getNext() === null) {
+				return '';
+			}
+			
+			return $this->getNext()->getName();
+		}
+		
 		/**
 		 * Chains all the names of identifiers together
 		 * @return string

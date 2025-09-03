@@ -8,6 +8,8 @@
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstBinaryOperator;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstCount;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstCountU;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstExpression;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstIdentifier;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstMax;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstMin;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstNumber;
@@ -20,6 +22,8 @@
 	use Quellabs\ObjectQuel\ObjectQuel\Visitors\CollectIdentifiers;
 	use Quellabs\ObjectQuel\ObjectQuel\Visitors\CollectNodes;
 	use Quellabs\ObjectQuel\ObjectQuel\Visitors\CollectRanges;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstCheckNull;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstCheckNotNull;
 	
 	/**
 	 * Query Optimizer for Aggregate Function Performance
@@ -111,6 +115,9 @@
 			$this->eliminateUnusedRanges($ast);
 			
 			$this->rewriteFilterOnlyJoinsToExists($ast);
+			
+			// simplify trivial self-join EXISTS
+			$this->simplifySelfJoinExists($ast, false);
 			
 			// Get all aggregates in one pass using visitor pattern
 			$aggregates = $this->findAllAggregateNodes($ast);
@@ -880,7 +887,7 @@
 				}
 			}
 		}
-
+		
 		// helper: clone predicate and retarget identifiers from $old to $new (only for that range)
 		private function rebindPredicateToClone(AstInterface $predicate, AstRange $old, AstRange $new): AstInterface {
 			$cloned = $predicate->deepClone();
@@ -889,7 +896,7 @@
 			$cloned->accept($visitor);
 			$identifiers = $visitor->getCollectedNodes();
 			
-			foreach($identifiers as $identifier) {
+			foreach ($identifiers as $identifier) {
 				if ($identifier->getRange() === $old) {
 					$identifier->setRange($new);
 				}
@@ -898,4 +905,150 @@
 			return $cloned;
 		}
 		
+		/**
+		 * Top-level entry: replace trivial self-join EXISTS with NOT NULL checks (or TRUE if including NULLs)
+		 */
+		private function simplifySelfJoinExists(AstRetrieve $ast, bool $includeNulls): void {
+			$where = $ast->getConditions();
+			if ($where === null) {
+				return;
+			}
+			
+			$rewritten = $this->rewriteExistsToNotNullChain($where, $includeNulls);
+			if ($rewritten !== $where) {
+				$ast->setConditions($rewritten);
+			}
+		}
+		
+		/**
+		 * Recursively rewrites an AND-tree, replacing eligible EXISTS with NOT NULL chains (or TRUE).
+		 */
+		private function rewriteExistsToNotNullChain(AstInterface $node, bool $includeNulls): AstInterface {
+			if ($node instanceof AstBinaryOperator && $node->getOperator() === 'AND') {
+				$l = $this->rewriteExistsToNotNullChain($node->getLeft(), $includeNulls);
+				$r = $this->rewriteExistsToNotNullChain($node->getRight(), $includeNulls);
+				if ($l === $node->getLeft() && $r === $node->getRight()) {
+					return $node;
+				}
+				return new AstBinaryOperator($l, $r, 'AND');
+			}
+			
+			if ($node instanceof AstSubquery && $node->getType() === AstSubquery::TYPE_EXISTS) {
+				$replacement = $this->trySimplifySelfJoinExistsNode($node, $includeNulls);
+				if ($replacement !== null) {
+					return $replacement;
+				}
+			}
+			
+			return $node;
+		}
+		
+		private function trySimplifySelfJoinExistsNode(AstSubquery $sub, bool $includeNulls): ?AstInterface {
+			// Consider ALL inner ranges of this subquery
+			$innerRanges = $sub->getCorrelatedRanges();
+			if (empty($innerRanges)) {
+				return null;
+			}
+			$innerSet = [];
+			foreach ($innerRanges as $ir) {
+				$innerSet[spl_object_hash($ir)] = true;
+			}
+			
+			$cond = $sub->getConditions();
+			if ($cond === null) {
+				return null;
+			}
+			
+			// Collect (outerId, innerId) pairs for equalities with exactly one inner-side
+			$pairs = [];
+			if (!$this->collectOuterInnerIdPairs($cond, $innerSet, $pairs) || empty($pairs)) {
+				return null;
+			}
+			
+			// Validate self-join semantics: same entity + same property on both sides
+			foreach ($pairs as [$outerId, $innerId]) {
+				/** @var AstIdentifier $outerBase */
+				$outerBase = $outerId->getBaseIdentifier();
+				/** @var AstIdentifier $innerBase */
+				$innerBase = $innerId->getBaseIdentifier();
+				
+				$outerRange = $outerBase->getRange();
+				$innerRange = $innerBase->getRange();
+				if ($outerRange === null || $innerRange === null) {
+					return null;
+				}
+				if ($outerRange->getEntityName() !== $innerRange->getEntityName()) {
+					return null;
+				}
+				
+				// Compare property/column names; prefer getPropertyName() if available
+				$outerProp = method_exists($outerId, 'getPropertyName') ? $outerId->getPropertyName() : $outerId->getName();
+				$innerProp = method_exists($innerId, 'getPropertyName') ? $innerId->getPropertyName() : $innerId->getName();
+				if ($outerProp === '' || $innerProp === '' || $outerProp !== $innerProp) {
+					return null;
+				}
+			}
+			
+			// EXISTS collapses to TRUE (1 = 1) if including nulls
+			if ($includeNulls) {
+				return new AstExpression(new AstNumber(1), new AstNumber(1), '=');
+			}
+			
+			// Otherwise: outer.col IS NOT NULL AND ...
+			$chain = null;
+			foreach ($pairs as [$outerId, $_innerId]) {
+				// Only outer identifiers are safe to surface in the outer WHERE
+				$pred  = new AstCheckNotNull($outerId->deepClone());
+				$chain = $chain ? new AstBinaryOperator($chain, $pred, 'AND') : $pred;
+			}
+			return $chain;
+		}
+		
+		/**
+		 * Collect pairs [outerId, innerId] for leaves of the form (identifier = identifier),
+		 * where exactly one side belongs to any of the inner ranges (by object identity).
+		 * Returns false if a leaf is not a simple id = id comparison.
+		 *
+		 * @param AstInterface $expr
+		 * @param array<string,bool> $innerSet map of spl_object_hash(AstRange) => true
+		 * @param array<array{0:AstIdentifier,1:AstIdentifier}> &$pairs
+		 */
+		private function collectOuterInnerIdPairs(AstInterface $expr, array $innerSet, array &$pairs): bool {
+			if ($expr instanceof AstBinaryOperator && $expr->getOperator() === 'AND') {
+				return $this->collectOuterInnerIdPairs($expr->getLeft(), $innerSet, $pairs)
+					&& $this->collectOuterInnerIdPairs($expr->getRight(), $innerSet, $pairs);
+			}
+			
+			// Equality is AstExpression in your tree
+			if ($expr instanceof AstExpression && $expr->getOperator() === '=') {
+				$L = $expr->getLeft();
+				$R = $expr->getRight();
+				if (!($L instanceof AstIdentifier) || !($R instanceof AstIdentifier)) {
+					return false;
+				}
+				
+				/** @var AstIdentifier $Lb */ $Lb = $L->getBaseIdentifier();
+				/** @var AstIdentifier $Rb */ $Rb = $R->getBaseIdentifier();
+				
+				$Lr = $Lb->getRange();
+				$Rr = $Rb->getRange();
+				if ($Lr === null || $Rr === null) {
+					return false;
+				}
+				
+				$Linner = isset($innerSet[spl_object_hash($Lr)]);
+				$Rinner = isset($innerSet[spl_object_hash($Rr)]);
+				if ($Linner === $Rinner) { // both inner or both outer → not a cross inner/outer equality
+					return false;
+				}
+				
+				// Canonical order: [outerId, innerId]
+				$pairs[] = $Linner ? [$R, $L] : [$L, $R];
+				return true;
+			}
+			
+			// Any other node type isn't a simple equality leaf we can use
+			return false;
+		}
+
 	}
