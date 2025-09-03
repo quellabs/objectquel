@@ -208,34 +208,61 @@
 			array $usedInCond,
 			array $usedInJoinOf
 		): array {
-			$live = [];
-			$corr = [];
+			$liveRanges = [];
+			$correlationOnlyRanges = [];
 			
-			foreach ($ranges as $r) {
-				$n = $r->getName();
+			foreach ($ranges as $range) {
+				// Fetch range name
+				$rangeName = $range->getName();
 				
-				// Criterion 1: direct usage => live
-				if (($usedInExpr[$n] ?? false) || ($usedInCond[$n] ?? false)) {
-					$live[$n] = $r;
+				// Criterion 1: Range is directly used in expressions or conditions
+				$isDirectlyUsed = ($usedInExpr[$rangeName] ?? false) || ($usedInCond[$rangeName] ?? false);
+				
+				if ($isDirectlyUsed) {
+					$liveRanges[$rangeName] = $range;
 					continue;
 				}
 				
-				// Criterion 2: referenced only through other JOINs => correlation-only
-				$onlyViaJoin = false;
+				// Criterion 2: Range is only referenced through other ranges' JOIN predicates
+				$isReferencedInJoins = $this->isRangeReferencedInJoins($rangeName, $ranges, $usedInJoinOf);
 				
-				foreach ($ranges as $k) {
-					if (!empty($usedInJoinOf[$k->getName()][$n])) {
-						$onlyViaJoin = true;
-						break;
-					}
+				if ($isReferencedInJoins) {
+					$correlationOnlyRanges[$rangeName] = $range;
 				}
 				
-				if ($onlyViaJoin) {
-					$corr[$n] = $r;
+				// Note: Ranges that are neither live nor correlation-only are implicitly excluded
+			}
+			
+			return [$liveRanges, $correlationOnlyRanges];
+		}
+		
+		/**
+		 * Check if a range is referenced in any other range's JOIN predicates.
+		 * @param string $targetRangeName The range to check for references
+		 * @param AstRange[] $allRanges All available ranges
+		 * @param array<string,array<string,bool>> $usedInJoinOf JOIN reference map
+		 * @return bool True if the target range is referenced in any JOIN predicate
+		 */
+		private function isRangeReferencedInJoins(
+			string $targetRangeName,
+			array  $allRanges,
+			array  $usedInJoinOf
+		): bool {
+			foreach ($allRanges as $otherRange) {
+				$otherRangeName = $otherRange->getName();
+				
+				// Skip self-references
+				if ($otherRangeName === $targetRangeName) {
+					continue;
+				}
+				
+				// Check if this other range's JOIN mentions our target range
+				if (!empty($usedInJoinOf[$otherRangeName][$targetRangeName])) {
+					return true;
 				}
 			}
 			
-			return [$live, $corr];
+			return false;
 		}
 		
 		/**
@@ -249,28 +276,56 @@
 		 * @return array<string,AstRange> Live map keyed by range name.
 		 */
 		private function fallbackLiveRanges(array $ranges, AstAny $node): array {
-			$byName = [];
-			$liveMap = [];
-			
-			foreach ($ranges as $r) {
-				$byName[$r->getName()] = $r;
+			if (empty($ranges)) {
+				return [];
 			}
 			
-			// Try to use ranges that appear in ANY(expr)
-			foreach ($this->getIdentifiers($node->getIdentifier()) as $id) {
-				$rangeName = $id->getRange()->getName();
+			$rangesByName = $this->indexRangesByName($ranges);
+			$liveRanges = $this->getLiveRangesFromExpression($node, $rangesByName);
+			
+			// If no ranges found in expression, use first range as stable fallback
+			if (empty($liveRanges)) {
+				$firstRange = $ranges[0];
+				$liveRanges[$firstRange->getName()] = $firstRange;
+			}
+			
+			return $liveRanges;
+		}
+		
+		/**
+		 * Create a lookup map of ranges indexed by their names.
+		 * @param AstRange[] $ranges Array of range objects
+		 * @return array<string,AstRange> Map from range name to range object
+		 */
+		private function indexRangesByName(array $ranges): array {
+			$rangesByName = [];
+			
+			foreach ($ranges as $range) {
+				$rangesByName[$range->getName()] = $range;
+			}
+			
+			return $rangesByName;
+		}
+		
+		/**
+		 * Extract live ranges from identifiers in the ANY expression.
+		 * @param AstAny $node ANY node to analyze
+		 * @param array<string,AstRange> $rangesByName Available ranges indexed by name
+		 * @return array<string,AstRange> Live ranges found in the expression
+		 */
+		private function getLiveRangesFromExpression(AstAny $node, array $rangesByName): array {
+			$liveRanges = [];
+			$identifiers = $this->getIdentifiers($node->getIdentifier());
+			
+			foreach ($identifiers as $identifier) {
+				$rangeName = $identifier->getRange()->getName();
 				
-				if (isset($byName[$rangeName])) {
-					$liveMap[$rangeName] = $byName[$rangeName];
+				if (isset($rangesByName[$rangeName])) {
+					$liveRanges[$rangeName] = $rangesByName[$rangeName];
 				}
 			}
 			
-			// Absolute last resort: keep the first range.
-			if (empty($liveMap) && isset($ranges[0])) {
-				$liveMap[$ranges[0]->getName()] = $ranges[0];
-			}
-			
-			return $liveMap;
+			return $liveRanges;
 		}
 		
 		/**
@@ -293,34 +348,43 @@
 			array $innerNames,
 			array $corrNames
 		): array {
-			$corrPreds = [];
-			$updated = $allRanges;
+			$promotedCorrelationPredicates = [];
+			$updatedRanges = $allRanges;
 			
-			foreach ($updated as $i => $range) {
-				// Only adjust JOINs of *live* ranges; others will be dropped anyway.
-				if (!isset($liveMap[$range->getName()])) {
-					continue;
+			foreach ($updatedRanges as $rangeIndex => $range) {
+				if (!$this->isLiveRange($range, $liveMap)) {
+					continue; // Only adjust JOINs of live ranges; others will be dropped anyway
 				}
 				
-				$join = $range->getJoinProperty();
+				$joinPredicate = $range->getJoinProperty();
 				
-				if ($join === null) {
-					continue; // nothing to split/promote
+				if ($joinPredicate === null) {
+					continue; // No JOIN predicate to split/promote
 				}
 				
-				// Split ON into inner-related (keep) and corr-only (promote to WHERE)
-				$split = $this->splitPredicateByRangeRefs($join, $innerNames, $corrNames);
+				$splitResult = $this->splitPredicateByRangeRefs($joinPredicate, $innerNames, $corrNames);
 				
-				// Keep inner piece on the JOIN
-				$range->setJoinProperty($split['innerPart']);
+				// Update the JOIN to keep only the inner-related part
+				$range->setJoinProperty($splitResult['innerPart']);
 				
-				// Promote corr-only piece(s) into WHERE
-				if ($split['corrPart'] !== null) {
-					$corrPreds[] = $split['corrPart'];
+				// Collect correlation-only parts for promotion to WHERE clause
+				if ($splitResult['corrPart'] !== null) {
+					$promotedCorrelationPredicates[] = $splitResult['corrPart'];
 				}
 			}
 			
-			return [$updated, $corrPreds];
+			return [$updatedRanges, $promotedCorrelationPredicates];
+		}
+		
+		/**
+		 * Check if a range is considered live (actively used in the query).
+		 *
+		 * @param AstRange $range The range to check
+		 * @param array<string,AstRange> $liveMap Map of live range names to ranges
+		 * @return bool True if the range is live
+		 */
+		private function isLiveRange(AstRange $range, array $liveMap): bool {
+			return isset($liveMap[$range->getName()]);
 		}
 		
 		/**
@@ -330,40 +394,29 @@
 		 * @return AstRange[] The subset of $ranges that are live.
 		 */
 		private function keepLiveRanges(array $ranges, array $liveMap): array {
-			$kept = [];
-			
-			foreach ($ranges as $r) {
-				if (isset($liveMap[$r->getName()])) {
-					$kept[] = $r;
-				}
+			// Early exit if no live ranges
+			if (empty($liveMap)) {
+				return [];
 			}
 			
-			return $kept;
+			// Use array_filter with isset for O(1) lookup per element
+			return array_filter($ranges, fn($r) => isset($liveMap[$r->getName()]));
 		}
 		
 		/**
-		 * Ensure exactly one anchor exists (range with joinProperty == null) and put it first.
+		 * Ensures exactly one anchor exists (range with joinProperty == null) and places it first.
 		 *
-		 * Preference order for choosing the anchor:
-		 *   (1) A range referenced in ANY(expr) that is already INNER (required) or can safely collapse from LEFT.
-		 *   (2) Any INNER range.
-		 *   (3) A LEFT range that can safely collapse to INNER (per analyzer maps).
+		 * Anchor selection priority:
+		 *   1. Range referenced in ANY(expr) that is INNER or can safely collapse from LEFT
+		 *   2. Any existing INNER range
+		 *   3. LEFT range that can safely collapse to INNER (based on analyzer maps)
 		 *
-		 * Safety rule for collapsing LEFT -> INNER (no single-use visitors):
-		 *   - A range is safely collapsible iff:
-		 *       (usedInExpr || usedInCond || nonNullableUse) && !hasIsNullInCond
-		 *     i.e., it is used and the WHERE logic does not depend on it being NULL.
+		 * Safety rule for LEFT → INNER collapse:
+		 *   Range is safely collapsible if:
+		 *   - It's actually used: (usedInExpr OR usedInCond OR nonNullableUse)
+		 *   - WHERE logic doesn't depend on NULL values: NOT hasIsNullInCond
 		 *
-		 * If no safe anchor can be created, we keep the incoming layout to preserve semantics.
-		 *
-		 * @param AstRange[] $ranges Candidate ranges (live-only, order preserved).
-		 * @param AstAny $any The ANY(...) node (to find expr ranges).
-		 * @param AstInterface|null $where WHERE that we can append JOIN predicates to.
-		 * @param array<string,bool> $usedInExpr Analyzer map.
-		 * @param array<string,bool> $usedInCond Analyzer map.
-		 * @param array<string,bool> $hasIsNullInCond Analyzer map.
-		 * @param array<string,bool> $nonNullableUse Analyzer map.
-		 * @return AstRange[] Updated ranges with exactly one anchor moved to front when possible.
+		 * If no safe anchor can be created, preserves original layout to maintain semantics.
 		 */
 		private function anchorRanges(
 			array         $ranges,
@@ -378,73 +431,126 @@
 				return $ranges;
 			}
 			
-			// Fast path: an anchor already exists (joinProperty == null) → done.
-			foreach ($ranges as $r) {
-				if ($r->getJoinProperty() === null) {
-					return $ranges;
+			// Fast path: anchor already exists
+			if ($this->hasExistingAnchor($ranges)) {
+				return $ranges;
+			}
+			
+			// Priority 1: Range used in ANY(expr) that's INNER or safely collapsible
+			$makeAnchor = $this->createAnchorMaker($ranges, $where);
+			$canCollapse = $this->createCollapseTester($usedInExpr, $usedInCond, $hasIsNullInCond, $nonNullableUse);
+			$anchorIndex = $this->findExpressionBasedAnchor($ranges, $any, $canCollapse);
+			
+			if ($anchorIndex !== null) {
+				if (!$ranges[$anchorIndex]->isRequired()) {
+					$ranges[$anchorIndex]->setRequired(true); // Safe LEFT → INNER
+				}
+				
+				return $makeAnchor($anchorIndex);
+			}
+			
+			// Priority 2: Any existing INNER range
+			$anchorIndex = $this->findInnerRangeAnchor($ranges);
+			
+			if ($anchorIndex !== null) {
+				return $makeAnchor($anchorIndex);
+			}
+			
+			// Priority 3: LEFT range that can safely become INNER
+			$anchorIndex = $this->findCollapsibleLeftAnchor($ranges, $canCollapse);
+			
+			if ($anchorIndex !== null) {
+				$ranges[$anchorIndex]->setRequired(true);
+				return $makeAnchor($anchorIndex);
+			}
+			
+			// No safe transformation possible - preserve semantics
+			return $ranges;
+		}
+		
+		private function hasExistingAnchor(array $ranges): bool {
+			foreach ($ranges as $range) {
+				if ($range->getJoinProperty() === null) {
+					return true;
 				}
 			}
 			
-			// Helper: turn range at index $idx into the anchor:
-			// - Move its JOIN predicate into WHERE
-			// - Null-out joinProperty
-			// - Move it to the front
-			$makeAnchor = function (int $idx) use (&$ranges, &$where): array {
-				$r = $ranges[$idx];
+			return false;
+		}
+		
+		private function createAnchorMaker(array &$ranges, ?AstInterface &$where): callable {
+			return function (int $index) use (&$ranges, &$where): array {
+				$range = $ranges[$index];
 				
-				if ($r->getJoinProperty() !== null) {
-					// For INNER joins, ON is equivalent to WHERE; for anchors, we must carry it into WHERE.
-					$where = $this->andAll([$where, $r->getJoinProperty()]);
-					$r->setJoinProperty(null);
+				// Move JOIN predicate to WHERE clause
+				if ($range->getJoinProperty() !== null) {
+					$where = $this->andAll([$where, $range->getJoinProperty()]);
+					$range->setJoinProperty(null);
 				}
 				
-				// Keep the anchor at position 0 so downstream code can rely on it.
-				if ($idx !== 0) {
-					array_splice($ranges, $idx, 1);
-					array_unshift($ranges, $r);
+				// Move anchor to front for downstream code
+				if ($index !== 0) {
+					array_splice($ranges, $index, 1);
+					array_unshift($ranges, $range);
 				}
 				
 				return $ranges;
 			};
-			
-			// Helper: decide if we may safely collapse LEFT→INNER using only analyzer maps.
-			$canCollapse = function (AstRange $r) use ($usedInExpr, $usedInCond, $hasIsNullInCond, $nonNullableUse): bool {
-				$n = $r->getName();
-				$isUsed = ($usedInExpr[$n] ?? false) || ($usedInCond[$n] ?? false) || ($nonNullableUse[$n] ?? false);
-				$dependsOnNull = ($hasIsNullInCond[$n] ?? false);
+		}
+		
+		private function createCollapseTester(
+			array $usedInExpr,
+			array $usedInCond,
+			array $hasIsNullInCond,
+			array $nonNullableUse
+		): callable {
+			return function (AstRange $range) use ($usedInExpr, $usedInCond, $hasIsNullInCond, $nonNullableUse): bool {
+				$name = $range->getName();
+				
+				$isUsed =
+					($usedInExpr[$name] ?? false) ||
+					($usedInCond[$name] ?? false) ||
+					($nonNullableUse[$name] ?? false);
+				
+				$dependsOnNull = ($hasIsNullInCond[$name] ?? false);
+				
 				return $isUsed && !$dependsOnNull;
 			};
+		}
+		
+		private function findExpressionBasedAnchor(array $ranges, AstAny $any, callable $canCollapse): ?int {
+			$expressionRangeNames = $this->rangeNamesUsedInExpr($any);
 			
-			// (1) Prefer a range used in ANY(expr); collapse it if needed & safe.
-			$exprNames = $this->rangeNamesUsedInExpr($any);
-			
-			foreach ($ranges as $i => $r) {
-				if (in_array($r->getName(), $exprNames, true) && ($r->isRequired() || $canCollapse($r))) {
-					if (!$r->isRequired()) {
-						$r->setRequired(true); // LEFT -> INNER (safe per rules above)
-					}
-					
-					return $makeAnchor($i);
+			foreach ($ranges as $index => $range) {
+				$isInExpression = in_array($range->getName(), $expressionRangeNames, true);
+				$canBeAnchor = $range->isRequired() || $canCollapse($range);
+				
+				if ($isInExpression && $canBeAnchor) {
+					return $index;
 				}
 			}
 			
-			// (2) Fallback: any INNER can be an anchor (ON == WHERE).
-			foreach ($ranges as $i => $r) {
-				if ($r->isRequired()) {
-					return $makeAnchor($i);
+			return null;
+		}
+		
+		private function findInnerRangeAnchor(array $ranges): ?int {
+			foreach ($ranges as $index => $range) {
+				if ($range->isRequired()) {
+					return $index;
 				}
 			}
 			
-			// (3) Last resort: collapse a safe LEFT to INNER and anchor it.
-			foreach ($ranges as $i => $r) {
-				if (!$r->isRequired() && $canCollapse($r)) {
-					$r->setRequired(true);
-					return $makeAnchor($i);
+			return null;
+		}
+		
+		private function findCollapsibleLeftAnchor(array $ranges, callable $canCollapse): ?int {
+			foreach ($ranges as $index => $range) {
+				if (!$range->isRequired() && $canCollapse($range)) {
+					return $index;
 				}
 			}
 			
-			// No safe transformation: keep semantics as-is.
-			return $ranges;
+			return null;
 		}
 		
 		/**
@@ -749,7 +855,7 @@
 		private function isTopLevelAny(AstRetrieve $ast, AstAny $node): bool {
 			return $ast->getLocationOfChild($node) === 'select';
 		}
-
+		
 		/**
 		 * Decide if we can inline ANY(...) as a literal without a subselect.
 		 * @param $subQueryType
