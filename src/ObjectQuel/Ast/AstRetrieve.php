@@ -180,6 +180,25 @@
 		}
 		
 		/**
+		 * Returns the main database range
+		 *
+		 * Main range criteria:
+		 *     1. Must be a database table (not subquery)
+		 *     2. Must not have a join condition (it's the FROM table)
+		 *
+		 * @return AstRangeDatabase|null
+		 */
+		public function getMainDatabaseRange(): ?AstRangeDatabase {
+			foreach ($this->getRanges() as $range) {
+				if ($range instanceof AstRangeDatabase && $range->getJoinProperty() === null) {
+					return $range;
+				}
+			}
+			
+			return null;
+		}
+		
+		/**
 		 * Returns true if the query is unique
 		 * @return bool
 		 */

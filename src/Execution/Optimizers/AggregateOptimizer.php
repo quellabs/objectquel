@@ -46,6 +46,7 @@
 		private RangeUsageAnalyzer $analyzer;
 		private RangePartitioner $rangePartitioner;
 		private AnchorManager $anchorManager;
+		private RangeOptimizer $rangeOptimizer;
 		
 		/**
 		 * Registry of all supported aggregate function AST node types
@@ -69,6 +70,16 @@
 		];
 		
 		/**
+		 * Registry of all distinct aggregate functions
+		 * @var array|string[]
+		 */
+		private array $distinctClasses = [
+			AstSumU::class,
+			AstAvgU::class,
+			AstCountU::class
+		];
+		
+		/**
 		 * Initialize optimizer with required dependencies
 		 * @param EntityManager $entityManager Provides access to entity metadata and storage layer
 		 */
@@ -79,6 +90,7 @@
 			$this->analyzer = new RangeUsageAnalyzer($entityManager->getEntityStore());
 			$this->rangePartitioner = new RangePartitioner($this->astUtilities);
 			$this->anchorManager = new AnchorManager($this->astUtilities);
+			$this->rangeOptimizer  = new RangeOptimizer($entityManager);
 		}
 		
 		/**
@@ -402,11 +414,15 @@
 				return false;
 			}
 			
+			// Do not flatten if there is more than one outer range.
+			// Window OVER () would ignore correlations and duplicate semantics.
+			if (count($root->getRanges()) !== 1) {
+				return false;
+			}
+			
 			// DISTINCT aggregates (SUMU/AVGU/COUNTU) require special handling that
 			// standard window functions don't support cleanly - safer to keep as subqueries
-			$distinctClasses = [AstSumU::class, AstAvgU::class, AstCountU::class,];
-			
-			if (in_array(get_class($agg), $distinctClasses, true)) {
+			if (in_array(get_class($agg), $this->distinctClasses, true)) {
 				return false;
 			}
 			
@@ -428,10 +444,8 @@
 			
 			// The referenced table must exist in the outer query with the same alias
 			// This ensures the window function will have the correct context
-			$name = $rangeNames[0];
-			
 			foreach ($root->getRanges() as $outer) {
-				if ($outer->getName() === $name) {
+				if ($outer->getName() === $rangeNames[0]) {
 					return true; // Safe to convert: AGG(expr) OVER () will work correctly
 				}
 			}

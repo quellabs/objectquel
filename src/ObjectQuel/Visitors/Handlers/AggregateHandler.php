@@ -426,7 +426,6 @@
 			
 			while ($parent !== null) {
 				if ($parent instanceof AstSubquery) {
-					error_log("Skipping ANY - already processed by subquery wrapper");
 					return ""; // Already handled by subquery
 				}
 				
