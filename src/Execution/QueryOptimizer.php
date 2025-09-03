@@ -52,7 +52,7 @@
 			// These may create new optimization opportunities for previous phases
 			$this->existsOptimizer->optimize($ast);
 			$this->anyOptimizer->optimize($ast);
-			//$this->aggregateOptimizer->optimize($ast);
+			$this->aggregateOptimizer->optimize($ast);
 			
 			// Phase 4: Final cleanup
 			// Remove any LEFT JOINs that became unused after previous optimizations

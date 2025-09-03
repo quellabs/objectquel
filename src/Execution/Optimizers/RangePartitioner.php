@@ -4,6 +4,7 @@
 	
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstAny;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRange;
+	use Quellabs\ObjectQuel\ObjectQuel\AstInterface;
 	
 	/**
 	 * RangePartitioner handles the partitioning and filtering of ranges based on usage analysis.
@@ -210,6 +211,53 @@
 			foreach ($identifiers as $identifier) {
 				$rangeName = $identifier->getRange()->getName();
 				
+				if (isset($rangesByName[$rangeName])) {
+					$liveRanges[$rangeName] = $rangesByName[$rangeName];
+				}
+			}
+			
+			return $liveRanges;
+		}
+		
+		/**
+		 * Fallback live-range selection for aggregate owners.
+		 * Prefers ranges referenced by the identifier, else the first range.
+		 *
+		 * @param AstRange[]   $ranges
+		 * @param AstInterface $owner
+		 * @return array<string,AstRange>
+		 */
+		public function selectFallbackLiveRangesForOwner(array $ranges, AstInterface $owner): array {
+			if (empty($ranges)) {
+				return [];
+			}
+			
+			$rangesByName = [];
+			foreach ($ranges as $r) {
+				$rangesByName[$r->getName()] = $r;
+			}
+			
+			$live = $this->extractLiveRangesFromExpressionOwner($owner, $rangesByName);
+			if (!empty($live)) {
+				return $live;
+			}
+			
+			$first = reset($ranges);
+			return $first ? [$first->getName() => $first] : [];
+		}
+		
+		/**
+		 * Helper: extract live ranges from an owner's identifier.
+		 * @param AstInterface $owner
+		 * @param array<string,AstRange> $rangesByName
+		 * @return array<string,AstRange>
+		 */
+		private function extractLiveRangesFromExpressionOwner(AstInterface $owner, array $rangesByName): array {
+			$liveRanges = [];
+			$identifiers = $this->astUtilities->collectIdentifiersFromAst($owner->getIdentifier());
+			
+			foreach ($identifiers as $identifier) {
+				$rangeName = $identifier->getRange()->getName();
 				if (isset($rangesByName[$rangeName])) {
 					$liveRanges[$rangeName] = $rangesByName[$rangeName];
 				}

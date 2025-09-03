@@ -1,5 +1,5 @@
 <?php
-
+	
 	namespace Quellabs\ObjectQuel\Execution\Optimizers;
 	
 	use Quellabs\ObjectQuel\EntityStore;
@@ -45,7 +45,7 @@
 	 * }
 	 */
 	final class RangeUsageAnalyzer {
-
+		
 		/**
 		 * Metadata source used to resolve entity → column definitions (including nullability).
 		 * @var EntityStore
@@ -225,5 +225,65 @@
 			
 			// If the AST has other composite node types (UNARY, PAREN, etc.),
 			// consider extending this method to recurse into them as needed.
+		}
+		
+		/**
+		 * Generic analyzer for aggregate-like nodes (SUM/COUNT/AVG/MIN/MAX, incl. U variants)
+		 * that expose getIdentifier() and getConditions().
+		 *
+		 * @param AstInterface $owner
+		 * @param AstRange[] $ranges
+		 * @return array{
+		 *   usedInExpr: array<string,bool>,
+		 *   usedInCond: array<string,bool>,
+		 *   hasIsNullInCond: array<string,bool>,
+		 *   nonNullableUse: array<string,bool>
+		 * }
+		 */
+		public function analyzeAggregate(AstInterface $owner, array $ranges): array {
+			// Build ordered list of range names
+			$names = array_map(
+			/** @return string */
+				static fn(AstRange $r) => $r->getName(),
+				$ranges
+			);
+			
+			// Seed result maps
+			$usedInExpr = array_fill_keys($names, false);
+			$usedInCond = array_fill_keys($names, false);
+			$hasIsNullInCond = array_fill_keys($names, false);
+			$nonNullableUse = array_fill_keys($names, false);
+			
+			// Collect identifiers from the aggregate expression and its condition
+			$exprIds = $this->collectIdentifiers($owner->getIdentifier());
+			$cond = method_exists($owner, 'getConditions') ? $owner->getConditions() : null;
+			$condIds = $this->collectIdentifiers($cond);
+			
+			// Mark ranges seen in the aggregate expression
+			foreach ($exprIds as $id) {
+				$usedInExpr[$id->getRange()->getName()] = true;
+			}
+			
+			// Mark ranges seen in the aggregate condition and track non-nullable usage
+			foreach ($condIds as $id) {
+				$rangeName = $id->getRange()->getName();
+				$usedInCond[$rangeName] = true;
+				
+				if ($this->isNonNullableField($id)) {
+					$nonNullableUse[$rangeName] = true;
+				}
+			}
+			
+			// Detect explicit IS NULL checks inside the condition tree
+			if ($cond !== null) {
+				$this->walkForIsNull($cond, $hasIsNullInCond);
+			}
+			
+			return [
+				'usedInExpr'      => $usedInExpr,
+				'usedInCond'      => $usedInCond,
+				'hasIsNullInCond' => $hasIsNullInCond,
+				'nonNullableUse'  => $nonNullableUse,
+			];
 		}
 	}
