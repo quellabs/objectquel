@@ -13,140 +13,355 @@
 	use Quellabs\ObjectQuel\ObjectQuel\AstInterface;
 	use Quellabs\ObjectQuel\ObjectQuel\Visitors\CollectIdentifiers;
 	use Quellabs\ObjectQuel\ObjectQuel\Visitors\CollectNodes;
-	use Quellabs\ObjectQuel\ObjectQuel\Visitors\ContainsCheckIsNullForRange;
-	use Quellabs\ObjectQuel\ObjectQuel\Visitors\ContainsNonNullableFieldForRange;
-	use Quellabs\ObjectQuel\ObjectQuel\Visitors\ContainsRange;
 	
 	/**
-	 * Optimizes JOIN types based on WHERE clause analysis.
-	 * Converts LEFT JOINs to INNER JOINs when safe, and vice versa.
+	 * ──────────────────────────────────────────────────────────────────────────────
+	 * ANY OPTIMIZER – READING GUIDE
+	 * ──────────────────────────────────────────────────────────────────────────────
+	 *
+	 * What this class does
+	 * ----------------------------
+	 * It rewrites ANY(...) constructs into subqueries with a minimized set of ranges,
+	 * promotes correlation-only predicates from JOINs into the WHERE clause, and
+	 * guarantees a single "anchor" range (a range with joinProperty == null).
+	 * Depending on the location of ANY(...) we emit an EXISTS-style or CASE WHEN-style
+	 * AstSubquery.
+	 *
+	 * Terminology
+	 * -----------
+	 * - Range: a FROM/JOIN source (AstRange). Each range may have a JOIN predicate
+	 *   (its "joinProperty") and a "required" flag (true = INNER, false = LEFT).
+	 * - Anchor: exactly one range per subquery must have joinProperty == null. It
+	 *   serves as the root for the subquery. We move this anchor to the front.
+	 * - Live range: referenced by the ANY expression or its WHERE conditions (directly).
+	 * - Correlation-only range: not live by itself but mentioned inside some other
+	 *   range's JOIN predicate. Its conditions should not remain in JOINs; we promote
+	 *   them into the WHERE of the subquery so the live part stays minimal.
+	 *
+	 * High-level pipeline (in optimizeAnyNode)
+	 * ---------------------------------------
+	 * 1) Clone ranges (don't mutate the original tree yet).
+	 * 2) Analyze usage (RangeUsageAnalyzer) => four boolean maps per range:
+	 *      - usedInExpr, usedInCond, hasIsNullInCond, nonNullableUse
+	 * 3) Compute join cross-references once (which JOIN(k) mentions which range r).
+	 * 4) Partition ranges into "live" and "correlation-only".
+	 * 5) If nothing is live, fallback to the expr range(s) or the first range.
+	 * 6) For each live range's JOIN: split ON predicate into:
+	 *      - innerPart (references only live ranges)       => stays in JOIN
+	 *      - corrPart  (references only correlation ranges) => moved to WHERE
+	 *    If a conjunct mixes both sides and contains OR, we keep it as innerPart
+	 *    (i.e., we don't split to preserve semantics).
+	 * 7) Keep only live ranges (drop others).
+	 * 8) Ensure exactly one anchor (joinProperty == null); prefer:
+	 *      a) expr range if INNER or safely collapsible LEFT
+	 *      b) any existing INNER
+	 *      c) a LEFT that is safe to collapse to INNER
+	 *    Safety uses the four analyzer maps; **no single-use visitors are created**.
+	 * 9) Replace the ANY(...) node with an AstSubquery (EXISTS or CASE WHEN).
+	 *
+	 * Key invariants
+	 * --------------
+	 * - We never change semantics when unsure: "unsafe to split" cases remain intact.
+	 * - Exactly one anchor range is produced when possible; else we keep the original
+	 *   ordering/joins (still correct, just less optimal).
+	 *
+	 * Implementation note
+	 * -------------------
+	 * All non-trivial decisions use precomputed maps from RangeUsageAnalyzer. This
+	 * file does not instantiate any single-use "ContainsXxx" visitors.
 	 */
 	class AnyOptimizer {
 		
-		/**
-		 * Entity metadata store for field nullability checks
-		 */
+		/** @var EntityStore Metadata store (used indirectly through the analyzer). */
 		private EntityStore $entityStore;
+		
+		/** @var AstNodeReplacer Utility to surgically replace nodes in the AST. */
 		private AstNodeReplacer $nodeReplacer;
+		
+		/** @var RangeUsageAnalyzer Reused analyzer: liveness / nullability maps, etc. */
 		private RangeUsageAnalyzer $analyzer;
 		
 		/**
-		 * Initialize optimizer with entity metadata access
-		 *
-		 * @param EntityManager $entityManager Manager providing entity metadata
+		 * AnyOptimizer constructor
+		 * @param EntityManager $entityManager Provides entity metadata access.
 		 */
 		public function __construct(EntityManager $entityManager) {
 			$this->entityStore = $entityManager->getEntityStore();
 			$this->nodeReplacer = new AstNodeReplacer();
-			$this->analyzer = new RangeUsageAnalyzer($this->entityStore); // single instance
+			$this->analyzer = new RangeUsageAnalyzer($this->entityStore);
 		}
 		
 		/**
-		 * Main optimization entry point - analyzes all ranges in the AST
-		 * @param AstRetrieve $ast The query AST to optimize
+		 * Entry point: find all ANY nodes in the retrieve AST and optimize them.
+		 * @param AstRetrieve $ast Root query AST.
+		 * @return void
 		 */
 		public function optimize(AstRetrieve $ast): void {
 			foreach ($this->getAllAnyNodes($ast) as $node) {
+				// The context of the ANY node decides the subquery shape we emit.
 				switch ($ast->getLocationOfChild($node)) {
-					case 'select' :
+					case 'select':
+						// ANY(...) in SELECT becomes a CASE WHEN subquery (value context).
 						$this->optimizeAnyNode($ast, $node, AstSubquery::TYPE_CASE_WHEN);
 						break;
 					
-					case 'conditions' :
+					case 'conditions':
+						// ANY(...) in WHERE becomes an EXISTS subquery (boolean context).
 						$this->optimizeAnyNode($ast, $node, AstSubquery::TYPE_EXISTS);
 						break;
 					
-					case 'order_by' :
+					case 'order_by':
+						// We currently do not perform ANY-specific rewrites in ORDER BY.
 						break;
 				}
 			}
 		}
 		
+		/**
+		 * Perform the full ANY(...) rewrite for a single node.
+		 * The method is intentionally kept as a sequence of small, well-commented steps.
+		 * @param AstRetrieve $ast Root AST.
+		 * @param AstAny $node ANY node to rewrite.
+		 * @param string $subQueryType Subquery type (EXISTS | CASE WHEN).
+		 * @return void
+		 */
 		private function optimizeAnyNode(AstRetrieve $ast, AstAny $node, string $subQueryType): void {
-			$cloned = $this->cloneRanges($ast);
+			// ── Step 0: Work on cloned ranges so we don't mutate the original AST until the end.
+			$ranges = $this->cloneRanges($ast);
 			
-			// one pass for all booleans you need:
-			$usage = $this->analyzer->analyze($node, $cloned);
-			$usedInExpr = $usage['usedInExpr'];
-			$usedInCond = $usage['usedInCond'];
-			$hasIsNull = $usage['hasIsNullInCond'];
-			$nonNullUse = $usage['nonNullableUse'];
+			// ── Step 1: Usage analysis (one pass).
+			//     The analyzer returns four boolean maps keyed by range name.
+			//     We rely on these maps for decisions.
+			/** @var array{usedInExpr:array<string,bool>, usedInCond:array<string,bool>, hasIsNullInCond:array<string,bool>, nonNullableUse:array<string,bool>} $usage */
+			$usage = $this->analyzer->analyze($node, $ranges);
+			$usedInExpr = $usage['usedInExpr'];            // Is range referenced in ANY(expr) ?
+			$usedInCond = $usage['usedInCond'];            // Is range referenced in ANY(WHERE ...) ?
+			$hasIsNullInCond = $usage['hasIsNullInCond'];  // Does ANY(WHERE ...) rely on IS NULL for this range ?
+			$nonNullableUse = $usage['nonNullableUse'];    // Are references only on non-nullable fields ?
 			
-			// compute join refs once (no throw-away visitors)
-			$usedInJoinOf = $this->computeJoinReferences($cloned);
+			// ── Step 2: Compute which JOIN(k) predicates reference which ranges.
+			//     This allows us to tell if a range is used only via other JOINs (correlation-only).
+			$usedInJoinOf = $this->computeJoinReferences($ranges);
 			
-			// decide live / correlateOnly
+			// ── Step 3: Partition the ranges into "live" and "correlation-only".
+			//     Live ranges are those directly used in expr/cond; correlation-only appear only inside others' JOINs.
+			[$liveMap, $corrOnlyMap] = $this->partitionRanges($ranges, $usedInExpr, $usedInCond, $usedInJoinOf);
+			
+			// ── Step 4: Ensure there's at least one live range.
+			//     If analyzer yielded none, we fallback to expr ranges or the first range.
+			if (empty($liveMap) && !empty($ranges)) {
+				$liveMap = $this->fallbackLiveRanges($ranges, $node);
+			}
+			
+			// ── Step 5: Promote correlation-only pieces of JOIN predicates into WHERE.
+			//     Only process JOINs of "live" ranges; others will be dropped anyway.
+			$innerNames = array_keys($liveMap);
+			$corrNames = array_keys($corrOnlyMap);
+			[$updatedRanges, $corrPredicates] = $this->promoteCorrelationPredicates($ranges, $liveMap, $innerNames, $corrNames);
+			
+			// ── Step 6: Build final WHERE: original ANY WHERE AND all promoted correlation predicates.
+			$finalWhere = $this->andAll([$node->getConditions(), $this->andAll($corrPredicates)]);
+			
+			// ── Step 7: Drop non-live ranges (keeping order of the survivors).
+			$kept = $this->keepLiveRanges($updatedRanges, $liveMap);
+			
+			// ── Step 8: Ensure exactly one anchor (joinProperty == null).
+			//     We try to anchor a range used in expr, else any INNER, else collapse a safe LEFT.
+			$kept = $this->anchorRanges(
+				$kept,
+				$node,
+				$finalWhere,
+				$usedInExpr,
+				$usedInCond,
+				$hasIsNullInCond,
+				$nonNullableUse
+			);
+			
+			// ── Step 9: Replace ANY(...) with the chosen subquery form.
+			$subQuery = new AstSubquery($subQueryType, null, $kept, $finalWhere);
+			$this->nodeReplacer->replaceChild($node->getParent(), $node, $subQuery);
+		}
+		
+		// ──────────────────────────────────────────────────────────────────────────
+		// Stage helpers (each one is small and has a single, well-defined purpose)
+		// ──────────────────────────────────────────────────────────────────────────
+		
+		/**
+		 * Decide which ranges are "live" vs "correlation-only".
+		 *
+		 * Live:     directly referenced in ANY(expr) or ANY(WHERE ...).
+		 * CorrOnly: not live, but referenced inside someone else's JOIN predicate.
+		 *
+		 * @param AstRange[] $ranges All cloned ranges (in original order).
+		 * @param array<string,bool> $usedInExpr Analyzer map.
+		 * @param array<string,bool> $usedInCond Analyzer map.
+		 * @param array<string,array<string,bool>> $usedInJoinOf Map: [K][R] = true if JOIN(K) mentions R (K != R).
+		 * @return array{0: array<string,AstRange>, 1: array<string,AstRange>} [liveMap, corrOnlyMap]
+		 */
+		private function partitionRanges(
+			array $ranges,
+			array $usedInExpr,
+			array $usedInCond,
+			array $usedInJoinOf
+		): array {
 			$live = [];
-			$corrOnly = [];
-			$byName = [];
-			foreach ($cloned as $r) $byName[$r->getName()] = $r;
+			$corr = [];
 			
-			foreach ($cloned as $r) {
+			foreach ($ranges as $r) {
 				$n = $r->getName();
+				
+				// Criterion 1: direct usage => live
 				if (($usedInExpr[$n] ?? false) || ($usedInCond[$n] ?? false)) {
 					$live[$n] = $r;
 					continue;
 				}
+				
+				// Criterion 2: referenced only through other JOINs => correlation-only
 				$onlyViaJoin = false;
-				foreach ($cloned as $k) {
+				
+				foreach ($ranges as $k) {
 					if (!empty($usedInJoinOf[$k->getName()][$n])) {
 						$onlyViaJoin = true;
 						break;
 					}
 				}
+				
 				if ($onlyViaJoin) {
-					$corrOnly[$n] = $r;
+					$corr[$n] = $r;
 				}
 			}
 			
-			if (empty($live) && !empty($cloned)) {
-				// fall back to expr range or first range
-				$exprIds = $this->getIdentifiers($node->getIdentifier());
-				foreach ($exprIds as $id) {
-					$live[$id->getRange()->getName()] = $byName[$id->getRange()->getName()] ?? null;
-				}
-				if (empty($live)) {
-					$live[$cloned[0]->getName()] = $cloned[0];
+			return [$live, $corr];
+		}
+		
+		/**
+		 * Provide a fallback set of live ranges when analyzer finds none.
+		 * Preference order:
+		 *   1) Ranges referenced by ANY(expr)
+		 *   2) The first range in the list (stable fallback)
+		 *
+		 * @param AstRange[] $ranges All cloned ranges.
+		 * @param AstAny $node ANY node whose expr we inspect.
+		 * @return array<string,AstRange> Live map keyed by range name.
+		 */
+		private function fallbackLiveRanges(array $ranges, AstAny $node): array {
+			$byName = [];
+			$liveMap = [];
+			
+			foreach ($ranges as $r) {
+				$byName[$r->getName()] = $r;
+			}
+			
+			// Try to use ranges that appear in ANY(expr)
+			foreach ($this->getIdentifiers($node->getIdentifier()) as $id) {
+				$rangeName = $id->getRange()->getName();
+				
+				if (isset($byName[$rangeName])) {
+					$liveMap[$rangeName] = $byName[$rangeName];
 				}
 			}
 			
-			// correlation promotion (split join predicates)
-			$innerNames = array_keys($live);
-			$corrNames = array_keys($corrOnly);
+			// Absolute last resort: keep the first range.
+			if (empty($liveMap) && isset($ranges[0])) {
+				$liveMap[$ranges[0]->getName()] = $ranges[0];
+			}
+			
+			return $liveMap;
+		}
+		
+		/**
+		 * For each live range, split its JOIN predicate into INNER vs CORR parts and
+		 * move the correlation-only parts into WHERE (returned as a list of predicates).
+		 *
+		 * Why: correlation terms referencing only "corrNames" do not belong in JOINs of
+		 * live ranges. Promoting them reduces join complexity and can enable better
+		 * anchor choices later.
+		 *
+		 * @param AstRange[] $allRanges All cloned ranges (we'll return an updated copy).
+		 * @param array<string,AstRange> $liveMap Ranges considered live (by name => range).
+		 * @param string[] $innerNames Names of live ranges.
+		 * @param string[] $corrNames Names of correlation-only ranges.
+		 * @return array{0: AstRange[], 1: AstInterface[]} [updatedRanges, promotedCorrelationPredicates]
+		 */
+		private function promoteCorrelationPredicates(
+			array $allRanges,
+			array $liveMap,
+			array $innerNames,
+			array $corrNames
+		): array {
 			$corrPreds = [];
+			$updated = $allRanges;
 			
-			foreach ($live as $kName => $kRange) {
-				$join = $kRange->getJoinProperty();
-				if ($join === null) {
+			foreach ($updated as $i => $range) {
+				// Only adjust JOINs of *live* ranges; others will be dropped anyway.
+				if (!isset($liveMap[$range->getName()])) {
 					continue;
 				}
 				
+				$join = $range->getJoinProperty();
+				
+				if ($join === null) {
+					continue; // nothing to split/promote
+				}
+				
+				// Split ON into inner-related (keep) and corr-only (promote to WHERE)
 				$split = $this->splitPredicateByRangeRefs($join, $innerNames, $corrNames);
-				$kRange->setJoinProperty($split['innerPart']);
+				
+				// Keep inner piece on the JOIN
+				$range->setJoinProperty($split['innerPart']);
+				
+				// Promote corr-only piece(s) into WHERE
 				if ($split['corrPart'] !== null) {
 					$corrPreds[] = $split['corrPart'];
 				}
 			}
 			
-			$conditions = $this->andAll([$node->getConditions(), $this->andAll($corrPreds)]);
-			
-			// keep order but only live
-			$kept = [];
-			foreach ($cloned as $r) if (isset($live[$r->getName()])) {
-				$kept[] = $r;
-			}
-			
-			// ensure anchor using the usage maps (no throw-away visitors)
-			$kept = $this->ensureAnchorRangeNoVisitors($kept, $node, $conditions, $usedInExpr, $usedInCond, $hasIsNull, $nonNullUse);
-			
-			$subQuery = new AstSubquery($subQueryType, null, $kept, $conditions);
-			$this->nodeReplacer->replaceChild($node->getParent(), $node, $subQuery);
+			return [$updated, $corrPreds];
 		}
 		
 		/**
-		 * Anchor selection without per-call visitor objects.
+		 * Keep only the ranges that are live; preserve their original order.
+		 * @param AstRange[] $ranges All cloned ranges (post-promotion).
+		 * @param array<string,AstRange> $liveMap Live ranges keyed by name.
+		 * @return AstRange[] The subset of $ranges that are live.
 		 */
-		private function ensureAnchorRangeNoVisitors(
+		private function keepLiveRanges(array $ranges, array $liveMap): array {
+			$kept = [];
+			
+			foreach ($ranges as $r) {
+				if (isset($liveMap[$r->getName()])) {
+					$kept[] = $r;
+				}
+			}
+			
+			return $kept;
+		}
+		
+		/**
+		 * Ensure exactly one anchor exists (range with joinProperty == null) and put it first.
+		 *
+		 * Preference order for choosing the anchor:
+		 *   (1) A range referenced in ANY(expr) that is already INNER (required) or can safely collapse from LEFT.
+		 *   (2) Any INNER range.
+		 *   (3) A LEFT range that can safely collapse to INNER (per analyzer maps).
+		 *
+		 * Safety rule for collapsing LEFT -> INNER (no single-use visitors):
+		 *   - A range is safely collapsible iff:
+		 *       (usedInExpr || usedInCond || nonNullableUse) && !hasIsNullInCond
+		 *     i.e., it is used and the WHERE logic does not depend on it being NULL.
+		 *
+		 * If no safe anchor can be created, we keep the incoming layout to preserve semantics.
+		 *
+		 * @param AstRange[] $ranges Candidate ranges (live-only, order preserved).
+		 * @param AstAny $any The ANY(...) node (to find expr ranges).
+		 * @param AstInterface|null $where WHERE that we can append JOIN predicates to.
+		 * @param array<string,bool> $usedInExpr Analyzer map.
+		 * @param array<string,bool> $usedInCond Analyzer map.
+		 * @param array<string,bool> $hasIsNullInCond Analyzer map.
+		 * @param array<string,bool> $nonNullableUse Analyzer map.
+		 * @return AstRange[] Updated ranges with exactly one anchor moved to front when possible.
+		 */
+		private function anchorRanges(
 			array         $ranges,
 			AstAny        $any,
 			?AstInterface &$where,
@@ -159,60 +374,64 @@
 				return $ranges;
 			}
 			
-			// A) already anchored?
-			foreach ($ranges as $r) if ($r->getJoinProperty() === null) {
-				return $ranges;
+			// Fast path: an anchor already exists (joinProperty == null) → done.
+			foreach ($ranges as $r) {
+				if ($r->getJoinProperty() === null) {
+					return $ranges;
+				}
 			}
 			
-			$exprIds = $this->getIdentifiers($any->getIdentifier());
-			$exprNames = array_map(fn($id) => $id->getRange()->getName(), $exprIds);
-			
-			$makeAnchor = function (int $idx) use (&$ranges, &$where) {
+			// Helper: turn range at index $idx into the anchor:
+			// - Move its JOIN predicate into WHERE
+			// - Null-out joinProperty
+			// - Move it to the front
+			$makeAnchor = function (int $idx) use (&$ranges, &$where): array {
 				$r = $ranges[$idx];
-				$join = $r->getJoinProperty();
-				if ($join !== null) {
-					$where = $this->andAll([$where, $join]);
+				
+				if ($r->getJoinProperty() !== null) {
+					// For INNER joins, ON is equivalent to WHERE; for anchors, we must carry it into WHERE.
+					$where = $this->andAll([$where, $r->getJoinProperty()]);
 					$r->setJoinProperty(null);
 				}
+				
+				// Keep the anchor at position 0 so downstream code can rely on it.
 				if ($idx !== 0) {
 					array_splice($ranges, $idx, 1);
 					array_unshift($ranges, $r);
 				}
+				
 				return $ranges;
 			};
 			
-			$canCollapse = function (AstRange $r) use ($usedInExpr, $usedInCond, $hasIsNullInCond, $nonNullableUse) {
+			// Helper: decide if we may safely collapse LEFT→INNER using only analyzer maps.
+			$canCollapse = function (AstRange $r) use ($usedInExpr, $usedInCond, $hasIsNullInCond, $nonNullableUse): bool {
 				$n = $r->getName();
-				if ($usedInExpr[$n] ?? false) {
-					return !($hasIsNullInCond[$n] ?? false);
-				}
-				if ($usedInCond[$n] ?? false) {
-					return !($hasIsNullInCond[$n] ?? false);
-				}
-				if ($nonNullableUse[$n] ?? false) {
-					return !($hasIsNullInCond[$n] ?? false);
-				}
-				return false;
+				$isUsed = ($usedInExpr[$n] ?? false) || ($usedInCond[$n] ?? false) || ($nonNullableUse[$n] ?? false);
+				$dependsOnNull = ($hasIsNullInCond[$n] ?? false);
+				return $isUsed && !$dependsOnNull;
 			};
 			
-			// B) prefer expr range, collapsing if safe
+			// (1) Prefer a range used in ANY(expr); collapse it if needed & safe.
+			$exprNames = $this->rangeNamesUsedInExpr($any);
+			
 			foreach ($ranges as $i => $r) {
-				if (in_array($r->getName(), $exprNames, true)) {
-					if ($r->isRequired() || (!$r->isRequired() && $canCollapse($r))) {
-						if (!$r->isRequired() && $canCollapse($r)) {
-							$r->setRequired(true);
-						}
-						return $makeAnchor($i);
+				if (in_array($r->getName(), $exprNames, true) && ($r->isRequired() || $canCollapse($r))) {
+					if (!$r->isRequired()) {
+						$r->setRequired(true); // LEFT -> INNER (safe per rules above)
 					}
+					
+					return $makeAnchor($i);
 				}
 			}
 			
-			// C) any INNER
-			foreach ($ranges as $i => $r) if ($r->isRequired()) {
-				return $makeAnchor($i);
+			// (2) Fallback: any INNER can be an anchor (ON == WHERE).
+			foreach ($ranges as $i => $r) {
+				if ($r->isRequired()) {
+					return $makeAnchor($i);
+				}
 			}
 			
-			// D) any LEFT that collapses safely
+			// (3) Last resort: collapse a safe LEFT to INNER and anchor it.
 			foreach ($ranges as $i => $r) {
 				if (!$r->isRequired() && $canCollapse($r)) {
 					$r->setRequired(true);
@@ -220,55 +439,93 @@
 				}
 			}
 			
-			// E) give up gracefully
+			// No safe transformation: keep semantics as-is.
 			return $ranges;
 		}
 		
+		/**
+		 * Convenience: list the names of ranges referenced by ANY(expr).
+		 * @param AstAny $any The ANY(...) node.
+		 * @return string[] Range names used in the ANY expression.
+		 */
+		private function rangeNamesUsedInExpr(AstAny $any): array {
+			$exprIds = $this->getIdentifiers($any->getIdentifier());
+			return array_map(static fn($id) => $id->getRange()->getName(), $exprIds);
+		}
+		
+		// ──────────────────────────────────────────────────────────────────────────
+		// Lower-level expression / AST utilities
+		// ──────────────────────────────────────────────────────────────────────────
+		
+		/**
+		 * Build a map of cross-join references:
+		 *   usedInJoinOf[K][R] = true  ⇔  JOIN(K).ON mentions range R (and R != K).
+		 *
+		 * Why we need this: a range that only appears inside other JOINs is
+		 * "correlation-only" and shouldn't stay as a joined input in the subquery.
+		 *
+		 * @param AstRange[] $ranges All cloned ranges.
+		 * @return array<string,array<string,bool>> Map of JOIN cross-refs.
+		 */
 		private function computeJoinReferences(array $ranges): array {
-			$usedInJoinOf = []; // [KName][RName] = true
+			$usedInJoinOf = [];
 			
 			foreach ($ranges as $k) {
 				$kName = $k->getName();
 				$join = $k->getJoinProperty();
+				
 				if ($join === null) {
 					continue;
 				}
 				
-				$ids = $this->getIdentifiers($join);
-				foreach ($ids as $id) {
+				// Identify which ranges are referenced by this join predicate.
+				foreach ($this->getIdentifiers($join) as $id) {
 					$rName = $id->getRange()->getName();
+					
 					if ($rName === $kName) {
+						// Self-reference is not correlation; it stays "inner".
 						continue;
-					} // self-ref is "inner", not correlation
+					}
+					
 					$usedInJoinOf[$kName][$rName] = true;
 				}
 			}
+			
 			return $usedInJoinOf;
 		}
 		
 		/**
-		 * @param AstInterface|null $predicate
-		 * @param array $innerNames
-		 * @param array $corrNames
-		 * @return array{innerPart:?AstInterface, corrPart:?AstInterface}
+		 * Split a predicate into:
+		 *   - innerPart: references only $innerNames
+		 *   - corrPart : references only $corrNames
+		 *
+		 * If a conjunct mixes inner & corr refs and contains OR, we treat it as
+		 * "unsafe to split" and keep the whole predicate as innerPart.
+		 *
+		 * @param AstInterface|null $predicate Original JOIN predicate.
+		 * @param string[] $innerNames Names considered "inner".
+		 * @param string[] $corrNames Names considered "correlation".
+		 * @return array
 		 */
 		private function splitPredicateByRangeRefs(
 			?AstInterface $predicate,
 			array         $innerNames,
 			array         $corrNames
 		): array {
+			// When no predicate passed, return empty values
 			if ($predicate === null) {
 				return ['innerPart' => null, 'corrPart' => null];
 			}
 			
+			// If it's an AND tree, we can classify each leaf conjunct independently.
 			if ($this->isAndNode($predicate)) {
 				$queue = [$predicate];
 				$andLeaves = [];
 				
-				// Flatten AND tree so we can classify each conjunct independently
+				// Flatten the AND tree to a list of leaves.
 				while ($queue) {
-					/** @var AstInterface $n */
 					$n = array_pop($queue);
+					
 					if ($this->isAndNode($n)) {
 						$queue[] = $n->getLeft();
 						$queue[] = $n->getRight();
@@ -282,14 +539,16 @@
 				
 				foreach ($andLeaves as $leaf) {
 					$bucket = $this->classifyByRefs($leaf, $innerNames, $corrNames);
+					
+					// Unsafe: leave the entire predicate as a single innerPart.
 					if ($bucket === 'MIXED_OR_COMPLEX') {
-						// Unsafe to split: keep everything as inner join
 						return ['innerPart' => $predicate, 'corrPart' => null];
 					}
+					
 					if ($bucket === 'CORR') {
 						$corrParts[] = $leaf;
-					} else { // 'INNER'
-						$innerParts[] = $leaf;
+					} else {
+						$innerParts[] = $leaf; // INNER
 					}
 				}
 				
@@ -299,20 +558,29 @@
 				];
 			}
 			
-			// Non-AND predicate: classify the whole thing
-			$bucket = $this->classifyByRefs($predicate, $innerNames, $corrNames);
-			
-			if ($bucket === 'MIXED_OR_COMPLEX') {
-				return ['innerPart' => $predicate, 'corrPart' => null];
-			}
-			
-			if ($bucket === 'CORR') {
-				return ['innerPart' => null, 'corrPart' => $predicate];
-			}
-			
-			return ['innerPart' => $predicate, 'corrPart' => null];
+			// Non-AND predicates are classified as a whole.
+			return match ($this->classifyByRefs($predicate, $innerNames, $corrNames)) {
+				'MIXED_OR_COMPLEX' => ['innerPart' => $predicate, 'corrPart' => null],
+				'CORR' => ['innerPart' => null, 'corrPart' => $predicate],
+				default => ['innerPart' => $predicate, 'corrPart' => null],
+			};
 		}
 		
+		/**
+		 * Classify an expression by the sets of ranges it references:
+		 *   - 'INNER'            : only innerNames appear
+		 *   - 'CORR'             : only corrNames appear
+		 *   - 'MIXED_OR_COMPLEX' : both appear AND there's an OR somewhere (unsafe split)
+		 *
+		 * Rationale: a conjunct that mixes both sides but has no OR can be pushed
+		 * into either bucket by normalization, but we keep it conservative: only
+		 * split when it's clearly safe and clean.
+		 *
+		 * @param AstInterface $expr
+		 * @param string[] $innerNames
+		 * @param string[] $corrNames
+		 * @return 'INNER'|'CORR'|'MIXED_OR_COMPLEX'
+		 */
 		private function classifyByRefs(AstInterface $expr, array $innerNames, array $corrNames): string {
 			$ids = $this->getIdentifiers($expr);
 			$hasInner = false;
@@ -320,23 +588,34 @@
 			
 			foreach ($ids as $id) {
 				$n = $id->getRange()->getName();
+				
 				if (in_array($n, $innerNames, true)) {
 					$hasInner = true;
 				}
+				
 				if (in_array($n, $corrNames, true)) {
 					$hasCorr = true;
 				}
 			}
 			
+			// If both sides appear AND there is an OR in the subtree, splitting
+			// risks changing semantics (e.g., distributing over OR). Avoid it.
 			if ($this->containsOr($expr) && $hasInner && $hasCorr) {
 				return 'MIXED_OR_COMPLEX';
 			}
+			
 			if ($hasCorr && !$hasInner) {
 				return 'CORR';
 			}
+			
 			return 'INNER';
 		}
 		
+		/**
+		 * True if the subtree contains an OR node anywhere.
+		 * @param AstInterface $node
+		 * @return bool
+		 */
 		private function containsOr(AstInterface $node): bool {
 			if ($this->isOrNode($node)) {
 				return true;
@@ -351,160 +630,34 @@
 			return false;
 		}
 		
+		// ──────────────────────────────────────────────────────────────────────────
+		// Small AST helpers (simple, boring, and well-commented)
+		// ──────────────────────────────────────────────────────────────────────────
+		
 		/**
-		 * Ensure exactly one anchor range (a range with null joinProperty) exists.
-		 * Prefers the range used in ANY(expr), then any INNER, then a LEFT that is safe to collapse.
+		 * Build a left-associative AND chain from a list of predicates.
+		 * Examples:
+		 *   []        → null
+		 *   [a]       → a
+		 *   [a,b,c]   → ((a AND b) AND c)
 		 *
-		 * @param AstRange[] $ranges Live ranges in desired order
-		 * @param AstAny $anyNode The ANY(...) node (for liveness checks)
-		 * @param AstInterface|null $where Subquery WHERE (will be updated)
-		 * @return AstRange[]
-		 */
-		private function ensureAnchorRange(array $ranges, AstAny $anyNode, ?AstInterface &$where): array {
-			if (empty($ranges)) {
-				return $ranges;
-			}
-			
-			// A) If an anchor already exists, nothing to do.
-			foreach ($ranges as $r) {
-				if ($r->getJoinProperty() === null) {
-					return $ranges;
-				}
-			}
-			
-			// Helper to apply anchoring: move ON -> WHERE, clear join, move to front.
-			$makeAnchor = function (int $idx) use (&$ranges, &$where) {
-				$r = $ranges[$idx];
-				$join = $r->getJoinProperty();
-				if ($join !== null) {
-					$where = $this->andAll([$where, $join]);
-					$r->setJoinProperty(null);
-				}
-				if ($idx !== 0) {
-					array_splice($ranges, $idx, 1);
-					array_unshift($ranges, $r);
-				}
-				return $ranges;
-			};
-			
-			// B) Prefer the range referenced in ANY(expr) as anchor.
-			$exprIds = $this->getIdentifiers($anyNode->getIdentifier());
-			$exprNames = array_map(fn($id) => $id->getRange()->getName(), $exprIds);
-			foreach ($ranges as $i => $r) {
-				if (in_array($r->getName(), $exprNames, true)) {
-					// Safe to anchor on the expr range:
-					// - If INNER: ON == WHERE
-					// - If LEFT but collapsible in ANY(): flip to required and anchor.
-					if ($r->isRequired() === false && $this->canCollapseLeftToInnerForAny($r, $anyNode)) {
-						$r->setRequired(true); // LEFT -> INNER
-					}
-					if ($r->isRequired() === true) {
-						return $makeAnchor($i);
-					}
-					// If still not safe, fall through to other candidates.
-				}
-			}
-			
-			// C) Any INNER range can be an anchor (ON == WHERE for INNER).
-			foreach ($ranges as $i => $r) {
-				if ($r->isRequired() === true) {
-					return $makeAnchor($i);
-				}
-			}
-			
-			// D) As a fallback, pick a LEFT that is safe to collapse in this ANY() context.
-			foreach ($ranges as $i => $r) {
-				if ($r->isRequired() === false && $this->canCollapseLeftToInnerForAny($r, $anyNode)) {
-					$r->setRequired(true); // collapse
-					return $makeAnchor($i);
-				}
-			}
-			
-			// E) No safe anchor transformation found; leave as-is (caller may raise or handle later).
-			// It's better to keep semantics than force a wrong rewrite.
-			return $ranges;
-		}
-		
-		/**
-		 * Decide if a LEFT join can be treated as INNER in this ANY() subquery.
-		 * Plug your real logic here using:
-		 * - ContainsRange (used in expr/cond?)
-		 * - ContainsNonNullableFieldForRange (non-nullable usage)
-		 * - ContainsCheckIsNullForRange (IS NULL dependence)
-		 */
-		private function canCollapseLeftToInnerForAny(AstRange $range, AstAny $anyNode): bool {
-			// Heuristic (tighten with your visitors):
-			// 1) If the range is referenced in ANY(expr) or ANY(WHERE ...), then rows with NULL on this range
-			//    cannot satisfy EXISTS -> LEFT behaves like INNER.
-			$name = $range->getName();
-			$usedInExpr = $this->containsRange($anyNode->getIdentifier(), $range);
-			$usedInCond = $this->containsRange($anyNode->getConditions(), $range);
-			if ($usedInExpr || $usedInCond) {
-				// Also ensure we are not relying on IS NULL checks of this range inside the ANY() WHERE.
-				$hasIsNull = (new ContainsCheckIsNullForRange($range))->check($anyNode->getConditions());
-				return !$hasIsNull;
-			}
-			
-			// 2) Or all references to this range inside ANY() are on non-nullable fields.
-			$nonNullableUse = (new ContainsNonNullableFieldForRange($range, $this->entityStore))
-				->check($anyNode);
-			if ($nonNullableUse) {
-				$hasIsNull = (new ContainsCheckIsNullForRange($range))->check($anyNode->getConditions());
-				return !$hasIsNull;
-			}
-			
-			return false;
-		}
-		
-		private function isInnerJoin(AstRange $r): bool {
-			// INNER when required
-			return $r->isRequired() === true;
-		}
-		
-		private function isLeftJoin(AstRange $r): bool {
-			// LEFT/optional when not required
-			return $r->isRequired() === false;
-		}
-		
-		
-		/**
-		 * Conservative: LEFT->INNER is safe if:
-		 *  - right side is referenced in ANY(expr) or ANY(WHERE ...), or
-		 *  - only non-nullable fields of the right side are referenced, and
-		 *  - there is no IS NULL check on the right side in this subquery.
-		 * Refine using your visitors (ContainsNonNullableFieldForRange, ContainsCheckIsNullForRange, etc.).
-		 */
-		private function canCollapseLeftToInner(AstRange $leftRange): bool {
-			// If you track "the other side" of this join explicitly, consult it here; otherwise, rely on global checks.
-			$rangeName = $leftRange->getName();
-			
-			// (1) If the right side is referenced in expr/cond, rows with NULL right side wouldn't pass.
-			// You can wire this up by passing in the current ANY() node or memoized liveness maps.
-			// For simplicity, return false here; plug your real checks in production.
-			return false;
-		}
-		
-		/**
-		 * Build an AND tree from a list of predicates.
-		 * - []      -> null
-		 * - [a]     -> a
-		 * - [a,b,c] -> ((a AND b) AND c)
-		 *
-		 * @param AstInterface[] $parts
+		 * @param AstInterface[] $parts Predicates to AND together (nulls are ignored).
 		 * @return AstInterface|null
 		 */
 		private function andAll(array $parts): ?AstInterface {
-			// Remove nulls/empties
+			// Drop nulls/empties early to keep the tree lean.
 			$parts = array_values(array_filter($parts));
 			$n = count($parts);
+			
 			if ($n === 0) {
 				return null;
 			}
+			
 			if ($n === 1) {
 				return $parts[0];
 			}
 			
-			// Left-associative chain is fine; if you care, you can balance it
+			// Build a simple left-deep AND tree; balancing offers no real advantage here.
 			$acc = new AstBinaryOperator($parts[0], $parts[1], 'AND');
 			
 			for ($i = 2; $i < $n; $i++) {
@@ -514,54 +667,38 @@
 			return $acc;
 		}
 		
-		// Helper predicates depending on your AST types:
+		/**
+		 * Lightweight operator test for AND.
+		 * @param AstInterface $node
+		 * @return bool
+		 */
 		private function isAndNode(AstInterface $node): bool {
 			return $node instanceof AstBinaryOperator && strtoupper($node->getOperator()) === 'AND';
 		}
 		
+		/**
+		 * Lightweight operator test for OR.
+		 * @param AstInterface $node
+		 * @return bool
+		 */
 		private function isOrNode(AstInterface $node): bool {
 			return $node instanceof AstBinaryOperator && strtoupper($node->getOperator()) === 'OR';
 		}
 		
-		/** @return AstInterface[] */
-		private function childrenOf(AstInterface $node): array {
-			if ($node instanceof AstBinaryOperator) {
-				return [$node->getLeft(), $node->getRight()];
-			}
-			return [];
-		}
-		
-		
 		/**
-		 * Filter out unused joins
-		 * @param array $ranges
-		 * @param AstAny $node
-		 * @return array
+		 * Return binary children when present; otherwise empty list.
+		 * @param AstInterface $node
+		 * @return AstInterface[]
 		 */
-		private function filterRanges(array $ranges, AstAny $node): array {
-			$result = [];
-			
-			foreach ($ranges as $range) {
-				// Check if range is referenced in ANY(expr) or conditions
-				$usedInExpr = $this->containsRange($node->getIdentifier(), $range);
-				$usedInCond = $this->containsRange($node->getConditions(), $range);
-				
-				// If not used at all drop it
-				if (!$usedInExpr && !$usedInCond) {
-					continue;
-				}
-				
-				// Add range to list
-				$result[] = $range;
-			}
-			
-			return $result;
+		private function childrenOf(AstInterface $node): array {
+			return $node instanceof AstBinaryOperator ? [$node->getLeft(), $node->getRight()] : [];
 		}
 		
 		/**
-		 * Fetch list of all used identifiers
+		 * Collect identifiers in an AST subtree.
+		 * We use this to find which ranges are referenced by expressions.
 		 * @param AstInterface|null $ast
-		 * @return array
+		 * @return array<int,AstIdentifier>
 		 */
 		private function getIdentifiers(?AstInterface $ast): array {
 			if ($ast === null) {
@@ -574,27 +711,9 @@
 		}
 		
 		/**
-		 * Returns true if any of the identifiers use the range
-		 * @param AstInterface|null $ast
-		 * @param AstRange $range
-		 * @return bool
-		 */
-		private function containsRange(?AstInterface $ast, AstRange $range): bool {
-			$identifiers = $this->getIdentifiers($ast);
-			
-			foreach ($identifiers as $identifier) {
-				if ($identifier->getRange()->getName() === $range->getName()) {
-					return true;
-				}
-			}
-			
-			return false;
-		}
-		
-		/**
-		 * Clones ranges
+		 * Deep clone of the query ranges for safe, local mutations.
 		 * @param AstRetrieve $ast
-		 * @return array
+		 * @return AstRange[]
 		 */
 		private function cloneRanges(AstRetrieve $ast): array {
 			$result = [];
@@ -607,9 +726,9 @@
 		}
 		
 		/**
-		 * Fetch a list of ANY nodes
+		 * Collect all ANY nodes under the retrieve AST in one pass.
 		 * @param AstRetrieve $ast
-		 * @return array
+		 * @return AstAny[]
 		 */
 		private function getAllAnyNodes(AstRetrieve $ast): array {
 			$visitor = new CollectNodes([AstAny::class]);
