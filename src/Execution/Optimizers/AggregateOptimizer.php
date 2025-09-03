@@ -144,11 +144,12 @@
 			// STEP 2: Comprehensive dependency analysis for this specific aggregate
 			// Determines which table ranges are referenced in expressions vs conditions,
 			// and identifies null-safety requirements for proper optimization
-			$usage = $this->analyzeUsageForAggregate($agg, $ranges);
-			$usedInExpr = $usage['usedInExpr'];     // Ranges referenced in aggregate expression
-			$usedInCond = $usage['usedInCond'];     // Ranges referenced in aggregate conditions
-			$hasIsNullInCond = $usage['hasIsNullInCond']; // Null-check predicates affecting ranges
-			$nonNullableUse = $usage['nonNullableUse'];   // Ranges that must produce non-null results
+			$usage = $this->analyzer->analyzeAggregate($agg, $ranges);
+			
+			$usedInExpr = $usage['usedInExpr'];            // Ranges referenced in aggregate expression
+			$usedInCond = $usage['usedInCond'];            // Ranges referenced in aggregate conditions
+			$hasIsNullInCond = $usage['hasIsNullInCond'];  // Null-check predicates affecting ranges
+			$nonNullableUse = $usage['nonNullableUse'];    // Ranges that must produce non-null results
 			
 			// STEP 3: Build cross-reference map for JOIN relationship analysis
 			// Essential for maintaining referential integrity when pruning ranges
@@ -166,7 +167,7 @@
 			// STEP 5: Safety fallback for edge cases where no live ranges detected
 			// Ensures the subquery has at least one meaningful data source
 			if (empty($liveRanges)) {
-				$liveRanges = $this->fallbackLiveRangesForOwner($ranges, $agg);
+				$liveRanges = $this->rangePartitioner->selectFallbackLiveRangesForOwner($ranges, $agg);
 			}
 			
 			// STEP 6: Extract and prepare WHERE conditions for the subquery
@@ -216,12 +217,6 @@
 		
 		/**
 		 * Discover all aggregate function nodes within the query AST
-		 *
-		 * Uses the visitor pattern to traverse the entire AST tree and collect
-		 * all nodes matching registered aggregate types. This ensures no aggregate
-		 * functions are missed regardless of their location in the query structure
-		 * (SELECT list, WHERE clauses, HAVING clauses, ORDER BY, etc.).
-		 *
 		 * @param AstRetrieve $ast Root query node to scan
 		 * @return AstInterface[] Array of discovered aggregate nodes
 		 */
@@ -230,145 +225,18 @@
 			$ast->accept($visitor);
 			return $visitor->getCollectedNodes();
 		}
-		
+
 		/**
-		 * Analyze table range usage patterns for a specific aggregate function
-		 *
-		 * Determines how each table range (FROM/JOIN source) is utilized by the aggregate:
-		 * - Expression usage: Range provides data for the aggregate calculation
-		 * - Condition usage: Range is referenced in aggregate-specific WHERE conditions
-		 * - Null handling: Whether the range participates in null-check predicates
-		 * - Non-nullable requirements: Whether the range must produce non-null results
-		 *
-		 * This analysis is critical for determining which ranges can be safely excluded
-		 * from the optimized subquery without affecting result correctness.
-		 *
-		 * FALLBACK BEHAVIOR:
-		 * If the enhanced analyzer is unavailable, uses conservative heuristics based
-		 * on identifier collection to ensure safe operation across different codebase versions.
-		 *
-		 * @param AstInterface $owner The aggregate node being analyzed
-		 * @param array $ranges Available table ranges from the query
-		 * @return array{usedInExpr: array<string,bool>, usedInCond: array<string,bool>, hasIsNullInCond: array<string,bool>, nonNullableUse: array<string,bool>}
-		 */
-		private function analyzeUsageForAggregate(AstInterface $owner, array $ranges): array {
-			// Prefer enhanced analyzer method if available in current codebase version
-			if (method_exists($this->analyzer, 'analyzeAggregate')) {
-				/** @var array $res */
-				$res = $this->analyzer->analyzeAggregate($owner, $ranges);
-				return $res;
-			}
-			
-			// FALLBACK: Conservative analysis using basic identifier collection
-			// This ensures compatibility with older codebase versions while providing
-			// reasonable optimization results through simplified usage detection
-			
-			// Initialize all ranges as unused across all categories
-			$names = array_map(static fn(AstRange $r) => $r->getName(), $ranges);
-			$usedInExpr = array_fill_keys($names, false);
-			$usedInCond = array_fill_keys($names, false);
-			$hasIsNullInCond = array_fill_keys($names, false);   // Conservative: assume no IS NULL predicates
-			$nonNullableUse = array_fill_keys($names, false);   // Conservative: assume all ranges nullable
-			
-			// Mark ranges referenced in the aggregate's main expression (e.g., SUM(table.column))
-			foreach ($this->astUtilities->collectIdentifiersFromAst($this->getIdentifierIfAny($owner)) as $id) {
-				$usedInExpr[$id->getRange()->getName()] = true;
-			}
-			
-			// Mark ranges referenced in the aggregate's WHERE conditions
-			$cond = $this->getConditionsIfAny($owner);
-			if ($cond !== null) {
-				$condIds = $this->astUtilities->collectIdentifiersFromAst($cond);
-				foreach ($condIds as $id) {
-					$usedInCond[$id->getRange()->getName()] = true;
-				}
-			}
-			
-			return [
-				'usedInExpr'      => $usedInExpr,
-				'usedInCond'      => $usedInCond,
-				'hasIsNullInCond' => $hasIsNullInCond,
-				'nonNullableUse'  => $nonNullableUse,
-			];
-		}
-		
-		/**
-		 * Determine minimal viable table ranges when automatic detection fails
-		 *
-		 * This safety mechanism ensures that even when the sophisticated range analysis
-		 * fails to identify live ranges, the optimizer can still produce a functional
-		 * subquery by falling back to basic heuristics.
-		 *
-		 * SELECTION STRATEGY:
-		 * 1. Prefer ranges directly referenced in the aggregate's expression
-		 * 2. Fall back to the first available range if no direct references found
-		 * 3. Return empty set only if no ranges available at all
-		 *
-		 * This conservative approach prioritizes correctness over optimization when
-		 * sophisticated analysis is unavailable or fails.
-		 *
-		 * @param AstRange[] $ranges All available table ranges
-		 * @param AstInterface $owner The aggregate node requiring live ranges
-		 * @return array<string,AstRange> Selected live ranges indexed by name
-		 */
-		private function fallbackLiveRangesForOwner(array $ranges, AstInterface $owner): array {
-			// Use enhanced method if available for more sophisticated fallback logic
-			if (method_exists($this->rangePartitioner, 'selectFallbackLiveRangesForOwner')) {
-				/** @var array<string,AstRange> $res */
-				$res = $this->rangePartitioner->selectFallbackLiveRangesForOwner($ranges, $owner);
-				return $res;
-			}
-			
-			// BASIC FALLBACK: Select ranges based on identifier analysis
-			
-			// Create lookup map for efficient range resolution
-			$rangesByName = [];
-			foreach ($ranges as $r) {
-				$rangesByName[$r->getName()] = $r;
-			}
-			
-			$live = [];
-			
-			// First preference: ranges referenced in the aggregate expression
-			foreach ($this->astUtilities->collectIdentifiersFromAst($this->getIdentifierIfAny($owner)) as $id) {
-				$name = $id->getRange()->getName();
-				
-				if (isset($rangesByName[$name])) {
-					$live[$name] = $rangesByName[$name];
-				}
-			}
-			
-			// If expression-based selection succeeded, use it
-			if (!empty($live)) {
-				return $live;
-			}
-			
-			// Ultimate fallback: use first available range
-			// Better to have a potentially suboptimal but functional subquery
-			// than to fail the optimization entirely
-			$first = reset($ranges);
-			return $first ? [$first->getName() => $first] : [];
-		}
-		
-		/**
-		 * Create clean aggregate node copy without embedded WHERE conditions
-		 *
-		 * The optimization strategy moves aggregate-specific WHERE conditions into
+		 * This optimization strategy moves aggregate-specific WHERE conditions into
 		 * the subquery's WHERE clause rather than keeping them embedded within
 		 * the aggregate node itself. This separation provides cleaner subquery
 		 * structure and more predictable SQL generation.
-		 *
 		 * @param AstInterface $agg Original aggregate node to clone
 		 * @return AstInterface Clean aggregate clone with conditions removed
 		 */
 		private function deepCloneAggregateWithoutConditions(AstInterface $agg): AstInterface {
 			$clone = $agg->deepClone();
-			
-			// Remove embedded conditions if the aggregate node supports them
-			if (method_exists($clone, 'setConditions')) {
-				$clone->setConditions(null);
-			}
-			
+			$clone->setConditions(null);
 			return $clone;
 		}
 		
@@ -403,20 +271,57 @@
 		/**
 		 * Decide if an aggregate can be emitted as a window function AGG(...) OVER ().
 		 *
-		 * Rules:
-		 *  - No aggregate-level conditions (we don't synthesize FILTER/CASE here)
-		 *  - No DISTINCT-like variants (SUMU/AVGU/COUNTU)
-		 *  - Engine supports window functions
-		 *  - Aggregate references exactly one alias
-		 *  - Considering only *active* outer ranges (main + joined ranges with include flag,
-		 *    minus inert LEFT JOINs that are referenced only in their own ON), there must be
-		 *    exactly one active range, and it must be the same alias the aggregate references.
+		 * This method orchestrates all the checks required to determine if an aggregate
+		 * can be safely converted to a window function. It validates basic prerequisites,
+		 * analyzes alias usage, manages join states, and ensures exactly one active range.
 		 *
-		 * Side effect:
-		 *  - Marks trivially-unused LEFT JOIN ranges as includeAsJoin=false so later phases
-		 *    don't emit them.
+		 * @param AstRetrieve $root The root AST retrieve node containing ranges and conditions
+		 * @param AstInterface $agg The aggregate node to evaluate for window function conversion
+		 * @return bool True if the aggregate can be flattened to a window function, false otherwise
+		 * @see passesBasicWindowChecks() For basic validation rules
+		 * @see getAggregateAlias() For alias extraction logic
+		 * @see markInertLeftJoinsAsExcluded() For side effects on join ranges
 		 */
 		private function canFlattenToWindow(AstRetrieve $root, AstInterface $agg): bool {
+			// Check basic window function compatibility (e.g., supported aggregate types,
+			// no DISTINCT modifiers, proper window frame requirements)
+			if (!$this->passesBasicWindowChecks($agg)) {
+				return false;
+			}
+			
+			// Extract the table alias that this aggregate function operates on
+			// Returns null if aggregate spans multiple tables or has no clear alias
+			$aggAlias = $this->getAggregateAlias($agg);
+			
+			if ($aggAlias === null) {
+				return false;
+			}
+			
+			// Mark LEFT JOINs that don't contribute to the final result set as excluded
+			// This prevents them from affecting the window function transformation
+			$this->markInertLeftJoinsAsExcluded($root);
+			
+			// Get all table aliases that are actually used in the query after
+			// excluding inert joins (aliases that contribute columns, filters, etc.)
+			$activeAliases = $this->getActiveAliases($root);
+			
+			// Verify that only one table alias is active and it matches the aggregate's alias
+			// Window functions can only flatten when operating on a single table context
+			return $this->validateSingleActiveAlias($activeAliases, $aggAlias);
+		}
+		
+		/**
+		 * Check basic conditions that would prevent window function usage.
+		 *
+		 * Validates three fundamental requirements for window function conversion:
+		 * 1. No aggregate-level conditions (WHERE clauses, FILTER expressions)
+		 * 2. No DISTINCT-like variants (SUMU/AVGU/COUNTU not supported as window functions)
+		 * 3. Database engine must support window functions
+		 *
+		 * @param AstInterface $agg The aggregate node to validate
+		 * @return bool True if all basic checks pass, false if any condition prevents window usage
+		 */
+		private function passesBasicWindowChecks(AstInterface $agg): bool {
 			// Guard 1: no aggregate-level WHERE/conditions
 			if ($this->getConditionsIfAny($agg) !== null) {
 				return false;
@@ -432,165 +337,63 @@
 				return false;
 			}
 			
-			// Aggregate must reference exactly one alias
-			$ids = $this->astUtilities->collectIdentifiersFromAst($this->getIdentifierIfAny($agg));
-			$names = array_values(array_unique(array_map(static fn($id) => $id->getRange()->getName(), $ids)));
-			if (count($names) !== 1) {
-				return false;
-			}
-			$aggAlias = $names[0];
-			
-			// Helper: count alias occurrences in OUTER scope, excluding subqueries and
-			// excluding a specific join predicate subtree (if provided).
-			$countAliasOutsideOwnJoin = function (AstRetrieve $tree, string $alias, $ownJoinProp = null): int {
-				$count = 0;
-				$stack = [$tree];
-				while ($stack) {
-					/** @var mixed $node */
-					$node = array_pop($stack);
-					
-					if ($ownJoinProp !== null && $node === $ownJoinProp) {
-						continue; // skip this range's ON subtree
-					}
-					if ($node instanceof AstSubquery) {
-						continue; // do not descend into subqueries
-					}
-					
-					if ($node instanceof \Quellabs\ObjectQuel\ObjectQuel\Ast\AstIdentifier) {
-						if ($node->getRange()->getName() === $alias) {
-							$count++;
-						}
-					}
-					
-					if ($node instanceof AstInterface && method_exists($node, 'getChildren')) {
-						foreach ($node->getChildren() as $child) {
-							if ($child instanceof AstInterface) {
-								$stack[] = $child;
-							}
-						}
-					}
-				}
-				return $count;
-			};
-			
-			// Consider only *active* ranges:
-			//  - main range is always active
-			//  - joined range is active if includeAsJoin==true (or missing flag defaults true)
-			//  - HOWEVER, if a joined range is a trivially-unused LEFT JOIN (only appears in its own ON),
-			//    we mark it includeAsJoin=false here and treat it as inactive.
-			$activeAliases = [];
-			
-			foreach ($root->getRanges() as $r) {
-				$isMain = !method_exists($r, 'getJoinProperty') || $r->getJoinProperty() === null;
-				
-				if ($isMain) {
-					$mainAlias = $r->getName();
-					$activeAliases[$mainAlias] = true;
-					continue;
-				}
-				
-				// Respect "required" joins
-				if (method_exists($r, 'isRequired') && $r->isRequired()) {
-					$activeAliases[$r->getName()] = true;
-					continue;
-				}
-				
-				// Current include flag (default true)
-				$include = true;
-				
-				if (method_exists($r, 'shouldIncludeAsJoin')) {
-					$include = (bool)$r->shouldIncludeAsJoin();
-				} elseif (method_exists($r, 'getIncludeAsJoin')) {
-					$include = (bool)$r->getIncludeAsJoin();
-				}
-				
-				// If currently included, check if it's inert; if inert, flip it off.
-				if ($include) {
-					$joinProp = method_exists($r, 'getJoinProperty') ? $r->getJoinProperty() : null;
-					$alias = $r->getName();
-					$outerUse = $countAliasOutsideOwnJoin($root, $alias, $joinProp);
-					
-					if ($outerUse === 0 && method_exists($r, 'setIncludeAsJoin')) {
-						// Inert LEFT JOIN (only used in its own ON): exclude it
-						$r->setIncludeAsJoin(false);
-						$include = false;
-					}
-				}
-				
-				if ($include) {
-					$activeAliases[$r->getName()] = true;
-				}
-			}
-			
-			// There must be exactly one active alias
-			if (count($activeAliases) !== 1) {
-				return false;
-			}
-			
-			// And it must be the one the aggregate references
-			$onlyActive = array_key_first($activeAliases);
-			if ($onlyActive !== $aggAlias) {
-				return false;
-			}
-			
 			return true;
 		}
 		
 		/**
-		 * Return the number of "active" outer ranges (i.e., ones that will actually be emitted in SQL).
-		 * We ignore ranges whose JOIN has been marked as excluded.
+		 * Extract the single alias that the aggregate references, or null if invalid.
+		 *
+		 * For window function conversion, an aggregate must reference exactly one table alias.
+		 * This method collects all identifiers from the aggregate AST, extracts their range names,
+		 * and validates that only one unique alias is referenced.
+		 *
+		 * @param AstInterface $agg The aggregate node to analyze for alias references
+		 * @return string|null The single alias name if valid, null if zero or multiple aliases found
 		 */
-		private function countActiveOuterRanges(AstRetrieve $root): int {
-			$count = 0;
-			foreach ($root->getRanges() as $r) {
-				// Main range has no join property → always active
-				$isMain = method_exists($r, 'getJoinProperty') ? $r->getJoinProperty() === null : true;
-				
-				// Respect includeAsJoin=false for joined ranges
-				$include = true;
-				if (!$isMain) {
-					if (method_exists($r, 'shouldIncludeAsJoin')) {
-						$include = $r->shouldIncludeAsJoin();
-					} elseif (method_exists($r, 'getIncludeAsJoin')) {
-						$include = (bool)$r->getIncludeAsJoin();
-					}
-				}
-				
-				if ($isMain || $include) {
-					$count++;
-				}
+		private function getAggregateAlias(AstInterface $agg): ?string {
+			$ids = $this->astUtilities->collectIdentifiersFromAst($this->getIdentifierIfAny($agg));
+			$names = array_values(array_unique(array_map(static fn($id) => $id->getRange()->getName(), $ids)));
+			
+			// Aggregate must reference exactly one alias
+			if (count($names) !== 1) {
+				return null;
 			}
-			return $count;
+			
+			return $names[0];
 		}
 		
 		/**
-		 * For this aggregate, mark any LEFT JOIN ranges that are unused in the OUTER scope
-		 * (i.e., referenced nowhere except their own ON predicate) as not included.
-		 * This does NOT descend into subqueries, so inner aliases won't block exclusion.
+		 * Mark inert LEFT JOINs (only used in their own ON clause) as excluded.
+		 *
+		 * This method has a side effect: it modifies join ranges by setting includeAsJoin=false
+		 * for LEFT JOINs that are only referenced in their own ON clause predicate. Such joins
+		 * are considered "inert" because they don't affect the result set and can be safely
+		 * excluded from window function queries.
+		 *
+		 * Only processes optional joins (non-required) that are currently included.
+		 *
+		 * @param AstRetrieve $root The root AST node containing all ranges to analyze
+		 * @return void This method modifies ranges in-place via setIncludeAsJoin()
+		 *
+		 * @see isInertLeftJoin() For the logic determining if a join is inert
+		 * @see shouldIncludeJoinRange() For current inclusion status
 		 */
-		private function excludeUnusedLeftJoinsForThisAggregate(AstRetrieve $root): void {
-			// Find main range
-			$main = null;
+		private function markInertLeftJoinsAsExcluded(AstRetrieve $root): void {
 			foreach ($root->getRanges() as $r) {
-				if (method_exists($r, 'getJoinProperty') && $r->getJoinProperty() === null) {
-					$main = $r;
-					break;
-				}
-			}
-			
-			foreach ($root->getRanges() as $r) {
-				// Skip main range and any range already required
-				if ($r === $main || (method_exists($r, 'isRequired') && $r->isRequired())) {
+				$isMain = !method_exists($r, 'getJoinProperty') || $r->getJoinProperty() === null;
+				if ($isMain) {
 					continue;
 				}
 				
-				// Only consider joined ranges
-				if (!method_exists($r, 'getJoinProperty') || $r->getJoinProperty() === null) {
+				// Skip required joins
+				if (method_exists($r, 'isRequired') && $r->isRequired()) {
 					continue;
 				}
 				
-				// If the alias does not appear anywhere in OUTER scope except its own ON, exclude it
-				if ($this->countAliasOutsideOwnJoinShallow($root, $r) === 0) {
+				// Current include flag (default true)
+				$include = $this->shouldIncludeJoinRange($r);
+				
+				if ($include && $this->isInertLeftJoin($root, $r)) {
 					if (method_exists($r, 'setIncludeAsJoin')) {
 						$r->setIncludeAsJoin(false);
 					}
@@ -599,27 +402,78 @@
 		}
 		
 		/**
-		 * Count occurrences of a range alias in OUTER scope, excluding subqueries and
-		 * excluding the range's own join predicate subtree.
+		 * Check if a join range should be included based on its current flags.
+		 *
+		 * Checks multiple possible method names for inclusion flags, as different range
+		 * implementations may use different naming conventions. Falls back to true
+		 * (include by default) if no explicit flag methods are found.
+		 *
+		 * @param mixed $r The join range object to check (various range implementations)
+		 * @return bool True if the range should be included in the join, false otherwise
 		 */
-		private function countAliasOutsideOwnJoinShallow(AstRetrieve $root, AstRange $range): int {
-			$alias = $range->getName();
-			$joinProp = method_exists($range, 'getJoinProperty') ? $range->getJoinProperty() : null;
+		private function shouldIncludeJoinRange($r): bool {
+			if (method_exists($r, 'shouldIncludeAsJoin')) {
+				return (bool)$r->shouldIncludeAsJoin();
+			}
 			
+			if (method_exists($r, 'getIncludeAsJoin')) {
+				return (bool)$r->getIncludeAsJoin();
+			}
+			
+			// Default true
+			return true;
+		}
+		
+		/**
+		 * Check if a join range is inert (only used in its own ON clause).
+		 *
+		 * An "inert" LEFT JOIN is one where the joined table's alias is only referenced
+		 * within the join's own ON predicate and nowhere else in the query. Such joins
+		 * don't affect the result set and can be safely omitted.
+		 *
+		 * @param AstRetrieve $root The root AST node to search for alias usage
+		 * @param mixed $r The join range to evaluate for inertness
+		 * @return bool True if the join is inert (safe to exclude), false otherwise
+		 *
+		 * @see countAliasOutsideOwnJoin() For the traversal logic counting alias usage
+		 */
+		private function isInertLeftJoin(AstRetrieve $root, $r): bool {
+			$joinProp = method_exists($r, 'getJoinProperty') ? $r->getJoinProperty() : null;
+			$alias = $r->getName();
+			$outerUse = $this->countAliasOutsideOwnJoin($root, $alias, $joinProp);
+			
+			return $outerUse === 0;
+		}
+		
+		/**
+		 * Count how many times an alias is used outside its own JOIN ON clause.
+		 *
+		 * Performs a depth-first traversal of the AST, counting occurrences of identifiers
+		 * that reference the specified alias. Excludes:
+		 * - The join's own ON predicate subtree (if ownJoinProp provided)
+		 * - Any subquery nodes (doesn't descend into them)
+		 *
+		 * This is used to determine if a LEFT JOIN is "inert" - if the count is 0,
+		 * the join only appears in its own ON clause and can be safely excluded.
+		 *
+		 * @param AstRetrieve $tree The root AST node to traverse
+		 * @param string $alias The alias name to count occurrences of
+		 * @param mixed|null $ownJoinProp The join's ON predicate subtree to exclude from counting
+		 * @return int Number of times the alias appears outside its own join predicate
+		 */
+		private function countAliasOutsideOwnJoin(AstRetrieve $tree, string $alias, $ownJoinProp = null): int {
 			$count = 0;
-			$stack = [$root];
+			$stack = [$tree];
 			
 			while ($stack) {
 				/** @var mixed $node */
 				$node = array_pop($stack);
 				
-				if ($node === $joinProp) {
-					// ignore the ON subtree for that range
-					continue;
+				if ($ownJoinProp !== null && $node === $ownJoinProp) {
+					continue; // skip this range's ON subtree
 				}
-				if ($node instanceof \Quellabs\ObjectQuel\ObjectQuel\Ast\AstSubquery) {
-					// do not descend into subqueries
-					continue;
+				if ($node instanceof AstSubquery) {
+					continue; // do not descend into subqueries
 				}
 				
 				if ($node instanceof \Quellabs\ObjectQuel\ObjectQuel\Ast\AstIdentifier) {
@@ -628,9 +482,9 @@
 					}
 				}
 				
-				if ($node instanceof \Quellabs\ObjectQuel\ObjectQuel\AstInterface && method_exists($node, 'getChildren')) {
+				if ($node instanceof AstInterface && method_exists($node, 'getChildren')) {
 					foreach ($node->getChildren() as $child) {
-						if ($child instanceof \Quellabs\ObjectQuel\ObjectQuel\AstInterface) {
+						if ($child instanceof AstInterface) {
 							$stack[] = $child;
 						}
 					}
@@ -638,5 +492,69 @@
 			}
 			
 			return $count;
+		}
+		
+		/**
+		 * Get all currently active aliases (main range + included joins).
+		 *
+		 * Builds a map of alias names that are considered "active" in the query context:
+		 * - Main range (table) is always active
+		 * - Required joins are always active regardless of include flags
+		 * - Optional joins are active only if their include flags are true
+		 *
+		 * This is used to ensure window function conversion only occurs when exactly
+		 * one range is active and matches the aggregate's referenced alias.
+		 *
+		 * @param AstRetrieve $root The root AST node containing all ranges to analyze
+		 * @return array<string, true> Associative array mapping active alias names to true
+		 *
+		 * @see shouldIncludeJoinRange() For determining join inclusion status
+		 */
+		private function getActiveAliases(AstRetrieve $root): array {
+			$activeAliases = [];
+			
+			foreach ($root->getRanges() as $r) {
+				$isMain = !method_exists($r, 'getJoinProperty') || $r->getJoinProperty() === null;
+				
+				if ($isMain) {
+					$activeAliases[$r->getName()] = true;
+					continue;
+				}
+				
+				// Required joins are always active
+				if (method_exists($r, 'isRequired') && $r->isRequired()) {
+					$activeAliases[$r->getName()] = true;
+					continue;
+				}
+				
+				// Check current include flag
+				if ($this->shouldIncludeJoinRange($r)) {
+					$activeAliases[$r->getName()] = true;
+				}
+			}
+			
+			return $activeAliases;
+		}
+		
+		/**
+		 * Validate that there's exactly one active alias and it matches the aggregate's alias.
+		 *
+		 * For window function conversion to be valid, the query must have exactly one
+		 * active table/range, and the aggregate must reference that same range. This
+		 * ensures the window function will operate over the correct data set.
+		 *
+		 * @param array<string, true> $activeAliases Map of currently active alias names
+		 * @param string $aggAlias The alias that the aggregate references
+		 * @return bool True if exactly one active alias exists and matches aggAlias
+		 */
+		private function validateSingleActiveAlias(array $activeAliases, string $aggAlias): bool {
+			// There must be exactly one active alias
+			if (count($activeAliases) !== 1) {
+				return false;
+			}
+			
+			// And it must be the one the aggregate references
+			$onlyActive = array_key_first($activeAliases);
+			return $onlyActive === $aggAlias;
 		}
 	}
