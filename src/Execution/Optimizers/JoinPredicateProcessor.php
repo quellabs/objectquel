@@ -17,14 +17,14 @@
 	 */
 	class JoinPredicateProcessor {
 		
-		/** @var AstUtilities Utility methods for AST operations. */
-		private AstUtilities $astUtilities;
+		/** @var Support\AstUtilities Utility methods for AST operations. */
+		private Support\AstUtilities $astUtilities;
 		
 		/**
 		 * JoinPredicateProcessor constructor
-		 * @param AstUtilities $astUtilities AST utility methods
+		 * @param Support\AstUtilities $astUtilities AST utility methods
 		 */
-		public function __construct(AstUtilities $astUtilities) {
+		public function __construct(Support\AstUtilities $astUtilities) {
 			$this->astUtilities = $astUtilities;
 		}
 		

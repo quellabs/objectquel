@@ -35,8 +35,8 @@
 		/** @var BinaryOperationHelper Utility for working with binary expressions in JOIN conditions */
 		private BinaryOperationHelper $binaryHelper;
 		
-		/** @var AstUtilities General AST manipulation and traversal utilities */
-		private AstUtilities $astUtilities;
+		/** @var Support\AstUtilities General AST manipulation and traversal utilities */
+		private Support\AstUtilities $astUtilities;
 		
 		/**
 		 * Initialize optimizer with required dependencies
@@ -45,7 +45,7 @@
 		public function __construct(EntityManager $entityManager) {
 			$this->entityStore = $entityManager->getEntityStore();
 			$this->binaryHelper = new BinaryOperationHelper();
-			$this->astUtilities = new AstUtilities();
+			$this->astUtilities = new Support\AstUtilities();
 		}
 		
 		/**

@@ -85,11 +85,11 @@
 		/** @var AnchorManager Manages anchor range selection and ensures single anchor. */
 		private AnchorManager $anchorManager;
 		
-		/** @var AstUtilities Utility methods for AST operations. */
-		private AstUtilities $astUtilities;
+		/** @var Support\AstUtilities Utility methods for AST operations. */
+		private Support\AstUtilities $astUtilities;
 		
-		/** @var AstNodeReplacer AST replacement */
-		private AstNodeReplacer $nodeReplacer;
+		/** @var Support\AstNodeReplacer AST replacement */
+		private Support\AstNodeReplacer $nodeReplacer;
 		
 		/**
 		 * AnyOptimizer constructor
@@ -98,8 +98,8 @@
 		public function __construct(EntityManager $entityManager) {
 			$this->entityStore = $entityManager->getEntityStore();
 			$this->analyzer = new RangeUsageAnalyzer($this->entityStore);
-			$this->astUtilities = new AstUtilities();
-			$this->nodeReplacer = new AstNodeReplacer();
+			$this->astUtilities = new Support\AstUtilities();
+			$this->nodeReplacer = new Support\AstNodeReplacer();
 			$this->rangePartitioner = new RangePartitioner($this->astUtilities);
 			$this->joinPredicateProcessor = new JoinPredicateProcessor($this->astUtilities);
 			$this->anchorManager = new AnchorManager($this->astUtilities);
