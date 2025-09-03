@@ -46,7 +46,6 @@
 		private RangeUsageAnalyzer $analyzer;
 		private RangePartitioner $rangePartitioner;
 		private AnchorManager $anchorManager;
-		private RangeOptimizer $rangeOptimizer;
 		
 		/**
 		 * Registry of all supported aggregate function AST node types
@@ -90,7 +89,6 @@
 			$this->analyzer = new RangeUsageAnalyzer($entityManager->getEntityStore());
 			$this->rangePartitioner = new RangePartitioner($this->astUtilities);
 			$this->anchorManager = new AnchorManager($this->astUtilities);
-			$this->rangeOptimizer = new RangeOptimizer($entityManager);
 		}
 		
 		/**
@@ -225,7 +223,7 @@
 			$ast->accept($visitor);
 			return $visitor->getCollectedNodes();
 		}
-
+		
 		/**
 		 * This optimization strategy moves aggregate-specific WHERE conditions into
 		 * the subquery's WHERE clause rather than keeping them embedded within
@@ -280,7 +278,7 @@
 		 * @return bool True if the aggregate can be flattened to a window function, false otherwise
 		 * @see passesBasicWindowChecks() For basic validation rules
 		 * @see getAggregateAlias() For alias extraction logic
-		 * @see markInertLeftJoinsAsExcluded() For side effects on join ranges
+		 * @see markInertJoinsAsExcluded() For side effects on join ranges
 		 */
 		private function canFlattenToWindow(AstRetrieve $root, AstInterface $agg): bool {
 			// Check basic window function compatibility (e.g., supported aggregate types,
@@ -299,7 +297,7 @@
 			
 			// Mark LEFT JOINs that don't contribute to the final result set as excluded
 			// This prevents them from affecting the window function transformation
-			$this->markInertLeftJoinsAsExcluded($root);
+			$this->markInertJoinsAsExcluded($root);
 			
 			// Get all table aliases that are actually used in the query after
 			// excluding inert joins (aliases that contribute columns, filters, etc.)
@@ -363,51 +361,7 @@
 		}
 		
 		/**
-		 * Mark inert LEFT JOINs (only used in their own ON clause) as excluded.
-		 *
-		 * This method has a side effect: it modifies join ranges by setting includeAsJoin=false
-		 * for LEFT JOINs that are only referenced in their own ON clause predicate. Such joins
-		 * are considered "inert" because they don't affect the result set and can be safely
-		 * excluded from window function queries.
-		 *
-		 * Only processes optional joins (non-required) that are currently included.
-		 *
-		 * @param AstRetrieve $root The root AST node containing all ranges to analyze
-		 * @return void This method modifies ranges in-place via setIncludeAsJoin()
-		 *
-		 * @see isInertLeftJoin() For the logic determining if a join is inert
-		 * @see shouldIncludeJoinRange() For current inclusion status
-		 */
-		private function markInertLeftJoinsAsExcluded(AstRetrieve $root): void {
-			foreach ($root->getRanges() as $r) {
-				$isMain = !method_exists($r, 'getJoinProperty') || $r->getJoinProperty() === null;
-				if ($isMain) {
-					continue;
-				}
-				
-				// Skip required joins
-				if (method_exists($r, 'isRequired') && $r->isRequired()) {
-					continue;
-				}
-				
-				// Current include flag (default true)
-				$include = $this->shouldIncludeJoinRange($r);
-				
-				if ($include && $this->isInertLeftJoin($root, $r)) {
-					if (method_exists($r, 'setIncludeAsJoin')) {
-						$r->setIncludeAsJoin(false);
-					}
-				}
-			}
-		}
-		
-		/**
 		 * Check if a join range should be included based on its current flags.
-		 *
-		 * Checks multiple possible method names for inclusion flags, as different range
-		 * implementations may use different naming conventions. Falls back to true
-		 * (include by default) if no explicit flag methods are found.
-		 *
 		 * @param mixed $r The join range object to check (various range implementations)
 		 * @return bool True if the range should be included in the join, false otherwise
 		 */
@@ -422,27 +376,6 @@
 			
 			// Default true
 			return true;
-		}
-		
-		/**
-		 * Check if a join range is inert (only used in its own ON clause).
-		 *
-		 * An "inert" LEFT JOIN is one where the joined table's alias is only referenced
-		 * within the join's own ON predicate and nowhere else in the query. Such joins
-		 * don't affect the result set and can be safely omitted.
-		 *
-		 * @param AstRetrieve $root The root AST node to search for alias usage
-		 * @param mixed $r The join range to evaluate for inertness
-		 * @return bool True if the join is inert (safe to exclude), false otherwise
-		 *
-		 * @see countAliasOutsideOwnJoin() For the traversal logic counting alias usage
-		 */
-		private function isInertLeftJoin(AstRetrieve $root, $r): bool {
-			$joinProp = method_exists($r, 'getJoinProperty') ? $r->getJoinProperty() : null;
-			$alias = $r->getName();
-			$outerUse = $this->countAliasOutsideOwnJoin($root, $alias, $joinProp);
-			
-			return $outerUse === 0;
 		}
 		
 		/**
@@ -527,8 +460,8 @@
 					continue;
 				}
 				
-				// Check current include flag
-				if ($this->shouldIncludeJoinRange($r)) {
+				// Otherwise: only active if (a) it’s included AND (b) it’s used outside its own ON
+				if ($this->shouldIncludeJoinRange($r) && !$this->isInertJoin($root, $r)) {
 					$activeAliases[$r->getName()] = true;
 				}
 			}
@@ -556,5 +489,43 @@
 			// And it must be the one the aggregate references
 			$onlyActive = array_key_first($activeAliases);
 			return $onlyActive === $aggAlias;
+		}
+		
+		private function markInertJoinsAsExcluded(AstRetrieve $root): void {
+			foreach ($root->getRanges() as $r) {
+				$isMain = !method_exists($r, 'getJoinProperty') || $r->getJoinProperty() === null;
+				if ($isMain) {
+					continue;
+				}
+				
+				// Skip required joins
+				if (method_exists($r, 'isRequired') && $r->isRequired()) {
+					continue;
+				}
+				
+				$include = $this->shouldIncludeJoinRange($r);
+				if ($include && $this->isInertJoin($root, $r)) {
+					// Try both setter flavors
+					if (method_exists($r, 'setShouldIncludeAsJoin')) {
+						$r->setShouldIncludeAsJoin(false);
+					} elseif (method_exists($r, 'setIncludeAsJoin')) {
+						$r->setIncludeAsJoin(false);
+					}
+				}
+			}
+		}
+		
+		/**
+		 * A join is "inert" if its alias only appears in its own ON predicate and nowhere else
+		 * in the SELECT / WHERE / GROUP BY / HAVING / ORDER BY of the outer query (and not in subqueries).
+		 */
+		private function isInertJoin(AstRetrieve $root, $r): bool {
+			$ownJoinProp = method_exists($r, 'getJoinProperty') ? $r->getJoinProperty() : null;
+			$alias = method_exists($r, 'getName') ? $r->getName() : null;
+			
+			if ($alias === null) {
+				return false;
+			}
+			return $this->countAliasOutsideOwnJoin($root, $alias, $ownJoinProp) === 0;
 		}
 	}
