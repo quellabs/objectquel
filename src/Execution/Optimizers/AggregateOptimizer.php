@@ -10,12 +10,14 @@
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstCountU;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstMax;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstMin;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstNumber;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRetrieve;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRange;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstSubquery;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstSum;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstSumU;
 	use Quellabs\ObjectQuel\ObjectQuel\AstInterface;
+	use Quellabs\ObjectQuel\ObjectQuel\Visitors\CollectIdentifiers;
 	use Quellabs\ObjectQuel\ObjectQuel\Visitors\CollectNodes;
 	use Quellabs\ObjectQuel\ObjectQuel\Visitors\CollectRanges;
 	
@@ -108,6 +110,8 @@
 			// Eliminate ranges
 			$this->eliminateUnusedRanges($ast);
 			
+			$this->rewriteFilterOnlyJoinsToExists($ast);
+			
 			// Get all aggregates in one pass using visitor pattern
 			$aggregates = $this->findAllAggregateNodes($ast);
 			
@@ -120,7 +124,7 @@
 						if ($this->needsGroupBy($ast)) {
 							$this->addGroupByClause($ast);
 						}
-
+						
 						break;
 					
 					case 'SUBQUERY':
@@ -407,11 +411,6 @@
 		
 		/**
 		 * Checks if the query SELECT clause contains only aggregate functions
-		 *
-		 * Pure aggregation queries (e.g., "SELECT SUM(x), COUNT(y) FROM table")
-		 * can be handled more efficiently with the DIRECT strategy since there
-		 * are no individual row details to preserve.
-		 *
 		 * @param AstRetrieve $retrieve The query AST
 		 * @return bool True if all SELECT items are aggregates
 		 */
@@ -529,7 +528,7 @@
 					}
 				}
 			}
-
+			
 			return false;
 		}
 		
@@ -726,35 +725,73 @@
 		}
 		
 		private function eliminateUnusedRanges(AstRetrieve $ast): void {
-			if ($this->isOnlyAggregatesInSelect($ast)) {
-				$usedRanges = $this->getAllRangesUsedInSelect($ast);
-				
-				$unusedRanges = array_udiff(
-					$ast->getRanges(),
-					$usedRanges,
-					static function ($a, $b): int {
-						return $a == $b ? 0 : -1; // or use === if instances must match exactly
-					}
-				);
-				
-				foreach ($unusedRanges as $unused) {
-					$ast->removeRange($unused);
+			// Only attempt when SELECT is aggregates-only
+			if (!$this->isOnlyAggregatesInSelect($ast)) {
+				return;
+			}
+			
+			$allRanges = $ast->getRanges();
+			
+			// 1) Collect ranges used in SELECT and WHERE
+			$usedInSelect = $this->getAllRangesUsedInSelect($ast);
+			$usedInWhere = $ast->getConditions()
+				? $this->getRangesUsedInExpression($ast->getConditions())
+				: [];
+			
+			// 2) Collect ranges referenced by ANY join condition
+			$usedInJoins = [];
+			foreach ($allRanges as $r) {
+				$jc = $r->getJoinProperty();
+				if ($jc !== null) {
+					$usedInJoins = array_merge($usedInJoins, $this->getRangesUsedInExpression($jc));
 				}
+			}
+			
+			// 3) Compute essential = SELECT ∪ WHERE ∪ JOIN-deps (and closure for nested join chains)
+			$keep = [];
+			foreach (array_unique(array_merge($usedInSelect, $usedInWhere, $usedInJoins), SORT_REGULAR) as $r) {
+				$keep[spl_object_hash($r)] = $r;
 				
-				// Move range conditions to query conditions
-				if (count($ast->getRanges()) == 1) {
-					$queryConditions = $ast->getConditions();
-					$rangeConditions = $ast->getRanges()[0]->getJoinProperty();
-					
-					if ($rangeConditions !== null) {
-						if ($queryConditions !== null) {
-							$queryConditions = new AstBinaryOperator($queryConditions, $rangeConditions, "AND");
-						} else {
-							$queryConditions = $rangeConditions;
+				// declare a variable
+				$processed = [];
+				
+				// Pull in dependency closure via join conditions
+				$this->addRangeWithDependencies($r, $allRanges, $keep, $processed);
+			}
+			
+			// 4) Remove only truly unreferenced ranges (never referenced anywhere)
+			foreach ($allRanges as $range) {
+				if (!isset($keep[spl_object_hash($range)])) {
+					$ast->removeRange($range);
+				}
+			}
+			
+			// 5) If a single range remains, DO NOT inline its join into WHERE if it still
+			//    references removed ranges. Only move the join condition when it references
+			//    the remaining range(s) exclusively.
+			if (count($ast->getRanges()) === 1) {
+				$only = $ast->getRanges()[0];
+				$jc = $only->getJoinProperty();
+				
+				if ($jc !== null) {
+					$refs = $this->getRangesUsedInExpression($jc);
+					$allRefsKept = true;
+					foreach ($refs as $ref) {
+						if ($ref !== $only) {
+							// If it references any other range, keep it as a JOIN (don’t inline)
+							$allRefsKept = false;
+							break;
 						}
-						
-						$ast->setConditions($queryConditions);
-						$ast->getRanges()[0]->setJoinProperty(null);
+					}
+					
+					if ($allRefsKept) {
+						$queryConditions = $ast->getConditions();
+						$ast->setConditions(
+							$queryConditions
+								? new AstBinaryOperator($queryConditions, $jc, "AND")
+								: $jc
+						);
+						$only->setJoinProperty(null);
 					}
 				}
 			}
@@ -768,11 +805,97 @@
 		private function getAllRangesUsedInSelect(AstRetrieve $retrieve): array {
 			$visitor = new CollectRanges();
 			
-			foreach($retrieve->getValues() as $value) {
+			foreach ($retrieve->getValues() as $value) {
 				$value->accept($visitor);
 			}
 			
 			return $visitor->getCollectedNodes();
+		}
+		
+		private function rewriteFilterOnlyJoinsToExists(AstRetrieve $ast): void {
+			if (!$this->isOnlyAggregatesInSelect($ast)) {
+				return;
+			}
+			
+			$ranges = $ast->getRanges();
+			if (count($ranges) < 2) {
+				return;
+			}
+			
+			// Ranges used by aggregate arguments
+			$aggRanges = [];
+			foreach ($this->findAllAggregateNodes($ast) as $agg) {
+				foreach ($this->getRangesUsedInExpression($agg) as $r) {
+					$aggRanges[spl_object_hash($r)] = true;
+				}
+			}
+			
+			$outerWhere = $ast->getConditions();
+			$usedInWhere = $outerWhere ? $this->getRangesUsedInExpression($outerWhere) : [];
+			
+			foreach ($ranges as $host) {
+				$hostJoin = $host->getJoinProperty();
+				
+				if ($hostJoin === null) {
+					continue;
+				}
+				
+				// Find referenced ranges in the host join predicate
+				$joinRefs = $this->getRangesUsedInExpression($hostJoin);
+				
+				foreach ($joinRefs as $ref) {
+					$refHash = spl_object_hash($ref);
+					$contributesToAgg = isset($aggRanges[$refHash]);
+					$contributesToWhere = in_array($ref, $usedInWhere, true);
+					
+					if ($contributesToAgg || $contributesToWhere) {
+						continue;
+					}
+					
+					// Build EXISTS over a clone of the referenced range, using the SAME predicate
+					$refClone = $ref->deepClone();
+					
+					// 2) Rebind the join predicate so identifiers of $ref point at $refClone
+					$subWhere = $this->rebindPredicateToClone($hostJoin, $ref, $refClone);
+					
+					$exists = new AstSubquery(
+						AstSubquery::TYPE_EXISTS,
+						new AstNumber(1),
+						[$refClone],
+						$subWhere
+					);
+					
+					// Attach EXISTS to outer WHERE
+					if ($outerWhere) {
+						$outerWhere = new AstBinaryOperator($outerWhere, $exists, "AND");
+					} else {
+						$outerWhere = $exists;
+					}
+					
+					$ast->setConditions($outerWhere);
+					
+					// Drop the join edge and the referenced range from FROM
+					$host->setJoinProperty(null);
+					$ast->removeRange($ref);
+				}
+			}
+		}
+
+		// helper: clone predicate and retarget identifiers from $old to $new (only for that range)
+		private function rebindPredicateToClone(AstInterface $predicate, AstRange $old, AstRange $new): AstInterface {
+			$cloned = $predicate->deepClone();
+			
+			$visitor = new CollectIdentifiers();
+			$cloned->accept($visitor);
+			$identifiers = $visitor->getCollectedNodes();
+			
+			foreach($identifiers as $identifier) {
+				if ($identifier->getRange() === $old) {
+					$identifier->setRange($new);
+				}
+			}
+			
+			return $cloned;
 		}
 		
 	}

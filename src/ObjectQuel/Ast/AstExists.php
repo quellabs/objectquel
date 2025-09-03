@@ -2,6 +2,7 @@
 	
 	namespace Quellabs\ObjectQuel\ObjectQuel\Ast;
 	
+	use Quellabs\ObjectQuel\ObjectQuel\AstInterface;
 	use Quellabs\ObjectQuel\ObjectQuel\AstVisitorInterface;
 	
 	/**
@@ -13,13 +14,13 @@
 		 * The value or string to check
 		 * @var AstIdentifier
 		 */
-		protected AstIdentifier $identifier;
+		protected AstInterface $identifier;
 		
 		/**
 		 * AstExists constructor.
-		 * @param AstIdentifier $identifier
+		 * @param AstInterface $identifier
 		 */
-		public function __construct(AstIdentifier $identifier) {
+		public function __construct(AstInterface $identifier) {
 			$this->identifier = $identifier;
 			$this->identifier->setParent($this);
 		}

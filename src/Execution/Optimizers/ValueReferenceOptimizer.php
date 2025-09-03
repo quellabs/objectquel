@@ -26,7 +26,7 @@
 			}
 			
 			// Use visitor pattern to traverse AST and collect field references
-			$visitor = new GatherReferenceJoinValues();
+			$visitor = new GatherReferenceJoinValues($ast);
 			$ast->accept($visitor);
 			
 			// Add each referenced field as an invisible alias
