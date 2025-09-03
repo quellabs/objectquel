@@ -37,15 +37,17 @@
 	 */
 	class AggregateOptimizer {
 		/** Strategy label: keep aggregate in the main query. */
-		private const STRATEGY_DIRECT = 'DIRECT';
+		private const string STRATEGY_DIRECT = 'DIRECT';
+
 		/** Strategy label: compute aggregate in a correlated subquery. */
-		private const STRATEGY_SUBQUERY = 'SUBQUERY';
+		private const string STRATEGY_SUBQUERY = 'SUBQUERY';
+
 		/** Strategy label: compute aggregate as a window function. */
-		private const STRATEGY_WINDOW = 'WINDOW';
+		private const string STRATEGY_WINDOW = 'WINDOW';
 		
 		private EntityManager $entityManager;
-		private AstUtilities $astUtils;
-		private AstNodeReplacer $replacer;
+		private Support\AstUtilities $astUtils;
+		private Support\AstNodeReplacer $replacer;
 		
 		/** @var array<class-string<AstInterface>> Supported aggregate node classes. */
 		private array $aggregateNodeTypes = [
@@ -71,8 +73,8 @@
 		 */
 		public function __construct(EntityManager $entityManager) {
 			$this->entityManager = $entityManager;
-			$this->astUtils = new AstUtilities();
-			$this->replacer = new AstNodeReplacer();
+			$this->astUtils = new Support\AstUtilities();
+			$this->replacer = new Support\AstNodeReplacer();
 		}
 		
 		// ---------------------------------------------------------------------
@@ -96,8 +98,7 @@
 			$this->rewriteFilterOnlyJoinsAsExists($root);
 			$this->simplifySelfJoinExists($root, /* includeNulls */ false);
 			
-			$aggregates = $this->collectAggregateNodes($root);
-			foreach ($aggregates as $agg) {
+			foreach ($this->collectAggregateNodes($root) as $agg) {
 				$strategy = $this->chooseStrategy($root, $agg);
 				
 				switch ($strategy) {
@@ -105,6 +106,7 @@
 						if ($this->selectNeedsGroupBy($root)) {
 							$this->ensureGroupByForNonAggregates($root);
 						}
+						
 						break;
 					
 					case self::STRATEGY_SUBQUERY:
@@ -146,14 +148,16 @@
 			}
 			
 			$nonAggItems = $this->collectNonAggregateSelectItems($root);
+			
 			if (!empty($nonAggItems)) {
 				$aggRanges = $this->collectRangesFromNode($aggregate);
 				$nonAggRanges = $this->collectRangesFromNodes($nonAggItems);
 				
 				if ($this->rangesOverlapOrAreRelated($aggRanges, $nonAggRanges)) {
 					return self::STRATEGY_DIRECT;
+				} else {
+					return self::STRATEGY_SUBQUERY;
 				}
-				return self::STRATEGY_SUBQUERY;
 			}
 			
 			if ($this->canRewriteAsWindowFunction($root, $aggregate)) {
@@ -232,7 +236,6 @@
 		
 		/**
 		 * Compute minimal range set (seed ranges + join dependency closure).
-		 *
 		 * @param AstRange[] $allRanges All ranges in the outer query
 		 * @param AstRange[] $seedRanges Ranges referenced by the aggregate
 		 * @return AstRange[] Minimal set of ranges needed for correctness
@@ -250,7 +253,6 @@
 		
 		/**
 		 * Recursively add a range and the ranges referenced by its join predicate.
-		 *
 		 * @param AstRange $range Starting range
 		 * @param AstRange[] $universe All known ranges
 		 * @param array<int,AstRange> $required Collected set (by reference)
@@ -320,6 +322,7 @@
 					return false;
 				}
 			}
+			
 			return true;
 		}
 		
@@ -347,16 +350,19 @@
 		 */
 		private function collectRangesFromNodes(array $nodes): array {
 			$visitor = new CollectRanges();
+			
 			foreach ($nodes as $n) {
 				if ($n instanceof AstInterface) {
 					$n->accept($visitor);
-				} elseif (method_exists($n, 'getExpression')) {
+				} else {
 					$expr = $n->getExpression();
+					
 					if ($expr instanceof AstInterface) {
 						$expr->accept($visitor);
 					}
 				}
 			}
+			
 			return $visitor->getCollectedNodes();
 		}
 		
