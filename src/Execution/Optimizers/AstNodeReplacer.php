@@ -23,6 +23,9 @@
 		 * @throws \InvalidArgumentException When the old child cannot be found or replacement is not supported
 		 */
 		public function replaceChild(AstInterface $parent, AstInterface $oldChild, AstInterface $newChild): void {
+			// Set new parent
+			$newChild->setParent($parent);
+			
 			// Handle binary operations (most common case)
 			// Binary nodes have left and right children (e.g., AND, OR, comparison operators)
 			if ($this->isBinaryNode($parent)) {
@@ -31,20 +34,26 @@
 			}
 			
 			// Replace expression child (e.g., in NOT operations, function calls)
-			if ($parent->getExpression() === $oldChild) {
+			if (method_exists($parent, 'getExpression') && $parent->getExpression() === $oldChild) {
 				$parent->setExpression($newChild);
 				return;
 			}
 			
 			// Replace conditions child (e.g., in WHERE clauses, conditional blocks)
-			if ($parent->getConditions() === $oldChild) {
+			if (method_exists($parent, 'getConditions') && $parent->getConditions() === $oldChild) {
 				$parent->setConditions($newChild);
 				return;
 			}
 			
 			// Replace identifier child (e.g., in field references, variable names)
-			if ($parent->getIdentifier() === $oldChild) {
+			if (method_exists($parent, 'getIdentifier') && $parent->getIdentifier() === $oldChild) {
 				$parent->setIdentifier($newChild);
+				return;
+			}
+			
+			// Replace identifier child (e.g., in field references, variable names)
+			if (method_exists($parent, 'getAggregation') && $parent->getAggregation() === $oldChild) {
+				$parent->setAggregation($newChild);
 				return;
 			}
 			

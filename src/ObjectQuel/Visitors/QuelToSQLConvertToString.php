@@ -477,6 +477,16 @@
 		 * @param AstAny $ast The ANY function node to process
 		 */
 		protected function handleAny(AstAny $ast): void {
+			$objectHash = spl_object_id($ast);
+			$isVisited = isset($this->visitedNodes[$objectHash]);
+			
+			error_log("handleAny: hash=$objectHash, visited=" . ($isVisited ? 'YES' : 'NO'));
+			
+			if ($isVisited) {
+				error_log("handleAny: skipping visited node");
+				return;
+			}
+			
 			$this->result[] = $this->aggregateHandler->handleAny($ast);
 		}
 		
@@ -491,9 +501,14 @@
 		
 		/**
 		 * Mark an AST node and its chain as visited
-		 * @param AstInterface $ast The AST node to mark as visited
+		 * @param AstInterface|null $ast The AST node to mark as visited
 		 */
-		protected function addToVisitedNodes(AstInterface $ast): void {
+		protected function addToVisitedNodes(?AstInterface $ast): void {
+			// Do not process empty nodes
+			if ($ast === null) {
+				return;
+			}
+			
 			// Mark this node as visited using its unique object ID
 			$this->visitedNodes[spl_object_id($ast)] = true;
 			
@@ -506,10 +521,23 @@
 			if (
 				$ast instanceof AstTerm ||
 				$ast instanceof AstFactor ||
-				$ast instanceof AstExpression
+				$ast instanceof AstExpression ||
+				$ast instanceof AstBinaryOperator
 			) {
 				$this->addToVisitedNodes($ast->getLeft());
 				$this->addToVisitedNodes($ast->getRight());
+			}
+			
+			// And AstAny
+			if ($ast instanceof AstAny) {
+				$this->addToVisitedNodes($ast->getConditions());
+				$this->addToVisitedNodes($ast->getIdentifier());
+			}
+
+			// And AstSubQuery
+			if ($ast instanceof AstSubquery) {
+				$this->addToVisitedNodes($ast->getAggregation());
+				$this->addToVisitedNodes($ast->getConditions());
 			}
 		}
 		

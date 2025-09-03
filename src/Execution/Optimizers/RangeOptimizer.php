@@ -267,6 +267,7 @@
 		private function isRangeCompletelyUnused(AstRetrieve $ast, AstRange $range): bool {
 			// Get all identifiers that reference this range
 			$allIdentifiers = $ast->getAllIdentifiers($range);
+			
 			// If no identifiers reference this range, it's unused
 			return empty($allIdentifiers);
 		}
