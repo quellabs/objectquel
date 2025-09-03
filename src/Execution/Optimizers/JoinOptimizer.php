@@ -129,7 +129,6 @@
 		/**
 		 * Identifies whether WHERE conditions reference non-nullable fields.
 		 * Non-nullable field references can affect join elimination.
-		 *
 		 * @param AstRetrieve $ast The query AST to analyze
 		 * @param AstRange $range The range to check for non-nullable field usage
 		 * @return bool True if non-nullable fields are referenced

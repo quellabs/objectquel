@@ -64,7 +64,10 @@
 		 * @param AstRetrieve $ast The query AST to optimize
 		 */
 		public function optimize(AstRetrieve $ast): void {
-			if ($this->shouldUseSingleRangeOptimization($ast)) {
+			// Check routing decision
+			$shouldUseSingle = $this->shouldUseSingleRangeOptimization($ast);
+			
+			if ($shouldUseSingle) {
 				$this->optimizeSingleRangeAggregates($ast);
 			} else {
 				$this->optimizeMultiRangeAggregates($ast);
@@ -77,7 +80,6 @@
 				return false;
 			}
 			
-			// If truly single range, safe to use single-range optimization
 			return true;
 		}
 		
@@ -106,24 +108,20 @@
 		 * @param AstRetrieve $ast The multi-range query AST
 		 */
 		private function optimizeMultiRangeAggregates(AstRetrieve $ast): void {
-			// Find all aggregate functions in both SELECT values and WHERE conditions
 			$valueAggregates = $this->findAggregatesForValues($ast->getValues());
 			$conditionAggregates = $this->findAggregatesForConditions($ast->getConditions());
 			$allAggregates = array_merge($valueAggregates, $conditionAggregates);
 			
-			// Process each aggregate function individually
-			foreach ($allAggregates as $aggregateNode) {
-				// Skip aggregates that don't need optimization
-				if (!$this->shouldWrapAggregation($ast, $aggregateNode)) {
+			foreach ($allAggregates as $i => $aggregateNode) {
+				$shouldWrap = $this->shouldWrapAggregation($ast, $aggregateNode);
+				
+				if (!$shouldWrap) {
 					continue;
 				}
 				
-				// Choose between subquery and CASE WHEN based on efficiency
 				if ($this->isSubqueryMoreEfficient($ast, $aggregateNode)) {
-					// Convert to subquery for complex scenarios
 					$this->convertAggregateToSubquery($ast, $aggregateNode);
 				} else {
-					// Use CASE WHEN for simpler transformations
 					$this->transformAggregateToCase($aggregateNode);
 				}
 			}
@@ -315,20 +313,20 @@
 			
 			// Most aggregates become scalar subqueries
 			if (!$aggregateNode instanceof AstAny) {
-				$subquery = new AstSubquery($aggregateNode, AstSubquery::TYPE_SCALAR);
+				$subquery = new AstSubquery(AstSubquery::TYPE_SCALAR, $aggregateNode, );
 				$this->astNodeReplacer->replaceChild($parentNode, $aggregateNode, $subquery);
 				return;
 			}
 			
 			// ANY functions in WHERE conditions become EXISTS subqueries
-			if ($aggregateNode->isAncestorOf($ast->getConditions())) {
-				$subquery = new AstSubquery($aggregateNode, AstSubquery::TYPE_EXISTS);
+			if ($ast->getConditions() !== null && $aggregateNode->isAncestorOf($ast->getConditions())) {
+				$subquery = new AstSubquery(AstSubquery::TYPE_EXISTS, $aggregateNode, );
 				$this->astNodeReplacer->replaceChild($parentNode, $aggregateNode, $subquery);
 				return;
 			}
 			
 			// ANY functions in SELECT values become CASE WHEN subqueries
-			$subquery = new AstSubquery($aggregateNode, AstSubquery::TYPE_CASE_WHEN);
+			$subquery = new AstSubquery(AstSubquery::TYPE_CASE_WHEN, $aggregateNode, );
 			$this->astNodeReplacer->replaceChild($parentNode, $aggregateNode, $subquery);
 		}
 		
@@ -349,8 +347,12 @@
 		 * @return bool True if subquery would be more efficient
 		 */
 		private function isSubqueryMoreEfficient(AstRetrieve $ast, AstInterface $aggregation): bool {
-			// Conservative approach: prefer CASE WHEN over subqueries
-			// CASE WHEN generally has better performance characteristics and is simpler
+			// ANY aggregates must use subqueries to work correctly
+			if ($aggregation instanceof AstAny) {
+				return true;
+			}
+			
+			// Conservative approach for other aggregates: prefer CASE WHEN
 			return false;
 		}
 		
@@ -425,12 +427,10 @@
 				return true;
 			}
 			
-			// Other aggregates only need processing if they have conditions
 			if ($aggregate->getConditions() === null) {
 				return false;
 			}
 			
-			// Single range queries should not wrap
 			if ($ast->isSingleRangeQuery(true)) {
 				return false;
 			}

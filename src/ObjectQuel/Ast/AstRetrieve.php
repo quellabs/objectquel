@@ -379,7 +379,7 @@
 		
 		public function getLocationOfChild(AstInterface $ast): ?string {
 			foreach($this->values as $value) {
-				if ($value->containsChild($ast)) {
+				if ($ast->isAncestorOf($value)) {
 					return "select";
 				}
 			}
