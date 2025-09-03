@@ -58,6 +58,7 @@
 			// Remove any LEFT JOINs that became unused after previous optimizations
 			// Optimize constant values and references last when structure is stable
 			$this->rangeOptimizer->removeUnusedLeftJoinRanges($ast);
+			$this->joinOptimizer->optimize($ast);
 			$this->valueReferenceOptimizer->optimize($ast);
 		}
 	}

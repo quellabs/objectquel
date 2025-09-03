@@ -480,10 +480,7 @@
 			$objectHash = spl_object_id($ast);
 			$isVisited = isset($this->visitedNodes[$objectHash]);
 			
-			error_log("handleAny: hash=$objectHash, visited=" . ($isVisited ? 'YES' : 'NO'));
-			
 			if ($isVisited) {
-				error_log("handleAny: skipping visited node");
 				return;
 			}
 			
