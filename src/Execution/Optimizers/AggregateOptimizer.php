@@ -3,15 +3,14 @@
 	namespace Quellabs\ObjectQuel\Execution\Optimizers;
 	
 	use Quellabs\ObjectQuel\EntityManager;
-	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstAny;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstAvg;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstAvgU;
-	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstCase;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstCount;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstCountU;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstMax;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstMin;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRetrieve;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRange;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstSubquery;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstSum;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstSumU;
@@ -19,472 +18,357 @@
 	use Quellabs\ObjectQuel\ObjectQuel\Visitors\CollectNodes;
 	
 	/**
-	 * Optimizes aggregate functions by choosing the most efficient execution strategy.
-	 * Handles both single-range and multi-range query optimizations.
+	 * Query Optimizer for Aggregate Function Performance
 	 *
-	 * Single-range optimization focuses on moving conditions from aggregate functions
-	 * to the WHERE clause and converting conditional aggregates to CASE WHEN statements.
+	 * Transforms aggregate functions (SUM, COUNT, AVG, MIN, MAX) into optimized scalar
+	 * subqueries to improve query performance. This optimization isolates aggregates with
+	 * their minimal required data scope, reducing unnecessary JOINs and table scans.
 	 *
-	 * Multi-range optimization decides between subqueries and CASE WHEN transformations
-	 * based on query complexity and performance considerations.
+	 * TRANSFORMATION EXAMPLE:
+	 * Before: SELECT o.id, SUM(oi.price) FROM orders o JOIN order_items oi ON o.id = oi.order_id
+	 * After:  SELECT o.id, (SELECT SUM(oi.price) FROM order_items oi WHERE oi.order_id = o.id)
+	 *
+	 * KEY FEATURES:
+	 * - Minimizes JOIN complexity by isolating aggregate calculations
+	 * - Preserves semantic correctness through correlation analysis
+	 * - Handles both nullable (SUM, COUNT, AVG) and non-nullable (SUMU, COUNTU, AVGU) variants
+	 * - Maintains original WHERE conditions within subquery scope
+	 *
+	 * LIMITATIONS:
+	 * - COUNT(*) syntax not supported - use COUNT(expression) instead
+	 * - Requires compatible RangeUsageAnalyzer for optimal performance
+	 *
 	 */
 	class AggregateOptimizer {
-		
-		/** @var array List of all supported aggregate AST node types */
-		private array $aggregateTypes;
-		
-		/** @var AstNodeReplacer Handles AST node replacements during optimization */
-		private AstNodeReplacer $astNodeReplacer;
+		private AstNodeReplacer $nodeReplacer;
+		private AstUtilities $astUtilities;
+		private RangeUsageAnalyzer $analyzer;
+		private RangePartitioner $rangePartitioner;
+		private AnchorManager $anchorManager;
 		
 		/**
-		 * Initialize the optimizer with all supported aggregate types.
+		 * Registry of all supported aggregate function AST node types
 		 *
-		 * @param EntityManager $entityManager The entity manager (currently unused but available for future enhancements)
+		 * Includes both nullable and non-nullable variants:
+		 * - SUM/SUMU: Arithmetic summation with/without null handling
+		 * - COUNT/COUNTU: Row counting with/without null handling
+		 * - AVG/AVGU: Arithmetic mean with/without null handling
+		 * - MIN/MAX: Extrema functions (inherently null-safe)
+		 * @var array<class-string>
+		 */
+		private array $aggregateTypes = [
+			AstSum::class,
+			AstSumU::class,
+			AstCount::class,
+			AstCountU::class,
+			AstAvg::class,
+			AstAvgU::class,
+			AstMin::class,
+			AstMax::class,
+		];
+		
+		/**
+		 * Initialize optimizer with required dependencies
+		 * @param EntityManager $entityManager Provides access to entity metadata and storage layer
 		 */
 		public function __construct(EntityManager $entityManager) {
-			$this->astNodeReplacer = new AstNodeReplacer();
+			$this->astUtilities = new AstUtilities();
+			$this->nodeReplacer = new AstNodeReplacer();
+			$this->analyzer = new RangeUsageAnalyzer($entityManager->getEntityStore());
+			$this->rangePartitioner = new RangePartitioner($this->astUtilities);
+			$this->anchorManager = new AnchorManager($this->astUtilities);
+		}
+		
+		/**
+		 * Main optimization entry point - processes entire AST for aggregate functions
+		 *
+		 * Scans the complete AST tree to locate all aggregate nodes and converts each
+		 * into an optimized scalar subquery. The process preserves query semantics while
+		 * potentially improving execution performance through reduced JOIN complexity.
+		 *
+		 * OPTIMIZATION STRATEGY:
+		 * 1. Identify all aggregate function nodes in the AST
+		 * 2. Analyze data dependencies for each aggregate
+		 * 3. Create minimal correlated subqueries with only required ranges
+		 * 4. Replace original aggregate nodes with subquery equivalents
+		 *
+		 * @param AstRetrieve $ast Root query AST node to optimize
+		 */
+		public function optimize(AstRetrieve $ast): void {
+			// Locate all aggregate functions throughout the entire query tree
+			foreach ($this->findAllAggregateNodes($ast) as $agg) {
+				// Transform each aggregate into an optimized scalar subquery
+				// Note: We use TYPE_SCALAR regardless of context (SELECT vs WHERE)
+				// as the optimization strategy remains consistent
+				$this->optimizeAggregateNode($ast, $agg, AstSubquery::TYPE_SCALAR);
+			}
+		}
+		
+		/**
+		 * Core optimization logic - transforms single aggregate into correlated subquery
+		 *
+		 * This method implements the heart of the optimization by:
+		 * 1. Analyzing which table ranges (FROM/JOIN sources) are actually needed
+		 * 2. Partitioning ranges into "live" (data-contributing) vs "correlation-only"
+		 * 3. Creating a minimal subquery with only essential ranges
+		 * 4. Ensuring proper correlation back to the outer query
+		 *
+		 * DEPENDENCY ANALYSIS:
+		 * - Expression dependencies: Ranges referenced in the aggregate expression itself
+		 * - Condition dependencies: Ranges referenced in the aggregate's WHERE conditions
+		 * - Join dependencies: Ranges required to maintain referential integrity
+		 *
+		 * @param AstRetrieve $ast Root query containing the aggregate
+		 * @param AstInterface $agg Specific aggregate node to optimize
+		 * @param string $subQueryType Subquery type constant (always TYPE_SCALAR for aggregates)
+		 */
+		private function optimizeAggregateNode(AstRetrieve $ast, AstInterface $agg, string $subQueryType): void {
+			// STEP 1: Create isolated working copy of table ranges to avoid mutation
+			// Deep cloning ensures the outer query structure remains untouched
+			$ranges = array_map(static fn(AstRange $r) => $r->deepClone(), $ast->getRanges());
 			
-			// Define all aggregate function types that this optimizer can handle
-			$this->aggregateTypes = [
-				AstCount::class,    // COUNT() function
-				AstCountU::class,   // COUNT(DISTINCT) function
-				AstAvg::class,      // AVG() function
-				AstAvgU::class,     // AVG(DISTINCT) function
-				AstSum::class,      // SUM() function
-				AstSumU::class,     // SUM(DISTINCT) function
-				AstMin::class,      // MIN() function
-				AstMax::class,      // MAX() function
-				AstAny::class       // ANY() / EXISTS-like function
+			// STEP 2: Comprehensive dependency analysis for this specific aggregate
+			// Determines which table ranges are referenced in expressions vs conditions,
+			// and identifies null-safety requirements for proper optimization
+			$usage = $this->analyzeUsageForAggregate($agg, $ranges);
+			$usedInExpr = $usage['usedInExpr'];     // Ranges referenced in aggregate expression
+			$usedInCond = $usage['usedInCond'];     // Ranges referenced in aggregate conditions
+			$hasIsNullInCond = $usage['hasIsNullInCond']; // Null-check predicates affecting ranges
+			$nonNullableUse = $usage['nonNullableUse'];   // Ranges that must produce non-null results
+			
+			// STEP 3: Build cross-reference map for JOIN relationship analysis
+			// Essential for maintaining referential integrity when pruning ranges
+			$joinReferences = $this->rangePartitioner->buildJoinReferenceMap($ranges);
+			
+			// STEP 4: Partition ranges into essential vs correlation-only categories
+			// Live ranges actively contribute data; correlation ranges only provide linking
+			[$liveRanges, $correlationOnlyRanges] = $this->rangePartitioner->separateLiveAndCorrelationRanges(
+				$ranges,
+				$usedInExpr,
+				$usedInCond,
+				$joinReferences
+			);
+			
+			// STEP 5: Safety fallback for edge cases where no live ranges detected
+			// Ensures the subquery has at least one meaningful data source
+			if (empty($liveRanges)) {
+				$liveRanges = $this->fallbackLiveRangesForOwner($ranges, $agg);
+			}
+			
+			// STEP 6: Extract and prepare WHERE conditions for the subquery
+			// Only the aggregate's own conditions are included; outer query predicates
+			// remain in the outer scope to preserve correlation semantics
+			$finalWhere = $this->astUtilities->combinePredicatesWithAnd([$this->getConditionsIfAny($agg)]);
+			
+			// STEP 7: Filter range list to include only live (data-contributing) ranges
+			// Maintains original ordering to preserve JOIN sequence semantics
+			$keptRanges = $this->rangePartitioner->filterToLiveRangesOnly($ranges, $liveRanges);
+			
+			// STEP 8: Ensure proper anchor range for correlation
+			// An anchor range provides the correlation link back to the outer query.
+			// This step may reorder or modify ranges to establish clear correlation paths.
+			$keptRanges = $this->anchorManager->ensureSingleAnchorRangeForOwner(
+				$keptRanges,
+				$agg,
+				$finalWhere,
+				$usedInExpr,
+				$usedInCond,
+				$hasIsNullInCond,
+				$nonNullableUse
+			);
+			
+			// STEP 9: Construct the optimized subquery and perform AST replacement
+			// Create clean aggregate node without embedded conditions (moved to subquery WHERE)
+			$aggregationNode = $this->deepCloneAggregateWithoutConditions($agg);
+			$subQuery = new AstSubquery($subQueryType, $aggregationNode, $keptRanges, $finalWhere);
+			
+			// Replace the original aggregate node with the new subquery in the AST
+			$this->nodeReplacer->replaceChild($agg->getParent(), $agg, $subQuery);
+		}
+		
+		/**
+		 * Discover all aggregate function nodes within the query AST
+		 *
+		 * Uses the visitor pattern to traverse the entire AST tree and collect
+		 * all nodes matching registered aggregate types. This ensures no aggregate
+		 * functions are missed regardless of their location in the query structure
+		 * (SELECT list, WHERE clauses, HAVING clauses, ORDER BY, etc.).
+		 *
+		 * @param AstRetrieve $ast Root query node to scan
+		 * @return AstInterface[] Array of discovered aggregate nodes
+		 */
+		private function findAllAggregateNodes(AstRetrieve $ast): array {
+			$visitor = new CollectNodes($this->aggregateTypes);
+			$ast->accept($visitor);
+			return $visitor->getCollectedNodes();
+		}
+		
+		/**
+		 * Analyze table range usage patterns for a specific aggregate function
+		 *
+		 * Determines how each table range (FROM/JOIN source) is utilized by the aggregate:
+		 * - Expression usage: Range provides data for the aggregate calculation
+		 * - Condition usage: Range is referenced in aggregate-specific WHERE conditions
+		 * - Null handling: Whether the range participates in null-check predicates
+		 * - Non-nullable requirements: Whether the range must produce non-null results
+		 *
+		 * This analysis is critical for determining which ranges can be safely excluded
+		 * from the optimized subquery without affecting result correctness.
+		 *
+		 * FALLBACK BEHAVIOR:
+		 * If the enhanced analyzer is unavailable, uses conservative heuristics based
+		 * on identifier collection to ensure safe operation across different codebase versions.
+		 *
+		 * @param AstInterface $owner The aggregate node being analyzed
+		 * @param array $ranges Available table ranges from the query
+		 * @return array{usedInExpr: array<string,bool>, usedInCond: array<string,bool>, hasIsNullInCond: array<string,bool>, nonNullableUse: array<string,bool>}
+		 */
+		private function analyzeUsageForAggregate(AstInterface $owner, array $ranges): array {
+			// Prefer enhanced analyzer method if available in current codebase version
+			if (method_exists($this->analyzer, 'analyzeAggregate')) {
+				/** @var array $res */
+				$res = $this->analyzer->analyzeAggregate($owner, $ranges);
+				return $res;
+			}
+			
+			// FALLBACK: Conservative analysis using basic identifier collection
+			// This ensures compatibility with older codebase versions while providing
+			// reasonable optimization results through simplified usage detection
+			
+			// Initialize all ranges as unused across all categories
+			$names = array_map(static fn(AstRange $r) => $r->getName(), $ranges);
+			$usedInExpr = array_fill_keys($names, false);
+			$usedInCond = array_fill_keys($names, false);
+			$hasIsNullInCond = array_fill_keys($names, false);   // Conservative: assume no IS NULL predicates
+			$nonNullableUse = array_fill_keys($names, false);   // Conservative: assume all ranges nullable
+			
+			// Mark ranges referenced in the aggregate's main expression (e.g., SUM(table.column))
+			foreach ($this->astUtilities->collectIdentifiersFromAst($this->getIdentifierIfAny($owner)) as $id) {
+				$usedInExpr[$id->getRange()->getName()] = true;
+			}
+			
+			// Mark ranges referenced in the aggregate's WHERE conditions
+			$cond = $this->getConditionsIfAny($owner);
+			if ($cond !== null) {
+				$condIds = $this->astUtilities->collectIdentifiersFromAst($cond);
+				foreach ($condIds as $id) {
+					$usedInCond[$id->getRange()->getName()] = true;
+				}
+			}
+			
+			return [
+				'usedInExpr'      => $usedInExpr,
+				'usedInCond'      => $usedInCond,
+				'hasIsNullInCond' => $hasIsNullInCond,
+				'nonNullableUse'  => $nonNullableUse,
 			];
 		}
 		
 		/**
-		 * Main entry point for aggregate optimization.
-		 * Routes to appropriate optimization strategy based on query type.
-		 * @param AstRetrieve $ast The query AST to optimize
+		 * Determine minimal viable table ranges when automatic detection fails
+		 *
+		 * This safety mechanism ensures that even when the sophisticated range analysis
+		 * fails to identify live ranges, the optimizer can still produce a functional
+		 * subquery by falling back to basic heuristics.
+		 *
+		 * SELECTION STRATEGY:
+		 * 1. Prefer ranges directly referenced in the aggregate's expression
+		 * 2. Fall back to the first available range if no direct references found
+		 * 3. Return empty set only if no ranges available at all
+		 *
+		 * This conservative approach prioritizes correctness over optimization when
+		 * sophisticated analysis is unavailable or fails.
+		 *
+		 * @param AstRange[] $ranges All available table ranges
+		 * @param AstInterface $owner The aggregate node requiring live ranges
+		 * @return array<string,AstRange> Selected live ranges indexed by name
 		 */
-		public function optimize(AstRetrieve $ast): void {
-			// Check routing decision
-			$shouldUseSingle = $this->shouldUseSingleRangeOptimization($ast);
-			
-			if ($shouldUseSingle) {
-				$this->optimizeSingleRangeAggregates($ast);
-			} else {
-				$this->optimizeMultiRangeAggregates($ast);
-			}
-		}
-		
-		private function shouldUseSingleRangeOptimization(AstRetrieve $ast): bool {
-			// Don't use single-range optimization if there are multiple ranges
-			if (count($ast->getRanges()) > 1) {
-				return false;
-			}
-			
-			return true;
-		}
-		
-		/**
-		 * Optimizes aggregate functions in single-range queries.
-		 * Can apply more aggressive optimizations like moving conditions to WHERE clause.
-		 * @param AstRetrieve $ast The single-range query AST
-		 */
-		private function optimizeSingleRangeAggregates(AstRetrieve $ast): void {
-			// Check if we can promote an aggregate condition to the main WHERE clause
-			$canPromoteCondition = $this->canPromoteAggregateCondition($ast);
-			
-			if ($canPromoteCondition) {
-				$aggregateCondition = $ast->getValues()[0]->getExpression()->getConditions();
-				$ast->setConditions($aggregateCondition);
-				$ast->getValues()[0]->getExpression()->setConditions(null);
+		private function fallbackLiveRangesForOwner(array $ranges, AstInterface $owner): array {
+			// Use enhanced method if available for more sophisticated fallback logic
+			if (method_exists($this->rangePartitioner, 'selectFallbackLiveRangesForOwner')) {
+				/** @var array<string,AstRange> $res */
+				$res = $this->rangePartitioner->selectFallbackLiveRangesForOwner($ranges, $owner);
+				return $res;
 			}
 			
-			// Transform any remaining conditional aggregates to CASE WHEN statements
-			$this->transformAggregatesToCaseWhen($ast);
-		}
-		
-		/**
-		 * Optimizes aggregate functions in multi-range queries.
-		 * Must be more conservative to avoid breaking cross-range relationships.
-		 * @param AstRetrieve $ast The multi-range query AST
-		 */
-		private function optimizeMultiRangeAggregates(AstRetrieve $ast): void {
-			$valueAggregates = $this->findAggregatesForValues($ast->getValues());
-			$conditionAggregates = $this->findAggregatesForConditions($ast->getConditions());
-			$allAggregates = array_merge($valueAggregates, $conditionAggregates);
+			// BASIC FALLBACK: Select ranges based on identifier analysis
 			
-			foreach ($allAggregates as $i => $aggregateNode) {
-				$shouldWrap = $this->shouldWrapAggregation($ast, $aggregateNode);
+			// Create lookup map for efficient range resolution
+			$rangesByName = [];
+			foreach ($ranges as $r) {
+				$rangesByName[$r->getName()] = $r;
+			}
+			
+			$live = [];
+			
+			// First preference: ranges referenced in the aggregate expression
+			foreach ($this->astUtilities->collectIdentifiersFromAst($this->getIdentifierIfAny($owner)) as $id) {
+				$name = $id->getRange()->getName();
 				
-				if (!$shouldWrap) {
-					continue;
-				}
-				
-				if ($this->isSubqueryMoreEfficient($ast, $aggregateNode)) {
-					$this->convertAggregateToSubquery($ast, $aggregateNode);
-				} else {
-					$this->transformAggregateToCase($aggregateNode);
-				}
-			}
-		}
-		
-		private function canPromoteAggregateCondition(AstRetrieve $ast): bool {
-			// Basic structural requirements
-			if (count($ast->getValues()) !== 1) {
-				return false;
-			}
-			
-			$aggregateExpression = $ast->getValues()[0]->getExpression();
-			
-			if (!$this->isAggregateNode($aggregateExpression)) {
-				return false;
-			}
-			
-			if ($aggregateExpression->getConditions() === null) {
-				return false;
-			}
-			
-			if ($ast->getConditions() !== null) {
-				return false;
-			}
-			
-			// CRITICAL FIX 1: Check if aggregate references ranges that would be eliminated
-			if (!$this->isAggregateSafeForConditionPromotion($ast, $aggregateExpression)) {
-				return false;
-			}
-			
-			// CRITICAL FIX 2: Verify that promoting conditions won't break range dependencies
-			if ($this->wouldPromotionBreakRangeDependencies($ast, $aggregateExpression)) {
-				return false;
-			}
-			
-			return true;
-		}
-		
-		private function isAggregateSafeForConditionPromotion(AstRetrieve $ast, AstInterface $aggregate): bool {
-			// Get all ranges referenced by the aggregate
-			$referencedRanges = $this->getAggregateReferencedRanges($aggregate);
-			
-			// If aggregate references multiple ranges, condition promotion is unsafe
-			// because it could eliminate necessary joins
-			if (count($referencedRanges) > 1) {
-				return false;
-			}
-			
-			// If aggregate references a range other than the main range, promotion is unsafe
-			$mainRange = $this->getMainRange($ast);
-			if (count($referencedRanges) === 1 && $referencedRanges[0] !== $mainRange) {
-				return false;
-			}
-			
-			// ANY functions specifically require range preservation
-			if ($aggregate instanceof AstAny) {
-				$identifier = $aggregate->getIdentifier();
-				if ($identifier instanceof AstIdentifier && $identifier->getRange() !== $mainRange) {
-					return false;
+				if (isset($rangesByName[$name])) {
+					$live[$name] = $rangesByName[$name];
 				}
 			}
 			
-			return true;
-		}
-		
-		private function wouldPromotionBreakRangeDependencies(AstRetrieve $ast, AstInterface $aggregate): bool {
-			// Get ranges that have join conditions
-			$joinedRanges = [];
-			foreach ($ast->getRanges() as $range) {
-				if ($range->getJoinProperty() !== null) {
-					$joinedRanges[] = $range;
-				}
+			// If expression-based selection succeeded, use it
+			if (!empty($live)) {
+				return $live;
 			}
 			
-			// If there are joined ranges, we need to ensure the aggregate
-			// doesn't depend on them in a way that would break with promotion
-			foreach ($joinedRanges as $range) {
-				if ($this->aggregateReferencesRange($aggregate, $range)) {
-					return true;
-				}
-			}
-			
-			return false;
-		}
-		
-		private function getAggregateReferencedRanges(AstInterface $aggregate): array {
-			$ranges = [];
-			
-			// Check identifier reference
-			if (method_exists($aggregate, 'getIdentifier')) {
-				$identifier = $aggregate->getIdentifier();
-				if ($identifier instanceof AstIdentifier) {
-					$ranges[] = $identifier->getRange();
-				}
-			}
-			
-			// Check conditions for range references
-			if (method_exists($aggregate, 'getConditions') && $aggregate->getConditions() !== null) {
-				$conditionRanges = $this->extractRangesFromExpression($aggregate->getConditions());
-				$ranges = array_merge($ranges, $conditionRanges);
-			}
-			
-			return array_unique($ranges, SORT_REGULAR);
-		}
-		
-		private function aggregateReferencesRange(AstInterface $aggregate, AstRange $targetRange): bool {
-			$referencedRanges = $this->getAggregateReferencedRanges($aggregate);
-			
-			foreach ($referencedRanges as $range) {
-				if ($range === $targetRange) {
-					return true;
-				}
-			}
-			
-			return false;
-		}
-		
-		private function extractRangesFromExpression(AstInterface $expression): array {
-			$ranges = [];
-			
-			if ($expression instanceof AstIdentifier) {
-				$ranges[] = $expression->getRange();
-			}
-			
-			// Recursively check binary operations
-			if (method_exists($expression, 'getLeft') && method_exists($expression, 'getRight')) {
-				$leftRanges = $this->extractRangesFromExpression($expression->getLeft());
-				$rightRanges = $this->extractRangesFromExpression($expression->getRight());
-				$ranges = array_merge($ranges, $leftRanges, $rightRanges);
-			}
-			
-			// Check other expression types
-			if (method_exists($expression, 'getExpression') && $expression->getExpression() !== null) {
-				$subRanges = $this->extractRangesFromExpression($expression->getExpression());
-				$ranges = array_merge($ranges, $subRanges);
-			}
-			
-			return $ranges;
-		}
-		
-		private function getMainRange(AstRetrieve $ast): ?AstRange {
-			foreach ($ast->getRanges() as $range) {
-				if ($range->getJoinProperty() === null) {
-					return $range;
-				}
-			}
-			return null;
-		}
-		
-		private function isTrulySingleRange(AstRetrieve $ast): bool {
-			// Check if query structurally has only one range
-			if (count($ast->getRanges()) === 1) {
-				return true;
-			}
-			
-			// Check if additional ranges are actually needed for aggregates
-			$aggregates = $this->findAllAggregates($ast);
-			
-			foreach ($aggregates as $aggregate) {
-				$referencedRanges = $this->getAggregateReferencedRanges($aggregate);
-				if (count($referencedRanges) > 1) {
-					return false; // Multi-range dependencies exist
-				}
-			}
-			
-			return false; // Conservative: if multiple ranges exist, treat as multi-range
-		}
-		
-		private function findAllAggregates(AstRetrieve $ast): array {
-			$valueAggregates = $this->findAggregatesForValues($ast->getValues());
-			$conditionAggregates = $this->findAggregatesForConditions($ast->getConditions());
-			return array_merge($valueAggregates, $conditionAggregates);
+			// Ultimate fallback: use first available range
+			// Better to have a potentially suboptimal but functional subquery
+			// than to fail the optimization entirely
+			$first = reset($ranges);
+			return $first ? [$first->getName() => $first] : [];
 		}
 		
 		/**
-		 * Converts an aggregate node to an appropriate subquery type.
-		 * The subquery type depends on context and aggregate function type.
+		 * Create clean aggregate node copy without embedded WHERE conditions
 		 *
-		 * Subquery types:
-		 * - SCALAR: Returns a single value (most aggregate functions)
-		 * - EXISTS: Returns boolean (for ANY functions in conditions)
-		 * - CASE_WHEN: Returns conditional value (for ANY functions in values)
+		 * The optimization strategy moves aggregate-specific WHERE conditions into
+		 * the subquery's WHERE clause rather than keeping them embedded within
+		 * the aggregate node itself. This separation provides cleaner subquery
+		 * structure and more predictable SQL generation.
 		 *
-		 * @param AstRetrieve $ast The query being optimized
-		 * @param AstInterface $aggregateNode The aggregate to convert
+		 * @param AstInterface $agg Original aggregate node to clone
+		 * @return AstInterface Clean aggregate clone with conditions removed
 		 */
-		private function convertAggregateToSubquery(AstRetrieve $ast, AstInterface $aggregateNode): void {
-			$parentNode = $aggregateNode->getParent();
+		private function deepCloneAggregateWithoutConditions(AstInterface $agg): AstInterface {
+			$clone = $agg->deepClone();
 			
-			// Most aggregates become scalar subqueries
-			if (!$aggregateNode instanceof AstAny) {
-				$subquery = new AstSubquery(AstSubquery::TYPE_SCALAR, $aggregateNode, );
-				$this->astNodeReplacer->replaceChild($parentNode, $aggregateNode, $subquery);
-				return;
+			// Remove embedded conditions if the aggregate node supports them
+			if (method_exists($clone, 'setConditions')) {
+				$clone->setConditions(null);
 			}
 			
-			// ANY functions in WHERE conditions become EXISTS subqueries
-			if ($ast->getConditions() !== null && $aggregateNode->isAncestorOf($ast->getConditions())) {
-				$subquery = new AstSubquery(AstSubquery::TYPE_EXISTS, $aggregateNode, );
-				$this->astNodeReplacer->replaceChild($parentNode, $aggregateNode, $subquery);
-				return;
-			}
-			
-			// ANY functions in SELECT values become CASE WHEN subqueries
-			$subquery = new AstSubquery(AstSubquery::TYPE_CASE_WHEN, $aggregateNode, );
-			$this->astNodeReplacer->replaceChild($parentNode, $aggregateNode, $subquery);
+			return $clone;
 		}
 		
 		/**
-		 * Determines if subquery approach would be more efficient than CASE WHEN.
+		 * Safe accessor for aggregate node's main expression/identifier
 		 *
-		 * Currently returns false (conservative approach) but should be enhanced
-		 * with cost-based analysis considering:
-		 * - Number of rows in source tables
-		 * - Complexity of join conditions
-		 * - Selectivity of aggregate conditions
-		 * - Available indexes
+		 * Different aggregate types may store their primary expression in different
+		 * ways. This method provides a unified interface while handling cases where
+		 * the node doesn't support identifier access.
 		 *
-		 * TODO: Implement cost-based analysis
-		 *
-		 * @param AstRetrieve $ast The query being analyzed
-		 * @param AstInterface $aggregation The aggregate function to evaluate
-		 * @return bool True if subquery would be more efficient
+		 * @param AstInterface $node Aggregate node to examine
+		 * @return AstInterface|null The node's main expression, or null if not accessible
 		 */
-		private function isSubqueryMoreEfficient(AstRetrieve $ast, AstInterface $aggregation): bool {
-			// ANY aggregates must use subqueries to work correctly
-			if ($aggregation instanceof AstAny) {
-				return true;
-			}
-			
-			// Conservative approach for other aggregates: prefer CASE WHEN
-			return false;
+		private function getIdentifierIfAny(AstInterface $node): ?AstInterface {
+			return method_exists($node, 'getIdentifier') ? $node->getIdentifier() : null;
 		}
 		
 		/**
-		 * Transforms conditional aggregate to CASE WHEN structure.
+		 * Safe accessor for aggregate node's embedded WHERE conditions
 		 *
-		 * Transformation pattern:
-		 * Before: SUM(expression WHERE condition)
-		 * After:  SUM(CASE WHEN condition THEN expression ELSE NULL END)
+		 * Some aggregate nodes support embedded WHERE conditions (e.g., conditional
+		 * aggregation). This method provides safe access while handling nodes that
+		 * don't support this functionality.
 		 *
-		 * This transformation maintains the same semantics while using standard SQL
-		 * constructs that are better optimized by most database engines.
-		 *
-		 * @param AstInterface $aggregation The aggregate function to transform
+		 * @param AstInterface $node Aggregate node to examine
+		 * @return AstInterface|null The node's conditions, or null if not accessible
 		 */
-		private function transformAggregateToCase(AstInterface $aggregation): void {
-			$condition = $aggregation->getConditions();
-			
-			// Skip aggregates without conditions
-			if ($condition === null) {
-				return;
-			}
-			
-			// Get the expression being aggregated
-			$expression = $aggregation->getIdentifier();
-			
-			// Create CASE WHEN structure: CASE WHEN condition THEN expression ELSE NULL END
-			$caseWhenExpression = new AstCase($condition, $expression);
-			
-			// Replace the aggregate's identifier with the CASE expression
-			$aggregation->setIdentifier($caseWhenExpression);
-			
-			// Remove the condition from the aggregate since it's now in the CASE
-			$aggregation->setConditions(null);
-		}
-		
-		/**
-		 * Transforms all conditional aggregates in SELECT values to CASE WHEN statements.
-		 * Used specifically for single-range queries after condition promotion.
-		 * @param AstRetrieve $ast The query to transform
-		 */
-		private function transformAggregatesToCaseWhen(AstRetrieve $ast): void {
-			// Find all aggregate functions in the SELECT clause
-			$aggregationNodes = $this->findAggregatesForValues($ast->getValues());
-			
-			// Transform each conditional aggregate
-			foreach ($aggregationNodes as $aggregate) {
-				if ($aggregate->getConditions() !== null) {
-					// Fetch conditions
-					$condition = $aggregate->getConditions();
-					$expression = $aggregate->getExpression();
-					
-					// Create CASE WHEN expression
-					$caseWhen = new AstCase($condition, $expression);
-					
-					// Replace the aggregate's expression and remove conditions
-					$aggregate->setExpression($caseWhen);
-					$aggregate->setConditions(null);
-				}
-			}
-		}
-		
-		/**
-		 * Determines if an aggregate function should be wrapped/optimized.
-		 * @param AstRetrieve $ast The query context
-		 * @param AstInterface $aggregate The aggregate to evaluate
-		 * @return bool True if the aggregate should be optimized
-		 */
-		private function shouldWrapAggregation(AstRetrieve $ast, AstInterface $aggregate): bool {
-			// ANY aggregates always need processing, even without conditions
-			if ($aggregate instanceof AstAny) {
-				return true;
-			}
-			
-			if ($aggregate->getConditions() === null) {
-				return false;
-			}
-			
-			if ($ast->isSingleRangeQuery(true)) {
-				return false;
-			}
-			
-			return true;
-		}
-		
-		/**
-		 * Finds all aggregate functions within the SELECT values.
-		 * @param array $values Array of value expressions to search
-		 * @return array Array of aggregate AST nodes found
-		 */
-		private function findAggregatesForValues(array $values): array {
-			// Create visitor
-			$visitor = new CollectNodes($this->aggregateTypes);
-			
-			// Visit each value expression to find aggregates
-			foreach ($values as $value) {
-				$value->accept($visitor);
-			}
-			
-			return $visitor->getCollectedNodes();
-		}
-		
-		/**
-		 * Finds all aggregate functions within WHERE conditions.
-		 * @param AstInterface|null $conditions The conditions to search (null if no WHERE clause)
-		 * @return array Array of aggregate AST nodes found
-		 */
-		private function findAggregatesForConditions(?AstInterface $conditions = null): array {
-			// No conditions to search
-			if ($conditions === null) {
-				return [];
-			}
-			
-			$visitor = new CollectNodes($this->aggregateTypes);
-			$conditions->accept($visitor);
-			return $visitor->getCollectedNodes();
-		}
-		
-		/**
-		 * Checks if an AST node is an aggregate function.
-		 * @param AstInterface $item The AST node to check
-		 * @return bool True if the node is an aggregate function
-		 */
-		private function isAggregateNode(AstInterface $item): bool {
-			return $item instanceof AstCount ||
-				$item instanceof AstCountU ||
-				$item instanceof AstAvg ||
-				$item instanceof AstAvgU ||
-				$item instanceof AstSum ||
-				$item instanceof AstSumU ||
-				$item instanceof AstMin ||
-				$item instanceof AstMax ||
-				$item instanceof AstAny;
+		private function getConditionsIfAny(AstInterface $node): ?AstInterface {
+			return method_exists($node, 'getConditions') ? $node->getConditions() : null;
 		}
 	}

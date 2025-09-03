@@ -29,6 +29,80 @@
 		}
 		
 		/**
+		 * Core logic for selecting a single anchor range.
+		 *
+		 * @param AstRange[]         $ranges
+		 * @param AstInterface|null  $whereClause (by-ref) — we may move JOIN → WHERE here
+		 * @param string[]           $exprRangeNames       — ranges referenced by the owner's expression
+		 * @param array<string,bool> $usedInCond
+		 * @param array<string,bool> $hasIsNullInCond
+		 * @param array<string,bool> $nonNullableUse
+		 * @return AstRange[]
+		 */
+		private function ensureSingleAnchorCore(
+			array         $ranges,
+			?AstInterface &$whereClause,
+			array         $exprRangeNames,
+			array         $usedInCond,
+			array         $hasIsNullInCond,
+			array         $nonNullableUse
+		): array {
+			if (empty($ranges) || $this->hasValidAnchorRange($ranges)) {
+				return $ranges;
+			}
+			
+			$canCollapse = $this->buildCollapsePredicate($usedInCond, $hasIsNullInCond, $nonNullableUse);
+			
+			// Helper to apply the chosen anchor and normalize position
+			$anchorize = function (int $index) use (&$ranges, &$whereClause) {
+				$selected = $ranges[$index];
+				$join     = $selected->getJoinProperty();
+				
+				if ($join !== null) {
+					$whereClause = $this->astUtilities->combinePredicatesWithAnd([$whereClause, $join]);
+					$selected->setJoinProperty(null);
+					$selected->setRequired(true);
+				}
+				
+				// Move anchor to front (stable downstream expectations)
+				if ($index !== 0) {
+					array_splice($ranges, $index, 1);
+					array_unshift($ranges, $selected);
+				}
+				
+				return $ranges;
+			};
+			
+			// Priority 1: a range used in the owner's expression that we can anchor on
+			foreach ($ranges as $i => $range) {
+				$inExpr     = in_array($range->getName(), $exprRangeNames, true);
+				$canBeAnchor = $range->isRequired() || $canCollapse($range);
+				if ($inExpr && $canBeAnchor) {
+					return $anchorize($i);
+				}
+			}
+			
+			// Priority 2: any INNER range
+			if (method_exists($this, 'findInnerRangeAnchor')) {
+				$idx = $this->findInnerRangeAnchor($ranges);
+				if ($idx !== null) {
+					return $anchorize($idx);
+				}
+			}
+			
+			// Priority 3: a LEFT range that can safely collapse to INNER
+			if (method_exists($this, 'findCollapsibleLeftAnchor')) {
+				$idx = $this->findCollapsibleLeftAnchor($ranges, $canCollapse);
+				if ($idx !== null) {
+					$ranges[$idx]->setRequired(true);
+					return $anchorize($idx);
+				}
+			}
+			
+			return $ranges;
+		}
+
+		/**
 		 * Ensures exactly one anchor exists (range with joinProperty == null) and places it first.
 		 *
 		 * Anchor selection priority:
@@ -52,54 +126,74 @@
 		 * @param array<string,bool> $nonNullableUse Usage analyzer map
 		 * @return AstRange[] Updated ranges with anchor guaranteed
 		 */
+		/**
+		 * Kept for backward-compatibility (used by AnyOptimizer).
+		 * Now generic: derives expression range candidates from $usedInExpr.
+		 *
+		 * @param AstRange[]         $ranges
+		 * @param AstInterface|null  $whereClause
+		 * @param array<string,bool> $usedInExpr
+		 * @param array<string,bool> $usedInCond
+		 * @param array<string,bool> $hasIsNullInCond
+		 * @param array<string,bool> $nonNullableUse
+		 * @return AstRange[]
+		 */
 		public function ensureSingleAnchorRange(
 			array         $ranges,
-			AstAny        $anyNode,
 			?AstInterface &$whereClause,
 			array         $usedInExpr,
 			array         $usedInCond,
 			array         $hasIsNullInCond,
 			array         $nonNullableUse
 		): array {
-			if (empty($ranges)) {
-				return $ranges;
-			}
+			$exprRangeNames = array_keys(array_filter($usedInExpr, static fn($v) => (bool)$v));
+
+			return $this->ensureSingleAnchorCore(
+				$ranges,
+				$whereClause,
+				$exprRangeNames,
+				$usedInCond,
+				$hasIsNullInCond,
+				$nonNullableUse
+			);
+		}
+		
+		/**
+		 * Generic version for nodes like SUM/COUNT/AVG/MIN/MAX that expose getIdentifier().
+		 *
+		 * @param AstRange[]         $ranges
+		 * @param AstInterface       $owner
+		 * @param AstInterface|null  $whereClause
+		 * @param array<string,bool> $usedInExpr
+		 * @param array<string,bool> $usedInCond
+		 * @param array<string,bool> $hasIsNullInCond
+		 * @param array<string,bool> $nonNullableUse
+		 * @return AstRange[]
+		 */
+		public function ensureSingleAnchorRangeForOwner(
+			array         $ranges,
+			AstInterface  $owner,
+			?AstInterface &$whereClause,
+			array         $usedInExpr,
+			array         $usedInCond,
+			array         $hasIsNullInCond,
+			array         $nonNullableUse
+		): array {
+			// Collect candidate ranges from the owner's identifier
+			$exprIds = $this->astUtilities->collectIdentifiersFromAst(
+				method_exists($owner, 'getIdentifier') ? $owner->getIdentifier() : null
+			);
 			
-			// Fast path: anchor already exists
-			if ($this->hasValidAnchorRange($ranges)) {
-				return $ranges;
-			}
+			$exprRangeNames = array_map(static fn($id) => $id->getRange()->getName(), $exprIds);
 			
-			// Priority 1: Range used in ANY(expr) that's INNER or safely collapsible
-			$anchorMaker = $this->createAnchorMaker($ranges, $whereClause);
-			$canCollapse = $this->createSafeCollapseChecker($usedInExpr, $usedInCond, $hasIsNullInCond, $nonNullableUse);
-			$anchorIndex = $this->findExpressionBasedAnchor($ranges, $anyNode, $canCollapse);
-			
-			if ($anchorIndex !== null) {
-				if (!$ranges[$anchorIndex]->isRequired()) {
-					$ranges[$anchorIndex]->setRequired(true); // Safe LEFT → INNER
-				}
-				
-				return $anchorMaker($anchorIndex);
-			}
-			
-			// Priority 2: Any existing INNER range
-			$anchorIndex = $this->findInnerRangeAnchor($ranges);
-			
-			if ($anchorIndex !== null) {
-				return $anchorMaker($anchorIndex);
-			}
-			
-			// Priority 3: LEFT range that can safely become INNER
-			$anchorIndex = $this->findCollapsibleLeftAnchor($ranges, $canCollapse);
-			
-			if ($anchorIndex !== null) {
-				$ranges[$anchorIndex]->setRequired(true);
-				return $anchorMaker($anchorIndex);
-			}
-			
-			// No safe transformation possible - preserve semantics
-			return $ranges;
+			return $this->ensureSingleAnchorCore(
+				$ranges,
+				$whereClause,
+				$exprRangeNames,
+				$usedInCond,
+				$hasIsNullInCond,
+				$nonNullableUse
+			);
 		}
 		
 		/**
@@ -232,5 +326,75 @@
 		private function getRangeNamesUsedInAnyExpression(AstAny $anyNode): array {
 			$exprIds = $this->astUtilities->collectIdentifiersFromAst($anyNode->getIdentifier());
 			return array_map(static fn($id) => $id->getRange()->getName(), $exprIds);
+		}
+
+		/**
+		 * Find a range used in the owner's identifier that can serve as anchor.
+		 * @param AstRange[] $ranges
+		 * @param AstInterface $owner
+		 * @param callable $canCollapse
+		 * @return int|null
+		 */
+		private function findExpressionBasedAnchorForOwner(array $ranges, AstInterface $owner, callable $canCollapse): ?int {
+			$exprIds = $this->astUtilities->collectIdentifiersFromAst($owner->getIdentifier());
+			$exprRangeNames = array_map(static fn($id) => $id->getRange()->getName(), $exprIds);
+			
+			foreach ($ranges as $index => $range) {
+				$isInExpression = in_array($range->getName(), $exprRangeNames, true);
+				$canBeAnchor = $range->isRequired() || $canCollapse($range);
+				if ($isInExpression && $canBeAnchor) {
+					return $index;
+				}
+			}
+			
+			return null;
+		}
+		
+		/**
+		 * Build a predicate used to check whether a LEFT-joined range can be safely
+		 * collapsed to an INNER join for an aggregate subquery.
+		 *
+		 * Conservative rules:
+		 *  - If the range participates in an explicit IS NULL check -> do NOT collapse.
+		 *  - If the range is used in the condition only via non-nullable fields -> OK to collapse.
+		 *  - If the range is not used in the aggregate condition at all -> OK to collapse.
+		 * Otherwise: do not collapse.
+		 *
+		 * @param array<string,bool> $usedInCond
+		 * @param array<string,bool> $hasIsNullInCond
+		 * @param array<string,bool> $nonNullableUse
+		 * @return callable($range):bool
+		 */
+		private function buildCollapsePredicate(
+			array $usedInCond,
+			array $hasIsNullInCond,
+			array $nonNullableUse
+		): callable {
+			return function ($range) use ($usedInCond, $hasIsNullInCond, $nonNullableUse): bool {
+				$name = $range->getName();
+				
+				// Already INNER — nothing to collapse. Treat as OK.
+				if (method_exists($range, 'isRequired') && $range->isRequired()) {
+					return true;
+				}
+				
+				// If the aggregate condition checks this range for IS NULL, keep it LEFT.
+				if (!empty($hasIsNullInCond[$name])) {
+					return false;
+				}
+				
+				// If conditions reference non-nullable fields on this range, collapsing is safe.
+				if (!empty($nonNullableUse[$name])) {
+					return true;
+				}
+				
+				// If the range is not used in the aggregate's condition at all, collapsing is safe.
+				if (empty($usedInCond[$name])) {
+					return true;
+				}
+				
+				// Otherwise, be conservative.
+				return false;
+			};
 		}
 	}

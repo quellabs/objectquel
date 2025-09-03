@@ -23,37 +23,41 @@
 	use Quellabs\ObjectQuel\ObjectQuel\Visitors\QuelToSQLConvertToString;
 	
 	/**
-	 * Handles conversion of ObjectQuel aggregate AST nodes to SQL aggregate functions and EXISTS queries.
+	 * Converts ObjectQuel aggregate AST nodes to SQL aggregate functions and existence checks.
 	 *
-	 * Key features:
-	 * - Supports all standard SQL aggregate functions (COUNT, SUM, AVG, MIN, MAX)
-	 * - Handles DISTINCT operations (COUNT UNIQUE, SUM UNIQUE, etc.)
-	 * - Optimizes ANY operations using linear flow decision-making
-	 * - Can generate either JOIN-based or subquery-based SQL depending on optimization opportunities
-	 * - Uses QueryAnalysis value object to eliminate complex nested conditional logic
+	 * This handler transforms ObjectQuel's aggregate operations (COUNT, SUM, AVG, MIN, MAX, ANY)
+	 * into their SQL equivalents, supporting both inline aggregation and subquery-based approaches.
+	 *
+	 * Key capabilities:
+	 * - Standard SQL aggregate functions: COUNT, SUM, AVG, MIN, MAX
+	 * - DISTINCT operations: COUNT UNIQUE, SUM UNIQUE, AVG UNIQUE
+	 * - Existence checks: ANY operations converted to EXISTS or CASE WHEN EXISTS
+	 * - Conditional aggregation: WHERE clauses converted to CASE WHEN expressions
+	 * - Subquery generation: Scalar subqueries for complex aggregation scenarios
+	 * - NULL handling: Automatic COALESCE for SUM operations
 	 *
 	 * @package Quellabs\ObjectQuel\ObjectQuel\Visitors\Handlers
 	 */
 	class AggregateHandler {
 		
-		/** @var EntityStore Store for entity metadata and table mappings */
+		/** @var EntityStore Maps entity names to database table names and provides metadata */
 		private EntityStore $entityStore;
 		
-		/** @var string Current part of the query being built (e.g., 'VALUES', 'WHERE') */
+		/** @var string Current SQL clause being constructed (SELECT, WHERE, HAVING, etc.) */
 		private string $partOfQuery;
 		
-		/** @var SqlBuilderHelper Helper for building SQL components */
+		/** @var SqlBuilderHelper Utility for constructing SQL fragments and join conditions */
 		private SqlBuilderHelper $sqlBuilder;
 		
-		/** @var QuelToSQLConvertToString Converter for AST nodes to SQL strings */
+		/** @var QuelToSQLConvertToString Converts AST nodes to their SQL string representations */
 		private QuelToSQLConvertToString $convertToString;
 		
 		/**
 		 * Initializes the aggregate handler with required dependencies.
-		 * @param EntityStore $entityStore Store containing entity-to-table mappings and metadata
-		 * @param string $partOfQuery Which part of the query is currently being built (VALUES, WHERE, etc.)
-		 * @param SqlBuilderHelper $sqlBuilder Helper class for constructing SQL components
-		 * @param QuelToSQLConvertToString $convertToString Converter for transforming AST nodes to SQL strings
+		 * @param EntityStore $entityStore Maps entity names to table names and provides schema metadata
+		 * @param string $partOfQuery Current SQL clause context (SELECT, WHERE, etc.) for output formatting
+		 * @param SqlBuilderHelper $sqlBuilder Helper for building SQL components like joins and conditions
+		 * @param QuelToSQLConvertToString $convertToString Converts AST expressions to SQL strings
 		 */
 		public function __construct(
 			EntityStore              $entityStore,
@@ -68,13 +72,20 @@
 		}
 		
 		// ============================================================================
-		// PUBLIC AGGREGATE HANDLERS
+		// SUBQUERY HANDLERS - MAIN ENTRY POINTS
 		// ============================================================================
 		
 		/**
-		 * Converts AstSubquery to SQL
-		 * @param AstSubquery $subquery
-		 * @return string
+		 * Converts AstSubquery nodes to appropriate SQL subquery types.
+		 *
+		 * Routes to specialized handlers based on subquery type:
+		 * - SCALAR: (SELECT COUNT(*) FROM ...) for aggregation in SELECT clauses
+		 * - EXISTS: EXISTS(SELECT 1 FROM ...) for boolean checks in WHERE clauses
+		 * - CASE_WHEN: CASE WHEN EXISTS(...) THEN 1 ELSE 0 END for numeric boolean results
+		 *
+		 * @param AstSubquery $subquery The subquery AST node to process
+		 * @return string Complete SQL subquery expression
+		 * @throws \InvalidArgumentException When subquery type is not recognized
 		 */
 		public function handleSubquery(AstSubquery $subquery): string {
 			switch ($subquery->getType()) {
@@ -93,10 +104,16 @@
 		}
 		
 		/**
-		 * Handles CASE WHEN expressions for conditional aggregation.
-		 * Converts: SUM(expr WHERE condition) → SUM(CASE WHEN condition THEN expr END)
-		 * @param AstCase $case The CASE AST node to process
-		 * @return string Generated SQL CASE expression
+		 * Converts conditional expressions to SQL CASE WHEN statements.
+		 *
+		 * Transforms ObjectQuel conditional logic into SQL CASE expressions:
+		 * Input:  CASE(condition, expression)
+		 * Output: CASE WHEN condition THEN expression END
+		 *
+		 * Used primarily for conditional aggregation where aggregates have WHERE clauses.
+		 *
+		 * @param AstCase $case The CASE AST node containing condition and expression
+		 * @return string SQL CASE WHEN expression
 		 */
 		public function handleCase(AstCase $case): string {
 			$condition = $this->convertExpressionToSql($case->getConditions());
@@ -104,85 +121,83 @@
 			return "CASE WHEN {$condition} THEN {$thenExpression} END";
 		}
 		
+		// ============================================================================
+		// SCALAR SUBQUERY CONSTRUCTION
+		// ============================================================================
+		
 		/**
-		 * Builds a scalar subquery for SQL aggregation functions.
-		 * @param AstSubquery $subquery
-		 * @return string The complete SQL subquery string wrapped in parentheses
+		 * Builds scalar subqueries for aggregate functions that return single values.
+		 *
+		 * Creates complete SQL subqueries like:
+		 * (SELECT COUNT(DISTINCT d.id) FROM departments d
+		 *  INNER JOIN employees e ON e.dept_id = d.id
+		 *  WHERE d.active = 1)
+		 *
+		 * Features:
+		 * - Automatic FROM clause generation from correlated ranges
+		 * - Optional WHERE clause from subquery conditions
+		 * - DISTINCT support for unique operations
+		 * - NULL handling with COALESCE for SUM operations
+		 *
+		 * @param AstSubquery $subquery Contains the aggregate function and related metadata
+		 * @return string Complete SQL scalar subquery wrapped in parentheses
 		 */
 		private function buildScalarSubquery(AstSubquery $subquery): string {
-			// Mark the inner aggregation as visited to prevent duplicate processing
+			// Prevent double-processing of the aggregate function
 			$this->markExpressionAsHandled($subquery->getAggregation());
 			
-			// Convert the aggregation type to its SQL function name (COUNT, AVG, etc.)
-			$aggregateString = $this->aggregateToString($subquery->getAggregation());
+			$aggNode = $subquery->getAggregation();
+			$functionName = $this->aggregateToString($aggNode);
+			$distinctClause = $this->isDistinct($aggNode) ? 'DISTINCT ' : '';
 			
-			// Add DISTINCT keyword for unique aggregation types (CountU, AvgU, SumU)
-			$distinct = $this->isDistinct($subquery->getAggregation()) ? "DISTINCT " : "";
+			// Convert the aggregate target (usually an identifier like d.id) to SQL
+			$targetExpression = $this->convertExpressionToSql($aggNode->getIdentifier()->deepClone());
 			
-			// Convert the field identifier to SQL expression
-			$aggregateExpression = $this->convertExpressionToSql($subquery->getAggregation()->getIdentifier()->deepClone());
+			// Build FROM clause with all necessary joins from correlated ranges
+			$fromClause = $this->buildFromClauseForRanges($subquery->getCorrelatedRanges());
 			
-			// Convert the WHERE conditions to SQL expression
+			// Add WHERE clause if the subquery has conditions
+			$whereClause = '';
 			if ($subquery->getConditions() !== null) {
-				$whereExpression = $this->convertExpressionToSql($subquery->getConditions());
-			} else {
-				$whereExpression = "";
-			}
-			
-			// Get the main table range for the query, and the join ranges
-			$mainRange = $subquery->getMainRange();
-			$mainRangeName = $mainRange->getName();
-			
-			// Generate the joins
-			$joinRanges = [];
-			
-			foreach($subquery->getJoinRanges() as $joinRange) {
-				$joinName = $joinRange->getName();
-				$tableName = $this->entityStore->getOwningTable($joinRange->getEntityName());
-				$joinType = $joinRange->isRequired() ? "INNER" : "LEFT";
-				$conditions = $joinRange->getJoinProperty()->deepClone();
-				$joinExpression = $this->convertExpressionToSql($conditions);
+				$conditionSql = trim($this->convertExpressionToSql($subquery->getConditions()));
 				
-				$joinRanges[] = "{$joinType} JOIN `{$tableName}` {$joinName} ON {$joinExpression}";
+				if ($conditionSql !== '') {
+					$whereClause = "WHERE {$conditionSql}";
+				}
 			}
 			
-			// Look up the actual database table name for the entity
-			$tableName = $this->entityStore->getOwningTable($mainRange->getEntityName());
-			$aggregateExpressionComplete = "{$aggregateString}({$distinct}{$aggregateExpression})";
-			$joins = implode("\n", $joinRanges);
+			// Build the aggregate function call
+			$aggregateExpression = "{$functionName}({$distinctClause}{$targetExpression})";
 			
-			if ($aggregateString === 'SUM') {
-				$aggregateExpressionComplete = "COALESCE({$aggregateExpressionComplete}, 0)";
+			// Wrap SUM with COALESCE to return 0 instead of NULL for empty result sets
+			if ($functionName === 'SUM') {
+				$aggregateExpression = "COALESCE({$aggregateExpression}, 0)";
 			}
 			
-			// Build and return the complete subquery
-			if ($whereExpression) {
-				return "(
-					SELECT
-						{$aggregateExpressionComplete}
-					FROM `{$tableName}` {$mainRangeName}
-					{$joins}
-					WHERE {$whereExpression}
-				)";
-			} else {
-				return "(
-					SELECT
-						{$aggregateExpressionComplete}
-					FROM `{$tableName}` {$mainRangeName}
-					{$joins}
-				)";
-			}
+			return "(
+		        SELECT {$aggregateExpression}
+		        FROM {$fromClause}
+		        {$whereClause}
+		    )";
 		}
-
+		
 		/**
-		 * Converts an aggregation AST node type to its corresponding SQL function name.
-		 * @param AstSubquery|AstCount|AstCountU|AstAvg|AstAvgU|AstMax|AstMin|AstSum|AstSumU $type The aggregation AST node
-		 * @return string The SQL aggregation function name (uppercase)
+		 * Maps aggregate AST node types to their corresponding SQL function names.
+		 *
+		 * Handles both regular and UNIQUE (DISTINCT) variants:
+		 * - AstCount/AstCountU → COUNT
+		 * - AstSum/AstSumU → SUM
+		 * - AstAvg/AstAvgU → AVG
+		 * - AstMin → MIN
+		 * - AstMax → MAX
+		 *
+		 * @param AstSubquery|AstCount|AstCountU|AstAvg|AstAvgU|AstMax|AstMin|AstSum|AstSumU $aggregateNode
+		 * @return string SQL function name in uppercase
 		 */
 		private function aggregateToString(
-			AstSubquery|AstCount|AstCountU|AstAvg|AstAvgU|AstMax|AstMin|AstSum|AstSumU $type
+			AstSubquery|AstCount|AstCountU|AstAvg|AstAvgU|AstMax|AstMin|AstSum|AstSumU $aggregateNode
 		): string {
-			return match(get_class($type)) {
+			return match (get_class($aggregateNode)) {
 				AstCount::class, AstCountU::class => "COUNT",
 				AstAvg::class, AstAvgU::class => "AVG",
 				AstSum::class, AstSumU::class => "SUM",
@@ -193,23 +208,36 @@
 		}
 		
 		/**
-		 * Determines if an aggregation should use the DISTINCT keyword.
-		 * @param AstSubquery|AstCount|AstCountU|AstAvg|AstAvgU|AstMax|AstMin|AstSum|AstSumU $type The aggregation AST node
-		 * @return bool True if DISTINCT should be used, false otherwise
+		 * Determines whether an aggregate function should include the DISTINCT keyword.
+		 *
+		 * Returns true for "UNIQUE" variants of aggregate functions:
+		 * - AstCountU → COUNT(DISTINCT ...)
+		 * - AstSumU → SUM(DISTINCT ...)
+		 * - AstAvgU → AVG(DISTINCT ...)
+		 *
+		 * Regular variants (AstCount, AstSum, AstAvg, AstMin, AstMax) return false.
+		 *
+		 * @param AstSubquery|AstCount|AstCountU|AstAvg|AstAvgU|AstMax|AstMin|AstSum|AstSumU $aggregateNode
+		 * @return bool True if DISTINCT should be included, false otherwise
 		 */
 		private function isDistinct(
-			AstSubquery|AstCount|AstCountU|AstAvg|AstAvgU|AstMax|AstMin|AstSum|AstSumU $type
+			AstSubquery|AstCount|AstCountU|AstAvg|AstAvgU|AstMax|AstMin|AstSum|AstSumU $aggregateNode
 		): bool {
 			return
-				$type instanceof AstCountU ||
-				$type instanceof AstAvgU ||
-				$type instanceof AstSumU;
+				$aggregateNode instanceof AstCountU ||
+				$aggregateNode instanceof AstAvgU ||
+				$aggregateNode instanceof AstSumU;
 		}
+		
+		// ============================================================================
+		// INDIVIDUAL AGGREGATE FUNCTION HANDLERS
+		// ============================================================================
 		
 		/**
 		 * Converts AstCount nodes to SQL COUNT() functions.
+		 *
 		 * @param AstCount $count The COUNT AST node to process
-		 * @return string Generated SQL COUNT expression
+		 * @return string SQL COUNT expression
 		 */
 		public function handleCount(AstCount $count): string {
 			return $this->handleAggregateOperation($count, 'COUNT');
@@ -217,9 +245,11 @@
 		
 		/**
 		 * Converts AstCountU nodes to SQL COUNT(DISTINCT) functions.
-		 * Handles unique counting operations, ensuring only distinct values are counted.
+		 *
+		 * Ensures only distinct values are counted, eliminating duplicates.
+		 *
 		 * @param AstCountU $count The COUNT UNIQUE AST node to process
-		 * @return string Generated SQL COUNT(DISTINCT) expression
+		 * @return string SQL COUNT(DISTINCT) expression
 		 */
 		public function handleCountU(AstCountU $count): string {
 			return $this->handleAggregateOperation($count, 'COUNT', true);
@@ -227,9 +257,9 @@
 		
 		/**
 		 * Converts AstAvg nodes to SQL AVG() functions.
-		 * Handles average calculation operations for numeric values.
+		 *
 		 * @param AstAvg $avg The AVG AST node to process
-		 * @return string Generated SQL AVG expression
+		 * @return string SQL AVG expression
 		 */
 		public function handleAvg(AstAvg $avg): string {
 			return $this->handleAggregateOperation($avg, 'AVG');
@@ -237,9 +267,11 @@
 		
 		/**
 		 * Converts AstAvgU nodes to SQL AVG(DISTINCT) functions.
-		 * Handles average calculation for distinct values only.
+		 *
+		 * Calculates average of only unique values, eliminating duplicates before averaging.
+		 *
 		 * @param AstAvgU $avg The AVG UNIQUE AST node to process
-		 * @return string Generated SQL AVG(DISTINCT) expression
+		 * @return string SQL AVG(DISTINCT) expression
 		 */
 		public function handleAvgU(AstAvgU $avg): string {
 			return $this->handleAggregateOperation($avg, 'AVG', true);
@@ -247,9 +279,9 @@
 		
 		/**
 		 * Converts AstMax nodes to SQL MAX() functions.
-		 * Handles maximum value finding operations.
+		 *
 		 * @param AstMax $max The MAX AST node to process
-		 * @return string Generated SQL MAX expression
+		 * @return string SQL MAX expression
 		 */
 		public function handleMax(AstMax $max): string {
 			return $this->handleAggregateOperation($max, 'MAX');
@@ -257,9 +289,9 @@
 		
 		/**
 		 * Converts AstMin nodes to SQL MIN() functions.
-		 * Handles minimum value finding operations.
+		 *
 		 * @param AstMin $min The MIN AST node to process
-		 * @return string Generated SQL MIN expression
+		 * @return string SQL MIN expression
 		 */
 		public function handleMin(AstMin $min): string {
 			return $this->handleAggregateOperation($min, 'MIN');
@@ -267,9 +299,11 @@
 		
 		/**
 		 * Converts AstSum nodes to SQL SUM() functions.
-		 * Handles summation operations with automatic NULL handling (COALESCE to 0).
+		 *
+		 * Automatically wraps result with COALESCE to return 0 instead of NULL when no rows match.
+		 *
 		 * @param AstSum $sum The SUM AST node to process
-		 * @return string Generated SQL SUM expression
+		 * @return string SQL SUM expression with NULL handling
 		 */
 		public function handleSum(AstSum $sum): string {
 			return $this->handleAggregateOperation($sum, 'SUM');
@@ -277,93 +311,118 @@
 		
 		/**
 		 * Converts AstSumU nodes to SQL SUM(DISTINCT) functions.
-		 * Handles summation of distinct values only, with automatic NULL handling.
+		 *
+		 * Sums only unique values, eliminating duplicates before summation.
+		 * Includes automatic NULL handling with COALESCE.
+		 *
 		 * @param AstSumU $sum The SUM UNIQUE AST node to process
-		 * @return string Generated SQL SUM(DISTINCT) expression
+		 * @return string SQL SUM(DISTINCT) expression with NULL handling
 		 */
 		public function handleSumU(AstSumU $sum): string {
 			return $this->handleAggregateOperation($sum, "SUM", true);
 		}
 		
+		// ============================================================================
+		// EXISTS SUBQUERY CONSTRUCTION
+		// ============================================================================
+		
 		/**
-		 * Builds a CASE WHEN EXISTS subquery for ANY functions in SELECT clauses.
-		 * Converts ANY(d.id) to CASE WHEN EXISTS(SELECT 1 FROM ...) THEN 1 ELSE 0 END
-		 * @param AstSubquery $subquery The subquery containing the ANY aggregate
+		 * Builds CASE WHEN EXISTS subqueries for ANY functions in SELECT clauses.
+		 *
+		 * Converts existence checks to numeric values for use in SELECT clauses:
+		 * Input:  ANY(d.employees)
+		 * Output: CASE WHEN EXISTS(SELECT 1 FROM employees e WHERE e.dept_id = d.id LIMIT 1) THEN 1 ELSE 0 END
+		 *
+		 * This format ensures consistent numeric results (0 or 1) regardless of database platform.
+		 *
+		 * @param AstSubquery $subquery Contains the ANY aggregate and related metadata
 		 * @return string SQL CASE WHEN statement with EXISTS subquery
 		 */
 		private function buildCaseWhenExistsSubquery(AstSubquery $subquery): string {
-			// Extract all ranges needed for the subquery
+			// Extract all ranges needed for the subquery FROM clause
 			$ranges = $subquery->getCorrelatedRanges();
 			
-			// Build the EXISTS subquery components
+			// Build the FROM clause with necessary table joins
 			$fromClause = $this->buildFromClauseForRanges($ranges);
 			
+			// Add WHERE clause if conditions exist
+			$whereClause = "";
 			if ($subquery->getConditions() !== null) {
 				$conditions = $this->convertExpressionToSql($subquery->getConditions());
 				$whereClause = "WHERE {$conditions}";
-			} else {
-				$whereClause = "";
 			}
 			
-			// Build the complete EXISTS subquery
-			// We use SELECT 1 for efficiency since we only care about existence
+			// Build EXISTS subquery optimized with SELECT 1 and LIMIT 1
 			$existsQuery = "EXISTS (SELECT 1 FROM {$fromClause} {$whereClause} LIMIT 1)";
 			
-			// Wrap in CASE WHEN to return 1/0 instead of boolean
+			// Wrap in CASE WHEN to return numeric 1/0 instead of boolean true/false
 			return "CASE WHEN {$existsQuery} THEN 1 ELSE 0 END";
 		}
-
+		
 		/**
-		 * Builds an EXISTS subquery for ANY functions in WHERE clauses.
-		 * Converts ANY(d.id) to EXISTS(SELECT 1 FROM ...)
-		 * @param AstSubquery $subquery The subquery containing the ANY aggregate
+		 * Builds EXISTS subqueries for ANY functions in WHERE clauses.
+		 *
+		 * Creates boolean existence checks for use in WHERE conditions:
+		 * Input:  ANY(d.employees) in WHERE clause
+		 * Output: EXISTS(SELECT 1 FROM employees e WHERE e.dept_id = d.id LIMIT 1)
+		 *
+		 * Uses SELECT 1 and LIMIT 1 for optimal performance since only existence matters.
+		 *
+		 * @param AstSubquery $subquery Contains the ANY aggregate and related metadata
 		 * @return string SQL EXISTS statement
 		 */
 		private function buildExistsSubquery(AstSubquery $subquery): string {
 			// Extract all ranges needed for the subquery
 			$ranges = $subquery->getCorrelatedRanges();
 			
-			// Build the EXISTS subquery components
+			// Build FROM clause with necessary table joins
 			$fromClause = $this->buildFromClauseForRanges($ranges);
 			$whereClause = $this->buildWhereClauseForRanges($ranges);
 			
-			// Build and return the EXISTS subquery
-			// LIMIT 1 optimizes performance since we only need to know if any record exists
+			// Return optimized EXISTS query
 			return "EXISTS (SELECT 1 FROM {$fromClause} {$whereClause} LIMIT 1)";
 		}
 		
 		/**
-		 * Converts AstAny nodes to appropriate SQL existence checks.
+		 * Converts AstAny nodes to SQL existence checks (EXISTS or CASE WHEN EXISTS).
+		 *
+		 * Transforms ObjectQuel ANY operations into appropriate SQL existence checks:
+		 * - In WHERE clauses: EXISTS(SELECT 1 FROM ...)
+		 * - In SELECT clauses: CASE WHEN EXISTS(...) THEN 1 ELSE 0 END
+		 *
+		 * Includes duplicate detection to prevent processing the same ANY twice when
+		 * it's already wrapped in a subquery.
+		 *
 		 * @param AstAny $ast The ANY AST node to process
-		 * @return string Generated SQL expression for existence check
+		 * @return string SQL existence check expression, or empty string if already processed
 		 */
 		public function handleAny(AstAny $ast): string {
-			// Check if this ANY is contained within a subquery that already processed it
+			// Check if this ANY is already processed by a parent subquery
 			$parent = $ast->getParent();
 			
 			while ($parent !== null) {
 				if ($parent instanceof AstSubquery) {
 					error_log("Skipping ANY - already processed by subquery wrapper");
-					return ""; // Return empty - subquery already handled this
+					return ""; // Already handled by subquery
 				}
 				
 				$parent = $parent->getParent();
 			}
 			
-			// Convert to EXISTS check with the referenced identifier
+			// Extract ranges from the referenced identifier
 			$identifier = $ast->getIdentifier();
 			$ranges = $this->extractAllRanges($identifier);
 			
-			// Mark as handled to prevent duplicate processing
+			// Mark identifier as processed to prevent duplicate handling
 			$this->markExpressionAsHandled($identifier);
 			
-			// Build EXISTS subquery
+			// Build EXISTS subquery components
 			$fromClause = $this->buildFromClauseForRanges($ranges);
 			$whereClause = $this->buildWhereClauseForRanges($ranges);
 			
 			$existsQuery = "EXISTS (SELECT 1 FROM {$fromClause} {$whereClause} LIMIT 1)";
 			
-			// Return format depends on context
+			// Return format depends on SQL clause context
 			if ($this->partOfQuery !== "WHERE") {
 				return "CASE WHEN {$existsQuery} THEN 1 ELSE 0 END";
 			}
@@ -372,31 +431,41 @@
 		}
 		
 		// ============================================================================
-		// CORE PROCESSING METHODS - LINEAR FLOW APPROACH
+		// CORE AGGREGATE PROCESSING ENGINE
 		// ============================================================================
 		
 		/**
-		 * Replaces complex branching logic with simple two-path decision:
-		 * either calculate in main query (when joins already exist) or use subquery.
-		 * This eliminates the need for complex optimization analysis in aggregate functions.
+		 * Core method for processing all aggregate operations with unified logic.
+		 *
+		 * Handles two main scenarios:
+		 * 1. Conditional aggregation: Converts WHERE clauses to CASE WHEN expressions
+		 *    Example: SUM(amount WHERE status = 'active') → SUM(CASE WHEN status = 'active' THEN amount END)
+		 *
+		 * 2. Standard aggregation: Direct function application with optional DISTINCT
+		 *    Example: COUNT(DISTINCT customer_id) → COUNT(DISTINCT customer_id)
+		 *
+		 * Features:
+		 * - Automatic NULL handling for SUM operations (COALESCE to 0)
+		 * - DISTINCT support for unique operations
+		 * - Conditional aggregation via CASE WHEN transformation
+		 *
 		 * @param AstCount|AstCountU|AstAvg|AstAvgU|AstMax|AstMin|AstSum|AstSumU $ast The aggregate AST node
-		 * @param string $aggregateFunction The SQL aggregate function name (COUNT, SUM, etc.)
-		 * @param bool $distinct Whether to add DISTINCT clause for unique operations
-		 * @return string Generated SQL aggregate expression
+		 * @param string $aggregateFunction SQL function name (COUNT, SUM, AVG, MIN, MAX)
+		 * @param bool $distinct Whether to include DISTINCT keyword for unique operations
+		 * @return string Complete SQL aggregate expression
 		 */
 		private function handleAggregateOperation(
 			AstCount|AstCountU|AstAvg|AstAvgU|AstMax|AstMin|AstSum|AstSumU $ast,
 			string                                                         $aggregateFunction,
 			bool                                                           $distinct = false
 		): string {
-			// Check if aggregate has WHERE conditions that need CASE WHEN transformation
+			// Handle conditional aggregation: aggregate WHERE condition → CASE WHEN condition
 			if ($ast->getConditions() !== null) {
-				// Transform to CASE WHEN expression
 				$condition = $this->convertExpressionToSql($ast->getConditions());
 				$expression = $this->convertExpressionToSql($ast->getIdentifier());
 				$caseExpression = "CASE WHEN {$condition} THEN {$expression} END";
 				
-				// Build aggregate with CASE WHEN
+				// Build aggregate function with CASE WHEN expression
 				$distinctClause = $distinct ? 'DISTINCT ' : '';
 				
 				if ($aggregateFunction === 'SUM') {
@@ -406,60 +475,74 @@
 				}
 			}
 			
-			// Convert the AST expression into its SQL string representation
+			// Handle standard aggregation
 			$sqlExpression = $this->convertExpressionToSql($ast->getIdentifier());
-			
-			// Prepare DISTINCT clause if needed - adds "DISTINCT " with trailing space
 			$distinctClause = $distinct ? 'DISTINCT ' : '';
 			
-			// Apply function-specific formatting and NULL handling
+			// Apply function-specific NULL handling
 			if ($aggregateFunction === 'SUM') {
-				// For SUM operations, wrap with COALESCE to convert NULL results to 0
-				// This ensures SUM always returns a numeric value instead of NULL
-				// when there are no matching rows or all values are NULL
+				// SUM returns NULL for empty result sets; COALESCE converts to 0
 				return "COALESCE({$aggregateFunction}({$distinctClause}{$sqlExpression}), 0)";
 			} else {
-				// For other aggregate functions (COUNT, AVG, MAX, MIN, etc.),
-				// use standard formatting without NULL coalescing
-				// COUNT typically returns 0 for empty sets, while AVG/MAX/MIN return NULL
+				// Other functions handle empty sets appropriately:
+				// COUNT returns 0, AVG/MIN/MAX return NULL (which is correct behavior)
 				return "{$aggregateFunction}({$distinctClause}{$sqlExpression})";
 			}
 		}
-
+		
 		// ============================================================================
-		// UTILITY METHODS (PRESERVED FROM ORIGINAL)
+		// UTILITY METHODS FOR AST PROCESSING AND SQL GENERATION
 		// ============================================================================
 		
 		/**
-		 * Converts an AST expression to SQL string representation.
+		 * Converts AST expressions to their SQL string representations.
+		 *
 		 * @param AstInterface $expression The AST expression to convert
-		 * @return string SQL string representation of the expression
+		 * @return string SQL string representation
 		 */
 		private function convertExpressionToSql(AstInterface $expression): string {
 			return $this->convertToString->visitNodeAndReturnSQL($expression);
 		}
 		
 		/**
-		 * Marks the expression as handled
-		 * @param AstInterface $expression The AST expression to convert
+		 * Marks an AST expression as already processed to prevent duplicate handling.
+		 *
+		 * This is important when the same expression appears in multiple contexts
+		 * or when subqueries contain expressions that shouldn't be processed again.
+		 *
+		 * @param AstInterface $expression The AST expression to mark as handled
 		 * @return void
 		 */
 		private function markExpressionAsHandled(AstInterface $expression): void {
-			// Convert but ignore result - we just need the side effect
+			// Trigger the conversion process to mark as handled, discard the result
 			$this->convertToString->visitNodeAndReturnSQL($expression);
 		}
 		
+		// ============================================================================
+		// SQL CLAUSE CONSTRUCTION METHODS
+		// ============================================================================
+		
 		/**
-		 * Builds the FROM clause portion of a SQL query based on the provided ranges.
-		 * Maps entity names to their corresponding database table names and creates proper aliases.
-		 * @param array $ranges Array of range objects containing entity and alias information
+		 * Constructs the FROM clause with appropriate JOIN syntax for multiple ranges.
+		 *
+		 * Builds complex FROM clauses by:
+		 * 1. Identifying the main table (range without join property)
+		 * 2. Adding INNER/LEFT JOINs for related ranges based on their join properties
+		 * 3. Using entity-to-table mappings from EntityStore
+		 * 4. Applying proper table aliases
+		 *
+		 * Example output:
+		 * `departments` d INNER JOIN `employees` e ON e.dept_id = d.id LEFT JOIN `addresses` a ON a.emp_id = e.id
+		 *
+		 * @param array $ranges Array of AstRange objects containing entity and join information
 		 * @return string Complete FROM clause content (without the "FROM" keyword)
+		 * @throws \InvalidArgumentException When no main range is found
 		 */
 		private function buildFromClauseForRanges(array $ranges): string {
 			$mainRange = null;
 			$joinRanges = [];
 			
-			// Separate main range from join ranges
+			// Separate main range (no join property) from ranges that need joins
 			foreach ($ranges as $range) {
 				if ($range->getJoinProperty() === null) {
 					$mainRange = $range;
@@ -469,23 +552,22 @@
 			}
 			
 			if ($mainRange === null) {
-				throw new \InvalidArgumentException("No main range found");
+				throw new \InvalidArgumentException("No main range found - at least one range must not have a join property");
 			}
 			
-			// Start with main table
+			// Start with the main table and its alias
 			$tableName = $this->entityStore->getOwningTable($mainRange->getEntityName());
 			$sql = "`{$tableName}` {$mainRange->getName()}";
 			
-			// Add proper JOIN syntax for each joined range
+			// Add JOIN clauses for each related range
 			foreach ($joinRanges as $range) {
 				$joinTableName = $this->entityStore->getOwningTable($range->getEntityName());
 				$joinType = $range->isRequired() ? "INNER" : "LEFT";
 				
-				// Debug the join property
+				// Convert join property to SQL condition
 				$joinProperty = $range->getJoinProperty();
 				$joinCondition = $this->convertExpressionToSql($joinProperty);
-
-				// Put in HTML
+				
 				$sql .= " {$joinType} JOIN `{$joinTableName}` {$range->getName()} ON {$joinCondition}";
 			}
 			
@@ -493,78 +575,92 @@
 		}
 		
 		/**
-		 * This method extracts and combines all join conditions from the ranges. Each range
-		 * may have join properties that define how it should be connected to other
-		 * tables in the query.
-		 * @param AstRange[] $ranges Array of ranges that need join conditions
-		 * @return string Complete WHERE clause with conditions, or empty string if no conditions exist
+		 * Constructs WHERE clauses from range join conditions.
+		 *
+		 * This method processes ranges that have join properties and converts them into
+		 * WHERE conditions. It's primarily used for subqueries where join relationships
+		 * need to be expressed as WHERE conditions rather than JOIN clauses.
+		 *
+		 * Example:
+		 * Input:  ranges with join properties like "e.dept_id = d.id"
+		 * Output: "WHERE e.dept_id = d.id AND e.active = 1"
+		 *
+		 * @param AstRange[] $ranges Array of ranges that may contain join conditions
+		 * @return string Complete WHERE clause with conditions, or empty string if none exist
 		 */
 		private function buildWhereClauseForRanges(array $ranges): string {
 			$conditions = [];
 			
 			foreach ($ranges as $range) {
-				// Step 1: Get the join property that defines how this range connects to others
-				// Join properties contain the logic for relating this entity to other entities
-				// (e.g., foreign key relationships, composite keys, etc.)
 				$joinProperty = $range->getJoinProperty();
 				
-				// Step 2: Skip ranges that don't require join conditions
-				// Some ranges might be standalone or already handled through other means
+				// Skip ranges without join conditions
 				if ($joinProperty === null) {
 					continue;
 				}
 				
-				// Step 3: Convert the join property into actual SQL condition
-				// Use deepClone() to avoid modifying the original join property object
-				// This ensures the AST remains immutable during SQL generation
+				// Convert join property to SQL condition using immutable clone
 				$joinConditionSql = $this->sqlBuilder->buildJoinCondition($joinProperty->deepClone());
 				
-				// Step 4: Validate and add the condition
-				// Only include conditions that actually contain meaningful SQL
-				// trim() removes whitespace to catch empty or whitespace-only conditions
+				// Only include non-empty conditions
 				if (!empty(trim($joinConditionSql))) {
 					$conditions[] = $joinConditionSql;
 				}
 			}
 			
-			// Step 5: Build the final WHERE clause
-			// If no valid conditions were found, return empty string (no WHERE clause needed)
-			// Otherwise, combine all conditions with AND logic and prepend "WHERE"
+			// Return empty string if no conditions, otherwise build WHERE clause
 			return empty($conditions) ? '' : 'WHERE ' . implode(' AND ', $conditions);
 		}
 		
+		// ============================================================================
+		// RANGE EXTRACTION AND ANALYSIS METHODS
+		// ============================================================================
+		
 		/**
-		 * Extracts all unique ranges from the expression by analyzing identifier nodes.
-		 * Also extracts ranges from join properties to get complete range set.
-		 * @param AstInterface $expression Expression to extract ranges from
-		 * @return AstRange[] Array of unique range objects
+		 * Extracts all unique ranges referenced by an expression and its join properties.
+		 *
+		 * This method performs comprehensive range discovery by:
+		 * 1. Finding all identifier nodes in the expression tree
+		 * 2. Extracting ranges from those identifiers
+		 * 3. Recursively extracting ranges from join properties
+		 * 4. Deduplicating the final range set
+		 *
+		 * This ensures we capture all tables needed for the complete query, including
+		 * those referenced indirectly through join relationships.
+		 *
+		 * @param AstInterface $expression Expression tree to analyze for range references
+		 * @return AstRange[] Array of unique range objects needed for the query
 		 */
 		private function extractAllRanges(AstInterface $expression): array {
 			$identifiers = $this->collectIdentifierNodes($expression);
-			$allRanges = $this->getAllRanges($identifiers);
+			$primaryRanges = $this->getAllRanges($identifiers);
 			
-			// Also collect ranges from join properties
-			$additionalRanges = [];
+			// Recursively collect ranges from join properties
+			$joinRanges = [];
 			
-			foreach ($allRanges as $range) {
+			foreach ($primaryRanges as $range) {
 				$joinProperty = $range->getJoinProperty();
 				
 				if ($joinProperty !== null) {
 					$joinIdentifiers = $this->collectIdentifierNodes($joinProperty);
-					$joinRanges = $this->getAllRanges($joinIdentifiers);
-					$additionalRanges = array_merge($additionalRanges, $joinRanges);
+					$additionalRanges = $this->getAllRanges($joinIdentifiers);
+					$joinRanges = array_merge($joinRanges, $additionalRanges);
 				}
 			}
 			
-			// Merge and deduplicate all ranges
-			return $this->deduplicateRanges(array_merge($allRanges, $additionalRanges));
+			// Merge and deduplicate all discovered ranges
+			return $this->deduplicateRanges(array_merge($primaryRanges, $joinRanges));
 		}
 		
 		/**
-		 * Traverses the AST tree to find all AstIdentifier nodes.
-		 * Identifiers represent references to entity properties and ranges in the query.
+		 * Traverses the AST tree to collect all AstIdentifier nodes.
+		 *
+		 * Uses the visitor pattern to efficiently walk the entire AST tree and
+		 * collect all identifier nodes, which represent references to entity
+		 * properties and ranges in ObjectQuel expressions.
+		 *
 		 * @param AstInterface $ast Root AST node to search
-		 * @return AstIdentifier[] Array of all identifier nodes found
+		 * @return AstIdentifier[] Array of all identifier nodes found in the tree
 		 */
 		private function collectIdentifierNodes(AstInterface $ast): array {
 			$visitor = new CollectNodes(AstIdentifier::class);
@@ -573,10 +669,15 @@
 		}
 		
 		/**
-		 * Gets unique ranges from an array of identifiers, filtering for database ranges only.
-		 * Ensures each range appears only once in the result set.
-		 * @param AstIdentifier[] $identifiers Array of identifier nodes
-		 * @return AstRange[] Array of unique ranges
+		 * Extracts unique database ranges from an array of identifiers.
+		 *
+		 * Filters identifiers to only include those with database ranges (not in-memory ranges),
+		 * and ensures each range appears only once in the result set based on range name.
+		 *
+		 * This prevents duplicate table references in generated SQL queries.
+		 *
+		 * @param AstIdentifier[] $identifiers Array of identifier nodes to process
+		 * @return AstRange[] Array of unique database ranges
 		 */
 		private function getAllRanges(array $identifiers): array {
 			$result = [];
@@ -585,12 +686,14 @@
 			foreach ($identifiers as $identifier) {
 				$range = $identifier->getRange();
 				
+				// Only process database ranges, skip in-memory or other range types
 				if (!$range instanceof AstRangeDatabase) {
 					continue;
 				}
 				
 				$rangeName = $range->getName();
 				
+				// Deduplicate based on range name
 				if (!isset($seen[$rangeName])) {
 					$seen[$rangeName] = true;
 					$result[] = $range;
@@ -601,7 +704,11 @@
 		}
 		
 		/**
-		 * Removes duplicate ranges based on range name.
+		 * Removes duplicate ranges from an array based on range names.
+		 *
+		 * Used as a final deduplication step when merging ranges from multiple sources
+		 * (primary expressions and join properties) to ensure each range appears only once.
+		 *
 		 * @param AstRange[] $ranges Array of ranges that may contain duplicates
 		 * @return AstRange[] Array of unique ranges
 		 */
@@ -621,9 +728,19 @@
 			return $result;
 		}
 		
+		// ============================================================================
+		// AST NAVIGATION UTILITIES
+		// ============================================================================
+		
 		/**
-		 * Returns the parent aggregate if any
-		 * @return AstInterface|null
+		 * Searches up the AST tree to find the closest AstRetrieve parent node.
+		 *
+		 * AstRetrieve nodes represent the main query structure in ObjectQuel.
+		 * This method is useful for understanding the broader query context
+		 * when processing individual aggregate operations.
+		 *
+		 * @param AstInterface $ast Starting AST node to search from
+		 * @return AstRetrieve|null The closest AstRetrieve ancestor, or null if none found
 		 */
 		public function getRetrieveNode(AstInterface $ast): ?AstRetrieve {
 			$current = $ast->getParent();
