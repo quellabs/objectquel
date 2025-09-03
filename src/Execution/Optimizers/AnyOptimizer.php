@@ -7,8 +7,10 @@
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstAny;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstBinaryOperator;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstIdentifier;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstNumber;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRange;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRetrieve;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstString;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstSubquery;
 	use Quellabs\ObjectQuel\ObjectQuel\AstInterface;
 	use Quellabs\ObjectQuel\ObjectQuel\Visitors\CollectIdentifiers;
@@ -178,6 +180,21 @@
 			);
 			
 			// ── Step 9: Replace ANY(...) with the chosen subquery form.
+			if ($subQueryType === AstSubquery::TYPE_CASE_WHEN
+				&& $finalWhere === null
+				&& count($kept) === 1
+				&& $this->isSelectOnlyAny($ast, $node)) {
+
+				$this->nodeReplacer->replaceChild(
+					$node->getParent(),
+					$node,
+					new AstNumber(1)
+				);
+				
+				return; // skip EXISTS path
+			}
+
+			// (keep your existing AstSubquery path below)
 			$subQuery = new AstSubquery($subQueryType, null, $kept, $finalWhere);
 			$this->nodeReplacer->replaceChild($node->getParent(), $node, $subQuery);
 		}
@@ -734,5 +751,14 @@
 			$visitor = new CollectNodes([AstAny::class]);
 			$ast->accept($visitor);
 			return $visitor->getCollectedNodes();
+		}
+
+		/**
+		 * @param AstRetrieve $ast
+		 * @param AstAny $node
+		 * @return bool
+		 */
+		private function isSelectOnlyAny(AstRetrieve $ast, AstAny $node): bool {
+			return $ast->getLocationOfChild($node) === 'select' && count($this->getAllAnyNodes($ast)) === 1;
 		}
 	}

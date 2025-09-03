@@ -320,21 +320,8 @@
 		 * @return string SQL EXISTS statement
 		 */
 		private function buildExistsSubquery(AstSubquery $subquery): string {
-			$aggregation = $subquery->getAggregation();
-			
-			// Ensure this is an ANY aggregation
-			if (!$aggregation instanceof AstAny) {
-				throw new \InvalidArgumentException("EXISTS subquery type requires AstAny aggregation");
-			}
-			
-			// Mark the aggregation as handled to prevent duplicate processing
-			$this->markExpressionAsHandled($aggregation);
-			
-			// Get the identifier being checked for existence
-			$identifier = $aggregation->getIdentifier();
-			
 			// Extract all ranges needed for the subquery
-			$ranges = $this->extractAllRanges($identifier);
+			$ranges = $subquery->getCorrelatedRanges();
 			
 			// Build the EXISTS subquery components
 			$fromClause = $this->buildFromClauseForRanges($ranges);
