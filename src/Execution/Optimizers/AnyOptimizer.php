@@ -10,7 +10,6 @@
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstNumber;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRange;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRetrieve;
-	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstString;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstSubquery;
 	use Quellabs\ObjectQuel\ObjectQuel\AstInterface;
 	use Quellabs\ObjectQuel\ObjectQuel\Visitors\CollectIdentifiers;
@@ -180,20 +179,41 @@
 			);
 			
 			// ── Step 9: Replace ANY(...) with the chosen subquery form.
-			if ($subQueryType === AstSubquery::TYPE_CASE_WHEN
-				&& $finalWhere === null
-				&& count($kept) === 1
-				&& $this->isSelectOnlyAny($ast, $node)) {
-
+			// Optimization: simplify a bare top-level ANY(...) in SELECT.
+			// Normally ANY(...) is emitted as
+			//   SELECT CASE WHEN EXISTS(SELECT 1 ... ) THEN 1 ELSE 0 END
+			// which wraps the existence check in a subquery.
+			//
+			// But if there is:
+			//   • no WHERE condition ($finalWhere === null),
+			//   • exactly one kept range (count($kept) === 1),
+			//   • and the ANY(...) is a top-level projection (isTopLevelAny),
+			// then we can inline it directly as
+			//   SELECT 1 AS ANY(...)
+			// with a LIMIT/WINDOW of 1 row.
+			//
+			// This avoids generating the unnecessary EXISTS subselect and
+			// makes the SQL shorter and faster to evaluate.
+			if (
+				$subQueryType === AstSubquery::TYPE_CASE_WHEN &&
+				$finalWhere === null &&
+				count($kept) === 1 &&
+				$this->isTopLevelAny($ast, $node)
+			) {
 				$this->nodeReplacer->replaceChild(
 					$node->getParent(),
 					$node,
 					new AstNumber(1)
 				);
 				
-				return; // skip EXISTS path
+				if ($ast->getWindow() === null) {
+					$ast->setWindow(0);
+					$ast->setWindowSize(1);
+				}
+				
+				return;
 			}
-
+			
 			// (keep your existing AstSubquery path below)
 			$subQuery = new AstSubquery($subQueryType, null, $kept, $finalWhere);
 			$this->nodeReplacer->replaceChild($node->getParent(), $node, $subQuery);
@@ -752,13 +772,14 @@
 			$ast->accept($visitor);
 			return $visitor->getCollectedNodes();
 		}
-
+		
 		/**
+		 * Check whether the given ANY(...) node is a simple top-level projection.
 		 * @param AstRetrieve $ast
 		 * @param AstAny $node
 		 * @return bool
 		 */
-		private function isSelectOnlyAny(AstRetrieve $ast, AstAny $node): bool {
-			return $ast->getLocationOfChild($node) === 'select' && count($this->getAllAnyNodes($ast)) === 1;
+		private function isTopLevelAny(AstRetrieve $ast, AstAny $node): bool {
+			return $ast->getLocationOfChild($node) === 'select';
 		}
 	}
