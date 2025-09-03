@@ -181,6 +181,16 @@
 			$this->ranges[] = $range;
 		}
 		
+		public function hasRange(AstRange $rangeToCheck): bool {
+			foreach($this->ranges as $range) {
+				if ($range->getName() === $rangeToCheck->getName()) {
+					return true;
+				}
+			}
+			
+			return false;
+		}
+		
 		public function removeRange(AstRange $rangeToRemove): void {
 			$result = [];
 			

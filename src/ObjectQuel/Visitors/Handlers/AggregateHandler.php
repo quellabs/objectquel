@@ -342,23 +342,22 @@
 		 * @return string SQL CASE WHEN statement with EXISTS subquery
 		 */
 		private function buildCaseWhenExistsSubquery(AstSubquery $subquery): string {
-			// Extract all ranges needed for the subquery FROM clause
-			$ranges = $subquery->getCorrelatedRanges();
-			
-			// Build the FROM clause with necessary table joins
+			$ranges     = $subquery->getCorrelatedRanges();
 			$fromClause = $this->buildFromClauseForRanges($ranges);
 			
-			// Add WHERE clause if conditions exist
-			$whereClause = "";
+			$whereClause = '';
+
 			if ($subquery->getConditions() !== null) {
-				$conditions = $this->convertExpressionToSql($subquery->getConditions());
-				$whereClause = "WHERE {$conditions}";
+				$condSql = trim($this->convertExpressionToSql($subquery->getConditions()));
+
+				if ($condSql !== '') {
+					$whereClause = "WHERE {$condSql}";
+				}
+			} else {
+				$whereClause = $this->buildWhereClauseForRanges($ranges);
 			}
 			
-			// Build EXISTS subquery optimized with SELECT 1 and LIMIT 1
-			$existsQuery = "EXISTS (SELECT 1 FROM {$fromClause} {$whereClause} LIMIT 1)";
-			
-			// Wrap in CASE WHEN to return numeric 1/0 instead of boolean true/false
+			$existsQuery = "EXISTS (SELECT 1 FROM {$fromClause} {$whereClause})";
 			return "CASE WHEN {$existsQuery} THEN 1 ELSE 0 END";
 		}
 		
@@ -396,15 +395,26 @@
 		 * @return string SQL EXISTS statement
 		 */
 		private function buildExistsSubquery(AstSubquery $subquery): string {
-			// Extract all ranges needed for the subquery
-			$ranges = $subquery->getCorrelatedRanges();
-			
-			// Build FROM clause with necessary table joins
+			// FROM
+			$ranges     = $subquery->getCorrelatedRanges();
 			$fromClause = $this->buildFromClauseForRanges($ranges);
-			$whereClause = $this->buildWhereClauseForRanges($ranges);
 			
-			// Return optimized EXISTS query
-			return "EXISTS (SELECT 1 FROM {$fromClause} {$whereClause} LIMIT 1)";
+			// WHERE – prefer the subquery's own conditions (what the optimizer set)
+			$whereClause = '';
+
+			if ($subquery->getConditions() !== null) {
+				$condSql = trim($this->convertExpressionToSql($subquery->getConditions()));
+
+				if ($condSql !== '') {
+					$whereClause = "WHERE {$condSql}";
+				}
+			} else {
+				// fallback for legacy callers that didn't set conditions
+				$whereClause = $this->buildWhereClauseForRanges($ranges);
+			}
+			
+			// EXISTS doesn't need LIMIT 1; it short-circuits internally
+			return "EXISTS (SELECT 1 FROM {$fromClause} {$whereClause})";
 		}
 		
 		/**
