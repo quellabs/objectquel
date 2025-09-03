@@ -152,8 +152,8 @@
 		 */
 		private function executeSimpleQueryDatabase(ExecutionStage $stage, array $initialParams = []): array {
 			// Transform and optimize the query
-			$this->queryTransformer->transform($stage->getQuery(), $initialParams);
 			$this->queryOptimizer->optimize($stage->getQuery());
+			$this->queryTransformer->transform($stage->getQuery(), $initialParams);
 			
 			// Convert the query to SQL
 			$sql = $this->convertToSQL($stage->getQuery(), $initialParams);

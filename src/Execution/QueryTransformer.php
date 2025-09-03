@@ -250,7 +250,7 @@
 			// Check if AstIn already exists and replace its parameters
 			try {
 				$visitor = new GetMainEntityInAst($astIdentifier);
-				$ast->getConditions()->accept($visitor);
+				$ast->getConditions()?->accept($visitor);
 			} catch (GetMainEntityInAstException $exception) {
 				$exception->getAstObject()->setParameters($parameters);
 				return;
