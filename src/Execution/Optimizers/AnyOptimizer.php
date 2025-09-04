@@ -4,11 +4,11 @@
 	
 	use Quellabs\ObjectQuel\EntityManager;
 	use Quellabs\ObjectQuel\EntityStore;
-	use Quellabs\ObjectQuel\Execution\Optimizers\Support\AstNodeReplacer;
-	use Quellabs\ObjectQuel\Execution\Optimizers\Support\AstUtilities;
-	use Quellabs\ObjectQuel\Execution\Optimizers\Support\JoinPredicateProcessor;
-	use Quellabs\ObjectQuel\Execution\Optimizers\Support\AnchorManager;
-	use Quellabs\ObjectQuel\Execution\Optimizers\Support\RangePartitioner;
+	use Quellabs\ObjectQuel\Execution\Support\AstNodeReplacer;
+	use Quellabs\ObjectQuel\Execution\Support\AstUtilities;
+	use Quellabs\ObjectQuel\Execution\Support\JoinPredicateProcessor;
+	use Quellabs\ObjectQuel\Execution\Support\AnchorManager;
+	use Quellabs\ObjectQuel\Execution\Support\RangePartitioner;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstAny;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstNumber;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRange;

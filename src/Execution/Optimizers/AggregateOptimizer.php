@@ -3,9 +3,9 @@
 	namespace Quellabs\ObjectQuel\Execution\Optimizers;
 	
 	use Quellabs\ObjectQuel\EntityManager;
-	use Quellabs\ObjectQuel\Execution\Optimizers\Support\AggregateConstants;
-	use Quellabs\ObjectQuel\Execution\Optimizers\Support\AggregateRewriter;
-	use Quellabs\ObjectQuel\Execution\Optimizers\Support\AstUtilities;
+	use Quellabs\ObjectQuel\Execution\Support\AggregateConstants;
+	use Quellabs\ObjectQuel\Execution\Support\AggregateRewriter;
+	use Quellabs\ObjectQuel\Execution\Support\AstUtilities;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstAvg;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstAvgU;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstCount;
@@ -16,9 +16,9 @@
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstSum;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstSumU;
 	use Quellabs\ObjectQuel\ObjectQuel\AstInterface;
-	use Quellabs\ObjectQuel\Execution\Optimizers\Support\ExistsRewriter;
-	use Quellabs\ObjectQuel\Execution\Optimizers\Support\RangeRemover;
-	use Quellabs\ObjectQuel\Execution\Optimizers\Support\RangeUtilities;
+	use Quellabs\ObjectQuel\Execution\Support\ExistsRewriter;
+	use Quellabs\ObjectQuel\Execution\Support\RangeRemover;
+	use Quellabs\ObjectQuel\Execution\Support\RangeUtilities;
 	
 	/**
 	 * Class AggregateOptimizer
