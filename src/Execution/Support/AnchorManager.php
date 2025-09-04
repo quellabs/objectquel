@@ -103,7 +103,7 @@
 				case 'expression_collapsible':
 				case 'outer_collapsible':
 					// Collapse other ranges into WHERE conditions, preserving semantics
-					return [self::convertToAnchorRange($ranges, $anchorSelection['index'], $whereClause)];
+					return self::convertToAnchorRange($ranges, $anchorSelection['index'], $whereClause);
 				
 				case 'expression_inner':
 				case 'inner_preserve':
@@ -112,7 +112,7 @@
 				
 				case 'inner_collapsible':
 					// Inner join that can be collapsed - move conditions to WHERE
-					return [self::convertToAnchorRange($ranges, $anchorSelection['index'], $whereClause)];
+					return self::convertToAnchorRange($ranges, $anchorSelection['index'], $whereClause);
 				
 				default:
 					// Defensive programming - should never reach here with valid input
@@ -283,9 +283,9 @@
 		 * @param array $ranges
 		 * @param int $anchorIndex
 		 * @param AstInterface|null $whereClause
-		 * @return AstRange
+		 * @return AstRange[]
 		 */
-		private static function convertToAnchorRange(array $ranges, int $anchorIndex, ?AstInterface &$whereClause): AstRange {
+		private static function convertToAnchorRange(array $ranges, int $anchorIndex, ?AstInterface &$whereClause): array {
 			// Fetch the new anchor
 			$anchor = $ranges[$anchorIndex];
 			
@@ -305,7 +305,7 @@
 			}
 			
 			// Return the new anchor
-			return $anchor;
+			return [$anchor];
 		}
 		
 		/**
