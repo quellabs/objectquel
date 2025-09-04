@@ -7,14 +7,11 @@
 	use Quellabs\ObjectQuel\Execution\Support\AggregateRewriter;
 	use Quellabs\ObjectQuel\Execution\Support\AstUtilities;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstAvg;
-	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstAvgU;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstCount;
-	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstCountU;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstMax;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstMin;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRetrieve;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstSum;
-	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstSumU;
 	use Quellabs\ObjectQuel\ObjectQuel\AstInterface;
 	use Quellabs\ObjectQuel\Execution\Support\ExistsRewriter;
 	use Quellabs\ObjectQuel\Execution\Support\RangeRemover;
@@ -42,10 +39,11 @@
 		/** Strategy label: compute aggregate as a window function. */
 		private const string STRATEGY_WINDOW = 'WINDOW';
 		
+		/** @var EntityManager EntityManager is the portal to the ORM */
 		private EntityManager $entityManager;
 		
 		/**
-		 * Constructor
+		 * AggregateOptimizer constructor
 		 * @param EntityManager $entityManager Provides DB capabilities (e.g. window support)
 		 */
 		public function __construct(EntityManager $entityManager) {
@@ -58,43 +56,57 @@
 		
 		/**
 		 * Optimize the provided retrieve AST in-place.
-		 *
-		 * Pipeline:
-		 *  1) Remove unused ranges when SELECT is aggregates-only
-		 *  2) Rewrite filter-only joins to EXISTS
-		 *  3) Simplify trivial self-join EXISTS to NOT NULL checks
-		 *  4) Per aggregate: choose DIRECT/SUBQUERY/WINDOW and rewrite
-		 *
 		 * @param AstRetrieve $root Root query node to mutate
 		 * @return void
 		 */
 		public function optimize(AstRetrieve $root): void {
-			$isAggregateOnly = $this->selectIsAggregateOnly($root);
+			// Determine if this query only contains aggregate functions (no regular columns)
+			$isAggregateOnly = AstUtilities::areAllSelectFieldsAggregates($root);
+			
+			// Build mapping of which ranges are used by aggregate functions
+			// This helps identify ranges that only serve filtering purposes
 			$aggregateRangeMap = $this->buildAggregateRangeMap($root);
 			
+			// Apply optimizations specific to aggregate-only queries
 			if ($isAggregateOnly) {
+				// Remove ranges (table joins) that aren't needed for aggregation
+				// Safe to do since we're not selecting any non-aggregate columns
 				RangeRemover::removeUnusedRangesInAggregateOnlyQueries($root);
+				
+				// Convert filter-only joins to EXISTS subqueries for better performance
+				// These joins don't contribute data, only filter conditions
 				ExistsRewriter::rewriteFilterOnlyJoinsAsExists($root, $aggregateRangeMap);
 			}
 			
+			// Simplify self-joins that can be rewritten as EXISTS conditions
+			// This works for both aggregate and non-aggregate queries
 			ExistsRewriter::simplifySelfJoinExists($root, false);
 			
+			// Process each aggregate function in the query
 			foreach (AstUtilities::collectAggregateNodes($root) as $agg) {
+				// Determine the best rewriting strategy for this specific aggregate
+				// Considers factors like correlation, grouping, and SQL dialect capabilities
 				$strategy = $this->chooseStrategy($root, $agg);
 				
 				switch ($strategy) {
 					case self::STRATEGY_DIRECT:
+						// Keep aggregate in main query - most efficient when possible
+						// Ensure proper GROUP BY clause if mixing aggregates with non-aggregates
 						if ($this->selectNeedsGroupBy($root)) {
-							$this->ensureGroupByForNonAggregates($root);
+							$root->setGroupBy(AstUtilities::collectNonAggregateSelectItems($root));
 						}
 						
 						break;
 					
 					case self::STRATEGY_SUBQUERY:
+						// Move aggregate to correlated subquery
+						// Used when aggregate references multiple tables or has complex conditions
 						AggregateRewriter::rewriteAggregateAsCorrelatedSubquery($root, $agg);
 						break;
 					
 					case self::STRATEGY_WINDOW:
+						// Convert to window function (e.g., ROW_NUMBER(), RANK())
+						// Most efficient for running totals, rankings, or partitioned aggregates
 						AggregateRewriter::rewriteAggregateAsWindowFunction($agg);
 						break;
 				}
@@ -108,20 +120,26 @@
 		 * @return string One of self::STRATEGY_* constants
 		 */
 		private function chooseStrategy(AstRetrieve $root, AstInterface $aggregate): string {
+			// If aggregate has filtering conditions, must use subquery to apply WHERE before aggregation
 			if ($aggregate->getConditions() !== null) {
 				return self::STRATEGY_SUBQUERY;
 			}
 			
-			if ($this->selectIsAggregateOnly($root)) {
+			// Pure aggregate query (no non-aggregate fields) can execute directly
+			if (AstUtilities::areAllSelectFieldsAggregates($root)) {
 				return self::STRATEGY_DIRECT;
 			}
 			
-			$nonAggItems = $this->collectNonAggregateSelectItems($root);
+			// Mixed query: check for compatibility between aggregate and non-aggregate fields
+			$nonAggItems = AstUtilities::collectNonAggregateSelectItems($root);
 			
 			if (!empty($nonAggItems)) {
+				// Collect table/field ranges to determine if aggregate and non-aggregate fields reference related data
 				$aggRanges = RangeUtilities::collectRangesFromNode($aggregate);
 				$nonAggRanges = RangeUtilities::collectRangesFromNodes($nonAggItems);
 				
+				// If ranges overlap/relate, fields can be grouped together in single query
+				// Otherwise, unrelated ranges require subquery to avoid incorrect grouping
 				if (RangeUtilities::rangesOverlapOrAreRelated($aggRanges, $nonAggRanges)) {
 					return self::STRATEGY_DIRECT;
 				} else {
@@ -129,48 +147,18 @@
 				}
 			}
 			
+			// Check if aggregate can be converted to window function for better performance
 			if ($this->canRewriteAsWindowFunction($root, $aggregate)) {
 				return self::STRATEGY_WINDOW;
 			}
 			
+			// Default fallback when no other strategy applies
 			return self::STRATEGY_SUBQUERY;
 		}
 		
 		// ---------------------------------------------------------------------
 		// QUERY STRUCTURE ANALYSIS
 		// ---------------------------------------------------------------------
-		
-		/**
-		 * @param AstRetrieve $root
-		 * @return bool True if every SELECT expression is an aggregate
-		 */
-		public function selectIsAggregateOnly(AstRetrieve $root): bool {
-			foreach ($root->getValues() as $selectItem) {
-				if (!AstUtilities::isAggregateExpression($selectItem->getExpression())) {
-					return false;
-				}
-			}
-			
-			return true;
-		}
-		
-		/**
-		 * @param AstRetrieve $root Query node
-		 * @return array<int,mixed> Non-aggregate SELECT value nodes
-		 */
-		private function collectNonAggregateSelectItems(AstRetrieve $root): array {
-			$result = [];
-
-			foreach ($root->getValues() as $selectItem) {
-				$expression = $selectItem->getExpression();
-				
-				if (!AstUtilities::isAggregateExpression($expression)) {
-					$result[] = $selectItem;
-				}
-			}
-
-			return $result;
-		}
 		
 		/**
 		 * @param AstRetrieve $root
@@ -189,20 +177,13 @@
 		}
 		
 		/**
+		 * Returns true if this is a mixed query (aggregates and non-aggregates).
+		 * In that case the system needs to add a GROUP_BY to be SQL standards compliant
 		 * @param AstRetrieve $root
 		 * @return bool True if SELECT mixes aggregate and non-aggregate expressions
 		 */
 		private function selectNeedsGroupBy(AstRetrieve $root): bool {
-			return !$this->selectIsAggregateOnly($root);
-		}
-		
-		/**
-		 * Ensure GROUP BY contains all non-aggregate SELECT items.
-		 * @param AstRetrieve $root Query to mutate
-		 * @return void
-		 */
-		private function ensureGroupByForNonAggregates(AstRetrieve $root): void {
-			$root->setGroupBy($this->collectNonAggregateSelectItems($root));
+			return !AstUtilities::areAllSelectFieldsAggregates($root);
 		}
 		
 		// ---------------------------------------------------------------------

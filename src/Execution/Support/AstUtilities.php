@@ -3,9 +3,17 @@
 	namespace Quellabs\ObjectQuel\Execution\Support;
 	
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstAny;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstAvg;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstAvgU;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstBinaryOperator;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstCount;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstCountU;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstIdentifier;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstMax;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstMin;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRetrieve;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstSum;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstSumU;
 	use Quellabs\ObjectQuel\ObjectQuel\AstInterface;
 	use Quellabs\ObjectQuel\ObjectQuel\Visitors\CollectAggregates;
 	use Quellabs\ObjectQuel\ObjectQuel\Visitors\CollectIdentifiers;
@@ -127,5 +135,37 @@
 			$visitor = new CollectNodes([AstAny::class]);
 			$ast->accept($visitor);
 			return $visitor->getCollectedNodes();
+		}
+		
+		/**
+		 * Returns true if all projections are aggregates, false if not
+		 * @param AstRetrieve $root
+		 * @return bool
+		 */
+		public static function areAllSelectFieldsAggregates(AstRetrieve $root): bool {
+			foreach($root->getValues() as $value) {
+				if (!AstUtilities::isAggregateExpression($value->getExpression())) {
+					return false;
+				}
+			}
+			
+			return true;
+		}
+		
+		/**
+		 * Returns all query projections that are not aggregates
+		 * @param AstRetrieve $root Query node
+		 * @return array<int,mixed> Non-aggregate SELECT value nodes
+		 */
+		public static function collectNonAggregateSelectItems(AstRetrieve $root): array {
+			$result = [];
+			
+			foreach ($root->getValues() as $selectItem) {
+				if (!AstUtilities::isAggregateExpression($selectItem->getExpression())) {
+					$result[] = $selectItem;
+				}
+			}
+			
+			return $result;
 		}
 	}
