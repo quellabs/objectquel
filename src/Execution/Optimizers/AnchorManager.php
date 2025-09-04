@@ -2,7 +2,7 @@
 	
 	namespace Quellabs\ObjectQuel\Execution\Optimizers;
 	
-	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstAny;
+	use Quellabs\ObjectQuel\Execution\Optimizers\Support\AstUtilities;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRange;
 	use Quellabs\ObjectQuel\ObjectQuel\AstInterface;
 	
@@ -17,23 +17,12 @@
 	 */
 	class AnchorManager {
 		
-		/** @var Support\AstUtilities Utility methods for AST operations. */
-		private Support\AstUtilities $astUtilities;
-		
-		/**
-		 * AnchorManager constructor
-		 * @param Support\AstUtilities $astUtilities AST utility methods
-		 */
-		public function __construct(Support\AstUtilities $astUtilities) {
-			$this->astUtilities = $astUtilities;
-		}
-		
 		/**
 		 * Core logic for selecting a single anchor range.
 		 *
-		 * @param AstRange[]         $ranges
-		 * @param AstInterface|null  $whereClause (by-ref) — we may move JOIN → WHERE here
-		 * @param string[]           $exprRangeNames       — ranges referenced by the owner's expression
+		 * @param AstRange[] $ranges
+		 * @param AstInterface|null $whereClause (by-ref) — we may move JOIN → WHERE here
+		 * @param string[] $exprRangeNames — ranges referenced by the owner's expression
 		 * @param array<string,bool> $usedInCond
 		 * @param array<string,bool> $hasIsNullInCond
 		 * @param array<string,bool> $nonNullableUse
@@ -56,10 +45,10 @@
 			// Helper to apply the chosen anchor and normalize position
 			$anchorize = function (int $index) use (&$ranges, &$whereClause) {
 				$selected = $ranges[$index];
-				$join     = $selected->getJoinProperty();
+				$join = $selected->getJoinProperty();
 				
 				if ($join !== null) {
-					$whereClause = $this->astUtilities->combinePredicatesWithAnd([$whereClause, $join]);
+					$whereClause = AstUtilities::combinePredicatesWithAnd([$whereClause, $join]);
 					$selected->setJoinProperty(null);
 					$selected->setRequired(true);
 				}
@@ -75,7 +64,7 @@
 			
 			// Priority 1: a range used in the owner's expression that we can anchor on
 			foreach ($ranges as $i => $range) {
-				$inExpr     = in_array($range->getName(), $exprRangeNames, true);
+				$inExpr = in_array($range->getName(), $exprRangeNames, true);
 				$canBeAnchor = $range->isRequired() || $canCollapse($range);
 				if ($inExpr && $canBeAnchor) {
 					return $anchorize($i);
@@ -101,7 +90,7 @@
 			
 			return $ranges;
 		}
-
+		
 		/**
 		 * Ensures exactly one anchor exists (range with joinProperty == null) and places it first.
 		 *
@@ -118,25 +107,12 @@
 		 * If no safe anchor can be created, preserves original layout to maintain semantics.
 		 *
 		 * @param AstRange[] $ranges Ranges to process
-		 * @param AstAny $anyNode The ANY node being optimized
 		 * @param AstInterface|null &$whereClause WHERE clause (modified by reference)
 		 * @param array<string,bool> $usedInExpr Usage analyzer map
 		 * @param array<string,bool> $usedInCond Usage analyzer map
 		 * @param array<string,bool> $hasIsNullInCond Usage analyzer map
 		 * @param array<string,bool> $nonNullableUse Usage analyzer map
 		 * @return AstRange[] Updated ranges with anchor guaranteed
-		 */
-		/**
-		 * Kept for backward-compatibility (used by AnyOptimizer).
-		 * Now generic: derives expression range candidates from $usedInExpr.
-		 *
-		 * @param AstRange[]         $ranges
-		 * @param AstInterface|null  $whereClause
-		 * @param array<string,bool> $usedInExpr
-		 * @param array<string,bool> $usedInCond
-		 * @param array<string,bool> $hasIsNullInCond
-		 * @param array<string,bool> $nonNullableUse
-		 * @return AstRange[]
 		 */
 		public function ensureSingleAnchorRange(
 			array         $ranges,
@@ -147,44 +123,6 @@
 			array         $nonNullableUse
 		): array {
 			$exprRangeNames = array_keys(array_filter($usedInExpr, static fn($v) => (bool)$v));
-
-			return $this->ensureSingleAnchorCore(
-				$ranges,
-				$whereClause,
-				$exprRangeNames,
-				$usedInCond,
-				$hasIsNullInCond,
-				$nonNullableUse
-			);
-		}
-		
-		/**
-		 * Generic version for nodes like SUM/COUNT/AVG/MIN/MAX that expose getIdentifier().
-		 *
-		 * @param AstRange[]         $ranges
-		 * @param AstInterface       $owner
-		 * @param AstInterface|null  $whereClause
-		 * @param array<string,bool> $usedInExpr
-		 * @param array<string,bool> $usedInCond
-		 * @param array<string,bool> $hasIsNullInCond
-		 * @param array<string,bool> $nonNullableUse
-		 * @return AstRange[]
-		 */
-		public function ensureSingleAnchorRangeForOwner(
-			array         $ranges,
-			AstInterface  $owner,
-			?AstInterface &$whereClause,
-			array         $usedInExpr,
-			array         $usedInCond,
-			array         $hasIsNullInCond,
-			array         $nonNullableUse
-		): array {
-			// Collect candidate ranges from the owner's identifier
-			$exprIds = $this->astUtilities->collectIdentifiersFromAst(
-				method_exists($owner, 'getIdentifier') ? $owner->getIdentifier() : null
-			);
-			
-			$exprRangeNames = array_map(static fn($id) => $id->getRange()->getName(), $exprIds);
 			
 			return $this->ensureSingleAnchorCore(
 				$ranges,
@@ -209,82 +147,6 @@
 			}
 			
 			return false;
-		}
-		
-		/**
-		 * Create a function that converts a range at given index to an anchor.
-		 * @param AstRange[] &$ranges Ranges array (modified by reference)
-		 * @param AstInterface|null &$whereClause WHERE clause (modified by reference)
-		 * @return callable Function that takes an index and returns updated ranges
-		 */
-		private function createAnchorMaker(array &$ranges, ?AstInterface &$whereClause): callable {
-			return function (int $index) use (&$ranges, &$whereClause): array {
-				$range = $ranges[$index];
-				
-				// Move JOIN predicate to WHERE clause
-				if ($range->getJoinProperty() !== null) {
-					$whereClause = $this->astUtilities->combinePredicatesWithAnd([$whereClause, $range->getJoinProperty()]);
-					$range->setJoinProperty(null);
-				}
-				
-				// Move anchor to front for downstream code
-				if ($index !== 0) {
-					array_splice($ranges, $index, 1);
-					array_unshift($ranges, $range);
-				}
-				
-				return $ranges;
-			};
-		}
-		
-		/**
-		 * Create a function that checks if a LEFT range can be safely collapsed to INNER.
-		 * @param array<string,bool> $usedInExpr Usage analyzer map
-		 * @param array<string,bool> $usedInCond Usage analyzer map
-		 * @param array<string,bool> $hasIsNullInCond Usage analyzer map
-		 * @param array<string,bool> $nonNullableUse Usage analyzer map
-		 * @return callable Function that takes a range and returns bool
-		 */
-		private function createSafeCollapseChecker(
-			array $usedInExpr,
-			array $usedInCond,
-			array $hasIsNullInCond,
-			array $nonNullableUse
-		): callable {
-			return function (AstRange $range) use ($usedInExpr, $usedInCond, $hasIsNullInCond, $nonNullableUse): bool {
-				$name = $range->getName();
-				
-				$isUsed =
-					($usedInExpr[$name] ?? false) ||
-					($usedInCond[$name] ?? false) ||
-					($nonNullableUse[$name] ?? false);
-				
-				$dependsOnNull = ($hasIsNullInCond[$name] ?? false);
-				
-				return $isUsed && !$dependsOnNull;
-			};
-		}
-		
-		/**
-		 * Find a range used in ANY expression that can serve as anchor.
-		 * @param AstRange[] $ranges Available ranges
-		 * @param AstAny $anyNode ANY node to analyze
-		 * @param callable $canCollapse Function to check if range can be collapsed
-		 * @return int|null Index of suitable anchor range, null if none found
-		 */
-		private function findExpressionBasedAnchor(array $ranges, AstAny $anyNode, callable $canCollapse): ?int {
-			$expressionRangeNames = $this->getRangeNamesUsedInAnyExpression($anyNode);
-			
-			foreach ($ranges as $index => $range) {
-				$isInExpression = in_array($range->getName(), $expressionRangeNames, true);
-				$canBeAnchor = $range->isRequired() || $canCollapse($range);
-				
-				if ($isInExpression && $canBeAnchor) {
-					return $index;
-				}
-			}
-			
-			return null;
 		}
 		
 		/**
@@ -319,38 +181,6 @@
 		}
 		
 		/**
-		 * Extract the names of ranges referenced by ANY(expr).
-		 * @param AstAny $anyNode The ANY(...) node.
-		 * @return string[] Range names used in the ANY expression.
-		 */
-		private function getRangeNamesUsedInAnyExpression(AstAny $anyNode): array {
-			$exprIds = $this->astUtilities->collectIdentifiersFromAst($anyNode->getIdentifier());
-			return array_map(static fn($id) => $id->getRange()->getName(), $exprIds);
-		}
-
-		/**
-		 * Find a range used in the owner's identifier that can serve as anchor.
-		 * @param AstRange[] $ranges
-		 * @param AstInterface $owner
-		 * @param callable $canCollapse
-		 * @return int|null
-		 */
-		private function findExpressionBasedAnchorForOwner(array $ranges, AstInterface $owner, callable $canCollapse): ?int {
-			$exprIds = $this->astUtilities->collectIdentifiersFromAst($owner->getIdentifier());
-			$exprRangeNames = array_map(static fn($id) => $id->getRange()->getName(), $exprIds);
-			
-			foreach ($ranges as $index => $range) {
-				$isInExpression = in_array($range->getName(), $exprRangeNames, true);
-				$canBeAnchor = $range->isRequired() || $canCollapse($range);
-				if ($isInExpression && $canBeAnchor) {
-					return $index;
-				}
-			}
-			
-			return null;
-		}
-		
-		/**
 		 * Build a predicate used to check whether a LEFT-joined range can be safely
 		 * collapsed to an INNER join for an aggregate subquery.
 		 *
@@ -365,11 +195,7 @@
 		 * @param array<string,bool> $nonNullableUse
 		 * @return callable($range):bool
 		 */
-		private function buildCollapsePredicate(
-			array $usedInCond,
-			array $hasIsNullInCond,
-			array $nonNullableUse
-		): callable {
+		private function buildCollapsePredicate(array $usedInCond, array $hasIsNullInCond, array $nonNullableUse): callable {
 			return function ($range) use ($usedInCond, $hasIsNullInCond, $nonNullableUse): bool {
 				$name = $range->getName();
 				

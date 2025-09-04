@@ -2,6 +2,7 @@
 	
 	namespace Quellabs\ObjectQuel\Execution\Optimizers;
 	
+	use Quellabs\ObjectQuel\Execution\Optimizers\Support\AstUtilities;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstBinaryOperator;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRange;
 	use Quellabs\ObjectQuel\ObjectQuel\AstInterface;
@@ -16,17 +17,6 @@
 	 * - Handling complex predicates with OR operators safely
 	 */
 	class JoinPredicateProcessor {
-		
-		/** @var Support\AstUtilities Utility methods for AST operations. */
-		private Support\AstUtilities $astUtilities;
-		
-		/**
-		 * JoinPredicateProcessor constructor
-		 * @param Support\AstUtilities $astUtilities AST utility methods
-		 */
-		public function __construct(Support\AstUtilities $astUtilities) {
-			$this->astUtilities = $astUtilities;
-		}
 		
 		/**
 		 * For each live range, split its JOIN predicate into INNER vs CORR parts and
@@ -100,7 +90,7 @@
 			}
 			
 			// If it's an AND tree, we can classify each leaf conjunct independently.
-			if ($this->astUtilities->isBinaryAndOperator($predicate)) {
+			if (AstUtilities::isBinaryAndOperator($predicate)) {
 				$queue = [$predicate];
 				$andLeaves = [];
 				
@@ -108,7 +98,7 @@
 				while ($queue) {
 					$n = array_pop($queue);
 					
-					if ($this->astUtilities->isBinaryAndOperator($n)) {
+					if (AstUtilities::isBinaryAndOperator($n)) {
 						$queue[] = $n->getLeft();
 						$queue[] = $n->getRight();
 					} else {
@@ -135,14 +125,13 @@
 				}
 				
 				return [
-					'innerPart' => $this->astUtilities->combinePredicatesWithAnd($innerParts),
-					'corrPart'  => $this->astUtilities->combinePredicatesWithAnd($corrParts),
+					'innerPart' => AstUtilities::combinePredicatesWithAnd($innerParts),
+					'corrPart'  => AstUtilities::combinePredicatesWithAnd($corrParts),
 				];
 			}
 			
 			// Non-AND predicates are classified as a whole.
 			return match ($this->classifyPredicateByRangeReferences($predicate, $liveRangeNames, $correlationRangeNames)) {
-				'MIXED_OR_COMPLEX' => ['innerPart' => $predicate, 'corrPart' => null],
 				'CORR' => ['innerPart' => null, 'corrPart' => $predicate],
 				default => ['innerPart' => $predicate, 'corrPart' => null],
 			};
@@ -164,7 +153,7 @@
 		 * @return 'INNER'|'CORR'|'MIXED_OR_COMPLEX' Classification result
 		 */
 		private function classifyPredicateByRangeReferences(AstInterface $expr, array $liveRangeNames, array $correlationRangeNames): string {
-			$ids = $this->astUtilities->collectIdentifiersFromAst($expr);
+			$ids = AstUtilities::collectIdentifiersFromAst($expr);
 			$hasInner = false;
 			$hasCorr = false;
 			
@@ -184,13 +173,11 @@
 			// risks changing semantics (e.g., distributing over OR). Avoid it.
 			if ($this->containsOrOperator($expr) && $hasInner && $hasCorr) {
 				return 'MIXED_OR_COMPLEX';
-			}
-			
-			if ($hasCorr && !$hasInner) {
+			} elseif ($hasCorr && !$hasInner) {
 				return 'CORR';
+			} else {
+				return 'INNER';
 			}
-			
-			return 'INNER';
 		}
 		
 		/**
@@ -199,11 +186,11 @@
 		 * @return bool True if OR operator found
 		 */
 		private function containsOrOperator(AstInterface $node): bool {
-			if ($this->astUtilities->isBinaryOrOperator($node)) {
+			if (AstUtilities::isBinaryOrOperator($node)) {
 				return true;
 			}
 			
-			foreach ($this->astUtilities->getChildrenFromBinaryOperator($node) as $child) {
+			foreach (AstUtilities::getChildrenFromBinaryOperator($node) as $child) {
 				if ($this->containsOrOperator($child)) {
 					return true;
 				}

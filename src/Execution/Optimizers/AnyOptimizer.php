@@ -4,6 +4,8 @@
 	
 	use Quellabs\ObjectQuel\EntityManager;
 	use Quellabs\ObjectQuel\EntityStore;
+	use Quellabs\ObjectQuel\Execution\Optimizers\Support\AstNodeReplacer;
+	use Quellabs\ObjectQuel\Execution\Optimizers\Support\AstUtilities;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstAny;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstNumber;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRange;
@@ -85,12 +87,6 @@
 		/** @var AnchorManager Manages anchor range selection and ensures single anchor. */
 		private AnchorManager $anchorManager;
 		
-		/** @var Support\AstUtilities Utility methods for AST operations. */
-		private Support\AstUtilities $astUtilities;
-		
-		/** @var Support\AstNodeReplacer AST replacement */
-		private Support\AstNodeReplacer $nodeReplacer;
-		
 		/**
 		 * AnyOptimizer constructor
 		 * @param EntityManager $entityManager Provides entity metadata access.
@@ -98,11 +94,9 @@
 		public function __construct(EntityManager $entityManager) {
 			$this->entityStore = $entityManager->getEntityStore();
 			$this->analyzer = new RangeUsageAnalyzer($this->entityStore);
-			$this->astUtilities = new Support\AstUtilities();
-			$this->nodeReplacer = new Support\AstNodeReplacer();
-			$this->rangePartitioner = new RangePartitioner($this->astUtilities);
-			$this->joinPredicateProcessor = new JoinPredicateProcessor($this->astUtilities);
-			$this->anchorManager = new AnchorManager($this->astUtilities);
+			$this->rangePartitioner = new RangePartitioner();
+			$this->joinPredicateProcessor = new JoinPredicateProcessor();
+			$this->anchorManager = new AnchorManager();
 		}
 		
 		/**
@@ -111,7 +105,7 @@
 		 * @return void
 		 */
 		public function optimize(AstRetrieve $ast): void {
-			foreach ($this->findAllAnyNodes($ast) as $node) {
+			foreach (AstUtilities::findAllAnyNodes($ast) as $node) {
 				// The context of the ANY node decides the subquery shape we emit.
 				switch ($ast->getLocationOfChild($node)) {
 					case 'select':
@@ -178,9 +172,9 @@
 			);
 			
 			// ── Step 6: Build final WHERE: original ANY WHERE AND all promoted correlation predicates.
-			$finalWhere = $this->astUtilities->combinePredicatesWithAnd([
+			$finalWhere = AstUtilities::combinePredicatesWithAnd([
 				$node->getConditions(),
-				$this->astUtilities->combinePredicatesWithAnd($promotedPredicates)
+				AstUtilities::combinePredicatesWithAnd($promotedPredicates)
 			]);
 			
 			// ── Step 7: Drop non-live ranges (keeping order of the survivors).
@@ -190,7 +184,6 @@
 			//     We try to anchor a range used in expr, else any INNER, else collapse a safe LEFT.
 			$keptRanges = $this->anchorManager->ensureSingleAnchorRange(
 				$keptRanges,
-				$node,
 				$finalWhere,
 				$usedInExpr,
 				$usedInCond,
@@ -199,18 +192,11 @@
 			);
 			
 			// ── Step 9: Replace ANY(...) with the chosen subquery form.
-			$this->replaceAnyNode($subQueryType, $keptRanges, $finalWhere, $ast, $node);
-		}
-		
-		/**
-		 * Collect all ANY nodes under the retrieve AST in one pass.
-		 * @param AstRetrieve $ast Root query AST
-		 * @return AstAny[] Array of ANY nodes found
-		 */
-		private function findAllAnyNodes(AstRetrieve $ast): array {
-			$visitor = new CollectNodes([AstAny::class]);
-			$ast->accept($visitor);
-			return $visitor->getCollectedNodes();
+			if ($this->canUseInlinedAnyOptimization($subQueryType, $finalWhere, $keptRanges, $ast, $node)) {
+				$this->replaceAnyWithInlinedValue($ast, $node);
+			} else {
+				$this->replaceAnyWithSubquery($subQueryType, $keptRanges, $finalWhere, $node);
+			}
 		}
 		
 		/**
@@ -226,23 +212,6 @@
 			}
 			
 			return $result;
-		}
-		
-		/**
-		 * Replace an ANY node with either an inlined value or a subquery, depending on optimization conditions.
-		 * @param string $subQueryType Type of subquery (EXISTS or CASE WHEN)
-		 * @param AstRange[] $keptRanges Ranges to include in subquery
-		 * @param AstInterface|null $finalWhere WHERE clause for subquery
-		 * @param AstRetrieve $ast Root query AST
-		 * @param AstAny $node ANY node to replace
-		 * @return void
-		 */
-		private function replaceAnyNode(string $subQueryType, array $keptRanges, ?AstInterface $finalWhere, AstRetrieve $ast, AstAny $node): void {
-			if ($this->canUseInlinedAnyOptimization($subQueryType, $finalWhere, $keptRanges, $ast, $node)) {
-				$this->replaceAnyWithInlinedValue($ast, $node);
-			} else {
-				$this->replaceAnyWithSubquery($subQueryType, $keptRanges, $finalWhere, $node);
-			}
 		}
 		
 		/**
@@ -269,7 +238,7 @@
 		 * @return void
 		 */
 		private function replaceAnyWithInlinedValue(AstRetrieve $ast, AstAny $node): void {
-			$this->nodeReplacer->replaceChild(
+			AstNodeReplacer::replaceChild(
 				$node->getParent(),
 				$node,
 				new AstNumber(1)
@@ -298,7 +267,7 @@
 				"ANY"
 			);
 			
-			$this->nodeReplacer->replaceChild($node->getParent(), $node, $subQuery);
+			AstNodeReplacer::replaceChild($node->getParent(), $node, $subQuery);
 		}
 		
 		/**
