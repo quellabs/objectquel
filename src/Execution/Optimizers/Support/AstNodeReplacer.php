@@ -22,14 +22,14 @@
 		 * @param AstInterface $newChild The new child node to replace the old one
 		 * @throws \InvalidArgumentException When the old child cannot be found or replacement is not supported
 		 */
-		public function replaceChild(AstInterface $parent, AstInterface $oldChild, AstInterface $newChild): void {
+		public static function replaceChild(AstInterface $parent, AstInterface $oldChild, AstInterface $newChild): void {
 			// Set new parent
 			$newChild->setParent($parent);
 			
 			// Handle binary operations (most common case)
 			// Binary nodes have left and right children (e.g., AND, OR, comparison operators)
-			if ($this->isBinaryNode($parent)) {
-				$this->replaceBinaryChild($parent, $oldChild, $newChild);
+			if (self::isBinaryNode($parent)) {
+				self::replaceBinaryChild($parent, $oldChild, $newChild);
 				return;
 			}
 			
@@ -73,7 +73,7 @@
 		 * @param AstInterface $node The node to check
 		 * @return bool True if the node has both getLeft and getRight methods
 		 */
-		private function isBinaryNode(AstInterface $node): bool {
+		public static function isBinaryNode(AstInterface $node): bool {
 			return
 				$node instanceof AstFactor ||
 				$node instanceof AstTerm ||
@@ -89,7 +89,7 @@
 		 * @param AstInterface $newChild The replacement child node
 		 * @throws \InvalidArgumentException When the old child is not found in either position
 		 */
-		private function replaceBinaryChild(AstInterface $parent, AstInterface $oldChild, AstInterface $newChild): void {
+		public static function replaceBinaryChild(AstInterface $parent, AstInterface $oldChild, AstInterface $newChild): void {
 			// Check if old child is the left operand
 			if ($parent->getLeft() === $oldChild) {
 				$parent->setLeft($newChild);

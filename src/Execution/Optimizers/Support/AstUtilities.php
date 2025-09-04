@@ -4,8 +4,10 @@
 	
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstBinaryOperator;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstIdentifier;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRetrieve;
 	use Quellabs\ObjectQuel\ObjectQuel\AstInterface;
 	use Quellabs\ObjectQuel\ObjectQuel\Visitors\CollectIdentifiers;
+	use Quellabs\ObjectQuel\ObjectQuel\Visitors\CollectNodes;
 	
 	/**
 	 * AstUtilities provides common AST manipulation and inspection methods.
@@ -30,7 +32,7 @@
 		 * @param AstInterface[] $parts Predicates to AND together (nulls are ignored).
 		 * @return AstInterface|null Combined predicate or null if no parts
 		 */
-		public function combinePredicatesWithAnd(array $parts): ?AstInterface {
+		public static function combinePredicatesWithAnd(array $parts): ?AstInterface {
 			// Drop nulls/empties early to keep the tree lean.
 			$parts = array_values(array_filter($parts));
 			$n = count($parts);
@@ -58,7 +60,7 @@
 		 * @param AstInterface $node Node to check
 		 * @return bool True if node is AND operator
 		 */
-		public function isBinaryAndOperator(AstInterface $node): bool {
+		public static function isBinaryAndOperator(AstInterface $node): bool {
 			return $node instanceof AstBinaryOperator && strtoupper($node->getOperator()) === 'AND';
 		}
 		
@@ -67,7 +69,7 @@
 		 * @param AstInterface $node Node to check
 		 * @return bool True if node is OR operator
 		 */
-		public function isBinaryOrOperator(AstInterface $node): bool {
+		public static function isBinaryOrOperator(AstInterface $node): bool {
 			return $node instanceof AstBinaryOperator && strtoupper($node->getOperator()) === 'OR';
 		}
 		
@@ -76,7 +78,7 @@
 		 * @param AstInterface $node Node to get children from
 		 * @return AstInterface[] Child nodes (left and right for binary operators)
 		 */
-		public function getChildrenFromBinaryOperator(AstInterface $node): array {
+		public static function getChildrenFromBinaryOperator(AstInterface $node): array {
 			return $node instanceof AstBinaryOperator ? [$node->getLeft(), $node->getRight()] : [];
 		}
 		
@@ -86,7 +88,7 @@
 		 * @param AstInterface|null $ast AST node to traverse
 		 * @return array<int,AstIdentifier> Array of identifier nodes found
 		 */
-		public function collectIdentifiersFromAst(?AstInterface $ast): array {
+		public static function collectIdentifiersFromAst(?AstInterface $ast): array {
 			if ($ast === null) {
 				return [];
 			}
@@ -96,5 +98,21 @@
 			return $visitor->getCollectedNodes();
 		}
 		
+		/**
+		 * @param AstRetrieve $root Query to visit
+		 * @return AstInterface[] Aggregate nodes found in the tree
+		 */
+		public static function collectAggregateNodes(AstRetrieve $root): array {
+			$visitor = new CollectNodes(AggregateConstants::AGGREGATE_NODE_TYPES);
+			$root->accept($visitor);
+			return $visitor->getCollectedNodes();
+		}
 		
+		/**
+		 * @param AstInterface $expr
+		 * @return bool True if $expr is one of the supported aggregate classes
+		 */
+		public static function isAggregateExpression(AstInterface $expr): bool {
+			return in_array(get_class($expr), AggregateConstants::AGGREGATE_NODE_TYPES, true);
+		}
 	}
