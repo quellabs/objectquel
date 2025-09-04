@@ -2,6 +2,7 @@
 	
 	namespace Quellabs\ObjectQuel\Execution\Optimizers;
 	
+	use Quellabs\ObjectQuel\Execution\Optimizers\Support\AstUtilities;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstAny;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRange;
 	use Quellabs\ObjectQuel\ObjectQuel\AstInterface;
@@ -16,17 +17,6 @@
 	 * - Filtering ranges to keep only live ones
 	 */
 	class RangePartitioner {
-		
-		/** @var Support\AstUtilities Utility methods for AST operations. */
-		private Support\AstUtilities $astUtilities;
-		
-		/**
-		 * RangePartitioner constructor
-		 * @param Support\AstUtilities $astUtilities AST utility methods
-		 */
-		public function __construct(Support\AstUtilities $astUtilities) {
-			$this->astUtilities = $astUtilities;
-		}
 		
 		/**
 		 * Build a map of cross-join references:
@@ -50,7 +40,7 @@
 				}
 				
 				// Identify which ranges are referenced by this join predicate.
-				foreach ($this->astUtilities->collectIdentifiersFromAst($join) as $id) {
+				foreach (AstUtilities::collectIdentifiersFromAst($join) as $id) {
 					$rName = $id->getRange()->getName();
 					
 					if ($rName === $kName) {
@@ -206,58 +196,11 @@
 		 */
 		private function extractLiveRangesFromAnyExpression(AstAny $node, array $rangesByName): array {
 			$liveRanges = [];
-			$identifiers = $this->astUtilities->collectIdentifiersFromAst($node->getIdentifier());
+			$identifiers = AstUtilities::collectIdentifiersFromAst($node->getIdentifier());
 			
 			foreach ($identifiers as $identifier) {
 				$rangeName = $identifier->getRange()->getName();
 				
-				if (isset($rangesByName[$rangeName])) {
-					$liveRanges[$rangeName] = $rangesByName[$rangeName];
-				}
-			}
-			
-			return $liveRanges;
-		}
-		
-		/**
-		 * Fallback live-range selection for aggregate owners.
-		 * Prefers ranges referenced by the identifier, else the first range.
-		 *
-		 * @param AstRange[]   $ranges
-		 * @param AstInterface $owner
-		 * @return array<string,AstRange>
-		 */
-		public function selectFallbackLiveRangesForOwner(array $ranges, AstInterface $owner): array {
-			if (empty($ranges)) {
-				return [];
-			}
-			
-			$rangesByName = [];
-			foreach ($ranges as $r) {
-				$rangesByName[$r->getName()] = $r;
-			}
-			
-			$live = $this->extractLiveRangesFromExpressionOwner($owner, $rangesByName);
-			if (!empty($live)) {
-				return $live;
-			}
-			
-			$first = reset($ranges);
-			return $first ? [$first->getName() => $first] : [];
-		}
-		
-		/**
-		 * Helper: extract live ranges from an owner's identifier.
-		 * @param AstInterface $owner
-		 * @param array<string,AstRange> $rangesByName
-		 * @return array<string,AstRange>
-		 */
-		private function extractLiveRangesFromExpressionOwner(AstInterface $owner, array $rangesByName): array {
-			$liveRanges = [];
-			$identifiers = $this->astUtilities->collectIdentifiersFromAst($owner->getIdentifier());
-			
-			foreach ($identifiers as $identifier) {
-				$rangeName = $identifier->getRange()->getName();
 				if (isset($rangesByName[$rangeName])) {
 					$liveRanges[$rangeName] = $rangesByName[$rangeName];
 				}

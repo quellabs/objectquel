@@ -2,12 +2,14 @@
 	
 	namespace Quellabs\ObjectQuel\Execution\Optimizers\Support;
 	
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstAny;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstBinaryOperator;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstIdentifier;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRetrieve;
 	use Quellabs\ObjectQuel\ObjectQuel\AstInterface;
 	use Quellabs\ObjectQuel\ObjectQuel\Visitors\CollectAggregates;
 	use Quellabs\ObjectQuel\ObjectQuel\Visitors\CollectIdentifiers;
+	use Quellabs\ObjectQuel\ObjectQuel\Visitors\CollectNodes;
 	
 	/**
 	 * AstUtilities provides common AST manipulation and inspection methods.
@@ -114,5 +116,16 @@
 		 */
 		public static function isAggregateExpression(AstInterface $expr): bool {
 			return in_array(get_class($expr), AggregateConstants::AGGREGATE_NODE_TYPES, true);
+		}
+		
+		/**
+		 * Collect all ANY nodes under the retrieve AST in one pass.
+		 * @param AstRetrieve $ast Root query AST
+		 * @return AstAny[] Array of ANY nodes found
+		 */
+		public static function findAllAnyNodes(AstRetrieve $ast): array {
+			$visitor = new CollectNodes([AstAny::class]);
+			$ast->accept($visitor);
+			return $visitor->getCollectedNodes();
 		}
 	}
