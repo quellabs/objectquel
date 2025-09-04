@@ -148,14 +148,14 @@
 			$nonNullableUse = $usage['nonNullableUse'];    // Are references only on non-nullable fields ?
 			
 			// ── Step 2: Compute which JOIN(k) predicates reference which ranges.
-			//     This allows us to tell if a range is used only via other JOINs (correlation-only).
+			//            This allows us to tell if a range is used only via other JOINs (correlation-only).
 			$joinReferences = $this->rangePartitioner->buildJoinReferenceMap($ranges);
 			
 			// ── Step 3: Partition the ranges into "live" and "correlation-only".
-			//     Live ranges are those directly used in expr/cond; correlation-only appear only inside others' JOINs.
-			[$liveRanges, $correlationOnlyRanges] = $this->rangePartitioner->separateLiveAndCorrelationRanges(
-				$ranges, $usedInExpr, $usedInCond, $joinReferences
-			);
+			//            Live ranges are those directly used in expr/cond; correlation-only
+			//            appear only inside others' JOINs.
+			$liveRanges = $this->rangePartitioner->computeLiveRanges($ranges, $usedInExpr, $usedInCond);
+			$correlationOnlyRanges = $this->rangePartitioner->computeCorrelationOnlyRanges($ranges, $joinReferences, $usedInCond, $usedInCond);
 			
 			// ── Step 4: Ensure there's at least one live range.
 			//     If analyzer yielded none, we fallback to expr ranges or the first range.
@@ -167,6 +167,7 @@
 			//     Only process JOINs of "live" ranges; others will be dropped anyway.
 			$liveRangeNames = array_keys($liveRanges);
 			$correlationRangeNames = array_keys($correlationOnlyRanges);
+			
 			[$updatedRanges, $promotedPredicates] = $this->joinPredicateProcessor->extractCorrelationPredicatesFromJoins(
 				$ranges, $liveRanges, $liveRangeNames, $correlationRangeNames
 			);
