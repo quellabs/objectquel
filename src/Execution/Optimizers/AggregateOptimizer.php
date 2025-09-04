@@ -18,7 +18,6 @@
 	use Quellabs\ObjectQuel\Execution\Optimizers\Support\ExistsRewriter;
 	use Quellabs\ObjectQuel\Execution\Optimizers\Support\RangeRemover;
 	use Quellabs\ObjectQuel\Execution\Optimizers\Support\RangeUtilities;
-	use Quellabs\ObjectQuel\ObjectQuel\Visitors\CollectNodes;
 	
 	/**
 	 * Class AggregateOptimizer
