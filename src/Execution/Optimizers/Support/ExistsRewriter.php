@@ -19,41 +19,51 @@
 		 * When SELECT is aggregates-only, rewrite join edges that merely filter
 		 * (and do not feed aggregates/WHERE) into EXISTS subqueries.
 		 * @param AstRetrieve $root Query to mutate
-		 * @param array $aggregateRangeMap
+		 * @param array $aggregateRangeMap Map of range hashes to ranges that feed aggregates
 		 * @return void
 		 */
 		public static function rewriteFilterOnlyJoinsAsExists(AstRetrieve $root, array $aggregateRangeMap): void {
-			$ranges = $root->getRanges();
-			
-			if (count($ranges) < 2) {
+			// Need at least 2 ranges to have joins worth optimizing
+			if ($root->isSingleRangeQuery()) {
 				return;
 			}
 			
+			// Collect ranges referenced in the outer WHERE clause
 			$outerWhere = $root->getConditions();
 			$rangesInWhere = $outerWhere ? RangeUtilities::collectRangesFromNode($outerWhere) : [];
 			
-			foreach ($ranges as $hostRange) {
+			// Examine each range to see if its joins can be converted to EXISTS
+			foreach ($root->getRanges() as $hostRange) {
 				$hostJoin = $hostRange->getJoinProperty();
 				
+				// Skip ranges without join conditions
 				if ($hostJoin === null) {
 					continue;
 				}
 				
+				// Find all ranges referenced in this join condition
 				$joinRefs = RangeUtilities::collectRangesFromNode($hostJoin);
 				
 				foreach ($joinRefs as $refRange) {
 					$refHash = spl_object_hash($refRange);
+					
+					// Check if this range feeds aggregates or WHERE clause
 					$feedsAgg = isset($aggregateRangeMap[$refHash]);
 					$feedsWhere = in_array($refRange, $rangesInWhere, true);
 					
+					// Keep join if range is needed for aggregates or WHERE filtering
 					if ($feedsAgg || $feedsWhere) {
 						continue;
 					}
 					
-					// Build EXISTS using a clone of the referenced range
+					// Convert join to EXISTS subquery for filter-only ranges
+					// Clone the referenced range to avoid side effects
 					$clonedRef = $refRange->deepClone();
+					
+					// Rewrite join predicate to work with cloned range
 					$rebasedWhere = self::rebindPredicateToClone($hostJoin, $refRange, $clonedRef);
 					
+					// Create EXISTS subquery with dummy SELECT 1
 					$exists = new AstSubquery(
 						AstSubquery::TYPE_EXISTS,
 						new AstNumber(1),
@@ -61,9 +71,14 @@
 						$rebasedWhere
 					);
 					
-					$outerWhere = $outerWhere ? new AstBinaryOperator($outerWhere, $exists, 'AND') : $exists;
-					$root->setConditions($outerWhere);
+					// Add EXISTS to outer WHERE clause
+					if ($outerWhere) {
+						$root->setConditions(new AstBinaryOperator($outerWhere, $exists, 'AND'));
+					} else {
+						$root->setConditions($exists);
+					}
 					
+					// Remove the join and referenced range from main query
 					$hostRange->setJoinProperty(null);
 					$root->removeRange($refRange);
 				}
@@ -72,17 +87,31 @@
 		
 		/**
 		 * Replace EXISTS(SelfJoin) with NOT NULL checks on the outer side (or TRUE if nulls allowed).
-		 * @param AstRetrieve $root Query to mutate
-		 * @param bool $includeNulls If true, EXISTS collapses to TRUE
-		 * @return void
+		 *
+		 * This optimization transforms EXISTS subqueries that reference the same table as the outer query
+		 * into simpler NOT NULL conditions or TRUE constants. This is valid because if a record exists
+		 * in the outer query, then by definition it exists in the table, making the EXISTS always true
+		 * (when nulls are included) or dependent only on the referenced columns being non-null.
+		 *
+		 * @param AstRetrieve $root Query AST to mutate in-place
+		 * @param bool $includeNulls If true, EXISTS collapses to TRUE; if false, becomes NOT NULL checks
+		 * @return void Modifies the query AST directly
 		 */
 		public static function simplifySelfJoinExists(AstRetrieve $root, bool $includeNulls): void {
-			$where = $root->getConditions();
-			if ($where === null) {
+			// Early exit if there are no WHERE conditions to process
+			if ($root->getConditions() === null) {
 				return;
 			}
 			
+			// Extract the current WHERE clause for processing
+			$where = $root->getConditions();
+			
+			// Recursively traverse and rewrite EXISTS nodes within AND trees
+			// This handles complex nested conditions while preserving the overall structure
 			$rewritten = self::rewriteExistsNodesWithinAndTree($where, $includeNulls);
+			
+			// Only update the query if changes were actually made
+			// This avoids unnecessary object mutations and maintains referential integrity
 			if ($rewritten !== $where) {
 				$root->setConditions($rewritten);
 			}
@@ -315,13 +344,20 @@
 		
 		/**
 		 * Builds a chain of IS NOT NULL conditions connected by AND operators.
+		 * @param array $joinPairs
+		 * @return AstInterface|null
 		 */
 		public static function buildNotNullChain(array $joinPairs): ?AstInterface {
+			// Initialize the chain as null - will build it incrementally
 			$notNullChain = null;
 			
+			// Process each join pair to create not-null checks
 			foreach ($joinPairs as [$outerIdentifier, $_innerIdentifier]) {
+				// Create a not-null check for the outer identifier (inner identifier unused, hence $_)
 				$notNullCheck = new AstCheckNotNull($outerIdentifier->deepClone());
 				
+				// For the first check, initialize the chain.
+				// Chain subsequent checks with AND operations to ensure all conditions must be true.
 				if ($notNullChain === null) {
 					$notNullChain = $notNullCheck;
 				} else {
@@ -329,6 +365,7 @@
 				}
 			}
 			
+			// Return the complete chain, or null if no join pairs were provided
 			return $notNullChain;
 		}
 		
@@ -341,18 +378,24 @@
 		 * @return AstInterface Cloned predicate with identifiers rebound
 		 */
 		public static function rebindPredicateToClone(AstInterface $predicate, AstRange $oldRange, AstRange $newRange): AstInterface {
+			// Create a deep copy of the AST predicate to avoid modifying the original
 			$cloned = $predicate->deepClone();
 			
+			// Initialize visitor to traverse and collect all identifier nodes in the cloned AST
 			$visitor = new CollectIdentifiers();
 			$cloned->accept($visitor);
 			$ids = $visitor->getCollectedNodes();
 			
+			// Iterate through all collected identifier nodes
 			foreach ($ids as $id) {
+				// Check if this identifier's range matches the old range we want to replace
+				// if so, update the identifier to reference the new range instead
 				if ($id->getRange() === $oldRange) {
 					$id->setRange($newRange);
 				}
 			}
 			
+			// Return the modified clone with rebound references
 			return $cloned;
 		}
 	}

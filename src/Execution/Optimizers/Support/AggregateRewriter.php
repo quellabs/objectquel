@@ -48,7 +48,8 @@
 				AstSubquery::TYPE_SCALAR,
 				$cleanAgg,
 				$clonedRanges,
-				$subWhere
+				$subWhere,
+				$aggregate->getType(),
 			);
 			
 			AstNodeReplacer::replaceChild($aggregate->getParent(), $aggregate, $subquery);

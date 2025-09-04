@@ -22,6 +22,7 @@
 		private string $type;
 		private array $correlatedRanges;
 		private ?AstInterface $conditions;
+		private ?string $origin;
 		
 		/**
 		 * AstSubquery constructor
@@ -29,17 +30,20 @@
 		 * @param string $type
 		 * @param array $correlatedRanges
 		 * @param AstInterface|null $conditions
+		 * @param string|null $origin
 		 */
 		public function __construct(
-			string       $type = self::TYPE_SCALAR,
+			string        $type = self::TYPE_SCALAR,
 			?AstInterface $aggregation = null,
-			array        $correlatedRanges = [],
-			?AstInterface $conditions = null
+			array         $correlatedRanges = [],
+			?AstInterface $conditions = null,
+			?string       $origin = null
 		) {
 			$this->type = $type;
 			$this->aggregation = $aggregation;
 			$this->conditions = $conditions;
 			$this->correlatedRanges = $correlatedRanges;
+			$this->origin = $origin;
 			
 			if ($aggregation !== null) {
 				$this->aggregation->setParent($this);
@@ -56,6 +60,23 @@
 		
 		public function getType(): string {
 			return $this->type;
+		}
+		
+		/**
+		 * If the subquery case in place of an aggregation, this returns the original aggregation type
+		 * @return AstInterface|null The left operand.
+		 */
+		public function getOrigin(): ?string {
+			return $this->origin;
+		}
+		
+		/**
+		 * If the subquery case in place of an aggregation, this returns the original aggregation type
+		 * @param string $origin
+		 * @return void The left operand.
+		 */
+		public function SetOrigin(string $origin): void {
+			$this->origin = $origin;
 		}
 		
 		/**
@@ -94,9 +115,9 @@
 			// Clone the identifier
 			$clonedAggregation = $this->aggregation->deepClone();
 			$clonedConditions = $this->conditions->deepClone();
-
+			
 			$clonedCorrelatedRanges = [];
-			foreach($this->correlatedRanges as $range) {
+			foreach ($this->correlatedRanges as $range) {
 				$clonedCorrelatedRanges[] = $range->deepClone();
 			}
 			

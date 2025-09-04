@@ -44,6 +44,14 @@
 		}
 		
 		/**
+		 * Returns string representation of aggregate
+		 * @return string
+		 */
+		public function getType(): string {
+			return "ANY";
+		}
+		
+		/**
 		 * Get the left-hand operand of the AND expression.
 		 * @return AstInterface The left operand.
 		 */

@@ -284,13 +284,20 @@
 		/**
 		 * Replace ANY node with a regular subquery form.
 		 * @param string $subQueryType Type of subquery (EXISTS or CASE WHEN)
-		 * @param AstRange[] $keptRanges Ranges to include in subquery
-		 * @param AstInterface|null $finalWhere WHERE clause for subquery
+		 * @param AstRange[] $correlatedRanges Ranges to include in subquery
+		 * @param AstInterface|null $conditions WHERE clause for subquery
 		 * @param AstAny $node ANY node to replace
 		 * @return void
 		 */
-		private function replaceAnyWithSubquery($subQueryType, array $keptRanges, $finalWhere, $node): void {
-			$subQuery = new AstSubquery($subQueryType, null, $keptRanges, $finalWhere);
+		private function replaceAnyWithSubquery(string $subQueryType, array $correlatedRanges, ?AstInterface $conditions, AstAny $node): void {
+			$subQuery = new AstSubquery(
+				$subQueryType,
+				null,
+				$correlatedRanges,
+				$conditions,
+				"ANY"
+			);
+			
 			$this->nodeReplacer->replaceChild($node->getParent(), $node, $subQuery);
 		}
 		
