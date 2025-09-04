@@ -6,8 +6,8 @@
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstIdentifier;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRetrieve;
 	use Quellabs\ObjectQuel\ObjectQuel\AstInterface;
+	use Quellabs\ObjectQuel\ObjectQuel\Visitors\CollectAggregates;
 	use Quellabs\ObjectQuel\ObjectQuel\Visitors\CollectIdentifiers;
-	use Quellabs\ObjectQuel\ObjectQuel\Visitors\CollectNodes;
 	
 	/**
 	 * AstUtilities provides common AST manipulation and inspection methods.
@@ -103,7 +103,7 @@
 		 * @return AstInterface[] Aggregate nodes found in the tree
 		 */
 		public static function collectAggregateNodes(AstRetrieve $root): array {
-			$visitor = new CollectNodes(AggregateConstants::AGGREGATE_NODE_TYPES);
+			$visitor = new CollectAggregates(false);
 			$root->accept($visitor);
 			return $visitor->getCollectedNodes();
 		}
