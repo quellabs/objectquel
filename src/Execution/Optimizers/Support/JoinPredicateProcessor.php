@@ -1,9 +1,7 @@
 <?php
 	
-	namespace Quellabs\ObjectQuel\Execution\Optimizers;
+	namespace Quellabs\ObjectQuel\Execution\Optimizers\Support;
 	
-	use Quellabs\ObjectQuel\Execution\Optimizers\Support\AstUtilities;
-	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstBinaryOperator;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRange;
 	use Quellabs\ObjectQuel\ObjectQuel\AstInterface;
 	
@@ -19,51 +17,120 @@
 	class JoinPredicateProcessor {
 		
 		/**
-		 * For each live range, split its JOIN predicate into INNER vs CORR parts and
-		 * move the correlation-only parts into WHERE (returned as a list of predicates).
+		 * For each live range, keep only the inner-related part of its JOIN predicate.
+		 * The input array is copied before mutation.
 		 *
-		 * Why: correlation terms referencing only "corrNames" do not belong in JOINs of
-		 * live ranges. Promoting them reduces join complexity and can enable better
-		 * anchor choices later.
+		 * This method processes correlated subqueries by splitting JOIN conditions:
+		 * - Inner parts (references between live ranges) stay in JOIN
+		 * - Correlation parts (references to outer query ranges) get removed from JOIN
 		 *
-		 * @param AstRange[] $allRanges All cloned ranges (we'll return an updated copy).
-		 * @param array<string,AstRange> $liveRanges Ranges considered live (by name => range).
-		 * @param string[] $liveRangeNames Names of live ranges.
-		 * @param string[] $correlationRangeNames Names of correlation-only ranges.
-		 * @return array{0: AstRange[], 1: AstInterface[]} [updatedRanges, promotedCorrelationPredicates]
+		 * Example: JOIN ON (t1.id = t2.id AND t1.status = outer.filter)
+		 * Result:  JOIN ON (t1.id = t2.id) -- correlation part removed
+		 *
+		 * @param AstRange[] $allRanges All ranges in the query (live + correlation)
+		 * @param array<string,AstRange> $liveRanges Map of range name -> range object for active ranges
+		 * @param string[] $liveRangeNames Names of ranges that are part of this subquery level
+		 * @param string[] $correlationRangeNames Names of ranges from outer query contexts
+		 * @return AstRange[] Updated ranges with JOINs stripped of correlation-only parts
 		 */
-		public function extractCorrelationPredicatesFromJoins(
+		public static function buildUpdatedRangesWithInnerJoinsOnly(
 			array $allRanges,
 			array $liveRanges,
 			array $liveRangeNames,
 			array $correlationRangeNames
 		): array {
-			$promotedCorrelationPredicates = [];
+			// Create a copy to avoid mutating the original array
+			// This preserves the original state for other operations
 			$updatedRanges = $allRanges;
 			
-			foreach ($updatedRanges as $rangeIndex => $range) {
-				if (!$this->isRangeInLiveSet($range, $liveRanges)) {
-					continue; // Only adjust JOINs of live ranges; others will be dropped anyway
+			foreach ($updatedRanges as $range) {
+				// Skip ranges that aren't part of the active subquery
+				// Dead/eliminated ranges don't need JOIN processing
+				if (!self::isRangeInLiveSet($range, $liveRanges)) {
+					continue;
 				}
 				
+				// Get the current JOIN condition for this range
+				// Ranges without JOIN conditions (like the first table) are skipped
+				$joinPredicate = $range->getJoinProperty();
+				if ($joinPredicate === null) {
+					continue;
+				}
+				
+				// Split the JOIN predicate into inner and correlation parts
+				// Inner: conditions between tables in current subquery
+				// Correlation: conditions referencing outer query tables
+				$split = self::splitJoinPredicateByRangeReferences(
+					$joinPredicate,
+					$liveRangeNames,
+					$correlationRangeNames
+				);
+				
+				// Replace the JOIN condition with only the inner part
+				// Correlation parts will be handled separately (moved to WHERE)
+				// Note: innerPart could be null if JOIN was purely correlational
+				$range->setJoinProperty($split['innerPart']);
+			}
+			
+			return $updatedRanges;
+		}
+		
+		/**
+		 * For each live range, collect correlation-only JOIN parts to move into WHERE.
+		 * This method does not mutate the provided ranges.
+		 *
+		 * Correlation predicates need to be moved from JOIN to WHERE because:
+		 * 1. JOINs should only contain conditions between tables at the same nesting level
+		 * 2. Correlation conditions create dependencies on outer query context
+		 * 3. Moving to WHERE ensures proper evaluation order in nested queries
+		 *
+		 * Example: JOIN ON (t1.id = outer.parent_id) becomes WHERE t1.id = outer.parent_id
+		 *
+		 * @param AstRange[] $allRanges All ranges in the query (live + correlation)
+		 * @param array<string,AstRange> $liveRanges Map of range name -> range object for active ranges
+		 * @param string[] $liveRangeNames Names of ranges that are part of this subquery level
+		 * @param string[] $correlationRangeNames Names of ranges from outer query contexts
+		 * @return AstInterface[] Correlation-only predicates to promote to WHERE clause
+		 */
+		public static function gatherCorrelationOnlyPredicatesFromJoins(
+			array $allRanges,
+			array $liveRanges,
+			array $liveRangeNames,
+			array $correlationRangeNames
+		): array {
+			$promoted = [];
+			
+			foreach ($allRanges as $range) {
+				// Only process ranges that are active in current subquery
+				// Inactive ranges won't contribute to the final query
+				if (!self::isRangeInLiveSet($range, $liveRanges)) {
+					continue;
+				}
+				
+				// Skip ranges without JOIN conditions
+				// These are typically the first table in FROM clause
 				$joinPredicate = $range->getJoinProperty();
 				
 				if ($joinPredicate === null) {
-					continue; // No JOIN predicate to split/promote
+					continue;
 				}
 				
-				$splitResult = $this->splitJoinPredicateByRangeReferences($joinPredicate, $liveRangeNames, $correlationRangeNames);
+				// Analyze the JOIN predicate to separate concerns
+				// This handles complex predicates with multiple conditions
+				$split = self::splitJoinPredicateByRangeReferences(
+					$joinPredicate,
+					$liveRangeNames,
+					$correlationRangeNames
+				);
 				
-				// Update the JOIN to keep only the inner-related part
-				$range->setJoinProperty($splitResult['innerPart']);
-				
-				// Collect correlation-only parts for promotion to WHERE clause
-				if ($splitResult['corrPart'] !== null) {
-					$promotedCorrelationPredicates[] = $splitResult['corrPart'];
+				// Collect any correlation parts that need to move to WHERE
+				// These predicates reference tables from outer query scopes
+				if ($split['corrPart'] !== null) {
+					$promoted[] = $split['corrPart'];
 				}
 			}
 			
-			return [$updatedRanges, $promotedCorrelationPredicates];
+			return $promoted;
 		}
 		
 		/**
@@ -79,7 +146,7 @@
 		 * @param string[] $correlationRangeNames Names considered "correlation".
 		 * @return array{innerPart: AstInterface|null, corrPart: AstInterface|null} Split predicate parts
 		 */
-		public function splitJoinPredicateByRangeReferences(
+		private static function splitJoinPredicateByRangeReferences(
 			?AstInterface $predicate,
 			array         $liveRangeNames,
 			array         $correlationRangeNames
@@ -110,7 +177,7 @@
 				$corrParts = [];
 				
 				foreach ($andLeaves as $leaf) {
-					$bucket = $this->classifyPredicateByRangeReferences($leaf, $liveRangeNames, $correlationRangeNames);
+					$bucket = self::classifyPredicateByRangeReferences($leaf, $liveRangeNames, $correlationRangeNames);
 					
 					// Unsafe: leave the entire predicate as a single innerPart.
 					if ($bucket === 'MIXED_OR_COMPLEX') {
@@ -131,7 +198,7 @@
 			}
 			
 			// Non-AND predicates are classified as a whole.
-			return match ($this->classifyPredicateByRangeReferences($predicate, $liveRangeNames, $correlationRangeNames)) {
+			return match (self::classifyPredicateByRangeReferences($predicate, $liveRangeNames, $correlationRangeNames)) {
 				'CORR' => ['innerPart' => null, 'corrPart' => $predicate],
 				default => ['innerPart' => $predicate, 'corrPart' => null],
 			};
@@ -152,7 +219,7 @@
 		 * @param string[] $correlationRangeNames Correlation range names
 		 * @return 'INNER'|'CORR'|'MIXED_OR_COMPLEX' Classification result
 		 */
-		private function classifyPredicateByRangeReferences(AstInterface $expr, array $liveRangeNames, array $correlationRangeNames): string {
+		private static function classifyPredicateByRangeReferences(AstInterface $expr, array $liveRangeNames, array $correlationRangeNames): string {
 			$ids = AstUtilities::collectIdentifiersFromAst($expr);
 			$hasInner = false;
 			$hasCorr = false;
@@ -171,7 +238,7 @@
 			
 			// If both sides appear AND there is an OR in the subtree, splitting
 			// risks changing semantics (e.g., distributing over OR). Avoid it.
-			if ($this->containsOrOperator($expr) && $hasInner && $hasCorr) {
+			if (self::containsOrOperator($expr) && $hasInner && $hasCorr) {
 				return 'MIXED_OR_COMPLEX';
 			} elseif ($hasCorr && !$hasInner) {
 				return 'CORR';
@@ -185,13 +252,13 @@
 		 * @param AstInterface $node Node to check
 		 * @return bool True if OR operator found
 		 */
-		private function containsOrOperator(AstInterface $node): bool {
+		private static function containsOrOperator(AstInterface $node): bool {
 			if (AstUtilities::isBinaryOrOperator($node)) {
 				return true;
 			}
 			
 			foreach (AstUtilities::getChildrenFromBinaryOperator($node) as $child) {
-				if ($this->containsOrOperator($child)) {
+				if (self::containsOrOperator($child)) {
 					return true;
 				}
 			}
@@ -201,12 +268,11 @@
 		
 		/**
 		 * Check if a range is considered live (actively used in the query).
-		 *
 		 * @param AstRange $range The range to check
 		 * @param array<string,AstRange> $liveRanges Map of live range names to ranges
 		 * @return bool True if the range is live
 		 */
-		private function isRangeInLiveSet(AstRange $range, array $liveRanges): bool {
+		private static function isRangeInLiveSet(AstRange $range, array $liveRanges): bool {
 			return isset($liveRanges[$range->getName()]);
 		}
 	}
