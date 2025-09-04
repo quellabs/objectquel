@@ -6,13 +6,13 @@
 	use Quellabs\ObjectQuel\EntityStore;
 	use Quellabs\ObjectQuel\Execution\Optimizers\Support\AstNodeReplacer;
 	use Quellabs\ObjectQuel\Execution\Optimizers\Support\AstUtilities;
+	use Quellabs\ObjectQuel\Execution\Optimizers\Support\JoinPredicateProcessor;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstAny;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstNumber;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRange;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRetrieve;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstSubquery;
 	use Quellabs\ObjectQuel\ObjectQuel\AstInterface;
-	use Quellabs\ObjectQuel\ObjectQuel\Visitors\CollectNodes;
 	
 	/**
 	 * ──────────────────────────────────────────────────────────────────────────────
@@ -81,9 +81,6 @@
 		/** @var RangePartitioner Handles range partitioning and filtering based on analysis results. */
 		private RangePartitioner $rangePartitioner;
 		
-		/** @var JoinPredicateProcessor Processes JOIN predicates and extracts correlation parts. */
-		private JoinPredicateProcessor $joinPredicateProcessor;
-		
 		/** @var AnchorManager Manages anchor range selection and ensures single anchor. */
 		private AnchorManager $anchorManager;
 		
@@ -95,7 +92,6 @@
 			$this->entityStore = $entityManager->getEntityStore();
 			$this->analyzer = new RangeUsageAnalyzer($this->entityStore);
 			$this->rangePartitioner = new RangePartitioner();
-			$this->joinPredicateProcessor = new JoinPredicateProcessor();
 			$this->anchorManager = new AnchorManager();
 		}
 		
@@ -167,10 +163,8 @@
 			//     Only process JOINs of "live" ranges; others will be dropped anyway.
 			$liveRangeNames = array_keys($liveRanges);
 			$correlationRangeNames = array_keys($correlationOnlyRanges);
-			
-			[$updatedRanges, $promotedPredicates] = $this->joinPredicateProcessor->extractCorrelationPredicatesFromJoins(
-				$ranges, $liveRanges, $liveRangeNames, $correlationRangeNames
-			);
+			$updatedRanges = JoinPredicateProcessor::buildUpdatedRangesWithInnerJoinsOnly($ranges, $liveRanges, $liveRangeNames, $correlationRangeNames);
+			$promotedPredicates = JoinPredicateProcessor::gatherCorrelationOnlyPredicatesFromJoins($ranges, $liveRanges, $liveRangeNames, $correlationRangeNames);
 			
 			// ── Step 6: Build final WHERE: original ANY WHERE AND all promoted correlation predicates.
 			$finalWhere = AstUtilities::combinePredicatesWithAnd([
