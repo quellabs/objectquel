@@ -8,6 +8,7 @@
 	use Quellabs\ObjectQuel\Execution\Optimizers\Support\AstUtilities;
 	use Quellabs\ObjectQuel\Execution\Optimizers\Support\JoinPredicateProcessor;
 	use Quellabs\ObjectQuel\Execution\Optimizers\Support\AnchorManager;
+	use Quellabs\ObjectQuel\Execution\Optimizers\Support\RangePartitioner;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstAny;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstNumber;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRange;
@@ -79,9 +80,6 @@
 		/** @var RangeUsageAnalyzer Reused analyzer: liveness / nullability maps, etc. */
 		private RangeUsageAnalyzer $analyzer;
 		
-		/** @var RangePartitioner Handles range partitioning and filtering based on analysis results. */
-		private RangePartitioner $rangePartitioner;
-		
 		/**
 		 * AnyOptimizer constructor
 		 * @param EntityManager $entityManager Provides entity metadata access.
@@ -89,7 +87,6 @@
 		public function __construct(EntityManager $entityManager) {
 			$this->entityStore = $entityManager->getEntityStore();
 			$this->analyzer = new RangeUsageAnalyzer($this->entityStore);
-			$this->rangePartitioner = new RangePartitioner();
 		}
 		
 		/**
@@ -142,18 +139,18 @@
 			
 			// ── Step 2: Compute which JOIN(k) predicates reference which ranges.
 			//            This allows us to tell if a range is used only via other JOINs (correlation-only).
-			$joinReferences = $this->rangePartitioner->buildJoinReferenceMap($ranges);
+			$joinReferences = RangePartitioner::buildJoinReferenceMap($ranges);
 			
 			// ── Step 3: Partition the ranges into "live" and "correlation-only".
 			//            Live ranges are those directly used in expr/cond; correlation-only
 			//            appear only inside others' JOINs.
-			$liveRanges = $this->rangePartitioner->computeLiveRanges($ranges, $usedInExpr, $usedInCond);
-			$correlationOnlyRanges = $this->rangePartitioner->computeCorrelationOnlyRanges($ranges, $joinReferences, $usedInCond, $usedInCond);
+			$liveRanges = RangePartitioner::computeLiveRanges($ranges, $usedInExpr, $usedInCond);
+			$correlationOnlyRanges = RangePartitioner::computeCorrelationOnlyRanges($ranges, $joinReferences, $usedInCond, $usedInCond);
 			
 			// ── Step 4: Ensure there's at least one live range.
 			//     If analyzer yielded none, we fallback to expr ranges or the first range.
 			if (empty($liveRanges) && !empty($ranges)) {
-				$liveRanges = $this->rangePartitioner->selectFallbackLiveRanges($ranges, $node);
+				$liveRanges = RangePartitioner::selectFallbackLiveRanges($ranges, $node);
 			}
 			
 			// ── Step 5: Promote correlation-only pieces of JOIN predicates into WHERE.
@@ -170,7 +167,7 @@
 			]);
 			
 			// ── Step 7: Drop non-live ranges (keeping order of the survivors).
-			$keptRanges = $this->rangePartitioner->filterToLiveRangesOnly($updatedRanges, $liveRanges);
+			$keptRanges = RangePartitioner::filterToLiveRangesOnly($updatedRanges, $liveRanges);
 			
 			// ── Step 8: Ensure exactly one anchor (joinProperty == null).
 			//     We try to anchor a range used in expr, else any INNER, else collapse a safe LEFT.

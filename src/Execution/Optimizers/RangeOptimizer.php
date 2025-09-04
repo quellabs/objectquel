@@ -13,6 +13,7 @@
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRangeDatabase;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRetrieve;
 	use Quellabs\ObjectQuel\ObjectQuel\Visitors\CollectRanges;
+	use Quellabs\ObjectQuel\Execution\Optimizers\Support\BinaryOperationHelper;
 	
 	/**
 	 * Handles range-specific optimizations including required annotations
@@ -32,16 +33,12 @@
 		/** @var EntityStore Provides access to entity metadata and annotations */
 		private EntityStore $entityStore;
 		
-		/** @var BinaryOperationHelper Utility for working with binary expressions in JOIN conditions */
-		private BinaryOperationHelper $binaryHelper;
-		
 		/**
 		 * Initialize optimizer with required dependencies
 		 * @param EntityManager $entityManager Provides access to entity metadata store
 		 */
 		public function __construct(EntityManager $entityManager) {
 			$this->entityStore = $entityManager->getEntityStore();
-			$this->binaryHelper = new BinaryOperationHelper();
 		}
 		
 		/**
@@ -125,8 +122,8 @@
 				// Extract the join condition components
 				// JOIN conditions are typically: main_table.foreign_key = joined_table.primary_key
 				$joinProperty = $range->getJoinProperty();
-				$left = $this->binaryHelper->getBinaryLeft($joinProperty);
-				$right = $this->binaryHelper->getBinaryRight($joinProperty);
+				$left = BinaryOperationHelper::getBinaryLeft($joinProperty);
+				$right = BinaryOperationHelper::getBinaryRight($joinProperty);
 				
 				// Normalize join direction: ensure range entity is on the left side
 				// This simplifies the annotation checking logic below

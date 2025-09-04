@@ -1,8 +1,7 @@
 <?php
 	
-	namespace Quellabs\ObjectQuel\Execution\Optimizers;
+	namespace Quellabs\ObjectQuel\Execution\Optimizers\Support;
 	
-	use Quellabs\ObjectQuel\Execution\Optimizers\Support\AstUtilities;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstAny;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRange;
 	
@@ -27,7 +26,7 @@
 		 * @param AstRange[] $ranges All cloned ranges.
 		 * @return array<string,array<string,bool>> Map of JOIN cross-refs.
 		 */
-		public function buildJoinReferenceMap(array $ranges): array {
+		public static function buildJoinReferenceMap(array $ranges): array {
 			$joinReferences = [];
 			
 			foreach ($ranges as $k) {
@@ -63,7 +62,7 @@
 		 * @param array $usedInCond Associative array mapping variable names to boolean usage in conditions
 		 * @return array            Associative array of live ranges keyed by variable name
 		 */
-		public function computeLiveRanges(array $ranges, array $usedInExpr, array $usedInCond): array {
+		public static function computeLiveRanges(array $ranges, array $usedInExpr, array $usedInCond): array {
 			$liveRanges = [];
 			
 			foreach ($ranges as $range) {
@@ -100,7 +99,7 @@
 		 * @param array $usedInCond Associative array mapping variable names to boolean usage in conditions
 		 * @return array            Associative array of correlation-only ranges keyed by variable name
 		 */
-		public function computeCorrelationOnlyRanges(array $ranges, array $joinReferences, array $usedInExpr, array $usedInCond): array {
+		public static function computeCorrelationOnlyRanges(array $ranges, array $joinReferences, array $usedInExpr, array $usedInCond): array {
 			$correlationOnly = [];
 			
 			foreach ($ranges as $range) {
@@ -118,7 +117,7 @@
 				
 				// For unused ranges, check if they appear in join predicates
 				// These are correlation-only ranges that exist solely for joins
-				if ($this->isRangeUsedInAnyJoinPredicate($name, $ranges, $joinReferences)) {
+				if (self::isRangeUsedInAnyJoinPredicate($name, $ranges, $joinReferences)) {
 					$correlationOnly[$name] = $range;
 				}
 			}
@@ -136,13 +135,13 @@
 		 * @param AstAny $node ANY node whose expr we inspect.
 		 * @return array<string,AstRange> Live map keyed by range name.
 		 */
-		public function selectFallbackLiveRanges(array $ranges, AstAny $node): array {
+		public static function selectFallbackLiveRanges(array $ranges, AstAny $node): array {
 			if (empty($ranges)) {
 				return [];
 			}
 			
-			$rangesByName = $this->createRangeNameMap($ranges);
-			$liveRanges = $this->extractLiveRangesFromAnyExpression($node, $rangesByName);
+			$rangesByName = self::createRangeNameMap($ranges);
+			$liveRanges = self::extractLiveRangesFromAnyExpression($node, $rangesByName);
 			
 			// If no ranges found in expression, use first range as stable fallback
 			if (empty($liveRanges)) {
@@ -159,7 +158,7 @@
 		 * @param array<string,AstRange> $liveRanges Live ranges keyed by name.
 		 * @return AstRange[] The subset of $ranges that are live.
 		 */
-		public function filterToLiveRangesOnly(array $ranges, array $liveRanges): array {
+		public static function filterToLiveRangesOnly(array $ranges, array $liveRanges): array {
 			// Early exit if no live ranges
 			if (empty($liveRanges)) {
 				return [];
@@ -176,7 +175,7 @@
 		 * @param array<string,array<string,bool>> $joinReferences JOIN reference map
 		 * @return bool True if the target range is referenced in any JOIN predicate
 		 */
-		private function isRangeUsedInAnyJoinPredicate(string $targetRangeName, array $allRanges, array $joinReferences): bool {
+		private static function isRangeUsedInAnyJoinPredicate(string $targetRangeName, array $allRanges, array $joinReferences): bool {
 			foreach ($allRanges as $otherRange) {
 				$otherRangeName = $otherRange->getName();
 				
@@ -199,7 +198,7 @@
 		 * @param AstRange[] $ranges Array of range objects
 		 * @return array<string,AstRange> Map from range name to range object
 		 */
-		private function createRangeNameMap(array $ranges): array {
+		private static function createRangeNameMap(array $ranges): array {
 			$rangesByName = [];
 			
 			foreach ($ranges as $range) {
@@ -215,7 +214,7 @@
 		 * @param array<string,AstRange> $rangesByName Available ranges indexed by name
 		 * @return array<string,AstRange> Live ranges found in the expression
 		 */
-		private function extractLiveRangesFromAnyExpression(AstAny $node, array $rangesByName): array {
+		private static function extractLiveRangesFromAnyExpression(AstAny $node, array $rangesByName): array {
 			$liveRanges = [];
 			$identifiers = AstUtilities::collectIdentifiersFromAst($node->getIdentifier());
 			
