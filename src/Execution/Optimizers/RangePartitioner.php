@@ -5,7 +5,6 @@
 	use Quellabs\ObjectQuel\Execution\Optimizers\Support\AstUtilities;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstAny;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRange;
-	use Quellabs\ObjectQuel\ObjectQuel\AstInterface;
 	
 	/**
 	 * RangePartitioner handles the partitioning and filtering of ranges based on usage analysis.
@@ -43,8 +42,8 @@
 				foreach (AstUtilities::collectIdentifiersFromAst($join) as $id) {
 					$rName = $id->getRange()->getName();
 					
+					// Self-reference is not correlation; it stays "inner".
 					if ($rName === $kName) {
-						// Self-reference is not correlation; it stays "inner".
 						continue;
 					}
 					
@@ -56,49 +55,75 @@
 		}
 		
 		/**
-		 * Decide which ranges are "live" vs "correlation-only".
-		 *
-		 * Live:     directly referenced in ANY(expr) or ANY(WHERE ...).
-		 * CorrOnly: not live, but referenced inside someone else's JOIN predicate.
-		 *
-		 * @param AstRange[] $ranges All cloned ranges (in original order).
-		 * @param array<string,bool> $usedInExpr Analyzer map.
-		 * @param array<string,bool> $usedInCond Analyzer map.
-		 * @param array<string,array<string,bool>> $joinReferences Map: [K][R] = true if JOIN(K) mentions R (K != R).
-		 * @return array{0: array<string,AstRange>, 1: array<string,AstRange>} [liveRanges, correlationOnlyRanges]
+		 * Computes live ranges by filtering ranges based on their usage in expressions or conditions.
+		 * This function performs liveness analysis to determine which variable ranges are actively
+		 * used and should be considered "live" for further processing (e.g., optimization passes).
+		 * @param array $ranges Array of range objects, each having a getName() method
+		 * @param array $usedInExpr Associative array mapping variable names to boolean usage in expressions
+		 * @param array $usedInCond Associative array mapping variable names to boolean usage in conditions
+		 * @return array            Associative array of live ranges keyed by variable name
 		 */
-		public function separateLiveAndCorrelationRanges(
-			array $ranges,
-			array $usedInExpr,
-			array $usedInCond,
-			array $joinReferences
-		): array {
+		public function computeLiveRanges(array $ranges, array $usedInExpr, array $usedInCond): array {
 			$liveRanges = [];
-			$correlationOnlyRanges = [];
 			
 			foreach ($ranges as $range) {
-				// Fetch range name
-				$rangeName = $range->getName();
+				// Extract the variable name from the range object
+				$name = $range->getName();
 				
-				// Criterion 1: Range is directly used in expressions or conditions
-				$isDirectlyUsed = ($usedInExpr[$rangeName] ?? false) || ($usedInCond[$rangeName] ?? false);
+				// Check if this variable is used in any expression context
+				// Uses null coalescing operator to default to false if key doesn't exist
+				$exprUsed = $usedInExpr[$name] ?? false;
 				
-				if ($isDirectlyUsed) {
-					$liveRanges[$rangeName] = $range;
+				// Check if this variable is used in any conditional context
+				// Uses null coalescing operator to default to false if key doesn't exist
+				$condUsed = $usedInCond[$name] ?? false;
+				
+				// A range is considered "live" if it's used in either expressions OR conditions
+				// This implements the union of both usage types for liveness determination
+				if ($exprUsed || $condUsed) {
+					// Add the live range to our result set, keyed by variable name for quick lookup
+					$liveRanges[$name] = $range;
+				}
+				// Note: Variables not used in either context are implicitly dead and excluded
+			}
+			
+			return $liveRanges;
+		}
+		
+		/**
+		 * Computes correlation-only ranges by identifying ranges used solely for join relationships.
+		 * This function performs correlation analysis to determine which variable ranges exist only
+		 * to establish join predicates and are not actively used in expressions or conditions.
+		 * @param array $ranges Array of range objects, each having a getName() method
+		 * @param array $joinReferences Array mapping join predicates to their referenced ranges
+		 * @param array $usedInExpr Associative array mapping variable names to boolean usage in expressions
+		 * @param array $usedInCond Associative array mapping variable names to boolean usage in conditions
+		 * @return array            Associative array of correlation-only ranges keyed by variable name
+		 */
+		public function computeCorrelationOnlyRanges(array $ranges, array $joinReferences, array $usedInExpr, array $usedInCond): array {
+			$correlationOnly = [];
+			
+			foreach ($ranges as $range) {
+				// Get the range name for lookups in usage arrays
+				$name = $range->getName();
+				
+				// Check if range is used in expressions or conditions (makes it "live")
+				$isExprUsed = $usedInExpr[$name] ?? false;
+				$isCondUsed = $usedInCond[$name] ?? false;
+				
+				// Skip ranges that are actively used in expressions or conditions
+				if ($isExprUsed || $isCondUsed) {
 					continue;
 				}
 				
-				// Criterion 2: Range is only referenced through other ranges' JOIN predicates
-				$isReferencedInJoins = $this->isRangeUsedInAnyJoinPredicate($rangeName, $ranges, $joinReferences);
-				
-				if ($isReferencedInJoins) {
-					$correlationOnlyRanges[$rangeName] = $range;
+				// For unused ranges, check if they appear in join predicates
+				// These are correlation-only ranges that exist solely for joins
+				if ($this->isRangeUsedInAnyJoinPredicate($name, $ranges, $joinReferences)) {
+					$correlationOnly[$name] = $range;
 				}
-				
-				// Note: Ranges that are neither live nor correlation-only are implicitly excluded
 			}
 			
-			return [$liveRanges, $correlationOnlyRanges];
+			return $correlationOnly;
 		}
 		
 		/**
@@ -151,11 +176,7 @@
 		 * @param array<string,array<string,bool>> $joinReferences JOIN reference map
 		 * @return bool True if the target range is referenced in any JOIN predicate
 		 */
-		private function isRangeUsedInAnyJoinPredicate(
-			string $targetRangeName,
-			array  $allRanges,
-			array  $joinReferences
-		): bool {
+		private function isRangeUsedInAnyJoinPredicate(string $targetRangeName, array $allRanges, array $joinReferences): bool {
 			foreach ($allRanges as $otherRange) {
 				$otherRangeName = $otherRange->getName();
 				
