@@ -13,7 +13,7 @@
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRangeDatabase;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRetrieve;
 	use Quellabs\ObjectQuel\ObjectQuel\Visitors\CollectRanges;
-	use Quellabs\ObjectQuel\Execution\Optimizers\Support\BinaryOperationHelper;
+	use Quellabs\ObjectQuel\Execution\Support\BinaryOperationHelper;
 	
 	/**
 	 * Handles range-specific optimizations including required annotations

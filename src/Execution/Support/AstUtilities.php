@@ -1,6 +1,6 @@
 <?php
 	
-	namespace Quellabs\ObjectQuel\Execution\Optimizers\Support;
+	namespace Quellabs\ObjectQuel\Execution\Support;
 	
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstAny;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstBinaryOperator;
