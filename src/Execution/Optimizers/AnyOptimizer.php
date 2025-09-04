@@ -7,6 +7,7 @@
 	use Quellabs\ObjectQuel\Execution\Optimizers\Support\AstNodeReplacer;
 	use Quellabs\ObjectQuel\Execution\Optimizers\Support\AstUtilities;
 	use Quellabs\ObjectQuel\Execution\Optimizers\Support\JoinPredicateProcessor;
+	use Quellabs\ObjectQuel\Execution\Optimizers\Support\AnchorManager;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstAny;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstNumber;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRange;
@@ -81,9 +82,6 @@
 		/** @var RangePartitioner Handles range partitioning and filtering based on analysis results. */
 		private RangePartitioner $rangePartitioner;
 		
-		/** @var AnchorManager Manages anchor range selection and ensures single anchor. */
-		private AnchorManager $anchorManager;
-		
 		/**
 		 * AnyOptimizer constructor
 		 * @param EntityManager $entityManager Provides entity metadata access.
@@ -92,7 +90,6 @@
 			$this->entityStore = $entityManager->getEntityStore();
 			$this->analyzer = new RangeUsageAnalyzer($this->entityStore);
 			$this->rangePartitioner = new RangePartitioner();
-			$this->anchorManager = new AnchorManager();
 		}
 		
 		/**
@@ -177,7 +174,7 @@
 			
 			// ── Step 8: Ensure exactly one anchor (joinProperty == null).
 			//     We try to anchor a range used in expr, else any INNER, else collapse a safe LEFT.
-			$keptRanges = $this->anchorManager->ensureSingleAnchorRange(
+			$keptRanges = AnchorManager::ensureSingleAnchorRange(
 				$keptRanges,
 				$finalWhere,
 				$usedInExpr,
