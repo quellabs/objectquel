@@ -25,5 +25,12 @@
 			AstMin::class,
 			AstMax::class,
 		];
+		
+		/** @var array<class-string<AstInterface>> DISTINCT-capable aggregate classes. */
+		public const array DISTINCT_AGGREGATE_TYPES = [
+			AstSumU::class,
+			AstAvgU::class,
+			AstCountU::class,
+		];
 	}
 	
