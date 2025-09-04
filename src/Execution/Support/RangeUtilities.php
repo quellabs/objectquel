@@ -19,43 +19,22 @@
 		 * @return AstRange[] Ranges referenced by the node
 		 */
 		public static function collectRangesFromNode(AstInterface $node): array {
-			// Create a new visitor instance to collect ranges
 			$visitor = new CollectRanges();
-			
-			// Traverse the AST node tree using the visitor pattern
-			// The visitor will internally collect all AstRange nodes it encounters
 			$node->accept($visitor);
-			
-			// Return the accumulated range nodes
 			return $visitor->getCollectedNodes();
 		}
 		
 		/**
 		 * Collects range references from an array of mixed node types
 		 * Handles both direct AstInterface nodes and wrapped expression nodes
-		 * @param array<int,mixed> $nodes Value/Expression nodes
+		 * @param array<int,AstInterface> $nodes Value/Expression nodes
 		 * @return AstRange[] Ranges referenced by all nodes
 		 */
 		public static function collectRangesFromNodes(array $nodes): array {
-			// Single visitor instance to accumulate ranges from all nodes
 			$visitor = new CollectRanges();
 			
-			foreach ($nodes as $n) {
-				// Handle direct AST nodes
-				if ($n instanceof AstInterface) {
-					$n->accept($visitor);
-				} else {
-					// Handle wrapped nodes - extract the expression first
-					// Note: This assumes $n has a getExpression() method
-					// Could throw error if $n is null or doesn't have this method
-					$expr = $n->getExpression();
-					
-					// Only process if the extracted expression is an AST node
-					if ($expr instanceof AstInterface) {
-						$expr->accept($visitor);
-					}
-					// Silent failure if expression is not AstInterface - might be intentional
-				}
+			foreach ($nodes as $node) {
+				$node->accept($visitor);
 			}
 			
 			return $visitor->getCollectedNodes();
@@ -64,23 +43,21 @@
 		/**
 		 * Specifically extracts ranges from SELECT statement values
 		 * More targeted than general collection methods
-		 * @param AstRetrieve $root Root SELECT/RETRIEVE AST node
+		 * @param AstRetrieve $root Root RETRIEVE AST node
 		 * @return AstRange[] Ranges referenced anywhere in SELECT values
 		 */
 		public static function collectRangesUsedInSelect(AstRetrieve $root): array {
-			// New collector for this specific operation
-			$collector = new CollectRanges();
-			
-			// Iterate through all values in the SELECT statement
-			// getValues() presumably returns the selected columns/expressions
-			foreach ($root->getValues() as $value) {
-				// Each value should be an AST node that can accept visitors
-				// This will collect ranges from column references, function calls, etc.
-				$value->accept($collector);
-			}
-			
-			// Return all ranges found in the SELECT values
-			return $collector->getCollectedNodes();
+			return self::collectRangesFromNodes($root->getValues());
+		}
+		
+		/**
+		 * Specifically extracts ranges from ORDER_BY statement values
+		 * More targeted than general collection methods
+		 * @param AstRetrieve $root Root RETRIEVE AST node
+		 * @return AstRange[] Ranges referenced anywhere in SELECT values
+		 */
+		public static function collectRangesUsedInSort(AstRetrieve $root): array {
+			return self::collectRangesFromNodes(array_map(function($e) { return $e["ast"]; }, $root->getSort()));
 		}
 		
 		// -------------------------------------------------
