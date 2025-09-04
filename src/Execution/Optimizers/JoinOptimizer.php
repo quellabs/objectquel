@@ -23,7 +23,6 @@
 		
 		/**
 		 * Initialize optimizer with entity metadata access
-		 *
 		 * @param EntityManager $entityManager Manager providing entity metadata
 		 */
 		public function __construct(EntityManager $entityManager) {
@@ -32,7 +31,6 @@
 		
 		/**
 		 * Main optimization entry point - analyzes all ranges in the AST
-		 *
 		 * @param AstRetrieve $ast The query AST to optimize
 		 */
 		public function optimize(AstRetrieve $ast): void {
@@ -78,8 +76,8 @@
 				// Non-nullable field references effectively filter out NULL rows anyway
 				$hasNonNullableReferences = $this->conditionListHasNonNullableReferences($ast, $range);
 				
+				// Safe to convert LEFT JOIN to INNER JOIN - performance improvement
 				if ($hasNonNullableReferences) {
-					// Safe to convert LEFT JOIN to INNER JOIN - performance improvement
 					$range->setRequired();
 				}
 			}
@@ -88,7 +86,6 @@
 		/**
 		 * Uses visitor pattern to detect NULL checks for the specified range.
 		 * Visitor throws exception when match is found (early termination pattern).
-		 *
 		 * @param AstRetrieve $ast The query AST to search
 		 * @param AstRange $range The range to check for NULL conditions
 		 * @return bool True if NULL checks exist for this range
