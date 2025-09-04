@@ -3,6 +3,7 @@
 	namespace Quellabs\ObjectQuel\Execution\Optimizers;
 	
 	use Quellabs\ObjectQuel\EntityManager;
+	use Quellabs\ObjectQuel\Execution\Optimizers\Support\AggregateConstants;
 	use Quellabs\ObjectQuel\Execution\Optimizers\Support\AggregateRewriter;
 	use Quellabs\ObjectQuel\Execution\Optimizers\Support\AstUtilities;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstAvg;
@@ -42,25 +43,6 @@
 		private const string STRATEGY_WINDOW = 'WINDOW';
 		
 		private EntityManager $entityManager;
-		
-		/** @var array<class-string<AstInterface>> Supported aggregate node classes. */
-		private const array AGGREGATE_NODE_TYPES = [
-			AstSum::class,
-			AstSumU::class,
-			AstCount::class,
-			AstCountU::class,
-			AstAvg::class,
-			AstAvgU::class,
-			AstMin::class,
-			AstMax::class,
-		];
-		
-		/** @var array<class-string<AstInterface>> DISTINCT-capable aggregate classes. */
-		private const array DISTINCT_AGGREGATE_TYPES = [
-			AstSumU::class,
-			AstAvgU::class,
-			AstCountU::class,
-		];
 		
 		/**
 		 * Constructor
@@ -345,7 +327,7 @@
 			}
 			
 			// DISTINCT variants commonly unsupported for window context
-			if (in_array(get_class($aggregate), self::DISTINCT_AGGREGATE_TYPES, true)) {
+			if (in_array(get_class($aggregate), AggregateConstants::DISTINCT_AGGREGATE_TYPES, true)) {
 				return false;
 			}
 			
