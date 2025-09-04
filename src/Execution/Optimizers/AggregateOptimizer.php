@@ -318,7 +318,6 @@
 			}
 			
 			// One of the supported aggregates (no distinct)
-			$supported = [AstSum::class, AstCount::class, AstAvg::class, AstMin::class, AstMax::class,];
-			return in_array(get_class($aggregate), $supported, true);
+			return in_array(get_class($aggregate), AggregateConstants::NOT_DISTINCT_AGGREGATE_TYPES, true);
 		}
 	}
