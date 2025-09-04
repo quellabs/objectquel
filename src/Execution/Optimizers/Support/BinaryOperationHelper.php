@@ -1,6 +1,6 @@
 <?php
 	
-	namespace Quellabs\ObjectQuel\Execution\Optimizers;
+	namespace Quellabs\ObjectQuel\Execution\Optimizers\Support;
 	
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstBinaryOperator;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstExpression;
@@ -29,7 +29,7 @@
 		 * @param AstInterface|null $item The AST node to check
 		 * @return bool True if the node supports binary operations, false otherwise
 		 */
-		public function isBinaryOperationNode(?AstInterface $item): bool {
+		public static function isBinaryOperationNode(?AstInterface $item): bool {
 			// Null nodes cannot be binary operations
 			if ($item === null) {
 				return false;
@@ -51,9 +51,9 @@
 		 * @throws \InvalidArgumentException If the item doesn't support binary operations
 		 * @throws \BadMethodCallException If the node doesn't actually implement getLeft()
 		 */
-		public function getBinaryLeft(AstInterface $item): AstInterface {
+		public static function getBinaryLeft(AstInterface $item): AstInterface {
 			// Validate that this is a supported binary operation node type
-			if (!$this->isBinaryOperationNode($item)) {
+			if (!self::isBinaryOperationNode($item)) {
 				throw new \InvalidArgumentException('Item does not support binary operations');
 			}
 			
@@ -69,9 +69,9 @@
 		 * @throws \InvalidArgumentException If the item doesn't support binary operations
 		 * @throws \BadMethodCallException If the node doesn't actually implement getRight()
 		 */
-		public function getBinaryRight(AstInterface $item): AstInterface {
+		public static function getBinaryRight(AstInterface $item): AstInterface {
 			// Validate that this is a supported binary operation node type
-			if (!$this->isBinaryOperationNode($item)) {
+			if (!self::isBinaryOperationNode($item)) {
 				throw new \InvalidArgumentException('Item does not support binary operations');
 			}
 			
@@ -88,9 +88,9 @@
 		 * @throws \InvalidArgumentException If the item doesn't support binary operations
 		 * @throws \BadMethodCallException If the node doesn't actually implement setLeft()
 		 */
-		public function setBinaryLeft(AstInterface $item, AstInterface $left): void {
+		public static function setBinaryLeft(AstInterface $item, AstInterface $left): void {
 			// Validate that this is a supported binary operation node type
-			if (!$this->isBinaryOperationNode($item)) {
+			if (!self::isBinaryOperationNode($item)) {
 				throw new \InvalidArgumentException('Item does not support binary operations');
 			}
 			
@@ -107,9 +107,9 @@
 		 * @throws \InvalidArgumentException If the item doesn't support binary operations
 		 * @throws \BadMethodCallException If the node doesn't actually implement setRight()
 		 */
-		public function setBinaryRight(AstInterface $item, AstInterface $right): void {
+		public static function setBinaryRight(AstInterface $item, AstInterface $right): void {
 			// Validate that this is a supported binary operation node type
-			if (!$this->isBinaryOperationNode($item)) {
+			if (!self::isBinaryOperationNode($item)) {
 				throw new \InvalidArgumentException('Item does not support binary operations');
 			}
 			

@@ -58,7 +58,7 @@
 			}
 			
 			/**
-			 * Do not use if we optimized the range anyway using a subquery
+			 * Do not use if we optimized the range away using a subquery
 			 */
 			if (!$node->getRange()->includeAsJoin()) {
 				return;

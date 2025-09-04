@@ -2,25 +2,17 @@
 	
 	namespace Quellabs\ObjectQuel\Execution\Optimizers;
 	
+	use Quellabs\ObjectQuel\ObjectQuel\AstInterface;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstBinaryOperator;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstExists;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRetrieve;
-	use Quellabs\ObjectQuel\ObjectQuel\AstInterface;
+	use Quellabs\ObjectQuel\Execution\Optimizers\Support\BinaryOperationHelper;
 	
 	/**
 	 * Processes EXISTS operators by removing them from conditions and converting
 	 * them to required ranges (INNER JOINs) for better performance.
 	 */
-	class ExistsOptimizer {
-		
-		private BinaryOperationHelper $binaryHelper;
-		
-		/**
-		 * ExistsOptimizer constructor
-		 */
-		public function __construct() {
-			$this->binaryHelper = new BinaryOperationHelper();
-		}
+	class ExistsOptimizer {		
 		
 		/**
 		 * Main entry point for optimization. Extracts EXISTS operators from the query
@@ -105,12 +97,12 @@
 			bool $parentLeft = false
 		): void {
 			// Only process binary operation nodes
-			if (!$this->binaryHelper->isBinaryOperationNode($item)) {
+			if (!BinaryOperationHelper::isBinaryOperationNode($item)) {
 				return;
 			}
 			
-			$left = $this->binaryHelper->getBinaryLeft($item);
-			$right = $this->binaryHelper->getBinaryRight($item);
+			$left = BinaryOperationHelper::getBinaryLeft($item);
+			$right = BinaryOperationHelper::getBinaryRight($item);
 			
 			// Recursively process left branch if it's a binary operator
 			if ($left instanceof AstBinaryOperator) {
@@ -123,8 +115,8 @@
 			}
 			
 			// Refresh left/right references after potential modifications from recursion
-			$left = $this->binaryHelper->getBinaryLeft($item);
-			$right = $this->binaryHelper->getBinaryRight($item);
+			$left = BinaryOperationHelper::getBinaryLeft($item);
+			$right = BinaryOperationHelper::getBinaryRight($item);
 			
 			// Special case: both operands are EXISTS and this is the root condition
 			// In this case, we remove the entire condition tree
@@ -163,15 +155,15 @@
 			}
 			
 			// Only set child relationships for binary operation nodes
-			if (!$this->binaryHelper->isBinaryOperationNode($parent)) {
+			if (!BinaryOperationHelper::isBinaryOperationNode($parent)) {
 				return;
 			}
 			
 			// Set as left or right child based on the parentLeft flag
 			if ($parentLeft) {
-				$this->binaryHelper->setBinaryLeft($parent, $item);
+				BinaryOperationHelper::setBinaryLeft($parent, $item);
 			} else {
-				$this->binaryHelper->setBinaryRight($parent, $item);
+				BinaryOperationHelper::setBinaryRight($parent, $item);
 			}
 		}
 	}
