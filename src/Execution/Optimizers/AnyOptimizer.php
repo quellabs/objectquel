@@ -171,7 +171,7 @@
 			
 			// ── Step 8: Ensure exactly one anchor (joinProperty == null).
 			//     We try to anchor a range used in expr, else any INNER, else collapse a safe LEFT.
-			$keptRanges = AnchorManager::ensureSingleAnchorRange(
+			$keptRanges = AnchorManager::configureRangeAnchors(
 				$keptRanges,
 				$finalWhere,
 				$usedInExpr,
