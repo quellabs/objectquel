@@ -2,7 +2,9 @@
 	
 	namespace Quellabs\ObjectQuel\Execution\Optimizers;
 	
+	use Quellabs\ObjectQuel\Execution\Support\AstUtilities;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstAlias;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstMin;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRetrieve;
 	use Quellabs\ObjectQuel\ObjectQuel\Visitors\GatherReferenceJoinValues;
 	
@@ -20,6 +22,9 @@
 		 * @return void
 		 */
 		public function optimize(AstRetrieve $ast): void {
+			// True if all projection fields are aggregates
+			$allProjectionsAggregates = AstUtilities::areAllSelectFieldsAggregates($ast);
+			
 			// Skip optimization if no conditions exist - no joins to process
 			if ($ast->getConditions() === null) {
 				return;
@@ -35,7 +40,12 @@
 				$clonedIdentifier = $identifier->deepClone();
 				
 				// Create alias using the field's complete name (e.g., "table.field")
-				$alias = new AstAlias($identifier->getCompleteName(), $clonedIdentifier);
+				// Wrap identifier in AstMin if all projection fields are aggregates
+				if ($allProjectionsAggregates) {
+					$alias = new AstAlias($identifier->getCompleteName(), new AstMin($clonedIdentifier));
+				} else {
+					$alias = new AstAlias($identifier->getCompleteName(), $clonedIdentifier);
+				}
 				
 				// Mark as invisible - needed for joins but not user-requested data
 				// This prevents the field from appearing in final query results
