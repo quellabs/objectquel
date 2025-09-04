@@ -77,60 +77,114 @@
 			array         $hasIsNullInCond,
 			array         $nonNullableUse
 		): array {
+			// Early exit for valid states
 			if (empty($ranges) || self::hasValidAnchorRange($ranges)) {
 				return $ranges;
 			}
 			
+			// Check if we can collapse
 			$canCollapse = self::buildCollapsePredicate($usedInCond, $hasIsNullInCond, $nonNullableUse);
 			
-			// Helper to apply the chosen anchor and normalize position
-			$anchorize = function (int $index) use (&$ranges, &$whereClause) {
-				$selected = $ranges[$index];
-				$join = $selected->getJoinProperty();
-				
-				if ($join !== null) {
-					$whereClause = AstUtilities::combinePredicatesWithAnd([$whereClause, $join]);
-					$selected->setJoinProperty(null);
-					$selected->setRequired(true);
-				}
-				
-				// Move anchor to front (stable downstream expectations)
-				if ($index !== 0) {
-					array_splice($ranges, $index, 1);
-					array_unshift($ranges, $selected);
-				}
-				
+			// Find anchor using priority order
+			$anchorIndex = self::findAnchorByPriority($ranges, $exprRangeNames, $canCollapse);
+			
+			if ($anchorIndex === null) {
 				return $ranges;
-			};
+			}
 			
-			// Priority 1: a range used in the owner's expression that we can anchor on
-			foreach ($ranges as $i => $range) {
-				$inExpr = in_array($range->getName(), $exprRangeNames, true);
-				$canBeAnchor = $range->isRequired() || $canCollapse($range);
+			return self::applyAnchorSelection($ranges, $anchorIndex, $whereClause);
+		}
+		
+		/**
+		 * Find the best anchor range using priority-based selection.
+		 * @param array $ranges
+		 * @param array $exprRangeNames
+		 * @param callable $canCollapse
+		 * @return int|null
+		 */
+		private static function findAnchorByPriority(array $ranges, array $exprRangeNames, callable $canCollapse): ?int {
+			// Priority 1: Expression range that can be anchored
+			$exprAnchor = self::findExpressionRangeAnchor($ranges, $exprRangeNames, $canCollapse);
+			if ($exprAnchor !== null) {
+				return $exprAnchor;
+			}
+			
+			// Priority 2: Any INNER range
+			$innerAnchor = self::findInnerRangeAnchor($ranges);
+			
+			if ($innerAnchor !== null) {
+				return $innerAnchor;
+			}
+			
+			// Priority 3: Collapsible LEFT range
+			return self::findCollapsibleLeftAnchor($ranges, $canCollapse);
+		}
+		
+		/**
+		 * Find a range used in owner's expression that can be anchored.
+		 * @param array $ranges
+		 * @param array $exprRangeNames
+		 * @param callable $canCollapse
+		 * @return int|null
+		 */
+		private static function findExpressionRangeAnchor(array $ranges, array $exprRangeNames, callable $canCollapse): ?int {
+			foreach ($ranges as $index => $range) {
+				if (!in_array($range->getName(), $exprRangeNames, true)) {
+					continue;
+				}
 				
-				if ($inExpr && $canBeAnchor) {
-					return $anchorize($i);
+				if ($range->isRequired() || $canCollapse($range)) {
+					return $index;
 				}
 			}
 			
-			// Priority 2: any INNER range
-			$idx = self::findInnerRangeAnchor($ranges);
+			return null;
+		}
+		
+		/**
+		 * Apply the selected anchor range and normalize position.
+		 * @param array $ranges
+		 * @param int $anchorIndex
+		 * @param AstInterface|null $whereClause
+		 * @return array
+		 */
+		private static function applyAnchorSelection(
+			array         $ranges,
+			int           $anchorIndex,
+			?AstInterface &$whereClause
+		): array {
+			$selectedRange = $ranges[$anchorIndex];
 			
-			if ($idx !== null) {
-				return $anchorize($idx);
-			}
+			// Move JOIN condition to WHERE clause if present
+			self::moveJoinToWhere($selectedRange, $whereClause);
 			
-			// Priority 3: a LEFT range that can safely collapse to INNER
-			$idx = self::findCollapsibleLeftAnchor($ranges, $canCollapse);
-			
-			if ($idx !== null) {
-				$ranges[$idx]->setRequired(true);
-				return $anchorize($idx);
+			// Move anchor to front for stable downstream expectations
+			if ($anchorIndex !== 0) {
+				array_splice($ranges, $anchorIndex, 1);
+				array_unshift($ranges, $selectedRange);
 			}
 			
 			return $ranges;
 		}
-
+		
+		/**
+		 * Move JOIN condition to WHERE clause and mark range as required.
+		 * @param AstRange $range
+		 * @param AstInterface|null $whereClause
+		 * @return void
+		 */
+		private static function moveJoinToWhere(AstRange $range, ?AstInterface &$whereClause): void {
+			$joinCondition = $range->getJoinProperty();
+			
+			if ($joinCondition === null) {
+				return;
+			}
+			
+			$whereClause = AstUtilities::combinePredicatesWithAnd([$whereClause, $joinCondition]);
+			$range->setJoinProperty(null);
+			$range->setRequired(true);
+		}
+		
 		/**
 		 * Check if any range already serves as an anchor (has null joinProperty).
 		 * @param AstRange[] $ranges Ranges to check
