@@ -133,6 +133,7 @@
 		 */
 		private function createUniqueRange(string $entityName): AstRangeDatabase {
 			$alias = $this->generateUniqueAlias($entityName);
+			
 			$this->usedRangeNames[] = $alias;
 			
 			return new AstRangeDatabase($alias, $entityName, null);

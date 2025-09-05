@@ -93,7 +93,7 @@
 		    $queries = [];
 		    
 		    do {
-			    // Get the next token without changing the position in the lexer.
+		    // Get the next token without changing the position in the lexer.
 			    $token = $this->lexer->peek();
 			    
 			    // Check if the token is a 'Retrieve' type.
