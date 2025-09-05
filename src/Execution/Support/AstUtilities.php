@@ -57,10 +57,10 @@
 			}
 			
 			// Build a simple left-deep AND tree; balancing offers no real advantage here.
-			$acc = new AstBinaryOperator($parts[0], $parts[1], 'AND');
+			$acc = AstFactory::createBinaryAndOperator($parts[0], $parts[1]);
 			
 			for ($i = 2; $i < $n; $i++) {
-				$acc = new AstBinaryOperator($acc, $parts[$i], 'AND');
+				$acc = AstFactory::createBinaryAndOperator($acc, $parts[$i]);
 			}
 			
 			return $acc;
@@ -167,4 +167,6 @@
 			
 			return $result;
 		}
+		
+
 	}

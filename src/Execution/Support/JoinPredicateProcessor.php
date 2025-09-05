@@ -134,16 +134,15 @@
 		}
 		
 		/**
-		 * Split a predicate into:
-		 *   - innerPart: references only $liveRangeNames
-		 *   - corrPart : references only $correlationRangeNames
+		 * Split a predicate into inner and correlation parts based on range references.
 		 *
-		 * If a conjunct mixes inner & corr refs and contains OR, we treat it as
-		 * "unsafe to split" and keep the whole predicate as innerPart.
+		 * Handles complex predicates containing AND/OR operators by recursively analyzing
+		 * each component to determine which ranges they reference. Returns separate
+		 * predicates for inner (live range) and correlation parts.
 		 *
-		 * @param AstInterface|null $predicate Original JOIN predicate.
-		 * @param string[] $liveRangeNames Names considered "inner".
-		 * @param string[] $correlationRangeNames Names considered "correlation".
+		 * @param AstInterface|null $predicate The JOIN predicate to split (null = no predicate)
+		 * @param string[] $liveRangeNames Names of ranges considered "inner" to current subquery
+		 * @param string[] $correlationRangeNames Names of ranges from outer query contexts
 		 * @return array{innerPart: AstInterface|null, corrPart: AstInterface|null} Split predicate parts
 		 */
 		private static function splitJoinPredicateByRangeReferences(
@@ -151,119 +150,216 @@
 			array         $liveRangeNames,
 			array         $correlationRangeNames
 		): array {
-			// When no predicate passed, return empty values
+			// If no predicate set, return empty data
 			if ($predicate === null) {
 				return ['innerPart' => null, 'corrPart' => null];
 			}
 			
-			// If it's an AND tree, we can classify each leaf conjunct independently.
-			if (AstUtilities::isBinaryAndOperator($predicate)) {
-				$queue = [$predicate];
-				$andLeaves = [];
-				
-				// Flatten the AND tree to a list of leaves.
-				while ($queue) {
-					$n = array_pop($queue);
-					
-					if (AstUtilities::isBinaryAndOperator($n)) {
-						$queue[] = $n->getLeft();
-						$queue[] = $n->getRight();
-					} else {
-						$andLeaves[] = $n;
-					}
-				}
-				
-				$innerParts = [];
-				$corrParts = [];
-				
-				foreach ($andLeaves as $leaf) {
-					$bucket = self::classifyPredicateByRangeReferences($leaf, $liveRangeNames, $correlationRangeNames);
-					
-					// Unsafe: leave the entire predicate as a single innerPart.
-					if ($bucket === 'MIXED_OR_COMPLEX') {
-						return ['innerPart' => $predicate, 'corrPart' => null];
-					}
-					
-					if ($bucket === 'CORR') {
-						$corrParts[] = $leaf;
-					} else {
-						$innerParts[] = $leaf; // INNER
-					}
-				}
-				
-				return [
-					'innerPart' => AstUtilities::combinePredicatesWithAnd($innerParts),
-					'corrPart'  => AstUtilities::combinePredicatesWithAnd($corrParts),
-				];
+			// Handle OR expressions with distribution
+			if (AstUtilities::isBinaryOrOperator($predicate)) {
+				return self::splitOrPredicate($predicate, $liveRangeNames, $correlationRangeNames);
 			}
 			
-			// Non-AND predicates are classified as a whole.
-			return match (self::classifyPredicateByRangeReferences($predicate, $liveRangeNames, $correlationRangeNames)) {
+			// Handle AND expressions by processing each conjunct
+			if (AstUtilities::isBinaryAndOperator($predicate)) {
+				return self::splitAndPredicate($predicate, $liveRangeNames, $correlationRangeNames);
+			}
+			
+			// Leaf node - classify directly
+			return match (self::classifyLeafPredicate($predicate, $liveRangeNames, $correlationRangeNames)) {
 				'CORR' => ['innerPart' => null, 'corrPart' => $predicate],
 				default => ['innerPart' => $predicate, 'corrPart' => null],
 			};
 		}
 		
 		/**
-		 * Classify an expression by the sets of ranges it references:
-		 *   - 'INNER'            : only liveRangeNames appear
-		 *   - 'CORR'             : only correlationRangeNames appear
-		 *   - 'MIXED_OR_COMPLEX' : both appear AND there's an OR somewhere (unsafe split)
+		 * Split OR predicate by distributing across operands.
 		 *
-		 * Rationale: a conjunct that mixes both sides but has no OR can be pushed
-		 * into either bucket by normalization, but we keep it conservative: only
-		 * split when it's clearly safe and clean.
+		 * Transforms (A OR B) into separate inner and correlation parts:
+		 * - Inner part: (A_inner OR B_inner) if any inner components exist
+		 * - Correlation part: (A_corr OR B_corr) if any correlation components exist
 		 *
-		 * @param AstInterface $expr Expression to classify
-		 * @param string[] $liveRangeNames Live range names
-		 * @param string[] $correlationRangeNames Correlation range names
-		 * @return 'INNER'|'CORR'|'MIXED_OR_COMPLEX' Classification result
+		 * @param AstInterface $orPredicate The OR predicate to split
+		 * @param string[] $liveRangeNames Names of ranges considered "inner"
+		 * @param string[] $correlationRangeNames Names of ranges from outer contexts
+		 * @return array{innerPart: AstInterface|null, corrPart: AstInterface|null} Split result
 		 */
-		private static function classifyPredicateByRangeReferences(AstInterface $expr, array $liveRangeNames, array $correlationRangeNames): string {
+		private static function splitOrPredicate(
+			AstInterface $orPredicate,
+			array        $liveRangeNames,
+			array        $correlationRangeNames
+		): array {
+			$orTerms = self::flattenOrTerms($orPredicate);
+			$innerTerms = [];
+			$corrTerms = [];
+			
+			foreach ($orTerms as $term) {
+				$split = self::splitJoinPredicateByRangeReferences($term, $liveRangeNames, $correlationRangeNames);
+				
+				if ($split['innerPart'] !== null) {
+					$innerTerms[] = $split['innerPart'];
+				}
+				if ($split['corrPart'] !== null) {
+					$corrTerms[] = $split['corrPart'];
+				}
+			}
+			
+			return [
+				'innerPart' => self::combinePredicatesWithOr($innerTerms),
+				'corrPart'  => self::combinePredicatesWithOr($corrTerms)
+			];
+		}
+		
+		/**
+		 * Split AND predicate by separating conjuncts based on range references.
+		 *
+		 * Processes (A AND B) by classifying each conjunct independently:
+		 * - Inner part: contains conjuncts referencing only live ranges
+		 * - Correlation part: contains conjuncts referencing correlation ranges
+		 *
+		 * @param AstInterface $andPredicate The AND predicate to split
+		 * @param string[] $liveRangeNames Names of ranges considered "inner"
+		 * @param string[] $correlationRangeNames Names of ranges from outer contexts
+		 * @return array{innerPart: AstInterface|null, corrPart: AstInterface|null} Split result
+		 */
+		private static function splitAndPredicate(
+			AstInterface $andPredicate,
+			array        $liveRangeNames,
+			array        $correlationRangeNames
+		): array {
+			$andTerms = self::flattenAndTerms($andPredicate);
+			$innerTerms = [];
+			$corrTerms = [];
+			
+			foreach ($andTerms as $term) {
+				$split = self::splitJoinPredicateByRangeReferences($term, $liveRangeNames, $correlationRangeNames);
+				
+				if ($split['innerPart'] !== null) {
+					$innerTerms[] = $split['innerPart'];
+				}
+				if ($split['corrPart'] !== null) {
+					$corrTerms[] = $split['corrPart'];
+				}
+			}
+			
+			return [
+				'innerPart' => AstUtilities::combinePredicatesWithAnd($innerTerms),
+				'corrPart'  => AstUtilities::combinePredicatesWithAnd($corrTerms)
+			];
+		}
+		
+		/**
+		 * Flatten OR expression tree into a flat array of terms.
+		 *
+		 * Recursively processes nested OR operators to create a single-level array.
+		 * Example: (A OR (B OR C)) becomes [A, B, C]
+		 *
+		 * @param AstInterface $orExpr The OR expression to flatten
+		 * @return AstInterface[] Array of individual OR terms
+		 */
+		private static function flattenOrTerms(AstInterface $orExpr): array {
+			if (!AstUtilities::isBinaryOrOperator($orExpr)) {
+				return [$orExpr];
+			}
+			
+			$terms = [];
+			$queue = [$orExpr];
+			
+			while (!empty($queue)) {
+				$node = array_pop($queue);
+				
+				if (AstUtilities::isBinaryOrOperator($node)) {
+					$queue[] = $node->getLeft();
+					$queue[] = $node->getRight();
+				} else {
+					$terms[] = $node;
+				}
+			}
+			
+			return $terms;
+		}
+		
+		/**
+		 * Flatten AND expression tree into a flat array of conjuncts.
+		 *
+		 * Recursively processes nested AND operators to create a single-level array.
+		 * Example: (A AND (B AND C)) becomes [A, B, C]
+		 *
+		 * @param AstInterface $andExpr The AND expression to flatten
+		 * @return AstInterface[] Array of individual AND terms (conjuncts)
+		 */
+		private static function flattenAndTerms(AstInterface $andExpr): array {
+			if (!AstUtilities::isBinaryAndOperator($andExpr)) {
+				return [$andExpr];
+			}
+			
+			$terms = [];
+			$queue = [$andExpr];
+			
+			while (!empty($queue)) {
+				$node = array_pop($queue);
+				
+				if (AstUtilities::isBinaryAndOperator($node)) {
+					$queue[] = $node->getLeft();
+					$queue[] = $node->getRight();
+				} else {
+					$terms[] = $node;
+				}
+			}
+			
+			return $terms;
+		}
+		
+		/**
+		 * Classify a leaf predicate based on which ranges it references.
+		 *
+		 * Analyzes all identifiers in the expression to determine classification:
+		 * - INNER: references only live ranges
+		 * - CORR: references only correlation ranges
+		 * - MIXED: references both live and correlation ranges
+		 *
+		 * @param AstInterface $expr The leaf expression to classify (no AND/OR operators)
+		 * @param string[] $liveRangeNames Names of ranges considered "inner"
+		 * @param string[] $correlationRangeNames Names of ranges from outer contexts
+		 * @return string Classification result: 'INNER', 'CORR', or 'MIXED'
+		 */
+		private static function classifyLeafPredicate(
+			AstInterface $expr,
+			array        $liveRangeNames,
+			array        $correlationRangeNames
+		): string {
 			$ids = AstUtilities::collectIdentifiersFromAst($expr);
 			$hasInner = false;
 			$hasCorr = false;
 			
 			foreach ($ids as $id) {
-				$n = $id->getRange()->getName();
+				$range = $id->getRange();
 				
-				if (in_array($n, $liveRangeNames, true)) {
+				// Skip identifiers without range references
+				if ($range === null) {
+					continue;
+				}
+				
+				$rangeName = $range->getName();
+				
+				if (in_array($rangeName, $liveRangeNames, true)) {
 					$hasInner = true;
 				}
 				
-				if (in_array($n, $correlationRangeNames, true)) {
+				if (in_array($rangeName, $correlationRangeNames, true)) {
 					$hasCorr = true;
 				}
 			}
 			
-			// If both sides appear AND there is an OR in the subtree, splitting
-			// risks changing semantics (e.g., distributing over OR). Avoid it.
-			if (self::containsOrOperator($expr) && $hasInner && $hasCorr) {
-				return 'MIXED_OR_COMPLEX';
-			} elseif ($hasCorr && !$hasInner) {
+			// For leaf predicates, we can handle mixed references
+			// They'll be duplicated in both parts
+			if ($hasCorr && $hasInner) {
+				return 'MIXED';
+			} elseif ($hasCorr) {
 				return 'CORR';
 			} else {
 				return 'INNER';
 			}
-		}
-		
-		/**
-		 * True if the subtree contains an OR node anywhere.
-		 * @param AstInterface $node Node to check
-		 * @return bool True if OR operator found
-		 */
-		private static function containsOrOperator(AstInterface $node): bool {
-			if (AstUtilities::isBinaryOrOperator($node)) {
-				return true;
-			}
-			
-			foreach (AstUtilities::getChildrenFromBinaryOperator($node) as $child) {
-				if (self::containsOrOperator($child)) {
-					return true;
-				}
-			}
-			
-			return false;
 		}
 		
 		/**
@@ -274,5 +370,39 @@
 		 */
 		private static function isRangeInLiveSet(AstRange $range, array $liveRanges): bool {
 			return isset($liveRanges[$range->getName()]);
+		}
+		
+		/**
+		 * Combine multiple predicates with OR operator.
+		 * Filters out null values and handles edge cases.
+		 * @param AstInterface[] $predicates Array of predicates to combine
+		 * @return AstInterface|null Combined predicate or null if no valid predicates
+		 */
+		public static function combinePredicatesWithOr(array $predicates): ?AstInterface {
+			// Filter out null predicates
+			$validPredicates = array_filter($predicates, function($predicate) {
+				return $predicate !== null;
+			});
+			
+			// Reindex array to avoid gaps
+			$validPredicates = array_values($validPredicates);
+			
+			// Handle edge cases
+			if (empty($validPredicates)) {
+				return null;
+			}
+			
+			if (count($validPredicates) === 1) {
+				return $validPredicates[0];
+			}
+			
+			// Build OR tree by folding from left to right
+			$result = $validPredicates[0];
+			
+			for ($i = 1; $i < count($validPredicates); $i++) {
+				$result = AstFactory::createBinaryOrOperator($result, $validPredicates[$i]);
+			}
+			
+			return $result;
 		}
 	}

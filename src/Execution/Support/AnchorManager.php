@@ -167,7 +167,7 @@
 			// Extract basic range properties for evaluation
 			$rangeName = $range->getName();
 			$joinType = $range->isRequired() ? "INNER" : "LEFT";
-			$isCollapsible = $canCollapse($rangeName);
+			$isCollapsible = $canCollapse($range);
 			$isExpressionRange = in_array($rangeName, $exprRangeNames, true);
 			
 			// Determine if this range can serve as a viable anchor based on join type
@@ -321,7 +321,7 @@
 			}
 			
 			// If there's already a WHERE clause, AND them together
-			return new AstBinaryOperator($existing, $newCondition, 'AND');
+			return AstFactory::createBinaryAndOperator($existing, $newCondition);
 		}
 		
 		/**
@@ -349,37 +349,6 @@
 		}
 		
 		/**
-		 * Find any INNER range that can serve as anchor.
-		 * @param AstRange[] $ranges Available ranges
-		 * @return int|null Index of INNER range, null if none found
-		 */
-		private static function findInnerRangeAnchor(array $ranges): ?int {
-			foreach ($ranges as $index => $range) {
-				if ($range->isRequired()) {
-					return $index;
-				}
-			}
-			
-			return null;
-		}
-		
-		/**
-		 * Find a LEFT range that can be safely collapsed to INNER.
-		 * @param AstRange[] $ranges Available ranges
-		 * @param callable $canCollapse Function to check collapse safety
-		 * @return int|null Index of collapsible range, null if none found
-		 */
-		private static function findCollapsibleLeftAnchor(array $ranges, callable $canCollapse): ?int {
-			foreach ($ranges as $index => $range) {
-				if (!$range->isRequired() && $canCollapse($range)) {
-					return $index;
-				}
-			}
-			
-			return null;
-		}
-		
-		/**
 		 * Build a predicate used to check whether a LEFT-joined range can be safely
 		 * collapsed to an INNER join for an aggregate subquery.
 		 *
@@ -396,6 +365,7 @@
 		 */
 		private static function createCollapseChecker(array $usedInCond, array $hasIsNullInCond, array $nonNullableUse): callable {
 			return function ($range) use ($usedInCond, $hasIsNullInCond, $nonNullableUse): bool {
+				// Fetch the name of the range
 				$name = $range->getName();
 				
 				// Already INNER — nothing to collapse. Treat as OK.
