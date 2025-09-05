@@ -2,341 +2,213 @@
 	
 	namespace Quellabs\ObjectQuel\Execution\Support;
 	
-	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstBinaryOperator;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRange;
 	use Quellabs\ObjectQuel\ObjectQuel\AstInterface;
 	use Quellabs\ObjectQuel\ObjectQuel\QuelException;
 	
 	/**
-	 * AnchorManager handles anchor range selection and ensures exactly one anchor exists.
+	 * AnchorManager optimizes SQL queries by selecting the best "anchor" table.
 	 *
-	 * This class is responsible for:
-	 * - Ensuring exactly one anchor range (with joinProperty == null) exists
-	 * - Selecting the optimal anchor based on usage patterns and safety rules
-	 * - Safely collapsing LEFT JOINs to INNER when possible
-	 * - Moving JOIN predicates to WHERE clause when converting to anchor
+	 * An ANCHOR is the primary table that other tables join to. Every SQL query needs
+	 * exactly one anchor (a FROM table with no JOIN conditions). This class:
+	 *
+	 * 1. Identifies the optimal table to serve as the query anchor
+	 * 2. Converts other table references to JOINs against that anchor
+	 * 3. Safely converts LEFT JOINs to INNER JOINs when possible for better performance
+	 *
+	 * Example transformation:
+	 * BEFORE: SELECT * FROM users u, orders o WHERE u.id = o.user_id
+	 * AFTER:  SELECT * FROM users u INNER JOIN orders o ON u.id = o.user_id
 	 */
 	class AnchorManager {
+		// Priority scores for anchor selection (higher = better)
+		private const int PRIORITY_EXPRESSION_REFERENCED = 1000;  // Table used in SELECT expressions
+		private const int PRIORITY_INNER_JOIN = 100;              // INNER JOIN (guaranteed rows)
+		private const int PRIORITY_LEFT_JOIN = 50;                // LEFT JOIN (possible NULLs)
+		private const int PRIORITY_COLLAPSIBLE_BONUS = 10;        // Can optimize JOIN conditions
 		
 		/**
-		 * Ensures exactly one anchor exists (range with joinProperty == null) and places it first.
+		 * Main entry point: Ensures exactly one anchor exists and optimizes the query structure.
 		 *
-		 * Anchor selection priority:
-		 *   1. Range referenced in ANY(expr) that is INNER or can safely collapse from LEFT
-		 *   2. Any existing INNER range
-		 *   3. LEFT range that can safely collapse to INNER (based on analyzer maps)
-		 *
-		 * Safety rule for LEFT → INNER collapse:
-		 *   Range is safely collapsible if:
-		 *   - It's actually used: (usedInExpr OR usedInCond OR nonNullableUse)
-		 *   - WHERE logic doesn't depend on NULL values: NOT hasIsNullInCond
-		 *
-		 * If no safe anchor can be created, preserves original layout to maintain semantics.
-		 *
-		 * @param AstRange[] $ranges Ranges to process
-		 * @param AstInterface|null &$whereClause WHERE clause (modified by reference)
-		 * @param array<string,bool> $usedInExpr Usage analyzer map
-		 * @param array<string,bool> $usedInCond Usage analyzer map
-		 * @param array<string,bool> $hasIsNullInCond Usage analyzer map
-		 * @param array<string,bool> $nonNullableUse Usage analyzer map
-		 * @return AstRange[] Updated ranges with anchor guaranteed
-		 * @throws QuelException
-		 */
-		public static function configureRangeAnchors(
-			array         $ranges,
-			?AstInterface &$whereClause,
-			array         $usedInExpr,
-			array         $usedInCond,
-			array         $hasIsNullInCond,
-			array         $nonNullableUse
-		): array {
-			return self::selectAndConfigureAnchor(
-				$ranges,
-				$whereClause,
-				array_keys(array_filter($usedInExpr, static fn($v) => (bool)$v)),
-				$usedInCond,
-				$hasIsNullInCond,
-				$nonNullableUse
-			);
-		}
-		
-		/**
-		 * Core logic for selecting a single anchor range.
-		 * @param AstRange[] $ranges Array of AST range nodes to evaluate
-		 * @param AstInterface|null $whereClause (by-ref) — we may move JOIN → WHERE here
-		 * @param string[] $exprRangeNames — ranges referenced by the owner's expression
-		 * @param array<string,bool> $usedInCond — tracks which ranges appear in conditions
-		 * @param array<string,bool> $hasIsNullInCond — tracks IS NULL checks per range
-		 * @param array<string,bool> $nonNullableUse — tracks non-nullable usage patterns
-		 * @return AstRange[] Modified ranges array with single anchor established
+		 * @param AstRange[] $ranges All table references in the query
+		 * @param AstInterface|null &$whereClause WHERE clause (modified to include moved JOIN conditions)
+		 * @param QueryAnalysisResult $analysis Pre-computed analysis of table usage patterns
+		 * @return AstRange[] Optimized ranges with exactly one anchor
 		 * @throws QuelException When no valid anchor can be determined
 		 */
-		private static function selectAndConfigureAnchor(
-			array         $ranges,
-			?AstInterface &$whereClause,
-			array         $exprRangeNames,
-			array         $usedInCond,
-			array         $hasIsNullInCond,
-			array         $nonNullableUse
+		public static function configureRangeAnchors(
+			array               $ranges,
+			?AstInterface       &$whereClause,
+			QueryAnalysisResult $analysis
 		): array {
-			// Early exit for valid states - no processing needed if already optimal
-			if (empty($ranges) || self::hasExistingAnchor($ranges)) {
+			if (empty($ranges)) {
 				return $ranges;
 			}
 			
-			// Build collapsibility predicate - determines which ranges can be safely collapsed
-			// based on NULL handling semantics and conditional usage patterns
-			$canCollapse = self::createCollapseChecker($usedInCond, $hasIsNullInCond, $nonNullableUse);
+			if (self::hasExistingAnchor($ranges)) {
+				return $ranges; // Already optimized
+			}
 			
-			// Find anchor using improved selection logic - prioritizes expression ranges,
-			// then evaluates join types and collapsibility to determine optimal strategy
-			$anchorSelection = self::evaluateAnchorOptions($ranges, $exprRangeNames, $canCollapse);
+			$anchorCandidate = self::selectBestAnchor($ranges, $analysis);
 			
-			if ($anchorSelection === null) {
-				// No viable anchor found - this is now an explicit failure state
-				// rather than silently proceeding with suboptimal query structure
+			if ($anchorCandidate === null) {
 				throw new QuelException("No valid anchor range found for query optimization");
 			}
 			
-			// Execute the selected optimization strategy
-			switch ($anchorSelection['strategy']) {
-				case 'expression_collapsible':
-				case 'outer_collapsible':
-					// Collapse other ranges into WHERE conditions, preserving semantics
-					return self::convertToAnchorRange($ranges, $anchorSelection['index'], $whereClause);
-				
-				case 'expression_inner':
-				case 'inner_preserve':
-					// Promote selected range to anchor without structural changes
-					return self::promoteToAnchor($ranges, $anchorSelection['index']);
-				
-				case 'inner_collapsible':
-					// Inner join that can be collapsed - move conditions to WHERE
-					return self::convertToAnchorRange($ranges, $anchorSelection['index'], $whereClause);
-				
-				default:
-					// Defensive programming - should never reach here with valid input
-					return throw new QuelException("Unknown anchor strategy: {$anchorSelection['strategy']}");
-			}
+			return self::applyAnchorOptimization($ranges, $anchorCandidate, $whereClause);
 		}
 		
 		/**
-		 * Find the optimal anchor range using a comprehensive selection strategy.
-		 * @param AstRange[] $ranges Array of AST ranges to evaluate as potential anchors
-		 * @param string[] $exprRangeNames Corresponding names for expression ranges
-		 * @param callable $canCollapse Callback function to determine if a range can be collapsed
-		 * @return array{index: int, strategy: string, score: int}|null
-		 *         Returns the optimal anchor with its array index, selection strategy used, and
-		 *         priority score, or null if no viable anchor is found
+		 * Find the best table to serve as the query anchor.
 		 */
-		private static function evaluateAnchorOptions(array $ranges, array $exprRangeNames, callable $canCollapse): ?array {
+		private static function selectBestAnchor(array $ranges, QueryAnalysisResult $analysis): ?AnchorCandidate {
 			$candidates = [];
 			
 			foreach ($ranges as $index => $range) {
-				// Assess for viability and assigned a priority score
-				$evaluation = self::scoreRangeForAnchor($range, $index, $exprRangeNames, $canCollapse);
+				$candidate = self::evaluateAsAnchor($range, $index, $analysis);
 				
-				// Only consider ranges that pass the viability check
-				if ($evaluation['viable']) {
-					$candidates[] = $evaluation;
+				if ($candidate->isViable()) {
+					$candidates[] = $candidate;
 				}
 			}
 			
-			// Return null if no ranges meet the anchor criteria
 			if (empty($candidates)) {
 				return null;
 			}
 			
-			// Sort candidates by priority score in descending order
-			// Higher scores indicate more suitable anchor points
-			usort($candidates, fn($a, $b) => $b['score'] <=> $a['score']);
+			// Sort by priority score (highest first)
+			usort($candidates, fn($a, $b) => $b->getPriorityScore() <=> $a->getPriorityScore());
 			
-			// Return the highest-scoring candidate as the optimal anchor
 			return $candidates[0];
 		}
 		
 		/**
-		 * Evaluate a range as a potential anchor.
-		 * @param AstRange $range
-		 * @param int $index
-		 * @param string[] $exprRangeNames
-		 * @param callable $canCollapse
-		 * @return array{index: int, strategy: string, score: int, viable: bool}
+		 * Evaluate whether a table can serve as a good anchor.
 		 */
-		private static function scoreRangeForAnchor(AstRange $range, int $index, array $exprRangeNames, callable $canCollapse): array {
-			// Extract basic range properties for evaluation
-			$rangeName = $range->getName();
-			$joinType = $range->isRequired() ? "INNER" : "LEFT";
-			$isCollapsible = $canCollapse($range);
-			$isExpressionRange = in_array($rangeName, $exprRangeNames, true);
+		private static function evaluateAsAnchor(AstRange $range, int $index, QueryAnalysisResult $analysis): AnchorCandidate {
+			$tableName = $range->getName();
+			$tableUsage = $analysis->getTableUsage($tableName);
 			
-			// Determine if this range can serve as a viable anchor based on join type
-			// INNER joins are always viable as they guarantee result rows
-			// LEFT joins are only viable if the range can be collapsed (optimized away)
-			switch ($joinType) {
-				case 'INNER':
-					// INNER joins guarantee matching rows exist, making them reliable anchors
-					$viable = true;
-					break;
-				
-				case 'LEFT':
-					// LEFT joins may produce NULL results, only viable if collapsible
-					$viable = $isCollapsible;
-					break;
-				
-				default:
-					// Unknown join types cannot be safely used as anchors
-					$viable = false;
-					break;
+			$isInnerJoin = $range->isRequired();
+			$isReferencedInExpressions = $tableUsage->isUsedInSelectExpressions();
+			$canOptimizeJoinConditions = $tableUsage->canSafelyCollapseToInner();
+			
+			// Calculate priority score
+			$priority = 0;
+			
+			if ($isReferencedInExpressions) {
+				$priority += self::PRIORITY_EXPRESSION_REFERENCED;
 			}
 			
-			// Early return for non-viable ranges to avoid unnecessary computation
-			if (!$viable) {
-				return [
-					'index'    => $index,
-					'strategy' => 'rejected',
-					'score'    => -1,
-					'viable'   => false
-				];
+			if ($isInnerJoin) {
+				$priority += self::PRIORITY_INNER_JOIN;
+			} else {
+				$priority += self::PRIORITY_LEFT_JOIN;
 			}
 			
-			// For viable ranges, calculate priority score and determine optimization strategy
-			return [
-				'index'    => $index,
-				'strategy' => self::selectOptimizationStrategy($isExpressionRange, $joinType, $isCollapsible),
-				'score'    => self::computeAnchorPriority($isExpressionRange, $isCollapsible, $joinType),
-				'viable'   => true
-			];
+			if ($canOptimizeJoinConditions) {
+				$priority += self::PRIORITY_COLLAPSIBLE_BONUS;
+			}
+			
+			// Determine optimization strategy
+			$strategy = self::determineOptimizationStrategy(
+				$isReferencedInExpressions,
+				$isInnerJoin,
+				$canOptimizeJoinConditions
+			);
+			
+			return new AnchorCandidate(
+				$index,
+				$range,
+				$priority,
+				$strategy,
+				$isInnerJoin || $canOptimizeJoinConditions  // viable if INNER or optimizable LEFT
+			);
 		}
 		
 		/**
-		 * Calculate priority score for anchor selection.
-		 * Higher scores indicate better anchor candidates.
-		 * @param bool $isExpressionRange
-		 * @param bool $isCollapsible
-		 * @param string $joinType
-		 * @return int
+		 * Determine how to optimize this anchor choice.
 		 */
-		private static function computeAnchorPriority(bool $isExpressionRange, bool $isCollapsible, string $joinType): int {
-			$score = 0;
-			
-			// Primary priority: Expression ranges (they drive the query logic)
-			if ($isExpressionRange) {
-				$score += 1000;
+		private static function determineOptimizationStrategy(
+			bool $isExpressionReferenced,
+			bool $isInnerJoin,
+			bool $canOptimizeJoins
+		): string {
+			if ($isExpressionReferenced) {
+				return $canOptimizeJoins ? 'expression_with_optimization' : 'expression_preserve';
 			}
 			
-			// Secondary priority: Join type preference
-			switch ($joinType) {
-				case 'INNER':
-					$score += 100;
-					break;
-				
-				case 'LEFT':
-					$score += 50;
-					break;
-				
-				case 'RIGHT':
-					$score += 25;
-					break;
-				
-				default:
-					$score += 0;
-					break;
+			if ($isInnerJoin) {
+				return $canOptimizeJoins ? 'inner_with_optimization' : 'inner_preserve';
 			}
 			
-			// Tertiary priority: Collapsibility bonus
-			if ($isCollapsible) {
-				$score += 10;
-			}
-			
-			// Additional scoring factors could be added here:
-			// - Table size estimates
-			// - Index availability
-			// - Selectivity hints
-			return $score;
+			return 'left_optimize_to_inner';
 		}
 		
 		/**
-		 * Determine the strategy used for anchor selection.
-		 * @param bool $isExpressionRange
-		 * @param string $joinType
-		 * @param bool $isCollapsible
-		 * @return string
-		 * @throws QuelException
+		 * Apply the selected anchor optimization to the query.
 		 */
-		private static function selectOptimizationStrategy(bool $isExpressionRange, string $joinType, bool $isCollapsible): string {
-			// Expression ranges have priority over join type
-			if ($isExpressionRange) {
-				return $isCollapsible ? 'expression_collapsible' : 'expression_inner';
-			}
+		private static function applyAnchorOptimization(
+			array           $ranges,
+			AnchorCandidate $anchor,
+			?AstInterface   &$whereClause
+		): array {
+			$strategy = $anchor->getStrategy();
 			
-			// Handle join-based strategies (system supports INNER and LEFT only)
-			return match (strtoupper($joinType)) {
-				'INNER' => $isCollapsible ? 'inner_collapsible' : 'inner_preserve',
-				'LEFT' => 'outer_collapsible', // Collapsible state irrelevant for left joins
-				default => throw new QuelException("Unsupported join type: {$joinType}. Only INNER and LEFT joins are supported.")
-			};
+			if (str_contains($strategy, 'optimization') || str_contains($strategy, 'optimize')) {
+				return self::convertToAnchorWithOptimization($ranges, $anchor, $whereClause);
+			} else {
+				return self::promoteToAnchorWithoutChanges($ranges, $anchor);
+			}
 		}
 		
 		/**
-		 * Collapse other ranges into the anchor range.
-		 * @param array $ranges
-		 * @param int $anchorIndex
-		 * @param AstInterface|null $whereClause
-		 * @return AstRange[]
+		 * Convert selected table to anchor and move JOIN conditions to WHERE clause.
 		 */
-		private static function convertToAnchorRange(array $ranges, int $anchorIndex, ?AstInterface &$whereClause): array {
-			// Fetch the new anchor
-			$anchor = $ranges[$anchorIndex];
+		private static function convertToAnchorWithOptimization(
+			array           $ranges,
+			AnchorCandidate $anchor,
+			?AstInterface   &$whereClause
+		): array {
+			$anchorRange = $ranges[$anchor->getIndex()];
 			
-			// Move the anchor's own JOIN expression to WHERE before clearing it
-			if ($anchor->getJoinProperty() !== null) {
-				$whereClause = self::mergeWhereConditions($whereClause, $anchor->getJoinProperty());
+			// Move the anchor's JOIN condition to WHERE
+			if ($anchorRange->getJoinProperty() !== null) {
+				$whereClause = self::addToWhereClause($whereClause, $anchorRange->getJoinProperty());
+				$anchorRange->setJoinProperty(null);
 			}
 			
-			// Clear the join properties of the anchor
-			$anchor->setJoinProperty(null);
-			
-			// Extract JOIN expressions from collapsed ranges and add to WHERE
+			// Move other tables' JOIN conditions to WHERE
 			foreach ($ranges as $index => $range) {
-				if ($index !== $anchorIndex && $range->getJoinProperty() !== null) {
-					$whereClause = self::mergeWhereConditions($whereClause, $range->getJoinProperty());
+				if ($index !== $anchor->getIndex() && $range->getJoinProperty() !== null) {
+					$whereClause = self::addToWhereClause($whereClause, $range->getJoinProperty());
 				}
 			}
 			
-			// Return the new anchor
-			return [$anchor];
+			return [$anchorRange];  // Return only the anchor
 		}
 		
 		/**
-		 * Combine two expression using an AND operator
-		 * @param AstInterface|null $existing
-		 * @param AstInterface $newCondition
-		 * @return AstInterface
+		 * Simply promote the selected table to anchor without structural changes.
 		 */
-		private static function mergeWhereConditions(?AstInterface $existing, AstInterface $newCondition): AstInterface {
-			// If no existing WHERE clause, the new condition becomes the WHERE clause
-			if ($existing === null) {
-				return $newCondition;
-			}
-			
-			// If there's already a WHERE clause, AND them together
-			return AstFactory::createBinaryAndOperator($existing, $newCondition);
-		}
-		
-		/**
-		 * Promote a range to anchor without collapsing others.
-		 */
-		private static function promoteToAnchor(array $ranges, int $anchorIndex): array {
-			$anchor = $ranges[$anchorIndex];
-			$anchor->setAsAnchor(true);
+		private static function promoteToAnchorWithoutChanges(array $ranges, AnchorCandidate $anchor): array {
+			$ranges[$anchor->getIndex()]->setAsAnchor(true);
 			return $ranges;
 		}
 		
 		/**
-		 * Check if any range already serves as an anchor (has null joinProperty).
-		 * @param AstRange[] $ranges Ranges to check
-		 * @return bool True if an anchor exists
+		 * Add a condition to the WHERE clause using AND logic.
+		 */
+		private static function addToWhereClause(?AstInterface $existing, AstInterface $newCondition): AstInterface {
+			if ($existing === null) {
+				return $newCondition;
+			}
+			
+			return AstFactory::createBinaryAndOperator($existing, $newCondition);
+		}
+		
+		/**
+		 * Check if any table already serves as an anchor.
 		 */
 		private static function hasExistingAnchor(array $ranges): bool {
 			foreach ($ranges as $range) {
@@ -344,52 +216,6 @@
 					return true;
 				}
 			}
-			
 			return false;
-		}
-		
-		/**
-		 * Build a predicate used to check whether a LEFT-joined range can be safely
-		 * collapsed to an INNER join for an aggregate subquery.
-		 *
-		 * Conservative rules:
-		 *  - If the range participates in an explicit IS NULL check -> do NOT collapse.
-		 *  - If the range is used in the condition only via non-nullable fields -> OK to collapse.
-		 *  - If the range is not used in the aggregate condition at all -> OK to collapse.
-		 * Otherwise: do not collapse.
-		 *
-		 * @param array<string,bool> $usedInCond
-		 * @param array<string,bool> $hasIsNullInCond
-		 * @param array<string,bool> $nonNullableUse
-		 * @return callable($range):bool
-		 */
-		private static function createCollapseChecker(array $usedInCond, array $hasIsNullInCond, array $nonNullableUse): callable {
-			return function ($range) use ($usedInCond, $hasIsNullInCond, $nonNullableUse): bool {
-				// Fetch the name of the range
-				$name = $range->getName();
-				
-				// Already INNER — nothing to collapse. Treat as OK.
-				if ($range->isRequired()) {
-					return true;
-				}
-				
-				// If the aggregate condition checks this range for IS NULL, keep it LEFT.
-				if (!empty($hasIsNullInCond[$name])) {
-					return false;
-				}
-				
-				// If conditions reference non-nullable fields on this range, collapsing is safe.
-				if (!empty($nonNullableUse[$name])) {
-					return true;
-				}
-				
-				// If the range is not used in the aggregate's condition at all, collapsing is safe.
-				if (empty($usedInCond[$name])) {
-					return true;
-				}
-				
-				// Otherwise, be conservative.
-				return false;
-			};
 		}
 	}
