@@ -6,9 +6,12 @@
 	 * Contains pre-analyzed information about how tables are used in the query.
 	 */
 	class QueryAnalysisResult {
+		private array $tableUsageMap;
+		
 		public function __construct(
-			private array $tableUsageMap
+			array $tableUsageMap
 		) {
+			$this->tableUsageMap = $tableUsageMap;
 		}
 		
 		public function getTableUsage(string $tableName): TableUsageInfo {

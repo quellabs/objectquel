@@ -62,28 +62,16 @@
 		 * @param array $usedInCond Associative array mapping variable names to boolean usage in conditions
 		 * @return array            Associative array of live ranges keyed by variable name
 		 */
-		public static function computeLiveRanges(array $ranges, array $usedInExpr, array $usedInCond): array {
+		public static function computeLiveRanges(array $ranges, QueryAnalysisResult $analysis): array {
 			$liveRanges = [];
 			
 			foreach ($ranges as $range) {
-				// Extract the variable name from the range object
 				$name = $range->getName();
+				$tableUsage = $analysis->getTableUsage($name);
 				
-				// Check if this variable is used in any expression context
-				// Uses null coalescing operator to default to false if key doesn't exist
-				$exprUsed = $usedInExpr[$name] ?? false;
-				
-				// Check if this variable is used in any conditional context
-				// Uses null coalescing operator to default to false if key doesn't exist
-				$condUsed = $usedInCond[$name] ?? false;
-				
-				// A range is considered "live" if it's used in either expressions OR conditions
-				// This implements the union of both usage types for liveness determination
-				if ($exprUsed || $condUsed) {
-					// Add the live range to our result set, keyed by variable name for quick lookup
+				if ($tableUsage->isUsedInSelectExpressions() || $tableUsage->isUsedInConditions()) {
 					$liveRanges[$name] = $range;
 				}
-				// Note: Variables not used in either context are implicitly dead and excluded
 			}
 			
 			return $liveRanges;
@@ -95,28 +83,22 @@
 		 * to establish join predicates and are not actively used in expressions or conditions.
 		 * @param array $ranges Array of range objects, each having a getName() method
 		 * @param array $joinReferences Array mapping join predicates to their referenced ranges
-		 * @param array $usedInExpr Associative array mapping variable names to boolean usage in expressions
-		 * @param array $usedInCond Associative array mapping variable names to boolean usage in conditions
+		 * @param QueryAnalysisResult $analysis
 		 * @return array            Associative array of correlation-only ranges keyed by variable name
 		 */
-		public static function computeCorrelationOnlyRanges(array $ranges, array $joinReferences, array $usedInExpr, array $usedInCond): array {
+		public static function computeCorrelationOnlyRanges(array $ranges, array $joinReferences, QueryAnalysisResult $analysis): array {
 			$correlationOnly = [];
 			
 			foreach ($ranges as $range) {
-				// Get the range name for lookups in usage arrays
 				$name = $range->getName();
-				
-				// Check if range is used in expressions or conditions (makes it "live")
-				$isExprUsed = $usedInExpr[$name] ?? false;
-				$isCondUsed = $usedInCond[$name] ?? false;
+				$tableUsage = $analysis->getTableUsage($name);
 				
 				// Skip ranges that are actively used in expressions or conditions
-				if ($isExprUsed || $isCondUsed) {
+				if ($tableUsage->isUsedInSelectExpressions() || $tableUsage->isUsedInConditions()) {
 					continue;
 				}
 				
 				// For unused ranges, check if they appear in join predicates
-				// These are correlation-only ranges that exist solely for joins
 				if (self::isRangeUsedInAnyJoinPredicate($name, $ranges, $joinReferences)) {
 					$correlationOnly[$name] = $range;
 				}
