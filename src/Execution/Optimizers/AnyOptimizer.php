@@ -10,7 +10,9 @@
 	use Quellabs\ObjectQuel\Execution\Support\AstUtilities;
 	use Quellabs\ObjectQuel\Execution\Support\JoinPredicateProcessor;
 	use Quellabs\ObjectQuel\Execution\Support\AnchorManager;
+	use Quellabs\ObjectQuel\Execution\Support\QueryAnalysisResult;
 	use Quellabs\ObjectQuel\Execution\Support\RangePartitioner;
+	use Quellabs\ObjectQuel\Execution\Support\TableUsageInfo;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstAny;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstNumber;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRange;
@@ -132,14 +134,13 @@
 			$ranges = $this->cloneQueryRanges($ast);
 			
 			// ── Step 1: Usage analysis (one pass).
+			$usage = $this->analyzer->analyze($node, $ranges);
+			
 			//     The analyzer returns four boolean maps keyed by range name.
 			//     We rely on these maps for decisions.
 			/** @var array{usedInExpr:array<string,bool>, usedInCond:array<string,bool>, hasIsNullInCond:array<string,bool>, nonNullableUse:array<string,bool>} $usage */
-			$usage = $this->analyzer->analyze($node, $ranges);
 			$usedInExpr = $usage['usedInExpr'];            // Is range referenced in ANY(expr) ?
 			$usedInCond = $usage['usedInCond'];            // Is range referenced in ANY(WHERE ...) ?
-			$hasIsNullInCond = $usage['hasIsNullInCond'];  // Does ANY(WHERE ...) rely on IS NULL for this range ?
-			$nonNullableUse = $usage['nonNullableUse'];    // Are references only on non-nullable fields ?
 			
 			// ── Step 2: Compute which JOIN(k) predicates reference which ranges.
 			//            This allows us to tell if a range is used only via other JOINs (correlation-only).
@@ -175,14 +176,24 @@
 			
 			// ── Step 8: Ensure exactly one anchor (joinProperty == null).
 			//     We try to anchor a range used in expr, else any INNER, else collapse a safe LEFT.
-			$keptRanges = AnchorManager::configureRangeAnchors(
-				$keptRanges,
-				$finalWhere,
-				$usedInExpr,
-				$usedInCond,
-				$hasIsNullInCond,
-				$nonNullableUse
+			$analysis = new QueryAnalysisResult(
+				array_map(
+					fn($tableName) => new TableUsageInfo(
+						!empty($usage['usedInExpr'][$tableName]),
+						!empty($usage['usedInCond'][$tableName]),
+						!empty($usage['hasIsNullInCond'][$tableName]),
+						!empty($usage['nonNullableUse'][$tableName])
+					),
+					array_unique(array_merge(
+						array_keys($usage['usedInExpr']),
+						array_keys($usage['usedInCond']),
+						array_keys($usage['hasIsNullInCond']),
+						array_keys($usage['nonNullableUse'])
+					))
+				)
 			);
+			
+			$keptRanges = AnchorManager::configureRangeAnchors($keptRanges, $finalWhere, $analysis);
 			
 			// ── Step 9: Replace ANY(...) with the chosen subquery form.
 			if ($this->canUseInlinedAnyOptimization($subQueryType, $finalWhere, $keptRanges, $ast, $node)) {
