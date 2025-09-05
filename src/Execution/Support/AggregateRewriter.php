@@ -2,30 +2,23 @@
 
 	namespace Quellabs\ObjectQuel\Execution\Support;
 	
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstAggregate;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRange;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRetrieve;
-	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstSubquery;
-	use Quellabs\ObjectQuel\ObjectQuel\AstInterface;
 	
 	class AggregateRewriter {
 		
 		/**
 		 * Replace an aggregate node with a window-function node.
-		 * @param AstInterface $aggregate Aggregate node to replace
+		 * @param AstAggregate $aggregate Aggregate node to replace
 		 * @return void
 		 */
-		public static function rewriteAggregateAsWindowFunction(AstInterface $aggregate): void {
+		public static function rewriteAggregateAsWindowFunction(AstAggregate $aggregate): void {
 			// Clone the aggregate node and clear the conditions
-			$cleanAgg = self::cloneAggregateWithoutConditions($aggregate);
+			$cleanAgg = AggregateCloner::cloneWithoutConditions($aggregate);
 			
 			// Create a new subquery node that replaces the original aggregate
-			$windowFn = new AstSubquery(
-				AstSubquery::TYPE_WINDOW,
-				$cleanAgg,
-				[],
-				null,
-				$aggregate->getType(),
-			);
+			$windowFn = SubqueryFactory::createWindowFunction($cleanAgg, $aggregate->getType());
 			
 			// Replace the aggregate with the new version
 			AstNodeReplacer::replaceChild($aggregate->getParent(), $aggregate, $windowFn);
@@ -35,8 +28,11 @@
 		 * Rewrites an aggregate expression as a correlated subquery.
 		 * This is typically done to handle aggregates that can't be processed in the main query,
 		 * such as aggregates with different grouping or filtering requirements.
+		 * @param AstRetrieve $root
+		 * @param AstAggregate $aggregate
+		 * @return void
 		 */
-		public static function rewriteAggregateAsCorrelatedSubquery(AstRetrieve $root, AstInterface $aggregate): void {
+		public static function rewriteAggregateAsCorrelatedSubquery(AstRetrieve $root, AstAggregate $aggregate): void {
 			// Collect all range references (table/alias references) used within the aggregate expression
 			// This includes any tables or aliases that the aggregate depends on
 			$aggRanges = RangeUtilities::collectRangesFromNode($aggregate);
@@ -60,31 +56,18 @@
 			
 			// Create a clean version of the aggregate without its conditions
 			// The conditions will be moved to the subquery's WHERE clause instead
-			$cleanAgg = self::cloneAggregateWithoutConditions($aggregate);
+			$cleanAgg = AggregateCloner::cloneWithoutConditions($aggregate);
 			
 			// Construct the correlated scalar subquery
-			// TYPE_SCALAR indicates this subquery returns a single value (typical for aggregates)
-			$subquery = new AstSubquery(
-				AstSubquery::TYPE_SCALAR,        // Subquery type - returns single scalar value
-				$cleanAgg,                       // The aggregate expression (without conditions)
-				$clonedRanges,                   // Table ranges for correlation
-				$subWhere,                       // WHERE conditions moved from aggregate
-				$aggregate->getType(),           // Preserve the original aggregate's data type
+			$subquery = SubqueryFactory::createCorrelatedScalar(
+				$cleanAgg,
+				$clonedRanges,
+				$subWhere,
+				$aggregate->getType()
 			);
 			
 			// Replace the original aggregate node with the new subquery in the AST
 			// This maintains the query structure while changing the execution strategy
 			AstNodeReplacer::replaceChild($aggregate->getParent(), $aggregate, $subquery);
-		}
-		
-		/**
-		 * Deep-clone an aggregate and drop embedded conditions.
-		 * @param AstInterface $aggregate Aggregate to clone
-		 * @return AstInterface Clean clone without conditions
-		 */
-		public static function cloneAggregateWithoutConditions(AstInterface $aggregate): AstInterface {
-			$clone = $aggregate->deepClone();
-			$clone->setConditions(null);
-			return $clone;
 		}
 	}
