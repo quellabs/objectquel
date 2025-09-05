@@ -2,6 +2,7 @@
 	
 	namespace Quellabs\ObjectQuel\Execution\Support;
 	
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstAggregate;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstAny;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstAvg;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstAvgU;
@@ -119,14 +120,6 @@
 		}
 		
 		/**
-		 * @param AstInterface $expr
-		 * @return bool True if $expr is one of the supported aggregate classes
-		 */
-		public static function isAggregateExpression(AstInterface $expr): bool {
-			return in_array(get_class($expr), AggregateConstants::AGGREGATE_NODE_TYPES, true);
-		}
-		
-		/**
 		 * Collect all ANY nodes under the retrieve AST in one pass.
 		 * @param AstRetrieve $ast Root query AST
 		 * @return AstAny[] Array of ANY nodes found
@@ -143,8 +136,11 @@
 		 * @return bool
 		 */
 		public static function areAllSelectFieldsAggregates(AstRetrieve $root): bool {
-			foreach($root->getValues() as $value) {
-				if (!AstUtilities::isAggregateExpression($value->getExpression())) {
+			foreach ($root->getValues() as $value) {
+				if (
+					!$value->getExpression() instanceof AstAggregate ||
+					$value->getExpression() instanceof AstAny
+				) {
 					return false;
 				}
 			}
@@ -161,7 +157,10 @@
 			$result = [];
 			
 			foreach ($root->getValues() as $selectItem) {
-				if (!AstUtilities::isAggregateExpression($selectItem->getExpression())) {
+				if (
+					!$selectItem->getExpression() instanceof AstAggregate ||
+					$selectItem->getExpression() instanceof AstAny
+				) {
 					$result[] = $selectItem;
 				}
 			}
