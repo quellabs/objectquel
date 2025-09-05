@@ -11,7 +11,7 @@
 	use Quellabs\ObjectQuel\Execution\Support\JoinPredicateProcessor;
 	use Quellabs\ObjectQuel\Execution\Support\QueryAnalysisResult;
 	use Quellabs\ObjectQuel\Execution\Support\RangePartitioner;
-	use Quellabs\ObjectQuel\Execution\Support\TableUsageInfo;
+	use Quellabs\ObjectQuel\Execution\Support\RangeUsageAnalyzer;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstAny;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRange;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRetrieve;
@@ -170,7 +170,6 @@
 			// Only at this point do we modify the original tree structure
 			$this->applyOptimization($ast, $node, $subQueryType, $optimizedSubquery);
 		}
-
 		
 		/**
 		 * Build the optimized subquery structure through a series of transformation steps.
@@ -186,6 +185,7 @@
 		 * @param AstAny $node The ANY node being optimized
 		 * @param QueryAnalysisResult $analysis Structured usage analysis
 		 * @return array [optimized_ranges, final_where_clause]
+		 * @throws QuelException
 		 */
 		private function buildOptimizedSubquery(array $ranges, AstAny $node, QueryAnalysisResult $analysis): array {
 			// Step 2: Compute JOIN cross-references
