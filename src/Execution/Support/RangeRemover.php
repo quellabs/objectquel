@@ -86,7 +86,7 @@
 			$existingWhere = $root->getConditions();
 			
 			if ($existingWhere) {
-				$newWhere = new AstBinaryOperator($existingWhere, $joinPredicate, 'AND');
+				$newWhere = AstFactory::createBinaryAndOperator($existingWhere, $joinPredicate);
 			} else {
 				$newWhere = $joinPredicate;
 			}

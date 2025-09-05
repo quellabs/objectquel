@@ -64,16 +64,15 @@
 					$rebasedWhere = self::rebindPredicateToClone($hostJoin, $refRange, $clonedRef);
 					
 					// Create EXISTS subquery with dummy SELECT 1
-					$exists = new AstSubquery(
-						AstSubquery::TYPE_EXISTS,
-						new AstNumber(1),
+					$exists = AstExpressionFactory::createExists(
+						AstFactory::createNumber(1),
 						[$clonedRef],
 						$rebasedWhere
 					);
 					
 					// Add EXISTS to outer WHERE clause
 					if ($outerWhere) {
-						$root->setConditions(new AstBinaryOperator($outerWhere, $exists, 'AND'));
+						$root->setConditions(AstFactory::createBinaryAndOperator($outerWhere, $exists));
 					} else {
 						$root->setConditions($exists);
 					}
@@ -143,7 +142,7 @@
 				}
 				
 				// Create new AND node with potentially rewritten children
-				return new AstBinaryOperator($l, $r, 'AND');
+				return AstFactory::createBinaryAndOperator($l, $r);
 			}
 			
 			// Handle EXISTS subqueries: attempt to simplify self-join patterns
@@ -361,7 +360,7 @@
 				if ($notNullChain === null) {
 					$notNullChain = $notNullCheck;
 				} else {
-					$notNullChain = new AstBinaryOperator($notNullChain, $notNullCheck, 'AND');
+					$notNullChain = AstFactory::createBinaryAndOperator($notNullChain, $notNullCheck);
 				}
 			}
 			

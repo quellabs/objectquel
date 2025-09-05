@@ -18,7 +18,7 @@
 			$cleanAgg = AggregateCloner::cloneWithoutConditions($aggregate);
 			
 			// Create a new subquery node that replaces the original aggregate
-			$windowFn = SubqueryFactory::createWindowFunction($cleanAgg, $aggregate->getType());
+			$windowFn = AstExpressionFactory::createWindowFunction($cleanAgg, $aggregate->getType());
 			
 			// Replace the aggregate with the new version
 			AstNodeReplacer::replaceChild($aggregate->getParent(), $aggregate, $windowFn);
@@ -59,7 +59,7 @@
 			$cleanAgg = AggregateCloner::cloneWithoutConditions($aggregate);
 			
 			// Construct the correlated scalar subquery
-			$subquery = SubqueryFactory::createCorrelatedScalar(
+			$subquery = AstExpressionFactory::createCorrelatedScalar(
 				$cleanAgg,
 				$clonedRanges,
 				$subWhere,

@@ -4,6 +4,8 @@
 	
 	use Quellabs\ObjectQuel\EntityManager;
 	use Quellabs\ObjectQuel\EntityStore;
+	use Quellabs\ObjectQuel\Execution\Support\AstExpressionFactory;
+	use Quellabs\ObjectQuel\Execution\Support\AstFactory;
 	use Quellabs\ObjectQuel\Execution\Support\AstNodeReplacer;
 	use Quellabs\ObjectQuel\Execution\Support\AstUtilities;
 	use Quellabs\ObjectQuel\Execution\Support\JoinPredicateProcessor;
@@ -15,6 +17,7 @@
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRetrieve;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstSubquery;
 	use Quellabs\ObjectQuel\ObjectQuel\AstInterface;
+	use Quellabs\ObjectQuel\ObjectQuel\QuelException;
 	
 	/**
 	 * ──────────────────────────────────────────────────────────────────────────────
@@ -122,6 +125,7 @@
 		 * @param AstAny $node ANY node to rewrite.
 		 * @param string $subQueryType Subquery type (EXISTS | CASE WHEN).
 		 * @return void
+		 * @throws QuelException
 		 */
 		private function optimizeAnyNode(AstRetrieve $ast, AstAny $node, string $subQueryType): void {
 			// ── Step 0: Work on cloned ranges so we don't mutate the original AST until the end.
@@ -230,7 +234,7 @@
 			AstNodeReplacer::replaceChild(
 				$node->getParent(),
 				$node,
-				new AstNumber(1)
+				AstFactory::createNumber(1)
 			);
 			
 			if ($ast->getWindow() === null) {
@@ -248,14 +252,12 @@
 		 * @return void
 		 */
 		private function replaceAnyWithSubquery(string $subQueryType, array $correlatedRanges, ?AstInterface $conditions, AstAny $node): void {
-			$subQuery = new AstSubquery(
-				$subQueryType,
-				null,
-				$correlatedRanges,
-				$conditions,
-				"ANY"
-			);
-			
+			if ($subQueryType === AstSubquery::TYPE_CASE_WHEN) {
+				$subQuery = AstExpressionFactory::createCaseWhen($correlatedRanges, $conditions,"ANY");
+			} else {
+				$subQuery = AstExpressionFactory::createExists(AstFactory::createNumber(1), $correlatedRanges, $conditions,"ANY");
+			}
+
 			AstNodeReplacer::replaceChild($node->getParent(), $node, $subQuery);
 		}
 		
