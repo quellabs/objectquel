@@ -10,13 +10,24 @@
 	 * Represents a table that could potentially serve as the query anchor.
 	 */
 	class AnchorCandidate {
+		private int $index;
+		private AstRange $range;
+		private int $priorityScore;
+		private string $strategy;
+		private bool $viable;
+		
 		public function __construct(
-			private int      $index,
-			private AstRange $range,
-			private int      $priorityScore,
-			private string   $strategy,
-			private bool     $viable
+			int      $index,
+			AstRange $range,
+			int      $priorityScore,
+			string   $strategy,
+			bool     $viable
 		) {
+			$this->viable = $viable;
+			$this->strategy = $strategy;
+			$this->priorityScore = $priorityScore;
+			$this->range = $range;
+			$this->index = $index;
 		}
 		
 		public function getIndex(): int {

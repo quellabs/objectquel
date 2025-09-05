@@ -3,6 +3,8 @@
 	namespace Quellabs\ObjectQuel\Execution\Optimizers;
 	
 	use Quellabs\ObjectQuel\EntityStore;
+	use Quellabs\ObjectQuel\Execution\Support\QueryAnalysisResult;
+	use Quellabs\ObjectQuel\Execution\Support\TableUsageInfo;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstAny;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstBinaryOperator;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstCheckNull;
@@ -79,17 +81,9 @@
 		 *
 		 * @param AstAny $any The ANY(...) AST node to analyze.
 		 * @param AstRange[] $ranges Ordered list of ranges declared for this ANY.
-		 *
-		 * @return array{
-		 *   usedInExpr: array<string,bool>,
-		 *   usedInCond: array<string,bool>,
-		 *   hasIsNullInCond: array<string,bool>,
-		 *   nonNullableUse: array<string,bool>
-		 * } A shape of boolean maps, one entry per provided range name.
-		 *
-		 * @phpstan-return RangeUsageMap
+		 * @return QueryAnalysisResult A shape of boolean maps, one entry per provided range name.
 		 */
-		public function analyze(AstAny $any, array $ranges): array {
+		public function analyze(AstAny $any, array $ranges): QueryAnalysisResult {
 			// Build an ordered list of range names so that we can pre-seed all maps
 			// with false and only flip to true when we detect usage.
 			$names = array_map(
@@ -134,7 +128,50 @@
 			}
 			
 			// Compact to keep return statement concise and keyed exactly as documented.
-			return compact('usedInExpr', 'usedInCond', 'hasIsNullInCond', 'nonNullableUse');
+			return $this->createAnalysisFromUsage(
+				compact('usedInExpr', 'usedInCond', 'hasIsNullInCond', 'nonNullableUse')
+			);
+		}
+		
+		/**
+		 * Convert usage analysis arrays into a structured analysis object.
+		 *
+		 * The RangeUsageAnalyzer returns raw arrays mapping table names to boolean flags.
+		 * This method converts that into a more structured QueryAnalysisResult object
+		 * that contains TableUsageInfo objects for easier manipulation.
+		 *
+		 * The four usage flags are:
+		 * - usedInExpr: table is referenced in the ANY expression itself
+		 * - usedInCond: table is referenced in WHERE conditions
+		 * - hasIsNullInCond: table has IS NULL checks (affects LEFT JOIN safety)
+		 * - nonNullableUse: table is used in a way that requires non-null values
+		 *
+		 * @param array $usage Raw usage analysis from RangeUsageAnalyzer
+		 * @return QueryAnalysisResult Structured analysis object
+		 */
+		private function createAnalysisFromUsage(array $usage): QueryAnalysisResult {
+			$tableUsageMap = [];
+			
+			// Collect all table names mentioned in any usage category
+			// This ensures we don't miss tables that appear in only one category
+			$allTableNames = array_unique(array_merge(
+				array_keys($usage['usedInExpr'] ?? []),
+				array_keys($usage['usedInCond'] ?? []),
+				array_keys($usage['hasIsNullInCond'] ?? []),
+				array_keys($usage['nonNullableUse'] ?? [])
+			));
+			
+			// Create structured TableUsageInfo objects for each table
+			foreach ($allTableNames as $tableName) {
+				$tableUsageMap[$tableName] = new TableUsageInfo(
+					!empty($usage['usedInExpr'][$tableName]),     // Convert to boolean
+					!empty($usage['usedInCond'][$tableName]),     // Handle missing keys safely
+					!empty($usage['hasIsNullInCond'][$tableName]),
+					!empty($usage['nonNullableUse'][$tableName])
+				);
+			}
+			
+			return new QueryAnalysisResult($tableUsageMap);
 		}
 		
 		/**

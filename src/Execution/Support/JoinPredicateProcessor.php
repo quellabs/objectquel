@@ -16,6 +16,41 @@
 	 */
 	class JoinPredicateProcessor {
 		
+		private array $liveRanges;
+		private array $correlationOnlyRanges;
+		
+		public function __construct(
+			array $liveRanges,
+			array $correlationOnlyRanges
+		) {
+			$this->correlationOnlyRanges = $correlationOnlyRanges;
+			$this->liveRanges = $liveRanges;
+		}
+		
+		public function buildUpdatedRanges(array $allRanges): array {
+			$liveRangeNames = array_keys($this->liveRanges);
+			$correlationRangeNames = array_keys($this->correlationOnlyRanges);
+			
+			return self::buildUpdatedRangesWithInnerJoinsOnly(
+				$allRanges,
+				$this->liveRanges,
+				$liveRangeNames,
+				$correlationRangeNames
+			);
+		}
+		
+		public function gatherPromotedPredicates(array $allRanges): array {
+			$liveRangeNames = array_keys($this->liveRanges);
+			$correlationRangeNames = array_keys($this->correlationOnlyRanges);
+			
+			return self::gatherCorrelationOnlyPredicatesFromJoins(
+				$allRanges,
+				$this->liveRanges,
+				$liveRangeNames,
+				$correlationRangeNames
+			);
+		}
+		
 		/**
 		 * For each live range, keep only the inner-related part of its JOIN predicate.
 		 * The input array is copied before mutation.
@@ -33,7 +68,7 @@
 		 * @param string[] $correlationRangeNames Names of ranges from outer query contexts
 		 * @return AstRange[] Updated ranges with JOINs stripped of correlation-only parts
 		 */
-		public static function buildUpdatedRangesWithInnerJoinsOnly(
+		private static function buildUpdatedRangesWithInnerJoinsOnly(
 			array $allRanges,
 			array $liveRanges,
 			array $liveRangeNames,
@@ -92,7 +127,7 @@
 		 * @param string[] $correlationRangeNames Names of ranges from outer query contexts
 		 * @return AstInterface[] Correlation-only predicates to promote to WHERE clause
 		 */
-		public static function gatherCorrelationOnlyPredicatesFromJoins(
+		private static function gatherCorrelationOnlyPredicatesFromJoins(
 			array $allRanges,
 			array $liveRanges,
 			array $liveRangeNames,
@@ -378,9 +413,9 @@
 		 * @param AstInterface[] $predicates Array of predicates to combine
 		 * @return AstInterface|null Combined predicate or null if no valid predicates
 		 */
-		public static function combinePredicatesWithOr(array $predicates): ?AstInterface {
+		private static function combinePredicatesWithOr(array $predicates): ?AstInterface {
 			// Filter out null predicates
-			$validPredicates = array_filter($predicates, function($predicate) {
+			$validPredicates = array_filter($predicates, function ($predicate) {
 				return $predicate !== null;
 			});
 			
