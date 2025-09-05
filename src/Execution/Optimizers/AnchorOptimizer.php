@@ -28,7 +28,7 @@
 		// Priority scores for anchor selection (higher = better)
 		private const int PRIORITY_EXPRESSION_REFERENCED = 1000;  // Table used in SELECT expressions
 		private const int PRIORITY_INNER_JOIN = 100;              // INNER JOIN (guaranteed rows)
-		private const int PRIORITY_LEFT_JOIN = 50;                // LEFT JOIN (possible NULLs)
+		private const int PRIORITY_ORIGINAL_ANCHOR = 200;         // Stability bonus for keeping current anchor
 		private const int PRIORITY_COLLAPSIBLE_BONUS = 10;        // Can optimize JOIN conditions
 		
 		/**
@@ -54,11 +54,6 @@
 			// Early return for empty queries - nothing to optimize
 			if (empty($ranges)) {
 				return $ranges;
-			}
-			
-			// Skip optimization if already has an anchor (FROM table without JOIN)
-			if (self::hasExistingAnchor($ranges)) {
-				return $ranges; // Already optimized
 			}
 			
 			// Find the best table to serve as the primary anchor
@@ -88,17 +83,18 @@
 		private static function selectBestAnchor(array $ranges, QueryAnalysisResult $analysis): ?AnchorCandidate {
 			$candidates = [];
 			
-			// Evaluate each table as a potential anchor
 			foreach ($ranges as $index => $range) {
+				// Evaluate the potential anchor
 				$candidate = self::evaluateAsAnchor($range, $index, $analysis);
 				
-				// Only consider tables that can actually serve as anchors
+				// If viable add it to the list
 				if ($candidate->isViable()) {
 					$candidates[] = $candidate;
 				}
 			}
 			
 			// No viable anchors found - query structure issue
+			// Should never happen, because parser enforces correct structure
 			if (empty($candidates)) {
 				return null;
 			}
@@ -106,6 +102,7 @@
 			// Select highest priority candidate (best optimization potential)
 			usort($candidates, fn($a, $b) => $b->getPriorityScore() <=> $a->getPriorityScore());
 			
+			// Return the best match
 			return $candidates[0];
 		}
 		
@@ -128,11 +125,17 @@
 		 * @return AnchorCandidate Evaluation result with priority and strategy
 		 */
 		private static function evaluateAsAnchor(AstRange $range, int $index, QueryAnalysisResult $analysis): AnchorCandidate {
+			// Tables with JOIN conditions that are not required (LEFT JOINs)
+			// cannot be anchors - this would change query semantics
+			if ($range->getJoinProperty() !== null && !$range->isRequired()) {
+				return new AnchorCandidate($index, $range, 0, 'left_join_not_viable', false);
+			}
+			
 			$tableName = $range->getName();
 			$tableUsage = $analysis->getTableUsage($tableName);
 			
 			// Analyze table characteristics
-			$isInnerJoin = $range->isRequired();              // INNER JOIN guarantees rows
+			$isOriginalAnchor = ($range->getJoinProperty() === null);
 			$isReferencedInExpressions = $tableUsage->isUsedInSelectExpressions(); // Used in SELECT
 			$canOptimizeJoinConditions = $tableUsage->canSafelyCollapseToInner();   // Optimization safe
 			
@@ -145,12 +148,11 @@
 				$priority += self::PRIORITY_EXPRESSION_REFERENCED;
 			}
 			
-			// INNER JOINs are preferred anchors because they guarantee row existence
-			if ($isInnerJoin) {
-				$priority += self::PRIORITY_INNER_JOIN;
+			// Original anchor gets stability bonus, INNER JOINs get standard priority
+			if ($isOriginalAnchor) {
+				$priority += self::PRIORITY_ORIGINAL_ANCHOR;
 			} else {
-				// LEFT JOINs can be anchors but are less optimal due to NULL handling
-				$priority += self::PRIORITY_LEFT_JOIN;
+				$priority += self::PRIORITY_INNER_JOIN;
 			}
 			
 			// Bonus for tables where JOIN conditions can be safely optimized
@@ -161,7 +163,6 @@
 			// Determine the optimization strategy based on characteristics
 			$strategy = self::determineOptimizationStrategy(
 				$isReferencedInExpressions,
-				$isInnerJoin,
 				$canOptimizeJoinConditions
 			);
 			
@@ -171,7 +172,7 @@
 				$range,
 				$priority,
 				$strategy,
-				$isInnerJoin || $canOptimizeJoinConditions  // viable if INNER or optimizable LEFT
+				true  // viable if INNER or original anchor
 			);
 		}
 		
@@ -193,13 +194,11 @@
 		 * - Must preserve NULL semantics if conversion unsafe
 		 *
 		 * @param bool $isExpressionReferenced Table used in SELECT expressions
-		 * @param bool $isInnerJoin Table has INNER JOIN semantics
 		 * @param bool $canOptimizeJoins Safe to collapse JOIN conditions
 		 * @return string Strategy identifier for optimization phase
 		 */
 		private static function determineOptimizationStrategy(
 			bool $isExpressionReferenced,
-			bool $isInnerJoin,
 			bool $canOptimizeJoins
 		): string {
 			// Expression-referenced tables get priority treatment
@@ -207,13 +206,8 @@
 				return $canOptimizeJoins ? 'expression_with_optimization' : 'expression_preserve';
 			}
 			
-			// INNER JOINs can often be optimized
-			if ($isInnerJoin) {
-				return $canOptimizeJoins ? 'inner_with_optimization' : 'inner_preserve';
-			}
-			
-			// LEFT JOINs: attempt conversion to INNER for performance
-			return 'left_optimize_to_inner';
+			// Non-expression tables: attempt optimization if safe
+			return $canOptimizeJoins ? 'inner_with_optimization' : 'inner_preserve';
 		}
 		
 		/**
@@ -265,7 +259,7 @@
 		 * @param AstRange[] $ranges Original table references
 		 * @param AnchorCandidate $anchor Selected anchor candidate
 		 * @param AstInterface|null &$whereClause WHERE clause to extend
-		 * @return AstRange[] Array containing only the anchor table
+		 * @return AstRange[] Array containing all tables with optimized structure
 		 */
 		private static function convertToAnchorWithOptimization(
 			array           $ranges,
@@ -289,9 +283,9 @@
 				}
 			}
 			
-			// Return only the anchor - other tables become implicit cross-product
+			// Return all ranges - other tables become implicit cross-product
 			// Database will optimize JOIN order based on WHERE conditions
-			return [$anchorRange];
+			return $ranges;
 		}
 		
 		/**
