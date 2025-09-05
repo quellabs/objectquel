@@ -338,17 +338,63 @@
 		 * @return void
 		 */
 		private function replaceAnyWithSubquery(string $subQueryType, array $correlatedRanges, ?AstInterface $conditions, AstAny $node): void {
-			// Generate the appropriate subquery type
-			if ($subQueryType === AstSubquery::TYPE_CASE_WHEN) {
-				// For SELECT context: CASE WHEN EXISTS(...) THEN 1 ELSE 0 END
-				$subQuery = AstExpressionFactory::createCaseWhen($correlatedRanges, $conditions, "ANY");
-			} else {
-				// For WHERE context: EXISTS(SELECT 1 FROM ... WHERE ...)
-				$subQuery = AstExpressionFactory::createExists(AstFactory::createNumber(1), $correlatedRanges, $conditions, "ANY");
+			// Replace with literal true/1 since anchor existence is guaranteed
+			if ($this->isAnyOnAnchorWithNoConditions($correlatedRanges, $conditions, $node)) {
+				$subQuery = AstFactory::createNumber(1);
+				AstNodeReplacer::replaceChild($node->getParent(), $node, $subQuery);
+				return;
 			}
 			
-			// Replace the original ANY node with the generated subquery
+			// For SELECT context: CASE WHEN EXISTS(...) THEN 1 ELSE 0 END
+			if ($subQueryType === AstSubquery::TYPE_CASE_WHEN) {
+				$subQuery = AstExpressionFactory::createCaseWhen($correlatedRanges, $conditions, "ANY");
+				AstNodeReplacer::replaceChild($node->getParent(), $node, $subQuery);
+				return;
+			}
+			
+			// For WHERE context: EXISTS(SELECT 1 FROM ... WHERE ...)
+			$subQuery = AstExpressionFactory::createExists(AstFactory::createNumber(1), $correlatedRanges, $conditions, "ANY");
 			AstNodeReplacer::replaceChild($node->getParent(), $node, $subQuery);
+		}
+		
+		/**
+		 * Detects if an ANY() subquery references only the anchor table with no filtering conditions.
+		 *
+		 * This optimization check identifies cases where ANY(subquery) can be simplified because:
+		 * - The subquery only references the main (anchor) table
+		 * - No WHERE conditions filter the results
+		 * - No JOINs introduce additional tables
+		 *
+		 * In such cases, ANY() becomes redundant since it's just checking if the anchor table
+		 * has any rows, which is already guaranteed by the outer query context.
+		 *
+		 * @param array $correlatedRanges Available table ranges in the subquery scope
+		 * @param ?AstInterface $conditions WHERE clause conditions (null if none)
+		 * @param AstAny $node The ANY() AST node being analyzed
+		 * @return bool True if this is a simplifiable ANY() on anchor with no conditions
+		 */
+		private function isAnyOnAnchorWithNoConditions(array $correlatedRanges, ?AstInterface $conditions, AstAny $node): bool {
+			// Must have no WHERE conditions
+			if ($conditions !== null) {
+				return false;
+			}
+			
+			// Must have exactly one range (the anchor)
+			if (count($correlatedRanges) !== 1) {
+				return false;
+			}
+			
+			// Anchor must not have JOIN conditions
+			$anchorRange = $correlatedRanges[0];
+			
+			if ($anchorRange->getJoinProperty() !== null) {
+				return false;
+			}
+			
+			// If we got here: single anchor range, no conditions, no JOINs
+			// This means ANY() must be referencing the anchor table
+			// (because that's the only table available in the subquery)
+			return true;
 		}
 		
 		/**

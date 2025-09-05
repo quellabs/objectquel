@@ -5,9 +5,6 @@
 	/**
 	 * Information about how a specific table is used in the query.
 	 */
-	/**
-	 * Information about how a specific table is used in the query.
-	 */
 	class TableUsageInfo {
 		private bool $usedInSelectExpressions = false;
 		private bool $usedInConditions = false;
