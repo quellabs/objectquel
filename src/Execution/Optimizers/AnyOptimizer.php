@@ -134,40 +134,28 @@
 		
 		/**
 		 * Perform the full ANY(...) rewrite for a single node.
-		 *
-		 * This is the core optimization pipeline that transforms ANY(...) constructs into
-		 * efficient subqueries. The method follows a strict sequence to ensure correctness:
-		 *
-		 * 1. Work on cloned data to avoid side effects
-		 * 2. Analyze usage patterns to understand dependencies
-		 * 3. Build optimized subquery structure
-		 * 4. Apply the transformation to the original AST
-		 *
-		 * The method is intentionally kept as a sequence of small, well-commented steps
-		 * to maintain readability and debuggability.
-		 *
 		 * @param AstRetrieve $ast Root AST.
 		 * @param AstAny $node ANY node to rewrite.
 		 * @param string $subQueryType Subquery type (EXISTS | CASE WHEN).
 		 * @return void
+		 * @throws QuelException
 		 */
 		private function optimizeAnyNode(AstRetrieve $ast, AstAny $node, string $subQueryType): void {
 			// Step 0: Work on cloned ranges to avoid mutating the original tree
 			// This ensures we can safely experiment with optimizations without side effects
 			$ranges = $this->cloneQueryRanges($ast);
 			
-			// Step 1: Usage analysis - convert raw analyzer output to structured object
+			// Step 1: Usage analysis
 			// The analyzer determines which tables are actually used and how they're used,
 			// which is critical for deciding what can be safely optimized
 			$analysis = $this->analyzer->analyze($node, $ranges);
 			
-			// Steps 2-8: Build optimized subquery using clean pipeline
+			// Steps 2: Build optimized subquery using clean pipeline
 			// This encapsulates all the complex logic for range partitioning,
 			// JOIN predicate processing, and anchor configuration
 			$optimizedSubquery = $this->buildOptimizedSubquery($ranges, $node, $analysis);
 			
-			// Step 9: Apply the optimization to the original AST
-			// Only at this point do we modify the original tree structure
+			// Step 3: Apply the optimization to the original AST
 			$this->applyOptimization($ast, $node, $subQueryType, $optimizedSubquery);
 		}
 		
@@ -260,11 +248,6 @@
 		
 		/**
 		 * Deep clone of the query ranges for safe, local mutations.
-		 *
-		 * We need to work on copies of the ranges to avoid side effects during
-		 * the optimization process. Only after we've determined the final optimized
-		 * structure do we modify the original AST.
-		 *
 		 * @param AstRetrieve $ast Root query AST
 		 * @return AstRange[] Cloned ranges array
 		 */
@@ -300,10 +283,10 @@
 		 */
 		private function canUseInlinedAnyOptimization(string $subQueryType, ?AstInterface $finalWhere, array $keptRanges, AstRetrieve $ast, AstAny $node): bool {
 			return
-				$subQueryType === AstSubquery::TYPE_CASE_WHEN  // Must be in SELECT context
-				&& $finalWhere === null                        // No WHERE conditions
-				&& count($keptRanges) === 1                   // Single table only
-				&& $this->isAnyNodeInSelectClause($ast, $node); // Direct SELECT projection
+				$subQueryType === AstSubquery::TYPE_CASE_WHEN &&   // Must be in SELECT context
+				$finalWhere === null &&                            // No WHERE conditions
+				count($keptRanges) === 1 &&                        // Single table only
+				$this->isAnyNodeInSelectClause($ast, $node);       // Direct SELECT projection
 		}
 		
 		/**

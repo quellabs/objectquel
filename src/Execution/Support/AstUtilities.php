@@ -85,15 +85,6 @@
 		}
 		
 		/**
-		 * Return binary operator children when present; otherwise empty array.
-		 * @param AstInterface $node Node to get children from
-		 * @return AstInterface[] Child nodes (left and right for binary operators)
-		 */
-		public static function getChildrenFromBinaryOperator(AstInterface $node): array {
-			return $node instanceof AstBinaryOperator ? [$node->getLeft(), $node->getRight()] : [];
-		}
-		
-		/**
 		 * Collect all identifiers in an AST subtree.
 		 * We use this to find which ranges are referenced by expressions.
 		 * @param AstInterface|null $ast AST node to traverse
@@ -167,6 +158,4 @@
 			
 			return $result;
 		}
-		
-
 	}
