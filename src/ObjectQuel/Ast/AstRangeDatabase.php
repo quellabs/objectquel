@@ -7,8 +7,7 @@
 	use Quellabs\ObjectQuel\ObjectQuel\Visitors\FindIdentifier;
 	
 	/**
-	 * Class AstRange
-	 * AstRange class is responsible for defining a range in the AST (Abstract Syntax Tree).
+	 * Class AstRangeDatabase
 	 */
 	class AstRangeDatabase extends AstRange {
 		
@@ -33,7 +32,13 @@
 		 * @param bool $required True if the relationship is required. E.g. it concerns an INNER JOIN. False for LEFT JOIN.
 		 * @param bool $includeAsJoin Whether to include this range as a JOIN clause
 		 */
-		public function __construct(string $name, string $entityName, ?AstInterface $joinProperty=null, bool $required=false, bool $includeAsJoin = true) {
+		public function __construct(
+			string $name,
+			string $entityName,
+			?AstInterface $joinProperty=null,
+			bool $required=false,
+			bool $includeAsJoin = true
+		) {
 			parent::__construct($name, $required);
 			$this->entityName = $entityName;
 			$this->joinProperty = $joinProperty;
@@ -139,6 +144,8 @@
 			}
 			
 			// @phpstan-ignore-next-line new.static
-			return new static($this->getName(), $this->getEntityName(), $joinProperty, $this->isRequired(), $this->includeAsJoin());
+			$clone = new static($this->getName(), $this->getEntityName(), $joinProperty, $this->isRequired(), $this->includeAsJoin());
+			$clone->setParent($this->getParent());
+			return $clone;
 		}
 	}

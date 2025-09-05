@@ -6,6 +6,7 @@
 	use Quellabs\ObjectQuel\Execution\Support\AstFactory;
 	use Quellabs\ObjectQuel\Execution\Support\QueryAnalysisResult;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRange;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRetrieve;
 	use Quellabs\ObjectQuel\ObjectQuel\AstInterface;
 	use Quellabs\ObjectQuel\ObjectQuel\QuelException;
 	
@@ -132,9 +133,12 @@
 			}
 			
 			// Analyze table characteristics
-			$tableName = $range->getName();
-			$tableUsage = $analysis->getTableUsage($tableName);
-			$isOriginalAnchor = ($range->getJoinProperty() === null);
+			/**
+			 * @var AstRetrieve $retrieveObject
+			 */
+			$retrieveObject = $range->getParent();
+			$rangeName = $range->getName();
+			$tableUsage = $analysis->getTableUsage($rangeName);
 			$isReferencedInExpressions = $tableUsage->isUsedInSelectExpressions(); // Used in SELECT
 			$canOptimizeJoinConditions = $tableUsage->canSafelyCollapseToInner();   // Optimization safe
 			
@@ -148,7 +152,7 @@
 			}
 			
 			// Original anchor gets stability bonus, INNER JOINs get standard priority
-			if ($isOriginalAnchor) {
+			if ($retrieveObject->getMainDatabaseRange()->getName() !== $rangeName) {
 				$priority += self::PRIORITY_ORIGINAL_ANCHOR;
 			} else {
 				$priority += self::PRIORITY_INNER_JOIN;
