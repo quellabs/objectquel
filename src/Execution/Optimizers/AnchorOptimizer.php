@@ -131,10 +131,9 @@
 				return new AnchorCandidate($index, $range, 0, 'left_join_not_viable', false);
 			}
 			
+			// Analyze table characteristics
 			$tableName = $range->getName();
 			$tableUsage = $analysis->getTableUsage($tableName);
-			
-			// Analyze table characteristics
 			$isOriginalAnchor = ($range->getJoinProperty() === null);
 			$isReferencedInExpressions = $tableUsage->isUsedInSelectExpressions(); // Used in SELECT
 			$canOptimizeJoinConditions = $tableUsage->canSafelyCollapseToInner();   // Optimization safe
