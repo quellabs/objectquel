@@ -2,6 +2,8 @@
 	
 	namespace Quellabs\ObjectQuel\ObjectQuel;
 	
+	use Quellabs\ObjectQuel\ObjectQuel\Visitors\ContainsNodeObject;
+	
 	/**
 	 * Interface AstInterface
 	 * Defines the contract for Abstract Syntax Tree (AST) nodes.
@@ -45,6 +47,15 @@
 		 * @return void
 		 */
 		public function setParent(?AstInterface $parent): void;
+		
+		/**
+		 * Determines if this node is an ancestor of the given node by checking
+		 * if this node appears anywhere in the given node's AST subtree.
+		 * Uses exception-based control flow for early termination when match is found.
+		 * @param AstInterface $node The potential descendant node to check
+		 * @return bool True if this node is an ancestor of the given node, false otherwise
+		 */
+		public function isAncestorOf(AstInterface $node): bool;
 		
 		/**
 		 * Make a deep clone of this node

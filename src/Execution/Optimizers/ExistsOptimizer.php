@@ -2,6 +2,8 @@
 	
 	namespace Quellabs\ObjectQuel\Execution\Optimizers;
 	
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstIdentifier;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRangeDatabase;
 	use Quellabs\ObjectQuel\ObjectQuel\AstInterface;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstBinaryOperator;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstExists;
@@ -44,7 +46,21 @@
 		 * @param AstExists $exists The EXISTS operator to convert
 		 */
 		private function setRangeRequiredForExists(AstRetrieve $ast, AstExists $exists): void {
-			$existsRange = $exists->getIdentifier()->getRange();
+			// Fetch the identifier from the exists node
+			$identifier = $exists->getIdentifier();
+			
+			// Check that this is in fact an identifier
+			if (!$identifier instanceof AstIdentifier) {
+				return;
+			}
+			
+			// Fetch the range from the identifier
+			$existsRange = $identifier->getRange();
+			
+			// Check that the range is a database range.
+			if (!$existsRange instanceof AstRangeDatabase) {
+				return;
+			}
 			
 			// Find the matching range in the main query and mark it as required
 			foreach ($ast->getRanges() as $range) {

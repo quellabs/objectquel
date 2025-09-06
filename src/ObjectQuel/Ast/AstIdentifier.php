@@ -202,14 +202,22 @@
 		
 		/**
 		 * Returns the first available identifier by traversing up the parent hierarchy.
-		 * @return AstInterface|null
+		 * @return AstIdentifier|null
 		 */
-		public function getBaseIdentifier(): ?AstInterface {
+		public function getBaseIdentifier(): ?AstIdentifier {
 			$current = $this;
 			
-			// @phpstan-ignore-next-line method.notFound
 			while (!$current->isBaseIdentifier()) {
-				$current = $current->getParent();
+				// Fetch parent
+				$parent = $current->getParent();
+				
+				// Type guard: ensure parent is an AstIdentifier
+				// Not really needed, but added to make PHPStan happy
+				if (!($parent instanceof AstIdentifier)) {
+					return null;
+				}
+				
+				$current = $parent;
 			}
 			
 			return $current;

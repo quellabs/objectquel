@@ -15,10 +15,7 @@
 		public const string TYPE_CASE_WHEN = 'case_when';  // CASE WHEN EXISTS(...) THEN 1 ELSE 0 END
 		public const string TYPE_WINDOW = 'window';
 		
-		/**
-		 * @var AstInterface
-		 */
-		protected ?AstInterface $aggregation;
+		protected ?AstAggregate $aggregation;
 		private string $type;
 		private array $correlatedRanges;
 		private ?AstInterface $conditions;
@@ -26,7 +23,7 @@
 		
 		/**
 		 * AstSubquery constructor
-		 * @param AstInterface|null $aggregation
+		 * @param AstAggregate|null $aggregation
 		 * @param string $type
 		 * @param array $correlatedRanges
 		 * @param AstInterface|null $conditions
@@ -34,7 +31,7 @@
 		 */
 		public function __construct(
 			string        $type = self::TYPE_SCALAR,
-			?AstInterface $aggregation = null,
+			?AstAggregate $aggregation = null,
 			array         $correlatedRanges = [],
 			?AstInterface $conditions = null,
 			?string       $origin = null
@@ -64,7 +61,7 @@
 		
 		/**
 		 * If the subquery case in place of an aggregation, this returns the original aggregation type
-		 * @return AstInterface|null The left operand.
+		 * @return string|null The left operand.
 		 */
 		public function getOrigin(): ?string {
 			return $this->origin;
@@ -81,18 +78,18 @@
 		
 		/**
 		 * Get the subquery expression
-		 * @return AstInterface|null The left operand.
+		 * @return AstAggregate|null The left operand.
 		 */
-		public function getAggregation(): ?AstInterface {
+		public function getAggregation(): ?AstAggregate {
 			return $this->aggregation;
 		}
 		
 		/**
 		 * Get the subquery expression
-		 * @param AstInterface $aggregation
+		 * @param AstAggregate $aggregation
 		 * @return void The left operand.
 		 */
-		public function setAggregation(AstInterface $aggregation): void {
+		public function setAggregation(AstAggregate $aggregation): void {
 			$this->aggregation = $aggregation;
 		}
 		
@@ -122,8 +119,8 @@
 			}
 			
 			// Create new instance with cloned identifier
-			// @phpstan-ignore-next-line new.static
 			// Return cloned node
+			// @phpstan-ignore-next-line new.static
 			return new static($this->type, $clonedAggregation, $clonedCorrelatedRanges, $clonedConditions);
 		}
 	}

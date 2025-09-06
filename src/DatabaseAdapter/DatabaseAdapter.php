@@ -488,9 +488,9 @@
 				$stmt = $this->connection->execute($probeSql);
 				
 				// Some drivers need an explicit close to free the cursor
-				if ($stmt instanceof \Cake\Database\StatementInterface) {
-					$stmt->closeCursor();
-				}
+				$stmt->closeCursor();
+				
+				// Return true if window functions are supported
 				return $this->supportsWindowFunctionsCache = true;
 			} catch (\Throwable $e) {
 				// Window functions not supported (or extremely old engine quirks) → treat as false

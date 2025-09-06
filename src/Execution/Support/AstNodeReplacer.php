@@ -35,25 +35,37 @@
 			
 			// Replace expression child (e.g., in NOT operations, function calls)
 			if (method_exists($parent, 'getExpression') && $parent->getExpression() === $oldChild) {
-				$parent->setExpression($newChild);
+				if (method_exists($parent, 'setExpression')) {
+					$parent->setExpression($newChild);
+				}
+			
 				return;
 			}
 			
 			// Replace conditions child (e.g., in WHERE clauses, conditional blocks)
 			if (method_exists($parent, 'getConditions') && $parent->getConditions() === $oldChild) {
-				$parent->setConditions($newChild);
+				if (method_exists($parent, 'setConditions')) {
+					$parent->setConditions($newChild);
+				}
+				
 				return;
 			}
 			
 			// Replace identifier child (e.g., in field references, variable names)
 			if (method_exists($parent, 'getIdentifier') && $parent->getIdentifier() === $oldChild) {
-				$parent->setIdentifier($newChild);
+				if (method_exists($parent, 'setIdentifier')) {
+					$parent->setIdentifier($newChild);
+				}
+				
 				return;
 			}
 			
 			// Replace identifier child (e.g., in field references, variable names)
 			if (method_exists($parent, 'getAggregation') && $parent->getAggregation() === $oldChild) {
-				$parent->setAggregation($newChild);
+				if (method_exists($parent, 'setAggregation')) {
+					$parent->setAggregation($newChild);
+				}
+				
 				return;
 			}
 			
@@ -91,14 +103,20 @@
 		 */
 		public static function replaceBinaryChild(AstInterface $parent, AstInterface $oldChild, AstInterface $newChild): void {
 			// Check if old child is the left operand
-			if ($parent->getLeft() === $oldChild) {
-				$parent->setLeft($newChild);
+			if (method_exists($parent, 'getLeft') && $parent->getLeft() === $oldChild) {
+				if (method_exists($parent, 'setLeft')) {
+					$parent->setLeft($newChild);
+				}
+			
 				return;
 			}
 			
 			// Check if old child is the right operand
-			if ($parent->getRight() === $oldChild) {
-				$parent->setRight($newChild);
+			if (method_exists($parent, 'getRight') && $parent->getRight() === $oldChild) {
+				if (method_exists($parent, 'setRight')) {
+					$parent->setRight($newChild);
+				}
+				
 				return;
 			}
 			

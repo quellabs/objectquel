@@ -92,8 +92,8 @@
 			$clonedConditions = $this->conditions?->deepClone();
 			
 			// Create new instance with cloned identifier
-			// @phpstan-ignore-next-line new.static
 			// Return cloned node
+			// @phpstan-ignore-next-line new.static
 			return new static($clonedIdentifier, $clonedConditions);
 		}
 	}
