@@ -147,37 +147,57 @@
 		 * @return string Complete SQL scalar subquery wrapped in parentheses
 		 */
 		private function buildScalarSubquery(AstSubquery $subquery): string {
-			// Prevent double-processing of the aggregate function
+			// Prevent double-processing of the aggregate function by marking it as already handled
+			// This avoids duplicate SQL generation in the parent query context
 			$this->markExpressionAsHandled($subquery->getAggregation());
 			
+			// Fetch the aggregation node
 			$aggNode = $subquery->getAggregation();
+			
+			// Early validation: ensure we have a valid aggregate node before proceeding
+			// Return empty string if invalid rather than throwing exception to allow graceful degradation
+			if (!$aggNode instanceof AstAggregate) {
+				return "";
+			}
+			
+			// Extract aggregate function details (COUNT, SUM, AVG, etc.)
 			$functionName = $this->aggregateToString($aggNode);
+			
+			// Handle DISTINCT modifier for aggregate functions (e.g., COUNT(DISTINCT column))
 			$distinctClause = $this->isDistinct($aggNode) ? 'DISTINCT ' : '';
 			
-			// Convert the aggregate target (usually an identifier like d.id) to SQL
+			// Convert the aggregate target expression to SQL
+			// Uses deepClone() to avoid modifying the original AST node during conversion
 			$targetExpression = $this->convertExpressionToSql($aggNode->getIdentifier()->deepClone());
 			
-			// Build FROM clause with all necessary joins from correlated ranges
+			// Build FROM clause including all necessary table joins from correlated ranges.
+			// Correlated ranges define which tables this subquery needs to access
 			$fromClause = $this->buildFromClauseForRanges($subquery->getCorrelatedRanges());
 			
-			// Add WHERE clause if the subquery has conditions
+			// Process optional WHERE conditions for filtering subquery results
 			$whereClause = '';
+			
 			if ($subquery->getConditions() !== null) {
 				$conditionSql = trim($this->convertExpressionToSql($subquery->getConditions()));
 				
+				// Only add WHERE clause if we have actual conditions (avoid "WHERE" with empty string)
 				if ($conditionSql !== '') {
 					$whereClause = "WHERE {$conditionSql}";
 				}
 			}
 			
-			// Build the aggregate function call
+			// Construct the complete aggregate function call with DISTINCT if needed
 			$aggregateExpression = "{$functionName}({$distinctClause}{$targetExpression})";
 			
-			// Wrap SUM with COALESCE to return 0 instead of NULL for empty result sets
+			// Handle NULL-to-zero conversion for SUM operations
+			// SUM returns NULL for empty result sets, but business logic often expects 0
+			// Other aggregates (COUNT, AVG, etc.) have different NULL-handling semantics
 			if ($functionName === 'SUM') {
 				$aggregateExpression = "COALESCE({$aggregateExpression}, 0)";
 			}
 			
+			// Assemble final scalar subquery with proper SQL formatting
+			// Parentheses ensure this can be used as a scalar expression in larger queries
 			return "(
 		        SELECT {$aggregateExpression}
 		        FROM {$fromClause}
@@ -366,21 +386,35 @@
 		 * SUM is wrapped in COALESCE(..., 0) to keep your current NULL behavior.
 		 */
 		private function buildWindowAggregate(AstSubquery $subquery): string {
+			// Mark the aggregation expression as processed to avoid duplicate handling
 			$this->markExpressionAsHandled($subquery->getAggregation());
 			
+			// Fetch aggregation from the subquery
 			$aggNode = $subquery->getAggregation();
-			$fn = $this->aggregateToString($aggNode);
+			
+			// Validate that we have a proper aggregate node before proceeding
+			if (!$aggNode instanceof AstAggregate) {
+				return "";
+			}
+			
+			// Extract the aggregate function name (SUM, COUNT, AVG, etc.)
+			$fn = $aggNode->getType();
+			
+			// Add DISTINCT keyword if the aggregate uses DISTINCT semantics
 			$distinct = $this->isDistinct($aggNode) ? 'DISTINCT ' : '';
+			
+			// Convert the aggregate's target expression to SQL, cloning to avoid side effects
 			$argSql = $this->convertExpressionToSql($aggNode->getIdentifier()->deepClone());
 			
+			// Special handling for SUM: wrap entire window function in COALESCE for NULL safety
+			// OVER() creates window function, COALESCE ensures 0 instead of NULL result
 			if ($fn === 'SUM') {
-				// ✅ OVER() attaches to SUM, COALESCE wraps the whole window result
 				return "COALESCE({$fn}({$distinct}{$argSql}) OVER (), 0)";
 			}
 			
+			// Standard window function format for non-SUM aggregates
 			return "{$fn}({$distinct}{$argSql}) OVER ()";
 		}
-		
 		
 		/**
 		 * Builds EXISTS subqueries for ANY functions in WHERE clauses.

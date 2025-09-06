@@ -15,7 +15,7 @@
 		public const string TYPE_CASE_WHEN = 'case_when';  // CASE WHEN EXISTS(...) THEN 1 ELSE 0 END
 		public const string TYPE_WINDOW = 'window';
 		
-		protected ?AstAggregate $aggregation;
+		protected ?AstInterface $aggregation;
 		private string $type;
 		private array $correlatedRanges;
 		private ?AstInterface $conditions;
@@ -31,7 +31,7 @@
 		 */
 		public function __construct(
 			string        $type = self::TYPE_SCALAR,
-			?AstAggregate $aggregation = null,
+			?AstInterface $aggregation = null,
 			array         $correlatedRanges = [],
 			?AstInterface $conditions = null,
 			?string       $origin = null
@@ -78,18 +78,18 @@
 		
 		/**
 		 * Get the subquery expression
-		 * @return AstAggregate|null The left operand.
+		 * @return AstInterface|null The left operand.
 		 */
-		public function getAggregation(): ?AstAggregate {
+		public function getAggregation(): ?AstInterface {
 			return $this->aggregation;
 		}
 		
 		/**
 		 * Get the subquery expression
-		 * @param AstAggregate $aggregation
+		 * @param AstInterface $aggregation
 		 * @return void The left operand.
 		 */
-		public function setAggregation(AstAggregate $aggregation): void {
+		public function setAggregation(AstInterface $aggregation): void {
 			$this->aggregation = $aggregation;
 		}
 		
