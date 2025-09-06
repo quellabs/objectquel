@@ -6,6 +6,7 @@
 	use Quellabs\ObjectQuel\Execution\Support\AggregateConstants;
 	use Quellabs\ObjectQuel\Execution\Support\AggregateRewriter;
 	use Quellabs\ObjectQuel\Execution\Support\AstUtilities;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstAggregate;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstAvg;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstCount;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstMax;
@@ -116,10 +117,10 @@
 		/**
 		 * Pick the best evaluation strategy for a given aggregate within the query.
 		 * @param AstRetrieve $root Query AST
-		 * @param AstInterface $aggregate Aggregate node to analyze
+		 * @param AstAggregate $aggregate Aggregate node to analyze
 		 * @return string One of self::STRATEGY_* constants
 		 */
-		private function chooseStrategy(AstRetrieve $root, AstInterface $aggregate): string {
+		private function chooseStrategy(AstRetrieve $root, AstAggregate $aggregate): string {
 			// If aggregate has filtering conditions, must use subquery to apply WHERE before aggregation
 			if ($aggregate->getConditions() !== null) {
 				return self::STRATEGY_SUBQUERY;
@@ -298,10 +299,10 @@
 		/**
 		 * Basic window support checks: no conditions, not DISTINCT variant, DB supports,
 		 * and the aggregate type is allowed.
-		 * @param AstInterface $aggregate Aggregate to test
+		 * @param AstAggregate $aggregate Aggregate to test
 		 * @return bool True if basic constraints are satisfied
 		 */
-		private function passesWindowFunctionBasics(AstInterface $aggregate): bool {
+		private function passesWindowFunctionBasics(AstAggregate $aggregate): bool {
 			// Window functions can't have their own filters
 			if ($aggregate->getConditions() !== null) {
 				return false;

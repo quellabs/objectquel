@@ -6,13 +6,13 @@
 	use Quellabs\ObjectQuel\ObjectQuel\AstVisitorInterface;
 	
 	/**
-	 * Class AstIsNumeric
+	 * Class AstExists
 	 */
 	class AstExists extends Ast {
 		
 		/**
 		 * The value or string to check
-		 * @var AstIdentifier
+		 * @var AstInterface
 		 */
 		protected AstInterface $identifier;
 		
@@ -37,9 +37,9 @@
 		
 		/**
 		 * Retrieves the entity
-		 * @return AstIdentifier
+		 * @return AstInterface
 		 */
-		public function getIdentifier(): AstIdentifier {
+		public function getIdentifier(): AstInterface {
 			return $this->identifier;
 		}
 		

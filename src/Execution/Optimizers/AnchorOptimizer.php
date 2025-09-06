@@ -6,6 +6,7 @@
 	use Quellabs\ObjectQuel\Execution\Support\AstFactory;
 	use Quellabs\ObjectQuel\Execution\Support\QueryAnalysisResult;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRange;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRangeDatabase;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRetrieve;
 	use Quellabs\ObjectQuel\ObjectQuel\AstInterface;
 	use Quellabs\ObjectQuel\ObjectQuel\QuelException;
@@ -259,10 +260,10 @@
 		 * ->
 		 * FROM users u, orders o WHERE u.id = o.user_id
 		 *
-		 * @param AstRange[] $ranges Original table references
+		 * @param AstRangeDatabase[] $ranges Original table references
 		 * @param AnchorCandidate $anchor Selected anchor candidate
 		 * @param AstInterface|null &$whereClause WHERE clause to extend
-		 * @return AstRange[] Array containing all tables with optimized structure
+		 * @return AstRangeDatabase[] Array containing all tables with optimized structure
 		 */
 		private static function convertToAnchorWithOptimization(
 			array           $ranges,
@@ -304,9 +305,9 @@
 		 * - Queries where LEFT JOIN NULL semantics must be preserved
 		 * - Cases where structural changes might affect result correctness
 		 *
-		 * @param AstRange[] $ranges Original table references
+		 * @param AstRangeDatabase[] $ranges Original table references
 		 * @param AnchorCandidate $anchor Selected anchor candidate
-		 * @return AstRange[] Original ranges with anchor designation
+		 * @return AstRangeDatabase[] Original ranges with anchor designation
 		 */
 		private static function promoteToAnchorWithoutChanges(array $ranges, AnchorCandidate $anchor): array {
 			// Get anchor
@@ -357,6 +358,7 @@
 		 *
 		 * @param AstRange[] $ranges All table references to check
 		 * @return bool True if an anchor already exists
+		 * @phpstan-ignore-next-line method.unused
 		 */
 		private static function hasExistingAnchor(array $ranges): bool {
 			foreach ($ranges as $range) {

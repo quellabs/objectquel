@@ -3,6 +3,7 @@
 	namespace Quellabs\ObjectQuel\ObjectQuel\Visitors\Handlers;
 	
 	use Quellabs\ObjectQuel\EntityStore;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstAggregate;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstAny;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstAvg;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstAvgU;
@@ -194,19 +195,20 @@
 		 * - AstMin → MIN
 		 * - AstMax → MAX
 		 *
-		 * @param AstSubquery|AstCount|AstCountU|AstAvg|AstAvgU|AstMax|AstMin|AstSum|AstSumU $aggregateNode
+		 * @param AstAggregate $aggregateNode
 		 * @return string SQL function name in uppercase
 		 */
-		private function aggregateToString(
-			AstSubquery|AstCount|AstCountU|AstAvg|AstAvgU|AstMax|AstMin|AstSum|AstSumU $aggregateNode
-		): string {
+		private function aggregateToString(AstAggregate $aggregateNode) : string {
 			return match (get_class($aggregateNode)) {
 				AstCount::class, AstCountU::class => "COUNT",
 				AstAvg::class, AstAvgU::class => "AVG",
 				AstSum::class, AstSumU::class => "SUM",
 				AstMin::class => "MIN",
 				AstMax::class => "MAX",
-				AstSubquery::class => "UNKNOWN",
+				AstAny::class => "ANY",
+				default => throw new \InvalidArgumentException(
+					'Unsupported aggregate type: ' . get_class($aggregateNode)
+				),
 			};
 		}
 		
@@ -220,12 +222,10 @@
 		 *
 		 * Regular variants (AstCount, AstSum, AstAvg, AstMin, AstMax) return false.
 		 *
-		 * @param AstSubquery|AstCount|AstCountU|AstAvg|AstAvgU|AstMax|AstMin|AstSum|AstSumU $aggregateNode
+		 * @param AstAggregate $aggregateNode
 		 * @return bool True if DISTINCT should be included, false otherwise
 		 */
-		private function isDistinct(
-			AstSubquery|AstCount|AstCountU|AstAvg|AstAvgU|AstMax|AstMin|AstSum|AstSumU $aggregateNode
-		): bool {
+		private function isDistinct(AstAggregate $aggregateNode): bool {
 			return
 				$aggregateNode instanceof AstCountU ||
 				$aggregateNode instanceof AstAvgU ||

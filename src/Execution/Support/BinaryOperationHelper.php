@@ -59,6 +59,7 @@
 			
 			// Call getLeft() - this may fail at runtime if the concrete class
 			// doesn't implement this method, despite passing the type check above
+			// @phpstan-ignore-next-line method.notFound
 			return $item->getLeft();
 		}
 		
@@ -77,6 +78,7 @@
 			
 			// Call getRight() - this may fail at runtime if the concrete class
 			// doesn't implement this method, despite passing the type check above
+			// @phpstan-ignore-next-line method.notFound
 			return $item->getRight();
 		}
 		
@@ -96,6 +98,7 @@
 			
 			// Call setLeft() - this may fail at runtime if the concrete class
 			// doesn't implement this method, despite passing the type check above
+			// @phpstan-ignore-next-line method.notFound
 			$item->setLeft($left);
 		}
 		
@@ -115,6 +118,7 @@
 			
 			// Call setRight() - this may fail at runtime if the concrete class
 			// doesn't implement this method, despite passing the type check above
+			// @phpstan-ignore-next-line method.notFound
 			$item->setRight($right);
 		}
 	}

@@ -8,6 +8,7 @@
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstIdentifier;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstNumber;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRange;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRangeDatabase;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRetrieve;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstSubquery;
 	use Quellabs\ObjectQuel\ObjectQuel\AstInterface;
@@ -323,6 +324,10 @@
 			$innerRange = $inner->getBaseIdentifier()->getRange();
 			
 			if ($outerRange === null || $innerRange === null) {
+				return false;
+			}
+			
+			if (!$outerRange instanceof AstRangeDatabase || !$innerRange instanceof AstRangeDatabase) {
 				return false;
 			}
 			

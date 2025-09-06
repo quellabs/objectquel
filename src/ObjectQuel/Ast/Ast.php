@@ -117,13 +117,29 @@
 			
 			return false;
 		}
-	
+		
+		/**
+		 * Determines if this node is an ancestor of the given node by checking
+		 * if this node appears anywhere in the given node's AST subtree.
+		 * Uses exception-based control flow for early termination when match is found.
+		 * @param AstInterface $node The potential descendant node to check
+		 * @return bool True if this node is an ancestor of the given node, false otherwise
+		 */
 		public function isAncestorOf(AstInterface $node): bool {
 			try {
+				// Create a visitor that searches for this node within the given node's subtree
 				$visitor = new ContainsNodeObject($this);
+				
+				// Traverse the given node's AST - if our node is found as a descendant,
+				// the visitor will throw an exception to signal the match
 				$node->accept($visitor);
+				
+				// If we reach here, the visitor completed without finding our node,
+				// meaning this node is NOT an ancestor of the given node
 				return false;
 			} catch (\Exception $exception) {
+				// Exception thrown means the visitor found our node within the given node's subtree,
+				// therefore this node IS an ancestor of the given node
 				return true;
 			}
 		}
