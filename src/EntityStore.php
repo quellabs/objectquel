@@ -598,7 +598,7 @@
 						    'default'       => $columnAnnotation->getDefault(),    // Default value for the column
 						    'primary_key'   => $columnAnnotation->isPrimaryKey(),  // Whether column is a primary key
 						    'scale'         => $columnAnnotation->getScale(),      // Decimal scale (for numeric types)
-						    'precision'     => $columnAnnotation->getPrecision(),  // Decimal precision (for numeric types)
+						    'precision'     => $columnAnnotation->getPrecision(),  // Decimal precision (for numeric types),
 						    
 						    // Check if this column is an auto-incrementing identity column
 						    'identity'      => $this->isIdentityColumn($propertyAnnotations->toArray()),

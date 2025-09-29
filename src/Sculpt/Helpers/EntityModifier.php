@@ -4,6 +4,7 @@
 	
 	use Quellabs\ObjectQuel\Configuration;
 	use Quellabs\ObjectQuel\DatabaseAdapter\TypeMapper;
+	use Quellabs\Support\StringInflector;
 	
 	class EntityModifier {
 		
@@ -296,7 +297,7 @@
 				
 				// For OneToMany relationships, add additional methods for collection management
 				if ($isOneToMany) {
-					$singularName = $this->getSingularName($property['name']);
+					$singularName = StringInflector::singularize($property['name']);
 					$addMethodName = 'add' . ucfirst($singularName);
 					$removeMethodName = 'remove' . ucfirst($singularName);
 					
@@ -337,7 +338,7 @@
 			$content .= "   use Quellabs\\ObjectQuel\\Collections\\CollectionInterface;\n";
 			
 			// Convert entity name to table name
-			$tableNamePlural = $this->pluralize($entityName);
+			$tableNamePlural = StringInflector::pluralize($entityName);
 			$tableName = $this->snakeCase($tableNamePlural);
 			
 			// Add class definitions
@@ -430,9 +431,9 @@
 			$properties[] = "name=\"{$snakeCaseName}\"";
 			$properties[] = "type=\"{$type}\"";
 
-			// Add enumType
+			// Use enum type for enums
 			if (!empty($property['enumType'])) {
-				$properties[] = "enumType={$property['enumType']}::class";
+				$properties[] = "enumType=\\" . ltrim($property['enumType'], "\\") . "::class";
 			}
 			
 			// Add optional properties if they exist
@@ -533,12 +534,16 @@
 			
 			// Handle regular properties
 			$type = $property['type'] ?? 'string';
-			$phpType = TypeMapper::phinxTypeToPhpType($type);
 			$nullableIndicator = $nullable ? '?' : '';
+			
+			if ($type === "enum") {
+				$phpType = "\\" . ltrim($property["enumType"], "\\");
+			} else {
+				$phpType = TypeMapper::phinxTypeToPhpType($type);
+			}
 			
 			return "protected {$nullableIndicator}{$phpType} \${$property['name']};";
 		}
-		
 		
 		/**
 		 * Generate a getter method for a property
@@ -579,8 +584,13 @@
 			// Handle regular property getter
 			$nullable = $property['nullable'] ?? false;
 			$type = $property['type'] ?? 'string';
-			$phpType = TypeMapper::phinxTypeToPhpType($type);
 			$nullableIndicator = $nullable ? '?' : '';
+			
+			if ($type === "enum") {
+				$phpType = "\\" . ltrim($property["enumType"], "\\");
+			} else {
+				$phpType = TypeMapper::phinxTypeToPhpType($type);
+			}
 			
 			return "\n      /**\n" .
 				"       * Get {$propertyName}\n" .
@@ -620,8 +630,13 @@
 			// Handle regular property setter
 			$nullable = $property['nullable'] ?? false;
 			$type = $property['type'] ?? 'string';
-			$phpType = TypeMapper::phinxTypeToPhpType($type);
 			$nullableIndicator = $nullable ? '?' : '';
+			
+			if ($type === "enum") {
+				$phpType = "\\" . ltrim($property["enumType"], "\\");
+			} else {
+				$phpType = TypeMapper::phinxTypeToPhpType($type);
+			}
 			
 			return "\n      /**\n" .
 				"       * Set {$propertyName}\n" .
@@ -642,7 +657,7 @@
 		 */
 		protected function generateCollectionAdder(array $property, string $entityName): string {
 			$collectionName = $property['name'];
-			$singularName = $this->getSingularName($collectionName);
+			$singularName = StringInflector::singularize($collectionName);
 			$methodName = 'add' . ucfirst($singularName);
 			$targetEntity = $property['targetEntity'] . 'Entity';
 			
@@ -674,7 +689,7 @@
 		 */
 		protected function generateCollectionRemover(array $property, string $entityName): string {
 			$collectionName = $property['name'];
-			$singularName = $this->getSingularName($collectionName);
+			$singularName = StringInflector::singularize($collectionName);
 			$methodName = 'remove' . ucfirst($singularName);
 			$targetEntity = $property['targetEntity'] . 'Entity';
 			
@@ -971,90 +986,5 @@
 		 */
 		protected function snakeCase(string $string): string {
 			return strtolower(preg_replace(['/([a-z\d])([A-Z])/', '/([^_])([A-Z][a-z])/'], '$1_$2', $string));
-		}
-		
-		/**
-		 * Attempts to get the singular form of a collection name using basic English pluralization rules
-		 * This function applies simple rules to convert plural nouns to singular form
-		 * @param string $pluralName The plural name to convert to singular form
-		 * @return string The singular form of the name
-		 */
-		protected function getSingularName(string $pluralName): string {
-			// Rule 1: Words ending in 'ies' typically come from singular words ending in 'y'
-			// Examples: entities -> entity, categories -> category, properties -> property
-			if (str_ends_with($pluralName, 'ies')) {
-				// Remove 'ies' suffix and add 'y'
-				return substr($pluralName, 0, -3) . 'y';
-			}
-			
-			// Rule 2: Words ending in 's' but not 'ss' are typically regular plurals
-			// Examples: cars -> car, books -> book
-			// The 'ss' check avoids incorrectly transforming words like 'address' to 'addres'
-			if (str_ends_with($pluralName, 's') && !str_ends_with($pluralName, 'ss')) {
-				// Remove the trailing 's'
-				return substr($pluralName, 0, -1);
-			}
-			
-			// Rule 3: If no rules match, return the original name unchanged
-			// This handles:
-			// - Words that are already singular
-			// - Irregular plurals not covered by these simple rules
-			// - Uncountable nouns that don't have distinct singular/plural forms
-			return $pluralName;
-		}
-		
-		/**
-		 * Pluralize a word
-		 * @param string $word
-		 * @return string|null
-		 */
-		private function pluralize(string $word): string|null {
-			// Convert to lowercase for rule checking
-			$lower = strtolower($word);
-			
-			// Irregular plurals
-			$irregulars = [
-				'child'   => 'children',
-				'person'  => 'people',
-				'man'     => 'men',
-				'woman'   => 'women',
-				'tooth'   => 'teeth',
-				'foot'    => 'feet',
-				'mouse'   => 'mice',
-				'goose'   => 'geese',
-				'ox'      => 'oxen',
-				'sheep'   => 'sheep',
-				'deer'    => 'deer',
-				'fish'    => 'fish',
-				'series'  => 'series',
-				'species' => 'species',
-			];
-			
-			if (isset($irregulars[$lower])) {
-				return $irregulars[$lower];
-			}
-			
-			// Words ending in 's', 'ss', 'sh', 'ch', 'x', 'z' -> add 'es'
-			if (preg_match('/[sxz]$|[cs]h$/', $lower)) {
-				return $word . 'es';
-			}
-			
-			// Words ending in consonant + 'y' -> change 'y' to 'ies'
-			if (preg_match('/[^aeiou]y$/', $lower)) {
-				return substr($word, 0, -1) . 'ies';
-			}
-			
-			// Words ending in 'f' or 'fe' -> change to 'ves'
-			if (preg_match('/fe?$/', $lower)) {
-				return preg_replace('/fe?$/', 'ves', $word);
-			}
-			
-			// Words ending in consonant + 'o' -> add 'es'
-			if (preg_match('/[^aeiou]o$/', $lower)) {
-				return $word . 'es';
-			}
-			
-			// Default: just add 's'
-			return $word . 's';
 		}
 	}
