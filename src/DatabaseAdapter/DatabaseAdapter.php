@@ -24,6 +24,7 @@
 		protected int $transaction_depth;
 		protected array $indexes;
 		private ?bool $supportsWindowFunctionsCache;
+		private string $databaseTypeCache;
 		
 		/**
 		 * Database Adapter constructor.
@@ -78,6 +79,27 @@
 		 */
 		public function getLastErrorMessage(): string {
 			return $this->last_error_message;
+		}
+		
+		/**
+		 * Get the database type from the CakePHP driver
+		 * @return string The database type (mysql, mariadb, pgsql, sqlite, sqlsrv)
+		 */
+		public function getDatabaseType(): string {
+			if ($this->databaseTypeCache === null) {
+				$driver = $this->connection->getDriver();
+				$driverClass = get_class($driver);
+				
+				$this->databaseTypeCache = match($driverClass) {
+					'Cake\Database\Driver\Mysql' => 'mysql',
+					'Cake\Database\Driver\Postgres' => 'pgsql',
+					'Cake\Database\Driver\Sqlite' => 'sqlite',
+					'Cake\Database\Driver\Sqlserver' => 'sqlsrv',
+					default => 'mysql'
+				};
+			}
+			
+			return $this->databaseTypeCache;
 		}
 		
 		/**
@@ -496,5 +518,13 @@
 				// Window functions not supported (or extremely old engine quirks) → treat as false
 				return $this->supportsWindowFunctionsCache = false;
 			}
+		}
+		
+		/**
+		 * Check if the database supports native ENUM column types
+		 * @return bool True if native enums are supported
+		 */
+		public function supportsNativeEnums(): bool {
+			return in_array($this->getDatabaseType(), ['mysql', 'mariadb']);
 		}
 	}
