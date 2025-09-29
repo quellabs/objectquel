@@ -32,6 +32,7 @@
     use Quellabs\ObjectQuel\Annotations\Orm\UniqueIndex;
     use Quellabs\ObjectQuel\DatabaseAdapter\TypeMapper;
     use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRetrieve;
+    use Quellabs\ObjectQuel\ObjectQuel\QuelException;
     use Quellabs\ObjectQuel\ProxyGenerator\ProxyGenerator;
     use Quellabs\ObjectQuel\ReflectionManagement\EntityLocator;
     use Quellabs\ObjectQuel\ReflectionManagement\ReflectionHandler;
@@ -178,6 +179,7 @@
 		    
 		    // Get the parent class name using the ReflectionHandler
 		    $parentClass = $this->getReflectionHandler()->getParent($normalizedClass);
+			
 		    // Check if the parent class exists in the entity_table_name array
 		    // Return false if neither the entity nor its parent class exists in the entity_table_name array
 		    return $parentClass !== null && isset($this->entity_table_name[$parentClass]);

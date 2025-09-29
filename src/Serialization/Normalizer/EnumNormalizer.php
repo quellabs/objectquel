@@ -32,34 +32,34 @@
 		}
 
 		/**
-		 * Normalize converts an enum instance to its scalar backing value.
-		 * Used when preparing entity data for database storage.
+		 * Normalize converts a scalar value to an enum instance.
+		 * Used when hydrating entity properties from database values.
 		 * @param mixed $value
 		 * @return mixed Returns the enum's backing value (string|int) if input is a BackedEnum,
 		 *               otherwise returns the value unchanged. Returns null if value is null.
 		 */
 		public function normalize(mixed $value): mixed {
-			if ($value instanceof \BackedEnum) {
-				return $value->value;
-			} else {
-				return $value;
-			}
-		}
-		
-		/**
-		 * Denormalize converts a scalar value to an enum instance.
-		 * Used when hydrating entity properties from database values.
-		 * @param mixed $value
-		 * @return \BackedEnum|null Returns an enum instance created from the scalar value,
-		 *                          or null if the input value is null.
-		 * @throws \ValueError If the value doesn't correspond to any enum case
-		 */
-		public function denormalize(mixed $value): ?\BackedEnum {
 			if ($value === null) {
 				return null;
 			}
 			
 			$enumClass = $this->enumType;
 			return $enumClass::from($value);
+		}
+		
+		/**
+		 * Denormalize converts an enum instance to its scalar backing value.
+		 * Used when preparing entity data for database storage.
+		 * @param mixed $value
+		 * @return mixed|null Returns an enum instance created from the scalar value,
+		 *                          or null if the input value is null.
+		 * @throws \ValueError If the value doesn't correspond to any enum case
+		 */
+		public function denormalize(mixed $value): mixed {
+			if ($value instanceof \BackedEnum) {
+				return $value->value;
+			} else {
+				return $value;
+			}
 		}
 	}

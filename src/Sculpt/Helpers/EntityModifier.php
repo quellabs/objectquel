@@ -433,7 +433,7 @@
 
 			// Use enum type for enums
 			if (!empty($property['enumType'])) {
-				$properties[] = "enumType=\\" . ltrim($property['enumType'], "\\") . "::class";
+				$properties[] = "enumType=" . ltrim($property['enumType'], "\\") . "::class";
 			}
 			
 			// Add optional properties if they exist
