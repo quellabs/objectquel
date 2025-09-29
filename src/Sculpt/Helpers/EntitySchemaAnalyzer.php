@@ -178,9 +178,9 @@
 		): array {
 			if (!in_array($tableName, $existingTables)) {
 				return $this->createNewTableChanges($className, $entityProperties);
+			} else {
+				return $this->compareExistingTable($tableName, $className, $entityProperties);
 			}
-			
-			return $this->compareExistingTable($tableName, $className, $entityProperties);
 		}
 		
 		/**
@@ -214,11 +214,13 @@
 			array  $entityProperties
 		): array {
 			try {
-				// Compare columns
+				// Fetch database columns
 				$tableColumns = $this->connection->getColumns($tableName);
+				
+				// Compare database columns with entity data
 				$changes = $this->schemaComparator->analyzeSchemaChanges($entityProperties, $tableColumns);
 				
-				// Compare indexes
+				// Also compare the indexes
 				$changes['indexes'] = $this->indexComparator->compareIndexes($className);
 				
 				// Future enhancement: Compare constraints

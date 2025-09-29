@@ -3,6 +3,7 @@
 	namespace Quellabs\ObjectQuel\Sculpt\Helpers;
 	
 	use Quellabs\ObjectQuel\DatabaseAdapter\TypeMapper;
+	use Quellabs\Support\Tools;
 	
 	/**
 	 * Class SchemaComparator
@@ -64,10 +65,8 @@
 			$commonColumns = array_intersect_key($entityColumns, $tableColumns);
 			
 			foreach ($commonColumns as $columnName => $entityColumn) {
-				$tableColumn = $tableColumns[$columnName];
-				
-				if ($this->hasColumnChanged($entityColumn, $tableColumn)) {
-					$result[$columnName] = $this->buildChangeDetails($entityColumn, $tableColumn);
+				if ($this->hasColumnChanged($entityColumn, $tableColumns[$columnName])) {
+					$result[$columnName] = $this->buildChangeDetails($entityColumn, $tableColumns[$columnName]);
 				}
 			}
 			
@@ -146,6 +145,7 @@
 			// Step 4: Sort the array keys alphabetically for consistent ordering
 			ksort($normalized);
 			
+			// Return the sorted result
 			return $normalized;
 		}
 		
@@ -157,6 +157,11 @@
 		private function addDefaultValues(array $columnDefinition): array {
 			$result = $columnDefinition;
 			$columnType = $result['type'] ?? 'string';
+
+			// Calculate enum limit
+			if ($result["type"] === 'enum') {
+				$result['limit'] = max(Tools::getMaxEnumValueLength($columnDefinition['enumType']), 32);
+			}
 			
 			// Add default limit if missing
 			if (!isset($result['limit'])) {
@@ -184,10 +189,13 @@
 		 * @return array Column definition with normalized property values
 		 */
 		private function normalizePropertyValues(array $columnDefinition): array {
-			$result = $columnDefinition;
-			$columnType = $result['type'] ?? 'string';
+			// Extract column type, defaulting to 'string' if not specified
+			$columnType = $columnDefinition['type'] ?? 'string';
 			
-			foreach ($result as $property => $value) {
+			// Normalize each property value based on its property name and the column type
+			$result = [];
+
+			foreach ($columnDefinition as $property => $value) {
 				$result[$property] = $this->normalizePropertyValue($property, $value, $columnType);
 			}
 			
@@ -202,6 +210,11 @@
 		 * @return mixed Normalized property value
 		 */
 		private function normalizePropertyValue(string $property, mixed $value, string $columnType): mixed {
+			// If the property is 'type' and the value is 'enum', transform to string
+			if ($property === 'type' && $value === 'enum') {
+				return "string";
+			}
+			
 			// Convert numeric properties to integers if the value is numeric
 			// This ensures consistent data types for properties like length, precision, scale, etc.
 			if (in_array($property, self::NUMERIC_PROPERTIES) && is_numeric($value)) {

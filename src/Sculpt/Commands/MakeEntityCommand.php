@@ -278,8 +278,20 @@
 				
 				// For enum types, ask for enum details
 				$enumType = null;
+				
 				if ($propertyType === 'enum') {
-					$enumType = $this->input->ask("Enter fully qualified enum class name (e.g. App\Enum\OrderStatus)");
+					while ($enumType === null) {
+						// Ask for enum class name.
+						$enumType = $this->input->ask("Enter fully qualified enum class name (e.g. App\Enum\OrderStatus)");
+						
+						// Check if it exists. If so, continue
+						if (enum_exists($enumType)) {
+							break;
+						}
+						
+						// Show error when the enum class does not exist
+						$this->output->error("Invalid enum class name");
+					}
 				}
 				
 				// Ask if property can be nullable in the database

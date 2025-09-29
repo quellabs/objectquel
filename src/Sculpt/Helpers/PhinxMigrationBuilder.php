@@ -264,6 +264,11 @@ PHP;
 				// Extract the column data type which maps to Phinx types
 				$type = $definition['type'];
 				
+				// If the type is 'enum', transform it to 'string'
+				if ($type === 'enum') {
+					$type = 'string';
+				}
+				
 				// Build column options using helper method (handles nullability, defaults, limits, etc.)
 				$options = $this->buildColumnOptions($definition);
 				

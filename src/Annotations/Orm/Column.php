@@ -4,6 +4,7 @@
 	
 	use Quellabs\AnnotationReader\AnnotationInterface;
 	use Quellabs\ObjectQuel\DatabaseAdapter\TypeMapper;
+	use Quellabs\Support\Tools;
 	
 	/**
 	 * Column annotation class for ORM mapping
@@ -68,12 +69,25 @@
 		}
 		
 		/**
+		 * Returns the enum type, or null if there is none
+		 * @return string|null
+		 */
+		public function getEnumType(): ?string {
+			return $this->parameters["enumType"] ?? null;
+		}
+		
+		/**
 		 * Gets the column length/size
 		 * This method retrieves the defined length or size constraint for a database column
 		 * (e.g., VARCHAR(255) where 255 is the limit)
 		 * @return int|null The length/size of the column or null if not specified or invalid
 		 */
 		public function getLimit(): ?int {
+			// Calculate the length if the type is 'enum'
+			if ($this->getType() === 'enum') {
+				return max(Tools::getMaxEnumValueLength($this->getEnumType()), 32);
+			}
+			
 			// Check if the limit parameter exists or is empty
 			if (empty($this->parameters["limit"])) {
 				// Return null if no limit is defined
