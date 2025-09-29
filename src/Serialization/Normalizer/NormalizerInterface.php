@@ -3,23 +3,22 @@
     namespace Quellabs\ObjectQuel\Serialization\Normalizer;
     
     interface NormalizerInterface {
-
+	    
 	    /**
-	     * Sets the value to normalize/denormalize
-	     * @param $value
-	     * @return void
+	     * Passed annotation parameters
+	     * @param array $parameters
 	     */
-		public function setValue($value): void;
-    
+		public function __construct(array $parameters);
+	    
         /**
          * The normalize function converts a value residing in an entity into a value
          * that can be inserted into an entity
          */
-        public function normalize();
+        public function normalize(mixed $value): mixed;
 
         /**
          * The denormalize function converts a value residing in the database into a value
          * that can be implanted in the DB
          */
-        public function denormalize();
+        public function denormalize(mixed $value): mixed;
     }

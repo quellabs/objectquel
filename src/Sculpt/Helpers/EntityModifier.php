@@ -429,6 +429,11 @@
 			// Add the name and type properties
 			$properties[] = "name=\"{$snakeCaseName}\"";
 			$properties[] = "type=\"{$type}\"";
+
+			// Add enumType
+			if (!empty($property['enumType'])) {
+				$properties[] = "enumType={$property['enumType']}::class";
+			}
 			
 			// Add optional properties if they exist
 			if (isset($property['limit']) && is_numeric($property['limit'])) {

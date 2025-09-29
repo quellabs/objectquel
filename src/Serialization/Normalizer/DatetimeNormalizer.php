@@ -12,49 +12,49 @@
 	class DatetimeNormalizer implements NormalizerInterface  {
 		
 		/**
-		 * The value to be normalized or denormalized.
-		 * Can be either a string datetime or a \DateTime object.
-		 * @var mixed
+		 * Parameters as passed by the annotation
+		 * @var array
 		 */
-		protected $value;
+		private array $parameters;
 		
 		/**
-		 * Sets the value to normalize/denormalize
-		 * @param mixed $value Either a datetime string or a \DateTime object
-		 * @return void
+		 * Passed annotation parameters
+		 * @param array $parameters
 		 */
-		public function setValue($value): void {
-			$this->value = $value;
+		public function __construct(array $parameters) {
+			$this->parameters = $parameters;
 		}
 		
 		/**
 		 * Converts a string datetime to a PHP \DateTime object
+		 * @param mixed $value
 		 * @return \DateTime|null Returns a DateTime object or null if:
 		 *                        - Input value is null
 		 *                        - Input is an empty/zero datetime ("0000-00-00 00:00:00")
 		 */
-		public function normalize(): ?\DateTime {
+		public function normalize(mixed $value): ?\DateTime {
 			// Return null for null values or empty/zero datetimes
-			if (is_null($this->value) || $this->value == "0000-00-00 00:00:00") {
+			if (is_null($value) || $value == "0000-00-00 00:00:00") {
 				return null;
 			}
 			
 			// Convert string datetime to \DateTime object using the format "Y-m-d H:i:s"
-			return \DateTime::createFromFormat("Y-m-d H:i:s", $this->value);
+			return \DateTime::createFromFormat("Y-m-d H:i:s", $value);
 		}
 		
 		/**
 		 * Converts a PHP \DateTime object to a formatted datetime string
+		 * @param mixed $value
 		 * @return string|null Returns a formatted datetime string in "Y-m-d H:i:s" format
 		 *                     or null if the input \DateTime is null
 		 */
-		public function denormalize(): ?string {
+		public function denormalize(mixed $value): ?string {
 			// Return null if the DateTime object is null
-			if ($this->value === null) {
+			if ($value === null) {
 				return null;
 			}
 			
 			// Format the DateTime object to a string using the format "Y-m-d H:i:s"
-			return $this->value->format("Y-m-d H:i:s");
+			return $value->format("Y-m-d H:i:s");
 		}
 	}
