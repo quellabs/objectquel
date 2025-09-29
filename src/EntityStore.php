@@ -41,59 +41,59 @@
     class EntityStore {
 	    protected Configuration $configuration;
 	    protected EntityLocator $entity_locator;
-		protected AnnotationReader $annotation_reader;
-        protected ReflectionHandler $reflection_handler;
-		protected ProxyGenerator $proxy_generator;
-		protected string $proxyNamespace;
-        protected array $entity_properties;
-        protected array $entity_table_name;
-        protected array $entity_annotations;
-        protected array $column_map_cache;
-        protected array $identifier_keys_cache;
-        protected array $identifier_columns_cache;
-        protected string|bool $services_path;
+	    protected AnnotationReader $annotation_reader;
+	    protected ReflectionHandler $reflection_handler;
+	    protected ProxyGenerator $proxy_generator;
+	    protected string $proxyNamespace;
+	    protected array $entity_properties;
+	    protected array $entity_table_name;
+	    protected array $entity_annotations;
+	    protected array $column_map_cache;
+	    protected array $identifier_keys_cache;
+	    protected array $identifier_columns_cache;
+	    protected string|bool $services_path;
 	    protected string $entity_namespace;
-        protected array|null $dependencies;
-        protected array $dependencies_cache;
-        protected array $completed_entity_name_cache;
-        protected array $auto_increment_column_cache;
-        protected array $index_cache;
+	    protected array|null $dependencies;
+	    protected array $dependencies_cache;
+	    protected array $completed_entity_name_cache;
+	    protected array $auto_increment_column_cache;
+	    protected array $index_cache;
 	    
 	    /**
 	     * EntityStore constructor.
 	     */
-		public function __construct(Configuration $configuration) {
-			$annotationReaderConfiguration = new \Quellabs\AnnotationReader\Configuration();
-			$annotationReaderConfiguration->setUseAnnotationCache($configuration->useMetadataCache());
-			$annotationReaderConfiguration->setAnnotationCachePath($configuration->getMetadataCachePath());
-			
-			$this->proxyNamespace = 'Quellabs\\ObjectQuel\\Proxy\\Runtime';
-			$this->configuration = $configuration;
-			$this->annotation_reader = new AnnotationReader($annotationReaderConfiguration);
-			$this->reflection_handler = new ReflectionHandler();
-			$this->services_path = realpath(__DIR__ . DIRECTORY_SEPARATOR . "..");
-			$this->entity_namespace = $configuration->getEntityNameSpace();
-			$this->entity_properties = [];
-			$this->entity_table_name = [];
-			$this->entity_annotations = [];
-			$this->column_map_cache = [];
-			$this->identifier_keys_cache = [];
-			$this->identifier_columns_cache = [];
-			$this->dependencies = null;
-			$this->dependencies_cache = [];
-			$this->completed_entity_name_cache = [];
-			$this->auto_increment_column_cache = [];
-			$this->index_cache = [];
-
-			// Create the EntityLocator
-			$this->entity_locator = new EntityLocator($configuration, $this->annotation_reader);
-			
-			// Deze functie initialiseert alle entiteiten in de "Entity"-directory.
-			$this->initializeEntities();
-			
-			// Deze functie initialiseert de proxies
-			$this->proxy_generator = new ProxyGenerator($this, $configuration);
-		}
+	    public function __construct(Configuration $configuration) {
+		    $annotationReaderConfiguration = new \Quellabs\AnnotationReader\Configuration();
+		    $annotationReaderConfiguration->setUseAnnotationCache($configuration->useMetadataCache());
+		    $annotationReaderConfiguration->setAnnotationCachePath($configuration->getMetadataCachePath());
+		    
+		    $this->proxyNamespace = 'Quellabs\\ObjectQuel\\Proxy\\Runtime';
+		    $this->configuration = $configuration;
+		    $this->annotation_reader = new AnnotationReader($annotationReaderConfiguration);
+		    $this->reflection_handler = new ReflectionHandler();
+		    $this->services_path = realpath(__DIR__ . DIRECTORY_SEPARATOR . "..");
+		    $this->entity_namespace = $configuration->getEntityNameSpace();
+		    $this->entity_properties = [];
+		    $this->entity_table_name = [];
+		    $this->entity_annotations = [];
+		    $this->column_map_cache = [];
+		    $this->identifier_keys_cache = [];
+		    $this->identifier_columns_cache = [];
+		    $this->dependencies = null;
+		    $this->dependencies_cache = [];
+		    $this->completed_entity_name_cache = [];
+		    $this->auto_increment_column_cache = [];
+		    $this->index_cache = [];
+		    
+		    // Create the EntityLocator
+		    $this->entity_locator = new EntityLocator($configuration, $this->annotation_reader);
+		    
+		    // Deze functie initialiseert alle entiteiten in de "Entity"-directory.
+		    $this->initializeEntities();
+		    
+		    // Deze functie initialiseert de proxies
+		    $this->proxy_generator = new ProxyGenerator($this, $configuration);
+	    }
 	    
 	    /**
 	     * Returns the annotationReader object
@@ -133,7 +133,7 @@
 	     * @return string Normalized class name.
 	     */
 	    public function normalizeEntityName(string $class): string {
-			// return cached entity name if present
+		    // return cached entity name if present
 		    if (isset($this->completed_entity_name_cache[$class])) {
 			    return $this->completed_entity_name_cache[$class];
 		    }
@@ -150,7 +150,7 @@
 		    
 		    // Try resolving short class name
 		    $resolved = NamespaceResolver::resolveClassName($class);
-			$fullyQualifiedClassName = ($resolved === $class) ? "{$this->entity_namespace}\\{$class}" : $resolved;
+		    $fullyQualifiedClassName = ($resolved === $class) ? "{$this->entity_namespace}\\{$class}" : $resolved;
 		    return $this->completed_entity_name_cache[$class] = $fullyQualifiedClassName;
 	    }
 	    
@@ -179,7 +179,7 @@
 		    
 		    // Get the parent class name using the ReflectionHandler
 		    $parentClass = $this->getReflectionHandler()->getParent($normalizedClass);
-			
+		    
 		    // Check if the parent class exists in the entity_table_name array
 		    // Return false if neither the entity nor its parent class exists in the entity_table_name array
 		    return $parentClass !== null && isset($this->entity_table_name[$parentClass]);
@@ -211,9 +211,9 @@
 	     * Returns an array with key = className and value=tableName
 	     * @return array
 	     */
-		public function getEntityMap(): array {
-			return $this->entity_table_name;
-		}
+	    public function getEntityMap(): array {
+		    return $this->entity_table_name;
+	    }
 	    
 	    /**
 	     * This function retrieves the primary keys of a given entity.
@@ -360,7 +360,7 @@
 	     * @param string|null $annotationType Optional class name to filter annotations by specific type
 	     * @return array<string, AnnotationCollection>
 	     *         Array of annotation objects, optionally filtered by type
-         */
+	     */
 	    public function getAnnotations(mixed $entity, ?string $annotationType = null): array {
 		    // Determine the class name of the entity
 		    // If $entity is not an object, treat it as a class name and remove leading backslash
@@ -395,7 +395,7 @@
 		    // No specific type requested, return all annotations for this entity
 		    return $annotationList;
 	    }
-
+	    
 	    /**
 	     * Retrieves all OneToOne dependencies for a specific entity.
 	     * @param mixed $entity The name of the entity for which you want to get the OneToOne dependencies.
@@ -567,7 +567,7 @@
 				    try {
 					    // Retrieve all annotations for the current property
 					    $propertyAnnotations = $this->annotation_reader->getPropertyAnnotations($className, $property->getName(), Column::class);
-						
+					    
 					    // If not found, go to the next property
 					    if ($propertyAnnotations->isEmpty()) {
 						    continue;
@@ -604,8 +604,11 @@
 						    
 						    // Check if this column is an auto-incrementing identity column
 						    'identity'      => $this->isIdentityColumn($propertyAnnotations->toArray()),
+						    
+						    // Read enum values
+						    'values'        => $this->getEnumCases($columnAnnotation->getEnumType())
 					    ];
-					} catch (ParserException $e) {
+				    } catch (ParserException $e) {
 				    }
 			    }
 		    } catch (\ReflectionException $e) {
@@ -672,22 +675,22 @@
 			    $annotations = $this->annotation_reader->getClassAnnotations($entity);
 			    
 			    // Filter annotations to only include Index and UniqueIndex types
-			    $filteredResults = $annotations->filter(function($annotation) {
+			    $filteredResults = $annotations->filter(function ($annotation) {
 				    // Return true only if the annotation is an index type
 				    // This keeps both regular indexes and unique indexes
 				    return
 					    $annotation instanceof Index ||        // Regular index annotation
 					    $annotation instanceof UniqueIndex;    // Unique constraint index annotation
 			    });
-				
-				// Cache and return result
+			    
+			    // Cache and return result
 			    return $this->index_cache[$owningTable] = $filteredResults->toArray();
 		    } catch (ParserException $e) {
 			    return [];
 		    }
 	    }
-
-		/**
+	    
+	    /**
 	     * Initialize entity classes using the EntityLocator.
 	     * This method discovers entity classes, validates them,
 	     * and loads their properties and annotations into memory.
@@ -718,28 +721,34 @@
 			    error_log("Error initializing entities: " . $e->getMessage());
 		    }
 	    }
-		
-		/**
-		 * Returns a list of entities and their ManyToOne dependencies
-		 * @return array
-		 */
-		private function getAllEntityDependencies(): array {
-			if ($this->dependencies === null) {
-				$this->dependencies = [];
-
-				foreach (array_keys($this->entity_table_name) as $class) {
-					$manyToOneDependencies = $this->getManyToOneDependencies($class);
-					$oneToOneDependencies = array_filter($this->getOneToOneDependencies($class), function($e) { return !empty($e->getInversedBy()); });
-					
-					$this->dependencies[$class] = array_unique(array_merge(
-						array_map(function($e) { return $this->normalizeEntityName($e->getTargetEntity()); }, $manyToOneDependencies),
-						array_map(function($e) { return $this->normalizeEntityName($e->getTargetEntity()); }, $oneToOneDependencies),
-					));
-				}
-			}
-			
-			return $this->dependencies;
-		}
+	    
+	    /**
+	     * Returns a list of entities and their ManyToOne dependencies
+	     * @return array
+	     */
+	    private function getAllEntityDependencies(): array {
+		    if ($this->dependencies === null) {
+			    $this->dependencies = [];
+			    
+			    foreach (array_keys($this->entity_table_name) as $class) {
+				    $manyToOneDependencies = $this->getManyToOneDependencies($class);
+				    $oneToOneDependencies = array_filter($this->getOneToOneDependencies($class), function ($e) {
+					    return !empty($e->getInversedBy());
+				    });
+				    
+				    $this->dependencies[$class] = array_unique(array_merge(
+					    array_map(function ($e) {
+						    return $this->normalizeEntityName($e->getTargetEntity());
+					    }, $manyToOneDependencies),
+					    array_map(function ($e) {
+						    return $this->normalizeEntityName($e->getTargetEntity());
+					    }, $oneToOneDependencies),
+				    ));
+			    }
+		    }
+		    
+		    return $this->dependencies;
+	    }
 	    
 	    /**
 	     * Internal helper functions for retrieving properties with a specific annotation
@@ -824,5 +833,27 @@
 		    // 1. It's a primary key, AND
 		    // 2. EITHER it has an identity strategy OR it has no strategy at all
 		    return $isPrimaryKey && ($isIdentityStrategy || !$hasStrategy);
+	    }
+	    
+	    /**
+	     * Extracts all enum cases from a Column annotation's enum type.
+	     * @param string|null $enumType
+	     * @return array Array of enum cases if enum type exists, empty array otherwise
+	     */
+	    private function getEnumCases(?string $enumType): array {
+		    // Return empty array if no enum type is defined
+		    if (empty($enumType)) {
+			    return [];
+		    }
+		    
+		    // Validate that the enum type exists and is actually an enum class
+		    // This prevents fatal errors if an invalid class name is passed
+		    if (!enum_exists($enumType)) {
+			    return [];
+		    }
+		    
+		    // Use the static cases() method to retrieve all enum cases
+		    // This works for both backed and pure enums in PHP 8.1+
+		    return array_map(function($e) { return $e->value; }, $enumType::cases());
 	    }
     }

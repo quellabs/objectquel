@@ -24,7 +24,7 @@
 		protected int $transaction_depth;
 		protected array $indexes;
 		private ?bool $supportsWindowFunctionsCache;
-		private string $databaseTypeCache;
+		private ?string $databaseTypeCache;
 		
 		/**
 		 * Database Adapter constructor.
@@ -43,6 +43,7 @@
 			$this->last_error_message = '';
 			$this->transaction_depth = 0;
 			$this->supportsWindowFunctionsCache = null;
+			$this->databaseTypeCache = null;
 			
 			// Check if connection already exists and drop it if needed
 			if (ConnectionManager::getConfig('default')) {
@@ -141,7 +142,7 @@
 				$columnType = $column->getType();
 				$isOfDecimalType = in_array(strtolower($columnType), $decimalTypes);
 				
-				$result[$column->getName()] = [
+				$columnData = [
 					// Basic column type (integer, string, decimal, etc.)
 					'type'        => $columnType,
 					
@@ -175,7 +176,18 @@
 					
 					// Whether this column is part of the primary key
 					'primary_key' => in_array($column->getName(), $primaryKey),
+					
+					// Values for enums
+					'values'      => $column->getValues()
 				];
+				
+				// For enums put the max length in the column data.
+				// This is needed to be able to compare entity data with database data
+				if ($columnType === 'enum') {
+					$columnData['limit'] = max(max(array_map('strlen', $column->getValues())), 32);
+				}
+				
+				$result[$column->getName()] = $columnData;
 			}
 			
 			return $result;
@@ -342,6 +354,7 @@
 					$keys = array_keys($row);
 					$firstCol = $keys[0];
 				}
+				
 				$result[] = $row[$firstCol];
 			}
 			

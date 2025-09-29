@@ -2,6 +2,7 @@
 	
 	namespace Quellabs\ObjectQuel\Sculpt\Helpers;
 	
+	use Quellabs\ObjectQuel\DatabaseAdapter\DatabaseAdapter;
 	use Quellabs\ObjectQuel\DatabaseAdapter\TypeMapper;
 	
 	/**
@@ -11,13 +12,20 @@
 	 * migration code for creating, modifying, or removing database tables, columns, and indexes.
 	 */
 	class PhinxMigrationBuilder {
+		
+		/** @var DatabaseAdapter Database connection adapter for querying schema information */
+		private DatabaseAdapter $connection;
+		
+		/** @var string The migrations folder */
 		private string $migrationsPath;
 		
 		/**
 		 * PhinxMigrationBuilder constructor
+		 * @param DatabaseAdapter $adapter
 		 * @param string $migrationsPath Path where migration files will be stored
 		 */
-		public function __construct(string $migrationsPath) {
+		public function __construct(DatabaseAdapter $adapter, string $migrationsPath) {
+			$this->connection = $adapter;
 			$this->migrationsPath = $migrationsPath;
 		}
 		
@@ -264,11 +272,6 @@ PHP;
 				// Extract the column data type which maps to Phinx types
 				$type = $definition['type'];
 				
-				// If the type is 'enum', transform it to 'string'
-				if ($type === 'enum') {
-					$type = 'string';
-				}
-				
 				// Build column options using helper method (handles nullability, defaults, limits, etc.)
 				$options = $this->buildColumnOptions($definition);
 				
@@ -284,7 +287,11 @@ PHP;
 				
 				// Generate the complete addColumn() method call with proper indentation
 				// This follows Phinx's fluent interface pattern for table operations
-				$columnDefs[] = "            ->addColumn('$columnName', '$type'$optionsStr)";
+				if ($type !== 'enum' || $this->connection->supportsNativeEnums()) {
+					$columnDefs[] = "            ->addColumn('{$columnName}', '{$type}'{$optionsStr})";
+				} else {
+					$columnDefs[] = "            ->addColumn('{$columnName}', 'string'{$optionsStr})";
+				}
 			}
 			
 			// Return all column definitions as an array of strings
@@ -568,6 +575,9 @@ PHP;
 			// Handle unsigned flag for numeric types
 			$this->addSignednessOption($options, $propertyDef);
 			
+			// Handle enum values
+			$this->addEnumValues($options, $propertyDef);
+			
 			// Return result
 			return $options;
 		}
@@ -578,7 +588,10 @@ PHP;
 		 * @param array $propertyDef Property definition
 		 */
 		private function addLimitOption(array &$options, array $propertyDef): void {
-			if (!empty($propertyDef['limit'])) {
+			if (
+				!empty($propertyDef['limit']) &&
+				($propertyDef['type'] !== 'enum' || !$this->connection->supportsNativeEnums())
+			) {
 				$options[] = "'limit' => " . TypeMapper::formatValue($propertyDef['limit']);
 			}
 		}
@@ -634,6 +647,18 @@ PHP;
 			if (isset($propertyDef['unsigned'])) {
 				// Note: Phinx uses 'signed' (opposite of 'unsigned')
 				$options[] = "'signed' => " . ($propertyDef['unsigned'] ? 'false' : 'true');
+			}
+		}
+
+		/**
+		 * Add enum values
+		 * @param array &$options Options array to modify
+		 * @param array $propertyDef Property definition
+		 */
+		private function addEnumValues(array &$options, array $propertyDef): void {
+			if (!empty($propertyDef['values'])) {
+				$enumValues = array_map(function ($value) { return "'" . addslashes($value) . "'"; }, $propertyDef["values"]);
+				$options[] = "'values' => [" . implode(', ', $enumValues) . "]";
 			}
 		}
 	}

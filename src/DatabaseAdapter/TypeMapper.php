@@ -155,7 +155,7 @@
 				
 				// Common extension types
 				'json'         => [],
-				'enum'         => ['limit', 'enumType'],
+				'enum'         => ['limit', 'values'],
 			];
 			
 			return array_merge($baseProperties, $typeProperties[$type] ?? []);
