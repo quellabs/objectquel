@@ -212,25 +212,21 @@
 		 * @param string $tableName
 		 * @return array
 		 */
-		private function getPrimaryKeyColumns(string $tableName): array {
-			try {
-				// Get the schema descriptor for the specified table
-				$schema = $this->connection->getSchemaCollection()->describe($tableName);
+		public function getPrimaryKeyColumns(string $tableName): array {
+			// Get the schema descriptor for the specified table
+			$schema = $this->connection->getSchemaCollection()->describe($tableName);
+			
+			// Iterate through all constraints defined on the table
+			foreach ($schema->constraints() as $constraint) {
+				// Get detailed information about the current constraint
+				$constraintData = $schema->getConstraint($constraint);
 				
-				// Iterate through all constraints defined on the table
-				foreach ($schema->constraints() as $constraint) {
-					// Get detailed information about the current constraint
-					$constraintData = $schema->getConstraint($constraint);
-					
-					// Check if this constraint is a primary key constraint
-					if ($constraintData['type'] === 'primary') {
-						// Return the column names that make up the primary key
-						// This supports both single and composite primary keys
-						return $constraintData['columns'];
-					}
+				// Check if this constraint is a primary key constraint
+				if ($constraintData['type'] === 'primary') {
+					// Return the column names that make up the primary key
+					// This supports both single and composite primary keys
+					return $constraintData['columns'];
 				}
-			} catch (\Exception $e) {
-				// Silently fail and return empty string
 			}
 			
 			// Return an empty array if no primary key could be determined
