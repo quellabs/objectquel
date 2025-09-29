@@ -2,6 +2,7 @@
 	
 	namespace Quellabs\ObjectQuel\Sculpt\Helpers;
 	
+	use Quellabs\ObjectQuel\DatabaseAdapter\DatabaseAdapter;
 	use Quellabs\ObjectQuel\DatabaseAdapter\TypeMapper;
 	use Quellabs\Support\Tools;
 	
@@ -14,6 +15,17 @@
 		
 		private const array NUMERIC_PROPERTIES = ['limit', 'precision', 'scale'];
 		private const array BOOLEAN_PROPERTIES = ['null', 'unsigned', 'signed', 'identity'];
+		
+		/** @var DatabaseAdapter Database connection adapter for querying schema information */
+		private DatabaseAdapter $connection;
+		
+		/**
+		 * SchemaComparator constructor
+		 * @param DatabaseAdapter $connection
+		 */
+		public function __construct(DatabaseAdapter $connection) {
+			$this->connection = $connection;
+		}
 		
 		/**
 		 * Main public method to compare entity properties with table columns
@@ -113,8 +125,12 @@
 			// Step 1: Add any missing default values to ensure all required properties are present
 			$normalized = $this->addDefaultValues($columnDefinition);
 			
-			// Step 2: Normalize enum to string
-			if (isset($normalized['type']) && $normalized['type'] === 'enum') {
+			// Step 2: If database does not support ENUM, normalize enum to string
+			if (
+				isset($normalized['type']) &&
+				$normalized['type'] === 'enum' &&
+				!$this->connection->supportsNativeEnums()
+			) {
 				$normalized['type'] = 'string';
 			}
 			

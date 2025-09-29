@@ -13,7 +13,7 @@
 	 * database schema to detect structural differences that need migration.
 	 */
 	class EntitySchemaAnalyzer {
-
+		
 		/** @var DatabaseAdapter Database connection adapter for querying schema information */
 		private DatabaseAdapter $connection;
 		
@@ -38,7 +38,7 @@
 			$this->connection = $connection;
 			$this->entityStore = $entityStore;
 			$this->indexComparator = new IndexComparator($connection, $entityStore);
-			$this->schemaComparator = new SchemaComparator();
+			$this->schemaComparator = new SchemaComparator($connection);
 		}
 		
 		/**
@@ -63,7 +63,7 @@
 				
 				// Analyze each entity class individually
 				$allChanges = [];
-
+				
 				foreach ($entityClasses as $className => $tableName) {
 					// Ensure entity class and table name are valid
 					$this->validate($className, $tableName);
@@ -127,7 +127,7 @@
 			
 			// Placeholder for future constraint comparison logic
 			$changes['constraints'] = [];
-		
+			
 			// Return results
 			return $changes;
 		}

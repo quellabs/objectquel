@@ -62,7 +62,7 @@
 			$allChanges = $entitySchemaAnalyzer->analyzeEntityChanges($entityMap);
 			
 			// Step 3: Generate a migration file based on changes
-			$migrationBuilder = new PhinxMigrationBuilder($this->migrationsPath);
+			$migrationBuilder = new PhinxMigrationBuilder($this->getConnection(), $this->migrationsPath);
 			$result = $migrationBuilder->generateMigrationFile($allChanges);
 			
 			if (!$result['success']) {
