@@ -68,7 +68,6 @@
 				];
 			}
 			
-			// If file writing failed, inform the user
 			return [
 				'success' => false,
 				'message' => "Failed to create migration file."
@@ -86,6 +85,9 @@
 			$downMethod = [];
 			
 			foreach ($allChanges as $tableName => $changes) {
+				// Validate changes structure
+				$changes = $this->validateChangesStructure($changes);
+				
 				// Add table if it doesn't exist
 				if (!empty($changes['table_not_exists'])) {
 					$upMethod[] = $this->buildCreateTableCode($tableName, $changes['added'], $changes['indexes']);
@@ -101,8 +103,8 @@
 				
 				// Modify columns
 				if (!empty($changes['modified'])) {
-					$upMethod[] = $this->buildModifyColumnsCode($tableName, $changes['modified']);
-					$downMethod[] = $this->buildReverseModifyColumnsCode($tableName, $changes['modified']);
+					$upMethod[] = $this->buildChangeColumnsCode($tableName, $changes['modified'], 'to');
+					$downMethod[] = $this->buildChangeColumnsCode($tableName, $changes['modified'], 'from');
 				}
 				
 				// Remove columns
@@ -119,7 +121,6 @@
 						$downMethod[] = $this->buildRemoveIndexesCode($tableName, $changes['indexes']['added']);
 					}
 					
-					// Modify existing indexes
 					if (!empty($changes['indexes']['modified'])) {
 						$upMethod[] = $this->buildModifyIndexesCode($tableName, $changes['indexes']['modified']);
 						
@@ -169,6 +170,27 @@ $downMethodContent
     }
 }
 PHP;
+		}
+		
+		/**
+		 * Validate and normalize changes structure to prevent undefined index errors
+		 * @param array $changes Changes array
+		 * @return array Normalized changes with all expected keys
+		 */
+		private function validateChangesStructure(array $changes): array {
+			$defaults = [
+				'added' => [],
+				'modified' => [],
+				'deleted' => [],
+				'indexes' => [
+					'added' => [],
+					'modified' => [],
+					'deleted' => []
+				],
+				'table_not_exists' => false
+			];
+			
+			return array_merge($defaults, $changes);
 		}
 		
 		/**
@@ -362,7 +384,7 @@ PHP;
 				$indexOptions[] = "'name' => '$indexName'";
 				
 				// Add unique constraint if specified
-				if ($indexConfig['unique']) {
+				if (!empty($indexConfig['unique'])) {
 					$indexOptions[] = "'unique' => true";
 				}
 				
@@ -405,14 +427,11 @@ PHP;
 			// Step 5: Add all column definitions
 			$tableCode .= "\n" . implode("\n", $columnDefinitions);
 			
-			// Step 6: Add indexes for primary keys
+			// Step 6: Update primary key definition using changePrimaryKey
+			// This properly redefines the entire primary key constraint
 			if (!empty($primaryKeys)) {
-				// Transform primary keys to string
-				$primaryKeysStr = implode("', '", $primaryKeys);
-				
-				// Remove any existing indexes on these columns first
-				$tableCode .= "\n            ->removeIndex(['$primaryKeysStr'])\n";
-				$tableCode .= "            ->addIndex(['$primaryKeysStr'], ['unique' => true, 'name' => 'PRIMARY'])";
+				$primaryKeysStr = "'" . implode("', '", $primaryKeys) . "'";
+				$tableCode .= "\n            ->changePrimaryKey([$primaryKeysStr])";
 			}
 			
 			// Step 7: Add separate unique index for auto-increment column if needed
@@ -422,7 +441,7 @@ PHP;
 			
 			// Step 8: Finalize the table update
 			$tableCode .= "\n            ->update();";
-		
+			
 			// Return the result
 			return $tableCode;
 		}
@@ -444,39 +463,19 @@ PHP;
 		}
 		
 		/**
-		 * Build code for modifying columns in a table
+		 * Build code for modifying columns in a table (supports both forward and reverse migrations)
 		 * @param string $tableName Table name
-		 * @param array $modifiedColumns Modified column definitions
+		 * @param array $modifiedColumns Modified column definitions with 'to' and 'from' states
+		 * @param string $direction Either 'to' for forward migration or 'from' for rollback
 		 * @return string Code for modifying columns
 		 */
-		private function buildModifyColumnsCode(string $tableName, array $modifiedColumns): string {
+		private function buildChangeColumnsCode(string $tableName, array $modifiedColumns, string $direction): string {
 			$columnDefs = [];
 			
 			foreach ($modifiedColumns as $columnName => $changes) {
-				$type = $changes['to']['type'];
+				$type = $changes[$direction]['type'];
 				
-				$options = $this->buildColumnOptions($changes['to']);
-				
-				$optionsStr = empty($options) ? "" : ", [" . implode(", ", $options) . "]";
-				$columnDefs[] = "            ->changeColumn('$columnName', '$type'$optionsStr)";
-			}
-			
-			return "        \$this->table('$tableName')\n" . implode("\n", $columnDefs) . "\n            ->update();";
-		}
-		
-		/**
-		 * Build code for reversing column modifications
-		 * @param string $tableName Table name
-		 * @param array $modifiedColumns Modified column definitions
-		 * @return string Code for reversing column modifications
-		 */
-		private function buildReverseModifyColumnsCode(string $tableName, array $modifiedColumns): string {
-			$columnDefs = [];
-			
-			foreach ($modifiedColumns as $columnName => $changes) {
-				$type = $changes['from']['type'];
-				
-				$options = $this->buildColumnOptions($changes['from']);
+				$options = $this->buildColumnOptions($changes[$direction]);
 				
 				$optionsStr = empty($options) ? "" : ", [" . implode(", ", $options) . "]";
 				$columnDefs[] = "            ->changeColumn('$columnName', '$type'$optionsStr)";
@@ -498,7 +497,7 @@ PHP;
 				$columns = "'" . implode("', '", $indexConfig['columns']) . "'";
 				$options = ["'name' => '$name'"];
 				
-				if ($indexConfig['unique']) {
+				if (!empty($indexConfig['unique'])) {
 					$options[] = "'unique' => true";
 				}
 				
@@ -512,13 +511,18 @@ PHP;
 		/**
 		 * Build code for modifying indexes in a table
 		 * @param string $tableName Table name
-		 * @param array $indexes Index modifications
+		 * @param array $indexes Index modifications with 'entity' and 'database' configurations
 		 * @return string Code for modifying indexes
 		 */
 		private function buildModifyIndexesCode(string $tableName, array $indexes): string {
 			$indexDefs = [];
 			
 			foreach ($indexes as $name => $configs) {
+				// Validate structure to prevent undefined index errors
+				if (!isset($configs['entity']['columns']) || !isset($configs['entity']['unique'])) {
+					continue;
+				}
+				
 				// We need to drop and recreate the index, as Phinx doesn't have a direct "modify index" function
 				$indexDefs[] = "            ->removeIndex([], ['name' => '$name'])";
 				
@@ -649,7 +653,7 @@ PHP;
 				$options[] = "'signed' => " . ($propertyDef['unsigned'] ? 'false' : 'true');
 			}
 		}
-
+		
 		/**
 		 * Add enum values
 		 * @param array &$options Options array to modify
