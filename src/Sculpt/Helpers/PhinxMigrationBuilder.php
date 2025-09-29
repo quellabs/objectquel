@@ -656,7 +656,7 @@ PHP;
 		 * @param array $propertyDef Property definition
 		 */
 		private function addEnumValues(array &$options, array $propertyDef): void {
-			if (!empty($propertyDef['values'])) {
+			if (!empty($propertyDef['values']) && $this->connection->supportsNativeEnums()) {
 				$enumValues = array_map(function ($value) { return "'" . addslashes($value) . "'"; }, $propertyDef["values"]);
 				$options[] = "'values' => [" . implode(', ', $enumValues) . "]";
 			}
