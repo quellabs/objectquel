@@ -62,9 +62,8 @@
 		 */
 		private function getModifiedColumns(array $entityColumns, array $tableColumns): array {
 			$result = [];
-			$commonColumns = array_intersect_key($entityColumns, $tableColumns);
 			
-			foreach ($commonColumns as $columnName => $entityColumn) {
+			foreach (array_intersect_key($entityColumns, $tableColumns) as $columnName => $entityColumn) {
 				if ($this->hasColumnChanged($entityColumn, $tableColumns[$columnName])) {
 					$result[$columnName] = $this->buildChangeDetails($entityColumn, $tableColumns[$columnName]);
 				}
@@ -96,8 +95,8 @@
 			$normalizedTable = $this->normalizeColumnDefinition($tableColumn);
 			
 			return [
-				'from'    => $tableColumn,
-				'to'      => $entityColumn,
+				'from'    => $normalizedTable,
+				'to'      => $normalizedEntity,
 				'changes' => $this->identifySpecificChanges($normalizedTable, $normalizedEntity)
 			];
 		}
@@ -158,14 +157,13 @@
 			$result = $columnDefinition;
 			$columnType = $result['type'] ?? 'string';
 
-			// Calculate enum limit
-			if ($result["type"] === 'enum') {
-				$result['limit'] = max(Tools::getMaxEnumValueLength($columnDefinition['enumType']), 32);
-			}
-			
 			// Add default limit if missing
 			if (!isset($result['limit'])) {
-				$result['limit'] = TypeMapper::getDefaultLimit($columnType);
+				if ($result["type"] === 'enum' && !empty($columnDefinition['enumType'])) {
+					$result['limit'] = max(Tools::getMaxEnumValueLength($columnDefinition['enumType']), 32);
+				} else {
+					$result['limit'] = TypeMapper::getDefaultLimit($columnType);
+				}
 			}
 			
 			return $result;
