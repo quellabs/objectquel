@@ -13,11 +13,8 @@
 	class Serializer {
 		
 		protected array $normalizers;
-		protected array $int_types;
-		protected array $float_types;
 		protected array $methodExistsCache;
-		protected array $normalizerInstances;
-		protected string $serialization_group_name;
+		protected string $serializationGroupName;
 		protected EntityStore $entityStore;
 		protected PropertyHandler $propertyHandler;
 		protected ReflectionHandler $reflectionHandler;
@@ -34,13 +31,9 @@
 			$this->propertyHandler = new PropertyHandler();
 			$this->reflectionHandler = $entityStore->getReflectionHandler();
 			$this->annotationReader = $entityStore->getAnnotationReader();
-			
-			$this->serialization_group_name = $serializationGroupName;
+			$this->serializationGroupName = $serializationGroupName;
 			$this->normalizers = [];
 			$this->methodExistsCache = [];
-			$this->normalizerInstances = [];
-			$this->int_types = array_flip(["int", "integer", "smallint", "tinyint", "mediumint", "bigint", "bit"]);
-			$this->float_types = array_flip(["decimal", "numeric", "float", "double", "real"]);
 			
 			$this->initializeNormalizers();
 		}
@@ -76,24 +69,6 @@
 		}
 		
 		/**
-		 * Checks if a given column type is an integer type.
-		 * @param string $columnType The column type to check.
-		 * @return bool True if the column type is an integer type, otherwise false.
-		 */
-		private function isIntColumnType(string $columnType): bool {
-			return isset($this->int_types[$columnType]);
-		}
-		
-		/**
-		 * Checks if a given column type is a float type.
-		 * @param string $columnType The column type to check.
-		 * @return bool True if the column type is a float type, otherwise false.
-		 */
-		private function isFloatColumnType(string $columnType): bool {
-			return isset($this->float_types[$columnType]);
-		}
-		
-		/**
 		 * Convert a string to camelcase
 		 * @param string $input
 		 * @param string $separator
@@ -104,17 +79,7 @@
 			$parts = array_map('ucfirst', $array);
 			return implode('', $parts);
 		}
-		
-		/**
-		 * Convert a string to snake case
-		 * @url https://stackoverflow.com/questions/40514051/using-preg-replace-to-convert-camelcase-to-snake-case
-		 * @param string $string
-		 * @return string
-		 */
-		protected function snakeCase(string $string): string {
-			return strtolower(preg_replace(['/([a-z\d])([A-Z])/', '/([^_])([A-Z][a-z])/'], '$1_$2', $string));
-		}
-		
+
 		/**
 		 * Normalizes a value based on its column type annotation.
 		 *
@@ -137,15 +102,11 @@
 				// Build the full normalizer class name based on the column type
 				$normalizerClass = "\\Quellabs\ObjectQuel\\Serialization\\Normalizer\\" . ucfirst($columnType) . "Normalizer";
 				
-				// Use cached normalizer instance if available, otherwise create a new one
-				// This improves performance by reusing normalizer objects
-				if (!isset($this->normalizerInstances[$columnType])) {
-					$this->normalizerInstances[$columnType] = new $normalizerClass();
-				}
+				// Instantiate normalizer
+				$normalizer = new $normalizerClass($annotation->getParameters());
 				
 				// Configure the normalizer with the current value and process it
-				$this->normalizerInstances[$columnType]->setValue($value);
-				return $this->normalizerInstances[$columnType]->normalize();
+				return $normalizer->normalize($value);
 			}
 			
 			// Perform casting if needed
@@ -187,13 +148,10 @@
 				
 				// Use cached normalizer instance if available, otherwise create a new one
 				// This improves performance by reusing normalizer objects
-				if (!isset($this->normalizerInstances[$columnType])) {
-					$this->normalizerInstances[$columnType] = new $normalizerClass();
-				}
+				$normalizer = new $normalizerClass($annotation->getParameters());
 				
 				// Configure the normalizer with the current value and process it for denormalization
-				$this->normalizerInstances[$columnType]->setValue($value);
-				return $this->normalizerInstances[$columnType]->denormalize();
+				return $normalizer->denormalize($value);
 			}
 			
 			// For all other column types, return the value unchanged
@@ -210,7 +168,7 @@
 		 */
 		public function propertyInSerializeGroup(array $annotations): bool {
 			// If no serialization group is specified, we include all properties
-			if (empty($this->serialization_group_name)) {
+			if (empty($this->serializationGroupName)) {
 				return true;
 			}
 			
@@ -218,7 +176,7 @@
 			foreach ($annotations as $annotation) {
 				if ($annotation instanceof SerializationGroups) {
 					// Check if the current serialization group appears in the annotation
-					return in_array($this->serialization_group_name, $annotation->getGroups(), true);
+					return in_array($this->serializationGroupName, $annotation->getGroups(), true);
 				}
 			}
 			

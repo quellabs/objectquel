@@ -14,21 +14,19 @@
 	 * with date values in the format "Y-m-d".
 	 */
 	class DateNormalizer implements NormalizerInterface {
+
+		/**
+		 * Parameters as passed by the annotation
+		 * @var array
+		 */
+		private array $parameters;
 		
 		/**
-		 * The value to be normalized or denormalized.
-		 * Can be either a date string or a \DateTime object.
-		 * @var mixed
+		 * Passed annotation parameters
+		 * @param array $parameters
 		 */
-		protected $value;
-		
-		/**
-		 * Sets the value to normalize/denormalize
-		 * @param mixed $value Either a date string or a \DateTime object
-		 * @return void
-		 */
-		public function setValue($value): void {
-			$this->value = $value;
+		public function __construct(array $parameters) {
+			$this->parameters = $parameters;
 		}
 		
 		/**
@@ -39,14 +37,14 @@
 		 *                        - Input value is null
 		 *                        - Input is an empty/zero date ("0000-00-00")
 		 */
-		public function normalize(): ?\DateTime {
+		public function normalize(mixed $value): ?\DateTime {
 			// Return null for null values or empty/zero dates
-			if (is_null($this->value) || $this->value === "0000-00-00") {
+			if (is_null($value) || $value === "0000-00-00") {
 				return null;
 			}
 			
 			// Convert string date to \DateTime object using the format "Y-m-d"
-			return \DateTime::createFromFormat("Y-m-d", $this->value);
+			return \DateTime::createFromFormat("Y-m-d", $value);
 		}
 		
 		/**
@@ -54,13 +52,13 @@
 		 * Specifically converts a \DateTime object to a date string.
 		 * @return string|null A formatted date string in "Y-m-d" format, or null if the input is null
 		 */
-		public function denormalize(): ?string {
+		public function denormalize(mixed $value): ?string {
 			// Return null if the DateTime object is null
-			if ($this->value === null) {
+			if ($value === null) {
 				return null;
 			}
 			
 			// Format the DateTime object to a string using only the date part in "Y-m-d" format
-			return $this->value->format("Y-m-d");
+			return $value->format("Y-m-d");
 		}
 	}

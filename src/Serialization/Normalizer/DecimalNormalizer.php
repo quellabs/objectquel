@@ -11,35 +11,36 @@
 	 * explicitly indicate that decimal values should be used as-is.
 	 */
 	class DecimalNormalizer implements NormalizerInterface  {
+
+		/**
+		 * Parameters as passed by the annotation
+		 * @var array
+		 */
+		private array $parameters;
 		
 		/**
-		 * The decimal value to be processed.
-		 * @var mixed
+		 * Passed annotation parameters
+		 * @param array $parameters
 		 */
-		protected $value;
-		
+		public function __construct(array $parameters) {
+			$this->parameters = $parameters;
+		}
+
 		/**
-		 * Sets the value to normalize/denormalize
-		 * @param mixed $value The decimal value to process
-		 * @return void
+		 * Returns the decimal value unchanged.
+		 * @param mixed $value
+		 * @return mixed The original value unchanged
 		 */
-		public function setValue($value): void {
-			$this->value = $value;
+		public function normalize(mixed $value): mixed {
+			return $value;
 		}
 		
 		/**
 		 * Returns the decimal value unchanged.
+		 * @param mixed $value
 		 * @return mixed The original value unchanged
 		 */
-		public function normalize(): mixed {
-			return $this->value;
-		}
-		
-		/**
-		 * Returns the decimal value unchanged.
-		 * @return mixed The original value unchanged
-		 */
-		public function denormalize(): mixed {
-			return $this->value;
+		public function denormalize(mixed $value): mixed {
+			return $value;
 		}
 	}
