@@ -64,41 +64,19 @@
 			$result = [];
 			
 			foreach (array_intersect_key($entityColumns, $tableColumns) as $columnName => $entityColumn) {
-				if ($this->hasColumnChanged($entityColumn, $tableColumns[$columnName])) {
-					$result[$columnName] = $this->buildChangeDetails($entityColumn, $tableColumns[$columnName]);
+				$normalizedEntity = $this->normalizeColumnDefinition($entityColumn);
+				$normalizedTable = $this->normalizeColumnDefinition($tableColumns[$columnName]);
+				
+				if ($normalizedEntity !== $normalizedTable) {
+					$result[$columnName] = [
+						'from'    => $normalizedTable,
+						'to'      => $normalizedEntity,
+						'changes' => $this->identifySpecificChanges($normalizedTable, $normalizedEntity)
+					];
 				}
 			}
 			
 			return $result;
-		}
-		
-		/**
-		 * Check if a specific column has changed between entity and table definitions
-		 * @param array $entityColumn Column definition from entity model
-		 * @param array $tableColumn Column definition from database table
-		 * @return bool True if the column has changed, false otherwise
-		 */
-		private function hasColumnChanged(array $entityColumn, array $tableColumn): bool {
-			$normalizedEntity = $this->normalizeColumnDefinition($entityColumn);
-			$normalizedTable = $this->normalizeColumnDefinition($tableColumn);
-			return $normalizedEntity !== $normalizedTable;
-		}
-		
-		/**
-		 * Build detailed change information for a modified column
-		 * @param array $entityColumn Column definition from entity model
-		 * @param array $tableColumn Column definition from database table
-		 * @return array Detailed change information including from/to values and specific changes
-		 */
-		private function buildChangeDetails(array $entityColumn, array $tableColumn): array {
-			$normalizedEntity = $this->normalizeColumnDefinition($entityColumn);
-			$normalizedTable = $this->normalizeColumnDefinition($tableColumn);
-			
-			return [
-				'from'    => $normalizedTable,
-				'to'      => $normalizedEntity,
-				'changes' => $this->identifySpecificChanges($normalizedTable, $normalizedEntity)
-			];
 		}
 		
 		/**
@@ -135,13 +113,18 @@
 			// Step 1: Add any missing default values to ensure all required properties are present
 			$normalized = $this->addDefaultValues($columnDefinition);
 			
-			// Step 2: Remove irrelevant or comparison-specific properties that shouldn't affect equality
+			// Step 2: Normalize enum to string
+			if (isset($normalized['type']) && $normalized['type'] === 'enum') {
+				$normalized['type'] = 'string';
+			}
+			
+			// Step 4: Remove irrelevant or comparison-specific properties that shouldn't affect equality
 			$normalized = $this->filterRelevantProperties($normalized);
 			
-			// Step 3: Standardize property values to a consistent format - pass full context
+			// Step 5: Standardize property values to a consistent format - pass full context
 			$normalized = $this->normalizePropertyValues($normalized);
 			
-			// Step 4: Sort the array keys alphabetically for consistent ordering
+			// Step 5: Sort the array keys alphabetically for consistent ordering
 			ksort($normalized);
 			
 			// Return the sorted result
@@ -156,7 +139,7 @@
 		private function addDefaultValues(array $columnDefinition): array {
 			$result = $columnDefinition;
 			$columnType = $result['type'] ?? 'string';
-
+			
 			// Add default limit if missing
 			if (!isset($result['limit'])) {
 				if ($result["type"] === 'enum' && !empty($columnDefinition['enumType'])) {
@@ -192,7 +175,7 @@
 			
 			// Normalize each property value based on its property name and the column type
 			$result = [];
-
+			
 			foreach ($columnDefinition as $property => $value) {
 				$result[$property] = $this->normalizePropertyValue($property, $value, $columnType);
 			}
@@ -208,11 +191,6 @@
 		 * @return mixed Normalized property value
 		 */
 		private function normalizePropertyValue(string $property, mixed $value, string $columnType): mixed {
-			// If the property is 'type' and the value is 'enum', transform to string
-			if ($property === 'type' && $value === 'enum') {
-				return "string";
-			}
-			
 			// Convert numeric properties to integers if the value is numeric
 			// This ensures consistent data types for properties like length, precision, scale, etc.
 			if (in_array($property, self::NUMERIC_PROPERTIES) && is_numeric($value)) {
@@ -245,9 +223,14 @@
 		/**
 		 * Normalize boolean default values to handle database tinyint(1) vs PHP boolean differences
 		 * @param mixed $value The default value to normalize (can be bool, int, string, or other types)
-		 * @return int Normalized boolean value as integer for consistency (0 or 1)
+		 * @return int|null Normalized boolean value as integer for consistency (0 or 1)
 		 */
-		private function normalizeBooleanDefault(mixed $value): int {
+		private function normalizeBooleanDefault(mixed $value): ?int {
+			// Check for null values
+			if ($value === null) {
+				return null;
+			}
+			
 			// Handle all truthy boolean representations
 			// Covers: PHP true, integer 1, string '1', string 'true' (case-sensitive)
 			if ($value === true || $value === 1 || $value === '1' || $value === 'true') {
@@ -261,7 +244,12 @@
 			}
 			
 			// Fallback for unexpected values
-			return is_numeric($value) ? (int)$value : 0;
+			if (is_numeric($value)) {
+				return (int)$value;
+			}
+			
+			// Fallback for unexpected values - treat as falsy
+			return 0;
 		}
 		
 		/**
