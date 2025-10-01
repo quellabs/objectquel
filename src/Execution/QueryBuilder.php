@@ -127,53 +127,21 @@
 			});
 			
 			foreach ($manyToOneDependenciesFiltered as $relation) {
-				// Get relationship columns
-				$inversedBy = $relation->getInversedBy();
-				$relationColumn = $relation->getRelationColumn();
-				
-				// If inversedBy is null or the property doesn't exist, skip this relationship
-				if ($inversedBy === null) {
-					continue;
-				}
-				
-				// Look up the corresponding OneToMany relationship to get the actual column
-				$oneToManyRelation = $this->findOneToManyByPropertyName($entityType, $inversedBy);
-				
-				// If no OneToMany relationship exists, skip this relationship
-				if ($oneToManyRelation === null) {
-					continue;
-				}
-				
 				// Create a unique alias for the range.
 				$alias = $this->createAlias($rangeCounter);
 				
-				// Get the actual relation column from the OneToMany side
-				$mainColumn = $oneToManyRelation->getRelationColumn();
+				// Fetch the column in this entity
+				$relationColumn = $relation->getRelationColumn();
+				
+				// Get the relation column from the relation
+				$targetRelationColumn = $relation->getTargetRelationColumn() ?? $this->entityStore->getPrimaryKey($entityType);
 				
 				// Add the new range to the list.
-				$ranges[$alias] = "range of {$alias} is {$dependentEntityType} via {$alias}.{$relationColumn}=main.{$mainColumn}";
+				$ranges[$alias] = "range of {$alias} is {$dependentEntityType} via {$alias}.{$relationColumn}=main.{$targetRelationColumn}";
 				
 				// Increment the range counter for the next unique range.
 				++$rangeCounter;
 			}
-		}
-		
-		/**
-		 * Finds a OneToMany relationship by property name
-		 * @param string $entityType The entity type to search in
-		 * @param string $propertyName The property name to find
-		 * @return object|null The OneToMany relation object or null
-		 */
-		private function findOneToManyByPropertyName(string $entityType, string $propertyName): ?object {
-			$oneToManyDependencies = $this->entityStore->getOneToManyDependencies($entityType);
-			
-			foreach ($oneToManyDependencies as $property => $relation) {
-				if ($property === $propertyName) {
-					return $relation;
-				}
-			}
-			
-			return null;
 		}
 		
 		/**

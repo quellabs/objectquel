@@ -642,6 +642,30 @@
 	    }
 	    
 	    /**
+	     * Retrieves the primary key field name for a given entity.
+	     * @param mixed $entity The entity object or class to inspect
+	     * @return string|null The primary key column name, or null if none exists
+	     */
+	    public function getPrimaryKey(mixed $entity): ?string {
+		    // Retrieve all field annotations from the entity store
+		    $annotations = $this->getAnnotations($entity);
+		    
+		    // Iterate through each field's annotation collection
+		    foreach ($annotations as $fieldName => $annotationSet) {
+			    // Check each annotation on the current field
+			    foreach ($annotationSet as $annotation) {
+				    // Identify Column annotations that are marked as primary keys
+				    if ($annotation instanceof Column && $annotation->isPrimaryKey()) {
+					    return $fieldName;
+				    }
+			    }
+		    }
+		    
+		    // No primary key found in any field
+		    return null;
+	    }
+		
+		/**
 	     * This method finds primary key columns that are configured to receive
 	     * database-generated values, which are either:
 	     * 1. Primary keys with a PrimaryKeyStrategy annotation set to "identity", or
