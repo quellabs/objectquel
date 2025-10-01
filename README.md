@@ -503,105 +503,246 @@ retrieve (p)
 window 2,10
 ```
 
-## Entity Relationships
+# Entity Relationships
 
-ObjectQuel supports five types of relationships:
+ObjectQuel supports five relationship types for modeling associations between entities. Each relationship has specific ownership semantics that determine how the database schema is structured.
 
-### 1. OneToOne (owning-side)
+## Relationship Ownership
 
+- **Owning side**: The entity that physically stores the foreign key column in its database table
+- **Inverse side**: The entity that is referenced by the foreign key but doesn't store it
+
+## Key Design Principle: Explicit Foreign Keys
+
+Unlike other ORMs that hide foreign key columns from the user, ObjectQuel requires **explicit definition of both the relationship property and the foreign key column property**. This design choice provides transparency, performance benefits, and direct access to foreign key values.
+
+**Example:**
 ```php
 /**
- * @Orm\OneToOne(targetEntity="CustomerEntity", inversedBy="profile", relationColumn="customerId", fetch="EAGER")
+ * @Orm\ManyToOne(targetEntity="PostEntity", inversedBy="vlaflips")
  */
-private ?CustomerEntity $customer;
+protected PostEntity $relation;
+
+/**
+ * @Orm\Column(name="relation_id", type="integer", unsigned=true, nullable=true)
+ */
+protected ?int $relationId;
 ```
 
-| Parameter      | Description                                                   |
-|----------------|---------------------------------------------------------------|
-| targetEntity   | Target entity class                                           |
-| inversedBy     | Property in target entity for reverse mapping                 |
-| relationColumn | Column in current entity that corresponds to the relationship |
-| fetch          | Loading strategy ("EAGER" or "LAZY"; LAZY is default)         |
+The `$relation` property handles the object relationship, while `$relationId` is the actual database column storing the foreign key. This separation allows you to:
+- Access the foreign key ID directly without loading the related entity
+- Check for relationship existence without database queries (`if ($entity->relationId !== null)`)
+- Set foreign keys when you have the ID but not the full entity object
+- See exactly what's stored in your database schema
 
-### 2. OneToOne (inverse-side)
+## 1. OneToOne (Owning Side)
+
+The owning side contains the foreign key column in its database table. You must define both the relationship property and the foreign key column property.
 
 ```php
 /**
- * @Orm\OneToOne(targetEntity="CustomerEntity", mappedBy="profile", relationColumn="customerId")
+ * @Orm\OneToOne(targetEntity="ProfileEntity", inversedBy="customer", fetch="EAGER")
  */
-private ?CustomerEntity $customer;
+private ?ProfileEntity $profile;
+
+/**
+ * @Orm\Column(name="profile_id", type="integer", unsigned=true, nullable=true)
+ */
+private ?int $profileId;
 ```
 
-| Parameter      | Description                                                   |
-|----------------|---------------------------------------------------------------|
-| targetEntity   | Target entity class                                           |
-| mappedBy       | Property in target entity that references back to this entity |
-| relationColumn | Column in current entity that corresponds to the relationship |
+**Note:** When `relationColumn` is omitted in the relationship annotation, it defaults to the property name with `Id` suffix (e.g., `$profile` relationship uses `profileId` column). The column name in the `@Orm\Column` annotation must match this convention or be explicitly specified in `relationColumn`.
 
-### 3. ManyToOne (owning-side)
+### Parameters
+
+| Parameter        | Required | Description                                                                                           |
+|------------------|----------|-------------------------------------------------------------------------------------------------------|
+| `targetEntity`   | Yes      | Fully qualified class name of the target entity                                                       |
+| `inversedBy`     | No       | Property name in the target entity that maps back to this relationship                                |
+| `relationColumn` | No       | Column name in the current entity's table that stores the foreign key. Defaults to `{propertyName}Id` |
+| `fetch`          | No       | Loading strategy: `"EAGER"` (load immediately) or `"LAZY"` (load on access). Default: `"LAZY"`        |
+
+## 2. OneToOne (Inverse Side)
+
+The inverse side references the relationship but doesn't store the foreign key.
 
 ```php
 /**
- * @Orm\ManyToOne(targetEntity="CustomerEntity", targetColumn="id", inversedBy="addresses", fetch="EAGER")
+ * @Orm\OneToOne(targetEntity="ProfileEntity", mappedBy="customer")
+ */
+private ?ProfileEntity $profile;
+```
+
+**Note:** The foreign key column in the target entity defaults to the owning side's property name with `Id` suffix. For example, if the owning side has `$customer`, the column becomes `customerId`.
+
+### Parameters
+
+| Parameter        | Required | Description                                                                                                                      |
+|------------------|----------|----------------------------------------------------------------------------------------------------------------------------------|
+| `targetEntity`   | Yes      | Fully qualified class name of the target entity                                                                                  |
+| `mappedBy`       | Yes      | Property name in the target entity that owns the relationship (the property with the relationship annotation on the owning side) |
+| `relationColumn` | No       | Column name in the **target** entity's table that stores the foreign key. Defaults to `{owningSidePropertyName}Id`               |
+| `targetColumn`   | No       | Column in target entity to reference. Defaults to the target's primary key                                                       |
+
+**Note:** `targetColumn` is rarely needed—only specify it when the relationship references a non-primary key column (e.g., a unique constraint column).
+
+## 3. ManyToOne (Owning Side)
+
+Multiple entities on this side can reference a single entity on the target side. The owning side stores the foreign key and requires both the relationship property and the foreign key column property.
+
+```php
+/**
+ * @Orm\ManyToOne(targetEntity="CustomerEntity", inversedBy="addresses", fetch="EAGER")
  * @Orm\RequiredRelation
  */
 private ?CustomerEntity $customer;
+
+/**
+ * @Orm\Column(name="customer_id", type="integer", unsigned=true, nullable=false)
+ */
+private int $customerId;
 ```
 
-| Parameter    | Description                                                                                                |
-|--------------|------------------------------------------------------------------------------------------------------------|
-| targetEntity | Target entity class                                                                                        |
-| targetColumn | Target entity column to reference. Defaults to primary key (optional)                                      |
-| inversedBy   | Property in target entity for reverse collection mapping (optional, omit for unidirectional relationships) |
-| fetch        | Loading strategy: "EAGER" (load immediately) or "LAZY" (load on access). Default: "LAZY"                   |
+**Note:** The foreign key column defaults to `{propertyName}Id` (e.g., `$customer` relationship uses `customerId` column). The column name in the `@Orm\Column` annotation must match this convention or be explicitly specified in `relationColumn`.
 
-**Note:** In most cases, you can omit `targetColumn` since relationships typically reference the primary key.
-Only specify it when referencing a non-primary key column.
+### Parameters
 
-**Note 2:** The annotation `@Orm\RequiredRelation` indicates that the relation can be loaded using an INNER JOIN
-(rather than the default LEFT JOIN) because it's guaranteed to be present. This improves query performance.
+| Parameter        | Required | Description                                                                                                |
+|------------------|----------|------------------------------------------------------------------------------------------------------------|
+| `targetEntity`   | Yes      | Fully qualified class name of the target entity                                                            |
+| `relationColumn` | No       | Column name in the current entity's table that stores the foreign key. Defaults to `{propertyName}Id`      |
+| `targetColumn`   | No       | Column in target entity to reference. Defaults to the target's primary key                                 |
+| `inversedBy`     | No       | Property name in target entity for the reverse OneToMany collection. Omit for unidirectional relationships |
+| `fetch`          | No       | Loading strategy: `"EAGER"` (load immediately) or `"LAZY"` (load on access). Default: `"LAZY"`             |
 
-### 4. OneToMany (inverse-side)
+### @Orm\RequiredRelation Annotation
+
+Use this annotation when the relationship is guaranteed to exist (NOT NULL constraint). This optimization allows the query builder to use `INNER JOIN` instead of `LEFT JOIN`, improving query performance.
+
+**Without @RequiredRelation (relationship is nullable):**
+```sql
+LEFT JOIN customers c ON a.customer_id = c.id
+```
+
+**With @RequiredRelation (relationship is required):**
+```sql
+INNER JOIN customers c ON a.customer_id = c.id
+```
+
+**Important:** When using `@Orm\RequiredRelation`, ensure the foreign key column property is also not nullable (e.g., `private int $customerId` instead of `private ?int $customerId`).
+
+## 4. OneToMany (Inverse Side)
+
+The inverse side of a ManyToOne relationship. Returns a collection of related entities.
 
 ```php
 /**
  * @Orm\OneToMany(targetEntity="AddressEntity", mappedBy="customer")
- * @var $addresses EntityCollection
+ * @var EntityCollection<AddressEntity>
  */
-public $addresses;
+private EntityCollection $addresses;
 ```
 
-| Parameter    | Description                                                   |
-|--------------|---------------------------------------------------------------|
-| targetEntity | Target entity class                                           |
-| mappedBy     | Property in target entity that references back to this entity |
+### Parameters
 
-### 5. ManyToMany
+| Parameter      | Required | Description                                                                             |
+|----------------|----------|-----------------------------------------------------------------------------------------|
+| `targetEntity` | Yes      | Fully qualified class name of the target entity                                         |
+| `mappedBy`     | Yes      | Property name in target entity that references back to this entity (the ManyToOne side) |
 
-ManyToMany relationships are implemented as a specialized extension of OneToMany/ManyToOne relationships. To establish
-an effective ManyToMany relation:
+**Important:** OneToMany is always the inverse side. The actual foreign key is stored in the target entity's table (the "Many" side).
 
-1. Apply the `@EntityBridge` annotation to your entity class that will serve as the junction table.
-2. This annotation instructs the query processor to treat the entity as an intermediary linking table.
-3. When queries execute, the processor automatically traverses and loads the related ManyToOne associations defined
-   within this bridge entity.
+## 5. ManyToMany
+
+ManyToMany relationships require a junction table to connect two entities. In ObjectQuel, this is implemented using the `@Orm\EntityBridge` annotation on a dedicated entity class.
+
+### Bridge Entity Pattern
 
 ```php
 /**
- * Class ProductCategoryEntity
- * @Orm\Table(name="products_categories")
+ * @Orm\Table(name="product_categories")
  * @Orm\EntityBridge
  */
 class ProductCategoryEntity {
-    // Properties defining the relationship
+    /**
+     * @Orm\Id
+     * @Orm\Column(type="int")
+     */
+    private int $id;
+    
+    /**
+     * @Orm\ManyToOne(targetEntity="ProductEntity", inversedBy="productCategories")
+     */
+    private ProductEntity $product;
+    
+    /**
+     * @Orm\Column(name="product_id", type="integer", unsigned=true)
+     */
+    private int $productId;
+    
+    /**
+     * @Orm\ManyToOne(targetEntity="CategoryEntity", inversedBy="productCategories")
+     */
+    private CategoryEntity $category;
+    
+    /**
+     * @Orm\Column(name="category_id", type="integer", unsigned=true)
+     */
+    private int $categoryId;
+    
+    /**
+     * @Orm\Column(type="datetime")
+     */
+    private \DateTime $assignedAt;
 }
 ```
 
-The `@Orm\EntityBridge` pattern extends beyond basic relationship mapping by offering several advanced capabilities:
+**Note:** Bridge entities follow the same explicit foreign key pattern - each ManyToOne relationship requires a corresponding foreign key column property.
 
-- Store supplementary data within the junction table (relationship metadata, timestamps, etc.)
-- Access and manipulate this contextual data alongside the primary relationship information
-- Maintain comprehensive audit trails and relationship history between associated entities
+### Accessing Related Entities
+
+```php
+// In ProductEntity
+/**
+ * @Orm\OneToMany(targetEntity="ProductCategoryEntity", mappedBy="product")
+ * @var EntityCollection<ProductCategoryEntity>
+ */
+private EntityCollection $productCategories;
+
+// In CategoryEntity
+/**
+ * @Orm\OneToMany(targetEntity="ProductCategoryEntity", mappedBy="category")
+ * @var EntityCollection<ProductCategoryEntity>
+ */
+private EntityCollection $productCategories;
+```
+
+### How @Orm\EntityBridge Works
+
+When the query processor encounters an entity annotated with `@Orm\EntityBridge`:
+
+1. It recognizes the entity as a junction table intermediary
+2. Automatically traverses the ManyToOne relationships within the bridge
+3. Presents them as a cohesive collection
+
+### Choosing Fetch Strategy
+
+- **EAGER**: Load related entities immediately with the parent query. Use for frequently accessed, small relationships
+- **LAZY**: Load related entities only when accessed. Use for large collections or rarely accessed relationships
+
+**Performance consideration**: EAGER loading uses JOINs, which can impact performance with large result sets. LAZY loading triggers additional queries when accessed (N+1 problem risk).
+
+## Troubleshooting
+
+### Common Mistakes
+
+1. **Confusing mappedBy and inversedBy**: `mappedBy` points to the owning side's relationship property name; `inversedBy` points to the inverse side's relationship property name
+2. **Wrong side declared as owning**: The side with the foreign key column must be the owning side
+3. **Forgetting @Orm\EntityBridge**: ManyToMany relationships won't work without this annotation on the junction entity
+4. **Specifying relationColumn unnecessarily**: When omitted, it defaults to `{propertyName}Id`, so explicit specification is only needed for non-standard naming
+5. **Missing foreign key column property**: Forgetting to define the explicit column property (e.g., `$customerId`) on the owning side of the relationship
+6. **Column name mismatch**: The column name in `@Orm\Column` must match the default convention (`{propertyName}Id`) or be explicitly specified in the `relationColumn` parameter of the relationship annotation
+7. **Nullable mismatch**: When using `@Orm\RequiredRelation`, ensure the foreign key column property is not nullable
 
 ## Indexing
 
