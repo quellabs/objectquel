@@ -9,6 +9,7 @@
 	use Quellabs\ObjectQuel\Collections\EntityCollection;
 	use Quellabs\ObjectQuel\EntityStore;
 	use Quellabs\ObjectQuel\EntityManager;
+	use Quellabs\ObjectQuel\ObjectQuel\QuelException;
 	use Quellabs\ObjectQuel\UnitOfWork;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstIdentifier;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRangeDatabase;
@@ -359,6 +360,7 @@
 		 * Promotes empty OneToMany relationships to lazy-loaded collections for the given filtered rows.
 		 * @param array $filteredRows The rows that need to be processed
 		 * @return void
+		 * @throws QuelException
 		 */
 		private function setupOneToManyCollections(array $filteredRows): void {
 			// Loop through all filtered rows
@@ -379,6 +381,13 @@
 						$targetEntity = $this->entityStore->normalizeEntityName($dependency->getTargetEntity());
 						$relationColumn = $this->getRelationColumn($value, $dependency);
 						$mappedBy = $dependency->getMappedBy();
+						
+						// Check if OneToMany has mappedBy. If not error out
+						if (empty($mappedBy)) {
+							throw new QuelException(
+								"OneToMany on {$objectClass}::{$property} requires mappedBy"
+							);
+						}
 						
 						// Do nothing if the data for this query was requested. There is simply no data,
 						// so there's no point in lazy loading this data. We keep the empty collection.
