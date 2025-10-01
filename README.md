@@ -503,9 +503,14 @@ retrieve (p)
 window 2,10
 ```
 
-## Entity Relationships
+# Entity Relationships
 
-ObjectQuel supports five types of relationships:
+ObjectQuel supports five relationship types for modeling associations between entities. Each relationship has specific ownership semantics that determine how the database schema is structured.
+
+## Relationship Ownership
+
+- **Owning side**: The entity that physically stores the foreign key column in its database table
+- **Inverse side**: The entity that is referenced by the foreign key but doesn't store it
 
 ### 1. OneToOne (owning-side)
 
