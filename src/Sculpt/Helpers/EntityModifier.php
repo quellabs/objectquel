@@ -469,54 +469,64 @@
 		protected function generateRelationshipDocComment(array $property): string {
 			$relationshipType = $property['relationshipType'];
 			$targetEntity = $property['targetEntity'];
-			$nullable = $property['nullable'] ?? false;
 			
-			// Add mappedBy attribute for OneToMany or bidirectional OneToOne
 			$options = [];
 			
+			// mappedBy indicates the inverse side of a bidirectional relationship
+			// This side doesn't own the foreign key
 			if (!empty($property['mappedBy'])) {
 				$options[] = "mappedBy=\"{$property['mappedBy']}\"";
 			}
 			
-			// Add inversedBy attribute for ManyToOne
+			// inversedBy indicates the owning side of a bidirectional relationship
+			// This side owns the foreign key and references the inverse side property
 			if (!empty($property['inversedBy'])) {
 				$options[] = "inversedBy=\"{$property['inversedBy']}\"";
 			}
 			
-			// Add fetch="LAZY" for OneToMany relationships
+			// OneToMany collections should use lazy loading by default
+			// to avoid loading all related entities unnecessarily
 			if ($relationshipType === 'OneToMany') {
 				$options[] = "fetch=\"LAZY\"";
 			}
 			
-			// Add nullable attribute if specified
-			if ($nullable) {
-				$options[] = "nullable=true";
+			// Determine if this is the owning side of the relationship
+			// Owning side is responsible for persisting the foreign key
+			$isOwningSide = empty($property['mappedBy']);
+			
+			// Foreign key attributes only apply to the owning side
+			if ($isOwningSide) {
+				// Allow null foreign key values if specified
+				if ($property['nullable'] ?? false) {
+					$options[] = "nullable=true";
+				}
+				
+				// Specify which column in the target entity this foreign key references
+				// Default is 'id', so only add if different
+				if (isset($property['referencedColumnName']) && $property['referencedColumnName'] !== 'id') {
+					$options[] = "referencedColumnName=\"{$property['referencedColumnName']}\"";
+				}
+				
+				// Specify the foreign key column name in the current entity's table
+				if (!empty($property['joinColumnName'])) {
+					$options[] = "joinColumnName=\"{$property['joinColumnName']}\"";
+				}
 			}
 			
-			// If we have a referenced column name that's not the default 'id',
-			// we can store it as a custom attribute in the annotation
-			if (isset($property['referencedColumnName']) && $property['referencedColumnName'] !== 'id') {
-				$options[] = "referencedColumnName=\"{$property['referencedColumnName']}\"";
-			}
+			// Build the annotation string with proper comma separation
+			// Options string is empty if no options, otherwise includes leading comma
+			$optionsStr = !empty($options) ? ', ' . implode(', ', $options) : '';
+			$comment = "/**\n       * @Orm\\{$relationshipType}(targetEntity=\"{$targetEntity}Entity\"{$optionsStr})";
 			
-			// Add a join column name if provided
-			if (!empty($property['joinColumnName'])) {
-				$options[] = "joinColumnName=\"{$property['joinColumnName']}\"";
-			}
-			
-			// Concat the gathered options
-			$comment = "/**\n       * @Orm\\{$relationshipType}(targetEntity=\"{$targetEntity}Entity\"";
-			$comment .= implode(", ", $options);
-			$comment .= ")";
-			
-			// Add PHPDoc var type for collections
+			// OneToMany relationships return collections, so add collection type hint
+			// This helps IDEs with autocompletion and static analysis
 			if ($relationshipType === 'OneToMany') {
-				$comment .= "\n       * @var \$" . $property['name'] . " CollectionInterface<" . $targetEntity . "Entity>";
+				$comment .= "\n       * @var CollectionInterface<{$targetEntity}Entity>";
 			}
 			
+			// Close the PHPDoc block
 			$comment .= "\n       */";
 			
-			// Return result
 			return $comment;
 		}
 		
