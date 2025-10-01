@@ -175,7 +175,7 @@
 				'driver'            => 'objectquel',
 				'query'             => $query,
 				'bound_parameters'  => $parameters,
-				'execution_time_ms' => round(($end - $start) * 1000),
+				'execution_time_ms' => round(($end - $start) * 1000, 0, PHP_ROUND_HALF_UP),
 				'timestamp'         => date('Y-m-d H:i:s'),
 				'memory_usage_kb'   => memory_get_usage(true) / 1024,
 				'peak_memory_kb'    => memory_get_peak_usage(true) / 1024
