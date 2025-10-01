@@ -205,20 +205,19 @@
 					'decimal', 'boolean', 'date', 'datetime', 'time', 'timestamp', 'enum', 'relationship',
 				]);
 				
-				// Handle relationship types separately
 				if ($propertyType === 'relationship') {
+					// Handle relationship types separately
 					$relationshipProperties = $this->collectRelationshipProperties(
 						$propertyName,
 						$availableEntities,
 						$entityName
 					);
+					
 					$properties = array_merge($properties, $relationshipProperties);
-					continue;
+				} else {
+					// Collect standard property definition
+					$properties[] = $this->collectStandardProperties($propertyName, $propertyType);
 				}
-				
-				// Collect standard property definition
-				$property = $this->collectStandardProperties($propertyName, $propertyType);
-				$properties[] = $property;
 			}
 			
 			return $properties;
@@ -286,7 +285,8 @@
 				"mappedBy"         => $mappingConfig['mappedBy'],
 				"inversedBy"       => $mappingConfig['inversedBy'],
 				"relationColumn"   => $relationColumn,
-				"targetColumn"     => $targetColumn
+				"targetColumn"     => $targetColumn,
+				"readonly"         => false
 			];
 			
 			// Auto-add foreign key column for owning side relationships
@@ -299,6 +299,7 @@
 					"type"     => $fkColumnType,
 					"unsigned" => $fkUnsigned,
 					"nullable" => $relationshipNullable,
+					"readonly" => true
 				];
 			}
 			
@@ -443,8 +444,9 @@
 		 */
 		private function collectStandardProperties(string $propertyName, string $propertyType): array {
 			$property = [
-				"name" => $propertyName,
-				"type" => $propertyType,
+				"name"     => $propertyName,
+				"type"     => $propertyType,
+				"readonly" => false
 			];
 			
 			// Collect type-specific attributes
