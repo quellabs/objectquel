@@ -527,6 +527,7 @@
 			// Close the PHPDoc block
 			$comment .= "\n       */";
 			
+			// Return the result
 			return $comment;
 		}
 		
