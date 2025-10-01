@@ -193,7 +193,7 @@
 			// Loop until user stops adding properties
 			while (true) {
 				// Get property name or break if empty
-				$propertyName = $this->input->ask("New property name (press <return> to stop adding fields)");
+				$propertyName = $this->input->ask("New property name (press enter to stop adding fields)");
 				
 				if (empty($propertyName)) {
 					break;
