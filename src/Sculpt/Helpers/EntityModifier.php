@@ -503,13 +503,13 @@
 				
 				// Specify which column in the target entity this foreign key references
 				// Default is 'id', so only add if different
-				if (isset($property['referencedColumnName']) && $property['referencedColumnName'] !== 'id') {
-					$options[] = "referencedColumnName=\"{$property['referencedColumnName']}\"";
+				if (isset($property['targetColumn']) && $property['targetColumn'] !== 'id') {
+					$options[] = "targetColumn=\"{$property['targetColumn']}\"";
 				}
 				
 				// Specify the foreign key column name in the current entity's table
-				if (!empty($property['joinColumnName'])) {
-					$options[] = "joinColumnName=\"{$property['joinColumnName']}\"";
+				if (!empty($property['relationColumn'])) {
+					$options[] = "relationColumn=\"{$property['relationColumn']}\"";
 				}
 			}
 			
