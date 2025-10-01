@@ -503,15 +503,6 @@ retrieve (p)
 window 2,10
 ```
 
-# Entity Relationships
-
-ObjectQuel supports five relationship types for modeling associations between entities. Each relationship has specific ownership semantics that determine how the database schema is structured.
-
-## Relationship Ownership
-
-- **Owning side**: The entity that physically stores the foreign key column in its database table
-- **Inverse side**: The entity that is referenced by the foreign key but doesn't store it
-
 ## Key Design Principle: Explicit Foreign Keys
 
 Unlike other ORMs that hide foreign key columns from the user, ObjectQuel requires **explicit definition of both the relationship property and the foreign key column property**. This design choice provides transparency, performance benefits, and direct access to foreign key values.
@@ -535,23 +526,13 @@ The `$relation` property handles the object relationship, while `$relationId` is
 - Set foreign keys when you have the ID but not the full entity object
 - See exactly what's stored in your database schema
 
-## 1. OneToOne (Owning Side)
+ObjectQuel automatically keeps relationship properties and foreign key columns synchronized:
 
-The owning side contains the foreign key column in its database table. You must define both the relationship property and the foreign key column property.
-
-```php
-/**
- * @Orm\OneToOne(targetEntity="ProfileEntity", inversedBy="customer", fetch="EAGER")
- */
-private ?ProfileEntity $profile;
-
-/**
- * @Orm\Column(name="profile_id", type="integer", unsigned=true, nullable=true)
- */
-private ?int $profileId;
-```
-
-**Note:** When `relationColumn` is omitted in the relationship annotation, it defaults to the property name with `Id` suffix (e.g., `$profile` relationship uses `profileId` column). The column name in the `@Orm\Column` annotation must match this convention or be explicitly specified in `relationColumn`.
+- When you set `$entity->relation = $postEntity`, ObjectQuel updates `$entity->relationId` on commit (flush)
+- The `$relationId` property is primarily read-only and reflects the current relationship state
+- For new entities, you can set `$relationId` directly only if you don't also set the `$relation` property - if both are set, the relationship entity's ID takes precedence
+- Once a relationship proxy is loaded, modifying `$relationId` has no effect (the proxy retains its loaded entity, and the ID will be overwritten on commit)
+- The recommended approach is to always set the relationship property (`$relation`) rather than the foreign key column (`$relationId`)
 
 ### Parameters
 
