@@ -244,15 +244,16 @@
 			$targetInfo = $this->getTargetEntityAndReferenceField($availableEntities);
 			$targetEntity = $targetInfo['targetEntity'];
 			$referencedField = $targetInfo['referencedField'];
-			$referencedColumnName = $targetInfo['referencedColumnName'];
+			$targetColumn = $targetInfo['targetColumn'];
 			
 			// Determine foreign key column details for owning side relationships
-			$joinColumnName = null;
+			$relationColumn = null;
 			$fkColumnType = 'integer';
 			$fkUnsigned = true;
 			
 			if ($relationshipType === 'ManyToOne' || $relationshipType === 'OneToOne') {
-				$joinColumnName = lcfirst($targetEntity) . ucfirst($referencedField);
+				// Derive join column from relation name + attached "Id"
+				$relationColumn = $propertyName . "Id";
 				
 				// Introspect target entity to determine FK column type
 				$fkInfo = $this->determineForeignKeyType($targetEntity, $referencedField);
@@ -284,18 +285,17 @@
 				"targetEntity"         => $targetEntity,
 				"mappedBy"             => $mappingConfig['mappedBy'],
 				"inversedBy"           => $mappingConfig['inversedBy'],
-				"joinColumnName"       => $joinColumnName,
-				"referencedColumnName" => $referencedColumnName,
-				"nullable"             => $relationshipNullable
+				"relationColumn"       => $relationColumn,
+				"targetColumn" => $targetColumn
 			];
 			
 			// Auto-add foreign key column for owning side relationships
 			if (
 				($relationshipType === 'ManyToOne' || ($relationshipType === 'OneToOne' && $mappingConfig['mappedBy'] === null)) &&
-				$joinColumnName !== null
+				$relationColumn !== null
 			) {
 				$properties[] = [
-					"name"     => $joinColumnName,
+					"name"     => $relationColumn,
 					"type"     => $fkColumnType,
 					"unsigned" => $fkUnsigned,
 					"nullable" => $relationshipNullable,
@@ -539,14 +539,14 @@
 		/**
 		 * Gets the target entity and reference field information for a relationship
 		 * @param array $availableEntities List of available entities
-		 * @return array Associative array with targetEntity, referencedField, and referencedColumnName
+		 * @return array Associative array with targetEntity, referencedField, and targetColumn
 		 */
 		private function getTargetEntityAndReferenceField(array $availableEntities): array {
 			// Set default values
 			$result = [
 				'targetEntity'         => '',
 				'referencedField'      => 'id',
-				'referencedColumnName' => 'id'
+				'targetColumn' => 'id'
 			];
 			
 			// Get the target entity (either from selection or manual entry)
@@ -556,7 +556,7 @@
 			if (in_array($result['targetEntity'], $availableEntities)) {
 				$referenceInfo = $this->getTargetEntityReferenceField($result['targetEntity']);
 				$result['referencedField'] = $referenceInfo['field'];
-				$result['referencedColumnName'] = $referenceInfo['column'];
+				$result['targetColumn'] = $referenceInfo['column'];
 			}
 			
 			return $result;
