@@ -246,14 +246,7 @@
 		 * @return string The name of the relation column
 		 */
 		private function getRelationColumn(object $entity, object $dependency): string {
-			$relationColumn = $dependency->getRelationColumn();
-			
-			if (empty($relationColumn)) {
-				$primaryKeys = $this->entityStore->getIdentifierKeys($entity);
-				$relationColumn = $primaryKeys[0];
-			}
-			
-			return $relationColumn;
+			return $dependency->getRelationColumn() ?? $this->entityStore->getPrimaryKey($entity);
 		}
 		
 		/**
