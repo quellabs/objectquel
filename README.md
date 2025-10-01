@@ -542,24 +542,24 @@ private ?CustomerEntity $customer;
 
 ```php
 /**
- * @Orm\ManyToOne(targetEntity="CustomerEntity", targetRelationColumn="id", inversedBy="addresses", fetch="EAGER")
+ * @Orm\ManyToOne(targetEntity="CustomerEntity", targetColumn="id", inversedBy="addresses", fetch="EAGER")
  * @Orm\RequiredRelation
  */
 private ?CustomerEntity $customer;
 ```
 
-| Parameter            | Description                                                                                                |
-|----------------------|------------------------------------------------------------------------------------------------------------|
-| targetEntity         | Target entity class                                                                                        |
-| targetRelationColumn | Target entity column to reference. Defaults to primary key (optional)                                      |
-| inversedBy           | Property in target entity for reverse collection mapping (optional, omit for unidirectional relationships) |
-| fetch                | Loading strategy: "EAGER" (load immediately) or "LAZY" (load on access). Default: "LAZY"                   |
+| Parameter    | Description                                                                                                |
+|--------------|------------------------------------------------------------------------------------------------------------|
+| targetEntity | Target entity class                                                                                        |
+| targetColumn | Target entity column to reference. Defaults to primary key (optional)                                      |
+| inversedBy   | Property in target entity for reverse collection mapping (optional, omit for unidirectional relationships) |
+| fetch        | Loading strategy: "EAGER" (load immediately) or "LAZY" (load on access). Default: "LAZY"                   |
 
-The annotation `@Orm\RequiredRelation` indicates that the relation can be loaded using an INNER JOIN
-(rather than the default LEFT JOIN) because it's guaranteed to be present, which improves query performance.
-
-**Note:** In most cases, you can omit `targetRelationColumn` since relationships typically reference the primary key.
+**Note:** In most cases, you can omit `targetColumn` since relationships typically reference the primary key.
 Only specify it when referencing a non-primary key column.
+
+**Note 2:** The annotation `@Orm\RequiredRelation` indicates that the relation can be loaded using an INNER JOIN
+(rather than the default LEFT JOIN) because it's guaranteed to be present. This improves query performance.
 
 ### 4. OneToMany (inverse-side)
 

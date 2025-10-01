@@ -67,7 +67,7 @@
 			}
 			
 			// Determine the column and value for the relation based on the dependency.
-			$relationColumn = $dependency->getRelationColumn();
+			$relationColumn = $dependency->getRelationColumn() ?? "{$property}Id";
 			$relationColumnValue = $this->propertyHandler->get($entity, $relationColumn);
 			
 			// If the value of the relation column is 0 or null, the operation does not continue.
