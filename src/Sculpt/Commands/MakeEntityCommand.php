@@ -279,14 +279,14 @@
 			
 			// Add the relationship property
 			$properties[] = [
-				"name"                 => $propertyName,
-				"type"                 => $propertyPhpType,
-				"relationshipType"     => $relationshipType,
-				"targetEntity"         => $targetEntity,
-				"mappedBy"             => $mappingConfig['mappedBy'],
-				"inversedBy"           => $mappingConfig['inversedBy'],
-				"relationColumn"       => $relationColumn,
-				"targetColumn" => $targetColumn
+				"name"             => $propertyName,
+				"type"             => $propertyPhpType,
+				"relationshipType" => $relationshipType,
+				"targetEntity"     => $targetEntity,
+				"mappedBy"         => $mappingConfig['mappedBy'],
+				"inversedBy"       => $mappingConfig['inversedBy'],
+				"relationColumn"   => $relationColumn,
+				"targetColumn"     => $targetColumn
 			];
 			
 			// Auto-add foreign key column for owning side relationships

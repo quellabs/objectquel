@@ -126,18 +126,18 @@
 				return $this->entityStore->normalizeEntityName($e->getTargetEntity()) === $entityType;
 			});
 			
-			foreach ($manyToOneDependenciesFiltered as $relation) {
+			foreach ($manyToOneDependenciesFiltered as $property => $relation) {
 				// Create a unique alias for the range.
 				$alias = $this->createAlias($rangeCounter);
 				
 				// Fetch the column in this entity
-				$relationColumn = $relation->getRelationColumn();
+				$relationColumn = $relation->getRelationColumn() ?? "{$property}Id";
 				
 				// Get the relation column from the relation
-				$targetRelationColumn = $relation->getTargetRelationColumn() ?? $this->entityStore->getPrimaryKey($entityType);
+				$targetColumn = $relation->getTargetColumn() ?? $this->entityStore->getPrimaryKey($entityType);
 				
 				// Add the new range to the list.
-				$ranges[$alias] = "range of {$alias} is {$dependentEntityType} via {$alias}.{$relationColumn}=main.{$targetRelationColumn}";
+				$ranges[$alias] = "range of {$alias} is {$dependentEntityType} via {$alias}.{$relationColumn}=main.{$targetColumn}";
 				
 				// Increment the range counter for the next unique range.
 				++$rangeCounter;
