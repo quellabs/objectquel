@@ -45,12 +45,20 @@
 		}
 		
 		/**
-		 * Retrieve the name of the relationship column.
+		 * Retrieve the name of the relationship column in the current entity.
 		 * This method retrieves the name of the column that represents the ManyToOne relationship in the database.
 		 * @return string|null The name of the join column or null if it is not set.
 		 */
 		public function getRelationColumn(): ?string {
 			return $this->parameters["relationColumn"] ?? null;
+		}
+		
+		/**
+		 * Retrieve the name of the relationship column in the target entity.
+		 * @return string|null The name of the join column or null if it is not set.
+		 */
+		public function getTargetRelationColumn(): ?string {
+			return $this->parameters["targetRelationColumn"] ?? null;
 		}
 		
 		/**

@@ -32,7 +32,6 @@
 	use Quellabs\SignalHub\Signal;
 	use Quellabs\SignalHub\SignalHub;
 	use Quellabs\SignalHub\SignalHubLocator;
-	use Quellabs\Support\NamespaceResolver;
 	
 	/**
 	 * Represents an Entity Manager.
