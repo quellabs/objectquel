@@ -503,36 +503,11 @@ retrieve (p)
 window 2,10
 ```
 
-## Key Design Principle: Explicit Foreign Keys
+## Entity Relationships
 
-Unlike other ORMs that hide foreign key columns from the user, ObjectQuel requires **explicit definition of both the relationship property and the foreign key column property**. This design choice provides transparency, performance benefits, and direct access to foreign key values.
+ObjectQuel supports five types of relationships:
 
-**Example:**
-```php
-/**
- * @Orm\ManyToOne(targetEntity="PostEntity", inversedBy="vlaflips")
- */
-protected PostEntity $relation;
-
-/**
- * @Orm\Column(name="relation_id", type="integer", unsigned=true, nullable=true)
- */
-protected ?int $relationId;
-```
-
-The `$relation` property handles the object relationship, while `$relationId` is the actual database column storing the foreign key. This separation allows you to:
-- Access the foreign key ID directly without loading the related entity
-- Check for relationship existence without database queries (`if ($entity->relationId !== null)`)
-- Set foreign keys when you have the ID but not the full entity object
-- See exactly what's stored in your database schema
-
-ObjectQuel automatically keeps relationship properties and foreign key columns synchronized:
-
-- When you set `$entity->relation = $postEntity`, ObjectQuel updates `$entity->relationId` on commit (flush)
-- The `$relationId` property is primarily read-only and reflects the current relationship state
-- For new entities, you can set `$relationId` directly only if you don't also set the `$relation` property - if both are set, the relationship entity's ID takes precedence
-- Once a relationship proxy is loaded, modifying `$relationId` has no effect (the proxy retains its loaded entity, and the ID will be overwritten on commit)
-- The recommended approach is to always set the relationship property (`$relation`) rather than the foreign key column (`$relationId`)
+### 1. OneToOne (owning-side)
 
 ### Parameters
 
@@ -713,9 +688,40 @@ When the query processor encounters an entity annotated with `@Orm\EntityBridge`
 
 **Performance consideration**: EAGER loading uses JOINs, which can impact performance with large result sets. LAZY loading triggers additional queries when accessed (N+1 problem risk).
 
-## Troubleshooting
+### Key Design Principle: Explicit Foreign Keys
 
-### Common Mistakes
+Unlike other ORMs that hide foreign key columns from the user, ObjectQuel requires **explicit definition of both the relationship property and the foreign key column property**. This design choice provides transparency, performance benefits, and direct access to foreign key values.
+
+**Example:**
+```php
+/**
+ * @Orm\ManyToOne(targetEntity="PostEntity", inversedBy="vlaflips")
+ */
+protected PostEntity $relation;
+
+/**
+ * @Orm\Column(name="relation_id", type="integer", unsigned=true, nullable=true)
+ */
+protected ?int $relationId;
+```
+
+The `$relation` property handles the object relationship, while `$relationId` is the actual database column storing the foreign key. This separation allows you to:
+- Access the foreign key ID directly without loading the related entity
+- Check for relationship existence without database queries (`if ($entity->relationId !== null)`)
+- Set foreign keys when you have the ID but not the full entity object
+- See exactly what's stored in your database schema
+
+ObjectQuel automatically keeps relationship properties and foreign key columns synchronized:
+
+- When you set `$entity->relation = $postEntity`, ObjectQuel updates `$entity->relationId` on commit (flush)
+- The `$relationId` property is primarily read-only and reflects the current relationship state
+- For new entities, you can set `$relationId` directly only if you don't also set the `$relation` property - if both are set, the relationship entity's ID takes precedence
+- Once a relationship proxy is loaded, modifying `$relationId` has no effect (the proxy retains its loaded entity, and the ID will be overwritten on commit)
+- The recommended approach is to always set the relationship property (`$relation`) rather than the foreign key column (`$relationId`)
+
+### Troubleshooting
+
+#### Common Mistakes
 
 1. **Confusing mappedBy and inversedBy**: `mappedBy` points to the owning side's relationship property name; `inversedBy` points to the inverse side's relationship property name
 2. **Wrong side declared as owning**: The side with the foreign key column must be the owning side
