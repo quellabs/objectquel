@@ -128,6 +128,28 @@
 	    }
 	    
 	    /**
+	     * Creates and initializes a proxy instance for a given entity
+	     * @param string $targetEntity The fully qualified class name of the target entity
+	     * @param EntityManager $entityManager The entity manager instance
+	     * @return object The created proxy instance
+	     */
+	    public function createProxy(string $targetEntity, EntityManager $entityManager): object {
+		    // Get the proxy class name
+		    $proxyClassName = $this->getProxyClass($targetEntity);
+		    
+		    // Get the proxy file path
+		    $proxyFilePath = $this->getProxyFilePath($targetEntity);
+		    
+		    // Require the proxy file if the class doesn't exist yet
+		    if (!class_exists($proxyClassName, false)) {
+			    require_once $proxyFilePath;
+		    }
+		    
+		    // Instantiate and return the proxy
+		    return new $proxyClassName($entityManager);
+	    }
+		
+	    /**
 	     * Normalizes the entity name by resolving proxies and namespaces.
 	     * @param string $class Fully qualified class name or short name.
 	     * @return string Normalized class name.

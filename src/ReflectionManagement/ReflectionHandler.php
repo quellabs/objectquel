@@ -332,19 +332,20 @@
 				// Fetch the ReflectionMethod object for the given method name
 				$method = $reflectionClass->getMethod($method);
 				
-				// Return null if the method does not have a return type
+				// Return empty string if the method does not have a return type
 				if (!$method->hasReturnType()) {
 					return "";
 				}
 				
 				// Get and return the return type of the method
-				$returnTypeClass = $method->getReturnType();
-				
-				if ($returnTypeClass instanceof \ReflectionUnionType) {
-					return implode("|", array_map(function($type) { return $type->getName(); }, $returnTypeClass->getTypes()));
+				if ($method->getReturnType() instanceof \ReflectionUnionType) {
+					return implode("|", array_map(function($type) { return $type->getName(); }, $method->getReturnType()->getTypes()));
+				} else {
+					$returnTypeClass = $method->getReturnType();
 				}
 				
-				return (string)$returnTypeClass;
+				// Return the return type
+				return $returnTypeClass->getName();
 			} catch (\ReflectionException $e) {
 				return "";
 			}
@@ -472,8 +473,15 @@
 				// Loop through each parameter and store its details in the result array
 				foreach ($parameterClass as $parameter) {
 					$type = $parameter->getType();
-					$typeName = $type !== null ? (string)$type : "";
 					$isDefaultValueAvailable = $parameter->isDefaultValueAvailable();
+					
+					if ($type === null) {
+						$typeName = "";
+					} elseif ($type instanceof \ReflectionUnionType) {
+						$typeName = implode("|", array_map(function($t) { return $t->getName(); }, $type->getTypes()));
+					} else {
+						$typeName = $type->getName();
+					}
 					
 					$result[] = [
 						'index'               => $parameter->getPosition(),

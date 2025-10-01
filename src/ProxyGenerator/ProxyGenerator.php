@@ -232,7 +232,13 @@
 		 * @return string The class name without the namespace.
 		 */
 		protected function getClassNameWithoutNamespace(string $classNameWithNamespace): string {
-			return ltrim(strrchr($classNameWithNamespace, '\\'), '\\');
+			$pos = strrpos($classNameWithNamespace, '\\');
+			
+			if ($pos === false) {
+				return $classNameWithNamespace;
+			} else {
+				return substr($classNameWithNamespace, $pos + 1);
+			}
 		}
 		
 		/**
@@ -434,6 +440,23 @@
 			
 			// Generate proxy class at runtime
 			return $this->generateRuntimeProxy($entityClass);
+		}
+		
+		/**
+		 * Gets the file path where the proxy class file is stored
+		 * Only valid when proxyPath is configured
+		 * @param string $targetEntity The entity class name
+		 * @return string The absolute file path to the proxy file
+		 */
+		public function getProxyFilePath(string $targetEntity): string {
+			// Normalize the entity name
+			$normalizedEntity = $this->entityStore->normalizeEntityName($targetEntity);
+			
+			// Extract just the class name without namespace
+			$shortClassName = $this->getClassNameWithoutNamespace($normalizedEntity);
+			
+			// Return the full file path
+			return $this->proxyPath . DIRECTORY_SEPARATOR . $shortClassName . '.php';
 		}
 		
 		/**

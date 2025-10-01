@@ -138,7 +138,6 @@
 			
 			// Gather information needed to create the proxy
 			$targetEntityName = $dependency->getTargetEntity();
-			$proxyClassName = $this->entityManager->getEntityStore()->getProxyGenerator()->getProxyClass($targetEntityName);
 			
 			if ($dependency instanceof ManyToOne) {
 				$relationPropertyName = $dependency->getInversedBy();
@@ -153,8 +152,23 @@
 			
 			// Create a new proxy if no existing entity was found
 			if ($proxyEntity === null) {
+				$proxyGenerator = $this->entityStore->getProxyGenerator();
+				$proxyClassName = $proxyGenerator->getProxyClass($targetEntityName);
+				$proxyFilePath = $proxyGenerator->getProxyFilePath($targetEntityName);
+				
+				// Load the proxy class file if it doesn't exist
+				if (!class_exists($proxyClassName, false)) {
+					require_once $proxyFilePath;
+				}
+				
+				// Instantiate the proxy
 				$proxyEntity = new $proxyClassName($this->entityManager);
-				$this->propertyHandler->set($proxyEntity, $relationPropertyName, $relationColumnValue);
+				
+				// Set the primary key on the proxy using the target entity's primary key property name
+				$targetPrimaryKeys = $this->entityStore->getIdentifierKeys($targetEntityName);
+				$this->propertyHandler->set($proxyEntity, $targetPrimaryKeys[0], $relationColumnValue);
+
+				// Put the proxy under ownership
 				$this->entityManager->persist($proxyEntity);
 			}
 			
