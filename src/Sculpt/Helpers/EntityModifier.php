@@ -471,39 +471,42 @@
 			$targetEntity = $property['targetEntity'];
 			$nullable = $property['nullable'] ?? false;
 			
-			$comment = "/**\n       * @Orm\\{$relationshipType}(targetEntity=\"{$targetEntity}Entity\"";
-			
 			// Add mappedBy attribute for OneToMany or bidirectional OneToOne
+			$options = [];
+			
 			if (!empty($property['mappedBy'])) {
-				$comment .= " mappedBy=\"{$property['mappedBy']}\"";
+				$options[] = "mappedBy=\"{$property['mappedBy']}\"";
 			}
 			
 			// Add inversedBy attribute for ManyToOne
 			if (!empty($property['inversedBy'])) {
-				$comment .= " inversedBy=\"{$property['inversedBy']}\"";
+				$options[] = "inversedBy=\"{$property['inversedBy']}\"";
 			}
 			
 			// Add fetch="LAZY" for OneToMany relationships
 			if ($relationshipType === 'OneToMany') {
-				$comment .= " fetch=\"LAZY\"";
+				$options[] = "fetch=\"LAZY\"";
 			}
 			
 			// Add nullable attribute if specified
 			if ($nullable) {
-				$comment .= " nullable=true";
+				$options[] = "nullable=true";
 			}
 			
 			// If we have a referenced column name that's not the default 'id',
 			// we can store it as a custom attribute in the annotation
 			if (isset($property['referencedColumnName']) && $property['referencedColumnName'] !== 'id') {
-				$comment .= " referencedColumnName=\"{$property['referencedColumnName']}\"";
+				$options[] = "referencedColumnName=\"{$property['referencedColumnName']}\"";
 			}
 			
 			// Add a join column name if provided
 			if (!empty($property['joinColumnName'])) {
-				$comment .= " joinColumnName=\"{$property['joinColumnName']}\"";
+				$options[] = "joinColumnName=\"{$property['joinColumnName']}\"";
 			}
 			
+			// Concat the gathered options
+			$comment = "/**\n       * @Orm\\{$relationshipType}(targetEntity=\"{$targetEntity}Entity\"";
+			$comment .= implode(", ", $options);
 			$comment .= ")";
 			
 			// Add PHPDoc var type for collections
@@ -513,6 +516,7 @@
 			
 			$comment .= "\n       */";
 			
+			// Return result
 			return $comment;
 		}
 		
