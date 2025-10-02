@@ -721,7 +721,7 @@
 			
 			$inverseSetter = '';
 			if (!empty($property['mappedBy'])) {
-				$setterMethod = 'set' . ucfirst($entityName);
+				$setterMethod = 'set' . ucfirst($property['mappedBy']);
 				$inverseSetter = "\n         // Set the owning side of the relationship\n";
 				$inverseSetter .= "         \${$singularName}->{$setterMethod}(\$this);";
 			}
@@ -754,9 +754,13 @@
 			$inverseRemover = '';
 			
 			if (!empty($property['mappedBy'])) {
-				$inverseRemover = "\n            // Unset the owning side only if it still points to this entity\n";
-				$inverseRemover .= "            if (\${$singularName}->get" . ucfirst($entityName) . "() === \$this) {\n";
-				$inverseRemover .= "               \${$singularName}->set" . ucfirst($entityName) . "(null);\n";
+				$mappedByField = $property['mappedBy'];
+				$getterMethod = 'get' . ucfirst($mappedByField);
+				$setterMethod = 'set' . ucfirst($mappedByField);
+				
+				$inverseRemover = "            // Unset the owning side only if it still points to this entity\n";
+				$inverseRemover .= "            if (\${$singularName}->{$getterMethod}() === \$this) {\n";
+				$inverseRemover .= "               \${$singularName}->{$setterMethod}(null);\n";
 				$inverseRemover .= "            }";
 			}
 			
