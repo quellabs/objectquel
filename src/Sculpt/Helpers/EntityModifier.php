@@ -646,9 +646,7 @@
 					$removerMethod = 'remove' . ucfirst($singularName);
 					
 					$setterBody .= "        // Remove from old relationship\n";
-					$setterBody .= "        if (\$this->{$propertyName} !== null) {\n";
-					$setterBody .= "            \$this->{$propertyName}->{$removerMethod}(\$this);\n";
-					$setterBody .= "        }\n";
+					$setterBody .= "        \$this->{$propertyName}?->{$removerMethod}(\$this);\n";
 				}
 				
 				$setterBody .= "        \$this->{$propertyName} = \${$propertyName};\n";
