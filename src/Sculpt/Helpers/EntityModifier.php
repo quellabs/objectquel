@@ -6,185 +6,127 @@
 	use Quellabs\ObjectQuel\DatabaseAdapter\TypeMapper;
 	use Quellabs\Support\StringInflector;
 	
+	/**
+	 * Manages entity class file generation and modification
+	 *
+	 * Handles creating new entity classes with properties, relationships, and accessors,
+	 * as well as updating existing entities with new properties while preserving existing code.
+	 */
 	class EntityModifier {
 		
+		/** @var Configuration Application configuration for entity paths and namespaces */
 		private Configuration $configuration;
 		
 		/**
-		 * Constructor for EntityModifier
-		 * @param Configuration $configuration
+		 * Constructor
+		 * @param Configuration $configuration Application configuration instance
 		 */
 		public function __construct(Configuration $configuration) {
 			$this->configuration = $configuration;
 		}
 		
 		/**
-		 * Checks if an entity exists
-		 * @param string $entityName Name of the entity
-		 * @return bool True if entity exists
+		 * Checks if an entity file exists on disk
+		 * @param string $entityName Entity class name (with or without "Entity" suffix)
+		 * @return bool True if the entity file exists
 		 */
 		public function entityExists(string $entityName): bool {
 			return file_exists($this->getEntityPath($entityName));
 		}
 		
 		/**
-		 * Gets the file path for an entity
-		 * @param string $entityName Name of the entity
-		 * @return string Path to the entity file
+		 * Constructs the full file path for an entity
+		 * @param string $entityName Entity class name
+		 * @return string Absolute path to the entity PHP file
 		 */
 		public function getEntityPath(string $entityName): string {
 			return $this->configuration->getEntityPath() . '/' . $entityName . '.php';
 		}
 		
 		/**
-		 * Creates a new entity or updates an existing one
-		 * This function serves as the main entry point for entity management, determining
-		 * whether to create a new entity class or update an existing one based on file existence
-		 * @param string $entityName Name of the entity (without "Entity" suffix)
-		 * @param array $properties List of properties to add - detailed metadata for each property
-		 * @return bool True if successful - indicates whether the operation completed correctly
+		 * Creates a new entity or updates an existing one based on file existence
+		 * @param string $entityName Entity name without "Entity" suffix
+		 * @param array $properties Property metadata with type, nullable, relationship info
+		 * @return bool True if operation succeeded
 		 */
 		public function createOrUpdateEntity(string $entityName, array $properties): bool {
-			// Check if the entity already exists by looking for its file
-			// The entityExists method likely checks for the presence of the file at the expected path
-			// We append "Entity" to match the standard naming convention for entity classes
-			if ($this->entityExists($entityName . "Entity")) {
-				// If the entity exists, delegate to the updateEntity method
-				// This method handles the complex task of modifying an existing class
-				// without disrupting existing code or functionality
-				// It will add the new properties and methods while preserving existing ones
-				return $this->updateEntity($entityName, $properties);
-			}
+			$fullEntityName = $entityName . "Entity";
 			
-			// If the entity doesn't exist, delegate to the createNewEntity method
-			// This method generates a complete class file from scratch with all required
-			// properties, methods, annotations, and proper initialization
-			return $this->createNewEntity($entityName, $properties);
+			if ($this->entityExists($fullEntityName)) {
+				return $this->updateEntity($entityName, $properties);
+			} else {
+				return $this->createNewEntity($entityName, $properties);
+			}
 		}
 		
 		/**
-		 * Creates a new entity with properties and getters/setters
-		 * This function generates a complete entity class file from scratch, including
-		 * all necessary properties, constructors, and accessor methods
-		 * @param string $entityName Name of the entity (without "Entity" suffix)
-		 * @param array $properties List of properties to add - detailed metadata for each property
-		 * @return bool True if successful - indicates whether the file was created correctly
+		 * Generates a complete entity class file from scratch
+		 * @param string $entityName Entity name without "Entity" suffix
+		 * @param array $properties Property definitions with metadata
+		 * @return bool True if file was created successfully
 		 */
 		public function createNewEntity(string $entityName, array $properties): bool {
-			// Ensure the entity directory exists before attempting to create files
-			// This is important for first-time setup or when deploying to new environments
-			if (!is_dir($this->configuration->getEntityPath())) {
-				// Create the directory structure recursively with standard permissions
-				// 0755 allows the owner to read/write/execute and others to read/execute
-				// The 'true' parameter creates parent directories as needed
-				mkdir($this->configuration->getEntityPath(), 0755, true);
+			$entityPath = $this->configuration->getEntityPath();
+			
+			if (!is_dir($entityPath)) {
+				mkdir($entityPath, 0755, true);
 			}
 			
-			// Generate the complete entity class content as a string
-			// This includes:
-			// - Namespace declaration
-			// - Use statements for imports
-			// - Class declaration with proper inheritance
-			// - Property declarations with proper annotations
-			// - Constructor for collection initialization
-			// - Getter/setter methods for all properties
-			// - Adder/remover methods for collections
 			$content = $this->generateEntityContent($entityName, $properties);
-			
-			// Write the generated content to a new file
-			// The file path is constructed using the entity name plus "Entity" suffix
-			// Returns boolean success/failure of the write operation
 			return file_put_contents($this->getEntityPath($entityName . "Entity"), $content) !== false;
 		}
 		
 		/**
-		 * Updates an existing entity with new properties and getters/setters
-		 * This function modifies entity classes by adding new properties, updating constructors
-		 * for collection initialization, and generating accessor methods
-		 * @param string $entityName Name of the entity (without "Entity" suffix)
-		 * @param array $properties List of properties to add - detailed metadata for each property
-		 * @return bool True if successful - indicates whether the file was updated correctly
+		 * Updates an existing entity with new properties and methods
+		 * @param string $entityName Entity name without "Entity" suffix
+		 * @param array $properties New properties to add with full metadata
+		 * @return bool True if file was updated successfully
 		 */
 		public function updateEntity(string $entityName, array $properties): bool {
-			// Construct the full file path to the entity class using the entity name
-			// The getEntityPath method likely adds necessary directory prefixes and file extension
 			$filePath = $this->getEntityPath($entityName . "Entity");
-			
-			// Read the current content of the entity file
-			// This gives us the starting point for our modifications
 			$content = file_get_contents($filePath);
 			
-			// Verify that the file exists and was read successfully
-			// Return false immediately if file cannot be read
 			if ($content === false) {
 				return false;
 			}
 			
-			// Parse the class structure to identify where to insert new code
-			// This helper method likely extracts information about class boundaries,
-			// existing properties, methods, etc.
 			$classContent = $this->parseClassContent($content);
 			
-			// Safety check - if parsing failed, abort the operation
-			// This prevents corrupting the file with improperly placed code
 			if (!$classContent) {
 				return false;
 			}
 			
-			// Analyze the properties to determine if we need to handle OneToMany relationships.
-			// OneToMany relationships require special handling for collection initialization.
-			$hasNewOneToMany = false;
-			$oneToManyProperties = [];
+			// Extract OneToMany relationships that need collection initialization
+			$oneToManyProperties = array_filter($properties, fn($p) => ($p['relationshipType'] ?? null) === 'OneToMany');
 			
-			// Iterate through each property to identify OneToMany relationships
-			foreach ($properties as $property) {
-				if (isset($property['relationshipType']) && $property['relationshipType'] === 'OneToMany') {
-					// Flag that we need constructor updates
-					$hasNewOneToMany = true;
-					
-					// Track the OneToMany properties for constructor initialization
-					$oneToManyProperties[] = $property;
-				}
+			$updatedContent = $content;
+			if (!empty($oneToManyProperties)) {
+				$updatedContent = $this->updateConstructor($updatedContent, $oneToManyProperties);
 			}
 			
-			// Update or create a constructor if we have OneToMany collections that need initialization
-			// Collection properties must be initialized to prevent null reference errors
-			if ($hasNewOneToMany) {
-				// The updateConstructor method handles both creating new constructors
-				// and modifying existing ones as needed
-				$updatedContent = $this->updateConstructor($content, $oneToManyProperties);
-			} else {
-				// If no OneToMany properties, we don't need to modify the constructor
-				$updatedContent = $content;
-			}
+			// Reparse to get accurate insertion points after constructor modifications
+			$updatedContent = $this->insertProperties(
+				$this->parseClassContent($updatedContent),
+				$properties
+			);
 			
-			// Add the new properties to the class
-			// This inserts the property declarations in the appropriate location
-			// Re-parse the class content after constructor updates to ensure correct insertion points
-			$updatedContent = $this->insertProperties($this->parseClassContent($updatedContent), $properties);
-			
-			// Generate and add the getter and setter methods for the new properties
-			// For OneToMany relationships, this also adds the collection adder/remover methods
 			$updatedContent = $this->insertGettersAndSetters($updatedContent, $properties, $entityName);
 			
-			// Write the updated content back to the file
-			// Return success/failure based on the write operation
-			// The !== false check handles cases where zero bytes might be written (unlikely but possible)
+			// Return true if write was successful
 			return file_put_contents($filePath, $updatedContent) !== false;
 		}
 		
 		/**
-		 * Parses the class content to identify sections
-		 * @param string $content Entity file content
-		 * @return array|false Class content sections or false on error
+		 * Parses class file to identify structural sections
+		 * @param string $content Complete entity file content
+		 * @return array|false Array with keys: header, properties, methods, footer; or false on parse error
 		 */
 		protected function parseClassContent(string $content): false|array {
-			// Find the class definition
+			// Locate class declaration with optional extends/implements
 			if (!preg_match('/class\s+(\w+)(?:\s+extends\s+\w+)?(?:\s+implements\s+[\w\s,]+)?\s*\{/s', $content, $classMatch, PREG_OFFSET_CAPTURE)) {
 				return false;
 			}
 			
-			// Find the last closing brace
 			$classStartPos = (int)$classMatch[0][1] + strlen($classMatch[0][0]);
 			$lastBracePos = strrpos($content, '}');
 			
@@ -192,29 +134,24 @@
 				return false;
 			}
 			
-			// Extract class body
 			$classBody = substr($content, $classStartPos, $lastBracePos - $classStartPos);
 			
-			// Identify property section (ends at the first method declaration)
-			// Methods start with: any visibility, then "function", then a name
+			// Find where methods begin (properties end at first method declaration)
 			$methodPattern = '/\s*(public|protected|private)?\s+function\s+\w+/';
 			
-			// Split into properties and methods sections
 			if (preg_match($methodPattern, $classBody, $methodMatch, PREG_OFFSET_CAPTURE)) {
 				$firstMethodPos = $methodMatch[0][1];
 				
-				// Find the beginning of the method or its docblock
+				// Check for docblock preceding the method
 				$potentialDocBlockStart = strrpos(substr($classBody, 0, $firstMethodPos), '/**');
 				
 				if ($potentialDocBlockStart !== false && ($firstMethodPos - $potentialDocBlockStart) < 100) {
-					// There's a docblock before this method, adjust firstMethodPos
 					$firstMethodPos = $potentialDocBlockStart;
 				}
 				
 				$propertiesSection = trim(substr($classBody, 0, $firstMethodPos));
 				$methodsSection = trim(substr($classBody, $firstMethodPos));
 			} else {
-				// No methods found
 				$propertiesSection = trim($classBody);
 				$methodsSection = '';
 			}
@@ -228,19 +165,19 @@
 		}
 		
 		/**
-		 * Insert properties into the class content
-		 * @param array $classContent Parsed class content
-		 * @param array $properties List of properties to add
-		 * @return string Updated class content
+		 * Inserts new property declarations into the class
+		 * @param array $classContent Parsed class sections from parseClassContent()
+		 * @param array $properties Properties to add
+		 * @return string Updated class content with new properties
 		 */
 		protected function insertProperties(array $classContent, array $properties): string {
 			$propertyCode = $classContent['properties'];
-			
-			// Add each new property
 			$newProperties = '';
+			
 			foreach ($properties as $property) {
-				// Skip if property already exists
 				$propertyName = $property['name'];
+				
+				// Skip if property already declared
 				if (preg_match('/\s*(protected|private|public)\s+.*\$' . $propertyName . '\s*;/i', $propertyCode)) {
 					continue;
 				}
@@ -254,21 +191,19 @@
 				$newProperties .= "\n\n\t" . $docComment . "\n\t" . $propertyDefinition;
 			}
 			
-			// Add the new properties at the end of the properties section
 			$updatedPropertyCode = $propertyCode . $newProperties;
 			
 			return $classContent['header'] . $updatedPropertyCode . "\n\n\t" . $classContent['methods'] . $classContent['footer'];
 		}
 		
 		/**
-		 * Insert getters and setters into the class content
-		 * @param string $content Class content
-		 * @param array $properties List of properties to add
-		 * @param string $entityName Name of the entity
-		 * @return string Updated class content
+		 * Inserts getter/setter methods and collection adder/remover methods
+		 * @param string $content Current class content
+		 * @param array $properties Properties needing accessors
+		 * @param string $entityName Current entity name for relationship methods
+		 * @return string Updated class content with new methods
 		 */
 		protected function insertGettersAndSetters(string $content, array $properties, string $entityName): string {
-			// Find the position of the last closing brace
 			$lastBracePos = strrpos($content, '}');
 			if ($lastBracePos === false) {
 				return $content;
@@ -276,26 +211,23 @@
 			
 			$methodsToAdd = '';
 			
-			// Generate getter and setter for each property
 			foreach ($properties as $property) {
-				// Skip getter/setter for OneToMany relationships
 				$isOneToMany = isset($property['relationshipType']) && $property['relationshipType'] === 'OneToMany';
 				
-				// Skip if getter/setter already exists
 				$getterName = 'get' . ucfirst($property['name']);
 				$setterName = 'set' . ucfirst($property['name']);
 				
-				// Only generate getter if not OneToMany and doesn't already exist
+				// Generate getter if not OneToMany and doesn't exist
 				if (!$isOneToMany && !preg_match('/function\s+' . $getterName . '\s*\(/i', $content)) {
 					$methodsToAdd .= $this->generateGetter($property);
 				}
 				
-				// Only generate setter if not OneToMany and doesn't already exist
-				if (!$isOneToMany && !preg_match('/function\s+' . $setterName . '\s*\(/i', $content)) {
+				// Generate setter if not OneToMany, not readonly, and doesn't exist
+				if (!$isOneToMany && !($property['readonly'] ?? false) && !preg_match('/function\s+' . $setterName . '\s*\(/i', $content)) {
 					$methodsToAdd .= $this->generateSetter($property);
 				}
 				
-				// For OneToMany relationships, add additional methods for collection management
+				// For OneToMany, generate collection management methods
 				if ($isOneToMany) {
 					$singularName = StringInflector::singularize($property['name']);
 					$addMethodName = 'add' . ucfirst($singularName);
@@ -311,22 +243,20 @@
 				}
 			}
 			
-			// Insert methods before the last brace
 			return substr($content, 0, $lastBracePos) . $methodsToAdd . "\n}" . substr($content, $lastBracePos + 1);
 		}
 		
 		/**
-		 * Generate the content for a new entity
-		 * @param string $entityName Name of the entity
-		 * @param array $properties List of properties for the entity
-		 * @return string Entity file content
+		 * Generates complete entity class file content
+		 * @param string $entityName Entity name without "Entity" suffix
+		 * @param array $properties All properties for this entity
+		 * @return string Complete PHP class file content
 		 */
 		protected function generateEntityContent(string $entityName, array $properties): string {
-			// Namespace
 			$namespace = $this->configuration->getEntityNameSpace();
 			$content = "<?php\n\n   namespace {$namespace};\n";
 			
-			// Use statements
+			// Use statements for ORM annotations and collections
 			$content .= "\n";
 			$content .= "   use Quellabs\\ObjectQuel\\Annotations\\Orm\\Table;\n";
 			$content .= "   use Quellabs\\ObjectQuel\\Annotations\\Orm\\Column;\n";
@@ -337,22 +267,21 @@
 			$content .= "   use Quellabs\\ObjectQuel\\Collections\\Collection;\n";
 			$content .= "   use Quellabs\\ObjectQuel\\Collections\\CollectionInterface;\n";
 			
-			// Convert entity name to table name
+			// Generate table name in snake_case plural form
 			$tableNamePlural = StringInflector::pluralize($entityName);
-			$tableName = $this->snakeCase($tableNamePlural);
+			$tableName = StringInflector::snakeCase($tableNamePlural);
 			
-			// Add class definitions
 			$content .= "\n   /**\n    * @Orm\\Table(name=\"{$tableName}\")\n    */\n";
 			$content .= "   class {$entityName}Entity {\n";
 			
-			// Add primary key property
+			// Primary key property
 			$content .= "\n      /**\n";
 			$content .= "       * @Orm\\Column(name=\"id\", type=\"integer\", unsigned=true, primary_key=true)\n";
 			$content .= "       * @Orm\\PrimaryKeyStrategy(strategy=\"identity\")\n";
 			$content .= "       */\n";
 			$content .= "      protected ?int \$id = null;\n";
 			
-			// Add constructor for OneToMany relationships initialization
+			// Check if constructor needed for OneToMany initialization
 			$hasOneToMany = false;
 			foreach ($properties as $property) {
 				if (isset($property['relationshipType']) && $property['relationshipType'] === 'OneToMany') {
@@ -361,7 +290,7 @@
 				}
 			}
 			
-			// If we have OneToMany relationships, add a constructor to initialize collections
+			// Add constructor if OneToMany relationships exist
 			if ($hasOneToMany) {
 				$content .= "\n      /**\n       * Constructor to initialize collections\n       */\n";
 				$content .= "      public function __construct() {\n";
@@ -375,13 +304,11 @@
 				$content .= "      }\n";
 			}
 			
-			// Add properties
+			// Add all properties with appropriate docblocks
 			foreach ($properties as $property) {
-				if (isset($property['relationshipType'])) {
-					$docComment = $this->generateRelationshipDocComment($property);
-				} else {
-					$docComment = $this->generatePropertyDocComment($property);
-				}
+				$docComment = isset($property['relationshipType'])
+					? $this->generateRelationshipDocComment($property)
+					: $this->generatePropertyDocComment($property);
 				
 				$propertyDefinition = $this->generatePropertyDefinition($property);
 				
@@ -389,23 +316,20 @@
 				$content .= "      " . $propertyDefinition . "\n";
 			}
 			
-			// Add getter for primary id
+			// Primary key getter
 			$content .= $this->generateGetter(['name' => 'id', 'type' => 'integer']);
 			
-			// Add getters and setters
+			// Accessors for all properties
 			foreach ($properties as $property) {
-				// Skip adding getter/setter for OneToMany relationships
 				$readOnly = $property['readonly'] ?? false;
 				$isOneToMany = isset($property['relationshipType']) && $property['relationshipType'] === 'OneToMany';
 				
-				// For OneToMany relationships, add additional methods
 				if ($isOneToMany) {
 					$content .= $this->generateCollectionAdder($property, $entityName);
 					$content .= $this->generateCollectionRemover($property, $entityName);
 					continue;
 				}
 				
-				// Add getter and setter only if not a OneToMany relationship
 				$content .= $this->generateGetter($property);
 				
 				if (!$readOnly) {
@@ -419,27 +343,26 @@
 		}
 		
 		/**
-		 * Generate a property's PHPDoc comment
-		 * @param array $property Property information
-		 * @return string PHPDoc comment
+		 * Generates ORM Column annotation docblock for regular properties
+		 * @param array $property Property metadata (name, type, nullable, limit, precision, etc.)
+		 * @return string PHPDoc comment with @Orm\Column annotation
 		 */
 		protected function generatePropertyDocComment(array $property): string {
 			$nullable = $property['nullable'] ?? false;
 			$type = $property['type'] ?? 'string';
-			$snakeCaseName = $this->snakeCase($property['name']);
+			$snakeCaseName = StringInflector::snakeCase($property['name']);
 			
-			$properties = [];
+			$properties = [
+				"name=\"{$snakeCaseName}\"",
+				"type=\"{$type}\""
+			];
 			
-			// Add the name and type properties
-			$properties[] = "name=\"{$snakeCaseName}\"";
-			$properties[] = "type=\"{$type}\"";
-
-			// Use enum type for enums
+			// Add enum class reference if applicable
 			if (!empty($property['enumType'])) {
 				$properties[] = "enumType=" . ltrim($property['enumType'], "\\") . "::class";
 			}
 			
-			// Add optional properties if they exist
+			// Optional column attributes
 			if (isset($property['limit']) && is_numeric($property['limit'])) {
 				$properties[] = "limit={$property['limit']}";
 			}
@@ -465,9 +388,9 @@
 		}
 		
 		/**
-		 * Generate a relationship PHPDoc comment
-		 * @param array $property Relationship property information
-		 * @return string PHPDoc comment
+		 * Generates ORM relationship annotation docblock
+		 * @param array $property Relationship metadata (targetEntity, mappedBy, inversedBy, etc.)
+		 * @return string PHPDoc comment with relationship annotation
 		 */
 		protected function generateRelationshipDocComment(array $property): string {
 			$relationshipType = $property['relationshipType'];
@@ -475,84 +398,70 @@
 			
 			$options = [];
 			
-			// mappedBy indicates the inverse side of a bidirectional relationship
-			// This side doesn't own the foreign key
+			// Inverse side property name (for bidirectional relationships)
 			if (!empty($property['mappedBy'])) {
 				$options[] = "mappedBy=\"{$property['mappedBy']}\"";
 			}
 			
-			// inversedBy indicates the owning side of a bidirectional relationship
-			// This side owns the foreign key and references the inverse side property
+			// Owning side property name (for bidirectional relationships)
 			if (!empty($property['inversedBy'])) {
 				$options[] = "inversedBy=\"{$property['inversedBy']}\"";
 			}
 			
-			// OneToMany collections should use lazy loading by default
-			// to avoid loading all related entities unnecessarily
+			// Lazy loading for collections to avoid N+1 queries
 			if ($relationshipType === 'OneToMany') {
 				$options[] = "fetch=\"LAZY\"";
 			}
 			
-			// Determine if this is the owning side of the relationship
-			// Owning side is responsible for persisting the foreign key
+			// Owning side owns the foreign key
 			$isOwningSide = empty($property['mappedBy']);
 			
-			// Foreign key attributes only apply to the owning side
 			if ($isOwningSide) {
-				// Allow null foreign key values if specified
 				if ($property['nullable'] ?? false) {
 					$options[] = "nullable=true";
 				}
 				
-				// Specify the foreign key column name in the current entity's table
+				// Foreign key column in current table
 				if (!empty($property['relationColumn'])) {
 					$options[] = "relationColumn=\"{$property['relationColumn']}\"";
 				}
 				
-				// Specify which column in the target entity this foreign key references
-				// Default is 'id', so only add if different
+				// Referenced column in target table (defaults to 'id')
 				if (isset($property['foreignColumn']) && $property['foreignColumn'] !== 'id') {
 					$options[] = "foreignColumn=\"{$property['foreignColumn']}\"";
 				}
 			}
 			
-			// Build the annotation string with proper comma separation
-			// Options string is empty if no options, otherwise includes leading comma
 			$optionsStr = !empty($options) ? ', ' . implode(', ', $options) : '';
 			$comment = "/**\n       * @Orm\\{$relationshipType}(targetEntity=\"{$targetEntity}Entity\"{$optionsStr})";
 			
-			// OneToMany relationships return collections, so add collection type hint
-			// This helps IDEs with autocompletion and static analysis
+			// Add collection type hint for OneToMany
 			if ($relationshipType === 'OneToMany') {
 				$comment .= "\n       * @var CollectionInterface<{$targetEntity}Entity>";
 			}
 			
-			// Close the PHPDoc block
 			$comment .= "\n       */";
 			
-			// Return the result
 			return $comment;
 		}
 		
 		/**
-		 * Generate a property definition
-		 * @param array $property Property information
-		 * @return string Property definition
+		 * Generates typed property declaration
+		 * @param array $property Property metadata
+		 * @return string Property declaration with type hint
 		 */
 		protected function generatePropertyDefinition(array $property): string {
 			$nullable = $property['nullable'] ?? false;
+			$nullableIndicator = $nullable ? '?' : '';
 			
-			// Handle relationship types
+			// Relationship properties use entity type
 			if (isset($property['relationshipType'])) {
 				$type = $property['type'];
-				$nullableIndicator = $nullable ? '?' : '';
-				
 				return "protected {$nullableIndicator}{$type} \${$property['name']};";
 			}
 			
-			// Handle regular properties
+			// Regular properties map database type to PHP type
 			$type = $property['type'] ?? 'string';
-			$nullableIndicator = $nullable ? '?' : '';
 			
 			if ($type === "enum") {
 				$phpType = "\\" . ltrim($property["enumType"], "\\");
@@ -564,25 +473,26 @@
 		}
 		
 		/**
-		 * Generate a getter method for a property
-		 * @param array $property Property information
-		 * @return string Getter method code
+		 * Generates getter method with proper type hints and docblock
+		 * @param array $property Property metadata
+		 * @return string Complete getter method
 		 */
 		protected function generateGetter(array $property): string {
 			$propertyName = $property['name'];
 			$methodName = 'get' . ucfirst($propertyName);
 			
-			// Handle relationship getter
+			// Relationship getters
 			if (isset($property['relationshipType'])) {
 				$type = $property['type'];
 				$nullable = $property['nullable'] ?? false;
 				$nullableIndicator = $nullable ? '?' : '';
 				
-				// Specially handle OneToMany collection getters
+				// OneToMany returns collection interface
 				if ($property['relationshipType'] === 'OneToMany') {
 					$targetEntity = $property['targetEntity'] . 'Entity';
 					
 					return "\n      /**\n" .
+						"       * Gets the {$propertyName} collection\n" .
 						"       * @return CollectionInterface<{$targetEntity}>\n" .
 						"       */\n" .
 						"      public function {$methodName}(): CollectionInterface {\n" .
@@ -591,7 +501,7 @@
 				}
 				
 				return "\n      /**\n" .
-					"       * Get {$propertyName}\n" .
+					"       * Gets the {$propertyName} relationship\n" .
 					"       * @return {$nullableIndicator}{$type}\n" .
 					"       */\n" .
 					"      public function {$methodName}(): {$nullableIndicator}{$type} {\n" .
@@ -599,7 +509,7 @@
 					"      }\n";
 			}
 			
-			// Handle regular property getter
+			// Regular property getters
 			$nullable = $property['nullable'] ?? false;
 			$type = $property['type'] ?? 'string';
 			$nullableIndicator = $nullable ? '?' : '';
@@ -611,7 +521,7 @@
 			}
 			
 			return "\n      /**\n" .
-				"       * Get {$propertyName}\n" .
+				"       * Gets the {$propertyName} value\n" .
 				"       * @return {$nullableIndicator}{$phpType}\n" .
 				"       */\n" .
 				"      public function {$methodName}(): {$nullableIndicator}{$phpType} {\n" .
@@ -620,38 +530,41 @@
 		}
 		
 		/**
-		 * Generate a setter method for a property
-		 * @param array $property Property information
-		 * @return string Setter method code
+		 * Generates setter method with fluent interface and bidirectional sync
+		 * @param array $property Property metadata
+		 * @return string Complete setter method
 		 */
 		protected function generateSetter(array $property): string {
 			$propertyName = $property['name'];
 			$methodName = 'set' . ucfirst($propertyName);
 			
-			// Handle relationship setter (ManyToOne, OneToOne relationships)
+			// Relationship setters with bidirectional sync
 			if (isset($property['relationshipType'])) {
 				$type = $property['type'];
 				$nullable = $property['nullable'] ?? false;
 				$nullableIndicator = $nullable ? '?' : '';
 				
-				// Start with identity check to prevent infinite loops
-				$setterBody  = "         // Do not update if already set\n";
+				// Identity check prevents infinite loops in bidirectional relationships
+				$setterBody = "         // Prevent redundant updates\n";
 				$setterBody .= "         if (\$this->{$propertyName} === \${$propertyName}) {\n";
 				$setterBody .= "             return \$this;\n";
-				$setterBody .= "         }\n         ";
+				$setterBody .= "         }\n";
 				
-				// Add cleanup for ManyToOne relationships before reassignment
+				// Clean up old ManyToOne relationship before reassigning
 				if ($property['relationshipType'] === 'ManyToOne' && !empty($property['inversedBy'])) {
 					$singularName = StringInflector::singularize($property['inversedBy']);
 					$removerMethod = 'remove' . ucfirst($singularName);
 					
-					$setterBody .= "        // Remove from old relationship\n";
+					$setterBody .= "\n";
+					$setterBody .= "        // Remove from previous parent's collection\n";
 					$setterBody .= "        \$this->{$propertyName}?->{$removerMethod}(\$this);\n";
 				}
 				
+				$setterBody .= "\n";
+				$setterBody .= "        // Set new property\n";
 				$setterBody .= "        \$this->{$propertyName} = \${$propertyName};\n";
 				
-				// Add bidirectional sync for ManyToOne relationships
+				// Sync bidirectional ManyToOne relationship
 				if ($property['relationshipType'] === 'ManyToOne' && !empty($property['inversedBy'])) {
 					$singularName = StringInflector::singularize($property['inversedBy']);
 					$adderMethod = 'add' . ucfirst($singularName);
@@ -662,8 +575,8 @@
 				return sprintf(
 					"
      /**
-       * Set %s
-       * @param %s%s $%s
+       * Sets the {$propertyName} relationship
+       * @param %s%s $%s The related entity
        * @return \$this
        */
       public function %s(%s%s $%s): self {
@@ -671,7 +584,6 @@
          return \$this;
       }
 ",
-					$propertyName,
 					$nullableIndicator,
 					$type,
 					$propertyName,
@@ -683,7 +595,7 @@
 				);
 			}
 			
-			// Handle regular property setter
+			// Regular property setters
 			$nullable = $property['nullable'] ?? false;
 			$type = $property['type'] ?? 'string';
 			$nullableIndicator = $nullable ? '?' : '';
@@ -694,9 +606,10 @@
 				$phpType = TypeMapper::phinxTypeToPhpType($type);
 			}
 			
-			return "\n      /**\n" .
-				"       * Set {$propertyName}\n" .
-				"       * @param {$nullableIndicator}{$phpType} \${$propertyName}\n" .
+			return "\n" .
+				"      /**\n" .
+				"       * Sets the {$propertyName} value\n" .
+				"       * @param {$nullableIndicator}{$phpType} \${$propertyName} New value to set\n" .
 				"       * @return \$this\n" .
 				"       */\n" .
 				"      public function {$methodName}({$nullableIndicator}{$phpType} \${$propertyName}): self {\n" .
@@ -706,10 +619,13 @@
 		}
 		
 		/**
-		 * Generate a method to add an item to a collection (for OneToMany)
-		 * @param array $property Collection property information
-		 * @param string $entityName Current entity name (without suffix)
-		 * @return string Method code
+		 * Generates method to add item to OneToMany collection
+		 *
+		 * Checks for duplicates and syncs the inverse side of bidirectional relationships.
+		 *
+		 * @param array $property Collection property metadata
+		 * @param string $entityName Current entity name
+		 * @return string Complete adder method
 		 */
 		protected function generateCollectionAdder(array $property, string $entityName): string {
 			$collectionName = $property['name'];
@@ -718,15 +634,16 @@
 			$targetEntity = $property['targetEntity'] . 'Entity';
 			
 			$inverseSetter = '';
+			
 			if (!empty($property['mappedBy'])) {
 				$setterMethod = 'set' . ucfirst($property['mappedBy']);
-				$inverseSetter = "\n         // Set the owning side of the relationship\n";
+				$inverseSetter = "\n         // Sync bidirectional relationship\n";
 				$inverseSetter .= "         \${$singularName}->{$setterMethod}(\$this);";
 			}
 			
 			return "\n      /**\n" .
-				"       * Adds a relation between {$targetEntity} and {$targetEntity}\n" .
-				"       * @param {$targetEntity} \${$singularName}\n" .
+				"       * Adds an entity to the {$collectionName} collection\n" .
+				"       * @param {$targetEntity} \${$singularName} Entity to add\n" .
 				"       * @return \$this\n" .
 				"       */\n" .
 				"      public function {$methodName}({$targetEntity} \${$singularName}): self {\n" .
@@ -738,10 +655,10 @@
 		}
 		
 		/**
-		 * Generate a method to remove an item from a collection (for OneToMany)
-		 * @param array $property Collection property information
-		 * @param string $entityName Current entity name (without suffix)
-		 * @return string Method code
+		 * Generates method to remove item from OneToMany collection
+		 * @param array $property Collection property metadata
+		 * @param string $entityName Current entity name
+		 * @return string Complete remover method
 		 */
 		protected function generateCollectionRemover(array $property, string $entityName): string {
 			$collectionName = $property['name'];
@@ -756,17 +673,15 @@
 				$getterMethod = 'get' . ucfirst($mappedByField);
 				$setterMethod = 'set' . ucfirst($mappedByField);
 				
-				$inverseRemover = "            // Unset the owning side only if it still points to this entity\n";
+				$inverseRemover = "            // Unset inverse side if it still references this entity\n";
 				$inverseRemover .= "            if (\${$singularName}->{$getterMethod}() === \$this) {\n";
 				$inverseRemover .= "               \${$singularName}->{$setterMethod}(null);\n";
 				$inverseRemover .= "            }";
 			}
 			
-			$targetEntityBase = substr($targetEntity, 0, -6);
-			
 			return "\n      /**\n" .
-				"       * Removes a relation between {$targetEntity} and {$targetEntityBase}\n" .
-				"       * @param {$targetEntity} \${$singularName}\n" .
+				"       * Removes an entity from the {$collectionName} collection\n" .
+				"       * @param {$targetEntity} \${$singularName} Entity to remove\n" .
 				"       * @return \$this\n" .
 				"       */\n" .
 				"      public function {$methodName}({$targetEntity} \${$singularName}): self {\n" .
@@ -779,273 +694,169 @@
 		}
 		
 		/**
-		 * Updates constructor to initialize new OneToMany collections
-		 * This function serves as the main entry point for modifying entity classes
-		 * to ensure proper initialization of OneToMany relationship collections
-		 * @param string $content Entity file content - the full PHP class definition as a string
-		 * @param array $oneToManyProperties OneToMany properties to initialize - array of property details
-		 * @return string Updated content - the modified class content with proper collection initialization
+		 * Updates constructor to initialize OneToMany collections
+		 * @param string $content Entity file content
+		 * @param array $oneToManyProperties OneToMany properties needing initialization
+		 * @return string Updated content with constructor modifications
 		 */
 		protected function updateConstructor(string $content, array $oneToManyProperties): string {
-			// First, determine if a constructor already exists in the class
-			// This check uses a regex pattern that matches constructors with any visibility
-			// (public, private, protected) or with no explicit visibility modifier
 			if ($this->constructorExists($content)) {
-				// If a constructor exists, we need to modify it to include our collection initializations
-				// without disrupting any existing code in the constructor
-				// This approach preserves existing constructor logic while adding new initializations
 				return $this->updateExistingConstructor($content, $oneToManyProperties);
 			} else {
-				// If no constructor exists, we need to create a new one from scratch
-				// The new constructor will contain only the collection initializations
-				// It will be placed in the appropriate position within the class structure
 				return $this->addNewConstructor($content, $oneToManyProperties);
 			}
-			
-			// Note: Both paths ensure that all OneToMany properties are properly initialized
-			// to prevent "Attempting to call methods on a non-object" errors when the
-			// entity is instantiated and collections are accessed before items are added
 		}
 		
 		/**
-		 * Checks if a constructor exists in the class
-		 * This function determines whether an entity class already has a constructor method
-		 * defined, to decide whether to add a new constructor or update an existing one
-		 * @param string $content Entity file content - the full PHP class definition as a string
-		 * @return bool True if constructor exists - indicates whether __construct method is present
+		 * Checks if a constructor method exists in the class
+		 * @param string $content Entity file content
+		 * @return bool True if __construct method found
 		 */
 		protected function constructorExists(string $content): bool {
-			// Use regular expression to search for constructor method signature
 			return preg_match('/\s+((?:public|private|protected)\s+)?function\s+__construct\s*\(/i', $content) === 1;
 		}
 		
 		/**
-		 * Locates the starting character position of a constructor method within class content
-		 * This function scans the provided PHP code to find the exact position where
-		 * the constructor method declaration begins. It supports finding constructors
-		 * with any visibility modifier (public, protected, private) or no modifier.
-		 * @param string $content The complete PHP file content containing the entity class
-		 * @return int|null The character position where constructor starts (pointing to the whitespace
-		 *                  before visibility or function keyword), or null if no constructor exists
+		 * Locates the character position where constructor declaration begins
+		 * @param string $content Complete PHP file content
+		 * @return int|null Character position of constructor start, or null if not found
 		 */
 		protected function getConstructorStartPos(string $content): ?int {
-			// Attempt to locate constructor method using regex pattern
 			if (!preg_match('/\s+((?:public|private|protected)\s+)?function\s+__construct\s*\(/i', $content, $constructorMatch, PREG_OFFSET_CAPTURE)) {
 				return null;
 			}
 			
-			// Return the precise character position where the constructor match begins
-			// This corresponds to the whitespace before the method declaration
 			return $constructorMatch[0][1];
 		}
 		
 		/**
-		 * Updates an existing constructor to initialize OneToMany collections
-		 * This function modifies a class constructor that already exists in the entity
-		 * by adding collection initializations for OneToMany relationships
-		 * @param string $content Entity file content - the full PHP class definition as a string
-		 * @param array $oneToManyProperties OneToMany properties to initialize - array of property details
-		 * @return string Updated content - the modified class content with constructor updated
+		 * Modifies existing constructor to add collection initialization statements
+		 * @param string $content Entity file content
+		 * @param array $oneToManyProperties Collections to initialize
+		 * @return string Updated content with modified constructor
 		 */
 		protected function updateExistingConstructor(string $content, array $oneToManyProperties): string {
-			// Extract the position where the constructor method signature was found
 			$constructorStart = $this->getConstructorStartPos($content);
-			
-			// Find the position of the opening brace that starts the constructor body
 			$openBracePos = strpos($content, '{', $constructorStart);
 			
-			// Safety check - if no opening brace found, return original content
 			if ($openBracePos === false) {
-				// Something wrong with the constructor format
-				// This should rarely happen as the regex already matched a brace,
-				// but provides a fallback for malformed code
 				return $content;
 			}
 			
-			// Find the matching closing brace that ends the constructor body
-			// This uses our specialized brace-matching function to handle nested braces
 			$constructorEnd = $this->findClosingBrace($content, $openBracePos);
 			
-			// Safety check - if no closing brace found, return original content
 			if ($constructorEnd === null) {
-				// Failed to find constructor end
-				// Could happen with syntax errors or incomplete code
 				return $content;
 			}
 			
-			// Generate the code needed to initialize collections
-			// The function checks which properties need initialization (avoiding duplicates)
 			$initCode = $this->generateCollectionInitializations($content, $oneToManyProperties);
 			
-			// Only modify the constructor if we have new initializations to add
 			if (!empty($initCode)) {
-				// Insert the initialization code just before the constructor's closing brace
-				// Maintaining proper indentation with a newline and tab
 				return substr($content, 0, $constructorEnd) . $initCode . "\n\t" . substr($content, $constructorEnd);
 			}
 			
-			// If no new initializations needed, return the original content unchanged
 			return $content;
 		}
 		
 		/**
-		 * Finds the position of a closing brace that matches the opening brace at given position
-		 * This function implements a brace-matching algorithm to locate the correct closing brace
-		 * that corresponds to a specific opening brace, accounting for nested braces
-		 * @param string $content Content to search in - the source code as a string
-		 * @param int $openBracePos Position of the opening brace - the character index of '{'
-		 * @return int|null Position of the closing brace or null if not found - returns character index of matching '}'
+		 * Finds matching closing brace for an opening brace at given position
+		 * @param string $content Source code to search
+		 * @param int $openBracePos Character index of opening brace
+		 * @return int|null Character index of matching closing brace, or null if not found
 		 */
 		protected function findClosingBrace(string $content, int $openBracePos): ?int {
-			// Start searching from the character after the opening brace
 			$offset = $openBracePos + 1;
-			
-			// Initialize brace level counter to track nesting depth
-			// Starting at 1 because we've already encountered the opening brace
 			$braceLevel = 1;
 			
-			// Continue searching until we reach the end of content or find the matching brace
-			// @phpstan-ignore-next-line greater.alwaysTrue
 			while ($offset < strlen($content) && $braceLevel > 0) {
-				// Check current character
 				if ($content[$offset] === '{') {
-					// Found another opening brace, increase nesting level
 					$braceLevel++;
 				} elseif ($content[$offset] === '}') {
-					// Found a closing brace, decrease nesting level
 					$braceLevel--;
 					
-					// If we've returned to level 0, we've found our matching closing brace
 					if ($braceLevel === 0) {
-						// Return the position of the matching closing brace
 						return $offset;
 					}
 				}
 				
-				// Move to next character
 				$offset++;
 			}
 			
-			// If we've reached the end of the content without finding a matching brace
-			// or if braceLevel is still > 0, then return null to indicate no match found
 			return null;
 		}
 		
 		/**
-		 * Generates code for collection initializations
-		 * This function creates the PHP code statements needed to initialize Collection objects
-		 * for entity OneToMany relationships, avoiding duplicate initializations
-		 * @param string $content Entity file content - the full PHP class definition as a string
-		 * @param array $oneToManyProperties OneToMany properties to initialize - array of property details
-		 * @return string Code for initializing collections - PHP statements as a string, ready to be inserted
+		 * Generates collection initialization code for constructor body
+		 * @param string $content Entity file content
+		 * @param array $oneToManyProperties Collections needing initialization
+		 * @return string Initialization code statements
 		 */
 		protected function generateCollectionInitializations(string $content, array $oneToManyProperties): string {
-			// Initialize empty string to store the collection initialization code
 			$initCode = '';
 			
-			// Process each OneToMany property from the provided array
 			foreach ($oneToManyProperties as $property) {
-				// Extract the property name from the property details array
 				$propertyName = $property['name'];
 				
-				// Check if this collection is already initialized in constructor.
-				// Using regex to find any existing initialization for this specific property.
-				// Format searched: $this->propertyName = new Collection()
-				// preg_quote ensures special characters in property names are escaped properly
+				// Skip if already initialized
 				if (!preg_match('/\$this->' . preg_quote($propertyName, '/') . '\s*=\s*new\s+Collection\(\)/', $content)) {
-					// Only add initialization if not already present
-					// Maintains proper indentation with tabs for code readability
 					$initCode .= "\n\t\t\$this->{$propertyName} = new Collection();";
 				}
 			}
 			
-			// Return the complete initialization code block
-			// If no new initializations needed, returns empty string
 			return $initCode;
 		}
 		
 		/**
-		 * Adds a new constructor to initialize OneToMany collections
-		 * This function generates a constructor method that initializes Collection objects
-		 * for OneToMany relationship properties in an entity class
-		 * @param string $content Entity file content - the full PHP class definition as a string
-		 * @param array $oneToManyProperties OneToMany properties to initialize - array of property details
-		 * @return string Updated content - the modified class content with constructor added
+		 * Creates a new constructor with collection initializations
+		 * @param string $content Entity file content
+		 * @param array $oneToManyProperties Collections to initialize
+		 * @return string Updated content with new constructor
 		 */
 		protected function addNewConstructor(string $content, array $oneToManyProperties): string {
-			// Create constructor method with proper PHPDoc comment block
 			$constructorCode = "\n\t/**\n\t * Constructor to initialize collections\n\t */\n\tpublic function __construct() {";
 			
-			// Iterate through each OneToMany property and add initialization code
 			foreach ($oneToManyProperties as $property) {
 				$propertyName = $property['name'];
-				// Initialize each collection property with a new Collection instance
-				// This prevents "null" errors when adding items to the collection later
 				$constructorCode .= "\n\t\t\$this->{$propertyName} = new Collection();";
 			}
 			
-			// Close the constructor method
 			$constructorCode .= "\n\t}\n";
 			
-			// Determine where to place the constructor in the class definition
-			// Typically after properties but before other methods
 			$insertPosition = $this->findConstructorInsertPosition($content);
 			
-			// Only insert if a valid position was found
 			if ($insertPosition !== null) {
-				// Splice the constructor into the content at the appropriate position
-				// Add a newline before the constructor for clean formatting
 				return substr($content, 0, $insertPosition) . "\n" . $constructorCode . substr($content, $insertPosition);
 			}
 			
-			// Return original content if no suitable insertion position found
 			return $content;
 		}
 		
 		/**
-		 * Finds the position to insert a new constructor in an entity file
-		 * This function analyzes PHP class content to determine the optimal position
-		 * for inserting a constructor method, following standard code organization practices
-		 * @param string $content The complete PHP file content containing the entity class
-		 * @return int|null Position (character index) to insert constructor or null if suitable position not found
+		 * Determines optimal position to insert a new constructor
+		 * @param string $content Complete PHP file content
+		 * @return int|null Character position for insertion, or null if not found
 		 */
 		protected function findConstructorInsertPosition(string $content): ?int {
-			// Search for the class declaration using a regex pattern.
 			if (!preg_match('/class\s+[^{]+\{/i', $content, $classMatch, PREG_OFFSET_CAPTURE)) {
 				return null;
 			}
 			
-			// Find the position of the opening brace '{' of the class
 			$classOpenBracePos = strpos($content, '{', $classMatch[0][1]);
 			
 			if ($classOpenBracePos === false) {
 				return null;
 			}
 			
-			// Search for all property declarations in the class
-			// This regex matches:
-			// 1. Properties with visibility modifiers (protected, private, public)
-			// 2. Properties without visibility modifiers (directly starting with $)
-			// The regex uses a non-capturing group (?:) with alternation to handle both cases
+			// Find all property declarations
 			preg_match_all('/(?:(protected|private|public)\s+|^\s*)\$[^;]+;/im', $content, $propertyMatches, PREG_OFFSET_CAPTURE);
 			
 			if (!empty($propertyMatches[0])) {
-				// If properties are found, we'll insert the constructor after the last property
+				// Insert after last property
 				$lastPropertyPos = $propertyMatches[0][count($propertyMatches[0]) - 1][1];
 				return strpos($content, ';', $lastPropertyPos) + 1;
 			}
 			
-			// If no property declarations were found, insert after class opening brace
+			// No properties found, insert after class opening brace
 			return $classOpenBracePos + 1;
-		}
-		
-		/**
-		 * Convert a string to snake case
-		 * @url https://stackoverflow.com/questions/40514051/using-preg-replace-to-convert-camelcase-to-snake-case
-		 * @param string $string
-		 * @return string
-		 */
-		protected function snakeCase(string $string): string {
-			return strtolower(preg_replace(['/([a-z\d])([A-Z])/', '/([^_])([A-Z][a-z])/'], '$1_$2', $string));
 		}
 	}
