@@ -713,15 +713,16 @@ protected ?int $relationId;
 The `$relation` property handles the object relationship, while `$relationId` is the actual database column storing the foreign key. This separation allows you to:
 - Access the foreign key ID directly without loading the related entity
 - Check for relationship existence without database queries (`if ($entity->relationId !== null)`)
-- Set foreign keys when you have the ID but not the full entity object
 - See exactly what's stored in your database schema
 
 ObjectQuel automatically keeps relationship properties and foreign key columns synchronized:
 
 - When you set `$entity->relation = $postEntity`, ObjectQuel updates `$entity->relationId` on commit (flush)
-- The `$relationId` property is primarily read-only and reflects the current relationship state
-- For new entities, you can set `$relationId` directly only if you don't also set the `$relation` property - if both are set, the relationship entity's ID takes precedence
-- Once a relationship proxy is loaded, modifying `$relationId` has no effect (the proxy retains its loaded entity, and the ID will be overwritten on commit)
+- The `$relationId` property should not be set directly because:
+  - ObjectQuel automatically synchronizes it when you set the relationship property
+  - Setting both the relationship and the ID creates ambiguity about which value takes precedence
+  - Once a relationship proxy is loaded, modifying the ID won't change the loaded entity reference, and the ID will be overwritten on commit
+- For new, unsaved entities only, you may set `$relationId` directly if you don't set the `$relation` property - if both are set, the relationship entity's ID takes precedence
 - The recommended approach is to always set the relationship property (`$relation`) rather than the foreign key column (`$relationId`)
 
 ### Troubleshooting
