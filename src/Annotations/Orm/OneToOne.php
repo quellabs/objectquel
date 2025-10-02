@@ -65,8 +65,8 @@
 		 * Retrieve the name of the relationship column in the target entity.
 		 * @return string|null The name of the join column or null if it is not set.
 		 */
-		public function getTargetColumn(): ?string {
-			return $this->parameters["targetColumn"] ?? null;
+		public function getForeignColumn(): ?string {
+			return $this->parameters["foreignColumn"] ?? null;
 		}
 		
 		/**

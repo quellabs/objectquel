@@ -243,7 +243,7 @@
 			$targetInfo = $this->getTargetEntityAndReferenceField($availableEntities);
 			$targetEntity = $targetInfo['targetEntity'];
 			$referencedField = $targetInfo['referencedField'];
-			$targetColumn = $targetInfo['targetColumn'];
+			$foreignColumn = $targetInfo['foreignColumn'];
 			
 			// Determine foreign key column details for owning side relationships
 			$relationColumn = null;
@@ -285,7 +285,7 @@
 				"mappedBy"         => $mappingConfig['mappedBy'],
 				"inversedBy"       => $mappingConfig['inversedBy'],
 				"relationColumn"   => $relationColumn,
-				"targetColumn"     => $targetColumn,
+				"foreignColumn"    => $foreignColumn,
 				"readonly"         => false
 			];
 			
@@ -541,14 +541,14 @@
 		/**
 		 * Gets the target entity and reference field information for a relationship
 		 * @param array $availableEntities List of available entities
-		 * @return array Associative array with targetEntity, referencedField, and targetColumn
+		 * @return array Associative array with targetEntity, referencedField, and foreignColumn
 		 */
 		private function getTargetEntityAndReferenceField(array $availableEntities): array {
 			// Set default values
 			$result = [
-				'targetEntity'         => '',
-				'referencedField'      => 'id',
-				'targetColumn' => 'id'
+				'targetEntity'    => '',
+				'referencedField' => 'id',
+				'foreignColumn'   => 'id'
 			];
 			
 			// Get the target entity (either from selection or manual entry)
@@ -558,7 +558,7 @@
 			if (in_array($result['targetEntity'], $availableEntities)) {
 				$referenceInfo = $this->getTargetEntityReferenceField($result['targetEntity']);
 				$result['referencedField'] = $referenceInfo['field'];
-				$result['targetColumn'] = $referenceInfo['column'];
+				$result['foreignColumn'] = $referenceInfo['column'];
 			}
 			
 			return $result;
