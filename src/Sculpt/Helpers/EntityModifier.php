@@ -634,15 +634,55 @@
 				$nullable = $property['nullable'] ?? false;
 				$nullableIndicator = $nullable ? '?' : '';
 				
-				return "\n      /**\n" .
-					"       * Set {$propertyName}\n" .
-					"       * @param {$nullableIndicator}{$type} \${$propertyName}\n" .
-					"       * @return \$this\n" .
-					"       */\n" .
-					"      public function {$methodName}({$nullableIndicator}{$type} \${$propertyName}): self {\n" .
-					"         \$this->{$propertyName} = \${$propertyName};\n" .
-					"         return \$this;\n" .
-					"      }\n";
+				// Start with identity check to prevent infinite loops
+				$setterBody  = "         // Do not update if already set\n";
+				$setterBody .= "         if (\$this->{$propertyName} === \${$propertyName}) {\n";
+				$setterBody .= "             return \$this;\n";
+				$setterBody .= "         }\n         ";
+				
+				// Add cleanup for ManyToOne relationships before reassignment
+				if ($property['relationshipType'] === 'ManyToOne' && !empty($property['inversedBy'])) {
+					$singularName = StringInflector::singularize($property['inversedBy']);
+					$removerMethod = 'remove' . ucfirst($singularName);
+					
+					$setterBody .= "        // Remove from old relationship\n";
+					$setterBody .= "        if (\$this->{$propertyName} !== null) {\n";
+					$setterBody .= "            \$this->{$propertyName}->{$removerMethod}(\$this);\n";
+					$setterBody .= "        }\n";
+				}
+				
+				$setterBody .= "        \$this->{$propertyName} = \${$propertyName};\n";
+				
+				// Add bidirectional sync for ManyToOne relationships
+				if ($property['relationshipType'] === 'ManyToOne' && !empty($property['inversedBy'])) {
+					$singularName = StringInflector::singularize($property['inversedBy']);
+					$adderMethod = 'add' . ucfirst($singularName);
+					
+					$setterBody .= "        \${$propertyName}?->{$adderMethod}(\$this);";
+				}
+				
+				return sprintf(
+					"
+     /**
+       * Set %s
+       * @param %s%s $%s
+       * @return \$this
+       */
+      public function %s(%s%s $%s): self {
+         %s
+         return \$this;
+      }
+",
+					$propertyName,
+					$nullableIndicator,
+					$type,
+					$propertyName,
+					$methodName,
+					$nullableIndicator,
+					$type,
+					$propertyName,
+					$setterBody
+				);
 			}
 			
 			// Handle regular property setter
@@ -714,9 +754,10 @@
 			$inverseRemover = '';
 			
 			if (!empty($property['mappedBy'])) {
-				$setterMethod = 'set' . ucfirst($entityName);
-				$inverseRemover = "\n            // Unset the owning side of the relationship\n";
-				$inverseRemover .= "            \${$singularName}->{$setterMethod}(null);";
+				$inverseRemover = "\n            // Unset the owning side only if it still points to this entity\n";
+				$inverseRemover .= "            if (\${$singularName}->get" . ucfirst($entityName) . "() === \$this) {\n";
+				$inverseRemover .= "               \${$singularName}->set" . ucfirst($entityName) . "(null);\n";
+				$inverseRemover .= "            }";
 			}
 			
 			$targetEntityBase = substr($targetEntity, 0, -6);
