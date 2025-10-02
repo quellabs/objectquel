@@ -545,7 +545,7 @@
 				$nullableIndicator = $nullable ? '?' : '';
 				
 				// Identity check prevents infinite loops in bidirectional relationships
-				$setterBody = "         // Prevent redundant updates\n";
+				$setterBody  = "         // Prevent redundant updates\n";
 				$setterBody .= "         if (\$this->{$propertyName} === \${$propertyName}) {\n";
 				$setterBody .= "             return \$this;\n";
 				$setterBody .= "         }\n";
