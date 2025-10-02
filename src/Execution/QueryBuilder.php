@@ -98,10 +98,10 @@
 				$relationColumn = $relation->getRelationColumn() ?? "{$property}Id";
 				
 				// Get the relation column from the relation
-				$targetColumn = $relation->getTargetColumn() ?? $this->entityStore->getPrimaryKey($entityType);
+				$foreignColumn = $relation->getForeignColumn() ?? $this->entityStore->getPrimaryKey($entityType);
 				
 				// Add the range
-				$ranges[$alias] = "range of {$alias} is {$dependentEntityType} via {$alias}.{$relationColumn}=main.{$targetColumn}";
+				$ranges[$alias] = "range of {$alias} is {$dependentEntityType} via {$alias}.{$relationColumn}=main.{$foreignColumn}";
 				
 				// Increment the range counter for the next unique range.
 				++$rangeCounter;
@@ -136,10 +136,10 @@
 				$relationColumn = $relation->getRelationColumn() ?? "{$property}Id";
 				
 				// Get the relation column from the relation
-				$targetColumn = $relation->getTargetColumn() ?? $this->entityStore->getPrimaryKey($entityType);
+				$foreignColumn = $relation->getForeignColumn() ?? $this->entityStore->getPrimaryKey($entityType);
 				
 				// Add the new range to the list.
-				$ranges[$alias] = "range of {$alias} is {$dependentEntityType} via {$alias}.{$relationColumn}=main.{$targetColumn}";
+				$ranges[$alias] = "range of {$alias} is {$dependentEntityType} via {$alias}.{$relationColumn}=main.{$foreignColumn}";
 				
 				// Increment the range counter for the next unique range.
 				++$rangeCounter;

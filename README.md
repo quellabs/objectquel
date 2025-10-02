@@ -543,9 +543,9 @@ private ?ProfileEntity $profile;
 | `targetEntity`   | Yes      | Fully qualified class name of the target entity                                                                                  |
 | `mappedBy`       | Yes      | Property name in the target entity that owns the relationship (the property with the relationship annotation on the owning side) |
 | `relationColumn` | No       | Column name in the **target** entity's table that stores the foreign key. Defaults to `{owningSidePropertyName}Id`               |
-| `targetColumn`   | No       | Column in target entity to reference. Defaults to the target's primary key                                                       |
+| `foreignColumn`  | No       | Column in target entity to reference. Defaults to the target's primary key                                                       |
 
-**Note:** `targetColumn` is rarely needed—only specify it when the relationship references a non-primary key column (e.g., a unique constraint column).
+**Note:** `foreignColumn` is rarely needed—only specify it when the relationship references a non-primary key column (e.g., a unique constraint column).
 
 ## 3. ManyToOne (Owning Side)
 
@@ -572,7 +572,7 @@ private int $customerId;
 |------------------|----------|------------------------------------------------------------------------------------------------------------|
 | `targetEntity`   | Yes      | Fully qualified class name of the target entity                                                            |
 | `relationColumn` | No       | Column name in the current entity's table that stores the foreign key. Defaults to `{propertyName}Id`      |
-| `targetColumn`   | No       | Column in target entity to reference. Defaults to the target's primary key                                 |
+| `foreignColumn`  | No       | Column in target entity to reference. Defaults to the target's primary key                                 |
 | `inversedBy`     | No       | Property name in target entity for the reverse OneToMany collection. Omit for unidirectional relationships |
 | `fetch`          | No       | Loading strategy: `"EAGER"` (load immediately) or `"LAZY"` (load on access). Default: `"LAZY"`             |
 
