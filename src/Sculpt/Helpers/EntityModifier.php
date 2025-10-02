@@ -254,32 +254,32 @@
 		 */
 		protected function generateEntityContent(string $entityName, array $properties): string {
 			$namespace = $this->configuration->getEntityNameSpace();
-			$content = "<?php\n\n   namespace {$namespace};\n";
+			$content = "<?php\n\n    namespace {$namespace};\n";
 			
 			// Use statements for ORM annotations and collections
 			$content .= "\n";
-			$content .= "   use Quellabs\\ObjectQuel\\Annotations\\Orm\\Table;\n";
-			$content .= "   use Quellabs\\ObjectQuel\\Annotations\\Orm\\Column;\n";
-			$content .= "   use Quellabs\\ObjectQuel\\Annotations\\Orm\\PrimaryKeyStrategy;\n";
-			$content .= "   use Quellabs\\ObjectQuel\\Annotations\\Orm\\OneToOne;\n";
-			$content .= "   use Quellabs\\ObjectQuel\\Annotations\\Orm\\OneToMany;\n";
-			$content .= "   use Quellabs\\ObjectQuel\\Annotations\\Orm\\ManyToOne;\n";
-			$content .= "   use Quellabs\\ObjectQuel\\Collections\\Collection;\n";
-			$content .= "   use Quellabs\\ObjectQuel\\Collections\\CollectionInterface;\n";
+			$content .= "    use Quellabs\\ObjectQuel\\Annotations\\Orm\\Table;\n";
+			$content .= "    use Quellabs\\ObjectQuel\\Annotations\\Orm\\Column;\n";
+			$content .= "    use Quellabs\\ObjectQuel\\Annotations\\Orm\\PrimaryKeyStrategy;\n";
+			$content .= "    use Quellabs\\ObjectQuel\\Annotations\\Orm\\OneToOne;\n";
+			$content .= "    use Quellabs\\ObjectQuel\\Annotations\\Orm\\OneToMany;\n";
+			$content .= "    use Quellabs\\ObjectQuel\\Annotations\\Orm\\ManyToOne;\n";
+			$content .= "    use Quellabs\\ObjectQuel\\Collections\\Collection;\n";
+			$content .= "    use Quellabs\\ObjectQuel\\Collections\\CollectionInterface;\n";
 			
 			// Generate table name in snake_case plural form
 			$tableNamePlural = StringInflector::pluralize($entityName);
 			$tableName = StringInflector::snakeCase($tableNamePlural);
 			
-			$content .= "\n   /**\n    * @Orm\\Table(name=\"{$tableName}\")\n    */\n";
-			$content .= "   class {$entityName}Entity {\n";
+			$content .= "\n    /**\n     * @Orm\\Table(name=\"{$tableName}\")\n     */\n";
+			$content .= "    class {$entityName}Entity {\n";
 			
 			// Primary key property
-			$content .= "\n      /**\n";
-			$content .= "       * @Orm\\Column(name=\"id\", type=\"integer\", unsigned=true, primary_key=true)\n";
-			$content .= "       * @Orm\\PrimaryKeyStrategy(strategy=\"identity\")\n";
-			$content .= "       */\n";
-			$content .= "      protected ?int \$id = null;\n";
+			$content .= "\n        /**\n";
+			$content .= "         * @Orm\\Column(name=\"id\", type=\"integer\", unsigned=true, primary_key=true)\n";
+			$content .= "         * @Orm\\PrimaryKeyStrategy(strategy=\"identity\")\n";
+			$content .= "         */\n";
+			$content .= "        protected ?int \$id = null;\n";
 			
 			// Check if constructor needed for OneToMany initialization
 			$hasOneToMany = false;
@@ -292,16 +292,16 @@
 			
 			// Add constructor if OneToMany relationships exist
 			if ($hasOneToMany) {
-				$content .= "\n      /**\n       * Constructor to initialize collections\n       */\n";
-				$content .= "      public function __construct() {\n";
+				$content .= "\n        /**\n         * Constructor to initialize collections\n         */\n";
+				$content .= "        public function __construct() {\n";
 				
 				foreach ($properties as $property) {
 					if (isset($property['relationshipType']) && $property['relationshipType'] === 'OneToMany') {
-						$content .= "         \$this->{$property['name']} = new Collection();\n";
+						$content .= "            \$this->{$property['name']} = new Collection();\n";
 					}
 				}
 				
-				$content .= "      }\n";
+				$content .= "        }\n";
 			}
 			
 			// Add all properties with appropriate docblocks
@@ -312,8 +312,8 @@
 				
 				$propertyDefinition = $this->generatePropertyDefinition($property);
 				
-				$content .= "\n      " . str_replace("\n\t", "\n      ", $docComment) . "\n";
-				$content .= "      " . $propertyDefinition . "\n";
+				$content .= "\n        " . str_replace("\n       ", "\n        ", $docComment) . "\n";
+				$content .= "        " . $propertyDefinition . "\n";
 			}
 			
 			// Primary key getter
@@ -337,7 +337,7 @@
 				}
 			}
 			
-			$content .= "   }\n";
+			$content .= "    }\n";
 			
 			return $content;
 		}
@@ -384,7 +384,7 @@
 			}
 			
 			$propertiesString = implode(", ", $properties);
-			return "/**\n       * @Orm\\Column({$propertiesString})\n       */";
+			return "/**\n         * @Orm\\Column({$propertiesString})\n         */";
 		}
 		
 		/**
@@ -433,14 +433,14 @@
 			}
 			
 			$optionsStr = !empty($options) ? ', ' . implode(', ', $options) : '';
-			$comment = "/**\n       * @Orm\\{$relationshipType}(targetEntity=\"{$targetEntity}Entity\"{$optionsStr})";
+			$comment = "/**\n         * @Orm\\{$relationshipType}(targetEntity=\"{$targetEntity}Entity\"{$optionsStr})";
 			
 			// Add collection type hint for OneToMany
 			if ($relationshipType === 'OneToMany') {
-				$comment .= "\n       * @var CollectionInterface<{$targetEntity}Entity>";
+				$comment .= "\n         * @var CollectionInterface<{$targetEntity}Entity>";
 			}
 			
-			$comment .= "\n       */";
+			$comment .= "\n         */";
 			
 			return $comment;
 		}
@@ -491,22 +491,22 @@
 				if ($property['relationshipType'] === 'OneToMany') {
 					$targetEntity = $property['targetEntity'] . 'Entity';
 					
-					return "\n      /**\n" .
-						"       * Gets the {$propertyName} collection\n" .
-						"       * @return CollectionInterface<{$targetEntity}>\n" .
-						"       */\n" .
-						"      public function {$methodName}(): CollectionInterface {\n" .
-						"         return \$this->{$propertyName};\n" .
-						"      }\n";
+					return "\n        /**\n" .
+						"         * Gets the {$propertyName} collection\n" .
+						"         * @return CollectionInterface<{$targetEntity}>\n" .
+						"         */\n" .
+						"        public function {$methodName}(): CollectionInterface {\n" .
+						"            return \$this->{$propertyName};\n" .
+						"        }\n";
 				}
 				
-				return "\n      /**\n" .
-					"       * Gets the {$propertyName} relationship\n" .
-					"       * @return {$nullableIndicator}{$type}\n" .
-					"       */\n" .
-					"      public function {$methodName}(): {$nullableIndicator}{$type} {\n" .
-					"         return \$this->{$propertyName};\n" .
-					"      }\n";
+				return "\n        /**\n" .
+					"         * Gets the {$propertyName} relationship\n" .
+					"         * @return {$nullableIndicator}{$type}\n" .
+					"         */\n" .
+					"        public function {$methodName}(): {$nullableIndicator}{$type} {\n" .
+					"            return \$this->{$propertyName};\n" .
+					"        }\n";
 			}
 			
 			// Regular property getters
@@ -520,13 +520,13 @@
 				$phpType = TypeMapper::phinxTypeToPhpType($type);
 			}
 			
-			return "\n      /**\n" .
-				"       * Gets the {$propertyName} value\n" .
-				"       * @return {$nullableIndicator}{$phpType}\n" .
-				"       */\n" .
-				"      public function {$methodName}(): {$nullableIndicator}{$phpType} {\n" .
-				"         return \$this->{$propertyName};\n" .
-				"      }\n";
+			return "\n        /**\n" .
+				"         * Gets the {$propertyName} value\n" .
+				"         * @return {$nullableIndicator}{$phpType}\n" .
+				"         */\n" .
+				"        public function {$methodName}(): {$nullableIndicator}{$phpType} {\n" .
+				"            return \$this->{$propertyName};\n" .
+				"        }\n";
 		}
 		
 		/**
@@ -545,10 +545,10 @@
 				$nullableIndicator = $nullable ? '?' : '';
 				
 				// Identity check prevents infinite loops in bidirectional relationships
-				$setterBody  = "         // Prevent redundant updates\n";
-				$setterBody .= "         if (\$this->{$propertyName} === \${$propertyName}) {\n";
-				$setterBody .= "             return \$this;\n";
-				$setterBody .= "         }\n";
+				$setterBody  = "            // Prevent redundant updates\n";
+				$setterBody .= "            if (\$this->{$propertyName} === \${$propertyName}) {\n";
+				$setterBody .= "                return \$this;\n";
+				$setterBody .= "            }\n";
 				
 				// Clean up old ManyToOne relationship before reassigning
 				if ($property['relationshipType'] === 'ManyToOne' && !empty($property['inversedBy'])) {
@@ -556,33 +556,33 @@
 					$removerMethod = 'remove' . ucfirst($singularName);
 					
 					$setterBody .= "\n";
-					$setterBody .= "        // Remove from previous parent's collection\n";
-					$setterBody .= "        \$this->{$propertyName}?->{$removerMethod}(\$this);\n";
+					$setterBody .= "            // Remove from previous parent's collection\n";
+					$setterBody .= "            \$this->{$propertyName}?->{$removerMethod}(\$this);\n";
 				}
 				
 				$setterBody .= "\n";
-				$setterBody .= "        // Set new property\n";
-				$setterBody .= "        \$this->{$propertyName} = \${$propertyName};\n";
+				$setterBody .= "            // Set new property\n";
+				$setterBody .= "            \$this->{$propertyName} = \${$propertyName};\n";
 				
 				// Sync bidirectional ManyToOne relationship
 				if ($property['relationshipType'] === 'ManyToOne' && !empty($property['inversedBy'])) {
 					$singularName = StringInflector::singularize($property['inversedBy']);
 					$adderMethod = 'add' . ucfirst($singularName);
 					
-					$setterBody .= "        \${$propertyName}?->{$adderMethod}(\$this);";
+					$setterBody .= "            \${$propertyName}?->{$adderMethod}(\$this);";
 				}
 				
 				return sprintf(
 					"
-     /**
-       * Sets the {$propertyName} relationship
-       * @param %s%s $%s The related entity
-       * @return \$this
-       */
-      public function %s(%s%s $%s): self {
-         %s
-         return \$this;
-      }
+        /**
+         * Sets the {$propertyName} relationship
+         * @param %s%s $%s The related entity
+         * @return \$this
+         */
+        public function %s(%s%s $%s): self {
+%s
+            return \$this;
+        }
 ",
 					$nullableIndicator,
 					$type,
@@ -607,15 +607,15 @@
 			}
 			
 			return "\n" .
-				"      /**\n" .
-				"       * Sets the {$propertyName} value\n" .
-				"       * @param {$nullableIndicator}{$phpType} \${$propertyName} New value to set\n" .
-				"       * @return \$this\n" .
-				"       */\n" .
-				"      public function {$methodName}({$nullableIndicator}{$phpType} \${$propertyName}): self {\n" .
-				"         \$this->{$propertyName} = \${$propertyName};\n" .
-				"         return \$this;\n" .
-				"      }\n";
+				"        /**\n" .
+				"         * Sets the {$propertyName} value\n" .
+				"         * @param {$nullableIndicator}{$phpType} \${$propertyName} New value to set\n" .
+				"         * @return \$this\n" .
+				"         */\n" .
+				"        public function {$methodName}({$nullableIndicator}{$phpType} \${$propertyName}): self {\n" .
+				"            \$this->{$propertyName} = \${$propertyName};\n" .
+				"            return \$this;\n" .
+				"        }\n";
 		}
 		
 		/**
@@ -637,21 +637,21 @@
 			
 			if (!empty($property['mappedBy'])) {
 				$setterMethod = 'set' . ucfirst($property['mappedBy']);
-				$inverseSetter = "\n         // Sync bidirectional relationship\n";
-				$inverseSetter .= "         \${$singularName}->{$setterMethod}(\$this);";
+				$inverseSetter = "\n                // Sync bidirectional relationship\n";
+				$inverseSetter .= "                \${$singularName}->{$setterMethod}(\$this);";
 			}
 			
-			return "\n      /**\n" .
-				"       * Adds an entity to the {$collectionName} collection\n" .
-				"       * @param {$targetEntity} \${$singularName} Entity to add\n" .
-				"       * @return \$this\n" .
-				"       */\n" .
-				"      public function {$methodName}({$targetEntity} \${$singularName}): self {\n" .
-				"         if (!\$this->{$collectionName}->contains(\${$singularName})) {\n" .
-				"            \$this->{$collectionName}[] = \${$singularName};{$inverseSetter}\n" .
-				"         }\n" .
-				"         return \$this;\n" .
-				"      }\n";
+			return "\n        /**\n" .
+				"         * Adds an entity to the {$collectionName} collection\n" .
+				"         * @param {$targetEntity} \${$singularName} Entity to add\n" .
+				"         * @return \$this\n" .
+				"         */\n" .
+				"        public function {$methodName}({$targetEntity} \${$singularName}): self {\n" .
+				"            if (!\$this->{$collectionName}->contains(\${$singularName})) {\n" .
+				"                \$this->{$collectionName}[] = \${$singularName};{$inverseSetter}\n" .
+				"            }\n" .
+				"            return \$this;\n" .
+				"        }\n";
 		}
 		
 		/**
@@ -673,24 +673,24 @@
 				$getterMethod = 'get' . ucfirst($mappedByField);
 				$setterMethod = 'set' . ucfirst($mappedByField);
 				
-				$inverseRemover = "            // Unset inverse side if it still references this entity\n";
-				$inverseRemover .= "            if (\${$singularName}->{$getterMethod}() === \$this) {\n";
-				$inverseRemover .= "               \${$singularName}->{$setterMethod}(null);\n";
-				$inverseRemover .= "            }";
+				$inverseRemover = "                // Unset inverse side if it still references this entity\n";
+				$inverseRemover .= "                if (\${$singularName}->{$getterMethod}() === \$this) {\n";
+				$inverseRemover .= "                    \${$singularName}->{$setterMethod}(null);\n";
+				$inverseRemover .= "                }";
 			}
 			
-			return "\n      /**\n" .
-				"       * Removes an entity from the {$collectionName} collection\n" .
-				"       * @param {$targetEntity} \${$singularName} Entity to remove\n" .
-				"       * @return \$this\n" .
-				"       */\n" .
-				"      public function {$methodName}({$targetEntity} \${$singularName}): self {\n" .
-				"         if (\$this->{$collectionName}->remove(\${$singularName})) {\n" .
-				"            {$inverseRemover}\n" .
-				"         }\n" .
-				"         \n" .
-				"         return \$this;\n" .
-				"      }\n";
+			return "\n        /**\n" .
+				"         * Removes an entity from the {$collectionName} collection\n" .
+				"         * @param {$targetEntity} \${$singularName} Entity to remove\n" .
+				"         * @return \$this\n" .
+				"         */\n" .
+				"        public function {$methodName}({$targetEntity} \${$singularName}): self {\n" .
+				"            if (\$this->{$collectionName}->remove(\${$singularName})) {\n" .
+				"                {$inverseRemover}\n" .
+				"            }\n" .
+				"            \n" .
+				"            return \$this;\n" .
+				"        }\n";
 		}
 		
 		/**
