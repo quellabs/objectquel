@@ -167,8 +167,11 @@
 				]);
 				
 				if ($propertyType === 'relationship') {
-					$relationshipProperties = $this->collectRelationshipProperties($availableEntities, $entityName);
-					$properties = array_merge($properties, $relationshipProperties);
+					$properties = array_merge($properties, $this->collectRelationshipProperties(
+						$propertyName,
+						$availableEntities,
+						$entityName
+					));
 				} else {
 					$properties[] = $this->collectStandardProperty($propertyName, $propertyType);
 				}
@@ -184,11 +187,10 @@
 		 * @param string $entityName Name of the current entity being created
 		 * @return array Array of property definitions for the relationship
 		 */
-		private function collectRelationshipProperties(array $availableEntities, string $entityName): array {
+		private function collectRelationshipProperties(string $propertyName, array $availableEntities, string $entityName): array {
 			$relationshipType = $this->input->choice("\nRelationship type", ['OneToOne', 'OneToMany', 'ManyToOne']);
 			
 			$targetInfo = $this->getTargetEntityInfo($availableEntities);
-			$propertyName = $this->generateRelationshipPropertyName($relationshipType, $targetInfo['targetEntity']);
 			
 			// Determine FK details for owning side
 			$isOwningSide = in_array($relationshipType, ['ManyToOne', 'OneToOne']);
@@ -239,7 +241,7 @@
 					$entityName,
 					$mappingConfig['targetPropertyName'],
 					$mappingConfig['targetRelationType'],
-					$mappingConfig['targetInversedBy'] ?? null,
+					$propertyName,
 					$targetInfo['foreignColumn']
 				);
 			}
@@ -248,23 +250,8 @@
 		}
 		
 		/**
-		 * Generate conventional property name based on relationship type.
-		 * @param string $relationshipType Type of relationship (OneToOne, OneToMany, ManyToOne)
-		 * @param string $targetEntity Target entity name
-		 * @return string Generated property name
-		 */
-		private function generateRelationshipPropertyName(string $relationshipType, string $targetEntity): string {
-			if (($relationshipType === 'OneToMany')) {
-				return StringInflector::pluralize(lcfirst($targetEntity));
-			} else {
-				return lcfirst($targetEntity);
-			}
-		}
-		
-		/**
 		 * Collect bidirectional mapping configuration for a relationship.
 		 * Returns mappedBy/inversedBy values and whether to create property in target entity.
-		 *
 		 * @param string $relationshipType Type of relationship (OneToOne, OneToMany, ManyToOne)
 		 * @param string $entityName Name of the current entity
 		 * @param string $targetEntity Name of the target entity
@@ -404,8 +391,10 @@
 			$isOwningSide = in_array($relationshipType, ['ManyToOne', 'OneToOne']);
 			$phpType = ($relationshipType === 'OneToMany') ? "CollectionInterface" : $currentEntity . "Entity";
 			
-			// Determine mappedBy for inverse side
-			$mappedBy = $isOwningSide ? null : lcfirst($currentEntity);
+			// FIX: For OneToMany (inverse side), mappedBy should reference the property name
+			// in the owning entity that we're creating the inverse for.
+			// The $inversedBy parameter contains the ManyToOne property name (e.g., "post")
+			$mappedBy = $isOwningSide ? null : $inversedBy;
 			
 			// Add relationship property
 			$properties[] = [
@@ -414,7 +403,7 @@
 				"relationshipType" => $relationshipType,
 				"targetEntity"     => $currentEntity,
 				"mappedBy"         => $mappedBy,
-				"inversedBy"       => $inversedBy,
+				"inversedBy"       => null,  // Inverse side doesn't have inversedBy
 				"relationColumn"   => $isOwningSide ? $propertyName . "Id" : null,
 				"foreignColumn"    => $foreignColumn,
 				"nullable"         => true,
