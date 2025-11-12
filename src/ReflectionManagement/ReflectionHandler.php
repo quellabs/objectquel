@@ -211,15 +211,16 @@
 				$property = $reflectionClass->getProperty($property);
 				
 				// Get the type of the property, if any
-				$typeClass = $property->getType();
+				$type = $property->getType();
 				
 				// Check if the type is null before proceeding
-				if ($typeClass === null) {
+				if ($type === null) {
 					return null;
 				}
 				
-				// If the type is not null, get its name and return
-				return (string)$typeClass;
+				// Convert the type to string
+				$typeString = $this->reflectionTypeToString($type);
+				return $typeString !== "" ? $typeString : null;
 			} catch (\ReflectionException $e) {
 				return null;
 			}
@@ -337,15 +338,8 @@
 					return "";
 				}
 				
-				// Get and return the return type of the method
-				if ($method->getReturnType() instanceof \ReflectionUnionType) {
-					return implode("|", array_map(function($type) { return $type->getName(); }, $method->getReturnType()->getTypes()));
-				} else {
-					$returnTypeClass = $method->getReturnType();
-				}
-				
-				// Return the return type
-				return $returnTypeClass->getName();
+				// Get the return type and convert to string
+				return $this->reflectionTypeToString($method->getReturnType());
 			} catch (\ReflectionException $e) {
 				return "";
 			}
@@ -365,7 +359,7 @@
 				// Fetch the ReflectionMethod object for the given method name
 				$method = $reflectionClass->getMethod($method);
 				
-				// Return null if the method does not have a return type
+				// Return false if the method does not have a return type
 				if (!$method->hasReturnType()) {
 					return false;
 				}
@@ -449,7 +443,7 @@
 				return false;
 			}
 		}
-
+		
 		/**
 		 * Returns an array containing the parameters of a specified method in a given class.
 		 * @param mixed $class The class name to inspect.
@@ -475,18 +469,10 @@
 					$type = $parameter->getType();
 					$isDefaultValueAvailable = $parameter->isDefaultValueAvailable();
 					
-					if ($type === null) {
-						$typeName = "";
-					} elseif ($type instanceof \ReflectionUnionType) {
-						$typeName = implode("|", array_map(function($t) { return $t->getName(); }, $type->getTypes()));
-					} else {
-						$typeName = $type->getName();
-					}
-					
 					$result[] = [
 						'index'               => $parameter->getPosition(),
 						'name'                => $parameter->getName(),
-						'type'                => $typeName,
+						'type'                => $type !== null ? $this->reflectionTypeToString($type) : "",
 						'nullable'            => $parameter->allowsNull(),
 						'has_default'         => $isDefaultValueAvailable,
 						'default'             => $isDefaultValueAvailable ? $parameter->getDefaultValue() : null,
@@ -570,5 +556,38 @@
 		 */
 		public function hasConstructor(mixed $class): bool {
 			return in_array("__construct", $this->getMethods($class));
+		}
+		
+		/**
+		 * Converts a ReflectionType to its string representation.
+		 * Handles union types (A|B), intersection types (A&B), and named types.
+		 * Does not include nullability indicators - caller must check allowsNull() separately.
+		 * @param \ReflectionType $type The type to convert.
+		 * @return string The string representation of the type, empty string if unknown type.
+		 */
+		private function reflectionTypeToString(\ReflectionType $type): string {
+			// Handle union types (e.g., string|int|null)
+			if ($type instanceof \ReflectionUnionType) {
+				return implode("|", array_map(
+					fn(\ReflectionNamedType $t) => $t->getName(),
+					$type->getTypes()
+				));
+			}
+			
+			// Handle intersection types (e.g., Countable&Traversable)
+			if ($type instanceof \ReflectionIntersectionType) {
+				return implode("&", array_map(
+					fn(\ReflectionNamedType $t) => $t->getName(),
+					$type->getTypes()
+				));
+			}
+			
+			// Handle simple named types (e.g., string, int, MyClass)
+			if ($type instanceof \ReflectionNamedType) {
+				return $type->getName();
+			}
+			
+			// Fallback for unknown/future type classes
+			return "";
 		}
 	}

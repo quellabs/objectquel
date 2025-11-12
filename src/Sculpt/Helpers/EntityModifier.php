@@ -767,8 +767,9 @@
 		protected function findClosingBrace(string $content, int $openBracePos): ?int {
 			$offset = $openBracePos + 1;
 			$braceLevel = 1;
+			$length = strlen($content);
 			
-			while ($offset < strlen($content) && $braceLevel > 0) {
+			while ($offset < $length) {
 				if ($content[$offset] === '{') {
 					$braceLevel++;
 				} elseif ($content[$offset] === '}') {
