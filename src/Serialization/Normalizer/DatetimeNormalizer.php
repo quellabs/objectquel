@@ -14,6 +14,7 @@
 		/**
 		 * Parameters as passed by the annotation
 		 * @var array
+		 * @phpstan-ignore-next-line property.onlyWritten
 		 */
 		private array $parameters;
 		

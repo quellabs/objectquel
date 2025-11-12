@@ -16,8 +16,7 @@
 		private string $enumType;
 		
 		/**
-		 * Constructor - initializes the normalizer with enum type configuration.
-		 *
+		 * Initializes the normalizer with enum type configuration.
 		 * @param array $parameters Configuration array, must contain 'enumType' key
 		 * @throws \RuntimeException If 'enumType' parameter is missing
 		 */
@@ -52,8 +51,7 @@
 		 * Used when preparing entity data for database storage.
 		 * @param mixed $value
 		 * @return mixed|null Returns an enum instance created from the scalar value,
-		 *                          or null if the input value is null.
-		 * @throws \ValueError If the value doesn't correspond to any enum case
+		 *                          or null if the input value is null
 		 */
 		public function denormalize(mixed $value): mixed {
 			if ($value instanceof \BackedEnum) {

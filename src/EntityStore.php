@@ -126,28 +126,6 @@
 	    public function getProxyNamespace(): string {
 		    return $this->proxyNamespace;
 	    }
-	    
-	    /**
-	     * Creates and initializes a proxy instance for a given entity
-	     * @param string $targetEntity The fully qualified class name of the target entity
-	     * @param EntityManager $entityManager The entity manager instance
-	     * @return object The created proxy instance
-	     */
-	    public function createProxy(string $targetEntity, EntityManager $entityManager): object {
-		    // Get the proxy class name
-		    $proxyClassName = $this->getProxyClass($targetEntity);
-		    
-		    // Get the proxy file path
-		    $proxyFilePath = $this->getProxyFilePath($targetEntity);
-		    
-		    // Require the proxy file if the class doesn't exist yet
-		    if (!class_exists($proxyClassName, false)) {
-			    require_once $proxyFilePath;
-		    }
-		    
-		    // Instantiate and return the proxy
-		    return new $proxyClassName($entityManager);
-	    }
 		
 	    /**
 	     * Normalizes the entity name by resolving proxies and namespaces.
@@ -833,7 +811,7 @@
 			    foreach ($annotations as $annotation) {
 				    if ($annotation instanceof $desiredAnnotationType) {
 					    $result[$property] = $annotation;
-					    break; // Stop searching if the desired annotation is found
+					    break;
 				    }
 			    }
 		    }
@@ -884,7 +862,7 @@
 	    /**
 	     * Extracts all enum cases from a Column annotation's enum type.
 	     * @param string|null $enumType
-	     * @return array Array of enum cases if enum type exists, empty array otherwise
+	     * @return array Array of enum case values for backed enums, or names for unit enums
 	     */
 	    private function getEnumCases(?string $enumType): array {
 		    // Return empty array if no enum type is defined
@@ -898,8 +876,23 @@
 			    return [];
 		    }
 		    
-		    // Use the static cases() method to retrieve all enum cases
-		    // This works for both backed and pure enums in PHP 8.1+
-		    return array_map(function($e) { return $e->value; }, $enumType::cases());
+		    // Get all enum cases using the static cases() method
+		    $cases = $enumType::cases();
+		    
+		    // Return empty array if no cases exist
+		    if (empty($cases)) {
+			    return [];
+		    }
+		    
+		    // Check if this is a backed enum using is_subclass_of
+		    // BackedEnum extends UnitEnum and adds the value property
+		    if (is_subclass_of($enumType, \BackedEnum::class)) {
+			    // For backed enums, extract the scalar values
+			    // PHPStan now knows $enumType is BackedEnum, so cases have ->value
+			    return array_map(fn(\BackedEnum $case) => $case->value, $cases);
+		    }
+		    
+		    // For unit enums, extract the case names instead
+		    return array_map(fn(\UnitEnum $case) => $case->name, $cases);
 	    }
     }
