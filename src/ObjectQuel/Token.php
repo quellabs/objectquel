@@ -76,7 +76,8 @@
 		const Window = 117;
 		const Using = 118;
 		const WindowSize = 119;
-		const JsonSource = 120;
+		const Json = 120;
+		const Filter = 121;
 		
 		protected int $type;
 		protected mixed $value;

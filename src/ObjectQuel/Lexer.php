@@ -69,7 +69,8 @@
 		        'window'      => Token::Window,
 		        'using'       => Token::Using,
 		        'window_size' => Token::WindowSize,
-		        'json_source' => Token::JsonSource,
+		        'json'        => Token::Json,
+		        'filter'      => Token::Filter,
 	        ];
 			
 			$this->single_tokens = [

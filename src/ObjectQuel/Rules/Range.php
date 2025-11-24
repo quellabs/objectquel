@@ -6,7 +6,6 @@
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRange;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRangeDatabase;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRangeJsonSource;
-	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRetrieve;
 	use Quellabs\ObjectQuel\ObjectQuel\Lexer;
 	use Quellabs\ObjectQuel\ObjectQuel\LexerException;
 	use Quellabs\ObjectQuel\ObjectQuel\ParserException;
@@ -37,30 +36,24 @@
 		/**
 		 * Parse a JSON source definition in a RANGE clause
 		 * Format: RANGE OF alias IS JSON_SOURCE("path/to/file.json"[, "optional filter expression"])
-		 * @param Token $alias The token containing the alias identifier
+		 * @param string $alias The alias
 		 * @return AstRangeJsonSource AST node representing a JSON data source
 		 * @throws LexerException If token matching fails
 		 */
-		private function parseJsonSource(Token $alias): AstRangeJsonSource {
-			// Match opening parenthesis after JSON_SOURCE
-			$this->lexer->match(Token::ParenthesesOpen);
-			
+		private function parseJson(string $alias): AstRangeJsonSource {
 			// Get the file path string
 			$path = $this->lexer->match(Token::String);
 			
 			// Check for an optional filter expression (separated by comma)
 			$expression = null;
 
-			if ($this->lexer->optionalMatch(Token::Comma)) {
+			if ($this->lexer->optionalMatch(Token::Filter)) {
 				$expression = $this->lexer->match(Token::String);
 				$expression = $expression->getValue();
 			}
 			
-			// Match closing parenthesis
-			$this->lexer->match(Token::ParenthesesClose);
-			
 			// Create and return the AST node for a JSON source with the alias, path, and optional filter
-			return new AstRangeJsonSource($alias->getValue(), $path->getValue(), $expression);
+			return new AstRangeJsonSource($alias, $path->getValue(), $expression);
 		}
 		
 		/**
@@ -166,16 +159,16 @@
 			// Match and consume the 'IS' keyword
 			$this->lexer->match(Token::Is);
 			
-			// Check if the next token is an opening parenthese; if so it's a temp table specification
+			// Check if the next token is an opening parenthesis; if so it's a temp table specification
 			if ($this->lexer->peek() == Token::ParenthesesOpen) {
 				// Handle JSON source definition
 				return $this->parseQuery($alias->getValue());
 			}
 			
-			// Check if the next token is 'JSON_SOURCE' to determine the type of data source
-			if ($this->lexer->optionalMatch(Token::JsonSource)) {
+			// Check if the next token is 'JSON' to determine the type of data source
+			if ($this->lexer->optionalMatch(Token::Json)) {
 				// Handle JSON source definition
-				return $this->parseJsonSource($alias);
+				return $this->parseJson($alias->getValue());
 			}
 			
 			// Otherwise, treat it as a database entity source
