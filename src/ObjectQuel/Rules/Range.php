@@ -6,6 +6,7 @@
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRange;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRangeDatabase;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRangeJsonSource;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRetrieve;
 	use Quellabs\ObjectQuel\ObjectQuel\Lexer;
 	use Quellabs\ObjectQuel\ObjectQuel\LexerException;
 	use Quellabs\ObjectQuel\ObjectQuel\ParserException;
@@ -60,6 +61,51 @@
 			
 			// Create and return the AST node for a JSON source with the alias, path, and optional filter
 			return new AstRangeJsonSource($alias->getValue(), $path->getValue(), $expression);
+		}
+		
+		/**
+		 * Parse ranges
+		 * @return array
+		 * @throws LexerException
+		 * @throws ParserException
+		 */
+		protected function parseRanges(): array {
+			$ranges = [];
+			
+			$rangeRule = new Range($this->lexer);
+			
+			while ($this->lexer->peek()->getType() == Token::Range) {
+				$ranges[] = $rangeRule->parse();
+			}
+			
+			return $ranges;
+		}
+		
+		/**
+		 * Parses a database query expression wrapped in parentheses.
+		 * @param string $alias The alias to assign to the resulting range
+		 * @return AstRangeDatabase The parsed database range with query attached
+		 * @throws LexerException If lexer encounters invalid tokens
+		 * @throws ParserException If syntax structure is invalid
+		 */
+		private function parseQuery(string $alias): AstRangeDatabase {
+			// Match opening parenthesis - start of query expression
+			$this->lexer->match(Token::ParenthesesOpen);
+			
+			// Parse range definitions that will be available to the query
+			$ranges = $this->parseRanges();
+			
+			// Parse the actual retrieve query using the defined ranges
+			$query = new Retrieve($this->lexer);
+			$retrieve = $query->parse([], $ranges);
+			
+			// Match closing parenthesis - end of query expression
+			$this->lexer->match(Token::ParenthesesClose);
+			
+			// Create the database range with a temporary name
+			$range = new AstRangeDatabase($alias, uniqid("temp"));
+			$range->setQuery($retrieve);
+			return $range;
 		}
 		
 		/**
@@ -119,6 +165,12 @@
 			
 			// Match and consume the 'IS' keyword
 			$this->lexer->match(Token::Is);
+			
+			// Check if the next token is an opening parenthese; if so it's a temp table specification
+			if ($this->lexer->peek() == Token::ParenthesesOpen) {
+				// Handle JSON source definition
+				return $this->parseQuery($alias->getValue());
+			}
 			
 			// Check if the next token is 'JSON_SOURCE' to determine the type of data source
 			if ($this->lexer->optionalMatch(Token::JsonSource)) {

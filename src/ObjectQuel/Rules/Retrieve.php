@@ -131,7 +131,7 @@
 		 * @param mixed $expression The parsed expression to validate
 		 * @throws ParserException if expression type is not allowed in field lists
 		 */
-		private function validateFieldExpression($expression): void {
+		private function validateFieldExpression(mixed $expression): void {
 			if ($expression instanceof AstRegExp) {
 				throw new ParserException(
 					'Regular expressions are not allowed in the value list. Please remove the regular expression.'
