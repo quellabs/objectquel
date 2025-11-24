@@ -25,6 +25,12 @@
 		private bool $includeAsJoin;
 		
 		/**
+		 * Returns a query for a temp table
+		 * @var AstRetrieve|null
+		 */
+		private ?AstRetrieve $query;
+		
+		/**
 		 * AstRange constructor.
 		 * @param string $name The name for this range.
 		 * @param string $entityName Name of the entity associated with this range.
@@ -134,6 +140,20 @@
 		 */
 		public function includeAsJoin(): bool {
 			return $this->includeAsJoin;
+		}
+		
+		
+		public function containsQuery(): bool {
+			return $this->query !== null;
+		}
+		
+		public function getQuery(): ?AstRetrieve {
+			return $this->query;
+		}
+		
+		public function setQuery(?AstRetrieve $query): AstRange {
+			$this->query = $query;
+			return $this;
 		}
 		
 		public function deepClone(): static {
