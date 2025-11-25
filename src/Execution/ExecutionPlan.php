@@ -37,17 +37,17 @@
 
 		/**
 		 * Adds a new execution stage to the plan
-		 * @param ExecutionStage $stage
+		 * @param ExecutionStageInterface $stage
 		 * @return void
 		 */
-		public function addStage(ExecutionStage $stage): void {
+		public function addStage(ExecutionStageInterface $stage): void {
 			$this->stages[] = $stage;
 		}
 		
 		/**
 		 * Returns all stages arranged in the correct execution order that respects dependencies.
 		 * The order is critical to ensure that stages are executed only after their dependencies.
-		 * @return ExecutionStage[] Array of stages in dependency-respecting execution order
+		 * @return ExecutionStageInterface[] Array of stages in dependency-respecting execution order
 		 * @todo Implement proper topological sorting of the stage dependency graph
 		 */
 		public function getStagesInOrder(): array {

@@ -2,40 +2,37 @@
 	
 	namespace Quellabs\ObjectQuel\Execution;
 	
-	use Cake\Database\StatementInterface;
-	use Flow\JSONPath\JSONPathException;
 	use Quellabs\ObjectQuel\EntityManager;
 	use Quellabs\ObjectQuel\DatabaseAdapter\DatabaseAdapter;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRangeJsonSource;
-	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRetrieve;
 	use Quellabs\ObjectQuel\ObjectQuel\ObjectQuel;
 	use Quellabs\ObjectQuel\ObjectQuel\QuelException;
 	use Quellabs\ObjectQuel\ObjectQuel\QuelResult;
-	use Quellabs\ObjectQuel\ObjectQuel\QuelToSQL;
+	use Quellabs\ObjectQuel\Execution\Executors\DatabaseQueryExecutor;
+	use Quellabs\ObjectQuel\Execution\Executors\JsonQueryExecutor;
 	
 	/**
-	 * Represents an Entity Manager.
+	 * Orchestrates query execution by delegating to specialized executors
 	 */
 	class QueryExecutor {
-		protected DatabaseAdapter $connection;
+		
 		private EntityManager $entityManager;
+		private DatabaseAdapter $connection;
 		private PlanExecutor $planExecutor;
 		private ObjectQuel $objectQuel;
-		private ConditionEvaluator $conditionEvaluator;
-		private QueryTransformer $queryTransformer;
-		private QueryOptimizer $queryOptimizer;
+		private DatabaseQueryExecutor $databaseExecutor;
+		private JsonQueryExecutor $jsonExecutor;
 		
-		/**
-		 * @param EntityManager $entityManager
-		 */
 		public function __construct(EntityManager $entityManager) {
 			$this->entityManager = $entityManager;
 			$this->connection = $entityManager->getConnection();
-			$this->conditionEvaluator = new ConditionEvaluator();
-			$this->planExecutor = new PlanExecutor($this, $this->conditionEvaluator);
 			$this->objectQuel = new ObjectQuel($entityManager);
-			$this->queryTransformer = new QueryTransformer($this->entityManager);
-			$this->queryOptimizer = new QueryOptimizer($this->entityManager);
+			
+			// Create specialized executors
+			$conditionEvaluator = new ConditionEvaluator();
+			$this->databaseExecutor = new DatabaseQueryExecutor($entityManager);
+			$this->jsonExecutor = new JsonQueryExecutor($conditionEvaluator);
+			$this->planExecutor = new PlanExecutor($this, $conditionEvaluator);
 		}
 		
 		/**
@@ -63,51 +60,29 @@
 		}
 		
 		/**
-		 * Removes duplicate objects from an array based on their object hash.
-		 * Non-objects in the array are left unchanged.
-		 * @param array $array The input array with possibly duplicate objects.
-		 * @return array An array with unique objects and all original non-object elements.
-		 */
-		public function deDuplicateObjects(array $array): array {
-			// Storage for the hashes of objects that have already been seen.
-			$objectKeys = [];
-			
-			// Use array_filter to go through the array and remove duplicate objects.
-			return array_filter($array, function ($item) use (&$objectKeys) {
-				// If the item is not an object, keep it in the array.
-				if (!is_object($item)) {
-					return true;
-				}
-				
-				// Calculate the unique hash of the object.
-				$hash = spl_object_hash($item);
-				
-				// Check if the hash is already in the list of seen objects.
-				if (in_array($hash, $objectKeys)) {
-					// If yes, filter this object out of the array.
-					return false;
-				}
-				
-				// Add the hash to the list of seen objects and keep the item in the array.
-				$objectKeys[] = $hash;
-				return true;
-			});
-		}
-		
-		/**
 		 * Execute a database query and return the results
-		 * @param ExecutionStage $stage
+		 * @param ExecutionStageInterface $stage
 		 * @param array $initialParams (Optional) An array of parameters to bind to the query
 		 * @return array
 		 * @throws QuelException
 		 */
-		public function executeStage(ExecutionStage $stage, array $initialParams = []): array {
-			$queryType = $stage->getRange() instanceof AstRangeJsonSource ? 'json' : 'database';
+		public function executeStage(ExecutionStageInterface $stage, array $initialParams = []): array {
+			// Handle temp table stages
+			if ($stage instanceof ExecutionStageTempTable) {
+				return $this->databaseExecutor->executeTempTableStage($stage, $this->planExecutor);
+			}
 			
-			return match ($queryType) {
-				'json' => $this->executeSimpleQueryJson($stage, $initialParams),
-				'database' => $this->executeSimpleQueryDatabase($stage, $initialParams),
-			};
+			// Handle regular stages
+			if ($stage instanceof ExecutionStage) {
+				$queryType = $stage->getRange() instanceof AstRangeJsonSource ? 'json' : 'database';
+				
+				return match ($queryType) {
+					'json' => $this->jsonExecutor->execute($stage, $initialParams),
+					'database' => $this->databaseExecutor->execute($stage, $initialParams),
+				};
+			}
+			
+			throw new QuelException('Unknown stage type: ' . get_class($stage));
 		}
 		
 		/**
@@ -130,119 +105,5 @@
 			
 			// QuelResult gebruikt de AST om de ontvangen data te transformeren naar entities
 			return new QuelResult($this->entityManager, $ast, $result);
-		}
-		
-		/**
-		 * Convert AstRetrieve node to SQL
-		 * @param AstRetrieve $retrieve The AST to convert
-		 * @param array $parameters Query parameters (passed by reference)
-		 * @return string The generated SQL query
-		 */
-		public function convertToSQL(AstRetrieve $retrieve, array &$parameters): string {
-			$quelToSQL = new QuelToSQL($this->entityManager->getEntityStore(), $parameters);
-			return $quelToSQL->convertToSQL($retrieve);
-		}
-		
-		/**
-		 * Transforms a Quel query to SQL, executes the SQL and returns the result
-		 * @param ExecutionStage $stage The parsed query (AST)
-		 * @param array $initialParams Parameters for this query
-		 * @return array The QuelResult object
-		 * @throws QuelException
-		 */
-		private function executeSimpleQueryDatabase(ExecutionStage $stage, array $initialParams = []): array {
-			// Transform and optimize the query
-			$this->queryOptimizer->optimize($stage->getQuery());
-			$this->queryTransformer->transform($stage->getQuery(), $initialParams);
-			
-			// Convert the query to SQL
-			$sql = $this->convertToSQL($stage->getQuery(), $initialParams);
-			
-			// Execute the SQL query
-			$rs = $this->connection->execute($sql, $initialParams);
-			
-			// If the query is incorrect, throw an exception
-			if (!$rs) {
-				throw new QuelException($this->connection->getLastErrorMessage());
-			}
-			
-			// Retrieve all data and pass it to QuelResult
-			$result = [];
-			while ($row = $rs->fetch(StatementInterface::FETCH_TYPE_ASSOC)) {
-				$result[] = $row;
-			}
-			
-			return $result;
-		}
-		
-		/**
-		 * Load and filter a JSON file from a JSON source
-		 * @param AstRangeJsonSource $source
-		 * @return array
-		 * @throws QuelException
-		 */
-		private function loadAndFilterJsonFile(AstRangeJsonSource $source): array {
-			// Load the JSON file
-			$contents = file_get_contents($source->getPath());
-			
-			if ($contents === false) {
-				throw new QuelException("JSON file {$source->getName()} not found");
-			}
-			
-			// Decode the JSON file
-			$decoded = json_decode($contents, true);
-			
-			if (json_last_error() !== JSON_ERROR_NONE) {
-				throw new QuelException("Error decoding JSON file {$source->getName()}: " . json_last_error_msg());
-			}
-			
-			// If a JSONPath was given, use it to filter the output
-			if (!empty($source->getExpression())) {
-				try {
-					$decoded = (new \Flow\JSONPath\JSONPath($decoded))->find($source->getExpression())->getData();
-				} catch (JSONPathException $e) {
-					throw new QuelException($e->getMessage(), $e->getCode(), $e);
-				}
-			}
-			
-			// Prefix all items with the range alias
-			$result = [];
-			$alias = $source->getName();
-			
-			foreach ($decoded as $row) {
-				$line = [];
-				
-				foreach ($row as $key => $value) {
-					$line["{$alias}.{$key}"] = $value;
-				}
-				
-				$result[] = $line;
-			}
-			
-			return $result;
-		}
-		
-		/**
-		 * Execute a JSON query and returns the result
-		 * @param ExecutionStage $stage
-		 * @param array $initialParams
-		 * @return array
-		 * @throws QuelException
-		 */
-		private function executeSimpleQueryJson(ExecutionStage $stage, array $initialParams = []): array {
-			// Load the JSON file and perform initial filtering
-			$contents = $this->loadAndFilterJsonFile($stage->getRange());
-			
-			// Use the conditions to further filter the file
-			$result = [];
-			
-			foreach ($contents as $row) {
-				if ($stage->getQuery()->getConditions() === null ||
-					$this->conditionEvaluator->evaluate($stage->getQuery()->getConditions(), $row, $initialParams)) {
-					$result[] = $row;
-				}
-			}
-			
-			return $result;
 		}
 	}

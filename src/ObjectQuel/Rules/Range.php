@@ -96,8 +96,9 @@
 			$this->lexer->match(Token::ParenthesesClose);
 			
 			// Create the database range with a temporary name
-			$range = new AstRangeDatabase($alias, uniqid("temp"));
+			$range = new AstRangeDatabase($alias);
 			$range->setQuery($retrieve);
+			$range->setTableName(uniqid($alias));
 			return $range;
 		}
 		
@@ -160,7 +161,7 @@
 			$this->lexer->match(Token::Is);
 			
 			// Check if the next token is an opening parenthesis; if so it's a temp table specification
-			if ($this->lexer->peek() == Token::ParenthesesOpen) {
+			if ($this->lexer->peekNext() == Token::ParenthesesOpen) {
 				// Handle JSON source definition
 				return $this->parseQuery($alias->getValue());
 			}

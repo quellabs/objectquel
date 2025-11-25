@@ -19,7 +19,7 @@
 	 * - Stage 2: Use Stage 1 results to query additional related data
 	 * - Stage 3: Join results from stages 1 and 2 based on join conditions
 	 */
-	class ExecutionStage {
+	class ExecutionStage implements ExecutionStageInterface {
 
 		/**
 		 * Unique name/identifier for this stage

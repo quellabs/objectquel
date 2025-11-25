@@ -21,6 +21,7 @@
 	namespace Quellabs\ObjectQuel;
 	
 	use Quellabs\ObjectQuel\DatabaseAdapter\DatabaseAdapter;
+	use Quellabs\ObjectQuel\Execution\ResultProcessor;
 	use Quellabs\ObjectQuel\ObjectQuel\QuelException;
 	use Quellabs\ObjectQuel\ObjectQuel\QuelResult;
 	use Quellabs\ObjectQuel\ProxyGenerator\ProxyInterface;
@@ -272,7 +273,7 @@
 			$filteredResult = array_column($result, "main");
 			
 			// Return deduplicated results
-			return $this->query_executor->deDuplicateObjects($filteredResult);
+			return ResultProcessor::deDuplicateObjects($filteredResult);
 		}
 		
 		/**

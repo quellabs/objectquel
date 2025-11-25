@@ -36,6 +36,59 @@
 		 */
 		private array $cache = [];
 		
+		
+		/**
+		 * Decomposes a query into separate execution stages for different data sources.
+		 * This function takes a mixed-source query and creates an execution plan with
+		 * appropriate stages for database and JSON sources.
+		 * @param AstRetrieve $query The ObjectQuel query to decompose
+		 * @param array $staticParams Optional static parameters for the query
+		 * @return ExecutionPlan|null The execution plan containing all stages, or null if decomposition failed
+		 * @throws QuelException If the query cannot be properly decomposed
+		 */
+		public function buildExecutionPlan(AstRetrieve $query, array $staticParams = []): ?ExecutionPlan {
+			$this->clearCache();
+			$plan = new ExecutionPlan();
+			
+			// 1. Extract and sort temp ranges by dependency
+			$temporaryRanges = $this->extractTemporaryRanges($query);
+			$sortedTempRanges = $this->sortByDependency($temporaryRanges);
+			
+			// 2. Recursively decompose each temp range
+			foreach($sortedTempRanges as $tempRange) {
+				// Recursively build plan for inner query
+				$innerPlan = $this->buildExecutionPlan($tempRange->getQuery(), $staticParams);
+				
+				// Generate unique table name
+				$tempTableName = 'temp_' . $tempRange->getName() . '_' . uniqid();
+				
+				// Convert from definition to materialized range
+				$tempRange->setTableName($tempTableName);
+				$tempRange->setQuery(null);
+				
+				// Add plan as a stage
+				$plan->addStage(new ExecutionStageTempTable(
+					$tempRange->getName(),
+					$innerPlan,
+					$tempRange
+				));
+			}
+			
+			// 3. Build main query stage (treating temp tables as available ranges)
+			$databaseStage = $this->createDatabaseExecutionStage($query, $staticParams);
+			
+			if ($databaseStage) {
+				$plan->addStage($databaseStage);
+			}
+			
+			// 4. JSON stages
+			foreach($query->getOtherRanges() as $otherRange) {
+				$plan->addStage($this->createRangeExecutionStage($query, $otherRange, $staticParams));
+			}
+			
+			return $plan;
+		}
+
 		/**
 		 * Returns database ranges
 		 * @param AstRetrieve $query
@@ -67,6 +120,18 @@
 		}
 		
 		/**
+		 * Returns only the database projections
+		 * @return array<AstRangeDatabase>
+		 */
+		protected function extractTemporaryRanges(AstRetrieve $query): array {
+			return array_filter($query->getRanges(), function($range) {
+				return
+					$range instanceof AstRangeDatabase &&
+					$range->getQuery() !== null;
+			});
+		}
+		
+		/**
 		 * Returns only the projections for the range
 		 * @return AstAlias[]
 		 */
@@ -80,6 +145,131 @@
 			}
 			
 			return $result;
+		}
+		
+		/**
+		 * Sorts temporary ranges by their dependencies
+		 * Since temp ranges can't reference other temp ranges in their range declarations,
+		 * we only need to check if inner queries reference other temp ranges in WHERE/retrieve
+		 * @param AstRangeDatabase[] $temporaryRanges
+		 * @return AstRangeDatabase[] Sorted array where dependencies come before ranges that use them
+		 * @throws QuelException If circular dependency detected
+		 */
+		protected function sortByDependency(array $temporaryRanges): array {
+			// Build lookup: name -> range
+			$rangesByName = [];
+			foreach ($temporaryRanges as $range) {
+				$rangesByName[$range->getName()] = $range;
+			}
+			
+			// Build dependency graph by checking WHERE/retrieve for temp range references
+			$dependencies = [];
+			foreach ($temporaryRanges as $range) {
+				$rangeName = $range->getName();
+				$deps = $this->findTempRangeDependenciesInConditions(
+					$range->getQuery(),
+					array_keys($rangesByName)
+				);
+				$dependencies[$rangeName] = $deps;
+			}
+			
+			// Topological sort (rest is same as before)
+			$inDegree = [];
+			foreach ($rangesByName as $name => $range) {
+				$inDegree[$name] = count($dependencies[$name]);
+			}
+			
+			$queue = [];
+			foreach ($inDegree as $name => $degree) {
+				if ($degree === 0) {
+					$queue[] = $name;
+				}
+			}
+			
+			$sorted = [];
+			while (!empty($queue)) {
+				$current = array_shift($queue);
+				$sorted[] = $rangesByName[$current];
+				
+				foreach ($dependencies as $rangeName => $deps) {
+					if (in_array($current, $deps)) {
+						$inDegree[$rangeName]--;
+						if ($inDegree[$rangeName] === 0) {
+							$queue[] = $rangeName;
+						}
+					}
+				}
+			}
+			
+			if (count($sorted) !== count($temporaryRanges)) {
+				throw new QuelException('Circular dependency detected in temporary ranges');
+			}
+			
+			return $sorted;
+		}
+		
+		/**
+		 * Finds temp range names referenced in WHERE conditions and retrieve expressions
+		 * @param AstRetrieve $query
+		 * @param array $tempRangeNames List of temp range names to check for
+		 * @return array Temp range names this query depends on
+		 */
+		protected function findTempRangeDependenciesInConditions(AstRetrieve $query, array $tempRangeNames): array {
+			$dependencies = [];
+			
+			// Check WHERE conditions
+			if ($query->getConditions() !== null) {
+				$deps = $this->extractRangeNamesFromAst($query->getConditions(), $tempRangeNames);
+				$dependencies = array_merge($dependencies, $deps);
+			}
+			
+			// Check retrieve expressions
+			foreach ($query->getValues() as $value) {
+				$deps = $this->extractRangeNamesFromAst($value, $tempRangeNames);
+				$dependencies = array_merge($dependencies, $deps);
+			}
+			
+			return array_unique($dependencies);
+		}
+		
+		/**
+		 * Recursively extracts temp range names from an AST node
+		 * @param AstInterface $node
+		 * @param array $tempRangeNames
+		 * @return array
+		 */
+		protected function extractRangeNamesFromAst(AstInterface $node, array $tempRangeNames): array {
+			$found = [];
+			
+			if ($node instanceof AstIdentifier) {
+				$range = $node->getRange();
+				if ($range !== null && in_array($range->getName(), $tempRangeNames)) {
+					$found[] = $range->getName();
+				}
+			}
+			
+			// Recursively check child nodes
+			if ($node instanceof AstBinaryOperator ||
+				$node instanceof AstExpression ||
+				$node instanceof AstTerm ||
+				$node instanceof AstFactor) {
+				$found = array_merge(
+					$found,
+					$this->extractRangeNamesFromAst($node->getLeft(), $tempRangeNames),
+					$this->extractRangeNamesFromAst($node->getRight(), $tempRangeNames)
+				);
+			}
+			
+			if ($node instanceof AstUnaryOperation || $node instanceof AstAlias) {
+				$found = array_merge(
+					$found,
+					$this->extractRangeNamesFromAst($node->getExpression(), $tempRangeNames)
+				);
+			}
+			
+			// Add other AST node types as needed
+			
+			return $found;
 		}
 		
 		/**
@@ -470,53 +660,5 @@
 		 */
 		protected function clearCache(): void {
 			$this->cache = [];
-		}
-		
-		/**
-		 * Decomposes a query into separate execution stages for different data sources.
-		 * This function takes a mixed-source query and creates an execution plan with
-		 * appropriate stages for database and JSON sources.
-		 * @param AstRetrieve $query The ObjectQuel query to decompose
-		 * @param array $staticParams Optional static parameters for the query
-		 * @return ExecutionPlan|null The execution plan containing all stages, or null if decomposition failed
-		 * @throws QuelException If the query cannot be properly decomposed
-		 */
-		public function buildExecutionPlan(AstRetrieve $query, array $staticParams = []): ?ExecutionPlan {
-			try {
-				// Clear any previous cache entries
-				$this->clearCache();
-				
-				// Create a new execution plan to hold all the query stages
-				$plan = new ExecutionPlan();
-				
-				// Extract the database query
-				$databaseStage = $this->createDatabaseExecutionStage($query, $staticParams);
-				
-				// Create a new execution stage with a unique ID for this database query
-				if (!empty($databaseStage)) {
-					$plan->addStage($databaseStage);
-				}
-				
-				// Process each non-database range (like JSON sources) individually
-				foreach($query->getOtherRanges() as $otherRange) {
-					// Create a copy of the query with only the range information in it
-					$rangeStage = $this->createRangeExecutionStage($query, $otherRange, $staticParams);
-					
-					// Adds the execution to the list
-					$plan->addStage($rangeStage);
-				}
-				
-				// Check if we have at least one stage
-				if ($plan->isEmpty()) {
-					throw new QuelException('Failed to create any execution stages from the query');
-				}
-				
-				// Return the complete execution plan with all stages
-				return $plan;
-			} catch (\Exception $e) {
-				// Log the error
-				// Consider whether to rethrow or return null based on your error handling strategy
-				throw new QuelException('Error decomposing query: ' . $e->getMessage(), 0, $e);
-			}
 		}
 	}
