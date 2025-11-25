@@ -12,7 +12,10 @@
 	class AstRangeDatabase extends AstRange {
 		
 		// Entity associated with the range
-		private string $entityName;
+		private ?string $entityName;
+		
+		// Table name associated with the range
+		private ?string $tableName;
 		
 		// The via string indicates on which field to join (LEFT JOIN etc)
 		private ?AstInterface $joinProperty;
@@ -33,14 +36,14 @@
 		/**
 		 * AstRange constructor.
 		 * @param string $name The name for this range.
-		 * @param string $entityName Name of the entity associated with this range.
+		 * @param string|null $entityName Name of the entity associated with this range.
 		 * @param AstInterface|null $joinProperty
 		 * @param bool $required True if the relationship is required. E.g. it concerns an INNER JOIN. False for LEFT JOIN.
 		 * @param bool $includeAsJoin Whether to include this range as a JOIN clause
 		 */
 		public function __construct(
 			string $name,
-			string $entityName,
+			?string $entityName=null,
 			?AstInterface $joinProperty=null,
 			bool $required=false,
 			bool $includeAsJoin = true
@@ -49,6 +52,8 @@
 			$this->entityName = $entityName;
 			$this->joinProperty = $joinProperty;
 			$this->includeAsJoin = $includeAsJoin;
+			$this->tableName = null;
+			$this->query = null;
 			
 			if ($this->joinProperty) {
 				$this->joinProperty->setParent($this);
@@ -69,9 +74,9 @@
 		
 		/**
 		 * Get the AST of the entity associated with this range.
-		 * @return string The name of the entity.
+		 * @return string|null The name of the entity.
 		 */
-		public function getEntityName(): string {
+		public function getEntityName(): ?string {
 			return $this->entityName;
 		}
 		
@@ -82,6 +87,15 @@
 		 */
 		public function setEntityName(string $entityName): void {
 			$this->entityName = $entityName;
+		}
+		
+		public function getTableName(): ?string {
+			return $this->tableName;
+		}
+		
+		public function setTableName(?string $tableName): AstRangeDatabase {
+			$this->tableName = $tableName;
+			return $this;
 		}
 		
 		/**
@@ -141,7 +155,6 @@
 		public function includeAsJoin(): bool {
 			return $this->includeAsJoin;
 		}
-		
 		
 		public function containsQuery(): bool {
 			return $this->query !== null;
