@@ -5,12 +5,22 @@
 	use Cake\Database\StatementInterface;
 	use Quellabs\ObjectQuel\EntityManager;
 	use Quellabs\ObjectQuel\DatabaseAdapter\DatabaseAdapter;
+	use Quellabs\ObjectQuel\Execution\ExecutionPlan;
 	use Quellabs\ObjectQuel\Execution\ExecutionStage;
 	use Quellabs\ObjectQuel\Execution\ExecutionStageTempTable;
-	use Quellabs\ObjectQuel\Execution\PlanExecutor;
 	use Quellabs\ObjectQuel\Execution\QueryOptimizer;
 	use Quellabs\ObjectQuel\Execution\QueryTransformer;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstAlias;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstAvg;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstAvgU;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstCount;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstCountU;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstMax;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstMin;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRetrieve;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstSum;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstSumU;
+	use Quellabs\ObjectQuel\ObjectQuel\AstInterface;
 	use Quellabs\ObjectQuel\ObjectQuel\QuelException;
 	use Quellabs\ObjectQuel\ObjectQuel\QuelToSQL;
 	
@@ -61,32 +71,7 @@
 			
 			return $result;
 		}
-		
-		/**
-		 * Execute a temp table stage by recursively executing its inner plan
-		 * @param ExecutionStageTempTable $stage
-		 * @param PlanExecutor $planExecutor
-		 * @return array The data that was inserted into the temp table
-		 * @throws QuelException
-		 */
-		public function executeTempTableStage(ExecutionStageTempTable $stage, PlanExecutor $planExecutor): array {
-			// Recursively execute the inner plan
-			$innerResults = $planExecutor->execute($stage->getInnerPlan());
-			
-			// Get the main stage results from inner plan
-			$mainStageName = $stage->getInnerPlan()->getMainStageName();
-			$data = $innerResults[$mainStageName] ?? [];
-			
-			// Create temp table
-			$tempTableName = $stage->getRangeToUpdate()->getTableName();
-			$this->createTempTable($tempTableName, $data);
-			
-			// Insert data into temp table
-			$this->insertIntoTempTable($tempTableName, $data);
-			
-			return $data;
-		}
-		
+
 		/**
 		 * Convert AstRetrieve node to SQL
 		 * @param AstRetrieve $retrieve The AST to convert
@@ -96,66 +81,5 @@
 		private function convertToSQL(AstRetrieve $retrieve, array &$parameters): string {
 			$quelToSQL = new QuelToSQL($this->entityManager->getEntityStore(), $parameters);
 			return $quelToSQL->convertToSQL($retrieve);
-		}
-		
-		/**
-		 * Create a temporary table with the structure matching the data
-		 * @param string $tableName
-		 * @param array $data
-		 * @return void
-		 * @throws QuelException
-		 */
-		private function createTempTable(string $tableName, array $data): void {
-			if (empty($data)) {
-				throw new QuelException("Cannot create temp table from empty result set");
-			}
-			
-			// Get column names from first row
-			$firstRow = reset($data);
-			$columns = [];
-			
-			foreach ($firstRow as $key => $value) {
-				// Infer column type from value
-				$type = match(true) {
-					is_int($value) => 'INTEGER',
-					is_float($value) => 'DOUBLE',
-					is_bool($value) => 'BOOLEAN',
-					default => 'VARCHAR(255)'
-				};
-				
-				$columns[] = "`{$key}` {$type}";
-			}
-			
-			$columnDefs = implode(', ', $columns);
-			$sql = "CREATE TEMPORARY TABLE `{$tableName}` ({$columnDefs})";
-			
-			$this->connection->execute($sql, []);
-		}
-		
-		/**
-		 * Insert data into a temporary table
-		 * @param string $tableName
-		 * @param array $data
-		 * @return void
-		 */
-		private function insertIntoTempTable(string $tableName, array $data): void {
-			if (empty($data)) {
-				return;
-			}
-			
-			// Get column names from first row
-			$firstRow = reset($data);
-			$columns = array_keys($firstRow);
-			$columnList = '`' . implode('`, `', $columns) . '`';
-			
-			// Build placeholders
-			$placeholders = '(' . implode(', ', array_fill(0, count($columns), '?')) . ')';
-			
-			// Insert all rows
-			foreach ($data as $row) {
-				$sql = "INSERT INTO `{$tableName}` ({$columnList}) VALUES {$placeholders}";
-				$values = array_values($row);
-				$this->connection->execute($sql, $values);
-			}
 		}
 	}
