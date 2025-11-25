@@ -4,6 +4,7 @@
 	
 	use Quellabs\ObjectQuel\EntityManager;
 	use Quellabs\ObjectQuel\DatabaseAdapter\DatabaseAdapter;
+	use Quellabs\ObjectQuel\Execution\Executors\TempTableExecutor;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRangeJsonSource;
 	use Quellabs\ObjectQuel\ObjectQuel\ObjectQuel;
 	use Quellabs\ObjectQuel\ObjectQuel\QuelException;
@@ -22,6 +23,7 @@
 		private ObjectQuel $objectQuel;
 		private DatabaseQueryExecutor $databaseExecutor;
 		private JsonQueryExecutor $jsonExecutor;
+		private TempTableExecutor $tempTableExecutor;
 		
 		public function __construct(EntityManager $entityManager) {
 			$this->entityManager = $entityManager;
@@ -30,9 +32,10 @@
 			
 			// Create specialized executors
 			$conditionEvaluator = new ConditionEvaluator();
+			$this->planExecutor = new PlanExecutor($this, $conditionEvaluator);
 			$this->databaseExecutor = new DatabaseQueryExecutor($entityManager);
 			$this->jsonExecutor = new JsonQueryExecutor($conditionEvaluator);
-			$this->planExecutor = new PlanExecutor($this, $conditionEvaluator);
+			$this->tempTableExecutor = new TempTableExecutor($this->planExecutor, $this->connection);
 		}
 		
 		/**
@@ -69,7 +72,7 @@
 		public function executeStage(ExecutionStageInterface $stage, array $initialParams = []): array {
 			// Handle temp table stages
 			if ($stage instanceof ExecutionStageTempTable) {
-				return $this->databaseExecutor->executeTempTableStage($stage, $this->planExecutor);
+				return $this->tempTableExecutor->execute($stage, $initialParams);
 			}
 			
 			// Handle regular stages
