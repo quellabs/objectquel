@@ -39,6 +39,10 @@
 				return;
 			}
 			
+			if (empty($node->getEntityName())) {
+				return;
+			}
+			
 			// If none of the above checks are true, the function adds a namespace
 			// to the name of the node. This is done by a method of the entityStore object.
 			$node->setEntityName($this->entityStore->normalizeEntityName($node->getEntityName()));

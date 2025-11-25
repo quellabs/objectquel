@@ -161,7 +161,7 @@
 			$this->lexer->match(Token::Is);
 			
 			// Check if the next token is an opening parenthesis; if so it's a temp table specification
-			if ($this->lexer->peekNext() == Token::ParenthesesOpen) {
+			if ($this->lexer->lookahead() == Token::ParenthesesOpen) {
 				// Handle JSON source definition
 				return $this->parseQuery($alias->getValue());
 			}
