@@ -133,7 +133,11 @@
 				$rangeName = $range->getName();
 				
 				// Get the corresponding table name for the entity.
-				$owningTable = $this->entityStore->getOwningTable($range->getEntityName());
+				if ($range->getTableName() !== null) {
+					$owningTable = $range->getTableName();
+				} else {
+					$owningTable = $this->entityStore->getOwningTable($range->getEntityName());
+				}
 				
 				// Add the table name and alias to the list for the FROM clause.
 				$tableNames[] = "`{$owningTable}` as `{$rangeName}`";
