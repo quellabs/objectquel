@@ -5,6 +5,7 @@
 	
 	use Quellabs\ObjectQuel\EntityStore;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstIdentifier;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRangeDatabase;
 	use Quellabs\ObjectQuel\ObjectQuel\AstInterface;
 	use Quellabs\ObjectQuel\ObjectQuel\AstVisitorInterface;
 	use Quellabs\ObjectQuel\ObjectQuel\QuelException;
@@ -49,6 +50,12 @@
 			
 			// Do nothing if the identifier has no properties
 			if (!$node->hasNext()) {
+				return;
+			}
+			
+			// Skip validation if this identifier references a temporary table (subquery range)
+			$range = $node->getRange();
+			if ($range instanceof AstRangeDatabase && $range->containsQuery()) {
 				return;
 			}
 			
