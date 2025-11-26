@@ -47,6 +47,11 @@
 				return;
 			}
 			
+			// Check if the expression has a range
+			if ($node->getExpression()->getRange() === null) {
+				return;
+			}
+			
 			// Set the alias pattern using the range name from the identifier's range
 			// The pattern format is "[range_name]."
 			$node->setAliasPattern($node->getExpression()->getRange()->getName() . ".");

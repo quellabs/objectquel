@@ -19,9 +19,9 @@
 		protected string $identifier;
 		
 		/**
-		 * @var ?AstRange The attached range (data source).
+		 * @var AstRange|AstRangeDatabase|null The attached range (data source).
 		 */
-		protected ?AstRange $range;
+		protected AstRange|AstRangeDatabase|null $range;
 		
 		/**
 		 * @var ?AstIdentifier Next identifier in chain for property access (e.g., "user.id").
@@ -226,18 +226,18 @@
 		
 		/**
 		 * Returns the range (data source) directly attached to this identifier.
-		 * @return AstRange|null
+		 * @return AstRange|AstRangeDatabase|null
 		 */
-		public function getRange(): ?AstRange {
+		public function getRange(): AstRange|AstRangeDatabase|null {
 			return $this->range;
 		}
 		
 		/**
 		 * Sets or clears the range (data source) for this identifier.
-		 * @param AstRange|null $range
+		 * @param AstRange|AstRangeDatabase|null $range
 		 * @return void
 		 */
-		public function setRange(?AstRange $range): void {
+		public function setRange(AstRange|AstRangeDatabase|null $range): void {
 			$this->range = $range;
 		}
 		
