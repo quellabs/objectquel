@@ -81,6 +81,11 @@
 				return;
 			}
 			
+			// Check if the range is attached to an entity. If not, abort.
+			if (!$node->isFromEntity()) {
+				return;
+			}
+			
 			// Checks if there is a macro with the same name as the node.
 			// If that's the case, the function stops without further action.
 			if ($this->macroExists($node->getName())) {
