@@ -39,6 +39,7 @@
 				return;
 			}
 			
+			// Do nothing when no entity name was found
 			if (empty($node->getEntityName())) {
 				return;
 			}
