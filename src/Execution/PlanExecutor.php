@@ -174,12 +174,17 @@
 					continue;
 				}
 				
+				// Skip temporary tables - they're internal only, not part of final output
+				if ($stage instanceof ExecutionStageTempTable) {
+					continue;
+				}
+				
 				// Perform the join using the appropriate strategy based on the stage's join type
 				$combinedResult = $this->performJoin(
-					$combinedResult,           // Current combined result (left side of join)
-					$stageResult,             // Current stage result (right side of join)
-					$stage->getJoinType(),    // Type of join to perform (inner, left, cross, etc.)
-					$stage->getJoinConditions() // Conditions for the join operation
+					$combinedResult,             // Current combined result (left side of join)
+					$stageResult,                // Current stage result (right side of join)
+					$stage->getJoinType(),       // Type of join to perform (inner, left, cross, etc.)
+					$stage->getJoinConditions()  // Conditions for the join operation
 				);
 			}
 			
