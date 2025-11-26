@@ -46,8 +46,7 @@
 			}
 			
 			// Skip validation if this identifier references a temporary table (subquery range)
-			$range = $node->getParent()->getRange();
-			if ($range instanceof AstRangeDatabase && $range->containsQuery()) {
+			if (!$node->getParent()->isFromEntity()) {
 				return;
 			}
 
