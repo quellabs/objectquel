@@ -54,9 +54,8 @@
 			}
 			
 			// Skip validation if this identifier references a temporary table (subquery range)
-			$range = $node->getRange();
-			if ($range instanceof AstRangeDatabase && $range->containsQuery()) {
-				return;
+			if (!$node->isFromEntity()) {
+				return;  // Skip temporary tables
 			}
 			
 			// Get all dependencies.
