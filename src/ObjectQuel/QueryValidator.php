@@ -45,6 +45,10 @@
 		 * @throws QuelException If any validation fails
 		 */
 		public function validate(AstRetrieve $ast): void {
+			// First, recursively validate all nested queries in temporary ranges
+			// This ensures inner queries are valid before validating the outer query
+			$this->validateNestedQueries($ast);
+			
 			// Step 1: Validate basic structural integrity
 			$this->validateNoDuplicateRanges($ast);
 			$this->validateAtLeastOneRangeWithoutVia($ast);
@@ -64,6 +68,25 @@
 			
 			// Step 6: Validate SQL compliance rules (aggregate placement)
 			$this->validateNoAggregatesInWhereClause($ast);
+		}
+		
+		/**
+		 * Recursively validate all nested queries in temporary range definitions.
+		 * Ensures that inner queries are valid before the outer query is validated.
+		 *
+		 * @param AstRetrieve $ast The query AST containing potential nested queries
+		 * @throws QuelException If any nested query validation fails
+		 */
+		private function validateNestedQueries(AstRetrieve $ast): void {
+			foreach ($ast->getRanges() as $range) {
+				// Only validate temporary ranges that contain nested queries
+				if ($range instanceof AstRangeDatabase && $range->getQuery() !== null) {
+					$innerQuery = $range->getQuery();
+					
+					// Recursively validate the inner query with full validation pipeline
+					$this->validate($innerQuery);
+				}
+			}
 		}
 		
 		/**

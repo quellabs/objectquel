@@ -59,4 +59,28 @@
 		public function getRangeToUpdate(): AstRangeDatabase {
 			return $this->rangeToUpdate;
 		}
+		
+		/**
+		 * Checks if this stage has a result processor configured
+		 * @return bool True if a result processor has been configured, false otherwise
+		 */
+		public function hasResultProcessor(): bool {
+			return false;
+		}
+		
+		/**
+		 * Returns the result processor function if one is configured
+		 * @return callable|null The processor function or null if none is set
+		 */
+		public function getResultProcessor(): ?callable {
+			return null;
+		}
+		
+		/**
+		 * Get the static parameters configured for this stage
+		 * @return array Associative array of parameter names to values
+		 */
+		public function getStaticParams(): array {
+			return [];
+		}
 	}

@@ -104,11 +104,11 @@
 		
 		/**
 		 * Process an individual stage with dependencies
-		 * @param ExecutionStage $stage The stage to execute
+		 * @param ExecutionStageInterface $stage The stage to execute
 		 * @return array The result of this stage's execution
 		 * @throws QuelException When dependencies cannot be satisfied or execution fails
 		 */
-		private function executeStage(ExecutionStage $stage): array {
+		private function executeStage(ExecutionStageInterface $stage): array {
 			// Execute the query with static parameters defined in the stage
 			$result = $this->queryExecutor->executeStage($stage, $stage->getStaticParams());
 			
