@@ -89,7 +89,7 @@
 			$ranges = $this->parseRanges();
 			
 			// Parse the actual retrieve query using the defined ranges
-			$query = new Retrieve($this->lexer);
+			$query = new Retrieve($this->lexer, $alias);
 			$retrieve = $query->parse([], $ranges);
 			
 			// Match closing parenthesis - end of query expression
