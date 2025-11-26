@@ -68,11 +68,7 @@
 			$innerPlan = $stage->getInnerPlan();
 			
 			// Recursively execute the inner plan
-			$innerResults = $this->planExecutor->execute($innerPlan);
-			
-			// Get the main stage results from inner plan
-			$mainStageName = $innerPlan->getMainStageName();
-			$data = $innerResults[$mainStageName] ?? [];
+			$data = $this->planExecutor->execute($innerPlan);
 			
 			// Create temp table based on retrieve() structure
 			$tempTableName = $stage->getRangeToUpdate()->getTableName();
@@ -201,9 +197,11 @@
 			
 			// Insert all rows
 			foreach ($data as $row) {
-				$sql = "INSERT INTO `{$tableName}` ({$columnList}) VALUES {$placeholders}";
-				$values = array_values($row);
-				$this->connection->execute($sql, $values);
+				$this->connection->execute("
+					INSERT INTO `{$tableName}` ({$columnList}) VALUES {$placeholders}
+				",
+					array_values($row)
+				);
 			}
 		}
 		
