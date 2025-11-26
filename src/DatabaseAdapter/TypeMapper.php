@@ -2,6 +2,8 @@
 	
 	namespace Quellabs\ObjectQuel\DatabaseAdapter;
 	
+	use Quellabs\ObjectQuel\Annotations\Orm\Column;
+	
 	/**
 	 * TypeMapper static utility class
 	 */
@@ -86,6 +88,55 @@
 			];
 			
 			return $typeMap[$phinxType] ?? 'mixed';
+		}
+		
+		/**
+		 * Convert Phinx type to SQL CREATE TABLE type definition
+		 * @param string $phinxType The Phinx column type
+		 * @param Column $annotation Column annotation with additional metadata
+		 * @return string SQL type definition
+		 */
+		public static function phinxTypeToSqlType(string $phinxType, Column $annotation): string {
+			// Get limit if specified, otherwise use default
+			$limit = $annotation->getLimit() ?? TypeMapper::getDefaultLimit($phinxType);
+			
+			return match ($phinxType) {
+				// Integer types
+				'tinyinteger' => 'TINYINT' . ($limit ? "({$limit})" : ''),
+				'smallinteger' => 'SMALLINT' . ($limit ? "({$limit})" : ''),
+				'integer' => 'INT' . ($limit ? "({$limit})" : ''),
+				'biginteger' => 'BIGINT' . ($limit ? "({$limit})" : ''),
+				
+				// String types
+				'string', 'char' => 'VARCHAR' . ($limit ? "({$limit})" : '(255)'),
+				'text' => 'TEXT',
+				
+				// Float/decimal types
+				'float' => 'FLOAT',
+				'decimal' => self::buildDecimalType($annotation),
+				
+				// Boolean type
+				'boolean' => 'BOOLEAN',
+				
+				// Date and time types
+				'date' => 'DATE',
+				'datetime' => 'DATETIME',
+				'time' => 'TIME',
+				'timestamp' => 'TIMESTAMP',
+				
+				// Binary types
+				'binary' => 'VARBINARY' . ($limit ? "({$limit})" : '(255)'),
+				'blob' => 'BLOB',
+				
+				// JSON type
+				'json', 'jsonb' => 'JSON',
+				
+				// Enum type
+				'enum' => self::buildEnumType($annotation),
+				
+				// Default fallback
+				default => 'VARCHAR(255)'
+			};
 		}
 		
 		/**
@@ -180,5 +231,32 @@
 			}
 			
 			return "'" . addslashes($value) . "'";
+		}
+		
+		/**
+		 * Build DECIMAL type with precision and scale
+		 * @param Column $annotation
+		 * @return string
+		 */
+		private static function buildDecimalType(Column $annotation): string {
+			$precision = $annotation->getPrecision() ?? 10;
+			$scale = $annotation->getScale() ?? 0;
+			return "DECIMAL({$precision},{$scale})";
+		}
+		
+		/**
+		 * Build ENUM type with values
+		 * @param Column $annotation
+		 * @return string
+		 */
+		private static function buildEnumType(Column $annotation): string {
+			$values = $annotation->getValues() ?? [];
+			
+			if (empty($values)) {
+				return 'VARCHAR(255)';
+			}
+			
+			$quotedValues = array_map(fn($v) => "'{$v}'", $values);
+			return 'ENUM(' . implode(',', $quotedValues) . ')';
 		}
 	}

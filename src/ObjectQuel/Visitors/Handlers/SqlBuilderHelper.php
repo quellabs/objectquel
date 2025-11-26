@@ -43,7 +43,7 @@
 			$this->partOfQuery = $partOfQuery;
 			$this->mainVisitor = $mainVisitor;
 		}
-	
+		
 		/**
 		 * Get the EntityStore instance
 		 * @return EntityStore The entity store containing metadata
@@ -53,9 +53,10 @@
 		}
 		
 		/**
-		 * Builds a fully qualified column name for SQL queries based on an AST identifier
-		 * Converts an ObjectQuel identifier (like "user.name") into a SQL column reference
-		 * (like "u.name_column"). Handles both entity identifiers and property identifiers.
+		 * Builds a fully qualified column name for SQL queries based on an AST identifier.
+		 * Handles both entity-based ranges (with metadata) and temporary table ranges
+		 * (derived from subqueries).
+		 *
 		 * @param AstIdentifier $identifier The AST identifier to convert
 		 * @return string Fully qualified SQL column name or empty string if invalid
 		 */
@@ -73,13 +74,28 @@
 				return '';
 			}
 			
-			// Get the entity name for metadata lookup
+			// Get the entity name to determine range type
 			$entityName = $identifier->getEntityName();
 			
+			// Check if this is a temporary table (no entity name)
 			if (empty($entityName)) {
-				return '';
+				return $this->buildColumnNameForTemporaryTable($identifier, $rangeName);
+			} else {
+				return $this->buildColumnNameForEntity($identifier, $rangeName, $entityName);
 			}
-			
+		}
+		
+		/**
+		 * Builds column name for entity-based ranges using entity metadata.
+		 * Converts entity properties to their corresponding database column names
+		 * using the entity store's column mappings.
+		 *
+		 * @param AstIdentifier $identifier The AST identifier to convert
+		 * @param string $rangeName The table alias
+		 * @param string $entityName The entity class name
+		 * @return string Fully qualified SQL column name or empty string if invalid
+		 */
+		private function buildColumnNameForEntity(AstIdentifier $identifier, string $rangeName, string $entityName): string {
 			// Handle case where identifier refers to the entity itself (primary key)
 			if ($this->identifierIsEntity($identifier)) {
 				$identifierColumns = $this->entityStore->getIdentifierColumnNames($entityName);
@@ -113,6 +129,35 @@
 			
 			// Return fully qualified column name
 			return "{$rangeName}.{$columnMap[$property]}";
+		}
+		
+		/**
+		 * Builds column name for temporary table ranges (subquery results).
+		 * Uses the identifier's own name as the column name since temporary tables
+		 * have no entity metadata. The column names come directly from the subquery's
+		 * SELECT clause aliases.
+		 *
+		 * @param AstIdentifier $identifier The AST identifier to convert
+		 * @param string $rangeName The table alias
+		 * @return string Fully qualified SQL column name or empty string if invalid
+		 */
+		private function buildColumnNameForTemporaryTable(AstIdentifier $identifier, string $rangeName): string {
+			// For temporary tables, we can't reference the table itself without a property
+			if (!$identifier->hasNext()) {
+				return '';
+			}
+			
+			// Get the column name from the next node in the identifier chain
+			// For temporary tables, this is the column alias from the subquery's SELECT
+			$columnName = $identifier->getNext()->getCompleteName();
+			
+			if (empty($columnName)) {
+				return '';
+			}
+			
+			// Return fully qualified column name using the identifier's name directly
+			// No mapping needed since temporary table columns are already in SQL format
+			return "{$rangeName}.`{$columnName}`";
 		}
 		
 		/**
@@ -218,6 +263,13 @@
 			$rangeName = $range->getName();
 			$entityName = $ast->getEntityName();
 			$propertyName = $ast->getNext()->getName();
+			
+			// Handle temporary tables - no metadata available
+			if (empty($entityName)) {
+				// For temporary tables, use column name directly without COALESCE
+				return "{$rangeName}.{$propertyName}";
+			}
+			
 			$columnMap = $this->entityStore->getColumnMap($entityName);
 			
 			// For non-sorting contexts, return simple column reference
