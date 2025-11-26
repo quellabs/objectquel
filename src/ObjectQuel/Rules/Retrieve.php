@@ -22,7 +22,8 @@
 		/** @var string Default sort order when ASC/DESC is not explicitly specified */
 		private const string DEFAULT_SORT_ORDER = '';
 		
-		private ?string $temporaryTableName = null;
+		/** @var bool Whether this retrieve is for a temporary table (affects column aliasing) */
+		private bool $isTemporaryTable;
 		
 		/** @var Lexer The lexer instance that tokenizes input and provides tokens for parsing */
 		private Lexer $lexer;
@@ -37,9 +38,9 @@
 		 * Initialize the Retrieve parser with required dependencies.
 		 * @param Lexer $lexer The lexer instance for token processing
 		 */
-		public function __construct(Lexer $lexer, ?string $temporaryTableName = null) {
+		public function __construct(Lexer $lexer, bool $isTemporaryTable = false) {
 			$this->lexer = $lexer;
-			$this->temporaryTableName = $temporaryTableName;
+			$this->isTemporaryTable = $isTemporaryTable;
 			$this->expressionRule = new ArithmeticExpression($this->lexer);
 			$this->filterExpressionRule = new FilterExpression($this->lexer);
 		}
@@ -161,17 +162,11 @@
 			}
 			
 			// Auto-generated aliases are derived from source text
-			// Example: "x.id" -> captured as "x.id" from source
 			$sourceSlice = $this->lexer->getSourceSlice($startPos, $this->lexer->getPos() - $startPos);
 			
-			// When inside a temporary table, rewrite auto-generated aliases
-			// to use the external temporary table name instead of internal range name
-			// Example: "x.id" -> "c.id" when temporary table is named "c"
-			if ($this->temporaryTableName !== null) {
-				$sourceSlice = $this->rewriteAliasForTemporaryTable($sourceSlice);
-			}
-			
-			return $sourceSlice;
+			// For temporary tables, strip range prefix from property access (x.id -> id)
+			// But NOT for entity retrievals (x) which will be expanded
+			return $this->isTemporaryTable && str_contains($sourceSlice, '.') ? $this->stripRangePrefixFromAlias($sourceSlice) : $sourceSlice;
 		}
 		
 		/**
@@ -334,12 +329,23 @@
 			}
 		}
 		
-		private function rewriteAliasForTemporaryTable(string $alias): string {
+		/**
+		 * Strip the range prefix from an auto-generated alias for temporary table columns.
+		 * Converts "x.id" to "id", "x.title" to "title", etc.
+		 * Leaves simple identifiers without dots unchanged.
+		 *
+		 * @param string $alias The auto-generated alias to process
+		 * @return string The alias with range prefix removed
+		 */
+		private function stripRangePrefixFromAlias(string $alias): string {
+			// If no dot present, return as-is (no range prefix to strip)
 			if (!str_contains($alias, '.')) {
 				return $alias;
 			}
 			
+			// Split on first dot and return everything after it
+			// Example: "x.id" -> ["x", "id"] -> "id"
 			$parts = explode('.', $alias, 2);
-			return $this->temporaryTableName . '.' . $parts[1];
+			return $parts[1];
 		}
 	}

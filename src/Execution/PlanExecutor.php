@@ -2,6 +2,7 @@
 	
 	namespace Quellabs\ObjectQuel\Execution;
 	
+	use Quellabs\ObjectQuel\EntityStore;
 	use Quellabs\ObjectQuel\ObjectQuel\QuelException;
 	use Quellabs\ObjectQuel\Execution\Joins\JoinStrategyInterface;
 	use Quellabs\ObjectQuel\Execution\Joins\CrossJoinStrategy;
@@ -41,6 +42,14 @@
 		public function __construct(QueryExecutor $queryExecutor, ConditionEvaluator $conditionEvaluator) {
 			$this->queryExecutor = $queryExecutor;
 			$this->conditionEvaluator = $conditionEvaluator;
+		}
+		
+		/**
+		 * Returns the EntityStore object
+		 * @return EntityStore
+		 */
+		public function getEntityStore(): EntityStore {
+			return $this->queryExecutor->getEntityManager()->getEntityStore();
 		}
 		
 		/**
