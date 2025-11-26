@@ -6,7 +6,7 @@
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRetrieve;
 	use Quellabs\ObjectQuel\ObjectQuel\Visitors\AddNamespacesToEntities;
 	use Quellabs\ObjectQuel\ObjectQuel\Visitors\AddNamespacesToRanges;
-	use Quellabs\ObjectQuel\ObjectQuel\Visitors\AddRangeToEntityWhenItsMissing;
+	use Quellabs\ObjectQuel\ObjectQuel\Visitors\ImplicitRangeResolver;
 	use Quellabs\ObjectQuel\ObjectQuel\Visitors\EntityPlugMacros;
 	use Quellabs\ObjectQuel\ObjectQuel\Visitors\EntityProcessMacro;
 	use Quellabs\ObjectQuel\ObjectQuel\Visitors\EntityProcessRange;
@@ -59,7 +59,7 @@
 			
 			// Step 5: Automatically add missing table ranges for referenced entities
 			// Analyzes field references and adds necessary JOIN clauses for tables not explicitly included
-			$this->plugMissingRanges($ast);
+			$this->resolveImplicitEntityReferences($ast);
 			
 			// Step 6: Add proper namespaces to all entity references
 			// Resolves entity names to their fully qualified forms using the entity store
@@ -109,11 +109,11 @@
 		 * @param AstRetrieve $ast The query AST to analyze and modify
 		 * @return void Modifies the AST by adding missing ranges and updating entity references
 		 */
-		private function plugMissingRanges(AstRetrieve $ast): void {
+		private function resolveImplicitEntityReferences(AstRetrieve $ast): void {
 			// Use a specialized visitor to traverse the AST and identify missing entity references
 			// AddRangeToEntityWhenItsMissing analyzes field references like "user.name"
 			// and determines if "user" table is properly joined in the query
-			$processor = $this->processWithVisitor($ast, AddRangeToEntityWhenItsMissing::class, $this->entityStore);
+			$processor = $this->processWithVisitor($ast, ImplicitRangeResolver::class, $this->entityStore);
 			
 			// Retrieve all the missing ranges that the visitor discovered during traversal
 			// Each range represents a table that needs to be joined to satisfy field references
