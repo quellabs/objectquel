@@ -22,6 +22,8 @@
 		/** @var string Default sort order when ASC/DESC is not explicitly specified */
 		private const string DEFAULT_SORT_ORDER = '';
 		
+		private ?string $temporaryTableName = null;
+		
 		/** @var Lexer The lexer instance that tokenizes input and provides tokens for parsing */
 		private Lexer $lexer;
 		
@@ -35,8 +37,9 @@
 		 * Initialize the Retrieve parser with required dependencies.
 		 * @param Lexer $lexer The lexer instance for token processing
 		 */
-		public function __construct(Lexer $lexer) {
+		public function __construct(Lexer $lexer, ?string $temporaryTableName = null) {
 			$this->lexer = $lexer;
+			$this->temporaryTableName = $temporaryTableName;
 			$this->expressionRule = new ArithmeticExpression($this->lexer);
 			$this->filterExpressionRule = new FilterExpression($this->lexer);
 		}
@@ -141,16 +144,34 @@
 		
 		/**
 		 * Determine the appropriate alias name for a field expression.
-		 * @param Token|null $aliasToken The explicit alias token if present
+		 *
+		 * For explicit aliases (e.g., "custom_id = x.id"), returns the explicit name unchanged.
+		 * For auto-generated aliases (e.g., "x.id"), generates from source and may rewrite
+		 * for temporary table context.
+		 *
+		 * @param Token|null $aliasToken The explicit alias token if present, null for auto-generated
 		 * @param int $startPos Starting position for source slice calculation
 		 * @return string The resolved alias name
 		 */
 		private function determineAliasName(?Token $aliasToken, int $startPos): string {
+			// Explicit aliases are used as-is and never rewritten
+			// Example: "custom_id = x.id" -> always "custom_id"
 			if ($aliasToken) {
 				return $aliasToken->getValue();
 			}
 			
-			return $this->lexer->getSourceSlice($startPos, $this->lexer->getPos() - $startPos);
+			// Auto-generated aliases are derived from source text
+			// Example: "x.id" -> captured as "x.id" from source
+			$sourceSlice = $this->lexer->getSourceSlice($startPos, $this->lexer->getPos() - $startPos);
+			
+			// When inside a temporary table, rewrite auto-generated aliases
+			// to use the external temporary table name instead of internal range name
+			// Example: "x.id" -> "c.id" when temporary table is named "c"
+			if ($this->temporaryTableName !== null) {
+				$sourceSlice = $this->rewriteAliasForTemporaryTable($sourceSlice);
+			}
+			
+			return $sourceSlice;
 		}
 		
 		/**
@@ -311,5 +332,14 @@
 			if ($this->lexer->lookahead() === Token::Semicolon) {
 				$this->lexer->match(Token::Semicolon);
 			}
+		}
+		
+		private function rewriteAliasForTemporaryTable(string $alias): string {
+			if (!str_contains($alias, '.')) {
+				return $alias;
+			}
+			
+			$parts = explode('.', $alias, 2);
+			return $this->temporaryTableName . '.' . $parts[1];
 		}
 	}
