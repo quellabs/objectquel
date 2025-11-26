@@ -23,18 +23,29 @@
 		 * @return string The name of the main output stage
 		 */
 		public function getMainStageName(): string {
-			// Try to find a database stage
-			foreach($this->stages as $stage) {
-				if ($stage->getRange() === null) {
+			foreach ($this->stages as $stage) {
+				// Skip temporary table stages - they're subqueries, not main stages
+				if ($stage instanceof ExecutionStageTempTable) {
+					continue;
+				}
+				
+				// Find the stage without a join property (the main FROM table)
+				$range = $stage->getRange();
+				
+				if ($range && $range->getJoinProperty() === null) {
 					return $stage->getName();
 				}
 			}
 			
-			// If none, return the first json stage
-			$firstKey = array_key_first($this->stages);
-			return $this->stages[$firstKey]->getName();
+			// If no main stage found, return first stage (could be temp table or joined)
+			if (!empty($this->stages)) {
+				$firstKey = array_key_first($this->stages);
+				return $this->stages[$firstKey]->getName();
+			}
+			
+			throw new \RuntimeException('Execution plan has no stages');
 		}
-
+		
 		/**
 		 * Adds a new execution stage to the plan
 		 * @param ExecutionStageInterface $stage
