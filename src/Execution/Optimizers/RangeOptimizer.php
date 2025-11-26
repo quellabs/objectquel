@@ -271,10 +271,19 @@
 			
 			// Extract property and entity names based on join direction
 			// These will be used to match against annotation metadata
-			$ownPropertyName = $isMainRange ? $right->getName() : $left->getName();
 			$ownEntityName = $isMainRange ? $right->getEntityName() : $left->getEntityName();
+			$ownPropertyName = $isMainRange ? $right->getName() : $left->getName();
 			$relatedPropertyName = $isMainRange ? $left->getName() : $right->getName();
 			$relatedEntityName = $isMainRange ? $left->getEntityName() : $right->getEntityName();
+			
+			// Skip annotation-based optimization for temporary tables and derived ranges
+			// Temporary tables (subqueries) have no entity metadata or annotations
+			// They can only use LEFT JOINs; INNER JOIN optimization requires entity annotations
+			if (empty($ownEntityName)) {
+				// This is a join with a temporary table - no annotations available
+				// Keep as LEFT JOIN (default) since we can't determine if it's required
+				return;
+			}
 			
 			// Get all annotations for the entity that owns the relationship
 			// Annotations are grouped by property/method they're applied to
