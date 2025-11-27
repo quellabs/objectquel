@@ -4,8 +4,6 @@
 	namespace Quellabs\ObjectQuel\ObjectQuel\Visitors;
 	
 	use Quellabs\ObjectQuel\EntityStore;
-	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstIdentifier;
-	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRange;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRangeDatabase;
 	use Quellabs\ObjectQuel\ObjectQuel\AstInterface;
 	use Quellabs\ObjectQuel\ObjectQuel\AstVisitorInterface;
@@ -13,7 +11,7 @@
 	/**
 	 * Class AddNamespacesToRanges
 	 */
-	class AddNamespacesToRanges implements AstVisitorInterface {
+	class RangeDatabaseEntityNormalizer implements AstVisitorInterface {
 		
 		/**
 		 * The EntityStore for storing and fetching entity metadata.

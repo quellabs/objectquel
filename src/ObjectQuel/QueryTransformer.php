@@ -5,8 +5,8 @@
 	use Quellabs\ObjectQuel\EntityStore;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRangeDatabase;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRetrieve;
-	use Quellabs\ObjectQuel\ObjectQuel\Visitors\AddNamespacesToEntities;
-	use Quellabs\ObjectQuel\ObjectQuel\Visitors\AddNamespacesToRanges;
+	use Quellabs\ObjectQuel\ObjectQuel\Visitors\EntityNameNormalizer;
+	use Quellabs\ObjectQuel\ObjectQuel\Visitors\RangeDatabaseEntityNormalizer;
 	use Quellabs\ObjectQuel\ObjectQuel\Visitors\ImplicitRangeResolver;
 	use Quellabs\ObjectQuel\ObjectQuel\Visitors\EntityPlugMacros;
 	use Quellabs\ObjectQuel\ObjectQuel\Visitors\EntityProcessMacro;
@@ -52,7 +52,7 @@
 			
 			// Step 2: Add proper namespaces to all ranges
 			// Resolves entity names to their fully qualified forms using the entity store
-			$this->processWithVisitor($ast, AddNamespacesToRanges::class, $this->entityStore);
+			$this->processWithVisitor($ast, RangeDatabaseEntityNormalizer::class, $this->entityStore);
 			
 			// Step 3: Process range definitions (table joins, aliases, and FROM clauses)
 			// Converts range specifications into proper join conditions and table references
@@ -68,7 +68,7 @@
 			
 			// Step 6: Add proper namespaces to all entity references
 			// Resolves entity names to their fully qualified forms using the entity store
-			$this->processWithVisitor($ast, AddNamespacesToEntities::class, $this->entityStore, $ast->getRanges(), $ast->getMacros());
+			$this->processWithVisitor($ast, EntityNameNormalizer::class, $this->entityStore, $ast->getRanges(), $ast->getMacros());
 			
 			// Step 7: Transform complex 'via' relationships into direct property lookups
 			// Converts indirect relationships through intermediate entities into direct SQL joins
