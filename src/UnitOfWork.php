@@ -204,10 +204,10 @@
 		/**
 		 * Adds a new entity to the entity manager's identity map for tracking before database insertion.
 		 * This method is specifically for entities that don't yet exist in the database but will be created.
-		 * @param mixed $entity The new entity object to persist.
+		 * @param object $entity The new entity object to persist.
 		 * @return bool True if the entity was successfully added to the tracking system, false otherwise.
 		 */
-		public function persistNew(mixed $entity): bool {
+		public function persistNew(object $entity): bool {
 			// Check if the entity is already being tracked in the identity map
 			// Prevents duplicate tracking of the same entity instance
 			// Returns false because we can't add it as "new" if it's already managed
@@ -261,11 +261,11 @@
 		 * This includes starting a transaction, performing the necessary operations (insert, update, delete)
 		 * based on the state of each entity, and committing the transaction. In case of an error,
 		 * the transaction is rolled back and the error is forwarded.
-		 * @param mixed|null $entity
+		 * @param object|array|null $entity
 		 * @return void
 		 * @throws OrmException if an error occurs during the database process.
 		 */
-		public function commit(mixed $entity = null): void {
+		public function commit(object|array|null $entity = null): void {
 			try {
 				// Process cascading persists first to ensure all related entities are managed
 				$this->processCascadingPersists();

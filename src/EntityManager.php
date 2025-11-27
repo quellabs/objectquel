@@ -135,11 +135,11 @@
 		/**
 		 * Flush all changed entities to the database
 		 * If an error occurs, an OrmException is thrown.
-		 * @param mixed|null $entity
+		 * @param object|array|null $entity
 		 * @return void
 		 * @throws OrmException
 		 */
-		public function flush(mixed $entity = null): void {
+		public function flush(object|array|null $entity = null): void {
 			$this->unit_of_work->commit($entity);
 		}
 		
