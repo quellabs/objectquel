@@ -7,6 +7,7 @@
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstAvgU;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstCount;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstCountU;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstIdentifier;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstMax;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstMin;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRangeDatabase;
@@ -43,18 +44,19 @@
 		/**
 		 * Main validation entry point - performs comprehensive query validation
 		 * @param AstRetrieve $ast The parsed query AST to validate
+		 * @param bool $nested True if we are validating a nested query
 		 * @throws QuelException If any validation fails
 		 */
-		public function validate(AstRetrieve $ast): void {
+		public function validate(AstRetrieve $ast, bool $nested = false): void {
 			// First, recursively validate all nested queries in temporary ranges
 			// This ensures inner queries are valid before validating the outer query
 			$this->validateNestedQueries($ast);
 			
 			// Step 1: Validate basic structural integrity
+			$this->validateNoRegExpInFieldList($ast);
 			$this->validateNoDuplicateRanges($ast);
 			$this->validateAtLeastOneRangeWithoutVia($ast);
 			$this->validateRangesOnlyReferenceOtherRanges($ast);
-			$this->validateNoRegExpInFieldList($ast);
 			
 			// Step 2: Validate against schema - ensure entities exist
 			$this->processWithVisitor($ast, EntityReferenceValidator::class, $this->entityStore);
@@ -70,24 +72,31 @@
 			
 			// Step 6: Validate SQL compliance rules (aggregate placement)
 			$this->validateNoAggregatesInWhereClause($ast);
+			
+			// Step 7: Validate no entire entities in nested queries
+			if ($nested) {
+				$this->validateNoEntireEntitiesInFieldList($ast);
+			}
 		}
 		
 		/**
 		 * Recursively validate all nested queries in temporary range definitions.
 		 * Ensures that inner queries are valid before the outer query is validated.
-		 *
 		 * @param AstRetrieve $ast The query AST containing potential nested queries
 		 * @throws QuelException If any nested query validation fails
 		 */
 		private function validateNestedQueries(AstRetrieve $ast): void {
 			foreach ($ast->getRanges() as $range) {
-				// Only validate temporary ranges that contain nested queries
-				if ($range instanceof AstRangeDatabase && $range->getQuery() !== null) {
-					$innerQuery = $range->getQuery();
-					
-					// Recursively validate the inner query with full validation pipeline
-					$this->validate($innerQuery);
+				if (!$range instanceof AstRangeDatabase) {
+					continue;
 				}
+				
+				if ($range->getQuery() === null) {
+					continue;
+				}
+				
+				// Recursively validate the inner query with full validation pipeline
+				$this->validate($range->getQuery(), true);
 			}
 		}
 		
@@ -198,7 +207,7 @@
 		 * @throws QuelException if expression type is not allowed in field lists
 		 */
 		private function validateNoRegExpInFieldList(AstRetrieve $ast): void {
-			foreach($ast->getValues() as $value) {
+			foreach ($ast->getValues() as $value) {
 				if ($value->getExpression() instanceof AstRegExp) {
 					throw new QuelException(
 						'Regular expressions are not allowed in the value list. Please remove the regular expression.'
@@ -286,6 +295,37 @@
 				
 				// Throw a user-friendly error explaining the SQL rule violation
 				throw new QuelException("Aggregate function '{$nodeType}' is not allowed in WHERE clause");
+			}
+		}
+		
+		/**
+		 * Validate that temporary table field lists don't retrieve entire entities.
+		 *
+		 * Temporary tables require explicit column definitions. Retrieving entire entities
+		 * (e.g., "retrieve(x)") creates ambiguous column names in joins. Users must specify
+		 * individual properties (e.g., "retrieve(x.id, x.title)") for clear column mapping.
+		 *
+		 * @throws QuelException if an entire entity is retrieved without property access
+		 */
+		private function validateNoEntireEntitiesInFieldList(AstRetrieve $ast): void {
+			foreach ($ast->getValues() as $value) {
+				$expression = $value->getExpression();
+				
+				// Skip non-identifier expressions (literals, function calls, etc.)
+				if (!$expression instanceof AstIdentifier) {
+					continue;
+				}
+				
+				// Check if identifier lacks property access (e.g., "x" instead of "x.id")
+				// hasNext() returns false when there's no chained property access
+				if (!$expression->hasNext()) {
+					$rangeName = $expression->getName();
+					
+					throw new QuelException(
+						"Cannot retrieve entire entity '{$rangeName}' in temporary table. " .
+						"Specify individual properties instead (e.g., {$rangeName}.id, {$rangeName}.title)"
+					);
+				}
 			}
 		}
 	}
