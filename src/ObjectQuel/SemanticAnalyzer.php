@@ -23,7 +23,7 @@
 	use Quellabs\ObjectQuel\ObjectQuel\Visitors\ViaClauseValidator;
 	
 	/**
-	 * QueryValidator class responsible for validating ObjectQuel query ASTs
+	 * SemanticAnalyzer class responsible for validating ObjectQuel query ASTs
 	 */
 	class SemanticAnalyzer {
 		
@@ -44,16 +44,16 @@
 		/**
 		 * Main validation entry point - performs comprehensive query validation
 		 * @param AstRetrieve $ast The parsed query AST to validate
-		 * @param bool $nested True if we are validating a nested query
+		 * @param bool $isSubquery True if we are validating a nested query
 		 * @throws QuelException If any validation fails
 		 */
-		public function validate(AstRetrieve $ast, bool $nested = false): void {
+		public function validate(AstRetrieve $ast, bool $isSubquery = false): void {
 			// First, recursively validate all nested queries in temporary ranges
 			// This ensures inner queries are valid before validating the outer query
 			$this->validateNestedQueries($ast);
 			
 			// Step 1: Validate basic structural integrity
-			$this->validateNoRegExpInFieldList($ast);
+			$this->validateNoRegExpInValueList($ast);
 			$this->validateNoDuplicateRanges($ast);
 			$this->validateAtLeastOneRangeWithoutVia($ast);
 			$this->validateRangesOnlyReferenceOtherRanges($ast);
@@ -74,8 +74,8 @@
 			$this->validateNoAggregatesInWhereClause($ast);
 			
 			// Step 7: Validate no entire entities in nested queries
-			if ($nested) {
-				$this->validateNoEntireEntitiesInFieldList($ast);
+			if ($isSubquery) {
+				$this->validateNoEntireEntitiesInValueList($ast);
 			}
 		}
 		
@@ -206,7 +206,7 @@
 		 * @param AstRetrieve $ast
 		 * @throws QuelException if expression type is not allowed in field lists
 		 */
-		private function validateNoRegExpInFieldList(AstRetrieve $ast): void {
+		private function validateNoRegExpInValueList(AstRetrieve $ast): void {
 			foreach ($ast->getValues() as $value) {
 				if ($value->getExpression() instanceof AstRegExp) {
 					throw new QuelException(
@@ -307,7 +307,7 @@
 		 *
 		 * @throws QuelException if an entire entity is retrieved without property access
 		 */
-		private function validateNoEntireEntitiesInFieldList(AstRetrieve $ast): void {
+		private function validateNoEntireEntitiesInValueList(AstRetrieve $ast): void {
 			foreach ($ast->getValues() as $value) {
 				$expression = $value->getExpression();
 				
@@ -319,12 +319,7 @@
 				// Check if identifier lacks property access (e.g., "x" instead of "x.id")
 				// hasNext() returns false when there's no chained property access
 				if (!$expression->hasNext()) {
-					$rangeName = $expression->getName();
-					
-					throw new QuelException(
-						"Cannot retrieve entire entity '{$rangeName}' in temporary table. " .
-						"Specify individual properties instead (e.g., {$rangeName}.id, {$rangeName}.title)"
-					);
+					throw new QuelException("Temporary table requires explicit column definitions.");
 				}
 			}
 		}
