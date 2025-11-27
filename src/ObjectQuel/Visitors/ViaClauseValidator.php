@@ -11,16 +11,16 @@
 	use Quellabs\ObjectQuel\ObjectQuel\QuelException;
 	
 	/**
-	 * Class EntityExistenceValidator
+	 * Class ViaClauseValidator
 	 * Validates the existence of entities within an AST.
 	 */
-	class ValidateRelationInViaValid implements AstVisitorInterface {
+	class ViaClauseValidator implements AstVisitorInterface {
 		
 		private EntityStore $entityStore;
 		private string $entityName;
 		
 		/**
-		 * ValidateRelationInViaValid constructor.
+		 * ViaClauseValidator constructor.
 		 * @param EntityStore $entityStore
 		 * @param string $entityName
 		 */

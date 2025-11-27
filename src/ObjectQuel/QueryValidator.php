@@ -18,7 +18,7 @@
 	use Quellabs\ObjectQuel\ObjectQuel\Visitors\EntityPropertyValidator;
 	use Quellabs\ObjectQuel\ObjectQuel\Visitors\NoExpressionsAllowedOnEntitiesValidator;
 	use Quellabs\ObjectQuel\ObjectQuel\Visitors\RangeOnlyReferencesOtherRanges;
-	use Quellabs\ObjectQuel\ObjectQuel\Visitors\ValidateRelationInViaValid;
+	use Quellabs\ObjectQuel\ObjectQuel\Visitors\ViaClauseValidator;
 	
 	/**
 	 * QueryValidator class responsible for validating ObjectQuel query ASTs
@@ -210,7 +210,7 @@
 					try {
 						// Create a validator to check that all 'via' relations in the join property are valid
 						// This verifies that intermediate entities and properties exist in the entity store
-						$validator = new ValidateRelationInViaValid($this->entityStore, $range->getEntityName());
+						$validator = new ViaClauseValidator($this->entityStore, $range->getEntityName());
 						
 						// Apply the validator to the join property tree
 						// This traverses all parts of the join definition looking for invalid 'via' references
