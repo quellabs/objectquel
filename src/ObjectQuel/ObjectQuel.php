@@ -16,7 +16,7 @@
 	class ObjectQuel {
 		private EntityStore $entityStore;
 		private QueryTransformer $queryTransformer;
-		private QueryValidator $queryValidator;
+		private SemanticAnalyzer $queryValidator;
 		
 		/**
 		 * Constructor to inject the EntityManager dependencies.
@@ -25,7 +25,7 @@
 		public function __construct(EntityManager $entityManager) {
 			$this->entityStore = $entityManager->getEntityStore();
 			$this->queryTransformer = new QueryTransformer($this->entityStore);
-			$this->queryValidator = new QueryValidator($this->entityStore);
+			$this->queryValidator = new SemanticAnalyzer($this->entityStore);
 		}
 		
 		/**
