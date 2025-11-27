@@ -64,7 +64,7 @@
 				
 				// Convert from definition to materialized range
 				$tempRange->setTableName($tempTableName);
-				$tempRange->setQuery(null);
+				//$tempRange->setQuery(null);
 				
 				// Add plan as a stage
 				$plan->addStage(new ExecutionStageTempTable(
