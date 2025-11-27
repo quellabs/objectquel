@@ -13,7 +13,7 @@
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRetrieve;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstSum;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstSumU;
-	use Quellabs\ObjectQuel\ObjectQuel\Visitors\ContainsNode;
+	use Quellabs\ObjectQuel\ObjectQuel\Visitors\NodeTypeValidator;
 	use Quellabs\ObjectQuel\ObjectQuel\Visitors\EntityReferenceValidator;
 	use Quellabs\ObjectQuel\ObjectQuel\Visitors\EntityPropertyValidator;
 	use Quellabs\ObjectQuel\ObjectQuel\Visitors\NoExpressionsAllowedOnEntitiesValidator;
@@ -254,7 +254,7 @@
 			try {
 				// Create a visitor that searches for any of the prohibited aggregate
 				// function types in the condition tree
-				$visitor = new ContainsNode($aggregateTypes);
+				$visitor = new NodeTypeValidator($aggregateTypes);
 				
 				// Traverse the WHERE clause conditions looking for aggregate functions
 				// If any are found, the visitor will throw an exception
