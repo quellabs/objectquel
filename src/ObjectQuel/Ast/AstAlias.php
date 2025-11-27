@@ -69,7 +69,7 @@
 		 * A field may be invisible if it was automatically added for join purposes
 		 * @return bool
 		 */
-		public function isVisibleInResult(): bool {
+		public function showInResult(): bool {
 			return $this->visibleInResult;
 		}
 		
@@ -78,7 +78,7 @@
 		 * @param bool $visibleInResult
 		 * @return void
 		 */
-		public function setVisibleInResult(bool $visibleInResult): void {
+		public function setShowInResult(bool $visibleInResult): void {
 			$this->visibleInResult = $visibleInResult;
 		}
 		
@@ -91,7 +91,7 @@
 			$clonedExpression = $this->expression->deepClone();
 			
 			// @phpstan-ignore-next-line new.static
-			$clone = new static($this->name, $clonedExpression, $this->aliasPattern);
+			$clone = new static($this->name, $clonedExpression);
 			
 			// Set the parent relationship
 			$clonedExpression->setParent($clone);
