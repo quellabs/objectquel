@@ -45,9 +45,6 @@
 				// Validation phase - Ensure AST integrity and correctness
 				$this->queryValidator->validate($ast);
 				
-				// Final processing phase - Apply final transformations
-				$this->processWithVisitor($ast, AliasPlugAliasPattern::class);
-				
 				// The AST is now fully validated
 				return $ast;
 				
