@@ -8,8 +8,8 @@
 	use Quellabs\ObjectQuel\ObjectQuel\Visitors\EntityNameNormalizer;
 	use Quellabs\ObjectQuel\ObjectQuel\Visitors\RangeDatabaseEntityNormalizer;
 	use Quellabs\ObjectQuel\ObjectQuel\Visitors\ImplicitRangeResolver;
-	use Quellabs\ObjectQuel\ObjectQuel\Visitors\EntityPlugMacros;
-	use Quellabs\ObjectQuel\ObjectQuel\Visitors\EntityProcessMacro;
+	use Quellabs\ObjectQuel\ObjectQuel\Visitors\MacroSubstitutor;
+	use Quellabs\ObjectQuel\ObjectQuel\Visitors\MacroExpander;
 	use Quellabs\ObjectQuel\ObjectQuel\Visitors\EntityProcessRange;
 	use Quellabs\ObjectQuel\ObjectQuel\Visitors\TransformRelationInViaToPropertyLookup;
 	
@@ -48,7 +48,7 @@
 			
 			// Step 1: Plug macro placeholders into the AST structure
 			// This visitor finds macro references and creates placeholder nodes for later expansion
-			$this->processWithVisitor($ast, EntityPlugMacros::class, $ast->getMacros());
+			$this->processWithVisitor($ast, MacroSubstitutor::class, $ast->getMacros());
 			
 			// Step 2: Add proper namespaces to all ranges
 			// Resolves entity names to their fully qualified forms using the entity store
@@ -60,7 +60,7 @@
 			
 			// Step 4: Expand macro definitions with their actual implementations
 			// Replaces macro placeholder nodes with the full macro body/logic
-			$this->processWithVisitor($ast, EntityProcessMacro::class, $ast->getMacros());
+			$this->processWithVisitor($ast, MacroExpander::class, $ast->getMacros());
 			
 			// Step 5: Automatically add missing table ranges for referenced entities
 			// Analyzes field references and adds necessary JOIN clauses for tables not explicitly included
