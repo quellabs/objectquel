@@ -5,7 +5,7 @@
 	use Quellabs\ObjectQuel\ObjectQuel\AstInterface;
 	use Quellabs\ObjectQuel\ObjectQuel\AstVisitorInterface;
 	use Quellabs\ObjectQuel\ObjectQuel\Visitors\IdentifierCollector;
-	use Quellabs\ObjectQuel\ObjectQuel\Visitors\ContainsJsonIdentifier;
+	use Quellabs\ObjectQuel\ObjectQuel\Visitors\JsonSourceIdentifierDetector;
 	
 	/**
 	 * Class AstRetrieve
@@ -405,7 +405,7 @@
 			}
 			
 			// Create a visitor to detect JSON identifiers
-			$visitor = new ContainsJsonIdentifier();
+			$visitor = new JsonSourceIdentifierDetector();
 			
 			try {
 				// Check each sort expression for JSON identifiers
