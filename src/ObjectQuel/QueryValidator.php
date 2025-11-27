@@ -14,7 +14,7 @@
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstSum;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstSumU;
 	use Quellabs\ObjectQuel\ObjectQuel\Visitors\ContainsNode;
-	use Quellabs\ObjectQuel\ObjectQuel\Visitors\EntityExistenceValidator;
+	use Quellabs\ObjectQuel\ObjectQuel\Visitors\EntityReferenceValidator;
 	use Quellabs\ObjectQuel\ObjectQuel\Visitors\EntityPropertyValidator;
 	use Quellabs\ObjectQuel\ObjectQuel\Visitors\NoExpressionsAllowedOnEntitiesValidator;
 	use Quellabs\ObjectQuel\ObjectQuel\Visitors\RangeOnlyReferencesOtherRanges;
@@ -55,7 +55,7 @@
 			$this->validateRangesOnlyReferenceOtherRanges($ast);
 			
 			// Step 2: Validate against schema - ensure entities exist
-			$this->processWithVisitor($ast, EntityExistenceValidator::class, $this->entityStore);
+			$this->processWithVisitor($ast, EntityReferenceValidator::class, $this->entityStore);
 			
 			// Step 3: Validate relationship definitions in 'via' clauses
 			$this->validateRangeViaRelations($ast);
