@@ -4,7 +4,7 @@
 	
 	use Quellabs\ObjectQuel\ObjectQuel\AstInterface;
 	use Quellabs\ObjectQuel\ObjectQuel\AstVisitorInterface;
-	use Quellabs\ObjectQuel\ObjectQuel\Visitors\ContainsNode;
+	use Quellabs\ObjectQuel\ObjectQuel\Visitors\NodeTypeValidator;
 	use Quellabs\ObjectQuel\ObjectQuel\Visitors\ContainsNodeObject;
 	
 	/**
