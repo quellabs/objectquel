@@ -20,7 +20,7 @@
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstSum;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstSumU;
 	use Quellabs\ObjectQuel\ObjectQuel\AstInterface;
-	use Quellabs\ObjectQuel\ObjectQuel\Visitors\CollectNodes;
+	use Quellabs\ObjectQuel\ObjectQuel\Visitors\NodeCollector;
 	use Quellabs\ObjectQuel\ObjectQuel\Visitors\QuelToSQLConvertToString;
 	
 	/**
@@ -730,7 +730,7 @@
 		 * @return AstIdentifier[] Array of all identifier nodes found in the tree
 		 */
 		private function collectIdentifierNodes(AstInterface $ast): array {
-			$visitor = new CollectNodes(AstIdentifier::class);
+			$visitor = new NodeCollector(AstIdentifier::class);
 			$ast->accept($visitor);
 			return $visitor->getCollectedNodes();
 		}
