@@ -2,7 +2,7 @@
 	
 	namespace Quellabs\ObjectQuel\ObjectQuel;
 	
-	use Quellabs\ObjectQuel\ObjectQuel\Visitors\ContainsNodeObject;
+	use Quellabs\ObjectQuel\ObjectQuel\Visitors\NodePresenceValidator;
 	
 	/**
 	 * Interface AstInterface

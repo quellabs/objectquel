@@ -11,7 +11,7 @@
 	 * during tree traversal. This visitor is designed to detect unwanted or restricted
 	 * node types within an Abstract Syntax Tree and throw an exception when found.
 	 */
-	class ContainsNodeObject implements AstVisitorInterface {
+	class NodePresenceValidator implements AstVisitorInterface {
 		
 		private AstInterface $node;
 		
