@@ -8,7 +8,7 @@
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRetrieve;
 	use Quellabs\ObjectQuel\ObjectQuel\Visitors\ContainsCheckIsNullForRange;
 	use Quellabs\ObjectQuel\ObjectQuel\Visitors\ContainsNonNullableFieldForRange;
-	use Quellabs\ObjectQuel\ObjectQuel\Visitors\ContainsRange;
+	use Quellabs\ObjectQuel\ObjectQuel\Visitors\UsesRange;
 	
 	/**
 	 * Optimizes JOIN types based on WHERE clause analysis.
@@ -113,7 +113,7 @@
 		private function conditionsListHasFieldReferences(AstRetrieve $ast, AstRange $range): bool {
 			try {
 				// Use visitor pattern to traverse condition tree
-				$visitor = new ContainsRange($range->getName());
+				$visitor = new UsesRange($range->getName());
 				$ast->getConditions()->accept($visitor);
 				// No references found if we reach here
 				return false;

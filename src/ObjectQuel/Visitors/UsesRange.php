@@ -14,7 +14,7 @@
 	 * When a node with the specified range is found, it throws an exception
 	 * to halt traversal and signal the presence of the range.
 	 */
-	class ContainsRange implements AstVisitorInterface {
+	class UsesRange implements AstVisitorInterface {
 		
 		/** @var string The name of the range to search for */
 		private string $rangeName;
