@@ -24,7 +24,7 @@
 	/**
 	 * QueryValidator class responsible for validating ObjectQuel query ASTs
 	 */
-	class QueryValidator {
+	class SemanticAnalyzer {
 		
 		/**
 		 * Entity store containing schema information for validation
