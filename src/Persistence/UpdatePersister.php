@@ -82,6 +82,7 @@
 			// Retrieve basic information needed for the update
 			// Get the table name where the entity is stored
 			$tableName = $this->entityStore->getOwningTable($entity);
+			$tableNameEscaped = str_replace('`', '``', $tableName);
 			
 			// Serialize the entity's current state into an array of column name => value pairs
 			$serializedEntity = $this->unitOfWork->getSerializer()->serialize($entity);
@@ -114,11 +115,7 @@
 			$mergedParams = array_merge($extractedEntityChanges, $this->prefixKeys($primaryKeyValues, "primary_key_"));
 			
 			// Execute the UPDATE query with the merged parameters
-			$rs = $this->connection->Execute("
-                UPDATE `{$tableName}` SET
-                    {$sql}
-                WHERE {$sqlWhere}
-            ", $mergedParams);
+			$rs = $this->connection->Execute("UPDATE `{$tableNameEscaped}` SET {$sql} WHERE {$sqlWhere}", $mergedParams);
 			
 			// If the query fails, throw an exception with error details
 			if (!$rs) {

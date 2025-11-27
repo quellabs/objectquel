@@ -81,6 +81,7 @@
 			// Gather the necessary information for the insert operation
 			// Get the table name where the entity should be stored
 			$tableName = $this->entity_store->getOwningTable($entity);
+			$tableNameEscaped = str_replace('`', '``', $tableName);
 			
 			// Get the primary key property names and their corresponding column names
 			$primaryKeys = $this->entity_store->getIdentifierKeys($entity);
@@ -129,10 +130,7 @@
 			));
 			
 			// Execute the insert query with the serialized entity data as parameters
-			$rs = $this->connection->Execute(
-				"INSERT INTO `" . str_replace('`', '``', $tableName) . "` SET {$sql}",
-				$serializedEntity
-			);
+			$rs = $this->connection->Execute("INSERT INTO `{$tableNameEscaped}` SET {$sql}", $serializedEntity);
 			
 			// If the query fails, throw an exception with the error details
 			if (!$rs) {
