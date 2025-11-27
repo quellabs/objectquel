@@ -10,6 +10,7 @@
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstMax;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstMin;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRangeDatabase;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRegExp;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRetrieve;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstSum;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstSumU;
@@ -53,6 +54,7 @@
 			$this->validateNoDuplicateRanges($ast);
 			$this->validateAtLeastOneRangeWithoutVia($ast);
 			$this->validateRangesOnlyReferenceOtherRanges($ast);
+			$this->validateNoRegExpInFieldList($ast);
 			
 			// Step 2: Validate against schema - ensure entities exist
 			$this->processWithVisitor($ast, EntityReferenceValidator::class, $this->entityStore);
@@ -186,6 +188,21 @@
 						// This helps identify which range has the invalid reference
 						throw new QuelException(sprintf($e->getMessage(), $range->getName()));
 					}
+				}
+			}
+		}
+		
+		/**
+		 * Validate that the parsed expression is allowed in field lists.
+		 * @param AstRetrieve $ast
+		 * @throws QuelException if expression type is not allowed in field lists
+		 */
+		private function validateNoRegExpInFieldList(AstRetrieve $ast): void {
+			foreach($ast->getValues() as $value) {
+				if ($value->getExpression() instanceof AstRegExp) {
+					throw new QuelException(
+						'Regular expressions are not allowed in the value list. Please remove the regular expression.'
+					);
 				}
 			}
 		}

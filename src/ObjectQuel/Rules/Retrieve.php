@@ -108,9 +108,6 @@
 			// Parse the actual expression (right side of alias or standalone expression)
 			$expression = $this->expressionRule->parse();
 			
-			// Validate that the parsed expression is suitable for use in a field context
-			$this->validateFieldExpression($expression);
-			
 			// Determine the final alias name (either from explicit token or auto-generated)
 			$aliasName = $this->determineAliasName($aliasToken, $startPos);
 			
@@ -128,19 +125,6 @@
 		 */
 		private function isExplicitAlias(): bool {
 			return $this->lexer->peekNext() === Token::Equals;
-		}
-		
-		/**
-		 * Validate that the parsed expression is allowed in field lists.
-		 * @param mixed $expression The parsed expression to validate
-		 * @throws ParserException if expression type is not allowed in field lists
-		 */
-		private function validateFieldExpression(mixed $expression): void {
-			if ($expression instanceof AstRegExp) {
-				throw new ParserException(
-					'Regular expressions are not allowed in the value list. Please remove the regular expression.'
-				);
-			}
 		}
 		
 		/**
