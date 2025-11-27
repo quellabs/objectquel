@@ -120,15 +120,15 @@
 		}
 		
 		/**
-		 * Adds an entity to the entity manager list
-		 * @param $entity
-		 * @return bool
+		 * Persists (inserts) an entity into the database
+		 *
+		 * For entities with composite primary keys where multiple keys use the identity strategy,
+		 * only the first identity key will receive the database-generated value. Other identity
+		 * keys must be set manually before calling flush().
+		 *
+		 * @param object $entity The entity to be inserted into the database
 		 */
-		public function persist($entity): bool {
-			if (!is_object($entity)) {
-				return false;
-			}
-			
+		public function persist(object $entity): bool {
 			return $this->unit_of_work->persistNew($entity);
 		}
 		
