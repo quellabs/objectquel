@@ -38,7 +38,7 @@
 		 * Returns all collected nodes
 		 * @return AstInterface[]
 		 */
-		public function getNodes(): array {
+		public function getCollectedNodes(): array {
 			return $this->nodes;
 		}
 	}
