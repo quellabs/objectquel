@@ -13,7 +13,6 @@
 	
 	/**
 	 * Specialized persister class responsible for inserting new entities into the database
-	 * Extends the PersisterBase to inherit common persistence functionality
 	 * This class handles the creation process of inserting entities into database tables
 	 */
 	class InsertPersister {
@@ -28,25 +27,24 @@
 		 * The EntityStore that maintains metadata about entities and their mappings
 		 * Used to retrieve information about entity tables, columns and identifiers
 		 */
-		protected EntityStore $entity_store;
+		private EntityStore $entity_store;
 		
 		/**
 		 * Reference to the UnitOfWork that manages persistence operations
-		 * This is a duplicate of the parent's unitOfWork property with a different naming convention
 		 */
-		protected UnitOfWork $unit_of_work;
+		private UnitOfWork $unit_of_work;
 		
 		/**
 		 * Utility for handling entity property access and manipulation
 		 * Provides methods to get and set entity properties regardless of their visibility
 		 */
-		protected PropertyHandler $property_handler;
+		private PropertyHandler $property_handler;
 		
 		/**
 		 * Database connection adapter used for executing SQL queries
 		 * Abstracts the underlying database system and provides a unified interface
 		 */
-		protected DatabaseAdapter $connection;
+		private DatabaseAdapter $connection;
 		
 		/**
 		 * Factory for creating primary key values
@@ -100,15 +98,23 @@
 					// (e.g., 'uuid', 'identity', 'sequence') - only done when needed
 					$strategy = $this->getPrimaryKeyStrategy($entity, $primaryKey);
 					
+					// Skip identity strategy - database handles these
+					if ($strategy === 'identity') {
+						continue;
+					}
+					
 					// Generate a new primary key value using the appropriate generator
 					// Passes context (entity manager and entity) for generators that need it
 					$value = $this->primary_key_factory->generate($this->entity_manager, $entity, $strategy);
 					
+					// Make sure the generator returned a valid value
+					if ($value === null) {
+						throw new OrmException("Primary key generator for strategy '{$strategy}' returned null for primary key '{$primaryKey}'");
+					}
+					
 					// Update the entity with the newly generated primary key value
 					// Uses the property handler to respect access rules for private/protected properties
-					if ($value !== null) {
-						$this->property_handler->set($entity, $primaryKey, $value);
-					}
+					$this->property_handler->set($entity, $primaryKey, $value);
 				}
 			}
 			
@@ -117,10 +123,16 @@
 			
 			// Create the SQL query for insertion
 			// Generates a comma-separated list of "column=:value" pairs for the SET clause
-			$sql = implode(",", array_map(fn($key) => "`{$key}`=:{$key}", array_keys($serializedEntity)));
+			$sql = implode(",", array_map(
+				fn($key) => "`" . str_replace('`', '``', $key) . "`=:{$key}",
+				array_keys($serializedEntity)
+			));
 			
 			// Execute the insert query with the serialized entity data as parameters
-			$rs = $this->connection->Execute("INSERT INTO `{$tableName}` SET {$sql}", $serializedEntity);
+			$rs = $this->connection->Execute(
+				"INSERT INTO `" . str_replace('`', '``', $tableName) . "` SET {$sql}",
+				$serializedEntity
+			);
 			
 			// If the query fails, throw an exception with the error details
 			if (!$rs) {
@@ -136,11 +148,12 @@
 				// Get the last inserted ID value from the database connection
 				$autoIncrementId = $this->connection->getInsertId();
 				
-				if ($autoIncrementId !== 0) {
+				// Check if the result is valid
+				if ($autoIncrementId !== false && $autoIncrementId > 0) {
 					// Non-zero ID was returned, indicating the database successfully generated a new primary key value
 					// Update the entity's property with the database-generated ID
 					// This ensures the entity's state is synchronized with its database representation
-					$this->property_handler->set($entity, $autoincrementColumn, $autoIncrementId);
+					$this->property_handler->set($entity, $autoincrementColumn, (int)$autoIncrementId);
 				}
 				
 				// If the auto-increment ID is 0, it may indicate no new ID was generated
@@ -158,17 +171,16 @@
 			$table = $this->entity_store->getOwningTable($entity);
 			
 			// Fetch key from cache if present
-			if (array_key_exists("$table.$primaryKey", $this->strategy_column_cache)) {
-				return $this->strategy_column_cache["$table.$primaryKey"];
+			if (isset($this->strategy_column_cache[$table][$primaryKey])) {
+				return $this->strategy_column_cache[$table][$primaryKey];
 			}
 			
 			// Get all annotations for the entity from the entity store
 			$annotations = $this->entity_store->getAnnotations($entity);
 			
 			// If no annotations exist for the specified primary key, return "identity"
-			// This should never happen as we already established that there's a primary key
 			if (empty($annotations[$primaryKey])) {
-				return "identity";
+				return $this->strategy_column_cache[$table][$primaryKey] = "identity";
 			}
 			
 			// Iterate through all annotations for the primary key
@@ -176,12 +188,11 @@
 				// Check if the current annotation is a PrimaryKeyStrategy instance
 				if ($annotation instanceof PrimaryKeyStrategy) {
 					// Return the value of the PrimaryKeyStrategy annotation
-					$this->strategy_column_cache["$table.$primaryKey"] = $annotation->getValue();
-					return $annotation->getValue();
+					return $this->strategy_column_cache[$table][$primaryKey] = $annotation->getValue();
 				}
 			}
 			
 			// No PrimaryKeyStrategy annotation found for this primary key
-			return $this->strategy_column_cache["$table.$primaryKey"] = "identity";
+			return $this->strategy_column_cache[$table][$primaryKey] = "identity";
 		}
 	}
