@@ -12,7 +12,7 @@
 	 * Adds referenced field values to the query's value list for join conditions.
 	 * These are technical fields needed for joins but not visible in final results.
 	 */
-	class ValueReferenceOptimizer {
+	class ImplicitJoinFieldOptimizer {
 		
 		/**
 		 * Scans the query conditions to find field references that are needed for
