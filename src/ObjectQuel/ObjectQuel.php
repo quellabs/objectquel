@@ -7,7 +7,7 @@
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstAlias;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRetrieve;
 	use Quellabs\ObjectQuel\ObjectQuel\Visitors\AliasPlugAliasPattern;
-	use Quellabs\ObjectQuel\ObjectQuel\Visitors\GatherReferenceJoinValues;
+	use Quellabs\ObjectQuel\ObjectQuel\Visitors\CollectJoinConditionIdentifiers;
 	
 	/**
 	 * Main ObjectQuel query processor that handles parsing and validation
