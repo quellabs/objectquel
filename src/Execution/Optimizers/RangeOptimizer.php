@@ -66,6 +66,64 @@
 		}
 		
 		/**
+		 * Normalizes query structure when temporary ranges would incorrectly become the main range.
+		 *
+		 * Problem:
+		 * When a temporary range has no via clause and an entity range does, the temporary range
+		 * becomes the main range (FROM clause). This is semantically backwards - entity tables
+		 * should be the primary source with temporary ranges joined to them.
+		 *
+		 * Solution:
+		 * For the simple case of one temporary + one entity range, swap the via clause to make
+		 * the entity range the main range.
+		 *
+		 * Before normalization:
+		 *   range of c is (subquery)                 // becomes main (wrong)
+		 *   range of d is PostEntity via d.id=c.id   // becomes joined
+		 *   SQL: FROM temp_c LEFT JOIN posts d ON d.id=c.id
+		 *
+		 * After normalization:
+		 *   range of c is (subquery) via d.id=c.id   // becomes joined
+		 *   range of d is PostEntity                 // becomes main (correct)
+		 *   SQL: FROM posts d LEFT JOIN temp_c ON d.id=c.id
+		 *
+		 * The required status is also transferred to maintain correct INNER/LEFT JOIN semantics.
+		 *
+		 * Limitation:
+		 * Currently only handles the simple case of exactly two ranges. Complex scenarios with
+		 * multiple temporary ranges or multi-range via clauses are not yet supported.
+		 *
+		 * @param AstRetrieve $ast The query AST to normalize
+		 */
+		public function normalizeTemporaryRangeStructure(AstRetrieve $ast): void {
+			$ranges = $ast->getRanges();
+			
+			// Only handle the simple case: exactly two ranges
+			if (count($ranges) !== 2) {
+				return;
+			}
+			
+			// Check if first range is temporary and second is entity with via clause
+			if (
+				$ranges[0] instanceof AstRangeDatabase &&
+				$ranges[0]->containsQuery() &&
+				$ranges[1] instanceof AstRangeDatabase &&
+				$ranges[1]->getJoinProperty() !== null
+			) {
+				// Swap the via clause from entity to temporary range
+				$tmp = $ranges[1]->getJoinProperty();
+				$ranges[0]->setJoinProperty($tmp);
+				$ranges[1]->setJoinProperty(null);
+				
+				// Transfer the required status to maintain INNER/LEFT JOIN semantics
+				// The entity range (now main) becomes required
+				// The temporary range inherits the previous required status
+				$ranges[0]->setRequired($ranges[1]->isRequired());
+				$ranges[1]->setRequired();
+			}
+		}
+		
+		/**
 		 * Sets the single range as required when exactly one range exists.
 		 *
 		 * Optimization Rationale:

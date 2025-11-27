@@ -69,6 +69,9 @@
 			$this->joinOptimizer->optimize($ast);
 			$this->rangeOptimizer->removeUnusedLeftJoinRanges($ast, false);
 			$this->valueReferenceOptimizer->optimize($ast);
+			
+			// Normalize structure first
+			$this->rangeOptimizer->normalizeTemporaryRangeStructure($ast);
 		}
 		
 		/**
