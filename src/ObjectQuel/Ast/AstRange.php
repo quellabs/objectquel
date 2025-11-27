@@ -4,7 +4,7 @@
 	
 	use Quellabs\ObjectQuel\ObjectQuel\AstInterface;
 	use Quellabs\ObjectQuel\ObjectQuel\AstVisitorInterface;
-	use Quellabs\ObjectQuel\ObjectQuel\Visitors\FindIdentifier;
+	use Quellabs\ObjectQuel\ObjectQuel\Visitors\IdentifierLocator;
 	
 	/**
 	 * AstRange class is responsible for defining a range in the AST (Abstract Syntax Tree).

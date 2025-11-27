@@ -4,7 +4,7 @@
 	
 	use Quellabs\ObjectQuel\ObjectQuel\AstInterface;
 	use Quellabs\ObjectQuel\ObjectQuel\AstVisitorInterface;
-	use Quellabs\ObjectQuel\ObjectQuel\Visitors\FindIdentifier;
+	use Quellabs\ObjectQuel\ObjectQuel\Visitors\IdentifierLocator;
 	
 	/**
 	 * Class AstRangeDatabase
@@ -191,7 +191,7 @@
 			}
 			
 			try {
-				$findVisitor = new FindIdentifier($entityName, $property);
+				$findVisitor = new IdentifierLocator($entityName, $property);
 				$this->joinProperty->accept($findVisitor);
 				return false;
 			} catch (\Exception $exception) {
