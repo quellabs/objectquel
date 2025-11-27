@@ -18,7 +18,7 @@
 	use Quellabs\ObjectQuel\ObjectQuel\AstInterface;
 	use Quellabs\ObjectQuel\ObjectQuel\Visitors\AggregateCollector;
 	use Quellabs\ObjectQuel\ObjectQuel\Visitors\IdentifierCollector;
-	use Quellabs\ObjectQuel\ObjectQuel\Visitors\CollectNodes;
+	use Quellabs\ObjectQuel\ObjectQuel\Visitors\NodeCollector;
 	
 	/**
 	 * AstUtilities provides common AST manipulation and inspection methods.
@@ -116,7 +116,7 @@
 		 * @return AstAny[] Array of ANY nodes found
 		 */
 		public static function findAllAnyNodes(AstRetrieve $ast): array {
-			$visitor = new CollectNodes([AstAny::class]);
+			$visitor = new NodeCollector([AstAny::class]);
 			$ast->accept($visitor);
 			return $visitor->getCollectedNodes();
 		}

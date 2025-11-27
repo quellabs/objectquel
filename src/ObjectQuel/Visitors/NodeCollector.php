@@ -5,7 +5,7 @@
 	use Quellabs\ObjectQuel\ObjectQuel\AstInterface;
 	use Quellabs\ObjectQuel\ObjectQuel\AstVisitorInterface;
 	
-	class CollectNodes implements AstVisitorInterface {
+	class NodeCollector implements AstVisitorInterface {
 		
 		/** @var array The node types to search for */
 		private array $types;
