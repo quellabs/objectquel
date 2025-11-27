@@ -19,19 +19,19 @@
 		 * Reference to the UnitOfWork that manages persistence operations
 		 * This is a duplicate of the parent's unitOfWork property with a different naming convention
 		 */
-		protected UnitOfWork $unit_of_work;
+		protected UnitOfWork $unitOfWork;
 		
 		/**
 		 * The EntityStore that maintains metadata about entities and their mappings
 		 * Used to retrieve information about entity tables, columns and identifiers
 		 */
-		protected EntityStore $entity_store;
+		protected EntityStore $entityStore;
 		
 		/**
 		 * Utility for handling entity property access and manipulation
 		 * Provides methods to get and set entity properties regardless of their visibility
 		 */
-		protected PropertyHandler $property_handler;
+		protected PropertyHandler $propertyHandler;
 		
 		/**
 		 * Database connection adapter used for executing SQL queries
@@ -44,9 +44,9 @@
 		 * @param UnitOfWork $unitOfWork The UnitOfWork that will coordinate update operations
 		 */
 		public function __construct(UnitOfWork $unitOfWork) {
-			$this->unit_of_work = $unitOfWork;
-			$this->entity_store = $unitOfWork->getEntityStore();
-			$this->property_handler = $unitOfWork->getPropertyHandler();
+			$this->unitOfWork = $unitOfWork;
+			$this->entityStore = $unitOfWork->getEntityStore();
+			$this->propertyHandler = $unitOfWork->getPropertyHandler();
 			$this->connection = $unitOfWork->getConnection();
 		}
 		
@@ -81,16 +81,16 @@
 		public function persist(object $entity): void {
 			// Retrieve basic information needed for the update
 			// Get the table name where the entity is stored
-			$tableName = $this->entity_store->getOwningTable($entity);
+			$tableName = $this->entityStore->getOwningTable($entity);
 			
 			// Serialize the entity's current state into an array of column name => value pairs
-			$serializedEntity = $this->unit_of_work->getSerializer()->serialize($entity);
+			$serializedEntity = $this->unitOfWork->getSerializer()->serialize($entity);
 			
 			// Get the entity's original data (snapshot) from when it was loaded or last persisted
-			$originalData = $this->unit_of_work->getOriginalEntityData($entity);
+			$originalData = $this->unitOfWork->getOriginalEntityData($entity);
 			
 			// Get the column names that make up the primary key
-			$primaryKeyColumnNames = $this->entity_store->getIdentifierColumnNames($entity);
+			$primaryKeyColumnNames = $this->entityStore->getIdentifierColumnNames($entity);
 			
 			// Extract the primary key values from the original data
 			// These will be used in the WHERE clause to identify the record to update
