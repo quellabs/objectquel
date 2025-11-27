@@ -269,6 +269,51 @@
 		}
 		
 		/**
+		 * Removes unused temporary ranges from the query.
+		 *
+		 * A temporary range is considered unused if:
+		 * - It's not referenced in the RETRIEVE values
+		 * - It's not referenced in the WHERE clause
+		 * - It's not referenced in ORDER BY
+		 * - It's not referenced in any other range's via clause
+		 *
+		 * This is different from removeUnusedLeftJoinRanges() because temporary ranges
+		 * may be main ranges (no join type), but still be completely unused.
+		 *
+		 * @param AstRetrieve $ast The query AST to optimize
+		 */
+		public function removeUnusedTemporaryRanges(AstRetrieve $ast): void {
+			$usedRanges = $this->getUsedRanges($ast, false);
+			$joinRanges = $this->getRangesUsedInJoinConditions($ast);
+			$allUsedRanges = array_merge($usedRanges, $joinRanges);
+			
+			$result = [];
+			
+			foreach ($ast->getRanges() as $range) {
+				// Keep non-temporary ranges
+				if (!($range instanceof AstRangeDatabase) || !$range->containsQuery()) {
+					$result[] = $range;
+					continue;
+				}
+				
+				// For temporary ranges, check if they're actually used
+				$isUsed = false;
+				foreach ($allUsedRanges as $usedRange) {
+					if ($usedRange->getName() === $range->getName()) {
+						$isUsed = true;
+						break;
+					}
+				}
+				
+				if ($isUsed) {
+					$result[] = $range;
+				}
+			}
+			
+			$ast->setRanges($result);
+		}
+		
+		/**
 		 * Collects ranges used in join conditions (via clauses)
 		 * @param AstRetrieve $ast
 		 * @return array
