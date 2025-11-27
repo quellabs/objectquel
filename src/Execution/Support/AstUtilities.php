@@ -16,8 +16,8 @@
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstSum;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstSumU;
 	use Quellabs\ObjectQuel\ObjectQuel\AstInterface;
-	use Quellabs\ObjectQuel\ObjectQuel\Visitors\CollectAggregates;
-	use Quellabs\ObjectQuel\ObjectQuel\Visitors\CollectIdentifiers;
+	use Quellabs\ObjectQuel\ObjectQuel\Visitors\AggregateCollector;
+	use Quellabs\ObjectQuel\ObjectQuel\Visitors\IdentifierCollector;
 	use Quellabs\ObjectQuel\ObjectQuel\Visitors\CollectNodes;
 	
 	/**
@@ -95,7 +95,7 @@
 				return [];
 			}
 			
-			$visitor = new CollectIdentifiers();
+			$visitor = new IdentifierCollector();
 			$ast->accept($visitor);
 			return $visitor->getCollectedNodes();
 		}
@@ -105,7 +105,7 @@
 		 * @return AstInterface[] Aggregate nodes found in the tree
 		 */
 		public static function collectAggregateNodes(AstRetrieve $root): array {
-			$visitor = new CollectAggregates(false);
+			$visitor = new AggregateCollector(false);
 			$root->accept($visitor);
 			return $visitor->getCollectedNodes();
 		}

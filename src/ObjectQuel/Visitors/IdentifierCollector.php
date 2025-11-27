@@ -6,7 +6,7 @@
 	use Quellabs\ObjectQuel\ObjectQuel\AstInterface;
 	use Quellabs\ObjectQuel\ObjectQuel\AstVisitorInterface;
 	
-	class CollectIdentifiers implements AstVisitorInterface {
+	class IdentifierCollector implements AstVisitorInterface {
 		
 		/** @var array All nodes */
 		private array $collectedNodes;

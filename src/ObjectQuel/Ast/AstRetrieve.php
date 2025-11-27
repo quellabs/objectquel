@@ -4,7 +4,7 @@
 	
 	use Quellabs\ObjectQuel\ObjectQuel\AstInterface;
 	use Quellabs\ObjectQuel\ObjectQuel\AstVisitorInterface;
-	use Quellabs\ObjectQuel\ObjectQuel\Visitors\CollectIdentifiers;
+	use Quellabs\ObjectQuel\ObjectQuel\Visitors\IdentifierCollector;
 	use Quellabs\ObjectQuel\ObjectQuel\Visitors\ContainsJsonIdentifier;
 	
 	/**
