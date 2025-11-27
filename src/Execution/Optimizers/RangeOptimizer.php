@@ -14,6 +14,7 @@
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRetrieve;
 	use Quellabs\ObjectQuel\ObjectQuel\Visitors\CollectRanges;
 	use Quellabs\ObjectQuel\Execution\Support\BinaryOperationHelper;
+	use Quellabs\ObjectQuel\ObjectQuel\Visitors\ContainsNonNullableFieldForRangeTemporary;
 	
 	/**
 	 * Handles range-specific optimizations including required annotations
@@ -182,26 +183,46 @@
 			$mainRange = $ast->getMainDatabaseRange();
 			$usedRanges = $this->getUsedRanges($ast, $traverseSubqueries);
 			
-			// Filter ranges to keep only necessary ones
+			// NEW: Also collect ranges used in join conditions
+			$joinRanges = $this->getRangesUsedInJoinConditions($ast);
+			
 			foreach ($ast->getRanges() as $range) {
-				// Always preserve the main table range and explicitly required joins
 				if ($range === $mainRange || $range->isRequired()) {
 					$result[] = $range;
 					continue;
 				}
 				
-				// Check if this range is referenced anywhere in the query
-				// (SELECT values, WHERE conditions, ORDER BY clauses)
-				foreach ($usedRanges as $usedRange) {
+				// Check both query usage AND join condition usage
+				$isUsed = false;
+				
+				foreach (array_merge($usedRanges, $joinRanges) as $usedRange) {
 					if ($usedRange->getName() === $range->getName()) {
-						$result[] = $range;
+						$isUsed = true;
 						break;
 					}
 				}
+				
+				if ($isUsed) {
+					$result[] = $range;
+				}
 			}
 			
-			// Update the AST with the filtered ranges (removing unused LEFT JOINs)
 			$ast->setRanges($result);
+		}
+		
+		/**
+		 * Collects ranges used in join conditions (via clauses)
+		 * @param AstRetrieve $ast
+		 * @return array
+		 */
+		private function getRangesUsedInJoinConditions(AstRetrieve $ast): array {
+			$visitor = new CollectRanges(false);
+			
+			foreach ($ast->getRanges() as $range) {
+				$range->getJoinProperty()?->accept($visitor);
+			}
+			
+			return $visitor->getCollectedNodes();
 		}
 		
 		/**
@@ -241,7 +262,7 @@
 		 * Process Flow:
 		 * 1. Determine the direction of the relationship (which table owns the foreign key)
 		 * 2. Extract property names from both sides of the JOIN condition
-		 * 3. Look up entity annotations for the owning entity
+		 * 3. Look up entity annotations for the owning entity (or analyze temporary range structure)
 		 * 4. Search for RequiredRelation annotations that match this relationship
 		 * 5. If found, mark the range as required (converting LEFT JOIN to INNER JOIN)
 		 *
@@ -253,6 +274,11 @@
 		 * - Target entity must match the joined table
 		 * - Relation column must match the foreign key field
 		 * - Inverse property must match the back-reference field
+		 *
+		 * Temporary Range Handling:
+		 * - For subqueries, uses nullability analysis instead of annotations
+		 * - Traces through the subquery structure to find source field nullability
+		 * - Converts LEFT JOIN to INNER JOIN if the joined field is non-nullable
 		 *
 		 * @param AstRangeDatabase $mainRange The main table range
 		 * @param AstRangeDatabase $range The range being checked for requirement
@@ -276,12 +302,10 @@
 			$relatedPropertyName = $isMainRange ? $left->getName() : $right->getName();
 			$relatedEntityName = $isMainRange ? $left->getEntityName() : $right->getEntityName();
 			
-			// Skip annotation-based optimization for temporary tables and derived ranges
-			// Temporary tables (subqueries) have no entity metadata or annotations
-			// They can only use LEFT JOINs; INNER JOIN optimization requires entity annotations
+			// Handle temporary ranges (subqueries) with nullability analysis
+			// Temporary tables have no entity metadata or annotations
 			if (empty($ownEntityName)) {
-				// This is a join with a temporary table - no annotations available
-				// Keep as LEFT JOIN (default) since we can't determine if it's required
+				$this->checkTemporaryRangeRequired($range, $isMainRange, $left, $right);
 				return;
 			}
 			
@@ -313,6 +337,57 @@
 			
 			// No matching RequiredRelation annotation found - leave as LEFT JOIN
 			// This preserves the original query semantics
+		}
+		
+		/**
+		 * Checks if a temporary range (subquery) join should be marked as required.
+		 *
+		 * Uses the existing ContainsNonNullableFieldForRangeTemporary visitor to determine
+		 * if the joined field is non-nullable. If so, converts LEFT JOIN to INNER JOIN.
+		 *
+		 * Logic:
+		 * - Identifies which side of the join is the temporary range
+		 * - Uses visitor pattern to check if the field being joined is non-nullable
+		 * - Non-nullable fields in join conditions make LEFT JOIN equivalent to INNER JOIN
+		 *
+		 * @param AstRangeDatabase $range The range being checked
+		 * @param bool $isMainRange Whether the main range is on the right side
+		 * @param AstIdentifier $left Left side of join condition
+		 * @param AstIdentifier $right Right side of join condition
+		 */
+		private function checkTemporaryRangeRequired(
+			AstRangeDatabase $range,
+			bool             $isMainRange,
+			AstIdentifier    $left,
+			AstIdentifier    $right
+		): void {
+			// Identify which side contains the temporary range
+			$joinedRange = $isMainRange ? $right->getRange() : $left->getRange();
+			
+			// Only process if it's actually a temporary range with a subquery
+			if (!($joinedRange instanceof AstRangeDatabase) || !$joinedRange->containsQuery()) {
+				return;
+			}
+			
+			try {
+				// Reuse existing visitor to check field nullability
+				$visitor = new ContainsNonNullableFieldForRangeTemporary(
+					$joinedRange->getName(),
+					$joinedRange->getQuery(),
+					$this->entityStore
+				);
+				
+				// Create a test identifier to check the specific field
+				// The visitor will analyze if this field reference is non-nullable
+				$testIdentifier = $isMainRange ? $right : $left;
+				$testIdentifier->accept($visitor);
+				
+				// If visitor didn't throw, field is nullable - keep as LEFT JOIN
+			} catch (\Exception $e) {
+				// Visitor throws exception when non-nullable field is found
+				// Non-nullable field in join = can safely convert to INNER JOIN
+				$range->setRequired();
+			}
 		}
 		
 		/**
