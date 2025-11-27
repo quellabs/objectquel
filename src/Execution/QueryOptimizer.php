@@ -53,6 +53,7 @@
 			
 			// Phase 2: Remove left joins that are not referenced in the query
 			$this->rangeOptimizer->removeUnusedLeftJoinRanges($ast);
+			$this->rangeOptimizer->removeUnusedTemporaryRanges($ast);
 			
 			// Phase 3: Optimize joins
 			$this->joinOptimizer->optimize($ast);
