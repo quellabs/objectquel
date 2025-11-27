@@ -3,6 +3,7 @@
 	namespace Quellabs\ObjectQuel\DatabaseAdapter;
 	
 	use Quellabs\ObjectQuel\Annotations\Orm\Column;
+	use Quellabs\ObjectQuel\Serialization\Normalizer\EnumNormalizer;
 	
 	/**
 	 * TypeMapper static utility class
@@ -234,6 +235,43 @@
 		}
 		
 		/**
+		 * Extracts all enum cases from a Column annotation's enum type.
+		 * @param string|null $enumType
+		 * @return array Array of enum case values for backed enums, or names for unit enums
+		 */
+		public static function getEnumCases(?string $enumType): array {
+			// Return empty array if no enum type is defined
+			if (empty($enumType)) {
+				return [];
+			}
+			
+			// Validate that the enum type exists and is actually an enum class
+			// This prevents fatal errors if an invalid class name is passed
+			if (!enum_exists($enumType)) {
+				return [];
+			}
+			
+			// Get all enum cases using the static cases() method
+			$cases = $enumType::cases();
+			
+			// Return empty array if no cases exist
+			if (empty($cases)) {
+				return [];
+			}
+			
+			// Check if this is a backed enum using is_subclass_of
+			// BackedEnum extends UnitEnum and adds the value property
+			if (is_subclass_of($enumType, \BackedEnum::class)) {
+				// For backed enums, extract the scalar values
+				// PHPStan now knows $enumType is BackedEnum, so cases have ->value
+				return array_map(fn(\BackedEnum $case) => $case->value, $cases);
+			}
+			
+			// For unit enums, extract the case names instead
+			return array_map(fn(\UnitEnum $case) => $case->name, $cases);
+		}
+		
+		/**
 		 * Build DECIMAL type with precision and scale
 		 * @param Column $annotation
 		 * @return string
@@ -250,7 +288,7 @@
 		 * @return string
 		 */
 		private static function buildEnumType(Column $annotation): string {
-			$values = $annotation->getValues() ?? [];
+			$values = self::getEnumCases($annotation->getEnumType());
 			
 			if (empty($values)) {
 				return 'VARCHAR(255)';
