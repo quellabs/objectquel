@@ -6,7 +6,7 @@
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstAlias;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstMin;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRetrieve;
-	use Quellabs\ObjectQuel\ObjectQuel\Visitors\GatherReferenceJoinValues;
+	use Quellabs\ObjectQuel\ObjectQuel\Visitors\CollectJoinConditionIdentifiers;
 	
 	/**
 	 * Adds referenced field values to the query's value list for join conditions.
@@ -31,7 +31,7 @@
 			}
 			
 			// Use visitor pattern to traverse AST and collect field references
-			$visitor = new GatherReferenceJoinValues($ast);
+			$visitor = new CollectJoinConditionIdentifiers($ast);
 			$ast->accept($visitor);
 			
 			// Add each referenced field as an invisible alias
