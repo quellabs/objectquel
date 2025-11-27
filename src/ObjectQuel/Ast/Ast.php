@@ -5,7 +5,7 @@
 	use Quellabs\ObjectQuel\ObjectQuel\AstInterface;
 	use Quellabs\ObjectQuel\ObjectQuel\AstVisitorInterface;
 	use Quellabs\ObjectQuel\ObjectQuel\Visitors\NodeTypeValidator;
-	use Quellabs\ObjectQuel\ObjectQuel\Visitors\NodePresenceValidator;
+	use Quellabs\ObjectQuel\ObjectQuel\Visitors\SpecificNodeDetector;
 	
 	/**
 	 * Class Ast
@@ -128,7 +128,7 @@
 		public function isAncestorOf(AstInterface $node): bool {
 			try {
 				// Create a visitor that searches for this node within the given node's subtree
-				$visitor = new NodePresenceValidator($this);
+				$visitor = new SpecificNodeDetector($this);
 				
 				// Traverse the given node's AST - if our node is found as a descendant,
 				// the visitor will throw an exception to signal the match
