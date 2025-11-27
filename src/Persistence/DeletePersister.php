@@ -10,7 +10,6 @@
 	
 	/**
 	 * Specialized persister class responsible for handling entity deletion operations
-	 * Extends the PersisterBase to inherit common persistence functionality
 	 * This class specifically manages the process of removing entities from the database
 	 */
 	class DeletePersister {
@@ -19,19 +18,19 @@
 		 * Reference to the UnitOfWork that manages persistence operations
 		 * This is a duplicate of the parent's unitOfWork property with a different naming convention
 		 */
-		protected UnitOfWork $unit_of_work;
+		protected UnitOfWork $unitOfWork;
 		
 		/**
 		 * The EntityStore that maintains metadata about entities and their mappings
 		 * Used to retrieve information about entity tables, columns and identifiers
 		 */
-		protected EntityStore $entity_store;
+		protected EntityStore $entityStore;
 		
 		/**
 		 * Utility for handling entity property access and manipulation
 		 * Provides methods to get and set entity properties regardless of their visibility
 		 */
-		protected PropertyHandler $property_handler;
+		protected PropertyHandler $propertyHandler;
 		
 		/**
 		 * Database connection adapter used for executing SQL queries
@@ -45,9 +44,9 @@
 		 * @param UnitOfWork $unitOfWork The UnitOfWork that will coordinate deletion operations
 		 */
 		public function __construct(UnitOfWork $unitOfWork) {
-			$this->unit_of_work = $unitOfWork;
-			$this->entity_store = $unitOfWork->getEntityStore();
-			$this->property_handler = $unitOfWork->getPropertyHandler();
+			$this->unitOfWork = $unitOfWork;
+			$this->entityStore = $unitOfWork->getEntityStore();
+			$this->propertyHandler = $unitOfWork->getPropertyHandler();
 			$this->connection = $unitOfWork->getConnection();
 		}
 		
@@ -63,7 +62,7 @@
 			$result = [];
 			
 			foreach($primaryKeys as $index => $key) {
-				$result[$primaryKeyColumns[$index]] = $this->property_handler->get($entity, $key);
+				$result[$primaryKeyColumns[$index]] = $this->propertyHandler->get($entity, $key);
 			}
 			
 			return $result;
@@ -78,11 +77,11 @@
 		 */
 		public function persist(object $entity): void {
 			// Get the name of the table where the entity is stored
-			$tableName = $this->entity_store->getOwningTable($entity);
+			$tableName = $this->entityStore->getOwningTable($entity);
 			
 			// Obtain the primary keys and corresponding column names of the entity
-			$primaryKeys = $this->entity_store->getIdentifierKeys($entity);
-			$primaryKeyColumns = $this->entity_store->getIdentifierColumnNames($entity);
+			$primaryKeys = $this->entityStore->getIdentifierKeys($entity);
+			$primaryKeyColumns = $this->entityStore->getIdentifierColumnNames($entity);
 			
 			// Create a mapping of primary key column names to their values for this specific entity
 			$primaryKeyValues = $this->extractPrimaryKeyValueMap($entity, $primaryKeys, $primaryKeyColumns);
