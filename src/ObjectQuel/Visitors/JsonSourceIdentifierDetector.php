@@ -15,7 +15,7 @@
 	 * When such an identifier is found, it throws an exception to halt traversal
 	 * and signal the presence of a JSON-sourced identifier.
 	 */
-	class ContainsJsonIdentifier implements AstVisitorInterface {
+	class JsonSourceIdentifierDetector implements AstVisitorInterface {
 		
 		/**
 		 * Visits a node in the AST and checks if it's an identifier attached to a JSON source.
