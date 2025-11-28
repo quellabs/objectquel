@@ -179,6 +179,12 @@
 					continue;
 				}
 				
+				// Skip everything that's not a ExecutionStage.
+				// There are no other stages at this moment, but this is to keep PhpStan happy
+				if (!($stage instanceof ExecutionStage)) {
+					continue;
+				}
+				
 				// Perform the join using the appropriate strategy based on the stage's join type
 				$combinedResult = $this->performJoin(
 					$combinedResult,             // Current combined result (left side of join)

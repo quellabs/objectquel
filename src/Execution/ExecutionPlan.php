@@ -29,6 +29,12 @@
 					continue;
 				}
 				
+				// Skip everything that's not a ExecutionStage.
+				// There are no other stages at this moment, but this is to keep PhpStan happy
+				if (!($stage instanceof ExecutionStage)) {
+					continue;
+				}
+				
 				// Find the stage without a join property (the main FROM table)
 				$range = $stage->getRange();
 				
