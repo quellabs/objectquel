@@ -43,8 +43,6 @@
 			// Convert the query to SQL
 			$sql = $this->convertToSQL($stage->getQuery(), $initialParams);
 			
-			echo $sql . "<br>";
-			
 			// Execute the SQL query
 			$rs = $this->connection->execute($sql, $initialParams);
 			
