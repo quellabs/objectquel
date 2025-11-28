@@ -11,6 +11,7 @@
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstIdentifier;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRange;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRangeDatabase;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRangeJsonSource;
 	use Quellabs\ObjectQuel\ObjectQuel\AstInterface;
 	use Quellabs\ObjectQuel\ObjectQuel\AstVisitorInterface;
 	
@@ -52,11 +53,11 @@
 		/**
 		 * Returns a new expression
 		 * @param string $propertyA
-		 * @param AstRangeDatabase $rangeB
+		 * @param AstRange|AstRangeDatabase|AstRangeJsonSource $rangeB
 		 * @param string $propertyB
 		 * @return AstExpression
 		 */
-		public function createPropertyLookupAst(string $propertyA, AstRange $rangeB, string $propertyB): AstInterface {
+		public function createPropertyLookupAst(string $propertyA, AstRange|AstRangeDatabase|AstRangeJsonSource $rangeB, string $propertyB): AstInterface {
 			$identifierA = new AstIdentifier($this->range->getEntityName());
 			$identifierA->setNext(new AstIdentifier($propertyA));
 			
