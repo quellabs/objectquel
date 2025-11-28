@@ -465,6 +465,74 @@ The `ANY()` function intelligently optimizes its behavior:
 - For complex scenarios, it generates optimized EXISTS subqueries
 - Performance is automatically optimized based on relationship type (required vs optional)
 
+### Temporary Ranges (Subqueries)
+
+ObjectQuel supports temporary ranges, which are inline subqueries that create intermediate result sets. Temporary ranges allow you to derive computed values, apply filters, or perform aggregations before joining the results with other ranges.
+
+#### Basic Syntax
+```php
+$results = $entityManager->executeQuery("
+    range of summary is (
+        range of p is App\\Entity\\ProductEntity
+        retrieve (categoryId=p.categoryId, avgPrice=AVG(p.price))
+    )
+    range of c is App\\Entity\\CategoryEntity via c.categoryId=summary.categoryId
+    retrieve (c.name, summary.avgPrice)
+");
+```
+
+In this example:
+- `summary` is a temporary range containing aggregated product data
+- `c` is an entity range that joins to the temporary range
+- The result combines category names with their average product prices
+
+#### How Temporary Ranges Work
+
+1. **Subquery Execution**: The inner query executes first, creating an intermediate result set
+2. **Result Materialization**: The result set is stored in a temporary table in the database
+3. **Join Operations**: The temporary table is then joined with other ranges in the outer query
+
+#### Common Use Cases
+
+**1. Pre-filtering data:**
+```php
+// Find products in categories with more than 10 products
+range of popular is (
+    range of p is App\\Entity\\ProductEntity
+    retrieve (categoryId=p.categoryId, productCount=COUNT(p.productId))
+)
+range of c is App\\Entity\\CategoryEntity via c.categoryId=popular.categoryId
+retrieve (c.name, popular.productCount)
+where popular.productCount > 10
+```
+
+**2. Computing derived values:**
+```php
+// Calculate profit margins for products
+range of margins is (
+    range of p is App\\Entity\\ProductEntity
+    retrieve (
+        productId=p.productId,
+        margin=(p.salePrice - p.costPrice) / p.salePrice * 100
+    )
+)
+range of p is App\\Entity\\ProductEntity via p.productId=margins.productId
+retrieve (p.name, margins.margin)
+```
+
+#### Performance Considerations
+
+- **Temporary table creation**: Each temporary range creates an actual temporary table in the database
+- **Optimization**: ObjectQuel automatically optimizes JOIN types based on nullability analysis
+- **Unused ranges**: Temporary ranges that aren't referenced in the outer query are automatically removed
+- **Complex subqueries**: Keep subqueries focused and use appropriate indexes on joined columns
+
+#### Limitations
+
+- Temporary ranges cannot have `via` clauses themselves (they define the result set others join against)
+- Multiple temporary ranges in a single query may require explicit join conditions
+- Very large temporary result sets may impact memory and performance
+
 ### Pagination
 
 ObjectQuel provides a developer-friendly pagination system that abstracts away the complexity of SQL's offset-based
