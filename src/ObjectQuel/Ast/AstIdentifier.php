@@ -245,9 +245,9 @@
 		 * Returns the range this identifier belongs to by traversing to the base identifier.
 		 * For "user.id", returns the range attached to "user".
 		 * For "c.title", returns the range attached to "c".
-		 * @return AstRange|null The range this identifier chain belongs to.
+		 * @return AstRange|AstRangeDatabase|AstRangeJsonSource|null The range this identifier chain belongs to.
 		 */
-		public function getSourceRange(): ?AstRange {
+		public function getSourceRange(): AstRange|AstRangeDatabase|AstRangeJsonSource|null {
 			$baseIdentifier = $this->getBaseIdentifier();
 			return $baseIdentifier?->getRange();
 		}
@@ -316,25 +316,21 @@
 		 * @return string|null The entity name or null.
 		 */
 		public function getEntityName(): ?string {
+			// Early return if this identifier doesn't originate from an entity
 			if (!$this->isFromEntity()) {
 				return null;
 			}
 			
+			// Get the source range that this identifier references
 			$range = $this->getSourceRange();
-			return $range->getEntityName();
-		}
-		
-		/**
-		 * Returns the temporary table query if this identifier belongs to a temporary table.
-		 * Returns null for entity ranges and non-database ranges.
-		 * @return AstRetrieve|null The temporary table query, or null.
-		 */
-		public function getTemporaryTableQuery(): ?AstRetrieve {
-			if (!$this->isFromTemporaryTable()) {
+			
+			// Verify the range is a database range (entities are stored in the database)
+			// Other range types (temporary, subquery, etc.) don't have entity names
+			if (!$range instanceof AstRangeDatabase) {
 				return null;
 			}
 			
-			$range = $this->getSourceRange();
-			return $range->getQuery();
+			// Extract and return the entity name from the database range
+			return $range->getEntityName();
 		}
 	}

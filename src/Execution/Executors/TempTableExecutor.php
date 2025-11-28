@@ -132,10 +132,6 @@
 			$columns = [];
 			
 			foreach ($retrieveValues as $value) {
-				if (!$value instanceof AstAlias) {
-					continue;
-				}
-				
 				$aliasName = $value->getName();
 				$expression = $value->getExpression();
 				

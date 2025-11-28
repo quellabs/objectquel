@@ -116,6 +116,7 @@
 		 * @return AstAny[] Array of ANY nodes found
 		 */
 		public static function findAllAnyNodes(AstRetrieve $ast): array {
+			/** @var NodeCollector<AstAny> $visitor */
 			$visitor = new NodeCollector([AstAny::class]);
 			$ast->accept($visitor);
 			return $visitor->getCollectedNodes();
