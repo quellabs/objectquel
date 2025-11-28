@@ -727,7 +727,7 @@
 		 * properties and ranges in ObjectQuel expressions.
 		 *
 		 * @param AstInterface $ast Root AST node to search
-		 * @return AstIdentifier[] Array of all identifier nodes found in the tree
+		 * @return AstInterface[] Array of all identifier nodes found in the tree
 		 */
 		private function collectIdentifierNodes(AstInterface $ast): array {
 			$visitor = new NodeCollector(AstIdentifier::class);

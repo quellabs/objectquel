@@ -217,9 +217,9 @@
 		 * Find a stage by name from the stages array
 		 * @param array $stages Array of ExecutionStage objects
 		 * @param string $stageName Name of the stage to find
-		 * @return ExecutionStage|null The found stage or null if not found
+		 * @return ExecutionStageInterface|null The found stage or null if not found
 		 */
-		private function findStageByName(array $stages, string $stageName): ?ExecutionStage {
+		private function findStageByName(array $stages, string $stageName): ?ExecutionStageInterface {
 			// Linear search through stages array
 			foreach ($stages as $stage) {
 				if ($stage->getName() === $stageName) {

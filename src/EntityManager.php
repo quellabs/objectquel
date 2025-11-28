@@ -243,7 +243,7 @@
 			}
 			
 			// Remove duplicate objects from the result array before returning
-			return $this->query_executor->deDuplicateObjects($result);
+			return ResultProcessor::deDuplicateObjects($result);
 		}
 		
 		/**

@@ -7,6 +7,7 @@
 	
 	/**
 	 * Collects AST nodes matching specified types during tree traversal
+	 * @template T of AstInterface
 	 */
 	class NodeCollector implements AstVisitorInterface {
 		
@@ -15,7 +16,7 @@
 		
 		/**
 		 * NodeCollector constructor
-		 * @param string|array $types Node class name(s) to collect
+		 * @param class-string<T>[] $types Node class name(s) to collect
 		 */
 		public function __construct(string|array $types) {
 			$this->targetTypes = is_array($types) ? $types : [$types];
@@ -36,7 +37,7 @@
 		
 		/**
 		 * Returns all collected nodes
-		 * @return AstInterface[]
+		 * @return T[]
 		 */
 		public function getCollectedNodes(): array {
 			return $this->nodes;

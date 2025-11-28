@@ -11,7 +11,7 @@
 		
 		/**
 		 * Collection of execution stages that make up this plan
-		 * @var ExecutionStage[]
+		 * @var ExecutionStageInterface[]
 		 */
 		private array $stages;
 		
