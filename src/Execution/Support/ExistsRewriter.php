@@ -226,7 +226,7 @@
 			// and NULLs are included, this is always true (assuming the outer row exists)
 			if ($includeNulls) {
 				// Return literal TRUE condition (1=1)
-				return new AstExpression(new AstNumber(1), new AstNumber(1), '=');
+				return new AstExpression(new AstNumber("1"), new AstNumber("1"), '=');
 			}
 			
 			// Standard case: transform EXISTS to conjunction of NOT NULL checks

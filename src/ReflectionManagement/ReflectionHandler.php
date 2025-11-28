@@ -569,7 +569,7 @@
 			// Handle union types (e.g., string|int|null)
 			if ($type instanceof \ReflectionUnionType) {
 				return implode("|", array_map(
-					fn(\ReflectionNamedType $t) => $t->getName(),
+					fn(\ReflectionType $t) => $this->reflectionTypeToString($t),
 					$type->getTypes()
 				));
 			}
@@ -577,7 +577,7 @@
 			// Handle intersection types (e.g., Countable&Traversable)
 			if ($type instanceof \ReflectionIntersectionType) {
 				return implode("&", array_map(
-					fn(\ReflectionNamedType $t) => $t->getName(),
+					fn(\ReflectionType $t) => $this->reflectionTypeToString($t),
 					$type->getTypes()
 				));
 			}
