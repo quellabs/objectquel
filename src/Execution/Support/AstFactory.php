@@ -37,6 +37,6 @@
 		 * @return AstInterface An AST node representing the number literal
 		 */
 		public static function createNumber(int $value): AstInterface {
-			return new AstNumber($value);
+			return new AstNumber((string)$value);
 		}
 	}

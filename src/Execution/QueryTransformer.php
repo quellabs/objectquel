@@ -272,7 +272,7 @@
 		 * @return void
 		 */
 		private function addImpossibleCondition(AstRetrieve $ast): void {
-			$condition = new AstBinaryOperator(new AstNumber(1), new AstNumber(0), "=");
+			$condition = new AstBinaryOperator(new AstNumber("1"), new AstNumber("0"), "=");
 			
 			if ($ast->getConditions() === null) {
 				$ast->setConditions($condition);
