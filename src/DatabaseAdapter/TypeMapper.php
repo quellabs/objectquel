@@ -263,9 +263,10 @@
 			// BackedEnum extends UnitEnum and adds the value property
 			if (is_subclass_of($enumType, \BackedEnum::class)) {
 				// For backed enums, extract the scalar values
-				// Cast to array<BackedEnum> so PHPStan understands the type
-				/** @var array<\BackedEnum> $cases */
-				return array_map(fn(\BackedEnum $case) => $case->value, $cases);
+				return array_map(
+					fn(\UnitEnum $case): int|string => $case instanceof \BackedEnum ? $case->value : $case->name,
+					$cases
+				);
 			}
 			
 			// For unit enums, extract the case names instead
