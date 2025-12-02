@@ -227,16 +227,19 @@
 				$left = BinaryOperationHelper::getBinaryLeft($joinProperty);
 				$right = BinaryOperationHelper::getBinaryRight($joinProperty);
 				
+				// Type assertion: we've already verified these are identifiers in shouldSetRangeRequired()
+				// PHPStan can't track this across method boundaries, so we assert here
+				assert($left instanceof AstIdentifier);
+				assert($right instanceof AstIdentifier);
+				
 				// Normalize join direction: ensure range entity is on the left side
 				// This simplifies the annotation checking logic below
-				// @phpstan-ignore-next-line method.notFound
 				if ($right->getEntityName() === $range->getEntityName()) {
 					[$left, $right] = [$right, $left];
 				}
 				
 				// Verify this range is actually part of the join condition
 				// Safety check to ensure we're analyzing the correct relationship
-				// @phpstan-ignore-next-line method.notFound
 				if ($left->getEntityName() === $range->getEntityName()) {
 					$this->checkAndSetRangeRequired($mainRange, $range, $left, $right);
 				}
