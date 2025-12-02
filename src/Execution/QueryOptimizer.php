@@ -18,7 +18,7 @@
 		private Optimizers\JoinOptimizer $joinOptimizer;                     // Handles JOIN operations and elimination
 		private Optimizers\AggregateOptimizer $aggregateOptimizer;           // Optimizes aggregate functions (COUNT, SUM, etc.)
 		private Optimizers\ExistsOptimizer $existsOptimizer;                 // Converts EXISTS subqueries to more efficient forms
-		private Optimizers\ImplicitJoinFieldOptimizer $valueReferenceOptimizer; // Optimizes value references and constants
+		private Optimizers\JoinConditionFieldInjector $JoinConditionFieldInjector; // Optimizes value references and constants
 		
 		/**
 		 * Initialize all optimizer components with shared EntityManager dependency.
@@ -33,7 +33,7 @@
 			
 			// Initialize stateless optimizers that work on AST structure alone
 			$this->existsOptimizer = new Optimizers\ExistsOptimizer();
-			$this->valueReferenceOptimizer = new Optimizers\ImplicitJoinFieldOptimizer();
+			$this->JoinConditionFieldInjector = new Optimizers\JoinConditionFieldInjector();
 		}
 		
 		/**
@@ -69,7 +69,7 @@
 			// Optimize constant values and references last when structure is stable
 			$this->joinOptimizer->optimize($ast);
 			$this->rangeOptimizer->removeUnusedLeftJoinRanges($ast, false);
-			$this->valueReferenceOptimizer->optimize($ast);
+			$this->JoinConditionFieldInjector->optimize($ast);
 			
 			// Normalize structure first
 			$this->rangeOptimizer->normalizeTemporaryRangeStructure($ast);
