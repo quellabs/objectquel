@@ -269,6 +269,46 @@ This pattern is especially important for identity (auto-increment) primary keys,
 have an ID until after they're persisted to the database. ObjectQuel's entity manager uses this nullability
 to determine whether an entity is new and requires an INSERT rather than an UPDATE operation.
 
+#### Immutable Entities
+
+Immutable entities represent read-only data that should never be modified through the ORM. This is particularly
+useful for database views, read-only tables, or reference data that should only be queried but never persisted.
+
+```php
+/**
+ * @Orm\Table(name="v_customer_summary")
+ * @Orm\Immutable
+ */
+class CustomerSummary {
+    /**
+     * @Orm\Column(name="customer_id", type="integer", primary_key=true)
+     */
+    private ?int $customerId = null;
+    
+    /**
+     * @Orm\Column(name="total_orders", type="integer")
+     */
+    private int $totalOrders;
+    
+    /**
+     * @Orm\Column(name="total_revenue", type="decimal")
+     */
+    private float $totalRevenue;
+}
+```
+
+The `@Orm\Immutable` annotation prevents any modification operations on the entity:
+- **INSERT operations** will throw an `OrmException` during flush
+- **UPDATE operations** will throw an `OrmException` during flush
+- **DELETE operations** will throw an `OrmException` during flush
+
+Immutable entities can still be queried normally using `find()`, `findBy()`, and `executeQuery()`. They are
+ideal for:
+- Database views that aggregate or join data from multiple tables
+- Read-only reference tables
+- Audit logs or historical data that should never be modified
+- Reports or dashboards that consume pre-calculated data
+ 
 ## The ObjectQuel Language
 
 ObjectQuel draws inspiration from QUEL, a pioneering database query language developed in the 1970s for the Ingres DBMS
