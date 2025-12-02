@@ -7,13 +7,7 @@
 	use Quellabs\ObjectQuel\Execution\Support\AggregateRewriter;
 	use Quellabs\ObjectQuel\Execution\Support\AstUtilities;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstAggregate;
-	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstAvg;
-	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstCount;
-	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstMax;
-	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstMin;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRetrieve;
-	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstSum;
-	use Quellabs\ObjectQuel\ObjectQuel\AstInterface;
 	use Quellabs\ObjectQuel\Execution\Support\ExistsRewriter;
 	use Quellabs\ObjectQuel\Execution\Support\RangeRemover;
 	use Quellabs\ObjectQuel\Execution\Support\RangeUtilities;
@@ -210,10 +204,10 @@
 		 * - Mixed table references in select items would produce inconsistent row counts
 		 *
 		 * @param AstRetrieve $root Query root containing the complete SELECT statement
-		 * @param AstInterface $aggregate Specific aggregate function being analyzed for rewriting
+		 * @param AstAggregate $aggregate Specific aggregate function being analyzed for rewriting
 		 * @return bool True if the aggregate can be safely rewritten as a window function
 		 */
-		private function canRewriteAsWindowFunction(AstRetrieve $root, AstInterface $aggregate): bool {
+		private function canRewriteAsWindowFunction(AstRetrieve $root, AstAggregate $aggregate): bool {
 			// VALIDATION 1: Basic Window Function Compatibility
 			// ================================================
 			// Check if this aggregate function type (SUM, COUNT, etc.) can be expressed
