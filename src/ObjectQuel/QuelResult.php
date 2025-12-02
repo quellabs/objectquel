@@ -160,9 +160,9 @@
 		 * Merge another QuelResult or array of rows into this one
 		 * Useful for combining multiple result sets
 		 * @param array|QuelResult $otherResult The result to merge
-		 * @return $this Returns a new QuelResult with merged data
+		 * @return static Returns a new QuelResult with merged data
 		 */
-		public function merge(array|QuelResult $otherResult): self {
+		public function merge(array|QuelResult $otherResult): static {
 			$cloned = clone $this;
 			$cloned->index = 0;
 			

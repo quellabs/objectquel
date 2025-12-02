@@ -2,6 +2,7 @@
 	
 	namespace Quellabs\ObjectQuel\Execution\Support;
 	
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstAggregate;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstSubquery;
 	use Quellabs\ObjectQuel\ObjectQuel\AstInterface;
 	
@@ -20,12 +21,12 @@
 		 * Window functions perform calculations across a set of table rows that are
 		 * somehow related to the current row, without requiring a GROUP BY clause.
 		 *
-		 * @param AstInterface $expression The window function expression (e.g., ROW_NUMBER(), SUM() OVER())
+		 * @param AstAggregate $expression The window function expression (e.g., ROW_NUMBER(), SUM() OVER())
 		 * @param string|null $origin Optional origin identifier for debugging/tracing
 		 * @return AstSubquery             Window function subquery with empty ranges and no WHERE conditions
 		 */
 		public static function createWindowFunction(
-			AstInterface $expression,
+			AstAggregate $expression,
 			?string      $origin = null
 		): AstSubquery {
 			return new AstSubquery(
@@ -44,14 +45,14 @@
 		 * from the outer query. The correlation is established through the ranges
 		 * and WHERE conditions that reference outer query columns.
 		 *
-		 * @param AstInterface $expression The scalar expression to evaluate (often an aggregate)
+		 * @param AstAggregate $expression The scalar expression to evaluate (often an aggregate)
 		 * @param array $ranges Array of table/range references that establish correlation
 		 * @param AstInterface|null $whereConditions Optional WHERE clause conditions for filtering
 		 * @param string|null $origin Optional origin identifier for debugging/tracing
 		 * @return AstSubquery                       Correlated scalar subquery that returns a single value
 		 */
 		public static function createCorrelatedScalar(
-			AstInterface  $expression,
+			AstAggregate  $expression,
 			array         $ranges,
 			?AstInterface $whereConditions,
 			?string       $origin = null
@@ -72,14 +73,14 @@
 		 * They're commonly used for filtering based on the existence of related data
 		 * and are often more efficient than IN clauses for large datasets.
 		 *
-		 * @param AstInterface $expression The expression to check for existence (often just a column or constant)
+		 * @param AstAggregate $expression The expression to check for existence (often just a column or constant)
 		 * @param array $ranges Array of table/range references for the subquery FROM clause
 		 * @param AstInterface|null $whereConditions WHERE clause conditions that typically correlate with outer query
 		 * @param string|null $origin Optional origin identifier for debugging/tracing
 		 * @return AstSubquery                       EXISTS subquery that returns boolean existence result
 		 */
 		public static function createExists(
-			AstInterface  $expression,
+			AstAggregate  $expression,
 			array         $ranges,
 			?AstInterface $whereConditions,
 			?string       $origin = null
