@@ -21,7 +21,7 @@
 	 *   Needs: users.department_id (for JOIN) but user only asked for users.name
 	 *   Result: Adds users.department_id as hidden field, filters it from output
 	 */
-	class ImplicitJoinFieldOptimizer {
+	class JoinConditionFieldInjector {
 		
 		/**
 		 * Adds hidden projections for identifier fields referenced in WHERE conditions
