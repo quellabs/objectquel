@@ -87,11 +87,11 @@
 		/**
 		 * Token constructor.
 		 * @param int $type
-		 * @param null $value
+		 * @param mixed $value
 		 * @param int $lineNumber
 		 * @param array $extraData
 		 */
-		public function __construct(int $type, $value = null, int $lineNumber = 0, array $extraData = []) {
+		public function __construct(int $type, mixed $value = null, int $lineNumber = 0, array $extraData = []) {
 			$this->type = $type;
 			$this->value = $value;
 			$this->lineNumber = $lineNumber;
