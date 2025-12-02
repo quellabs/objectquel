@@ -104,7 +104,7 @@
 		
 		/**
 		 * @param AstRetrieve $root Query to visit
-		 * @return AstInterface[] Aggregate nodes found in the tree
+		 * @return AstAggregate[] Aggregate nodes found in the tree
 		 */
 		public static function collectAggregateNodes(AstRetrieve $root): array {
 			$visitor = new AggregateCollector(false);
