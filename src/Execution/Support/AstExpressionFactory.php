@@ -3,6 +3,7 @@
 	namespace Quellabs\ObjectQuel\Execution\Support;
 	
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstAggregate;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstNumber;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstSubquery;
 	use Quellabs\ObjectQuel\ObjectQuel\AstInterface;
 	
@@ -73,17 +74,17 @@
 		 * They're commonly used for filtering based on the existence of related data
 		 * and are often more efficient than IN clauses for large datasets.
 		 *
-		 * @param AstAggregate $expression The expression to check for existence (often just a column or constant)
+		 * @param AstAggregate|AstNumber $expression The expression to check for existence (often just a column or constant)
 		 * @param array $ranges Array of table/range references for the subquery FROM clause
 		 * @param AstInterface|null $whereConditions WHERE clause conditions that typically correlate with outer query
 		 * @param string|null $origin Optional origin identifier for debugging/tracing
 		 * @return AstSubquery                       EXISTS subquery that returns boolean existence result
 		 */
 		public static function createExists(
-			AstAggregate  $expression,
-			array         $ranges,
-			?AstInterface $whereConditions,
-			?string       $origin = null
+			AstAggregate|AstNumber $expression,
+			array                  $ranges,
+			?AstInterface          $whereConditions,
+			?string                $origin = null
 		): AstSubquery {
 			return new AstSubquery(
 				AstSubquery::TYPE_EXISTS,
