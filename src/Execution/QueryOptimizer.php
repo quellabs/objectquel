@@ -72,7 +72,8 @@
 			$this->JoinConditionFieldInjector->optimize($ast);
 			
 			// Normalize structure first
-			$this->rangeOptimizer->normalizeTemporaryRangeStructure($ast);
+			$this->rangeOptimizer->promoteEntityRangeToMainFrom($ast);
+			$this->rangeOptimizer->promoteWhereToEntityRange($ast);
 		}
 		
 		/**

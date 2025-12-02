@@ -9,9 +9,11 @@
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstBinaryOperator;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstCount;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstCountU;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstExpression;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstIdentifier;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstMax;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstMin;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRangeDatabase;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRetrieve;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstSum;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstSumU;
@@ -158,5 +160,27 @@
 			}
 			
 			return $result;
+		}
+		
+		/**
+		 * Checks if a condition expression references only the specified range.
+		 * @param AstExpression $condition The condition to check (e.g., "temp.id = 5")
+		 * @param AstRangeDatabase $range The range to test against
+		 * @return bool True if left OR right side of condition references the range
+		 */
+		public static function conditionReferencesRange(AstExpression $condition, AstRangeDatabase $range): bool {
+			$rangeName = $range->getName();
+			
+			// Check if left side is an identifier from this range
+			$leftMatches =
+				$condition->getLeft() instanceof AstIdentifier &&
+				$condition->getLeft()->getRange()->getName() === $rangeName;
+			
+			// Check if right side is an identifier from this range
+			$rightMatches =
+				$condition->getRight() instanceof AstIdentifier &&
+				$condition->getRight()->getRange()->getName() === $rangeName;
+			
+			return $leftMatches || $rightMatches;
 		}
 	}
