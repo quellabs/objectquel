@@ -204,10 +204,10 @@
 		
 		/**
 		 * Returns true if the given key exists in the collection, false if not
-		 * @param string $key
+		 * @param string|int $key
 		 * @return bool
 		 */
-		public function containsKey(string $key): bool {
+		public function containsKey(string|int $key): bool {
 			return isset($this->collection[$key]);
 		}
 		
