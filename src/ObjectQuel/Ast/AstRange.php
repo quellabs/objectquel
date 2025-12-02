@@ -45,6 +45,14 @@
 		}
 		
 		/**
+		 * Get the entity name associated with this range
+		 * @return string|null The entity name
+		 */
+		public function getEntityName(): ?string {
+			return null;
+		}
+		
+		/**
 		 * Get the join property expression.
 		 * @return AstInterface|null The join condition expression, or null if no specific join property
 		 */
