@@ -10,9 +10,9 @@
 		/**
 		 * Deep-clone an aggregate and drop embedded conditions.
 		 * @param AstAggregate $aggregate Aggregate to clone
-		 * @return AstInterface Clean clone without conditions
+		 * @return AstAggregate Clean clone without conditions
 		 */
-		public static function cloneWithoutConditions(AstAggregate $aggregate): AstInterface {
+		public static function cloneWithoutConditions(AstAggregate $aggregate): AstAggregate {
 			$clone = $aggregate->deepClone();
 			$clone->setConditions(null);
 			return $clone;
