@@ -303,6 +303,12 @@
 						// Perform the corresponding database operation based on the state of the entity.
 						switch ($this->getEntityState($entity)) {
 							case DirtyState::New:
+								if ($this->getEntityStore()->isImmutable($entity)) {
+									throw new OrmException(
+										"Cannot insert immutable entity " . get_class($entity)
+									);
+								}
+
 								$changed[] = $entity; // Add entity to the changed list
 								
 								$this->getSignalHub()->getSignal('orm.prePersist')->emit($entity);
@@ -311,6 +317,12 @@
 								break;
 							
 							case DirtyState::Dirty:
+								if ($this->getEntityStore()->isImmutable($entity)) {
+									throw new OrmException(
+										"Cannot update immutable entity " . get_class($entity)
+									);
+								}
+								
 								$changed[] = $entity; // Add entity to the changed list
 								
 								$this->getSignalHub()->getSignal('orm.preUpdate')->emit($entity);
@@ -319,6 +331,12 @@
 								break;
 							
 							case DirtyState::Deleted:
+								if ($this->getEntityStore()->isImmutable($entity)) {
+									throw new OrmException(
+										"Cannot delete immutable entity " . get_class($entity)
+									);
+								}
+
 								$deleted[] = $entity; // Add entity to the deleted list
 								
 								$this->getSignalHub()->getSignal('orm.preDelete')->emit($entity);
