@@ -236,12 +236,19 @@
 		): array {
 			$strategy = $anchor->getStrategy();
 			
+			// Ensure all ranges are AstRangeDatabase instances
+			// This is required because we need setJoinProperty() which only exists on AstRangeDatabase
+			assert(array_reduce($ranges, fn($carry, $range) => $carry && $range instanceof AstRangeDatabase, true),
+				'All ranges must be AstRangeDatabase instances for anchor optimization');
+			
 			// Check if strategy involves JOIN condition movement/optimization
 			if (str_contains($strategy, 'optimization') || str_contains($strategy, 'optimize')) {
 				// Complex optimization: restructure query with condition movement
+				/** @var AstRangeDatabase[] $ranges */
 				return self::convertToAnchorWithOptimization($ranges, $anchor, $whereClause);
 			} else {
 				// Simple optimization: preserve structure, designate anchor only
+				/** @var AstRangeDatabase[] $ranges */
 				return self::promoteToAnchorWithoutChanges($ranges, $anchor);
 			}
 		}
