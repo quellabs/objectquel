@@ -644,7 +644,7 @@
 		 */
 		protected function doesConditionInvolveRangeCached(AstInterface $condition, AstRange $range): bool {
 			// Generate a cache key based on object identities
-			$cacheKey = 'involve_' . spl_object_id($condition) . '_' . spl_object_id($range);
+			$cacheKey = 'involve_' . spl_object_hash($condition) . '_' . spl_object_hash($range);
 			
 			// Return cached result if available
 			if (isset($this->cache[$cacheKey])) {

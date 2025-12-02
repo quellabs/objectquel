@@ -106,7 +106,7 @@
 		 */
 		public function visitNode(AstInterface $node): void {
 			// Generate unique identifier for this node instance
-			$objectHash = spl_object_id($node);
+			$objectHash = spl_object_hash($node);
 			
 			// Skip if already visited to prevent infinite recursion
 			if (isset($this->visitedNodes[$objectHash])) {
@@ -477,7 +477,7 @@
 		 * @param AstAny $ast The ANY function node to process
 		 */
 		protected function handleAny(AstAny $ast): void {
-			$objectHash = spl_object_id($ast);
+			$objectHash = spl_object_hash($ast);
 			$isVisited = isset($this->visitedNodes[$objectHash]);
 			
 			if ($isVisited) {
@@ -507,7 +507,7 @@
 			}
 			
 			// Mark this node as visited using its unique object ID
-			$this->visitedNodes[spl_object_id($ast)] = true;
+			$this->visitedNodes[spl_object_hash($ast)] = true;
 			
 			// For chained identifiers (e.g., table.column.subfield), mark the entire chain
 			if ($ast instanceof AstIdentifier && $ast->hasNext()) {

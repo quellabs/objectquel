@@ -144,7 +144,7 @@
 		 * @return array|null
 		 */
 		public function getOriginalEntityData(mixed $entity): ?array {
-			return $this->original_entity_data[spl_object_id($entity)] ?? null;
+			return $this->original_entity_data[spl_object_hash($entity)] ?? null;
 		}
 		
 		/**
@@ -178,7 +178,7 @@
 			
 			// Generate a unique object identifier using PHP's built-in function
 			// This hash serves as a consistent reference to this specific object instance
-			$hash = spl_object_id($entity);
+			$hash = spl_object_hash($entity);
 			
 			// Get the primary key values for this entity
 			// These are used to uniquely identify the entity in the database
@@ -228,7 +228,7 @@
 			
 			// Generate a unique object identifier for this entity instance
 			// This provides a consistent way to reference this specific object in memory
-			$hash = spl_object_id($entity);
+			$hash = spl_object_hash($entity);
 			
 			// Extract primary key values from the entity
 			// For new entities, these might be null or empty until after database insertion
@@ -368,7 +368,7 @@
 		public function detach(object $entity): void {
 			// Generate a unique identifier for the entity instance using PHP's built-in function
 			// This hash is used as a key in various tracking collections
-			$hash = spl_object_id($entity);
+			$hash = spl_object_hash($entity);
 			
 			// Get the normalized class name of the entity for consistent identity map access
 			// This handles potential differences in namespace notation
@@ -403,7 +403,7 @@
 		 * @return void
 		 */
 		public function scheduleForDelete(object $entity): void {
-			$entityId = spl_object_id($entity);
+			$entityId = spl_object_hash($entity);
 			
 			// Skip if already scheduled for deletion to prevent duplicate processing
 			if ($this->isEntityScheduledForDeletion($entityId)) {
@@ -429,7 +429,7 @@
 			}
 			
 			// Class and hash of the entity object for identification.
-			$entityHash = spl_object_id($entity);
+			$entityHash = spl_object_hash($entity);
 			
 			// Checks if the entity appears in the deleted list, if so, then the state is Deleted
 			if ($this->isEntityScheduledForDeletion($entityHash)) {
@@ -507,10 +507,10 @@
 		
 		/**
 		 * Checks if an entity is already scheduled for deletion
-		 * @param int $entityId The entity's object ID
+		 * @param string $entityId The entity's object ID
 		 * @return bool
 		 */
-		private function isEntityScheduledForDeletion(int $entityId): bool {
+		private function isEntityScheduledForDeletion(string $entityId): bool {
 			return isset($this->entity_removal_list[$entityId]);
 		}
 		
@@ -633,7 +633,7 @@
 					}
 					
 					// Get a unique identifier for the parent entity
-					$parentId = spl_object_id($parentEntity);
+					$parentId = spl_object_hash($parentEntity);
 					
 					// Register the dependency in our graph:
 					// 1. Add current entity as a dependent (child) of the parent
@@ -704,7 +704,7 @@
 			}
 			
 			// Check if the object itself exists in the identity map using its unique ID.
-			return isset($this->identity_map[$normalizedEntityName][spl_object_id($entity)]);
+			return isset($this->identity_map[$normalizedEntityName][spl_object_hash($entity)]);
 		}
 		
 		/**
@@ -716,7 +716,7 @@
 		private function updateIdentityMapAndResetChangeTracking(array $changed, array $deleted): void {
 			foreach ($changed as $entity) {
 				// Get the unique object identifier
-				$hash = spl_object_id($entity);
+				$hash = spl_object_hash($entity);
 				
 				// Get the normalized class name of the entity
 				$class = $this->getEntityStore()->normalizeEntityName(get_class($entity));
@@ -1020,7 +1020,7 @@
 			// We need to examine every managed entity to check for cascade relationships
 			foreach ($entitiesToProcess as $entity) {
 				// Fetch the object id of this entity
-				$entityId = spl_object_id($entity);
+				$entityId = spl_object_hash($entity);
 				
 				// Skip if the entity is scheduled for deletion
 				// No need to process cascade persists for entities that will be removed anyway

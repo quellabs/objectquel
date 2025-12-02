@@ -52,7 +52,7 @@
 			}
 			
 			// Generate a unique hash for the object to prevent duplicate processing
-			$objectHash = spl_object_id($node);
+			$objectHash = spl_object_hash($node);
 			
 			// Skip already visited nodes to prevent infinite loops in cyclic ASTs
 			if (isset($this->visitedNodes[$objectHash])) {

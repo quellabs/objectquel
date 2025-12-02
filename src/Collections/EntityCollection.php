@@ -103,7 +103,7 @@
 		public function contains($entity): bool {
 			// For performance, we can check if the entity exists without initializing
 			// the entire collection in some cases
-			$objectId = spl_object_id($entity);
+			$objectId = spl_object_hash($entity);
 			
 			// If already initialized or the entity is in the collection, return the result
 			if ($this->initialized) {
@@ -190,7 +190,7 @@
 			$this->doInitialize();
 			
 			if (is_null($offset)) {
-				$this->collection->offsetSet(spl_object_id($value), $value);
+				$this->collection->offsetSet(spl_object_hash($value), $value);
 			} else {
 				$this->collection->offsetSet($offset, $value);
 			}
@@ -276,7 +276,7 @@
 			$this->doInitialize();
 			
 			if (!$this->contains($entity)) {
-				$this->collection->offsetSet(spl_object_id($entity), $entity);
+				$this->collection->offsetSet(spl_object_hash($entity), $entity);
 			}
 		}
 		
@@ -288,7 +288,7 @@
 		 */
 		public function remove($entity): bool {
 			$this->doInitialize();
-			$objectId = spl_object_id($entity);
+			$objectId = spl_object_hash($entity);
 			
 			if ($this->collection->offsetExists($objectId)) {
 				$this->collection->offsetUnset($objectId);

@@ -60,7 +60,7 @@
 		
 		/**
 		 * Returns all collected aggregate function nodes
-		 * @return array<AstInterface> Array of AST nodes representing aggregate functions
+		 * @return AstAggregate[] Array of AST nodes representing aggregate functions
 		 */
 		public function getCollectedNodes(): array {
 			return $this->collectedNodes;
