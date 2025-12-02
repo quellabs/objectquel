@@ -42,6 +42,11 @@
 			if (!$node instanceof AstIdentifier) {
 				return;
 			}
+
+			// Only handle base identifiers
+			if (!$node->isBaseIdentifier()) {
+				return;
+			}
 			
 			// Get the identifier's name for range lookup
 			$name = $node->getName();
