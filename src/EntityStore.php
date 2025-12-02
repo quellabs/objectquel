@@ -24,6 +24,7 @@
     use Quellabs\AnnotationReader\Collection\AnnotationCollection;
     use Quellabs\AnnotationReader\Exception\ParserException;
     use Quellabs\ObjectQuel\Annotations\Orm\Column;
+    use Quellabs\ObjectQuel\Annotations\Orm\Immutable;
     use Quellabs\ObjectQuel\Annotations\Orm\Index;
     use Quellabs\ObjectQuel\Annotations\Orm\ManyToOne;
     use Quellabs\ObjectQuel\Annotations\Orm\OneToMany;
@@ -395,6 +396,16 @@
 		    // No specific type requested, return all annotations for this entity
 		    return $annotationList;
 	    }
+	    
+	    /**
+	     * Return true if the entity is immutable (readonly), false if not
+	     * @param mixed $entity
+	     * @return bool
+	     */
+		public function isImmutable(mixed $entity): bool {
+			$annotationList = $this->getAnnotations($entity, Immutable::class);
+			return !empty($annotationList);
+		}
 	    
 	    /**
 	     * Retrieves all OneToOne dependencies for a specific entity.
