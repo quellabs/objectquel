@@ -11,12 +11,15 @@
 	 */
 	class NodeCollector implements AstVisitorInterface {
 		
+		/** @var class-string<T>[] */
 		private array $targetTypes;
+		
+		/** @var T[] */
 		private array $nodes = [];
 		
 		/**
 		 * NodeCollector constructor
-		 * @param class-string<T>[] $types Node class name(s) to collect
+		 * @param class-string<T>|class-string<T>[] $types Node class name(s) to collect
 		 */
 		public function __construct(string|array $types) {
 			$this->targetTypes = is_array($types) ? $types : [$types];
@@ -29,6 +32,7 @@
 		public function visitNode(AstInterface $node): void {
 			foreach ($this->targetTypes as $type) {
 				if (is_a($node, $type)) {
+					/** @var T $node */
 					$this->nodes[] = $node;
 					return;
 				}
