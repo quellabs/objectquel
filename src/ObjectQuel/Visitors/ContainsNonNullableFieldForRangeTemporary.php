@@ -54,6 +54,12 @@
 				return;
 			}
 			
+			// Only handle base identifiers
+			if (!($node->isBaseIdentifier())) {
+				return;
+			}
+			
+			// Check the range name
 			if ($node->getRange()->getName() !== $this->rangeName) {
 				return;
 			}
