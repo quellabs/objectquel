@@ -42,12 +42,10 @@
 		 *   [a]       → a
 		 *   [a,b,c]   → ((a AND b) AND c)
 		 *
-		 * @param AstInterface[] $parts Predicates to AND together (nulls are ignored).
+		 * @param AstInterface[] $parts Predicates to AND together (must not be null).
 		 * @return AstInterface|null Combined predicate or null if no parts
 		 */
 		public static function combinePredicatesWithAnd(array $parts): ?AstInterface {
-			// Drop nulls/empties early to keep the tree lean.
-			$parts = array_values(array_filter($parts));
 			$n = count($parts);
 			
 			if ($n === 0) {
