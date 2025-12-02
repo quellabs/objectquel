@@ -7,6 +7,7 @@
 	use Quellabs\ObjectQuel\Annotations\Orm\RequiredRelation;
 	use Quellabs\ObjectQuel\EntityManager;
 	use Quellabs\ObjectQuel\EntityStore;
+	use Quellabs\ObjectQuel\Execution\Support\AstUtilities;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstExpression;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstIdentifier;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRange;
@@ -95,7 +96,7 @@
 		 *
 		 * @param AstRetrieve $ast The query AST to normalize
 		 */
-		public function normalizeTemporaryRangeStructure(AstRetrieve $ast): void {
+		public function promoteEntityRangeToMainFrom(AstRetrieve $ast): void {
 			$ranges = $ast->getRanges();
 			
 			// Only handle the simple case: exactly two ranges
@@ -120,6 +121,48 @@
 				// The temporary range inherits the previous required status
 				$ranges[0]->setRequired($ranges[1]->isRequired());
 				$ranges[1]->setRequired();
+			}
+		}
+		
+		/**
+		 * Promotes WHERE conditions to range join properties when applicable.
+		 * @param AstRetrieve $ast The retrieve statement to optimize
+		 * @return void
+		 */
+		public function promoteWhereToEntityRange(AstRetrieve $ast): void {
+			$conditions = $ast->getConditions();
+			$ranges = $ast->getRanges();
+			
+			// Early exits for invalid states
+			if (!$conditions instanceof AstExpression || count($ranges) !== 2) {
+				return;
+			}
+			
+			// Identify temp and main ranges
+			$tempRange = null;
+			$mainRange = null;
+			
+			foreach ($ranges as $range) {
+				if (!$range instanceof AstRangeDatabase) {
+					return;
+				}
+				
+				if ($range->containsQuery()) {
+					$tempRange = $range;
+				} elseif ($range->getJoinProperty() === null) {
+					$mainRange = $range;
+				}
+			}
+			
+			// Need exactly one temp range and one main range without join property
+			if ($tempRange === null || $mainRange === null) {
+				return;
+			}
+			
+			// Move condition to temp range if it references only temp range
+			if (AstUtilities::conditionReferencesRange($conditions, $tempRange)) {
+				$tempRange->setJoinProperty($conditions);
+				$ast->setConditions(null);
 			}
 		}
 		
