@@ -7,7 +7,6 @@
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRetrieve;
 	use Quellabs\ObjectQuel\ObjectQuel\Visitors\EntityNameNormalizer;
 	use Quellabs\ObjectQuel\ObjectQuel\Visitors\RangeDatabaseEntityNormalizer;
-	use Quellabs\ObjectQuel\ObjectQuel\Visitors\ImplicitRangeResolver;
 	use Quellabs\ObjectQuel\ObjectQuel\Visitors\MacroSubstitutor;
 	use Quellabs\ObjectQuel\ObjectQuel\Visitors\MacroExpander;
 	use Quellabs\ObjectQuel\ObjectQuel\Visitors\EntityProcessRange;
@@ -62,15 +61,11 @@
 			// Replaces macro placeholder nodes with the full macro body/logic
 			$this->processWithVisitor($ast, MacroExpander::class, $ast->getMacros());
 			
-			// Step 5: Automatically add missing table ranges for referenced entities
-			// Analyzes field references and adds necessary JOIN clauses for tables not explicitly included
-			$this->resolveImplicitEntityReferences($ast);
-			
-			// Step 6: Add proper namespaces to all entity references
+			// Step 5: Add proper namespaces to all entity references
 			// Resolves entity names to their fully qualified forms using the entity store
 			$this->processWithVisitor($ast, EntityNameNormalizer::class, $this->entityStore, $ast->getRanges(), $ast->getMacros());
 			
-			// Step 7: Transform complex 'via' relationships into direct property lookups
+			// Step 6: Transform complex 'via' relationships into direct property lookups
 			// Converts indirect relationships through intermediate entities into direct SQL joins
 			$this->transformViaRelations($ast);
 		}
@@ -114,36 +109,6 @@
 			
 			// Return the visitor instance in case caller needs access to results or state
 			return $visitor;
-		}
-		
-		/**
-		 * Adds missing ranges when users directly reference entity classes without explicit range aliases.
-		 *
-		 * This method handles the transformation from direct entity class usage to proper range-based queries.
-		 * When users write queries like `retrieve(PostEntity)`, this method automatically creates the
-		 * necessary range with a generated alias, transforming it to `range(p001 is PostEntity) retrieve(p001)`.
-		 *
-		 * Process:
-		 * 1. Scan the AST for direct entity class references (e.g., PostEntity, UserEntity)
-		 * 2. For each direct entity reference found, generate a unique range alias (e.g., p001, u002)
-		 * 3. Create a new range definition that maps the alias to the entity class
-		 * 4. Replace the direct entity reference with the generated range alias
-		 *
-		 * Example transformation:
-		 * Before: `retrieve(PostEntity)`
-		 * After:  `range of p001 is PostEntity; retrieve(p001)`
-		 *
-		 * @param AstRetrieve $ast The query AST to analyze and modify
-		 * @return void Modifies the AST by adding missing ranges and updating entity references
-		 */
-		private function resolveImplicitEntityReferences(AstRetrieve $ast): void {
-			// Use a specialized visitor to traverse the AST and identify direct entity references
-			$processor = $this->processWithVisitor($ast, ImplicitRangeResolver::class, $this->entityStore);
-			
-			// Add all generated ranges to the query
-			foreach ($processor->getRanges() as $range) {
-				$ast->addRange($range);
-			}
 		}
 		
 		/**
