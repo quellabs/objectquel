@@ -59,6 +59,12 @@
 		private array $strategy_column_cache;
 		
 		/**
+		 * Handles values with @Orm\Version annotations
+		 * @var VersionValueHandler
+		 */
+		private VersionValueHandler $valueHandler;
+		
+		/**
 		 * InsertPersister constructor
 		 * @param UnitOfWork $unitOfWork The UnitOfWork that will coordinate insertion operations
 		 * @param PrimaryKeyFactory|null $factory Factory for creating primary keys
@@ -69,6 +75,7 @@
 			$this->entity_store = $unitOfWork->getEntityStore();
 			$this->property_handler = $unitOfWork->getPropertyHandler();
 			$this->connection = $unitOfWork->getConnection();
+			$this->valueHandler = new VersionValueHandler($unitOfWork->getConnection(), $unitOfWork->getEntityStore(), $unitOfWork, $unitOfWork->getPropertyHandler());
 			$this->primary_key_factory = $factory ?? new PrimaryKeyFactory();
 			$this->strategy_column_cache = [];
 		}
@@ -84,8 +91,14 @@
 			$tableName = $this->entity_store->getOwningTable($entity);
 			$tableNameEscaped = str_replace('`', '``', $tableName);
 			
+			// Fetch the column map
+			$columnMap = array_flip($this->entity_store->getColumnMap($entity));
+			
 			// Get the primary key property names and their corresponding column names
 			$primaryKeys = $this->entity_store->getIdentifierKeys($entity);
+			
+			// Get the column names that make up the primary key
+			$primaryKeyColumnNames = $this->entity_store->getIdentifierColumnNames($entity);
 			
 			// Iterate through each identified primary key for the entity
 			foreach ($primaryKeys as $primaryKey) {
@@ -121,22 +134,40 @@
 			}
 			
 			// Get the primary key property names and their corresponding column names
-			$versionColumnNames = $this->entity_store->getVersionColumnNames($entity);
-			
-			// Iterate through each identified primary key for the entity
-			foreach ($versionColumnNames as $property => $versionColumn) {
-				$this->property_handler->set($entity, $property, $this->getInitialVersionValue($versionColumn["column"]->getType()));
-			}
+			$versionColumns = $this->entity_store->getVersionColumnNames($entity);
+			$versionColumnNames = array_flip(array_column($versionColumns, 'name'));
 			
 			// Serialize the entity into an array of column name => value pairs
 			$serializedEntity = $this->unit_of_work->getSerializer()->serialize($entity);
-			
+
 			// Create the SQL query for insertion
-			// Generates a comma-separated list of "column=:value" pairs for the SET clause
-			$sql = implode(",", array_map(
-				fn($key) => "`" . str_replace('`', '``', $key) . "`=:{$key}",
-				array_keys($serializedEntity)
-			));
+			$sqlParts = [];
+			
+			foreach ($serializedEntity as $key => $value) {
+				// Escape the identifier (add backticks)
+				$escapedKey = $this->valueHandler->escapeIdentifier($key);
+				
+				// Check if the column name exists
+				if (isset($versionColumnNames[$key])) {
+					// Fetch the column name from the map
+					$columnName = $columnMap[$key];
+					
+					// Fetch the value
+					$initialVersion = $this->getInitialVersionValue($versionColumns[$columnName]["column"]->getType());
+					
+					// Remove version property from bound parameters list
+					unset($serializedEntity[$key]);
+					
+					// Add initial value to SQL
+					$sqlParts[] = $escapedKey . "=" . $initialVersion;
+				} else {
+					// normal bound parameter
+					$sqlParts[] = $escapedKey . "=:" . $key;
+				}
+			}
+			
+			// Implode the parts
+			$sql = implode(",", $sqlParts);
 			
 			// Execute the insert query with the serialized entity data as parameters
 			$rs = $this->connection->Execute("INSERT INTO `{$tableNameEscaped}` SET {$sql}", $serializedEntity);
@@ -161,11 +192,30 @@
 					// Update the entity's property with the database-generated ID
 					// This ensures the entity's state is synchronized with its database representation
 					$this->property_handler->set($entity, $autoincrementColumn, (int)$autoIncrementId);
+					
+					// Also set it in $serializedEntity
+					$serializedEntity[$autoincrementColumn] = (int)$autoIncrementId;
 				}
 				
 				// If the auto-increment ID is 0, it may indicate no new ID was generated
 				// (possibly due to a transaction rollback or other database condition)
 			}
+			
+			// Extract the primary key values from the original data
+			// These will be used in the WHERE clause to identify the record to update
+			$primaryKeyValues = array_intersect_key($serializedEntity, array_flip($primaryKeyColumnNames));
+			
+			// Fetch version values from the database (if any)
+			$fetchedDatetimeValues = $this->valueHandler->fetchUpdatedVersionValues(
+				$tableName,
+				$versionColumns,
+				$primaryKeyColumnNames,
+				$primaryKeyValues,
+			);
+			
+			// Update the entity with the new version values so the in-memory object
+			// matches the database state and can be used for subsequent operations
+			$this->valueHandler->updateEntityVersionValues($entity, $fetchedDatetimeValues);
 		}
 		
 		/**
@@ -175,6 +225,7 @@
 		 * @return string             The primary key strategy value
 		 */
 		protected function getPrimaryKeyStrategy(object $entity, string $primaryKey): string {
+			// Fetch owning table
 			$table = $this->entity_store->getOwningTable($entity);
 			
 			// Fetch key from cache if present
@@ -203,7 +254,7 @@
 			return $this->strategy_column_cache[$table][$primaryKey] = "identity";
 		}
 		
-		protected function getInitialVersionValue(string $columnType): \DateTimeImmutable|int|string {
+		protected function getInitialVersionValue(string $columnType): \DateTime|int|string {
 			switch ($columnType) {
 				case 'int':
 				case 'integer':
@@ -212,11 +263,11 @@
 				
 				case 'datetime':
 				case 'timestamp':
-					return new \DateTimeImmutable('now');
+					return "NOW()";
 				
 				case 'uuid':
 				case 'guid':
-					return Tools::createGUID();
+					return "'" . Tools::createGUID() . "'";
 				
 				default:
 					throw new \RuntimeException("Invalid column type {$columnType} for Version annotation");
