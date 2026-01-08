@@ -116,7 +116,7 @@
 				);
 			}
 			
-			// Fetch datetime version values from the database (if any)
+			// Fetch version values from the database (if any)
 			$fetchedDatetimeValues = $this->fetchUpdatedVersionValues(
 				$tableName,
 				$versionColumns,
