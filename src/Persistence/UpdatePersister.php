@@ -60,8 +60,7 @@
 		public function persist(object $entity): void {
 			// Retrieve basic information needed for the update
 			// Get the table name where the entity is stored
-			$tableName = $this->entityStore->getOwningTable($entity);
-			$tableNameEscaped = str_replace('`', '``', $tableName);
+			$tableName = $this->escapeIdentifier($this->entityStore->getOwningTable($entity));
 			
 			// Serialize the entity's current state into an array of column name => value pairs
 			$serializedEntity = $this->unitOfWork->getSerializer()->serialize($entity);
@@ -86,20 +85,20 @@
 			// Build the complete UPDATE statement components
 			$params = [];
 			
-			// Build SET clause for version columns and track their new values
-			$versionResult = $this->buildVersionSetClause($versionColumns, $params);
-			
-			// Build SET clause for regular changed fields
-			$fieldsSetClause = $this->buildFieldsSetClause($changedFields, $params);
-			
-			// Combine all SET clause parts into a single string
-			$setClause = implode(", ", array_merge($versionResult, $fieldsSetClause));
+			// Build SET clause for version columns and regular changed fields
+			$setClauseParts = array_merge(
+				$this->buildVersionSetClause($versionColumns, $params),
+				$this->buildFieldsSetClause($changedFields, $params)
+			);
 			
 			// Build WHERE clause with primary keys and version checks for optimistic locking
 			$whereClause = $this->buildWhereClause($primaryKeyColumnNames, $primaryKeyValues, $versionColumns, $originalData, $params);
 			
+			// Build query
+			$query = "UPDATE {$tableName} SET " . implode(", ", $setClauseParts) . " WHERE {$whereClause}";
+			
 			// Execute the UPDATE query with the merged parameters
-			$rs = $this->connection->Execute("UPDATE `{$tableNameEscaped}` SET {$setClause} WHERE {$whereClause}", $params);
+			$rs = $this->connection->Execute($query, $params);
 			
 			// If the query fails, throw an exception with error details
 			if (!$rs) {
@@ -118,8 +117,8 @@
 			}
 			
 			// Fetch datetime version values from the database (if any)
-			$fetchedDatetimeValues = $this->fetchDatetimeVersionValues(
-				$tableNameEscaped,
+			$fetchedDatetimeValues = $this->fetchUpdatedVersionValues(
+				$tableName,
 				$versionColumns,
 				$primaryKeyColumnNames,
 				$primaryKeyValues,
@@ -127,26 +126,16 @@
 			
 			// Update the entity with the new version values so the in-memory object
 			// matches the database state and can be used for subsequent operations
-			$annotations = $this->entityStore->getAnnotations($entity, Column::class);
-
-			foreach ($fetchedDatetimeValues as $property => $newValue) {
-				$this->propertyHandler->set($entity, $property, $this->unitOfWork->getSerializer()->normalizeValue($annotations[$property], $newValue));
-			}
+			$this->updateEntityVersionValues($entity, $fetchedDatetimeValues);
 		}
-
+		
 		/**
-		 * Takes an array, adds a prefix to all keys, and returns the new, modified array
-		 * This is used to prevent parameter name collisions in SQL prepared statements
-		 * @param array $array The original array with keys to be prefixed
-		 * @param string $prefix The prefix to add to each key
-		 * @return array The new array with prefixed keys and original values
+		 * Escapes a database identifier (table or column name)
+		 * @param string $identifier The identifier to escape
+		 * @return string The escaped identifier wrapped in backticks
 		 */
-		protected function prefixKeys(array $array, string $prefix): array {
-			$newArray = [];
-			foreach ($array as $key => $value) {
-				$newArray[$prefix . $key] = $value;
-			}
-			return $newArray;
+		protected function escapeIdentifier(string $identifier): string {
+			return '`' . str_replace('`', '``', $identifier) . '`';
 		}
 		
 		/**
@@ -166,7 +155,7 @@
 				if (in_array($key, $versionColumnNames)) {
 					return false;
 				}
-
+				
 				// Use primary keys and changed data. Skip the rest.
 				return in_array($key, $primaryKeyColumnNames) || ($value != $originalData[$key]);
 			}, ARRAY_FILTER_USE_BOTH);
@@ -185,25 +174,24 @@
 			
 			// Process each version column according to its type
 			foreach ($versionColumns as $property => $versionColumn) {
-				$columnName = $versionColumn['name'];
-				$columnNameEscaped = str_replace('`', '``', $columnName);
+				$columnName = $this->escapeIdentifier($versionColumn['name']);
 				
 				switch($versionColumn['column']->getType()) {
 					case 'integer':
 						// Integer versions increment by 1
-						$setClauseParts[] = "`{$columnNameEscaped}`=`{$columnNameEscaped}` + 1";
+						$setClauseParts[] = "{$columnName}={$columnName} + 1";
 						break;
 					
 					case 'datetime':
 						// Datetime versions use the database's current timestamp
-						$setClauseParts[] = "`{$columnNameEscaped}`=NOW()";
+						$setClauseParts[] = "{$columnName}=NOW()";
 						break;
 					
 					case 'uuid':
 						// UUID versions get a new generated GUID
-						$newGuid = \Quellabs\Support\Tools::createGUID();
-						$setClauseParts[] = "`{$columnNameEscaped}`=:version_{$columnName}";
-						$params["version_{$columnName}"] = $newGuid;
+						$paramName = "version_{$versionColumn['name']}";
+						$setClauseParts[] = "{$columnName}=:{$paramName}";
+						$params[$paramName] = \Quellabs\Support\Tools::createGUID();
 						break;
 					
 					default:
@@ -222,14 +210,13 @@
 		 * @return array Array of SQL SET clause parts
 		 */
 		protected function buildFieldsSetClause(array $changedFields, array &$params): array {
-			$setClauseParts = [];
-			
 			// Add the regular changed fields to the SET clause
 			// Each field gets a prefixed parameter name to avoid collisions
+			$setClauseParts = [];
 			foreach ($changedFields as $columnName => $value) {
-				$columnNameEscaped = str_replace('`', '``', $columnName);
-				$setClauseParts[] = "`{$columnNameEscaped}`=:field_{$columnName}";
-				$params["field_{$columnName}"] = $value;
+				$paramName = "field_{$columnName}";
+				$setClauseParts[] = $this->escapeIdentifier($columnName) . "=:{$paramName}";
+				$params[$paramName] = $value;
 			}
 			
 			return $setClauseParts;
@@ -246,23 +233,26 @@
 		 * @return string Complete WHERE clause SQL
 		 */
 		protected function buildWhereClause(array $primaryKeyColumnNames, array $primaryKeyValues, array $versionColumns, array $originalData, array &$params): string {
+			$whereClauseParts = [];
+			
 			// Build the WHERE clause to target the specific record
 			// This includes primary key columns to identify the record
-			$whereClauseParts = array_map(fn($key) => "`" . str_replace('`', '``', $key) . "`=:pk_{$key}", $primaryKeyColumnNames);
-			
-			// Add primary key values to parameters with 'pk_' prefix
-			$params = array_merge($params, $this->prefixKeys($primaryKeyValues, "pk_"));
+			foreach ($primaryKeyColumnNames as $columnName) {
+				$paramName = "pk_{$columnName}";
+				$whereClauseParts[] = $this->escapeIdentifier($columnName) . "=:{$paramName}";
+				$params[$paramName] = $primaryKeyValues[$columnName];
+			}
 			
 			// Add version columns to WHERE clause for optimistic locking
 			// If the version in the database doesn't match our original snapshot,
 			// the UPDATE will affect 0 rows, indicating a concurrent modification
 			foreach ($versionColumns as $property => $versionColumn) {
 				$columnName = $versionColumn['name'];
-				$columnNameEscaped = str_replace('`', '``', $columnName);
-				$whereClauseParts[] = "`{$columnNameEscaped}`=:where_version_{$columnName}";
+				$paramName = "where_version_{$columnName}";
+				$whereClauseParts[] = $this->escapeIdentifier($columnName) . "=:{$paramName}";
 				
 				// Use the original version value from our snapshot
-				$params["where_version_{$columnName}"] = $originalData[$columnName];
+				$params[$paramName] = $originalData[$columnName];
 			}
 			
 			// Combine all WHERE clause parts
@@ -270,45 +260,64 @@
 		}
 		
 		/**
-		 * Fetches datetime version values back from the database after update
-		 * Required because NOW() values are unknown until the database sets them
-		 * @param string $tableNameEscaped Escaped table name
+		 * Fetches version values back from the database after update
+		 * Required to ensure in-memory entity matches database state exactly
+		 * @param string $tableName Escaped table name
 		 * @param array $versionColumns All version column metadata
 		 * @param array $primaryKeyColumnNames Primary key column names
 		 * @param array $primaryKeyValues Primary key values
-		 * @return array Fetched datetime values as property_name => value pairs
+		 * @return array Fetched version values as property_name => value pairs
 		 */
-		protected function fetchDatetimeVersionValues(string $tableNameEscaped, array $versionColumns, array $primaryKeyColumnNames, array $primaryKeyValues): array {
+		protected function fetchUpdatedVersionValues(string $tableName, array $versionColumns, array $primaryKeyColumnNames, array $primaryKeyValues): array {
 			// Do nothing when no version columns exist
 			if (empty($versionColumns)) {
 				return [];
 			}
 			
-			// Build a SELECT query to retrieve only the datetime version columns
-			$selectColumns = array_map(function($vc) {
-				return "`" . str_replace('`', '``', $vc['name']) . "`";
-			}, array_filter($versionColumns, fn($vc) => $vc['column']->getType() === 'datetime'));
+			// Build a SELECT query to retrieve all version columns
+			$selectColumns = array_map(fn($vc) => $this->escapeIdentifier($vc['name']), $versionColumns);
 			
 			// Build WHERE clause using only primary keys to identify the row we just updated
-			$whereClauseParts = array_map(fn($key) => "`" . str_replace('`', '``', $key) . "`=:pk_{$key}", $primaryKeyColumnNames);
-			$whereClause = implode(" AND ", $whereClauseParts);
-			$selectParams = $this->prefixKeys($primaryKeyValues, "pk_");
+			$whereClauseParts = [];
+			$selectParams = [];
+			
+			foreach ($primaryKeyColumnNames as $columnName) {
+				$paramName = "pk_{$columnName}";
+				$whereClauseParts[] = $this->escapeIdentifier($columnName) . "=:{$paramName}";
+				$selectParams[$paramName] = $primaryKeyValues[$columnName];
+			}
 			
 			// Build select query
-			$selectSql = "SELECT " . implode(", ", $selectColumns) . " FROM `{$tableNameEscaped}` WHERE {$whereClause}";
+			$selectSql = "SELECT " . implode(", ", $selectColumns) . " FROM {$tableName} WHERE " . implode(" AND ", $whereClauseParts);
 			
 			// Execute select query
 			$result = $this->connection->Execute($selectSql, $selectParams);
 			
 			// Collect fetched datetime values
-			$fetchedValues = [];
-			
-			if ($result && $row = $result->fetchAssoc()) {
-				foreach ($versionColumns as $prop => $vc) {
-					$fetchedValues[$prop] = $row[$vc['name']];
-				}
+			if (!$result || !($row = $result->fetchAssoc())) {
+				return [];
 			}
 			
-			return $fetchedValues;
+			return array_map(function ($vc) use ($row) {
+				return $row[$vc['name']];
+			}, $versionColumns);
+		}
+		
+		/**
+		 * Updates the entity with new version values from the database
+		 * @param object $entity The entity to update
+		 * @param array $fetchedValues Fetched version values as property_name => value pairs
+		 * @return void
+		 */
+		protected function updateEntityVersionValues(object $entity, array $fetchedValues): void {
+			if (empty($fetchedValues)) {
+				return;
+			}
+			
+			$annotations = $this->entityStore->getAnnotations($entity, Column::class);
+			foreach ($fetchedValues as $property => $newValue) {
+				$normalizedValue = $this->unitOfWork->getSerializer()->normalizeValue($annotations[$property], $newValue);
+				$this->propertyHandler->set($entity, $property, $normalizedValue);
+			}
 		}
 	}
