@@ -31,6 +31,7 @@
     use Quellabs\ObjectQuel\Annotations\Orm\OneToOne;
     use Quellabs\ObjectQuel\Annotations\Orm\PrimaryKeyStrategy;
     use Quellabs\ObjectQuel\Annotations\Orm\UniqueIndex;
+    use Quellabs\ObjectQuel\Annotations\Orm\Version;
     use Quellabs\ObjectQuel\DatabaseAdapter\TypeMapper;
     use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRetrieve;
     use Quellabs\ObjectQuel\ObjectQuel\QuelException;
@@ -52,6 +53,7 @@
 	    protected array $column_map_cache;
 	    protected array $identifier_keys_cache;
 	    protected array $identifier_columns_cache;
+	    protected array $versions_columns_cache;
 	    protected string|bool $services_path;
 	    protected string $entity_namespace;
 	    protected array|null $dependencies;
@@ -80,6 +82,7 @@
 		    $this->column_map_cache = [];
 		    $this->identifier_keys_cache = [];
 		    $this->identifier_columns_cache = [];
+		    $this->versions_columns_cache = [];
 		    $this->dependencies = null;
 		    $this->dependencies_cache = [];
 		    $this->completed_entity_name_cache = [];
@@ -305,6 +308,64 @@
 		    // Return the result
 		    return $result;
 	    }
+		
+		/**
+	     * Retrieves the column names that serve as primary keys for a specific entity.
+	     * @param mixed $entity The entity for which the primary key columns are retrieved.
+	     * @return array An array with the names of the columns that serve as primary keys.
+	     */
+	    public function getVersionColumnNames(mixed $entity): array {
+		    // Determine the class name of the entity
+		    if (!is_object($entity)) {
+			    $entityClass = ltrim($entity, "\\");
+		    } elseif ($entity instanceof \ReflectionClass) {
+			    $entityClass = $entity->getName();
+		    } else {
+			    $entityClass = get_class($entity);
+		    }
+		    
+		    // If the class name is a proxy, get the class from the parent
+		    $normalizedClass = $this->normalizeEntityName($entityClass);
+		    
+		    // Use the cached value if it exists
+		    if (isset($this->versions_columns_cache[$normalizedClass])) {
+			    return $this->versions_columns_cache[$normalizedClass];
+		    }
+		    
+		    // Retrieve all annotations for the given entity
+		    $annotationList = $this->getAnnotations($normalizedClass);
+		    
+		    // Initialize an empty array to store the results
+		    $result = [];
+		    
+		    // Loop through all annotations of the entity
+		    foreach ($annotationList as $property => $annotations) {
+				$column = null;
+				$version = null;
+				
+			    foreach ($annotations as $annotation) {
+				    if ($annotation instanceof Column) {
+					    $column = $annotation;
+				    } elseif ($annotation instanceof Version) {
+						$version = $annotation;
+				    }
+			    }
+				
+				if ($column !== null && $version !== null) {
+					$result[$property] = [
+						'name'    => $column->getName(),
+						'column'  => $column,
+						'version' => $version,
+					];
+				}
+		    }
+		    
+		    // Cache the result for future use
+		    $this->versions_columns_cache[$normalizedClass] = $result;
+		    
+		    // Return the result
+		    return $result;
+	    }
 	    
 	    /**
 	     * Obtains the map between properties and column names for a given entity.
@@ -359,14 +420,17 @@
 	     * Returns the entity's annotations
 	     * @param mixed $entity The entity object or class name string to get annotations for
 	     * @param string|null $annotationType Optional class name to filter annotations by specific type
-	     * @return array<string, AnnotationCollection>
-	     *         Array of annotation objects, optionally filtered by type
+	     * @return array<string, AnnotationCollection> Array of annotation objects, optionally filtered by type
 	     */
 	    public function getAnnotations(mixed $entity, ?string $annotationType = null): array {
 		    // Determine the class name of the entity
-		    // If $entity is not an object, treat it as a class name and remove leading backslash
-		    // If $entity is an object, get its class name using get_class()
-		    $entityClass = !is_object($entity) ? ltrim($entity, "\\") : get_class($entity);
+		    if (!is_object($entity)) {
+			    $entityClass = ltrim($entity, "\\");
+		    } elseif ($entity instanceof \ReflectionClass) {
+			    $entityClass = $entity->getName();
+		    } else {
+			    $entityClass = get_class($entity);
+		    }
 		    
 		    // If the class name is a proxy, get the class from the parent
 		    // This handles cases where ORM proxies or other wrapper classes are used
