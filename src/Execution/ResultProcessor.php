@@ -28,7 +28,7 @@
 				$hash = spl_object_hash($item);
 				
 				// Check if the hash is already in the list of seen objects.
-				if (in_array($hash, $objectKeys)) {
+				if (in_array($hash, $objectKeys, true)) {
 					// If yes, filter this object out of the array.
 					return false;
 				}

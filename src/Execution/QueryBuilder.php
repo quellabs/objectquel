@@ -162,9 +162,13 @@
 			$rangesImpl = implode("\n", $relationRanges);
 			
 			// Create a WHERE string based on the primary keys.
-			$whereString = $this->parametersToString($primaryKeys, "main");
+			if (!empty($primaryKeys)) {
+				$whereString = " where " . $this->parametersToString($primaryKeys, "main");
+			} else {
+				$whereString = "";
+			}
 			
 			// Combine everything into the final query string.
-			return "{$rangesImpl}\nretrieve unique (" . implode(",", array_keys($relationRanges)) . ") where {$whereString}";
+			return "{$rangesImpl}\nretrieve unique (" . implode(",", array_keys($relationRanges)) . "){$whereString}";
 		}
 	}
