@@ -10,6 +10,7 @@
 	use Quellabs\ObjectQuel\PrimaryKeys\PrimaryKeyFactory;
 	use Quellabs\ObjectQuel\ReflectionManagement\PropertyHandler;
 	use Quellabs\ObjectQuel\UnitOfWork;
+	use Quellabs\Support\Tools;
 	
 	/**
 	 * Specialized persister class responsible for inserting new entities into the database
@@ -62,7 +63,7 @@
 		 * @param UnitOfWork $unitOfWork The UnitOfWork that will coordinate insertion operations
 		 * @param PrimaryKeyFactory|null $factory Factory for creating primary keys
 		 */
-		public function __construct(UnitOfWork $unitOfWork, ?PrimaryKeyFactory $factory=null) {
+		public function __construct(UnitOfWork $unitOfWork, ?PrimaryKeyFactory $factory = null) {
 			$this->unit_of_work = $unitOfWork;
 			$this->entity_manager = $unitOfWork->getEntityManager();
 			$this->entity_store = $unitOfWork->getEntityStore();
@@ -85,9 +86,9 @@
 			
 			// Get the primary key property names and their corresponding column names
 			$primaryKeys = $this->entity_store->getIdentifierKeys($entity);
-
+			
 			// Iterate through each identified primary key for the entity
-			foreach($primaryKeys as $primaryKey) {
+			foreach ($primaryKeys as $primaryKey) {
 				// First check if the primary key already has a value
 				// This prevents overwriting manually set primary keys
 				$currentValue = $this->property_handler->get($entity, $primaryKey);
@@ -119,6 +120,14 @@
 				}
 			}
 			
+			// Get the primary key property names and their corresponding column names
+			$versionColumnNames = $this->entity_store->getVersionColumnNames($entity);
+			
+			// Iterate through each identified primary key for the entity
+			foreach ($versionColumnNames as $property => $versionColumn) {
+				$this->property_handler->set($entity, $property, $this->getInitialVersionValue($versionColumn["column"]->getType()));
+			}
+			
 			// Serialize the entity into an array of column name => value pairs
 			$serializedEntity = $this->unit_of_work->getSerializer()->serialize($entity);
 			
@@ -136,7 +145,7 @@
 			if (!$rs) {
 				throw new OrmException($this->connection->getLastErrorMessage(), $this->connection->getLastError());
 			}
-
+			
 			// After successful query execution, check if the entity has a primary key with identity/auto-increment strategy
 			// This identifies columns marked either with @PrimaryKeyStrategy(strategy="identity") or primary keys with no strategy
 			$autoincrementColumn = $this->entity_store->findAutoIncrementPrimaryKey($entity);
@@ -161,8 +170,8 @@
 		
 		/**
 		 * Retrieves the primary key generation strategy for a given entity and primary key.
-		 * @param object $entity      The entity object to examine
-		 * @param string $primaryKey  The name of the primary key field
+		 * @param object $entity The entity object to examine
+		 * @param string $primaryKey The name of the primary key field
 		 * @return string             The primary key strategy value
 		 */
 		protected function getPrimaryKeyStrategy(object $entity, string $primaryKey): string {
@@ -182,7 +191,7 @@
 			}
 			
 			// Iterate through all annotations for the primary key
-			foreach($annotations[$primaryKey] as $annotation) {
+			foreach ($annotations[$primaryKey] as $annotation) {
 				// Check if the current annotation is a PrimaryKeyStrategy instance
 				if ($annotation instanceof PrimaryKeyStrategy) {
 					// Return the value of the PrimaryKeyStrategy annotation
@@ -192,5 +201,25 @@
 			
 			// No PrimaryKeyStrategy annotation found for this primary key
 			return $this->strategy_column_cache[$table][$primaryKey] = "identity";
+		}
+		
+		protected function getInitialVersionValue(string $columnType): \DateTimeImmutable|int|string {
+			switch ($columnType) {
+				case 'int':
+				case 'integer':
+				case 'bigint':
+					return 1;
+				
+				case 'datetime':
+				case 'timestamp':
+					return new \DateTimeImmutable('now');
+				
+				case 'uuid':
+				case 'guid':
+					return Tools::createGUID();
+				
+				default:
+					throw new \RuntimeException("Invalid column type {$columnType} for Version annotation");
+			}
 		}
 	}
