@@ -170,8 +170,7 @@
 		 */
 		public function exists(mixed $entity): bool {
 			// Determine the class name of the entity
-			$entityClass = $this->extractClassName($entity);
-			$normalizedClass = $this->normalizeEntityName($entityClass);
+			$normalizedClass = $this->normalizeEntityName($entity);
 			
 			// Check if the entity class exists in the entity registry
 			if (isset($this->entityRegistry[$normalizedClass])) {
@@ -651,25 +650,17 @@
 		
 		/**
 		 * Extract class name from various entity representations.
-		 *
-		 * Handles multiple input types:
-		 * - ReflectionClass objects
-		 * - Entity object instances
-		 * - String class names (with or without leading backslash)
-		 *
 		 * @param mixed $entity The entity in any supported format
 		 * @return string The extracted class name
 		 */
 		private function extractClassName(mixed $entity): string {
 			if ($entity instanceof \ReflectionClass) {
 				return $entity->getName();
-			}
-			
-			if (is_object($entity)) {
+			} elseif (is_object($entity)) {
 				return get_class($entity);
+			} else {
+				return ltrim($entity, "\\");
 			}
-			
-			return ltrim($entity, "\\");
 		}
 		
 		/**
