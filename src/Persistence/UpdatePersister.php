@@ -2,7 +2,6 @@
 	
 	namespace Quellabs\ObjectQuel\Persistence;
 	
-	use Quellabs\ObjectQuel\Annotations\Orm\Column;
 	use Quellabs\ObjectQuel\DatabaseAdapter\DatabaseAdapter;
 	use Quellabs\ObjectQuel\EntityStore;
 	use Quellabs\ObjectQuel\OrmException;
@@ -20,25 +19,25 @@
 		 * Reference to the UnitOfWork that manages persistence operations
 		 * This is a duplicate of the parent's unitOfWork property with a different naming convention
 		 */
-		protected UnitOfWork $unitOfWork;
+		private UnitOfWork $unitOfWork;
 		
 		/**
 		 * The EntityStore that maintains metadata about entities and their mappings
 		 * Used to retrieve information about entity tables, columns and identifiers
 		 */
-		protected EntityStore $entityStore;
-		
-		/**
-		 * Utility for handling entity property access and manipulation
-		 * Provides methods to get and set entity properties regardless of their visibility
-		 */
-		protected PropertyHandler $propertyHandler;
+		private EntityStore $entityStore;
 		
 		/**
 		 * Database connection adapter used for executing SQL queries
 		 * Abstracts the underlying database system and provides a unified interface
 		 */
-		protected DatabaseAdapter $connection;
+		private DatabaseAdapter $connection;
+		
+		/**
+		 * Handles values with @Orm\Version annotations
+		 * @var VersionValueHandler
+		 */
+		private VersionValueHandler $valueHandler;
 		
 		/**
 		 * UpdatePersister constructor
@@ -47,8 +46,8 @@
 		public function __construct(UnitOfWork $unitOfWork) {
 			$this->unitOfWork = $unitOfWork;
 			$this->entityStore = $unitOfWork->getEntityStore();
-			$this->propertyHandler = $unitOfWork->getPropertyHandler();
 			$this->connection = $unitOfWork->getConnection();
+			$this->valueHandler = new VersionValueHandler($unitOfWork->getConnection(), $unitOfWork->getEntityStore(), $unitOfWork, $unitOfWork->getPropertyHandler());
 		}
 		
 		/**
@@ -60,7 +59,7 @@
 		public function persist(object $entity): void {
 			// Retrieve basic information needed for the update
 			// Get the table name where the entity is stored
-			$tableName = $this->escapeIdentifier($this->entityStore->getOwningTable($entity));
+			$tableName = $this->valueHandler->escapeIdentifier($this->entityStore->getOwningTable($entity));
 			
 			// Serialize the entity's current state into an array of column name => value pairs
 			$serializedEntity = $this->unitOfWork->getSerializer()->serialize($entity);
@@ -117,7 +116,7 @@
 			}
 			
 			// Fetch version values from the database (if any)
-			$fetchedDatetimeValues = $this->fetchUpdatedVersionValues(
+			$fetchedDatetimeValues = $this->valueHandler->fetchUpdatedVersionValues(
 				$tableName,
 				$versionColumns,
 				$primaryKeyColumnNames,
@@ -126,16 +125,7 @@
 			
 			// Update the entity with the new version values so the in-memory object
 			// matches the database state and can be used for subsequent operations
-			$this->updateEntityVersionValues($entity, $fetchedDatetimeValues);
-		}
-		
-		/**
-		 * Escapes a database identifier (table or column name)
-		 * @param string $identifier The identifier to escape
-		 * @return string The escaped identifier wrapped in backticks
-		 */
-		protected function escapeIdentifier(string $identifier): string {
-			return '`' . str_replace('`', '``', $identifier) . '`';
+			$this->valueHandler->updateEntityVersionValues($entity, $fetchedDatetimeValues);
 		}
 		
 		/**
@@ -174,7 +164,7 @@
 			
 			// Process each version column according to its type
 			foreach ($versionColumns as $property => $versionColumn) {
-				$columnName = $this->escapeIdentifier($versionColumn['name']);
+				$columnName = $this->valueHandler->escapeIdentifier($versionColumn['name']);
 				
 				switch($versionColumn['column']->getType()) {
 					case 'integer':
@@ -215,7 +205,7 @@
 			$setClauseParts = [];
 			foreach ($changedFields as $columnName => $value) {
 				$paramName = "field_{$columnName}";
-				$setClauseParts[] = $this->escapeIdentifier($columnName) . "=:{$paramName}";
+				$setClauseParts[] = $this->valueHandler->escapeIdentifier($columnName) . "=:{$paramName}";
 				$params[$paramName] = $value;
 			}
 			
@@ -239,7 +229,7 @@
 			// This includes primary key columns to identify the record
 			foreach ($primaryKeyColumnNames as $columnName) {
 				$paramName = "pk_{$columnName}";
-				$whereClauseParts[] = $this->escapeIdentifier($columnName) . "=:{$paramName}";
+				$whereClauseParts[] = $this->valueHandler->escapeIdentifier($columnName) . "=:{$paramName}";
 				$params[$paramName] = $primaryKeyValues[$columnName];
 			}
 			
@@ -249,7 +239,7 @@
 			foreach ($versionColumns as $property => $versionColumn) {
 				$columnName = $versionColumn['name'];
 				$paramName = "where_version_{$columnName}";
-				$whereClauseParts[] = $this->escapeIdentifier($columnName) . "=:{$paramName}";
+				$whereClauseParts[] = $this->valueHandler->escapeIdentifier($columnName) . "=:{$paramName}";
 				
 				// Use the original version value from our snapshot
 				$params[$paramName] = $originalData[$columnName];
@@ -257,67 +247,5 @@
 			
 			// Combine all WHERE clause parts
 			return implode(" AND ", $whereClauseParts);
-		}
-		
-		/**
-		 * Fetches version values back from the database after update
-		 * Required to ensure in-memory entity matches database state exactly
-		 * @param string $tableName Escaped table name
-		 * @param array $versionColumns All version column metadata
-		 * @param array $primaryKeyColumnNames Primary key column names
-		 * @param array $primaryKeyValues Primary key values
-		 * @return array Fetched version values as property_name => value pairs
-		 */
-		protected function fetchUpdatedVersionValues(string $tableName, array $versionColumns, array $primaryKeyColumnNames, array $primaryKeyValues): array {
-			// Do nothing when no version columns exist
-			if (empty($versionColumns)) {
-				return [];
-			}
-			
-			// Build a SELECT query to retrieve all version columns
-			$selectColumns = array_map(fn($vc) => $this->escapeIdentifier($vc['name']), $versionColumns);
-			
-			// Build WHERE clause using only primary keys to identify the row we just updated
-			$whereClauseParts = [];
-			$selectParams = [];
-			
-			foreach ($primaryKeyColumnNames as $columnName) {
-				$paramName = "pk_{$columnName}";
-				$whereClauseParts[] = $this->escapeIdentifier($columnName) . "=:{$paramName}";
-				$selectParams[$paramName] = $primaryKeyValues[$columnName];
-			}
-			
-			// Build select query
-			$selectSql = "SELECT " . implode(", ", $selectColumns) . " FROM {$tableName} WHERE " . implode(" AND ", $whereClauseParts);
-			
-			// Execute select query
-			$result = $this->connection->Execute($selectSql, $selectParams);
-			
-			// Collect fetched datetime values
-			if (!$result || !($row = $result->fetchAssoc())) {
-				return [];
-			}
-			
-			return array_map(function ($vc) use ($row) {
-				return $row[$vc['name']];
-			}, $versionColumns);
-		}
-		
-		/**
-		 * Updates the entity with new version values from the database
-		 * @param object $entity The entity to update
-		 * @param array $fetchedValues Fetched version values as property_name => value pairs
-		 * @return void
-		 */
-		protected function updateEntityVersionValues(object $entity, array $fetchedValues): void {
-			if (empty($fetchedValues)) {
-				return;
-			}
-			
-			$annotations = $this->entityStore->getAnnotations($entity, Column::class);
-			foreach ($fetchedValues as $property => $newValue) {
-				$normalizedValue = $this->unitOfWork->getSerializer()->normalizeValue($annotations[$property], $newValue);
-				$this->propertyHandler->set($entity, $property, $normalizedValue);
-			}
 		}
 	}
