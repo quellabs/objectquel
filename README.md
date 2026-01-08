@@ -15,10 +15,10 @@ ObjectQuel addresses fundamental challenges in working with relational data thro
 
 - **Domain-Level Query Language**: The ObjectQuel language provides an intuitive, declarative syntax for expressing
   complex data relationships that feels natural to developers, elevating queries from SQL mechanics to business logic
+- **Integrated ORM with Data Mapper Architecture**: Entities remain decoupled from the database, ensuring clean, testable domain logic
 - **Relationship Simplicity**: Work with complex relationships without complex query code
 - **Performance By Design**: Multiple built-in optimization strategies for efficient database interactions
 - **Hybrid Data Sources**: Uniquely combine traditional databases with external JSON data sources
-- **Integrated ORM with Data Mapper Architecture**: Entities remain decoupled from the database, ensuring clean, testable domain logic
 - **Powered by CakePHP's Database Layer**: Reliable and battle-tested SQL engine under the hood
 
 ## Installation
