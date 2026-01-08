@@ -103,18 +103,34 @@
 		
 		// ==================== System Access Methods ====================
 		
+		/**
+		 * Returns the annotationReader object
+		 * @return AnnotationReader
+		 */
 		public function getAnnotationReader(): AnnotationReader {
 			return $this->annotationReader;
 		}
 		
+		/**
+		 * Returns the ReflectionHandler object
+		 * @return ReflectionHandler
+		 */
 		public function getReflectionHandler(): ReflectionHandler {
 			return $this->reflectionHandler;
 		}
 		
+		/**
+		 * Returns the proxy generator
+		 * @return ProxyGenerator
+		 */
 		public function getProxyGenerator(): ProxyGenerator {
 			return $this->proxyGenerator;
 		}
 		
+		/**
+		 * Returns the proxy namespace
+		 * @return string
+		 */
 		public function getProxyNamespace(): string {
 			return $this->proxyNamespace;
 		}
