@@ -37,7 +37,6 @@
     "ext-fileinfo": "*",
     "quellabs/contracts": "^1.",
     "quellabs/support": "^1.",
-    "quellabs/cache": "^1.",
     "quellabs/signal-hub": "^1.",
     "quellabs/annotation-reader": "^1.",
     "quellabs/sculpt": "^1.",
