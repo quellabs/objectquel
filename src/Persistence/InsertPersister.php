@@ -267,7 +267,7 @@
 				
 				case 'uuid':
 				case 'guid':
-					return "'" . Tools::createGUID() . "'";
+					return "'" . Tools::createUUIDv7() . "'";
 				
 				default:
 					throw new \RuntimeException("Invalid column type {$columnType} for Version annotation");
