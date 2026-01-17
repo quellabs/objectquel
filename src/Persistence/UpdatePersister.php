@@ -181,7 +181,7 @@
 						// UUID versions get a new generated GUID
 						$paramName = "version_{$versionColumn['name']}";
 						$setClauseParts[] = "{$columnName}=:{$paramName}";
-						$params[$paramName] = \Quellabs\Support\Tools::createGUID();
+						$params[$paramName] = \Quellabs\Support\Tools::createUUIDv7();
 						break;
 					
 					default:
