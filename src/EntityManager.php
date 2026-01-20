@@ -20,6 +20,7 @@
 	
 	namespace Quellabs\ObjectQuel;
 	
+	use Cake\Database\Connection;
 	use Quellabs\ObjectQuel\DatabaseAdapter\DatabaseAdapter;
 	use Quellabs\ObjectQuel\Execution\ResultProcessor;
 	use Quellabs\ObjectQuel\ObjectQuel\QuelException;
@@ -62,13 +63,14 @@
 		protected QueryExecutor $query_executor;
 		
 		/**
-		 * EntityManager constructor - accepts optional configuration or discovers it
+		 * EntityManager constructor
 		 * @param Configuration|null $configuration
+		 * @param Connection $connection CakePHP database connection
 		 */
-		public function __construct(?Configuration $configuration = null) {
+		public function __construct(?Configuration $configuration, Connection $connection) {
 			$this->configuration = $configuration;
 			$this->signal_hub = SignalHubLocator::getInstance();
-			$this->connection = new DatabaseAdapter($configuration);
+			$this->connection = new DatabaseAdapter($connection);
 			$this->entity_store = new EntityStore($configuration);
 			$this->unit_of_work = new UnitOfWork($this, $this->signal_hub);
 			$this->query_builder = new QueryBuilder($this->entity_store);
@@ -76,11 +78,10 @@
 			$this->property_handler = new PropertyHandler();
 			
 			// Assign the signal hub to this class
-			$signalHub = SignalHubLocator::getInstance();
-			$this->setSignalHub($signalHub);
+			$this->setSignalHub($this->signal_hub);
 			
 			// Fetch Signal or create if it doesn't exist
-			$this->debugQuerySignal = $signalHub->getSignal('debug.database.query');
+			$this->debugQuerySignal = $this->signal_hub->getSignal('debug.database.query');
 			
 			if ($this->debugQuerySignal === null) {
 				$this->debugQuerySignal = $this->createSignal(['array'], 'debug.database.query');

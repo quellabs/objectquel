@@ -29,11 +29,10 @@
 		/**
 		 * Database Adapter constructor.
 		 * This file wraps the functions of CakePHP Database
-		 * @param Configuration $configuration
+		 * @param Connection $connection CakePHP Database database connection
 		 */
-		public function __construct(Configuration $configuration, Connection $connection) {
-			// Store configuration object
-			$this->configuration = $configuration;
+		public function __construct(Connection $connection) {
+			// Store connection
 			$this->connection = $connection;
 			
 			// setup ORM
