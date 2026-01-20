@@ -65,18 +65,7 @@
 			$configuration->setEntityPath($config['entity_path'] ?? $defaults['entity_path'] ?? '');
 			$configuration->setEntityNameSpace($config['entity_namespace'] ?? $defaults['entity_namespace'] ?? '');
 			$configuration->setMigrationsPath($config['migrations_path'] ?? $defaults['migrations_path'] ?? '');
-			
-			$configuration->setConnectionParams([
-				'driver'    => $config['driver'] ?? $defaults['driver'] ?? 'mysql',
-				'host'      => $config['host'] ?? $defaults['host'] ?? 'localhost',
-				'database'  => $config['database'] ?? $defaults['database'] ?? '',
-				'username'  => $config['username'] ?? $defaults['username'] ?? '',
-				'password'  => $config['password'] ?? $defaults['password'] ?? '',
-				'port'      => $config['port'] ?? $defaults['port'] ?? 3306,
-				'encoding'  => $config['encoding'] ?? $defaults['encoding'] ?? 'utf8mb4',
-				'collation' => $config['collation'] ?? $defaults['collation'] ?? 'utf8mb4_unicode_ci',
-			]);
-			
+
 			return $configuration;
 		}
 		
