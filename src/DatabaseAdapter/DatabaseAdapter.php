@@ -31,9 +31,10 @@
 		 * This file wraps the functions of CakePHP Database
 		 * @param Configuration $configuration
 		 */
-		public function __construct(Configuration $configuration) {
+		public function __construct(Configuration $configuration, Connection $connection) {
 			// Store configuration object
 			$this->configuration = $configuration;
+			$this->connection = $connection;
 			
 			// setup ORM
 			$this->descriptions = [];
@@ -44,18 +45,6 @@
 			$this->transaction_depth = 0;
 			$this->supportsWindowFunctionsCache = null;
 			$this->databaseTypeCache = null;
-			
-			// Check if connection already exists and drop it if needed
-			if (ConnectionManager::getConfig('default')) {
-				ConnectionManager::drop('default');
-			}
-			
-			// Create the database connection
-			ConnectionManager::setConfig('default', ['url' => $configuration->getDsn()]);
-			
-			/** @var Connection $connection */
-			$connection = ConnectionManager::get('default');
-			$this->connection = $connection;
 		}
 		
 		/**
@@ -91,7 +80,7 @@
 				$driver = $this->connection->getDriver();
 				$driverClass = get_class($driver);
 				
-				$this->databaseTypeCache = match($driverClass) {
+				$this->databaseTypeCache = match ($driverClass) {
 					'Cake\Database\Driver\Mysql' => 'mysql',
 					'Cake\Database\Driver\Postgres' => 'pgsql',
 					'Cake\Database\Driver\Sqlite' => 'sqlite',
@@ -499,7 +488,7 @@
 			// Create and return the adapter
 			return AdapterFactory::instance()->getAdapter($phinxConfig['adapter'], $phinxConfig);
 		}
-
+		
 		/**
 		 * Detects support for SQL window functions (OVER()) by feature probing.
 		 * Uses a portable query that should work across vendors that implement windows.
