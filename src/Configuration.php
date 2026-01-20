@@ -23,31 +23,7 @@
 	/**
 	 * Configuration class for ObjectQuel ORM
 	 */
-	class Configuration implements \ArrayAccess {
-		
-		/**
-		 * @var array Database connection parameters
-		 *
-		 * Contains all database connection settings including:
-		 * - driver: Database driver (mysql, pgsql, sqlite, etc.)
-		 * - host: Database server hostname or IP
-		 * - database: Database name
-		 * - username: Database username
-		 * - password: Database password
-		 * - port: Database port number
-		 * - encoding: Character encoding (default: utf8mb4)
-		 * - flags: Additional PDO connection flags
-		 * - dsn: Complete DSN string
-		 */
-		private array $connectionParams = [];
-		
-		/**
-		 * @var string The DSN string for database connection
-		 * Data Source Name string used for PDO connections.
-		 * Format: driver://username:password@host:port/database?encoding=charset
-		 * Example: mysql://user:pass@localhost:3306/mydb?encoding=utf8mb4
-		 */
-		private string $dsn = '';
+	class Configuration {
 		
 		/**
 		 * @var string Directory where proxy classes will be stored
@@ -106,122 +82,6 @@
 		private ?int $defaultWindowSize = null;
 		
 		/**
-		 * Constructor - optionally initialize with connection parameters
-		 * @param array $connectionParams Database connection parameters (optional)
-		 */
-		public function __construct(array $connectionParams = []) {
-			if (!empty($connectionParams)) {
-				$this->connectionParams = $connectionParams;
-				
-				// If DSN is provided directly, use it without modification
-				// This allows for custom DSN formats or connection strings
-				if (isset($connectionParams['DSN'])) {
-					$this->dsn = $connectionParams['DSN'];
-				}
-			}
-		}
-		
-		/**
-		 * Set database connection parameters and generate DSN
-		 * @param string $driver Database driver (mysql, pgsql, sqlite, etc.)
-		 * @param string $host Database host (IP address or hostname)
-		 * @param string $dbname Database name/schema
-		 * @param string $user Database username
-		 * @param string $password Database password
-		 * @param int $port Database port (default: 3306 for MySQL)
-		 * @param string $charset Character set (default: utf8mb4 for full Unicode support)
-		 * @param array $options Additional PDO connection options/flags
-		 * @return self Returns this instance for method chaining
-		 */
-		public function setDatabaseParams(
-			string $driver,
-			string $host,
-			string $dbname,
-			string $user,
-			string $password,
-			int    $port = 3306,
-			string $charset = 'utf8mb4',
-			array  $options = []
-		): self {
-			// Store all connection parameters in a structured format
-			$this->connectionParams = [
-				'driver'   => $driver,     // Database driver type
-				'host'     => $host,       // Database server address
-				'database' => $dbname,     // Database/schema name
-				'username' => $user,       // Database username
-				'password' => $password,   // Database password
-				'port'     => $port,       // Database port number
-				'encoding' => $charset,    // Character encoding
-				'flags'    => $options     // Additional PDO options
-			];
-			
-			// Generate CakePHP-compatible DSN string
-			// Format: driver://username:password@host:port/database?encoding=charset
-			$this->dsn = "{$driver}://{$user}:{$password}@{$host}:{$port}/{$dbname}?encoding={$charset}";
-			$this->connectionParams['dsn'] = $this->dsn;
-			return $this;
-		}
-		
-		/**
-		 * Set DSN string directly
-		 * @param string $dsn Database connection string
-		 * @return self Returns this instance for method chaining
-		 */
-		public function setDsn(string $dsn): self {
-			$this->dsn = $dsn;
-			$this->connectionParams['dsn'] = $dsn;
-			return $this;
-		}
-		
-		/**
-		 * Get DSN string
-		 * @return string The database connection DSN
-		 */
-		public function getDsn(): string {
-			return $this->dsn;
-		}
-		
-		/**
-		 * Set all database connection parameters at once
-		 * @param array $params Connection parameters array
-		 *                      Must include either 'dsn' OR all of: driver, host, database, username, password
-		 * @return self Returns this instance for method chaining
-		 */
-		public function setConnectionParams(array $params): self {
-			$this->connectionParams = $params;
-			
-			// If a pre-built DSN is provided, use it directly
-			if (isset($params['dsn'])) {
-				$this->dsn = $params['dsn'];
-				return $this;
-			}
-			
-			// If individual parameters are provided, generate DSN automatically
-			if (isset($params['driver'], $params['host'], $params['database'], $params['username'], $params['password'])) {
-				$this->setDatabaseParams(
-					$params['driver'],
-					$params['host'],
-					$params['database'],
-					$params['username'],
-					$params['password'],
-					$params['port'] ?? 3306,        // Default MySQL port
-					$params['encoding'] ?? 'utf8mb4', // Default to full Unicode support
-					$params['flags'] ?? []           // Default to no additional flags
-				);
-			}
-			
-			return $this;
-		}
-		
-		/**
-		 * Get database connection parameters
-		 * @return array Complete array of connection parameters
-		 */
-		public function getConnectionParams(): array {
-			return $this->connectionParams;
-		}
-		
-		/**
 		 * Retrieves entity path
 		 * @return string Primary entity path
 		 */
@@ -261,11 +121,6 @@
 		
 		/**
 		 * Set the directory where proxy classes will be stored
-		 *
-		 * Proxy classes are dynamically generated by the ORM to provide lazy loading
-		 * and change tracking functionality. The specified directory must be writable
-		 * by the web server process.
-		 *
 		 * @param string|null $proxyDir Directory path for proxy classes (null to disable)
 		 * @return self Returns this instance for method chaining
 		 */
@@ -366,48 +221,5 @@
 		 */
 		public function setDefaultWindowSize(?int $defaultWindowSize): void {
 			$this->defaultWindowSize = $defaultWindowSize;
-		}
-		
-		/**
-		 * ArrayAccess implementation - Check if offset exists
-		 * @param mixed $offset The key to check for existence
-		 * @return bool True if the key exists in connection parameters
-		 */
-		public function offsetExists(mixed $offset): bool {
-			return isset($this->connectionParams[$offset]);
-		}
-		
-		/**
-		 * ArrayAccess implementation - Get value at offset
-		 * @param mixed $offset The key to retrieve
-		 * @return mixed The value at the specified key or null if not found
-		 */
-		public function offsetGet(mixed $offset): mixed {
-			return $this->connectionParams[$offset] ?? null;
-		}
-		
-		/**
-		 * ArrayAccess implementation - Set value at offset
-		 * @param mixed $offset The key to set
-		 * @param mixed $value The value to set
-		 * @return void
-		 */
-		public function offsetSet(mixed $offset, mixed $value): void {
-			$this->connectionParams[$offset] = $value;
-			
-			// Update internal DSN if the legacy DB_DSN key is being set
-			// This maintains backwards compatibility with older configuration formats
-			if ($offset === 'DB_DSN') {
-				$this->dsn = $value;
-			}
-		}
-		
-		/**
-		 * ArrayAccess implementation - Unset offset
-		 * @param mixed $offset The key to remove
-		 * @return void
-		 */
-		public function offsetUnset(mixed $offset): void {
-			unset($this->connectionParams[$offset]);
 		}
 	}
