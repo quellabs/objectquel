@@ -61,7 +61,10 @@
 			}
 			
 			// Step 2: Analyze changes between entities and database
+			// Instantiate the schema analyzer
 			$entitySchemaAnalyzer = new EntitySchemaAnalyzer($databaseAdapter, $this->getEntityStore());
+			
+			// And perform the analysis
 			$allChanges = $entitySchemaAnalyzer->analyzeEntityChanges($entityMap);
 			
 			// Step 3: Generate a migration file based on changes

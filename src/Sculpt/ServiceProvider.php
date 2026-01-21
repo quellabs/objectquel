@@ -150,11 +150,7 @@
 				'password'      => $configData['password'] ?? $defaults['password'],
 				'database'      => $configData['database'] ?? $defaults['database'],
 				'port'          => $configData['port'] ?? $defaults['port'],
-				'encoding'      => $configData['encoding'] ?? $defaults['encoding'],
-				'timezone'      => $configData['timezone'] ?? $defaults['timezone'],
-				'flags'         => $configData['flags'] ?? $defaults['flags'],
-				'cacheMetadata' => $configData['cacheMetadata'] ?? $defaults['cacheMetadata'],
-				'log'           => $configData['log'] ?? $defaults['log'],
+				'encoding'      => $configData['encoding'] ?? $defaults['encoding']
 			];
 		}
 		

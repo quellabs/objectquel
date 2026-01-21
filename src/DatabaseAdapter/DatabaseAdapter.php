@@ -455,9 +455,13 @@
 		 * Get a Phinx adapter instance using CakePHP's database connection
 		 * @return AdapterInterface
 		 */
+		/**
+		 * Get a Phinx adapter instance using CakePHP's database connection
+		 * @return AdapterInterface
+		 */
 		public function getPhinxAdapter(): AdapterInterface {
-			// Get the CakePHP connection
-			$connection = ConnectionManager::get('default');
+			// Use the existing connection instead of fetching 'default'
+			$connection = $this->connection;
 			
 			// Get the CakePHP connection config
 			$config = $connection->config();
