@@ -11,25 +11,45 @@
 	use Phinx\Db\Adapter\AdapterFactory;
 	
 	/**
-	 * Database adapter that ties ObjectQuel and Cakephp/Database together
+	 * Database adapter that ties ObjectQuel and CakePHP Database together
+	 * Wraps CakePHP's database connection to provide ObjectQuel-specific functionality
+	 * including schema introspection, transaction management, and cross-database compatibility.
 	 */
 	class DatabaseAdapter {
 		
+		/** @var Configuration Configuration instance for ObjectQuel settings */
 		protected Configuration $configuration;
+		
+		/** @var Connection CakePHP database connection instance */
 		protected Connection $connection;
+		
+		/** @var array Cached table descriptions for schema introspection */
 		protected array $descriptions;
+		
+		/** @var array Cached extended column descriptions */
 		protected array $columns_ex_descriptions;
+		
+		/** @var int Error code from the last failed database operation (0 = no error) */
 		protected int $last_error;
+		
+		/** @var string Error message from the last failed database operation */
 		protected string $last_error_message;
+		
+		/** @var int Current nesting level of active transactions (0 = no active transaction) */
 		protected int $transaction_depth;
+		
+		/** @var array Cached index definitions for tables */
 		protected array $indexes;
+		
+		/** @var bool|null Cached result of window function support detection (null = not yet tested) */
 		private ?bool $supportsWindowFunctionsCache;
+		
+		/** @var string|null Cached database type identifier (null = not yet determined) */
 		private ?string $databaseTypeCache;
 		
 		/**
-		 * Database Adapter constructor.
-		 * This file wraps the functions of CakePHP Database
-		 * @param Connection $connection CakePHP Database database connection
+		 * Constructs a new database adapter instance
+		 * @param Connection $connection CakePHP database connection to wrap
 		 */
 		public function __construct(Connection $connection) {
 			// Store connection
@@ -46,74 +66,151 @@
 			$this->databaseTypeCache = null;
 		}
 		
+		// ==================== Connection & Driver Info ====================
+		
 		/**
-		 * Returns the CakePHP connection
-		 * @return Connection
+		 * Returns the wrapped CakePHP database connection
+		 * @return Connection The underlying CakePHP connection instance
 		 */
 		public function getConnection(): Connection {
 			return $this->connection;
 		}
 		
 		/**
-		 * Returns the last occurred error
-		 * @return int
-		 */
-		public function getLastError(): int {
-			return $this->last_error;
-		}
-		
-		/**
-		 * Returns the last occurred error message
-		 * @return string
-		 */
-		public function getLastErrorMessage(): string {
-			return $this->last_error_message;
-		}
-		
-		/**
-		 * Get the database type from the CakePHP driver
-		 * @return string The database type (mysql, mariadb, pgsql, sqlite, sqlsrv)
+		 * Determines the database type from the CakePHP driver class
+		 * @return string Database type identifier: 'mysql', 'mariadb', 'pgsql', 'sqlite', or 'sqlsrv'
 		 */
 		public function getDatabaseType(): string {
-			if ($this->databaseTypeCache === null) {
-				$driver = $this->connection->getDriver();
-				$driverClass = get_class($driver);
-				
-				$this->databaseTypeCache = match ($driverClass) {
-					'Cake\Database\Driver\Postgres' => 'pgsql',
-					'Cake\Database\Driver\Sqlite' => 'sqlite',
-					'Cake\Database\Driver\Sqlserver' => 'sqlsrv',
-					default => 'mysql'
-				};
+			if ($this->databaseTypeCache !== null) {
+				return $this->databaseTypeCache;
 			}
+			
+			$driver = $this->connection->getDriver();
+			$driverClass = get_class($driver);
+			
+			$this->databaseTypeCache = match ($driverClass) {
+				'Cake\Database\Driver\Postgres' => 'pgsql',
+				'Cake\Database\Driver\Sqlite' => 'sqlite',
+				'Cake\Database\Driver\Sqlserver' => 'sqlsrv',
+				default => 'mysql'
+			};
 			
 			return $this->databaseTypeCache;
 		}
 		
 		/**
-		 * Execute a query
-		 * @param string $query
-		 * @param array $parameters Parameters for prepared statements
-		 * @return StatementInterface|false
+		 * Returns the schema collection for database introspection
+		 * @return CollectionInterface Schema collection providing access to table metadata
 		 */
-		public function execute(string $query, array $parameters = []): StatementInterface|false {
+		public function getSchemaCollection(): CollectionInterface {
+			return $this->connection->getSchemaCollection();
+		}
+		
+		/**
+		 * Creates a Phinx adapter instance from the current CakePHP connection
+		 * Maps CakePHP driver configuration to Phinx adapter format for schema migration support.
+		 * @return AdapterInterface Phinx adapter instance configured for the current database
+		 */
+		public function getPhinxAdapter(): AdapterInterface {
+			// Use the existing connection instead of fetching 'default'
+			$connection = $this->connection;
+			
+			// Get the CakePHP connection config
+			$config = $connection->config();
+			
+			// Map CakePHP driver to Phinx adapter name
+			$driverMap = [
+				'Cake\Database\Driver\Mysql'     => 'mysql',
+				'Cake\Database\Driver\Postgres'  => 'pgsql',
+				'Cake\Database\Driver\Sqlite'    => 'sqlite',
+				'Cake\Database\Driver\Sqlserver' => 'sqlsrv'
+			];
+			
+			// Get the appropriate adapter name
+			$adapter = $driverMap[$config['driver']] ?? 'mysql';
+			
+			// Convert CakePHP connection config to Phinx format
+			$phinxConfig = [
+				'adapter' => $adapter,
+				'host'    => $config['host'] ?? 'localhost',
+				'name'    => $config['database'],
+				'user'    => $config['username'],
+				'pass'    => $config['password'],
+				'port'    => $config['port'] ?? 3306,
+				'charset' => $config['encoding'] ?? 'utf8mb4',
+			];
+			
+			// Create and return the adapter
+			return AdapterFactory::instance()->getAdapter($phinxConfig['adapter'], $phinxConfig);
+		}
+		
+		// ==================== Database Capability Detection ====================
+		
+		/**
+		 * Tests whether the database supports SQL window functions (OVER clause)
+		 *
+		 * Performs feature detection by executing a test query. Result is cached
+		 * for the lifetime of the adapter instance.
+		 *
+		 * @return bool True if window functions are supported, false otherwise
+		 */
+		public function supportsWindowFunctions(): bool {
+			if ($this->supportsWindowFunctionsCache !== null) {
+				return $this->supportsWindowFunctionsCache;
+			}
+			
+			// Portable probe: COUNT(...) OVER () over a single-row derived table.
+			// If window functions aren't supported, this will raise a syntax error.
+			$probeSql = 'SELECT COUNT(1) OVER () AS __wf FROM (SELECT 1) t';
+			
 			try {
-				return $this->connection->execute($query, $parameters);
-			} catch (\Exception $exception) {
-				$this->last_error = $exception->getCode();
-				$this->last_error_message = $exception->getMessage();
+				// Bypass our execute() wrapper so we don't set last_error on capability checks
+				$stmt = $this->connection->execute($probeSql);
+				
+				// Some drivers need an explicit close to free the cursor
+				$stmt->closeCursor();
+				
+				// Return true if window functions are supported
+				$this->supportsWindowFunctionsCache = true;
+				return true;
+			} catch (\Throwable $e) {
+				// Window functions not supported (or extremely old engine quirks) → treat as false
+				$this->supportsWindowFunctionsCache = false;
 				return false;
 			}
 		}
 		
 		/**
-		 * Retrieves and formats column definitions from the database table
+		 * Checks whether the database supports native ENUM column types
+		 * @return bool True if native ENUM types are supported (MySQL/MariaDB), false otherwise
+		 */
+		public function supportsNativeEnums(): bool {
+			return in_array($this->getDatabaseType(), ['mysql', 'mariadb']);
+		}
+		
+		// ==================== Schema Introspection ====================
+		
+		/**
+		 * Retrieves a list of all tables in the database (excluding views)
+		 * @return array List of table names
+		 */
+		public function getTables(): array {
+			$schemaCollection = $this->getSchemaCollection();
+			return $schemaCollection->listTablesWithoutViews();
+		}
+		
+		/**
+		 * Retrieves detailed column definitions for a database table
+		 *
+		 * Returns comprehensive metadata for each column including type, constraints,
+		 * defaults, and special properties like auto-increment and primary key status.
+		 *
 		 * @param string $tableName Name of the table to analyze
-		 * @return array Associative array of column definitions indexed by column name
+		 * @return array Associative array of column definitions indexed by column name,
+		 *               each containing: type, php_type, limit, default, nullable, precision,
+		 *               scale, unsigned, generated, identity, primary_key, values
 		 */
 		public function getColumns(string $tableName): array {
-			$result = [];
-			
 			// Fetch the Phinx adapter
 			$phinxAdapter = $this->getPhinxAdapter();
 			
@@ -125,6 +222,8 @@
 			$decimalTypes = ['decimal', 'numeric', 'float', 'double'];
 			
 			// Fetch and process each column in the table
+			$result = [];
+			
 			foreach ($phinxAdapter->getColumns($tableName) as $column) {
 				$columnType = $column->getType();
 				$isOfDecimalType = in_array(strtolower($columnType), $decimalTypes);
@@ -181,9 +280,10 @@
 		}
 		
 		/**
-		 * Returns the name of the primary key column
-		 * @param string $tableName
-		 * @return string
+		 * Retrieves the primary key column name for a table
+		 * For composite primary keys, returns only the first column.
+		 * @param string $tableName Name of the table
+		 * @return string Primary key column name, or empty string if no primary key exists
 		 */
 		public function getPrimaryKey(string $tableName): string {
 			// Get all primary key columns
@@ -195,9 +295,10 @@
 		}
 		
 		/**
-		 * Returns the primary key columns for a table
-		 * @param string $tableName
-		 * @return array
+		 * Retrieves all columns that make up the primary key for a table
+		 * Supports both single-column and composite primary keys.
+		 * @param string $tableName Name of the table
+		 * @return array List of column names in the primary key, or empty array if none exists
 		 */
 		public function getPrimaryKeyColumns(string $tableName): array {
 			// Get the schema descriptor for the specified table
@@ -222,70 +323,10 @@
 		}
 		
 		/**
-		 * Fetch a list of tables
-		 * @return array
-		 */
-		public function getTables(): array {
-			$schemaCollection = $this->getSchemaCollection();
-			return $schemaCollection->listTablesWithoutViews();
-		}
-		
-		/**
-		 * Begin a new transaction.
-		 * @return void
-		 */
-		public function beginTrans(): void {
-			if ($this->transaction_depth == 0) {
-				$this->connection->begin();
-			}
-			
-			$this->transaction_depth++;
-		}
-		
-		/**
-		 * Commit the current transaction.
-		 * @return void
-		 */
-		public function commitTrans(): void {
-			$this->transaction_depth--;
-			
-			if ($this->transaction_depth == 0) {
-				$this->connection->commit();
-			}
-		}
-		
-		/**
-		 * Rollback the current transaction.
-		 * @return void
-		 */
-		public function rollbackTrans(): void {
-			$this->transaction_depth--;
-			
-			if ($this->transaction_depth == 0) {
-				$this->connection->rollback();
-			}
-		}
-		
-		/**
-		 * Returns the insert id
-		 * @return int|string|false
-		 */
-		public function getInsertId(): int|string|false {
-			return $this->connection->getDriver()->lastInsertId();
-		}
-		
-		/**
-		 * Returns the schema collection of this connection
-		 * @return CollectionInterface
-		 */
-		public function getSchemaCollection(): CollectionInterface {
-			return $this->connection->getSchemaCollection();
-		}
-		
-		/**
-		 * Returns a list of indexes for a specified database table
-		 * @param string $tableName The name of the table to retrieve indexes from
-		 * @return array An associative array of indexes with their details
+		 * Retrieves index definitions for a database table
+		 * @param string $tableName Name of the table
+		 * @return array Associative array of index configurations indexed by index name,
+		 *               each containing: columns, type (PRIMARY, UNIQUE, INDEX), and other properties
 		 */
 		public function getIndexes(string $tableName): array {
 			// Get the schema collection which provides access to database metadata
@@ -309,77 +350,85 @@
 			return $result;
 		}
 		
-		/**
-		 * Get a Phinx adapter instance using CakePHP's database connection
-		 * @return AdapterInterface
-		 */
-		public function getPhinxAdapter(): AdapterInterface {
-			// Use the existing connection instead of fetching 'default'
-			$connection = $this->connection;
-			
-			// Get the CakePHP connection config
-			$config = $connection->config();
-			
-			// Map CakePHP driver to Phinx adapter name
-			$driverMap = [
-				'Cake\Database\Driver\Mysql'     => 'mysql',
-				'Cake\Database\Driver\Postgres'  => 'pgsql',
-				'Cake\Database\Driver\Sqlite'    => 'sqlite',
-				'Cake\Database\Driver\Sqlserver' => 'sqlsrv'
-			];
-			
-			// Get the appropriate adapter name
-			$adapter = $driverMap[$config['driver']] ?? 'mysql';
-			
-			// Convert CakePHP connection config to Phinx format
-			$phinxConfig = [
-				'adapter' => $adapter,
-				'host'    => $config['host'] ?? 'localhost',
-				'name'    => $config['database'],
-				'user'    => $config['username'],
-				'pass'    => $config['password'],
-				'port'    => $config['port'] ?? 3306,
-				'charset' => $config['encoding'] ?? 'utf8mb4',
-			];
-			
-			// Create and return the adapter
-			return AdapterFactory::instance()->getAdapter($phinxConfig['adapter'], $phinxConfig);
-		}
+		// ==================== Query Execution ====================
 		
 		/**
-		 * Detects support for SQL window functions (OVER()) by feature probing.
-		 * Uses a portable query that should work across vendors that implement windows.
-		 * Result is cached for the lifetime of this adapter.
+		 * Executes a SQL query with optional parameter binding
+		 * @param string $query SQL query to execute
+		 * @param array $parameters Parameter values for prepared statement placeholders
+		 * @return StatementInterface|false Statement object on success, false on failure
 		 */
-		public function supportsWindowFunctions(): bool {
-			if ($this->supportsWindowFunctionsCache !== null) {
-				return $this->supportsWindowFunctionsCache;
-			}
-			
-			// Portable probe: COUNT(...) OVER () over a single-row derived table.
-			// If window functions aren't supported, this will raise a syntax error.
-			$probeSql = 'SELECT COUNT(1) OVER () AS __wf FROM (SELECT 1) t';
-			
+		public function execute(string $query, array $parameters = []): StatementInterface|false {
 			try {
-				// Bypass our execute() wrapper so we don't set last_error on capability checks
-				$stmt = $this->connection->execute($probeSql);
-				
-				// Some drivers need an explicit close to free the cursor
-				$stmt->closeCursor();
-				
-				// Return true if window functions are supported
-				return $this->supportsWindowFunctionsCache = true;
-			} catch (\Throwable $e) {
-				// Window functions not supported (or extremely old engine quirks) → treat as false
-				return $this->supportsWindowFunctionsCache = false;
+				return $this->connection->execute($query, $parameters);
+			} catch (\Exception $exception) {
+				$this->last_error = $exception->getCode();
+				$this->last_error_message = $exception->getMessage();
+				return false;
 			}
 		}
 		
 		/**
-		 * Check if the database supports native ENUM column types
-		 * @return bool True if native enums are supported
+		 * Retrieves the auto-generated ID from the last INSERT operation
+		 * @return int|string|false The last insert ID, or false if not available
 		 */
-		public function supportsNativeEnums(): bool {
-			return in_array($this->getDatabaseType(), ['mysql', 'mariadb']);
+		public function getInsertId(): int|string|false {
+			return $this->connection->getDriver()->lastInsertId();
+		}
+		
+		// ==================== Error Handling ====================
+		
+		/**
+		 * Returns the error code from the last failed query
+		 * @return int Error code (0 indicates no error)
+		 */
+		public function getLastError(): int {
+			return $this->last_error;
+		}
+		
+		/**
+		 * Returns the error message from the last failed query
+		 * @return string Error message text (empty string indicates no error)
+		 */
+		public function getLastErrorMessage(): string {
+			return $this->last_error_message;
+		}
+		
+		// ==================== Transaction Management ====================
+		
+		/**
+		 * Begins a new database transaction
+		 * @return void
+		 */
+		public function beginTrans(): void {
+			if ($this->transaction_depth == 0) {
+				$this->connection->begin();
+			}
+			
+			$this->transaction_depth++;
+		}
+		
+		/**
+		 * Commits the current transaction
+		 * @return void
+		 */
+		public function commitTrans(): void {
+			$this->transaction_depth--;
+			
+			if ($this->transaction_depth == 0) {
+				$this->connection->commit();
+			}
+		}
+		
+		/**
+		 * Rolls back the current transaction
+		 * @return void
+		 */
+		public function rollbackTrans(): void {
+			$this->transaction_depth--;
+			
+			if ($this->transaction_depth == 0) {
+				$this->connection->rollback();
+			}
 		}
 	}
