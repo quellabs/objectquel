@@ -104,9 +104,13 @@
 		 * @return array
 		 */
 		public function createPhinxConfig(): array {
+			// Fetch default values
 			$defaults = $this->getDefaults();
+			
+			// Fetch contents of configuration file
 			$configuration = $this->getConfig();
 			
+			// Make a phinx config configuration array
 			return [
 				'paths'        => [
 					'migrations' => $configuration['migrations_path'] ?? $defaults['migrations_path'] ?? '',
