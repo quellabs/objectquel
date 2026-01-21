@@ -51,9 +51,12 @@
 				return 0;
 			}
 			
+			// Fetch the database adapter
+			$databaseAdapter = $this->provider->getDatabaseAdapter();
+			
 			// Extract all necessary data from the table
 			$tableCamelCase = $this->camelCase($table);
-			$tableDescription = $this->getConnection()->getColumns($table);
+			$tableDescription = $databaseAdapter->getColumns($table);
 			
 			if (empty($tableDescription)) {
 				$this->output->writeLn("Could not extract table description for {$table}.");
@@ -177,7 +180,7 @@
 		private function promptForTable(): string {
 			return $this->input->choice(
 				"Select a database table to generate an entity class from:",
-				$this->getConnection()->getTables()
+				$this->provider->getDatabaseAdapter()->getTables()
 			);
 		}
 		
@@ -517,18 +520,6 @@
 		}
 		
 		/**
-		 * Returns the database connector
-		 * @return DatabaseAdapter
-		 */
-		private function getConnection(): DatabaseAdapter {
-			if ($this->connection === null) {
-				$this->connection = new DatabaseAdapter($this->configuration);
-			}
-			
-			return $this->connection;
-		}
-		
-		/**
 		 * Retrieves all database indexes defined for a specific table
 		 * @param string $tableName The name of the database table to get indexes for
 		 * @return array Formatted array of database indexes with their configurations
@@ -540,6 +531,6 @@
 					'type'    => $index['type'],      // Original index type from database
 					'unique'  => strtoupper($index['type']) === 'UNIQUE'  // Convert type to boolean flag for uniqueness
 				];
-			}, $this->getConnection()->getIndexes($tableName));
+			}, $this->provider->getDatabaseAdapter()->getIndexes($tableName));
 		}
 	}

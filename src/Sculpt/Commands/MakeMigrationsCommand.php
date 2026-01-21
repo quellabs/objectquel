@@ -49,6 +49,9 @@
 		public function execute(ConfigurationManager $config): int {
 			$this->output->writeLn("Generating database migrations based on entity changes...");
 			
+			// Fetch the database adapter
+			$databaseAdapter = $this->provider->getDatabaseAdapter();
+			
 			// Step 1: Fetch the entity map from the Entity Store
 			$entityMap = $this->getEntityStore()->getEntityMap();
 			
@@ -58,11 +61,11 @@
 			}
 			
 			// Step 2: Analyze changes between entities and database
-			$entitySchemaAnalyzer = new EntitySchemaAnalyzer($this->getConnection(), $this->getEntityStore());
+			$entitySchemaAnalyzer = new EntitySchemaAnalyzer($databaseAdapter, $this->getEntityStore());
 			$allChanges = $entitySchemaAnalyzer->analyzeEntityChanges($entityMap);
 			
 			// Step 3: Generate a migration file based on changes
-			$migrationBuilder = new PhinxMigrationBuilder($this->getConnection(), $this->migrationsPath);
+			$migrationBuilder = new PhinxMigrationBuilder($databaseAdapter, $this->migrationsPath);
 			$result = $migrationBuilder->generateMigrationFile($allChanges);
 			
 			if (!$result['success']) {
@@ -97,23 +100,7 @@
 		public function getHelp(): string {
 			return "Creates a new database migration file by comparing entity definitions with current database schema to synchronize changes.";
 		}
-		
-		/**
-		 * Returns the database connector using lazy initialization pattern
-		 * @return DatabaseAdapter The database adapter instance
-		 */
-		private function getConnection(): DatabaseAdapter {
-			// Check if connection has already been established
-			if ($this->connection === null) {
-				// Create a new database adapter with stored configuration
-				// This only happens on first call (lazy initialization)
-				$this->connection = new DatabaseAdapter($this->configuration);
-			}
-			
-			// Return the existing or newly created connection
-			return $this->connection;
-		}
-		
+
 		/**
 		 * Returns the EntityStore object
 		 * @return EntityStore
