@@ -118,8 +118,10 @@
 				];
 			}
 			
-			// Table exists - compare actual schema against entity definition
+			// Fetch the table columns
 			$tableColumns = $this->connection->getColumns($tableName);
+			
+			// Analyze what changed
 			$changes = $this->schemaComparator->analyzeSchemaChanges($entityColumns, $tableColumns);
 			
 			// Add index comparisons to the change set
