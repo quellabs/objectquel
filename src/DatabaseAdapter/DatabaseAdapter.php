@@ -80,7 +80,6 @@
 				$driverClass = get_class($driver);
 				
 				$this->databaseTypeCache = match ($driverClass) {
-					'Cake\Database\Driver\Mysql' => 'mysql',
 					'Cake\Database\Driver\Postgres' => 'pgsql',
 					'Cake\Database\Driver\Sqlite' => 'sqlite',
 					'Cake\Database\Driver\Sqlserver' => 'sqlsrv',
@@ -268,147 +267,6 @@
 		}
 		
 		/**
-		 * Fetches a single value from the database using the provided query and parameters
-		 * @param string $query The SQL query to execute
-		 * @param array $parameters Optional array of parameters to bind to the query
-		 * @return mixed            Returns the first column of the first row if found, false if no results
-		 */
-		public function getOne(string $query, array $parameters = []): mixed {
-			// Execute the query with provided parameters
-			$rs = $this->execute($query, $parameters);
-			
-			// Return false if no recordset returned
-			if (!$rs) {
-				return false;
-			}
-			
-			// Fetch the first row
-			$row = $rs->fetch('assoc');
-			
-			// Return false if no row found
-			if (empty($row)) {
-				return false;
-			}
-			
-			// Return the first column value from the row
-			return reset($row);
-		}
-		
-		/**
-		 * Fetches a single row from the database using the provided query and parameters
-		 * @param string $query The SQL query to execute
-		 * @param array $parameters Optional array of parameters to bind to the query
-		 * @return array             Returns the first row as an associative array if found, empty array if no results
-		 */
-		public function getRow(string $query, array $parameters = []): array {
-			// Execute the query with provided parameters
-			$rs = $this->execute($query, $parameters);
-			
-			// Return an empty array if no recordset returned
-			if (!$rs) {
-				return [];
-			}
-			
-			// Return first row from recordset as an array
-			$row = $rs->fetch('assoc');
-			return $row ?: [];
-		}
-		
-		/**
-		 * Fetches a column from the database using the provided query and parameters
-		 * @param string $query The SQL query to execute
-		 * @param array $parameters Optional array of parameters to bind to the query
-		 * @return array             Returns the values from the first column as an array
-		 */
-		public function getCol(string $query, array $parameters = []): array {
-			// Execute the query with provided parameters
-			$rs = $this->execute($query, $parameters);
-			
-			// Return an empty array if no recordset returned
-			if (!$rs) {
-				return [];
-			}
-			
-			// Fetch all rows and extract the first column
-			$result = [];
-			$firstCol = null;
-			
-			while ($row = $rs->fetch('assoc')) {
-				if ($firstCol === null) {
-					$keys = array_keys($row);
-					$firstCol = $keys[0];
-				}
-				
-				$result[] = $row[$firstCol];
-			}
-			
-			return $result;
-		}
-		
-		/**
-		 * Fetches all rows from the database using the provided query and parameters
-		 * @param string $query The SQL query to execute
-		 * @param array $parameters Optional array of parameters to bind to the query
-		 * @return array             Returns all rows as an array of associative arrays
-		 */
-		public function getAll(string $query, array $parameters = []): array {
-			// Execute the query with provided parameters
-			$rs = $this->execute($query, $parameters);
-			
-			// Return an empty array if no recordset returned
-			if (!$rs) {
-				return [];
-			}
-			
-			// Fetch all rows
-			$result = [];
-			while ($row = $rs->fetch('assoc')) {
-				$result[] = $row;
-			}
-			
-			return $result;
-		}
-		
-		/**
-		 * Returns a table's foreign key information
-		 * @param string $tableName
-		 * @return array
-		 */
-		public function getForeignKeys(string $tableName): array {
-			try {
-				// This array will receive the foreign key data
-				$foreignKeys = [];
-				
-				// Get the schema descriptor for the specified table
-				$schema = $this->connection->getSchemaCollection()->describe($tableName);
-				
-				// Iterate through all constraints defined on the table
-				foreach ($schema->constraints() as $constraint) {
-					// Get detailed information about the current constraint
-					$constraintData = $schema->getConstraint($constraint);
-					
-					// Check if this constraint is a foreign key constraint
-					if ($constraintData['type'] === 'foreign') {
-						// Build the foreign key information array to match the original format
-						foreach ($constraintData['columns'] as $index => $column) {
-							$foreignKeys[] = [
-								'COLUMN_NAME'            => $column,
-								'CONSTRAINT_NAME'        => $constraint,
-								'REFERENCED_TABLE_NAME'  => $constraintData['references'][0] ?? null,
-								'REFERENCED_COLUMN_NAME' => $constraintData['references'][1][$index] ?? null
-							];
-						}
-					}
-				}
-				
-				return $foreignKeys;
-			} catch (\Exception $e) {
-				// Silently fail and return an empty array
-				return [];
-			}
-		}
-		
-		/**
 		 * Returns the insert id
 		 * @return int|string|false
 		 */
@@ -451,10 +309,6 @@
 			return $result;
 		}
 		
-		/**
-		 * Get a Phinx adapter instance using CakePHP's database connection
-		 * @return AdapterInterface
-		 */
 		/**
 		 * Get a Phinx adapter instance using CakePHP's database connection
 		 * @return AdapterInterface
