@@ -28,8 +28,6 @@
 	use Quellabs\ObjectQuel\Annotations\Orm\PostUpdate;
 	use Quellabs\ObjectQuel\Annotations\Orm\PreDelete;
 	use Quellabs\ObjectQuel\Annotations\Orm\PostDelete;
-	use Quellabs\SignalHub\SignalHub;
-	use Quellabs\SignalHub\SignalHubLocator;
 	
 	/**
 	 * Manages lifecycle event callbacks for entities
