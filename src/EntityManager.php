@@ -54,13 +54,13 @@
 		 * Properties
 		 */
 		protected Configuration $configuration;
-		protected SignalHub $signal_hub;
+		protected SignalHub $signalHub;
 		protected DatabaseAdapter $connection;
-		protected UnitOfWork $unit_of_work;
-		protected EntityStore $entity_store;
-		protected QueryBuilder $query_builder;
-		protected PropertyHandler $property_handler;
-		protected QueryExecutor $query_executor;
+		protected UnitOfWork $unitOfWork;
+		protected EntityStore $entityStore;
+		protected QueryBuilder $queryBuilder;
+		protected PropertyHandler $propertyHandler;
+		protected QueryExecutor $queryExecutor;
 		
 		/**
 		 * EntityManager constructor
@@ -69,23 +69,28 @@
 		 */
 		public function __construct(?Configuration $configuration, Connection $connection) {
 			$this->configuration = $configuration;
-			$this->signal_hub = SignalHubLocator::getInstance();
+			$this->signalHub = SignalHubLocator::getInstance();
 			$this->connection = new DatabaseAdapter($connection);
-			$this->entity_store = new EntityStore($configuration);
-			$this->unit_of_work = new UnitOfWork($this, $this->signal_hub);
-			$this->query_builder = new QueryBuilder($this->entity_store);
-			$this->query_executor = new QueryExecutor($this);
-			$this->property_handler = new PropertyHandler();
-			
-			// Assign the signal hub to this class
-			$this->setSignalHub($this->signal_hub);
+			$this->entityStore = new EntityStore($configuration);
+			$this->unitOfWork = new UnitOfWork($this, $this->signalHub);
+			$this->queryBuilder = new QueryBuilder($this->entityStore);
+			$this->queryExecutor = new QueryExecutor($this);
+			$this->propertyHandler = new PropertyHandler();
 			
 			// Fetch Signal or create if it doesn't exist
-			$this->debugQuerySignal = $this->signal_hub->getSignal('debug.database.query');
+			$this->debugQuerySignal = $this->signalHub->getSignal('debug.database.query');
 			
 			if ($this->debugQuerySignal === null) {
-				$this->debugQuerySignal = $this->createSignal(['array'], 'debug.database.query');
+				$this->debugQuerySignal = new Signal('debug.database.query');
+				$this->signalHub->registerSignal($this->debugQuerySignal);
 			}
+		}
+		
+		/**
+		 * Remove signal from hub
+		 */
+		public function __destruct() {
+			$this->signalHub->unregisterSignal($this->debugQuerySignal);
 		}
 		
 		/**
@@ -101,7 +106,7 @@
 		 * @return UnitOfWork
 		 */
 		public function getUnitOfWork(): UnitOfWork {
-			return $this->unit_of_work;
+			return $this->unitOfWork;
 		}
 		
 		/**
@@ -109,7 +114,7 @@
 		 * @return EntityStore
 		 */
 		public function getEntityStore(): EntityStore {
-			return $this->entity_store;
+			return $this->entityStore;
 		}
 		
 		/**
@@ -117,7 +122,7 @@
 		 * @return PropertyHandler
 		 */
 		public function getPropertyHandler(): PropertyHandler {
-			return $this->property_handler;
+			return $this->propertyHandler;
 		}
 		
 		/**
@@ -130,7 +135,7 @@
 		 * @param object $entity The entity to be inserted into the database
 		 */
 		public function persist(object $entity): bool {
-			return $this->unit_of_work->persistNew($entity);
+			return $this->unitOfWork->persistNew($entity);
 		}
 		
 		/**
@@ -141,7 +146,7 @@
 		 * @throws OrmException
 		 */
 		public function flush(object|array|null $entity = null): void {
-			$this->unit_of_work->commit($entity);
+			$this->unitOfWork->commit($entity);
 		}
 		
 		/**
@@ -150,7 +155,7 @@
 		 * @param object $entity The entity to detach.
 		 */
 		public function detach(object $entity): void {
-			$this->unit_of_work->detach($entity);
+			$this->unitOfWork->detach($entity);
 		}
 
 		/**
@@ -165,7 +170,7 @@
 			$start = microtime(true);
 			
 			// Execute the query through the query executor
-			$result = $this->query_executor->executeQuery($query, $parameters);
+			$result = $this->queryExecutor->executeQuery($query, $parameters);
 			
 			// Record end time to calculate execution duration
 			$end = microtime(true);
@@ -257,15 +262,15 @@
 		 */
 		public function findBy(string $entityType, mixed $primaryKey): array {
 			// Check if the desired entity type is actually an entity
-			if (!$this->entity_store->exists($entityType)) {
+			if (!$this->entityStore->exists($entityType)) {
 				throw new QuelException("The entity or range {$entityType} referenced in the query does not exist.");
 			}
 			
 			// Normalize the primary key
-			$primaryKeys = $this->entity_store->formatPrimaryKeyAsArray($primaryKey, $entityType);
+			$primaryKeys = $this->entityStore->formatPrimaryKeyAsArray($primaryKey, $entityType);
 			
 			// Prepare a query in case the entity is not found
-			$query = $this->query_builder->prepareQuery($entityType, $primaryKeys);
+			$query = $this->queryBuilder->prepareQuery($entityType, $primaryKeys);
 			
 			// Execute query and retrieve result
 			$result = $this->getAll($query, $primaryKeys);
@@ -288,15 +293,15 @@
 		 */
 		public function find(string $entityType, mixed $primaryKey): ?object {
 			// Check if the desired entity type is actually an entity
-			if (!$this->entity_store->exists($entityType)) {
+			if (!$this->entityStore->exists($entityType)) {
 				throw new QuelException("The entity or range {$entityType} referenced in the query does not exist.");
 			}
 			
 			// Normalize the primary key
-			$primaryKeys = $this->entity_store->formatPrimaryKeyAsArray($primaryKey, $entityType);
+			$primaryKeys = $this->entityStore->formatPrimaryKeyAsArray($primaryKey, $entityType);
 			
 			// Try to find the entity in the current unit of work
-			$existingEntity = $this->unit_of_work->findEntity($entityType, $primaryKeys);
+			$existingEntity = $this->unitOfWork->findEntity($entityType, $primaryKeys);
 			
 			// If the entity exists and is initialized, return it
 			if (!empty($existingEntity) && !($existingEntity instanceof ProxyInterface && !$existingEntity->isInitialized())) {
@@ -321,7 +326,7 @@
 		 * @return void
 		 */
 		public function remove(object $entity): void {
-			$this->unit_of_work->scheduleForDelete($entity);
+			$this->unitOfWork->scheduleForDelete($entity);
 		}
 		
 		/**
