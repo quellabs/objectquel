@@ -32,45 +32,75 @@
 	use Quellabs\ObjectQuel\ProxyGenerator\ProxyInterface;
 	use Quellabs\ObjectQuel\ReflectionManagement\PropertyHandler;
 	use Quellabs\ObjectQuel\Serialization\Serializers\SQLSerializer;
-	use Quellabs\SignalHub\HasSignals;
+	use Quellabs\SignalHub\Signal;
 	use Quellabs\SignalHub\SignalHub;
+	use Quellabs\SignalHub\SignalHubLocator;
 	
 	class UnitOfWork {
-		
-		use HasSignals;
 		
 		protected array $original_entity_data;
 		protected array $identity_map;
 		protected array $entity_removal_list;
-		protected EntityManager $entity_manager;
-		protected EntityStore $entity_store;
-		protected PropertyHandler $property_handler;
+		private SignalHub $signalHub;
+		protected EntityManager $entityManager;
+		protected EntityStore $entityStore;
+		protected PropertyHandler $propertyHandler;
 		protected ?SQLSerializer $serializer;
 		protected ?DatabaseAdapter $connection;
 		protected EntityLifecycleManager $lifecycleManager;
 		
+		public Signal $signalPrePersist;
+		public Signal $signalPostPersist;
+		public Signal $signalPreUpdate;
+		public Signal $signalPostUpdate;
+		public Signal $signalPreDelete;
+		public Signal $signalPostDelete;
+		
 		/**
 		 * UnitOfWork constructor.
 		 * @param EntityManager $entityManager
-		 * @param SignalHub $signalHub
+		 * @throws \Exception
 		 */
-		public function __construct(EntityManager $entityManager, SignalHub $signalHub) {
-			$this->setSignalHub($signalHub);
-
+		public function __construct(EntityManager $entityManager) {
+			$this->signalHub = SignalHubLocator::getInstance();
 			$this->connection = $entityManager->getConnection();
-			$this->entity_manager = $entityManager;
-			$this->entity_store = $entityManager->getEntityStore();
-			$this->property_handler = new PropertyHandler();
+			$this->entityManager = $entityManager;
+			$this->entityStore = $entityManager->getEntityStore();
+			$this->propertyHandler = new PropertyHandler();
 			$this->serializer = new SQLSerializer($entityManager->getEntityStore());
 			$this->original_entity_data = [];
 			$this->entity_removal_list = [];
 			$this->identity_map = [];
 			
 			// Register the signals
-			$this->registerLifecycleSignals();
+			$this->signalPrePersist = new Signal('orm.prePersist');
+			$this->signalPostPersist = new Signal('orm.postPersist');
+			$this->signalPreUpdate = new Signal('orm.preUpdate');
+			$this->signalPostUpdate = new Signal('orm.postUpdate');
+			$this->signalPreDelete = new Signal('orm.preDelete');
+			$this->signalPostDelete = new Signal('orm.postDelete');
+			
+			$this->signalHub->registerSignal($this->signalPrePersist);
+			$this->signalHub->registerSignal($this->signalPostPersist);
+			$this->signalHub->registerSignal($this->signalPreUpdate);
+			$this->signalHub->registerSignal($this->signalPostUpdate);
+			$this->signalHub->registerSignal($this->signalPreDelete);
+			$this->signalHub->registerSignal($this->signalPostDelete);
 			
 			// Create the EntityLifecycleManager instance
-			$this->lifecycleManager = new EntityLifecycleManager($this->getSignalHub(), $this->entity_store);
+			$this->lifecycleManager = new EntityLifecycleManager($this);
+		}
+		
+		/**
+		 * Remove signals from hub
+		 */
+		public function __destruct() {
+			$this->signalHub->unregisterSignal($this->signalPostDelete);
+			$this->signalHub->unregisterSignal($this->signalPreDelete);
+			$this->signalHub->unregisterSignal($this->signalPostUpdate);
+			$this->signalHub->unregisterSignal($this->signalPreUpdate);
+			$this->signalHub->unregisterSignal($this->signalPostPersist);
+			$this->signalHub->unregisterSignal($this->signalPrePersist);
 		}
 		
 		/**
@@ -78,7 +108,7 @@
 		 * @return PropertyHandler
 		 */
 		public function getPropertyHandler(): PropertyHandler {
-			return $this->property_handler;
+			return $this->propertyHandler;
 		}
 		
 		/**
@@ -86,7 +116,7 @@
 		 * @return EntityManager
 		 */
 		public function getEntityManager(): EntityManager {
-			return $this->entity_manager;
+			return $this->entityManager;
 		}
 		
 		/**
@@ -94,7 +124,7 @@
 		 * @return EntityStore
 		 */
 		public function getEntityStore(): EntityStore {
-			return $this->entity_store;
+			return $this->entityStore;
 		}
 		
 		/**
@@ -297,7 +327,7 @@
 						// Copy the primary keys from the parent entity to this entity, if available.
 						// This only happens if the relationship is not self-referential.
 						foreach($this->fetchParentEntitiesPrimaryKeyData($entity) as $parentEntity) {
-							$this->property_handler->set($entity, $parentEntity["property"], $parentEntity["value"]);
+							$this->propertyHandler->set($entity, $parentEntity["property"], $parentEntity["value"]);
 						}
 						
 						// Perform the corresponding database operation based on the state of the entity.
@@ -460,7 +490,7 @@
 			}
 			
 			// Checks if the entity is new based on the absence of primary keys.
-			$primaryKeys = $this->entity_store->getIdentifierKeys($entity);
+			$primaryKeys = $this->entityStore->getIdentifierKeys($entity);
 			
 			if ($this->hasNullPrimaryKeys($entity, $primaryKeys)) {
 				return DirtyState::New;
@@ -499,7 +529,7 @@
 		 */
 		private function hasNullPrimaryKeys(object $entity, array $primaryKeys): bool {
 			foreach ($primaryKeys as $primaryKey) {
-				if ($this->property_handler->get($entity, $primaryKey) === null) {
+				if ($this->propertyHandler->get($entity, $primaryKey) === null) {
 					return true;
 				}
 			}
@@ -549,7 +579,7 @@
 			
 			// Fallback to using the property handler if no getter method exists
 			// This likely accesses properties through alternative means (e.g., reflection)
-			return $this->property_handler->get($entity, $property);
+			return $this->propertyHandler->get($entity, $property);
 		}
 		
 		/**
@@ -637,7 +667,7 @@
 				// Process all parent dependencies (both ManyToOne and qualifying OneToOne)
 				foreach (array_merge($manyToOneParents, $oneToOneParents) as $property => $annotation) {
 					// Get the actual parent entity object from the current entity's property
-					$parentEntity = $this->property_handler->get($entity, $property);
+					$parentEntity = $this->propertyHandler->get($entity, $property);
 					
 					// Skip if the relationship is null (no parent entity assigned)
 					if ($parentEntity === null) {
@@ -786,7 +816,7 @@
 					
 					// Use the property_handler to retrieve the value of the related parent entity.
 					// This is the actual object reference to the parent entity
-					$parentEntity = $this->property_handler->get($entity, $property);
+					$parentEntity = $this->propertyHandler->get($entity, $property);
 					
 					// If the parent entity exists, add it to the result with its relationship details.
 					if (!empty($parentEntity)) {
@@ -839,7 +869,7 @@
 
 			foreach ($primaryKeys as $key) {
 				// Fetch the corresponding value for each primary key from the entity using the property handler
-				$result[$key] = $this->property_handler->get($entity, $key);
+				$result[$key] = $this->propertyHandler->get($entity, $key);
 			}
 			
 			return $result;
@@ -861,12 +891,12 @@
 			
 			// Normalize the entity class name to ensure consistent format
 			// Normalization handles variations in namespace notation
-			$normalizedClass = $this->entity_store->normalizeEntityName($entityClass);
+			$normalizedClass = $this->entityStore->normalizeEntityName($entityClass);
 			
 			// Retrieve all entity classes that depend on this entity
 			// These are entities that have relationships annotated with cascade="remove"
 			// or similar configurations that indicate cascading deletes
-			$dependentEntityClasses = $this->entity_store->getDependentEntities($entity);
+			$dependentEntityClasses = $this->entityStore->getDependentEntities($entity);
 			
 			// Process each dependent entity class to find and mark instances for deletion
 			// This handles OneToMany and OneToOne relationships where the parent is being deleted
@@ -890,11 +920,11 @@
 		private function processDependentEntityClass(string $dependentEntityClass, string $normalizedClass, object $entity): void {
 			// Retrieve all ManyToOne relationships defined in the dependent entity class
 			// These are relationships where the dependent entity has a foreign key to some parent
-			$manyToOneDependencies = $this->entity_store->getManyToOneDependencies($dependentEntityClass);
+			$manyToOneDependencies = $this->entityStore->getManyToOneDependencies($dependentEntityClass);
 			
 			// Retrieve all OneToOne relationships defined in the dependent entity class
 			// These are one-to-one associations between entities
-			$oneToOneDependencies = $this->entity_store->getOneToOneDependencies($dependentEntityClass);
+			$oneToOneDependencies = $this->entityStore->getOneToOneDependencies($dependentEntityClass);
 			
 			// Filter OneToOne relationships to only include bidirectional ones
 			// We only want relationships where both sides reference each other
@@ -907,7 +937,7 @@
 			foreach (array_merge($manyToOneDependencies, $oneToOneDependencies) as $property => $annotation) {
 				// Skip if this relationship doesn't point to our parent entity class
 				// This ensures we only process relationships relevant to the deleted entity
-				if ($this->entity_store->normalizeEntityName($annotation->getTargetEntity()) !== $normalizedClass) {
+				if ($this->entityStore->normalizeEntityName($annotation->getTargetEntity()) !== $normalizedClass) {
 					continue;
 				}
 				
@@ -943,7 +973,7 @@
 		 */
 		private function getCascadeInfo(string $entityClass, string $property): ?object {
 			// Retrieve all annotations for the specified entity class from the entity store
-			$entityAnnotations = $this->entity_store->getAnnotations($entityClass);
+			$entityAnnotations = $this->entityStore->getAnnotations($entityClass);
 			
 			// Check if the specified property exists in the entity annotations
 			// If not, return null immediately since no cascade can exist
@@ -1010,7 +1040,7 @@
 			// Query the entity manager to find all dependent objects
 			// that have a foreign key relationship to the parent entity
 			// Uses the specified property name to match against the parent's ID
-			$dependentObjects = $this->entity_manager->findBy($dependentEntityClass, [
+			$dependentObjects = $this->entityManager->findBy($dependentEntityClass, [
 				$property => $parentId
 			]);
 			
@@ -1091,7 +1121,7 @@
 				}
 				
 				// Get the actual collection of related entities from the entity's property
-				$collection = $this->property_handler->get($entity, $property);
+				$collection = $this->propertyHandler->get($entity, $property);
 				
 				// Skip if the collection property is null (no collection initialized)
 				if ($collection === null) {
@@ -1146,7 +1176,7 @@
 				}
 				
 				// Get the single related entity from the entity's property
-				$relatedEntity = $this->property_handler->get($entity, $property);
+				$relatedEntity = $this->propertyHandler->get($entity, $property);
 				
 				// Skip if no related entity exists (the property is null)
 				if ($relatedEntity === null) {
@@ -1177,11 +1207,5 @@
 		 */
 		private function registerLifecycleSignals(): void {
 			// Define standard ORM lifecycle signals
-			$this->createSignal(['object'], 'orm.prePersist');
-			$this->createSignal(['object'], 'orm.postPersist');
-			$this->createSignal(['object'], 'orm.preUpdate');
-			$this->createSignal(['object'], 'orm.postUpdate');
-			$this->createSignal(['object'], 'orm.preDelete');
-			$this->createSignal(['object'], 'orm.postDelete');
 		}
 	}
