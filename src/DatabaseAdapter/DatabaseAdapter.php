@@ -359,6 +359,34 @@
 		 * @return StatementInterface|false Statement object on success, false on failure
 		 */
 		public function execute(string $query, array $parameters = []): StatementInterface|false {
+			// MySQL does not support named parameters inside MATCH...AGAINST() in prepared
+			// statements. Since ObjectQuel uses CakePHP's database abstraction (not raw PDO),
+			// we resolve this by inlining parameter values directly into MATCH...AGAINST()
+			// expressions before passing the query to CakePHP. The values are safely escaped
+			// using the driver's own quote() method, so no SQL injection risk.
+			if (str_contains($query, 'MATCH(') && !empty($parameters)) {
+				$query = preg_replace_callback(
+					'/MATCH\(([^)]+)\)\s+AGAINST\(:([\w]+)\s+IN\s+BOOLEAN\s+MODE\)/i',
+					function (array $matches) use (&$parameters): string {
+						$paramName = $matches[2];
+						
+						if (!array_key_exists($paramName, $parameters)) {
+							return $matches[0];
+						}
+						
+						$value = (string) $parameters[$paramName];
+						
+						// Escape for a single-quoted SQL string literal.
+						// MySQL accepts both \' and '' but '' is standard SQL.
+						$escaped = str_replace(["\\", "'"], ["\\\\", "\\'"], $value);
+						unset($parameters[$paramName]);
+						
+						return "MATCH({$matches[1]}) AGAINST('{$escaped}' IN BOOLEAN MODE)";
+					},
+					$query
+				);
+			}
+			
 			try {
 				return $this->connection->execute($query, $parameters);
 			} catch (\Exception $exception) {
