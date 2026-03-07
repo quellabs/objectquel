@@ -10,7 +10,7 @@
 	 * This is the default injected by QuelToSQL when the caller does not supply
 	 * a platform instance.
 	 */
-	class NullDatabasePlatform implements DatabasePlatformInterface {
+	class NullPlatformCapabilities implements PlatformCapabilitiesInterface {
 		
 		/**
 		 * @inheritDoc

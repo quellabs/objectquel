@@ -14,10 +14,10 @@
 	 *
 	 * Implement this interface once per integration point (e.g. a CakePHP adapter)
 	 * and inject it into QuelToSQL. When no implementation is provided, ObjectQuel
-	 * falls back to NullDatabasePlatform, which assumes the most conservative
+	 * falls back to NullPlatformCapabilities, which assumes the most conservative
 	 * (widest-compatible) behaviour.
 	 */
-	interface DatabasePlatformInterface {
+	interface PlatformCapabilitiesInterface {
 		
 		/**
 		 * Returns true if the database engine supports REGEXP_LIKE(col, pattern, flags).

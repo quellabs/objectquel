@@ -2,8 +2,8 @@
 	
 	namespace Quellabs\ObjectQuel\Execution\Optimizers;
 	
-	use Quellabs\ObjectQuel\Database\DatabasePlatformInterface;
-	use Quellabs\ObjectQuel\Database\NullDatabasePlatform;
+	use Quellabs\ObjectQuel\Database\PlatformCapabilitiesInterface;
+	use Quellabs\ObjectQuel\Database\NullPlatformCapabilities;
 	use Quellabs\ObjectQuel\EntityManager;
 	use Quellabs\ObjectQuel\Execution\Support\AggregateConstants;
 	use Quellabs\ObjectQuel\Execution\Support\AggregateRewriter;
@@ -39,15 +39,15 @@
 		/** @var EntityManager EntityManager is the portal to the ORM */
 		private EntityManager $entityManager;
 
-		/** @var DatabasePlatformInterface Database engine capability descriptor */
-		private DatabasePlatformInterface $platform;
+		/** @var PlatformCapabilitiesInterface Database engine capability descriptor */
+		private PlatformCapabilitiesInterface $platform;
 		
 		/**
 		 * AggregateOptimizer constructor
 		 * @param EntityManager $entityManager Provides entity metadata
-		 * @param DatabasePlatformInterface $platform Database engine capability descriptor
+		 * @param PlatformCapabilitiesInterface $platform Database engine capability descriptor
 		 */
-		public function __construct(EntityManager $entityManager, DatabasePlatformInterface $platform = new NullDatabasePlatform()) {
+		public function __construct(EntityManager $entityManager, PlatformCapabilitiesInterface $platform = new NullPlatformCapabilities()) {
 			$this->entityManager = $entityManager;
 			$this->platform = $platform;
 		}

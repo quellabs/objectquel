@@ -6,19 +6,30 @@
 	use Cake\Database\Driver\Mysql;
 	
 	/**
-	 * DatabasePlatformInterface adapter for a CakePHP database connection.
+	 * PlatformCapabilitiesInterface adapter for a CakePHP database connection.
 	 *
 	 * Wraps a CakePHP Connection and inspects its driver to determine which
 	 * SQL features are available at runtime. Construct this once (typically
 	 * alongside your EntityManager) and pass it into QuelToSQL.
 	 *
 	 * Example:
-	 *   $platform = new CakePHPDatabasePlatform($connection);
+	 *   $platform = new PlatformCapabilities($connection);
 	 *   $quelToSQL = new QuelToSQL($entityStore, $parameters, $platform);
 	 */
-	class CakePHPDatabasePlatform implements DatabasePlatformInterface {
+	readonly class PlatformCapabilities implements PlatformCapabilitiesInterface {
 		
-		public function __construct(private readonly Connection $connection) {}
+		/**
+		 * @var Connection CakePHP Database connection
+		 */
+		private Connection $connection;
+		
+		/**
+		 * Constructor
+		 * @param Connection $connection
+		 */
+		public function __construct(Connection $connection) {
+			$this->connection = $connection;
+		}
 		
 		/**
 		 * @inheritDoc
