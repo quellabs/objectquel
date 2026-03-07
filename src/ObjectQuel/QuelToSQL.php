@@ -290,9 +290,9 @@
 			}
 			
 			$groupSQL = [];
-			$visitor = new QuelToSQLConvertToString($this->entityStore, $this->parameters, "CONDITION");
 
 			foreach($groupBy as $group) {
+				$visitor = new QuelToSQLConvertToString($this->entityStore, $this->parameters, "CONDITION");
 				$group->accept($visitor);
 				$groupSQL[] = $visitor->getResult();
 			}

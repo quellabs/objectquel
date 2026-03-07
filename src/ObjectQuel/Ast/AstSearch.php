@@ -27,7 +27,7 @@
 			
 			// Automatically set parent relationships
 			$this->searchString->setParent($this);
-
+			
 			foreach ($this->identifiers as $identifier) {
 				$identifier->setParent($this);
 			}
@@ -69,6 +69,14 @@
 		 */
 		public function getIdentifiers(): array {
 			return $this->identifiers;
+		}
+		
+		/**
+		 * Get the search string node
+		 * @return AstString|AstParameter The search string or parameter node
+		 */
+		public function getSearchString(): AstString|AstParameter {
+			return $this->searchString;
 		}
 		
 		/**

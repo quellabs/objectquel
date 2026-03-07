@@ -536,6 +536,15 @@
 				$this->addToVisitedNodes($ast->getAggregation());
 				$this->addToVisitedNodes($ast->getConditions());
 			}
+			
+			// And AstSearch
+			if ($ast instanceof AstSearch) {
+				foreach ($ast->getIdentifiers() as $identifier) {
+					$this->addToVisitedNodes($identifier);
+				}
+				
+				$this->addToVisitedNodes($ast->getSearchString());
+			}
 		}
 		
 		/**
