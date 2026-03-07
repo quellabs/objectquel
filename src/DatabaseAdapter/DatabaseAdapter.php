@@ -85,13 +85,21 @@
 			$driverClass = get_class($driver);
 			
 			$this->databaseTypeCache = match ($driverClass) {
-				'Cake\Database\Driver\Postgres' => 'pgsql',
-				'Cake\Database\Driver\Sqlite' => 'sqlite',
-				'Cake\Database\Driver\Sqlserver' => 'sqlsrv',
-				default => 'mysql'
+				'Cake\Database\Driver\Postgres'   => 'pgsql',
+				'Cake\Database\Driver\Sqlite'     => 'sqlite',
+				'Cake\Database\Driver\Sqlserver'  => 'sqlsrv',
+				default => stripos($driver->version(), 'mariadb') !== false ? 'mariadb' : 'mysql'
 			};
 			
 			return $this->databaseTypeCache;
+		}
+		
+		/**
+		 * Returns the database version number
+		 * @return string
+		 */
+		public function getMysqlVersion(): string {
+			return $this->connection->getDriver()->version();
 		}
 		
 		/**

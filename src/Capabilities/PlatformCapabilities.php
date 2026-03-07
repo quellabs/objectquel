@@ -2,62 +2,47 @@
 	
 	namespace Quellabs\ObjectQuel\Capabilities;
 	
-	use Cake\Database\Connection;
-	use Cake\Database\Driver\Mysql;
+	use Quellabs\ObjectQuel\DatabaseAdapter\DatabaseAdapter;
 	
 	/**
-	 * PlatformCapabilitiesInterface adapter for a CakePHP database connection.
+	 * PlatformCapabilitiesInterface adapter backed by a DatabaseAdapter instance.
 	 *
-	 * Wraps a CakePHP Connection and inspects its driver to determine which
-	 * SQL features are available at runtime. Construct this once (typically
-	 * alongside your EntityManager) and pass it into QuelToSQL.
+	 * Wraps a DatabaseAdapter and uses it to determine which SQL features are
+	 * available at runtime. Construct this once (typically alongside your
+	 * EntityManager) and pass it into QuelToSQL.
 	 *
 	 * Example:
-	 *   $platform = new PlatformCapabilities($connection);
+	 *   $platform = new PlatformCapabilities($adapter);
 	 *   $quelToSQL = new QuelToSQL($entityStore, $parameters, $platform);
 	 */
 	readonly class PlatformCapabilities implements PlatformCapabilitiesInterface {
 		
 		/**
-		 * @var Connection CakePHP Database connection
+		 * @var DatabaseAdapter
 		 */
-		private Connection $connection;
+		private DatabaseAdapter $adapter;
 		
 		/**
 		 * Constructor
-		 * @param Connection $connection
+		 * @param DatabaseAdapter $adapter
 		 */
-		public function __construct(Connection $connection) {
-			$this->connection = $connection;
+		public function __construct(DatabaseAdapter $adapter) {
+			$this->adapter = $adapter;
 		}
 		
 		/**
 		 * @inheritDoc
 		 *
 		 * REGEXP_LIKE(col, pattern, flags) is available in MySQL 8.0.0 and later.
-		 * MariaDB exposes a REGEXP_LIKE() function but does not accept the flags
-		 * argument, so we conservatively restrict this to MySQL only.
+		 * MariaDB exposes REGEXP_LIKE() but does not accept the flags argument,
+		 * so this returns false for MariaDB and all non-MySQL databases.
 		 */
 		public function supportsRegexpLike(): bool {
-			// Fetch CakePHP driver
-			$driver = $this->connection->getDriver();
-			
-			// Bail if this is not MySQL
-			if (!$driver instanceof Mysql) {
+			if ($this->adapter->getDatabaseType() !== 'mysql') {
 				return false;
 			}
 			
-			// Fetch version
-			$version = $driver->version();
-			
-			// MariaDB identifies itself through the Mysql driver but does not support
-			// the flags argument in REGEXP_LIKE(). Detect it via the version string.
-			if (stripos($version, 'mariadb') !== false) {
-				return false;
-			}
-			
-			// getVersion() returns a string like "8.0.32" or "5.7.41"
-			return version_compare($driver->version(), '8.0.0', '>=');
+			return version_compare($this->adapter->getMysqlVersion(), '8.0.0', '>=');
 		}
 		
 		/**
@@ -74,15 +59,15 @@
 			}
 			
 			// Portable probe: COUNT(...) OVER () over a single-row derived table.
-			// If window functions aren't supported, this will raise a syntax error.
+			// If window functions aren't supported, execute() returns false.
 			$probeSql = 'SELECT COUNT(1) OVER () AS __wf FROM (SELECT 1) t';
+			$stmt = $this->adapter->execute($probeSql);
 			
-			try {
-				$stmt = $this->connection->execute($probeSql);
-				$stmt->closeCursor();
-				return $cache = true;
-			} catch (\Throwable) {
+			if ($stmt === false) {
 				return $cache = false;
 			}
+			
+			$stmt->closeCursor();
+			return $cache = true;
 		}
 	}
