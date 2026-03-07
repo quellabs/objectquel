@@ -308,7 +308,7 @@
 			$altValue = $this->expressionRule->parseSimpleValue();
 			
 			$this->lexer->match(Token::ParenthesesClose);
-			
+
 			return new AstIfNull($expression, $altValue);
 		}
 		
@@ -448,8 +448,8 @@
 			do {
 				// Not an identifier — stop here, the caller will parse the search term next
 				if ($this->lexer->lookahead() !== Token::Identifier) {
-					// If we already consumed a comma to get here, that comma had nothing after it
-					if (!empty($identifiers)) {
+					// A closing paren after a comma is a genuine trailing comma error: search(p.content, )
+					if (!empty($identifiers) && $this->lexer->lookahead() === Token::ParenthesesClose) {
 						throw new ParserException("Unexpected token after comma in SEARCH() identifier list. Expected a field identifier or search string.");
 					}
 					

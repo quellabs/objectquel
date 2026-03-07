@@ -341,14 +341,24 @@
 		 * @return string SQL MATCH...AGAINST expression
 		 */
 		private function buildFullTextCondition(array $identifiers, AstString|AstParameter $searchString, string $searchKey): string {
-			$columns = array_map(fn($id) => $this->buildColumnName($id), $identifiers);
+			// MATCH() requires bare column names — no table alias prefix.
+			// buildColumnName() returns `alias.column`; we extract only the column part.
+			$columns = array_map(function($id) {
+				$full = $this->buildColumnName($id);
+				// Strip "alias." prefix if present — MATCH(content) not MATCH(p.content)
+				$dotPos = strpos($full, '.');
+				return $dotPos !== false ? substr($full, $dotPos + 1) : $full;
+			}, $identifiers);
+			
 			$columnList = implode(', ', $columns);
 			
 			if ($searchString instanceof AstParameter) {
-				// Named parameter — pass through directly, no new parameter needed
+				// Pass the caller's named parameter through directly.
+				// MATCH...AGAINST() rejects named params with MySQL native prepares —
+				// DatabaseAdapter::execute() enables emulated prepares for MATCH queries.
 				$term = ':' . $searchString->getName();
 			} else {
-				// Inline string literal — bind as a parameter to keep the query safe
+				// Inline string literal — bind under a unique ft_ key
 				$paramName = 'ft_' . $searchKey;
 				$this->parameters[$paramName] = $searchString->getValue();
 				$term = ':' . $paramName;
@@ -382,6 +392,13 @@
 		 */
 		public function buildSortableColumn(AstIdentifier $ast): string {
 			$range = $ast->getRange();
+			
+			// Alias identifier (e.g. `score` from `score=search_score(...)`) —
+			// no range, no next node. Return the bare name so ORDER BY score works.
+			if ($range === null || !$ast->hasNext()) {
+				return $ast->getName();
+			}
+			
 			$rangeName = $range->getName();
 			$entityName = $ast->getEntityName();
 			$propertyName = $ast->getNext()->getName();
