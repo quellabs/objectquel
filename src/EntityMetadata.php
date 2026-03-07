@@ -22,6 +22,7 @@
 	
 	use Quellabs\AnnotationReader\Collection\AnnotationCollection;
 	use Quellabs\ObjectQuel\Annotations\Orm\Column;
+	use Quellabs\ObjectQuel\Annotations\Orm\FullTextIndex;
 	use Quellabs\ObjectQuel\Annotations\Orm\Index;
 	use Quellabs\ObjectQuel\Annotations\Orm\OneToMany;
 	use Quellabs\ObjectQuel\Annotations\Orm\OneToOne;
@@ -55,7 +56,7 @@
 		 * @param array<string, ManyToOne> $manyToOneRelations Property => ManyToOne annotation mapping
 		 * @param array<string, OneToMany> $oneToManyRelations Property => OneToMany annotation mapping
 		 * @param array<string, OneToOne> $oneToOneRelations Property => OneToOne annotation mapping
-		 * @param array<Index|UniqueIndex> $indexes Index annotations from class level
+		 * @param array<Index|UniqueIndex|FullTextIndex> $indexes Index annotations from class level
 		 * @param string|null $autoIncrementColumn Property name of auto-increment primary key (if any)
 		 * @param array<string, array> $columnDefinitions Full column definitions for schema generation
 		 */

@@ -19,6 +19,7 @@
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstIsNumeric;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstParameter;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstSearch;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstSearchScore;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstString;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstCountU;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstSum;
@@ -80,6 +81,7 @@
 				'any' => $this->parseAny(),
 				'concat' => $this->parseConcat(),
 				'search' => $this->parseSearch(),
+				'search_score' => $this->parseSearchScore(),
 				'is_empty' => $this->parseIsEmpty(),
 				'is_numeric' => $this->parseIsNumeric(),
 				'is_integer' => $this->parseIsInteger(),
@@ -306,7 +308,7 @@
 			$altValue = $this->expressionRule->parseSimpleValue();
 			
 			$this->lexer->match(Token::ParenthesesClose);
-
+			
 			return new AstIfNull($expression, $altValue);
 		}
 		
@@ -354,7 +356,47 @@
 		}
 		
 		/**
-		 * Parse SEARCH() function - performs text search across multiple fields
+		 * Parse SEARCH_SCORE() function - returns the full-text relevance score for a set of fields.
+		 * Uses the same syntax as SEARCH() but emits a MATCH...AGAINST value expression instead
+		 * of a boolean condition. Intended for use in SELECT and ORDER BY clauses.
+		 *
+		 * Requires a @FullTextIndex annotation on the entity covering all searched columns.
+		 * An exception is thrown at SQL generation time if no matching index is found.
+		 *
+		 * Example:
+		 *   retrieve (p, search_score(p.name, p.description, :term) as score)
+		 *   where search(p.name, p.description, :term)
+		 *   sort by score desc
+		 *
+		 * @return AstSearchScore The SEARCH_SCORE AST node
+		 * @throws LexerException When token matching fails
+		 * @throws ParserException When identifier list is empty or search string is invalid
+		 */
+		protected function parseSearchScore(): AstSearchScore {
+			$this->lexer->match(Token::ParenthesesOpen);
+			
+			$identifiers = $this->parseIdentifierList();
+			
+			if (empty($identifiers)) {
+				throw new ParserException("Missing identifier list for SEARCH_SCORE operator.");
+			}
+			
+			$searchString = $this->expressionRule->parse();
+			
+			if ((!$searchString instanceof AstString) && (!$searchString instanceof AstParameter)) {
+				throw new ParserException(
+					"SEARCH_SCORE() requires a string literal or :parameter as its last argument, got " . get_class($searchString) . ". " .
+					"Did you mean to quote the search term or use a :parameter?"
+				);
+			}
+			
+			$this->lexer->match(Token::ParenthesesClose);
+			
+			return new AstSearchScore($identifiers, $searchString);
+		}
+		
+		/**
+		 * Parse SEARCH() function - performs text search across multiple fields.
 		 * Searches for the given search string across the specified identifier fields.
 		 * The last parameter must be a string literal or parameter containing the search term.
 		 * @return AstSearch The SEARCH AST node

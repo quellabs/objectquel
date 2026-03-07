@@ -32,6 +32,7 @@
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstParameter;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRangeJsonSource;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstSearch;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstSearchScore;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstString;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstSubquery;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstSum;
@@ -384,6 +385,15 @@
 		}
 		
 		/**
+		 * Process a search_score() operation — returns the MATCH...AGAINST relevance score
+		 * as a numeric value for use in SELECT and ORDER BY clauses.
+		 * @param AstSearchScore $searchScore The search_score node to process
+		 */
+		protected function handleSearchScore(AstSearchScore $searchScore): void {
+			$this->result[] = $this->expressionHandler->handleSearchScore($searchScore);
+		}
+		
+		/**
 		 * Process a subquery
 		 * @param AstSubquery $subquery
 		 */
@@ -539,6 +549,15 @@
 			
 			// And AstSearch
 			if ($ast instanceof AstSearch) {
+				foreach ($ast->getIdentifiers() as $identifier) {
+					$this->addToVisitedNodes($identifier);
+				}
+				
+				$this->addToVisitedNodes($ast->getSearchString());
+			}
+			
+			// And AstSearchScore
+			if ($ast instanceof AstSearchScore) {
 				foreach ($ast->getIdentifiers() as $identifier) {
 					$this->addToVisitedNodes($identifier);
 				}
