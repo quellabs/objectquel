@@ -15,7 +15,7 @@
 	 * Implement this interface once per integration point (e.g. a CakePHP adapter)
 	 * and inject it into QuelToSQL. When no implementation is provided, ObjectQuel
 	 * falls back to NullPlatformCapabilities, which assumes the most conservative
-	 * (widest-compatible) behaviour.
+	 * (widest-compatible) behavior.
 	 */
 	interface PlatformCapabilitiesInterface {
 		
@@ -27,7 +27,7 @@
 		 * that the plain REGEXP operator cannot express.
 		 *
 		 * When false, ObjectQuel falls back to col REGEXP "pattern" and flags are
-		 * silently ignored — behaviour is then determined by the column's collation.
+		 * silently ignored — behavior is then determined by the column's collation.
 		 *
 		 * MySQL: supported from 8.0.0 onward.
 		 * MariaDB: not supported (REGEXP_LIKE does not accept a flags argument).
