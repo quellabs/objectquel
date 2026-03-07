@@ -374,9 +374,14 @@
 			// Parse the search string/parameter
 			$searchString = $this->expressionRule->parse();
 			
-			// Validate that search string is either a string literal or parameter
+			// Validate that search string is either a string literal or parameter.
+			// A bare identifier here means the user forgot to quote the search term
+			// or forgot to prefix a parameter with ':'.
 			if ((!$searchString instanceof AstString) && (!$searchString instanceof AstParameter)) {
-				throw new ParserException("Missing search string for SEARCH operator.");
+				throw new ParserException(
+					"SEARCH() requires a string literal or :parameter as its last argument, got " . get_class($searchString) . ". " .
+					"Did you mean to quote the search term or use a :parameter?"
+				);
 			}
 			
 			$this->lexer->match(Token::ParenthesesClose);
@@ -385,16 +390,27 @@
 		}
 		
 		/**
-		 * Helper method that parses a sequence of identifiers separated by commas.
-		 * Stops parsing when encountering a non-identifier token.
+		 * Helper method that parses a sequence of identifiers separated by commas,
+		 * stopping before the final search string argument.
+		 *
+		 * Identifiers are field references (e.g. p.name, p.description). The list ends
+		 * when the next token after a comma is not an identifier — that token is the
+		 * search string. A trailing comma with no following identifier is an error.
+		 *
 		 * @return AstIdentifier[] Array of parsed identifier AST nodes
-		 * @throws LexerException|ParserException When token matching fails
+		 * @throws LexerException|ParserException When token matching fails or a trailing comma is found
 		 */
 		private function parseIdentifierList(): array {
 			$identifiers = [];
 			
 			do {
+				// Not an identifier — stop here, the caller will parse the search term next
 				if ($this->lexer->lookahead() !== Token::Identifier) {
+					// If we already consumed a comma to get here, that comma had nothing after it
+					if (!empty($identifiers)) {
+						throw new ParserException("Unexpected token after comma in SEARCH() identifier list. Expected a field identifier or search string.");
+					}
+					
 					break;
 				}
 				
