@@ -39,8 +39,10 @@
 		 * argument, so we conservatively restrict this to MySQL only.
 		 */
 		public function supportsRegexpLike(): bool {
+			// Fetch CakePHP driver
 			$driver = $this->connection->getDriver();
 			
+			// Bail if this is not MySQL
 			if (!$driver instanceof Mysql) {
 				return false;
 			}
