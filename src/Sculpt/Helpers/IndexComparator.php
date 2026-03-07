@@ -2,6 +2,7 @@
 	
 	namespace Quellabs\ObjectQuel\Sculpt\Helpers;
 	
+	use Quellabs\ObjectQuel\Annotations\Orm\FullTextIndex;
 	use Quellabs\ObjectQuel\Annotations\Orm\UniqueIndex;
 	use Quellabs\ObjectQuel\DatabaseAdapter\DatabaseAdapter;
 	use Quellabs\ObjectQuel\EntityStore;
@@ -112,8 +113,14 @@
 			$result = [];
 
 			foreach ($this->entityStore->getIndexes($entity) as $annotation) {
-				// Check if this is a unique index or a regular index
-				$isUnique = $annotation instanceof UniqueIndex;
+				// Determine the index type from the annotation class
+				if ($annotation instanceof FullTextIndex) {
+					$indexType = 'FULLTEXT';
+				} elseif ($annotation instanceof UniqueIndex) {
+					$indexType = 'UNIQUE';
+				} else {
+					$indexType = 'INDEX';
+				}
 				
 				// Get the entity property names that make up this index
 				$columns = $annotation->getColumns();
@@ -133,9 +140,9 @@
 				
 				// Build the index configuration array
 				$result[$annotation->getName()] = [
-					'columns' => $databaseColumns,                // Database column names for this index
-					'type'    => $isUnique ? 'UNIQUE' : 'INDEX',  // Index type identifier
-					'unique'  => $isUnique                        // Boolean flag for uniqueness constraint
+					'columns' => $databaseColumns,
+					'type'    => $indexType,
+					'unique'  => $annotation instanceof UniqueIndex
 				];
 			}
 			
@@ -154,8 +161,8 @@
 				return true;
 			}
 			
-			// Check uniqueness (single boolean comparison)
-			if ($dbConfig['unique'] !== $entityConfig['unique']) {
+			// Compare index type explicitly — this catches FULLTEXT vs INDEX vs UNIQUE
+			if (strtoupper($dbConfig['type']) !== strtoupper($entityConfig['type'])) {
 				return true;
 			}
 			
