@@ -39,6 +39,8 @@
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstSumU;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstTerm;
 	use Quellabs\ObjectQuel\ObjectQuel\AstInterface;
+	use Quellabs\ObjectQuel\Database\DatabasePlatformInterface;
+	use Quellabs\ObjectQuel\Database\NullDatabasePlatform;
 	use Quellabs\ObjectQuel\ObjectQuel\AstVisitorInterface;
 	use Quellabs\ObjectQuel\ObjectQuel\Visitors\Handlers\AggregateHandler;
 	use Quellabs\ObjectQuel\ObjectQuel\Visitors\Handlers\ExpressionHandler;
@@ -79,6 +81,9 @@
 		
 		/** @var ExpressionHandler Handles expressions, operators, and data types */
 		private ExpressionHandler $expressionHandler;
+
+		/** @var DatabasePlatformInterface Database engine capability descriptor */
+		private DatabasePlatformInterface $platform;
 		
 		/**
 		 * Initialize the SQL converter with required dependencies
@@ -86,19 +91,20 @@
 		 * @param array $parameters Reference to parameters array for parameterized queries
 		 * @param string $partOfQuery Current query part being processed (default: "VALUES")
 		 */
-		public function __construct(EntityStore $store, array &$parameters, string $partOfQuery = "VALUES") {
+		public function __construct(EntityStore $store, array &$parameters, string $partOfQuery = "VALUES", DatabasePlatformInterface $platform = new NullDatabasePlatform()) {
 			// Initialize core properties
 			$this->result = [];
 			$this->visitedNodes = [];
 			$this->entityStore = $store;
 			$this->parameters = &$parameters; // Use reference to allow parameter modification
 			$this->partOfQuery = $partOfQuery;
+			$this->platform = $platform;
 			
 			// Initialize helper classes with proper dependencies and references
-			$this->sqlBuilder = new SqlBuilderHelper($this->entityStore, $this->parameters, $this->partOfQuery, $this);
+			$this->sqlBuilder = new SqlBuilderHelper($this->entityStore, $this->parameters, $this->partOfQuery, $this, $this->platform);
 			$this->typeInference = new TypeInferenceHelper($this->entityStore);
 			$this->aggregateHandler = new AggregateHandler($this->entityStore, $this->partOfQuery, $this->sqlBuilder, $this);
-			$this->expressionHandler = new ExpressionHandler($this->sqlBuilder, $this->typeInference, $this->parameters, $this);
+			$this->expressionHandler = new ExpressionHandler($this->sqlBuilder, $this->typeInference, $this->parameters, $this, $this->platform);
 		}
 		
 		/**
