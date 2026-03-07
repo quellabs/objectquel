@@ -2,28 +2,17 @@
 	
 	namespace Quellabs\ObjectQuel\Execution;
 	
+	use Quellabs\ObjectQuel\Capabilities\PlatformCapabilitiesInterface;
 	use Quellabs\ObjectQuel\DatabaseAdapter\DatabaseAdapter;
 	use Quellabs\ObjectQuel\EntityManager;
 	use Quellabs\ObjectQuel\EntityStore;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstAlias;
-	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstAny;
-	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstAvg;
-	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstAvgU;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstBinaryOperator;
-	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstCount;
-	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstCountU;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstIdentifier;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstIn;
-	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstMax;
-	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstMin;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstNumber;
-	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRange;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRetrieve;
-	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstSum;
-	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstSumU;
-	use Quellabs\ObjectQuel\ObjectQuel\AstInterface;
 	use Quellabs\ObjectQuel\ObjectQuel\QuelToSQL;
-	use Quellabs\ObjectQuel\ObjectQuel\Visitors\NodeCollector;
 	use Quellabs\ObjectQuel\ObjectQuel\Visitors\GetMainEntityInAst;
 	use Quellabs\ObjectQuel\ObjectQuel\Visitors\GetMainEntityInAstException;
 	
@@ -31,14 +20,16 @@
 		
 		private EntityStore $entityStore;
 		private DatabaseAdapter $connection;
+		private PlatformCapabilitiesInterface $platform;
 		
 		/**
 		 * QueryBuilder constructor
 		 * @param EntityManager $entityManager
 		 */
-		public function __construct(EntityManager $entityManager) {
+		public function __construct(EntityManager $entityManager, PlatformCapabilitiesInterface $platform) {
 			$this->entityStore = $entityManager->getEntityStore();
-			$this->connection = $entityManager->getConnection();
+			$this->entityStore = $entityManager->getEntityStore();
+			$this->platform = $platform;
 		}
 		
 		/**
@@ -220,7 +211,7 @@
 		 * @return string The generated SQL query
 		 */
 		private function convertToSQL(AstRetrieve $retrieve, array &$parameters): string {
-			$quelToSQL = new QuelToSQL($this->entityStore, $parameters);
+			$quelToSQL = new QuelToSQL($this->entityStore, $parameters, $this->platform);
 			return $quelToSQL->convertToSQL($retrieve);
 		}
 		

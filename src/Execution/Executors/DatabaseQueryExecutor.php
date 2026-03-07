@@ -26,8 +26,8 @@
 		public function __construct(EntityManager $entityManager) {
 			$this->entityManager = $entityManager;
 			$this->connection = $entityManager->getConnection();
-			$this->platform = new PlatformCapabilities($this->connection->getConnection());
-			$this->queryTransformer = new QueryTransformer($this->entityManager);
+			$this->platform = new PlatformCapabilities($this->connection);
+			$this->queryTransformer = new QueryTransformer($this->entityManager, $this->platform);
 			$this->queryOptimizer = new QueryOptimizer($this->entityManager, $this->platform);
 		}
 		
