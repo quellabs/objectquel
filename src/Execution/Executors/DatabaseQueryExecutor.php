@@ -7,7 +7,7 @@
 	use Quellabs\ObjectQuel\DatabaseAdapter\DatabaseAdapter;
 	use Quellabs\ObjectQuel\Execution\ExecutionStage;
 	use Quellabs\ObjectQuel\Execution\QueryOptimizer;
-	use Quellabs\ObjectQuel\Database\CakePHPDatabasePlatform;
+	use Quellabs\ObjectQuel\Database\PlatformCapabilities;
 	use Quellabs\ObjectQuel\Execution\QueryTransformer;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRetrieve;
 	use Quellabs\ObjectQuel\ObjectQuel\QuelException;
@@ -21,12 +21,12 @@
 		private DatabaseAdapter $connection;
 		private QueryTransformer $queryTransformer;
 		private QueryOptimizer $queryOptimizer;
-		private CakePHPDatabasePlatform $platform;
+		private PlatformCapabilities $platform;
 		
 		public function __construct(EntityManager $entityManager) {
 			$this->entityManager = $entityManager;
 			$this->connection = $entityManager->getConnection();
-			$this->platform = new CakePHPDatabasePlatform($this->connection->getConnection());
+			$this->platform = new PlatformCapabilities($this->connection->getConnection());
 			$this->queryTransformer = new QueryTransformer($this->entityManager);
 			$this->queryOptimizer = new QueryOptimizer($this->entityManager, $this->platform);
 		}

@@ -39,8 +39,8 @@
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstSumU;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstTerm;
 	use Quellabs\ObjectQuel\ObjectQuel\AstInterface;
-	use Quellabs\ObjectQuel\Database\DatabasePlatformInterface;
-	use Quellabs\ObjectQuel\Database\NullDatabasePlatform;
+	use Quellabs\ObjectQuel\Database\PlatformCapabilitiesInterface;
+	use Quellabs\ObjectQuel\Database\NullPlatformCapabilities;
 	use Quellabs\ObjectQuel\ObjectQuel\AstVisitorInterface;
 	use Quellabs\ObjectQuel\ObjectQuel\Visitors\Handlers\AggregateHandler;
 	use Quellabs\ObjectQuel\ObjectQuel\Visitors\Handlers\ExpressionHandler;
@@ -82,8 +82,8 @@
 		/** @var ExpressionHandler Handles expressions, operators, and data types */
 		private ExpressionHandler $expressionHandler;
 
-		/** @var DatabasePlatformInterface Database engine capability descriptor */
-		private DatabasePlatformInterface $platform;
+		/** @var PlatformCapabilitiesInterface Database engine capability descriptor */
+		private PlatformCapabilitiesInterface $platform;
 		
 		/**
 		 * Initialize the SQL converter with required dependencies
@@ -91,7 +91,7 @@
 		 * @param array $parameters Reference to parameters array for parameterized queries
 		 * @param string $partOfQuery Current query part being processed (default: "VALUES")
 		 */
-		public function __construct(EntityStore $store, array &$parameters, string $partOfQuery = "VALUES", DatabasePlatformInterface $platform = new NullDatabasePlatform()) {
+		public function __construct(EntityStore $store, array &$parameters, string $partOfQuery = "VALUES", PlatformCapabilitiesInterface $platform = new NullPlatformCapabilities()) {
 			// Initialize core properties
 			$this->result = [];
 			$this->visitedNodes = [];

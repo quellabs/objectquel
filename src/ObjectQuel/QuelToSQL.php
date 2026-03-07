@@ -8,26 +8,26 @@
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRetrieve;
 	use Quellabs\ObjectQuel\ObjectQuel\Visitors\GetMainEntityInAst;
 	use Quellabs\ObjectQuel\ObjectQuel\Visitors\GetMainEntityInAstException;
-	use Quellabs\ObjectQuel\Database\DatabasePlatformInterface;
-	use Quellabs\ObjectQuel\Database\NullDatabasePlatform;
+	use Quellabs\ObjectQuel\Database\PlatformCapabilitiesInterface;
+	use Quellabs\ObjectQuel\Database\NullPlatformCapabilities;
 	use Quellabs\ObjectQuel\ObjectQuel\Visitors\QuelToSQLConvertToString;
 	
 	class QuelToSQL {
 		
 		private EntityStore $entityStore;
 		private array $parameters;
-		private DatabasePlatformInterface $platform;
+		private PlatformCapabilitiesInterface $platform;
 		
 		/**
 		 * QuelToSQL constructor
 		 * @param EntityStore $entityStore
 		 * @param array $parameters
-		 * @param DatabasePlatformInterface $platform Database engine capability descriptor
+		 * @param PlatformCapabilitiesInterface $platform Database engine capability descriptor
 		 */
 		public function __construct(
 			EntityStore $entityStore,
 			array &$parameters,
-			DatabasePlatformInterface $platform = new NullDatabasePlatform()
+			PlatformCapabilitiesInterface $platform = new NullPlatformCapabilities()
 		) {
 			$this->entityStore = $entityStore;
 			$this->parameters = &$parameters;

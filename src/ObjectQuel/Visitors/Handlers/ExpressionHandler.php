@@ -24,8 +24,8 @@
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstSearchScore;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstString;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstTerm;
-	use Quellabs\ObjectQuel\Database\DatabasePlatformInterface;
-	use Quellabs\ObjectQuel\Database\NullDatabasePlatform;
+	use Quellabs\ObjectQuel\Database\PlatformCapabilitiesInterface;
+	use Quellabs\ObjectQuel\Database\NullPlatformCapabilities;
 	use Quellabs\ObjectQuel\ObjectQuel\AstInterface;
 	
 	/**
@@ -86,8 +86,8 @@
 		/** @var mixed Reference to the main visitor to avoid circular dependencies */
 		private mixed $mainVisitor;
 
-		/** @var DatabasePlatformInterface Describes what the connected database engine supports */
-		private DatabasePlatformInterface $platform;
+		/** @var PlatformCapabilitiesInterface Describes what the connected database engine supports */
+		private PlatformCapabilitiesInterface $platform;
 		
 		/**
 		 * Constructor - Initialize the expression handler with required dependencies
@@ -95,14 +95,14 @@
 		 * @param TypeInferenceHelper $typeInference Helper for type analysis
 		 * @param array &$parameters Reference to parameters array for prepared statements
 		 * @param mixed $mainVisitor Reference to the main AST visitor (avoids circular dependency)
-		 * @param DatabasePlatformInterface $platform Database engine capability descriptor
+		 * @param PlatformCapabilitiesInterface $platform Database engine capability descriptor
 		 */
 		public function __construct(
 			SqlBuilderHelper       $sqlBuilder,
 			TypeInferenceHelper    $typeInference,
 			array                  &$parameters,
 			mixed                  $mainVisitor,
-			DatabasePlatformInterface $platform = new NullDatabasePlatform()
+			PlatformCapabilitiesInterface $platform = new NullPlatformCapabilities()
 		) {
 			$this->sqlBuilder = $sqlBuilder;
 			$this->typeInference = $typeInference;
