@@ -379,14 +379,8 @@ PHP;
 			$indexCode = "";
 			
 			foreach ($indexes as $indexName => $indexConfig) {
-				// Initialize an options array with the index name
-				$indexOptions = [];
-				$indexOptions[] = "'name' => '$indexName'";
-				
-				// Add unique constraint if specified
-				if (!empty($indexConfig['unique'])) {
-					$indexOptions[] = "'unique' => true";
-				}
+				// Build options (name, type/unique) via shared helper
+				$indexOptions = $this->buildIndexOptions($indexName, $indexConfig);
 				
 				// Convert options array to a string for Phinx method
 				$indexOptionsStr = implode(", ", $indexOptions);
@@ -501,9 +495,32 @@ PHP;
 		}
 		
 		/**
+		 * Build Phinx index options array from an index configuration
+		 *
+		 * Centralizes the logic for mapping INDEX/UNIQUE/FULLTEXT types to the correct
+		 * Phinx addIndex() options so no caller has to re-implement it.
+		 *
+		 * @param string $indexName Index name (always included as 'name')
+		 * @param array  $indexConfig Index configuration containing 'type' and 'columns'
+		 * @return array Formatted option strings ready for implode()
+		 */
+		private function buildIndexOptions(string $indexName, array $indexConfig): array {
+			$options = ["'name' => '$indexName'"];
+			$type = strtoupper($indexConfig['type'] ?? 'INDEX');
+			
+			if ($type === 'FULLTEXT') {
+				$options[] = "'type' => 'fulltext'";
+			} elseif ($type === 'UNIQUE' || !empty($indexConfig['unique'])) {
+				$options[] = "'unique' => true";
+			}
+			
+			return $options;
+		}
+		
+		/**
 		 * Build code for adding new indexes to a table
 		 * @param string $tableName Table name
-		 * @param array $indexes Index configurations with 'columns' and optional 'unique' properties
+		 * @param array $indexes Index configurations with 'columns', 'type', and optional 'unique' properties
 		 * @return string Code for adding indexes
 		 */
 		private function buildAddIndexesCode(string $tableName, array $indexes): string {
@@ -513,13 +530,8 @@ PHP;
 				// Build comma-separated column list for the index
 				$columns = "'" . implode("', '", $indexConfig['columns']) . "'";
 				
-				// Initialize options array with index name
-				$options = ["'name' => '$name'"];
-				
-				// Add unique constraint if specified
-				if (!empty($indexConfig['unique'])) {
-					$options[] = "'unique' => true";
-				}
+				// Build options (name, type/unique) via shared helper
+				$options = $this->buildIndexOptions($name, $indexConfig);
 				
 				// Assemble options string for addIndex call
 				$optionsStr = ", [" . implode(", ", $options) . "]";
@@ -543,10 +555,10 @@ PHP;
 			
 			foreach ($indexes as $name => $configs) {
 				// Validate structure and fail fast instead of silently continuing
-				if (!isset($configs['entity']['columns']) || !isset($configs['entity']['unique'])) {
+				if (!isset($configs['entity']['columns']) || !isset($configs['entity']['type'])) {
 					throw new \InvalidArgumentException(
 						"Invalid index configuration for '$name' in table '$tableName'. " .
-						"Expected 'entity' key with 'columns' and 'unique' properties."
+						"Expected 'entity' key with 'columns' and 'type' properties."
 					);
 				}
 				
@@ -557,13 +569,8 @@ PHP;
 				// Build column list for new index
 				$columns = "'" . implode("', '", $configs['entity']['columns']) . "'";
 				
-				// Configure index options
-				$options = ["'name' => '$name'"];
-				
-				// Add unique constraint if specified
-				if ($configs['entity']['unique']) {
-					$options[] = "'unique' => true";
-				}
+				// Build options (name, type/unique) via shared helper
+				$options = $this->buildIndexOptions($name, $configs['entity']);
 				
 				// Assemble options string for addIndex call
 				$optionsStr = ", [" . implode(", ", $options) . "]";
