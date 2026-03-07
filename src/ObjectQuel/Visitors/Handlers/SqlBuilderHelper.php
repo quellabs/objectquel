@@ -307,6 +307,7 @@
 				return null;
 			}
 			
+			// Grab entity name
 			$entityName = reset($entityNames);
 			
 			// Temporary table ranges have no entity name and therefore no annotation metadata
@@ -316,7 +317,6 @@
 			
 			// Collect the property names being searched
 			$propertyNames = $this->extractPropertyNames($identifiers);
-			
 			return $this->entityStore->getFullTextIndexForColumns($entityName, $propertyNames);
 		}
 		
