@@ -16,9 +16,9 @@
 	 *   $platform = new CakePHPDatabasePlatform($connection);
 	 *   $quelToSQL = new QuelToSQL($entityStore, $parameters, $platform);
 	 */
-	readonly class CakePHPDatabasePlatform implements DatabasePlatformInterface {
+	class CakePHPDatabasePlatform implements DatabasePlatformInterface {
 		
-		public function __construct(private Connection $connection) {}
+		public function __construct(private readonly Connection $connection) {}
 		
 		/**
 		 * @inheritDoc
@@ -36,5 +36,31 @@
 			
 			// getVersion() returns a string like "8.0.32" or "5.7.41"
 			return version_compare($driver->version(), '8.0.0', '>=');
+		}
+		
+		/**
+		 * @inheritDoc
+		 *
+		 * Performs feature detection by executing a probe query the first time it is
+		 * called. Result is cached for the lifetime of this instance.
+		 */
+		public function supportsWindowFunctions(): bool {
+			static $cache = null;
+			
+			if ($cache !== null) {
+				return $cache;
+			}
+			
+			// Portable probe: COUNT(...) OVER () over a single-row derived table.
+			// If window functions aren't supported, this will raise a syntax error.
+			$probeSql = 'SELECT COUNT(1) OVER () AS __wf FROM (SELECT 1) t';
+			
+			try {
+				$stmt = $this->connection->execute($probeSql);
+				$stmt->closeCursor();
+				return $cache = true;
+			} catch (\Throwable) {
+				return $cache = false;
+			}
 		}
 	}

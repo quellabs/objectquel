@@ -2,6 +2,8 @@
 	
 	namespace Quellabs\ObjectQuel\Execution;
 	
+	use Quellabs\ObjectQuel\Database\DatabasePlatformInterface;
+	use Quellabs\ObjectQuel\Database\NullDatabasePlatform;
 	use Quellabs\ObjectQuel\EntityManager;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRangeDatabase;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRetrieve;
@@ -23,13 +25,14 @@
 		/**
 		 * Initialize all optimizer components with shared EntityManager dependency.
 		 * @param EntityManager $entityManager Provides metadata about entities/tables for optimization decisions
+		 * @param DatabasePlatformInterface $platform Database engine capability descriptor
 		 */
-		public function __construct(EntityManager $entityManager) {
+		public function __construct(EntityManager $entityManager, DatabasePlatformInterface $platform = new NullDatabasePlatform()) {
 			// Initialize optimizers that need entity metadata
 			$this->anyOptimizer = new Optimizers\AnyOptimizer($entityManager);
 			$this->rangeOptimizer = new Optimizers\RangeOptimizer($entityManager);
 			$this->joinOptimizer = new Optimizers\JoinOptimizer($entityManager);
-			$this->aggregateOptimizer = new Optimizers\AggregateOptimizer($entityManager);
+			$this->aggregateOptimizer = new Optimizers\AggregateOptimizer($entityManager, $platform);
 			
 			// Initialize stateless optimizers that work on AST structure alone
 			$this->existsOptimizer = new Optimizers\ExistsOptimizer();

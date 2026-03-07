@@ -7,11 +7,11 @@
 	use Quellabs\ObjectQuel\DatabaseAdapter\DatabaseAdapter;
 	use Quellabs\ObjectQuel\Execution\ExecutionStage;
 	use Quellabs\ObjectQuel\Execution\QueryOptimizer;
+	use Quellabs\ObjectQuel\Database\CakePHPDatabasePlatform;
 	use Quellabs\ObjectQuel\Execution\QueryTransformer;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRetrieve;
 	use Quellabs\ObjectQuel\ObjectQuel\QuelException;
 	use Quellabs\ObjectQuel\ObjectQuel\QuelToSQL;
-	use Quellabs\ObjectQuel\Database\CakePHPDatabasePlatform;
 	
 	/**
 	 * Handles database-specific query execution including SQL conversion and temp tables
@@ -21,12 +21,14 @@
 		private DatabaseAdapter $connection;
 		private QueryTransformer $queryTransformer;
 		private QueryOptimizer $queryOptimizer;
+		private CakePHPDatabasePlatform $platform;
 		
 		public function __construct(EntityManager $entityManager) {
 			$this->entityManager = $entityManager;
 			$this->connection = $entityManager->getConnection();
+			$this->platform = new CakePHPDatabasePlatform($this->connection->getConnection());
 			$this->queryTransformer = new QueryTransformer($this->entityManager);
-			$this->queryOptimizer = new QueryOptimizer($this->entityManager);
+			$this->queryOptimizer = new QueryOptimizer($this->entityManager, $this->platform);
 		}
 		
 		/**
@@ -68,8 +70,7 @@
 		 * @return string The generated SQL query
 		 */
 		private function convertToSQL(AstRetrieve $retrieve, array &$parameters): string {
-			$platform = new CakePHPDatabasePlatform($this->connection->getConnection());
-			$quelToSQL = new QuelToSQL($this->entityManager->getEntityStore(), $parameters, $platform);
+			$quelToSQL = new QuelToSQL($this->entityManager->getEntityStore(), $parameters, $this->platform);
 			return $quelToSQL->convertToSQL($retrieve);
 		}
 	}
