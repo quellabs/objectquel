@@ -47,15 +47,16 @@
 		 * Creates a new entity or updates an existing one based on file existence
 		 * @param string $entityName Entity name without "Entity" suffix
 		 * @param array $properties Property metadata with type, nullable, relationship info
+		 * @param array $indexes Optional index definitions (regular, unique, full-text)
 		 * @return bool True if operation succeeded
 		 */
-		public function createOrUpdateEntity(string $entityName, array $properties): bool {
+		public function createOrUpdateEntity(string $entityName, array $properties, array $indexes = []): bool {
 			$fullEntityName = $entityName . "Entity";
 			
 			if ($this->entityExists($fullEntityName)) {
 				return $this->updateEntity($entityName, $properties);
 			} else {
-				return $this->createNewEntity($entityName, $properties);
+				return $this->createNewEntity($entityName, $properties, $indexes);
 			}
 		}
 		
@@ -63,16 +64,17 @@
 		 * Generates a complete entity class file from scratch
 		 * @param string $entityName Entity name without "Entity" suffix
 		 * @param array $properties Property definitions with metadata
+		 * @param array $indexes Optional index definitions (regular, unique, full-text)
 		 * @return bool True if file was created successfully
 		 */
-		public function createNewEntity(string $entityName, array $properties): bool {
+		public function createNewEntity(string $entityName, array $properties, array $indexes = []): bool {
 			$entityPath = $this->configuration->getEntityPath();
 			
 			if (!is_dir($entityPath)) {
 				mkdir($entityPath, 0755, true);
 			}
 			
-			$content = $this->generateEntityContent($entityName, $properties);
+			$content = $this->generateEntityContent($entityName, $properties, $indexes);
 			return file_put_contents($this->getEntityPath($entityName . "Entity"), $content) !== false;
 		}
 		
@@ -250,9 +252,10 @@
 		 * Generates complete entity class file content
 		 * @param string $entityName Entity name without "Entity" suffix
 		 * @param array $properties All properties for this entity
+		 * @param array $indexes Optional index definitions. Each entry: ['type' => 'INDEX'|'UNIQUE'|'FULLTEXT', 'name' => '...', 'columns' => [...]]
 		 * @return string Complete PHP class file content
 		 */
-		protected function generateEntityContent(string $entityName, array $properties): string {
+		protected function generateEntityContent(string $entityName, array $properties, array $indexes = []): string {
 			$namespace = $this->configuration->getEntityNameSpace();
 			$content = "<?php\n\n    namespace {$namespace};\n";
 			
@@ -260,6 +263,9 @@
 			$content .= "\n";
 			$content .= "    use Quellabs\\ObjectQuel\\Annotations\\Orm\\Table;\n";
 			$content .= "    use Quellabs\\ObjectQuel\\Annotations\\Orm\\Column;\n";
+			$content .= "    use Quellabs\\ObjectQuel\\Annotations\\Orm\\Index;\n";
+			$content .= "    use Quellabs\\ObjectQuel\\Annotations\\Orm\\UniqueIndex;\n";
+			$content .= "    use Quellabs\\ObjectQuel\\Annotations\\Orm\\FullTextIndex;\n";
 			$content .= "    use Quellabs\\ObjectQuel\\Annotations\\Orm\\PrimaryKeyStrategy;\n";
 			$content .= "    use Quellabs\\ObjectQuel\\Annotations\\Orm\\OneToOne;\n";
 			$content .= "    use Quellabs\\ObjectQuel\\Annotations\\Orm\\OneToMany;\n";
@@ -271,7 +277,25 @@
 			$tableNamePlural = StringInflector::pluralize($entityName);
 			$tableName = StringInflector::snakeCase($tableNamePlural);
 			
-			$content .= "\n    /**\n     * @Orm\\Table(name=\"{$tableName}\")\n     */\n";
+			// Build class docblock — @Table first, then all index annotations
+			$content .= "\n    /**\n";
+			$content .= "     * @Orm\\Table(name=\"{$tableName}\")\n";
+			
+			foreach ($indexes as $index) {
+				$indexName = $index['name'];
+				$indexColumns = '{"' . implode('", "', $index['columns']) . '"}';
+				$indexType = strtoupper($index['type'] ?? 'INDEX');
+				
+				$annotationClass = match ($indexType) {
+					'UNIQUE'   => 'UniqueIndex',
+					'FULLTEXT' => 'FullTextIndex',
+					default    => 'Index',
+				};
+				
+				$content .= "     * @Orm\\{$annotationClass}(name=\"{$indexName}\", columns={$indexColumns})\n";
+			}
+			
+			$content .= "     */\n";
 			$content .= "    class {$entityName}Entity {\n";
 			
 			// Primary key property
