@@ -21,6 +21,7 @@
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstParameter;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRegExp;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstSearch;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstSearchScore;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstString;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstTerm;
 	use Quellabs\ObjectQuel\ObjectQuel\AstInterface;
@@ -399,6 +400,24 @@
 			
 			// Combine all conditions with OR logic
 			return '(' . implode(" OR ", $conditions) . ')';
+		}
+		
+		/**
+		 * Convert a search_score() call to a MATCH...AGAINST value expression.
+		 *
+		 * Returns the relevance score of the full-text search as a numeric SQL expression,
+		 * suitable for use in SELECT clause column lists and ORDER BY clauses.
+		 *
+		 * Requires a @FullTextIndex annotation covering all searched columns on the entity.
+		 * Throws a RuntimeException if no matching full-text index is found — falling back
+		 * to an approximate LIKE-based score would be misleading about relevance ordering.
+		 *
+		 * @param AstSearchScore $searchScore The search_score AST node
+		 * @return string SQL MATCH...AGAINST expression
+		 * @throws \RuntimeException If no full-text index covers the requested columns
+		 */
+		public function handleSearchScore(AstSearchScore $searchScore): string {
+			return $this->sqlBuilder->buildSearchScoreExpression($searchScore);
 		}
 		
 		/**

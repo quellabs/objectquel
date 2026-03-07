@@ -25,6 +25,7 @@
 	use Quellabs\AnnotationReader\Exception\ParserException;
 	use Quellabs\ObjectQuel\Annotations\Orm\Column;
 	use Quellabs\ObjectQuel\Annotations\Orm\Immutable;
+	use Quellabs\ObjectQuel\Annotations\Orm\FullTextIndex;
 	use Quellabs\ObjectQuel\Annotations\Orm\Index;
 	use Quellabs\ObjectQuel\Annotations\Orm\ManyToOne;
 	use Quellabs\ObjectQuel\Annotations\Orm\OneToMany;
@@ -459,10 +460,44 @@
 		/**
 		 * Retrieves all index annotations defined for a given entity class.
 		 * @param mixed $entity The entity class to analyze (can be string classname or object instance)
-		 * @return array A collection of Index and UniqueIndex annotation objects
+		 * @return array A collection of Index, UniqueIndex and FullTextIndex annotation objects
 		 */
 		public function getIndexes(mixed $entity): array {
 			return $this->getMetadata($entity)->indexes;
+		}
+		
+		/**
+		 * Finds a FullTextIndex annotation that covers all the given property names.
+		 *
+		 * Used by the SQL generator to decide whether search() and search_score() can
+		 * use MATCH...AGAINST instead of LIKE chains. A full-text index matches when its
+		 * column list is identical to (or a superset of) the requested property names.
+		 *
+		 * Note: the columns defined on FullTextIndex annotations are property names,
+		 * not database column names. This method compares at the property level.
+		 *
+		 * @param mixed $entity The entity to inspect
+		 * @param array $propertyNames The property names passed to search() or search_score()
+		 * @return FullTextIndex|null The matching index, or null if none covers all columns
+		 */
+		public function getFullTextIndexForColumns(mixed $entity, array $propertyNames): ?FullTextIndex {
+			$indexes = $this->getMetadata($entity)->indexes;
+			
+			foreach ($indexes as $index) {
+				if (!$index instanceof FullTextIndex) {
+					continue;
+				}
+				
+				// All requested property names must be present in this index's column list
+				$indexColumns = $index->getColumns();
+				$missingColumns = array_diff($propertyNames, $indexColumns);
+				
+				if (empty($missingColumns)) {
+					return $index;
+				}
+			}
+			
+			return null;
 		}
 		
 		/**
@@ -730,7 +765,7 @@
 				$classAnnotations = $this->annotationReader->getClassAnnotations($className);
 				
 				$indexes = $classAnnotations->filter(function ($annotation) {
-					return $annotation instanceof Index || $annotation instanceof UniqueIndex;
+					return $annotation instanceof Index || $annotation instanceof UniqueIndex || $annotation instanceof FullTextIndex;
 				});
 				
 				return $indexes->toArray();
