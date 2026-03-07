@@ -68,8 +68,8 @@
 		 */
 		private const array REGEX_PATTERNS = [
 			'NUMERIC' => '^-?[0-9]+(\\.[0-9]+)?$',  // Optional decimal part for integers and floats
-			'INTEGER' => '^-?[0-9]+$',              // Only digits, no decimal point allowed
-			'FLOAT'   => '^-?[0-9]+\\.[0-9]+$'        // Requires decimal point with digits on both sides
+			'INTEGER' => '^-?[0-9]+$',               // Only digits, no decimal point allowed
+			'FLOAT'   => '^-?[0-9]+\\.[0-9]+$'       // Requires decimal point with digits on both sides
 		];
 		
 		/** @var SqlBuilderHelper Helper for constructing SQL query components */
@@ -82,10 +82,7 @@
 		private array $parameters;
 		
 		/** @var mixed Reference to the main visitor to avoid circular dependencies */
-		private mixed $mainVisitor; // Reference to main visitor instead of interface
-		
-		/** @var string Temporary storage for the last processed result */
-		private string $lastResult = '';
+		private mixed $mainVisitor;
 		
 		/**
 		 * Constructor - Initialize the expression handler with required dependencies
@@ -102,7 +99,7 @@
 		) {
 			$this->sqlBuilder = $sqlBuilder;
 			$this->typeInference = $typeInference;
-			$this->parameters = &$parameters; // Pass by reference to allow parameter modification
+			$this->parameters = &$parameters;
 			$this->mainVisitor = $mainVisitor;
 		}
 		
@@ -115,38 +112,31 @@
 		 * - Regular expression patterns (converted to SQL REGEXP)
 		 * - Standard comparison and arithmetic operations
 		 *
-		 * @param AstInterface $ast The AST node representing the binary expression
+		 * @param AstTerm|AstBinaryOperator|AstExpression|AstFactor $ast The AST node representing the binary expression
 		 * @param string $operator The SQL operator to use (=, <>, +, -, etc.)
 		 * @return string The resulting SQL expression
 		 */
-		public function handleGenericExpression(AstInterface $ast, string $operator): string {
-			// Type safety check - ensure we're working with expression-type nodes
-			if (
-				!$ast instanceof AstTerm &&
-				!$ast instanceof AstBinaryOperator &&
-				!$ast instanceof AstExpression &&
-				!$ast instanceof AstFactor
-			) {
-				return ''; // Return empty string for unsupported node types
-			}
-			
+		public function handleGenericExpression(AstTerm|AstBinaryOperator|AstExpression|AstFactor $ast, string $operator): string {
 			// Special processing for equality/inequality operators
 			if (in_array($operator, ['=', '<>'], true)) {
 				$rightAst = $ast->getRight();
 				
 				// Check if right side is a wildcard string pattern
-				if ($rightAst instanceof AstString && $this->handleWildcardString($rightAst, $ast, $operator)) {
-					return $this->getLastResult(); // Return the LIKE expression result
+				if ($rightAst instanceof AstString) {
+					$wildcardResult = $this->handleWildcardString($rightAst, $ast, $operator);
+					
+					if ($wildcardResult !== null) {
+						return $wildcardResult;
+					}
 				}
 				
 				// Check if right side is a regular expression pattern
-				if ($rightAst instanceof AstRegExp && $this->handleRegularExpression($rightAst, $ast, $operator)) {
-					return $this->getLastResult(); // Return the REGEXP expression result
+				if ($rightAst instanceof AstRegExp) {
+					return $this->handleRegularExpression($rightAst, $ast, $operator);
 				}
 			}
 			
-			// Standard binary operation processing
-			// Visit both sides of the expression and combine with the operator
+			// Standard binary operation: visit both sides and combine with operator
 			$leftResult = $this->visitNodeAndReturnSQL($ast->getLeft());
 			$rightResult = $this->visitNodeAndReturnSQL($ast->getRight());
 			
@@ -161,62 +151,47 @@
 		 * @return string SQL CONCAT function call
 		 */
 		public function handleConcat(AstConcat $concat): string {
-			$result = ["CONCAT("]; // Start building the SQL function
-			$counter = 0;
+			$parts = array_map(
+				fn($param) => $this->visitNodeAndReturnSQL($param),
+				$concat->getParameters()
+			);
 			
-			// Process each parameter in the concatenation
-			foreach ($concat->getParameters() as $parameter) {
-				// Add comma separator for all parameters except the first
-				if ($counter > 0) {
-					$result[] = ",";
-				}
-				
-				// Process the parameter and add to result
-				$result[] = $this->visitNodeAndReturnSQL($parameter);
-				++$counter;
-			}
-			
-			$result[] = ")";
-			
-			// Combine all parts into final SQL
-			return implode("", $result);
+			return 'CONCAT(' . implode(', ', $parts) . ')';
 		}
 		
 		/**
 		 * Process logical NOT operator
-		 * Converts an AstNot node to the SQL NOT keyword with proper spacing.
+		 * Wraps the child expression in a SQL NOT().
 		 * @param AstNot $ast The NOT AST node
-		 * @return string SQL NOT operator with spacing
+		 * @return string SQL NOT expression
 		 */
 		public function handleNot(AstNot $ast): string {
-			return " NOT ";
+			return 'NOT(' . $this->visitNodeAndReturnSQL($ast->getExpression()) . ')';
 		}
 		
 		/**
 		 * Process NULL literal values
-		 * Converts an AstNull node to the SQL null keyword.
+		 * Converts an AstNull node to the SQL NULL keyword.
 		 * @param AstNull $ast The NULL AST node
-		 * @return string SQL null literal
+		 * @return string SQL NULL literal
 		 */
 		public function handleNull(AstNull $ast): string {
-			return 'null';
+			return 'NULL';
 		}
 		
 		/**
 		 * Process boolean literal values
 		 * Converts an AstBool node to SQL boolean representation.
-		 * Uses "true"/"false" strings for SQL compatibility.
 		 * @param AstBool $ast The boolean AST node
 		 * @return string SQL boolean literal ("true" or "false")
 		 */
 		public function handleBool(AstBool $ast): string {
-			return $ast->getValue() ? "true" : "false";
+			return $ast->getValue() ? 'true' : 'false';
 		}
 		
 		/**
 		 * Process numeric literal values
 		 * Converts an AstNumber node to its SQL numeric representation.
-		 * Numbers are returned as-is since SQL can handle them directly.
 		 * @param AstNumber $ast The number AST node
 		 * @return string SQL numeric literal
 		 */
@@ -227,56 +202,38 @@
 		/**
 		 * Process string literal values
 		 * Converts an AstString node to a properly escaped SQL string literal.
-		 * Uses double quotes and addslashes() for SQL injection protection.
 		 * @param AstString $ast The string AST node
 		 * @return string SQL string literal with proper escaping
 		 */
 		public function handleString(AstString $ast): string {
-			return "\"" . addslashes($ast->getValue()) . "\"";
+			return '"' . $this->escapeSqlString($ast->getValue()) . '"';
 		}
 		
 		/**
 		 * Process parameter placeholders for prepared statements
 		 * Converts an AstParameter node to a SQL parameter placeholder.
-		 * Uses colon notation for named parameters (e.g., :paramName).
 		 * @param AstParameter $ast The parameter AST node
-		 * @return string SQL parameter placeholder
+		 * @return string SQL parameter placeholder (e.g. :paramName)
 		 */
 		public function handleParameter(AstParameter $ast): string {
-			return ":" . $ast->getName();
+			return ':' . $ast->getName();
 		}
 		
 		/**
 		 * Process SQL IN clauses
 		 * Converts an AstIn node to a SQL IN clause with proper formatting.
-		 * Handles multiple values within parentheses, comma-separated.
 		 * @param AstIn $ast The IN clause AST node
 		 * @return string Complete SQL IN clause
 		 */
 		public function handleIn(AstIn $ast): string {
-			$result = [];
+			$identifier = $this->visitNodeAndReturnSQL($ast->getIdentifier());
 			
-			// Process the identifier (field/column being checked)
-			$result[] = $this->visitNodeAndReturnSQL($ast->getIdentifier());
-			$result[] = " IN(";
+			$values = array_map(
+				fn($item) => $this->visitNodeAndReturnSQL($item),
+				$ast->getParameters()
+			);
 			
-			// Process all values in the IN list
-			$first = true;
-			
-			foreach ($ast->getParameters() as $item) {
-				// Add comma separator for all values except the first
-				if (!$first) {
-					$result[] = ",";
-				}
-				
-				$result[] = $this->visitNodeAndReturnSQL($item);
-				$first = false;
-			}
-			
-			$result[] = ")";
-			
-			// Combine all parts into final SQL
-			return implode("", $result);
+			return $identifier . ' IN(' . implode(', ', $values) . ')';
 		}
 		
 		/**
@@ -286,7 +243,7 @@
 		 * @return string SQL IS NULL condition
 		 */
 		public function handleCheckNull(AstCheckNull $ast): string {
-			return $this->visitNodeAndReturnSQL($ast->getExpression()) . " IS NULL ";
+			return $this->visitNodeAndReturnSQL($ast->getExpression()) . ' IS NULL';
 		}
 		
 		/**
@@ -296,7 +253,7 @@
 		 * @return string SQL IS NOT NULL condition
 		 */
 		public function handleCheckNotNull(AstCheckNotNull $ast): string {
-			return $this->visitNodeAndReturnSQL($ast->getExpression()) . " IS NOT NULL ";
+			return $this->visitNodeAndReturnSQL($ast->getExpression()) . ' IS NOT NULL';
 		}
 		
 		/**
@@ -316,39 +273,32 @@
 		public function handleIsEmpty(AstIsEmpty $ast): string {
 			$valueNode = $ast->getValue();
 			
-			// Handle literal null values - always empty
 			if ($valueNode instanceof AstNull) {
-				return "1";
+				return '1';
 			}
 			
-			// Handle numeric literals - empty if value is 0
 			if ($valueNode instanceof AstNumber) {
-				$value = (int)$valueNode->getValue();
-				return $value == 0 ? "1" : "0";
+				// Cast to float to correctly handle values like 0.5 (would be truthy, not empty)
+				return (float)$valueNode->getValue() == 0 ? '1' : '0';
 			}
 			
-			// Handle boolean literals - empty if false
 			if ($valueNode instanceof AstBool) {
-				return !$valueNode->getValue() ? "1" : "0";
+				return !$valueNode->getValue() ? '1' : '0';
 			}
 			
-			// Handle string literals - empty if empty string
 			if ($valueNode instanceof AstString) {
-				return $valueNode->getValue() === "" ? "1" : "0";
+				return $valueNode->getValue() === '' ? '1' : '0';
 			}
 			
-			// Handle identifiers (variables/fields) - build dynamic check
+			// Identifier: build dynamic check based on inferred type
 			$inferredType = $this->typeInference->inferReturnType($valueNode);
 			$string = $this->visitNodeAndReturnSQL($valueNode);
 			
-			// Different empty checks based on inferred type
-			if (($inferredType === "integer") || ($inferredType === "float")) {
-				// Numeric types: empty if NULL or 0
+			if ($inferredType === 'integer' || $inferredType === 'float') {
 				return "({$string} IS NULL OR {$string} = 0)";
-			} else {
-				// String types: empty if NULL or empty string
-				return "({$string} IS NULL OR {$string} = '')";
 			}
+			
+			return "({$string} IS NULL OR {$string} = '')";
 		}
 		
 		/**
@@ -389,17 +339,11 @@
 		 * @return string SQL search conditions wrapped in parentheses
 		 */
 		public function handleSearch(AstSearch $search): string {
-			// Generate unique key for this search operation
 			$searchKey = uniqid();
-			
-			// Parse the search data using current parameters
 			$parsed = $search->parseSearchData($this->parameters);
-			
-			// Build SQL conditions using the SQL builder helper
 			$conditions = $this->sqlBuilder->buildSearchConditions($search, $parsed, $searchKey);
 			
-			// Combine all conditions with OR logic
-			return '(' . implode(" OR ", $conditions) . ')';
+			return '(' . implode(' OR ', $conditions) . ')';
 		}
 		
 		/**
@@ -420,16 +364,33 @@
 		}
 		
 		/**
-		 * IFNULL() serves as a simple COALESCE. If the expression returns NULL, use the alt value
+		 * IFNULL() serves as a simple COALESCE. If the expression returns NULL, use the alt value.
 		 * @param AstIfnull $ast
 		 * @return string
 		 */
-		public function handleIfnull(AstIfNull $ast): string {
+		public function handleIfnull(AstIfnull $ast): string {
 			return sprintf(
-				"COALESCE(%s, %s)",
+				'COALESCE(%s, %s)',
 				$this->visitNodeAndReturnSQL($ast->getExpression()),
 				$this->visitNodeAndReturnSQL($ast->getAltValue())
 			);
+		}
+		
+		/**
+		 * Escape a string value for safe inclusion in a SQL literal.
+		 *
+		 * NOTE: This centralises escaping so it can be swapped for a PDO/mysqli
+		 * real_escape_string call once a connection reference is available here.
+		 * Do not inline addslashes() calls elsewhere in this class.
+		 *
+		 * @param string $value Raw string value
+		 * @return string Escaped string safe for embedding between SQL quotes
+		 */
+		private function escapeSqlString(string $value): string {
+			// addslashes() is a stopgap. Replace this body with:
+			//   return $this->connection->real_escape_string($value);
+			// or route through the parameter binding system when that becomes feasible.
+			return addslashes($value);
 		}
 		
 		/**
@@ -443,120 +404,94 @@
 		private function handleTypeCheckWithPattern(AstIsNumeric|AstIsInteger|AstIsFloat $ast, string $patternKey): string {
 			$valueNode = $ast->getValue();
 			
-			// Handle string literals - use SQL REGEXP with the pattern
+			// String literal: use SQL REGEXP with the pattern
 			if ($valueNode instanceof AstString) {
-				$string = "'" . addslashes($valueNode->getValue()) . "'";
-				$pattern = self::REGEX_PATTERNS[$patternKey];
-				return "{$string} REGEXP '{$pattern}'";
+				$escaped = "'" . $this->escapeSqlString($valueNode->getValue()) . "'";
+				return "{$escaped} REGEXP '" . self::REGEX_PATTERNS[$patternKey] . "'";
 			}
 			
-			// Handle numeric literals - direct evaluation based on pattern type
+			// Numeric literal: evaluate at compile time
 			if ($valueNode instanceof AstNumber) {
 				return match ($patternKey) {
-					'NUMERIC' => "1", // All numbers are numeric
-					'INTEGER' => !str_contains($valueNode->getValue(), ".") ? "1" : "0", // Check for decimal point
-					'FLOAT' => str_contains($valueNode->getValue(), ".") ? "1" : "0", // Requires decimal point
-					default => "0" // Unknown pattern
+					'NUMERIC' => '1',
+					'INTEGER' => !str_contains($valueNode->getValue(), '.') ? '1' : '0',
+					'FLOAT'   => str_contains($valueNode->getValue(), '.') ? '1' : '0',
+					default   => '0',
 				};
 			}
 			
-			// Handle boolean and null literals - never match numeric patterns
+			// Boolean or null literal: never numeric
 			if ($valueNode instanceof AstBool || $valueNode instanceof AstNull) {
-				return "0";
+				return '0';
 			}
 			
-			// Handle identifiers - use type inference for optimization
+			// Identifier: use type inference to avoid a runtime REGEXP where possible
 			$inferredType = $this->typeInference->inferReturnType($valueNode);
 			$string = $this->visitNodeAndReturnSQL($valueNode);
 			
-			// Match against pattern type and inferred type for optimization
 			return match ([$patternKey, $inferredType]) {
-				['NUMERIC', 'integer'], ['NUMERIC', 'float'] => "1", // Known numeric types
-				['INTEGER', 'integer'] => "1", // Known integer type
-				['INTEGER', 'float'] => "0", // Float is not integer
-				['FLOAT', 'float'] => "1", // Known float type
-				['FLOAT', 'integer'] => "0", // Integer is not float
-				default => "{$string} REGEXP '" . self::REGEX_PATTERNS[$patternKey] . "'" // Runtime check
+				['NUMERIC', 'integer'], ['NUMERIC', 'float'] => '1',
+				['INTEGER', 'integer']                       => '1',
+				['INTEGER', 'float']                         => '0',
+				['FLOAT',   'float']                         => '1',
+				['FLOAT',   'integer']                       => '0',
+				default => "{$string} REGEXP '" . self::REGEX_PATTERNS[$patternKey] . "'",
 			};
 		}
 		
 		/**
-		 * Handle wildcard string patterns for SQL LIKE conversion
-		 * Converts user-friendly wildcard patterns (* and ?) to SQL LIKE syntax.
-		 * Only processes strings that actually contain wildcard characters.
+		 * Handle wildcard string patterns for SQL LIKE conversion.
+		 *
+		 * Returns the LIKE expression if the string contains wildcard characters (* or ?),
+		 * or null if no wildcards are present (letting standard processing handle it).
+		 *
 		 * @param AstString $rightAst The string containing potential wildcards
 		 * @param AstExpression|AstBinaryOperator|AstFactor|AstTerm $ast The full expression
 		 * @param string $operator The comparison operator (= or <>)
-		 * @return bool True if wildcard processing was performed
+		 * @return string|null The LIKE expression, or null if no wildcards found
 		 */
-		private function handleWildcardString(AstString $rightAst, AstExpression|AstBinaryOperator|AstFactor|AstTerm $ast, string $operator): bool {
+		private function handleWildcardString(AstString $rightAst, AstExpression|AstBinaryOperator|AstFactor|AstTerm $ast, string $operator): ?string {
 			$stringValue = $rightAst->getValue();
 			
-			// Check if string contains wildcard characters
-			if (!str_contains($stringValue, "*") && !str_contains($stringValue, "?")) {
-				return false; // No wildcards found, let standard processing handle it
+			if (!str_contains($stringValue, '*') && !str_contains($stringValue, '?')) {
+				return null;
 			}
 			
-			// Process the left side of the expression
 			$leftResult = $this->visitNodeAndReturnSQL($ast->getLeft());
 			
-			// Convert wildcards to SQL LIKE patterns
 			$stringValue = str_replace(
 				array_keys(self::WILDCARD_MAPPINGS),
 				array_values(self::WILDCARD_MAPPINGS),
 				$stringValue
 			);
 			
-			// Choose LIKE or NOT LIKE based on original operator
-			$likeOperator = $operator === "=" ? " LIKE " : " NOT LIKE ";
+			$likeOperator = $operator === '=' ? ' LIKE ' : ' NOT LIKE ';
 			
-			// Store result for later retrieval
-			$this->lastResult = "{$leftResult}{$likeOperator}\"" . addslashes($stringValue) . "\"";
-			
-			return true; // Indicate that wildcard processing was performed
+			return "{$leftResult}{$likeOperator}\"" . $this->escapeSqlString($stringValue) . '"';
 		}
 		
 		/**
-		 * Handle regular expression patterns for SQL REGEXP conversion
-		 * Converts regex patterns to SQL REGEXP syntax for pattern matching.
+		 * Handle regular expression patterns for SQL REGEXP conversion.
+		 *
 		 * @param AstRegExp $rightAst The regex pattern AST node
 		 * @param AstExpression|AstBinaryOperator|AstFactor|AstTerm $ast The full expression
 		 * @param string $operator The comparison operator (= or <>)
-		 * @return bool True to indicate regex processing was performed
+		 * @return string The REGEXP expression
 		 */
-		private function handleRegularExpression(AstRegExp $rightAst, AstExpression|AstBinaryOperator|AstFactor|AstTerm $ast, string $operator): bool {
-			$stringValue = $rightAst->getValue();
-			
-			// Process the left side of the expression
+		private function handleRegularExpression(AstRegExp $rightAst, AstExpression|AstBinaryOperator|AstFactor|AstTerm $ast, string $operator): string {
 			$leftResult = $this->visitNodeAndReturnSQL($ast->getLeft());
+			$regexpOperator = $operator === '=' ? ' REGEXP ' : ' NOT REGEXP ';
 			
-			// Choose REGEXP or NOT REGEXP based on original operator
-			$regexpOperator = $operator === "=" ? " REGEXP " : " NOT REGEXP ";
-			
-			// Store result for later retrieval
-			$this->lastResult = "{$leftResult}{$regexpOperator}\"{$stringValue}\"";
-			
-			return true; // Always return true as regex processing always occurs
+			return "{$leftResult}{$regexpOperator}\"{$rightAst->getValue()}\"";
 		}
 		
 		/**
-		 * Visit an AST node and return its SQL representation
-		 * Delegates to the main visitor's method to process AST nodes.
-		 * This maintains proper isolation and avoids circular dependencies.
+		 * Visit an AST node and return its SQL representation.
+		 * Delegates to the main visitor to maintain proper isolation.
 		 * @param AstInterface $node The AST node to process
 		 * @return string The SQL representation of the node
 		 */
 		private function visitNodeAndReturnSQL(AstInterface $node): string {
-			// Use the main visitor's visitNodeAndReturnSQL method instead of creating new instances
 			return $this->mainVisitor->visitNodeAndReturnSQL($node);
-		}
-		
-		/**
-		 * Retrieve the last stored result
-		 * Used by wildcard and regex handling methods to return their processed results.
-		 * @return string The last stored processing result
-		 */
-		private function getLastResult(): string {
-			return $this->lastResult;
 		}
 	}
