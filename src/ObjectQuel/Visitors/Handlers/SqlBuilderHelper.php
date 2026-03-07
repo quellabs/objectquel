@@ -267,26 +267,19 @@
 		 * this method returns the raw MATCH...AGAINST value expression so it can be
 		 * used as a numeric score column.
 		 *
-		 * Throws if no FullTextIndex covers the requested columns — a score is meaningless
-		 * without full-text indexing, and silently returning 0 or a LIKE count would
-		 * mislead callers about relevance ordering.
+		 * When no FullTextIndex covers the requested columns, returns the literal 0.0.
+		 * All rows score equally, meaning no relevance ranking occurs, but the query
+		 * succeeds. Add a @FullTextIndex annotation to the entity to enable real scoring.
 		 *
 		 * @param AstSearchScore $searchScore The search_score AST node
-		 * @return string SQL MATCH...AGAINST expression
-		 * @throws \RuntimeException If no full-text index covers the requested columns
+		 * @return string SQL MATCH...AGAINST expression, or '0.0' if no full-text index exists
 		 */
 		public function buildSearchScoreExpression(AstSearchScore $searchScore): string {
 			$identifiers = $searchScore->getIdentifiers();
 			$fullTextIndex = $this->detectFullTextIndex($identifiers);
 			
 			if ($fullTextIndex === null) {
-				$propertyNames = $this->extractPropertyNames($identifiers);
-				throw new \RuntimeException(
-					"search_score() requires a @FullTextIndex annotation covering all searched columns. " .
-					"No full-text index found for: " . implode(', ', $propertyNames) . ". " .
-					"Add @Orm\\FullTextIndex(name=\"...\", columns={\"" . implode('", "', $propertyNames) . "\"}) " .
-					"to your entity class, or use search() for LIKE-based matching without scoring."
-				);
+				return '0.0';
 			}
 			
 			return $this->buildFullTextCondition($identifiers, $searchScore->getSearchString(), uniqid());
@@ -294,14 +287,13 @@
 		
 		/**
 		 * Checks whether all given identifiers belong to the same entity and whether
-		 * that entity has a FullTextIndex covering all of them.
-		 *
-		 * Returns the matching FullTextIndex if found, null otherwise.
-		 *
+		 * that entity has a FullTextIndex covering all of them. Returns the matching
+		 * FullTextIndex if found, null otherwise.
 		 * @param AstIdentifier[] $identifiers
 		 * @return FullTextIndex|null
 		 */
 		private function detectFullTextIndex(array $identifiers): ?FullTextIndex {
+			// Don't do anything if identifiers is empty
 			if (empty($identifiers)) {
 				return null;
 			}
@@ -309,12 +301,15 @@
 			// All identifiers must belong to the same entity for a single MATCH() to be valid
 			$entityNames = array_unique(array_map(fn($id) => $id->getEntityName(), $identifiers));
 			
+			// MATCH() across multiple entities would require separate MATCH() calls per entity,
+			// which can't be expressed as a single full-text condition
 			if (count($entityNames) !== 1) {
 				return null;
 			}
 			
 			$entityName = reset($entityNames);
 			
+			// Temporary table ranges have no entity name and therefore no annotation metadata
 			if (empty($entityName)) {
 				return null;
 			}

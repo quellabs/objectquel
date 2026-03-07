@@ -408,13 +408,12 @@
 		 * Returns the relevance score of the full-text search as a numeric SQL expression,
 		 * suitable for use in SELECT clause column lists and ORDER BY clauses.
 		 *
-		 * Requires a @FullTextIndex annotation covering all searched columns on the entity.
-		 * Throws a RuntimeException if no matching full-text index is found — falling back
-		 * to an approximate LIKE-based score would be misleading about relevance ordering.
+		 * When no @FullTextIndex annotation covers the searched columns, returns 0.0 so
+		 * that the query succeeds without ranking. Add a @FullTextIndex to the entity to
+		 * enable real relevance scoring.
 		 *
 		 * @param AstSearchScore $searchScore The search_score AST node
-		 * @return string SQL MATCH...AGAINST expression
-		 * @throws \RuntimeException If no full-text index covers the requested columns
+		 * @return string SQL MATCH...AGAINST expression, or '0.0' if no full-text index exists
 		 */
 		public function handleSearchScore(AstSearchScore $searchScore): string {
 			return $this->sqlBuilder->buildSearchScoreExpression($searchScore);
