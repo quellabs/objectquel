@@ -114,8 +114,25 @@
 				return;
 			}
 			
-			// Extract class name and determine handler method name
+			// Extract class name and determine handler method name.
+			// All AST node classes must follow the 'Ast' prefix convention.
 			$className = $this->extractClassName($node);
+			
+			if (!str_starts_with($className, 'Ast')) {
+				// A node reached the visitor that doesn't follow the naming convention.
+				// This is a programming error — flag it loudly in debug mode rather
+				// than silently producing incomplete SQL.
+				trigger_error(
+					sprintf(
+						'%s: node class "%s" does not follow the Ast* naming convention; no handler will be invoked.',
+						self::class,
+						$className
+					),
+					E_USER_WARNING
+				);
+				return;
+			}
+			
 			$handleMethod = 'handle' . substr($className, 3); // Remove 'Ast' prefix
 			
 			// Call the appropriate handler method if it exists
@@ -128,25 +145,26 @@
 		}
 		
 		/**
-		 * Visit a node and return the generated SQL without adding to main result
+		 * Visit a node and return the generated SQL without adding to main result.
+		 * Saves and restores $this->result so the main buffer is unaffected even if
+		 * an exception propagates out of the handler.
 		 * @param AstInterface $node The AST node to process
 		 * @return string The generated SQL for this node
 		 */
 		public function visitNodeAndReturnSQL(AstInterface $node): string {
-			// Remember current position in result array
-			$pos = count($this->result);
+			// Swap in a clean buffer so visitNode writes only this node's output
+			$saved = $this->result;
+			$this->result = [];
 			
-			// Process the node (this adds to result array)
-			$this->visitNode($node);
+			try {
+				$this->visitNode($node);
+				$sql = implode("", $this->result);
+			} finally {
+				// Always restore the main buffer, even if visitNode throws
+				$this->result = $saved;
+			}
 			
-			// Extract the SQL that was just added
-			$slice = implode("", array_slice($this->result, $pos));
-			
-			// Restore result array to original state
-			$this->result = array_slice($this->result, 0, $pos);
-			
-			// Return slice
-			return $slice;
+			return $sql;
 		}
 		
 		/**
@@ -411,8 +429,8 @@
 		}
 		
 		/**
-		 * Process an IN operation (value IN (list))
-		 * @param AstCase $ast The IN operation node to process
+		 * Process a CASE expression (CASE WHEN ... THEN ... ELSE ... END)
+		 * @param AstCase $ast The CASE expression node to process
 		 */
 		protected function handleCase(AstCase $ast): void {
 			$this->result[] = $this->aggregateHandler->handleCase($ast);
@@ -496,13 +514,6 @@
 		 * @param AstAny $ast The ANY function node to process
 		 */
 		protected function handleAny(AstAny $ast): void {
-			$objectHash = spl_object_hash($ast);
-			$isVisited = isset($this->visitedNodes[$objectHash]);
-			
-			if ($isVisited) {
-				return;
-			}
-			
 			$this->result[] = $this->aggregateHandler->handleAny($ast);
 		}
 		
@@ -516,11 +527,58 @@
 		}
 		
 		/**
-		 * Mark an AST node and its chain as visited
+		 * Returns the child nodes of an AST node that must also be marked visited.
+		 *
+		 * This centralises child-traversal knowledge so that addToVisitedNodes() stays
+		 * a simple loop and adding a new node type only requires touching this one method.
+		 *
+		 * Ideally this logic lives on the nodes themselves via a getChildren(): array
+		 * method on AstInterface, eliminating all instanceof checks here. That refactor
+		 * can be done incrementally: once AstInterface declares getChildren(), remove
+		 * the corresponding branch below and rely on the interface instead.
+		 *
+		 * @param AstInterface $ast
+		 * @return array<AstInterface|null> Direct children (nulls are filtered by addToVisitedNodes)
+		 */
+		private function getAstChildren(AstInterface $ast): array {
+			// Chained identifier: table.column.subfield — walk the chain
+			if ($ast instanceof AstIdentifier) {
+				return $ast->hasNext() ? [$ast->getNext()] : [];
+			}
+			
+			// Binary-ish expression nodes share a left/right structure
+			if (
+				$ast instanceof AstTerm ||
+				$ast instanceof AstFactor ||
+				$ast instanceof AstExpression ||
+				$ast instanceof AstBinaryOperator
+			) {
+				return [$ast->getLeft(), $ast->getRight()];
+			}
+			
+			if ($ast instanceof AstAny) {
+				return [$ast->getConditions(), $ast->getIdentifier()];
+			}
+			
+			if ($ast instanceof AstSubquery) {
+				return [$ast->getAggregation(), $ast->getConditions()];
+			}
+			
+			// AstSearch and AstSearchScore share the same child shape
+			if ($ast instanceof AstSearch || $ast instanceof AstSearchScore) {
+				return [...$ast->getIdentifiers(), $ast->getSearchString()];
+			}
+			
+			return [];
+		}
+		
+		/**
+		 * Mark an AST node and all its descendants as visited.
+		 * Child discovery is delegated to getAstChildren() — add new node types there,
+		 * not here.
 		 * @param AstInterface|null $ast The AST node to mark as visited
 		 */
 		protected function addToVisitedNodes(?AstInterface $ast): void {
-			// Do not process empty nodes
 			if ($ast === null) {
 				return;
 			}
@@ -528,50 +586,9 @@
 			// Mark this node as visited using its unique object ID
 			$this->visitedNodes[spl_object_hash($ast)] = true;
 			
-			// For chained identifiers (e.g., table.column.subfield), mark the entire chain
-			if ($ast instanceof AstIdentifier && $ast->hasNext()) {
-				$this->addToVisitedNodes($ast->getNext());
-			}
-			
-			// Also handle expressions
-			if (
-				$ast instanceof AstTerm ||
-				$ast instanceof AstFactor ||
-				$ast instanceof AstExpression ||
-				$ast instanceof AstBinaryOperator
-			) {
-				$this->addToVisitedNodes($ast->getLeft());
-				$this->addToVisitedNodes($ast->getRight());
-			}
-			
-			// And AstAny
-			if ($ast instanceof AstAny) {
-				$this->addToVisitedNodes($ast->getConditions());
-				$this->addToVisitedNodes($ast->getIdentifier());
-			}
-
-			// And AstSubQuery
-			if ($ast instanceof AstSubquery) {
-				$this->addToVisitedNodes($ast->getAggregation());
-				$this->addToVisitedNodes($ast->getConditions());
-			}
-			
-			// And AstSearch
-			if ($ast instanceof AstSearch) {
-				foreach ($ast->getIdentifiers() as $identifier) {
-					$this->addToVisitedNodes($identifier);
-				}
-				
-				$this->addToVisitedNodes($ast->getSearchString());
-			}
-			
-			// And AstSearchScore
-			if ($ast instanceof AstSearchScore) {
-				foreach ($ast->getIdentifiers() as $identifier) {
-					$this->addToVisitedNodes($identifier);
-				}
-				
-				$this->addToVisitedNodes($ast->getSearchString());
+			// Recursively mark all children
+			foreach ($this->getAstChildren($ast) as $child) {
+				$this->addToVisitedNodes($child);
 			}
 		}
 		
