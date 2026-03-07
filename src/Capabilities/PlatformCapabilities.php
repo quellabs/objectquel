@@ -45,6 +45,15 @@
 				return false;
 			}
 			
+			// Fetch version
+			$version = $driver->version();
+			
+			// MariaDB identifies itself through the Mysql driver but does not support
+			// the flags argument in REGEXP_LIKE(). Detect it via the version string.
+			if (stripos($version, 'mariadb') !== false) {
+				return false;
+			}
+			
 			// getVersion() returns a string like "8.0.32" or "5.7.41"
 			return version_compare($driver->version(), '8.0.0', '>=');
 		}
