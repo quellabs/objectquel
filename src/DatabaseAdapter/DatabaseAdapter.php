@@ -82,9 +82,8 @@
 			}
 			
 			$driver = $this->connection->getDriver();
-			$driverClass = get_class($driver);
 			
-			$this->databaseTypeCache = match ($driverClass) {
+			$this->databaseTypeCache = match (get_class($driver)) {
 				'Cake\Database\Driver\Postgres'   => 'pgsql',
 				'Cake\Database\Driver\Sqlite'     => 'sqlite',
 				'Cake\Database\Driver\Sqlserver'  => 'sqlsrv',
