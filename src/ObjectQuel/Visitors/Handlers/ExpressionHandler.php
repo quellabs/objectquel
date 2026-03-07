@@ -24,6 +24,8 @@
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstSearchScore;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstString;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstTerm;
+	use Quellabs\ObjectQuel\Database\DatabasePlatformInterface;
+	use Quellabs\ObjectQuel\Database\NullDatabasePlatform;
 	use Quellabs\ObjectQuel\ObjectQuel\AstInterface;
 	
 	/**
@@ -83,6 +85,9 @@
 		
 		/** @var mixed Reference to the main visitor to avoid circular dependencies */
 		private mixed $mainVisitor;
+
+		/** @var DatabasePlatformInterface Describes what the connected database engine supports */
+		private DatabasePlatformInterface $platform;
 		
 		/**
 		 * Constructor - Initialize the expression handler with required dependencies
@@ -90,17 +95,20 @@
 		 * @param TypeInferenceHelper $typeInference Helper for type analysis
 		 * @param array &$parameters Reference to parameters array for prepared statements
 		 * @param mixed $mainVisitor Reference to the main AST visitor (avoids circular dependency)
+		 * @param DatabasePlatformInterface $platform Database engine capability descriptor
 		 */
 		public function __construct(
-			SqlBuilderHelper    $sqlBuilder,
-			TypeInferenceHelper $typeInference,
-			array               &$parameters,
-			mixed               $mainVisitor
+			SqlBuilderHelper       $sqlBuilder,
+			TypeInferenceHelper    $typeInference,
+			array                  &$parameters,
+			mixed                  $mainVisitor,
+			DatabasePlatformInterface $platform = new NullDatabasePlatform()
 		) {
 			$this->sqlBuilder = $sqlBuilder;
 			$this->typeInference = $typeInference;
 			$this->parameters = &$parameters;
 			$this->mainVisitor = $mainVisitor;
+			$this->platform = $platform;
 		}
 		
 		/**
@@ -471,17 +479,35 @@
 		}
 		
 		/**
-		 * Handle regular expression patterns for SQL REGEXP conversion.
+		 * Handle regular expression patterns for SQL REGEXP / REGEXP_LIKE conversion.
+		 *
+		 * When the pattern carries flags (e.g. /pattern/i) AND the connected database
+		 * supports REGEXP_LIKE(), emits REGEXP_LIKE(col, "pattern", "flags") so that
+		 * the flags are honoured (e.g. case-insensitive matching).
+		 *
+		 * When the platform does not support REGEXP_LIKE, or no flags are present,
+		 * falls back to the plain col REGEXP "pattern" form and flags are ignored.
+		 * In that case case-sensitivity is determined by the column's collation.
 		 *
 		 * @param AstRegExp $rightAst The regex pattern AST node
 		 * @param AstExpression|AstBinaryOperator|AstFactor|AstTerm $ast The full expression
 		 * @param string $operator The comparison operator (= or <>)
-		 * @return string The REGEXP expression
+		 * @return string The REGEXP or REGEXP_LIKE expression
 		 */
 		private function handleRegularExpression(AstRegExp $rightAst, AstExpression|AstBinaryOperator|AstFactor|AstTerm $ast, string $operator): string {
 			$leftResult = $this->visitNodeAndReturnSQL($ast->getLeft());
-			$regexpOperator = $operator === '=' ? ' REGEXP ' : ' NOT REGEXP ';
+			$flags = $rightAst->getFlags();
 			
+			// Use REGEXP_LIKE(col, pattern, flags) when flags are present and the
+			// platform supports it (MySQL 8.0+). This is the only way to pass flags
+			// to the regex engine in MySQL — the plain REGEXP operator has no flag syntax.
+			if ($flags !== '' && $this->platform->supportsRegexpLike()) {
+				$not = $operator === '<>' ? 'NOT ' : '';
+				return "{$not}REGEXP_LIKE({$leftResult}, \"{$rightAst->getValue()}\", \"{$flags}\")";
+			}
+			
+			// Fallback: plain REGEXP. Flags are dropped — behavior depends on collation.
+			$regexpOperator = $operator === '=' ? ' REGEXP ' : ' NOT REGEXP ';
 			return "{$leftResult}{$regexpOperator}\"{$rightAst->getValue()}\"";
 		}
 		

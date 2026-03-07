@@ -66,7 +66,7 @@
 			$this->signalHub = SignalHubLocator::getInstance();
 			$this->connection = new DatabaseAdapter($connection);
 			$this->entityStore = new EntityStore($configuration);
-			$this->unitOfWork = new UnitOfWork($this, $this->signalHub);
+			$this->unitOfWork = new UnitOfWork($this);
 			$this->queryBuilder = new QueryBuilder($this->entityStore);
 			$this->queryExecutor = new QueryExecutor($this);
 			$this->propertyHandler = new PropertyHandler();

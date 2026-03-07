@@ -11,6 +11,7 @@
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRetrieve;
 	use Quellabs\ObjectQuel\ObjectQuel\QuelException;
 	use Quellabs\ObjectQuel\ObjectQuel\QuelToSQL;
+	use Quellabs\ObjectQuel\Database\CakePHPDatabasePlatform;
 	
 	/**
 	 * Handles database-specific query execution including SQL conversion and temp tables
@@ -67,7 +68,8 @@
 		 * @return string The generated SQL query
 		 */
 		private function convertToSQL(AstRetrieve $retrieve, array &$parameters): string {
-			$quelToSQL = new QuelToSQL($this->entityManager->getEntityStore(), $parameters);
+			$platform = new CakePHPDatabasePlatform($this->connection->getConnection());
+			$quelToSQL = new QuelToSQL($this->entityManager->getEntityStore(), $parameters, $platform);
 			return $quelToSQL->convertToSQL($retrieve);
 		}
 	}
