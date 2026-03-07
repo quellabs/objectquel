@@ -3,7 +3,7 @@
 	namespace Quellabs\ObjectQuel\ObjectQuel;
 	
 	use Quellabs\ObjectQuel\EntityStore;
-	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstAlias;
+	use Quellabs\ObjectQuel\ObjectQuel\AstInterface;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstIdentifier;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRangeDatabase;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRetrieve;
@@ -32,17 +32,23 @@
 		 * @return string
 		 */
 		public function convertToSQL(AstRetrieve $retrieve): string {
-			return trim(sprintf("SELECT %s%s%s %s %s%s%s",
-				$this->getUnique($retrieve),
-				$this->getFieldNames($retrieve),
+			// Build each clause independently, then join non-empty parts with a single
+			// space so the output never contains runs of whitespace when optional clauses
+			// are absent. Clause order follows the SQL standard:
+			//   SELECT … FROM … JOIN … WHERE … GROUP BY … ORDER BY …
+			$parts = array_filter([
+				"SELECT",
+				$this->getUnique($retrieve) . $this->getFieldNames($retrieve),
 				$this->getFrom($retrieve),
 				$this->getJoins($retrieve),
 				$this->getWhere($retrieve),
-				$this->getSort($retrieve),
 				$this->getGroupBy($retrieve),
-			));
+				$this->getSort($retrieve),
+			], fn(string $p) => $p !== "");
+			
+			return implode(" ", $parts);
 		}
-
+		
 		/**
 		 * Returns the keyword DISTINCT if the query is unique
 		 * @param AstRetrieve $retrieve
@@ -99,8 +105,29 @@
 				}
 			}
 			
-			// Convert the array to a string and remove duplicate values
+			// array_unique is intentional: buildEntityColumns() can expand a whole entity
+			// into a comma-joined column list that may overlap with individually-referenced
+			// columns elsewhere in the query. isDuplicateField only guards against adding
+			// the same string twice within this loop; array_unique catches cross-expansion
+			// duplicates after the fact.
 			return implode(",", array_unique($result));
+		}
+		
+		/**
+		 * Resolve the physical table name for a database range.
+		 *
+		 * Both getFrom() and getJoins() need the same logic: if the range has an
+		 * explicit table name (e.g. a derived/subquery range), use it directly;
+		 * otherwise look it up from the entity store. Centralising this prevents
+		 * the two call sites from drifting out of sync and eliminates the null-table
+		 * bug that existed in getJoins() when getQuery() was non-null but
+		 * getTableName() returned null.
+		 *
+		 * @param AstRangeDatabase $range
+		 * @return string
+		 */
+		protected function resolveOwningTable(AstRangeDatabase $range): string {
+			return $range->getTableName() ?? $this->entityStore->getOwningTable($range->getEntityName());
 		}
 		
 		/**
@@ -133,11 +160,7 @@
 				$rangeName = $range->getName();
 				
 				// Get the corresponding table name for the entity.
-				if ($range->getTableName() !== null) {
-					$owningTable = $range->getTableName();
-				} else {
-					$owningTable = $this->entityStore->getOwningTable($range->getEntityName());
-				}
+				$owningTable = $this->resolveOwningTable($range);
 				
 				// Add the table name and alias to the list for the FROM clause.
 				$tableNames[] = "`{$owningTable}` as `{$rangeName}`";
@@ -149,7 +172,7 @@
 			}
 			
 			// Combine the table names with commas to generate the FROM part of the SQL query.
-			return " FROM " . implode(",", $tableNames);
+			return "FROM " . implode(",", $tableNames);
 		}
 		
 		/**
@@ -220,7 +243,7 @@
 				$parametersSql = implode(",", array_unique(array_filter($mappedParameters)));
 				
 				// Return results
-				return " ORDER BY FIELD(" . $retrieveEntitiesVisitor->getResult() . ", " . $parametersSql . ")";
+				return "ORDER BY FIELD(" . $retrieveEntitiesVisitor->getResult() . ", " . $parametersSql . ")";
 			}
 		}
 		
@@ -253,9 +276,9 @@
 				$sqlSort[] = $retrieveEntitiesVisitor->getResult() . " " . $s["order"];
 			}
 			
-			// Get the result, which is now a SQL-compliant string, and add 'WHERE' for the SQL query.
-			// This is the result of converting Quel conditions to SQL.
-			return " ORDER BY " . implode(",", $sqlSort);
+			// Combine sort expressions into the ORDER BY clause.
+			
+			return "ORDER BY " . implode(",", $sqlSort);
 		}
 		
 		/**
@@ -290,7 +313,7 @@
 			}
 			
 			$groupSQL = [];
-
+			
 			foreach($groupBy as $group) {
 				$visitor = new QuelToSQLConvertToString($this->entityStore, $this->parameters, "CONDITION");
 				$group->accept($visitor);
@@ -336,11 +359,7 @@
 				$joinProperty = $range->getJoinProperty();
 				
 				// Find the table associated with the entity.
-				if ($range->getQuery() !== null) {
-					$owningTable = $range->getTableName();
-				} else {
-					$owningTable = $this->entityStore->getOwningTable($range->getEntityName());
-				}
+				$owningTable = $this->resolveOwningTable($range);
 				
 				// Convert the join condition to a SQL string.
 				// This involves translating the join condition to a format that SQL understands.
@@ -361,22 +380,33 @@
 		
 		/**
 		 * Checks if a SQL field name is already present in the list of fields.
-		 * @param array $existingFields Array of existing field names or field groups
+		 *
+		 * @param array $existingFields Array of existing field names or field groups.
+		 *   Some entries may be comma-separated strings produced by buildEntityColumns()
+		 *   when a whole entity is expanded (e.g. "`u`.`id`,`u`.`name`,`u`.`email`").
 		 * @param string $fieldToCheck Field name to check for duplicates
 		 * @return bool True if the field already exists, false otherwise
+		 *
+		 * @note Case 2 splits entries on literal commas to detect membership inside an
+		 *   entity-column group. This works correctly for bare column references but will
+		 *   produce false negatives (missed duplicates) or false positives if any column
+		 *   expression itself contains a comma — e.g. FIELD(col,1,2), CONCAT(a,b), or
+		 *   CASE expressions. The correct long-term fix is to store individual field
+		 *   strings in $result rather than joining them in buildEntityColumns(), making
+		 *   a plain in_array() check sufficient and eliminating the split entirely.
 		 */
 		protected function isDuplicateField(array $existingFields, string $fieldToCheck): bool {
 			// Normalize the field to check (trim whitespace)
 			$fieldToCheck = trim($fieldToCheck);
 			
 			foreach ($existingFields as $existingField) {
-				// Case 1: Direct match with an existing field
+				// Case 1: Direct match with an existing single field
 				if ($existingField === $fieldToCheck) {
 					return true;
 				}
 				
-				// Case 2: Field exists in a comma-separated list
-				// Split by comma and check each field
+				// Case 2: Field may exist inside a comma-separated entity-column group.
+				// See @note above regarding the fragility of this split.
 				$individualFields = array_map('trim', explode(',', $existingField));
 				
 				if (in_array($fieldToCheck, $individualFields, true)) {
