@@ -2,8 +2,8 @@
 	
 	namespace Quellabs\ObjectQuel\Execution\Optimizers;
 	
-	use Quellabs\ObjectQuel\Database\PlatformCapabilitiesInterface;
-	use Quellabs\ObjectQuel\Database\NullPlatformCapabilities;
+	use Quellabs\ObjectQuel\Capabilities\PlatformCapabilitiesInterface;
+	use Quellabs\ObjectQuel\Capabilities\NullPlatformCapabilities;
 	use Quellabs\ObjectQuel\EntityManager;
 	use Quellabs\ObjectQuel\Execution\Support\AggregateConstants;
 	use Quellabs\ObjectQuel\Execution\Support\AggregateRewriter;
