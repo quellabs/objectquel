@@ -1,6 +1,6 @@
 <?php
 	
-	namespace Quellabs\ObjectQuel\Database;
+	namespace Quellabs\ObjectQuel\Capabilities;
 	
 	/**
 	 * Abstracts database-engine capabilities that affect SQL generation.

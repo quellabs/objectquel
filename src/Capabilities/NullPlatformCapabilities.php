@@ -1,6 +1,6 @@
 <?php
 	
-	namespace Quellabs\ObjectQuel\Database;
+	namespace Quellabs\ObjectQuel\Capabilities;
 	
 	/**
 	 * Conservative no-op platform used when no database connection is available.

@@ -1,6 +1,6 @@
 <?php
 	
-	namespace Quellabs\ObjectQuel\Database;
+	namespace Quellabs\ObjectQuel\Capabilities;
 	
 	use Cake\Database\Connection;
 	use Cake\Database\Driver\Mysql;

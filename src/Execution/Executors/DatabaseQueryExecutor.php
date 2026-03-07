@@ -7,7 +7,7 @@
 	use Quellabs\ObjectQuel\DatabaseAdapter\DatabaseAdapter;
 	use Quellabs\ObjectQuel\Execution\ExecutionStage;
 	use Quellabs\ObjectQuel\Execution\QueryOptimizer;
-	use Quellabs\ObjectQuel\Database\PlatformCapabilities;
+	use Quellabs\ObjectQuel\Capabilities\PlatformCapabilities;
 	use Quellabs\ObjectQuel\Execution\QueryTransformer;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRetrieve;
 	use Quellabs\ObjectQuel\ObjectQuel\QuelException;

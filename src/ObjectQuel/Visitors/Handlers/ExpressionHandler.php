@@ -24,8 +24,8 @@
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstSearchScore;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstString;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstTerm;
-	use Quellabs\ObjectQuel\Database\PlatformCapabilitiesInterface;
-	use Quellabs\ObjectQuel\Database\NullPlatformCapabilities;
+	use Quellabs\ObjectQuel\Capabilities\PlatformCapabilitiesInterface;
+	use Quellabs\ObjectQuel\Capabilities\NullPlatformCapabilities;
 	use Quellabs\ObjectQuel\ObjectQuel\AstInterface;
 	
 	/**
