@@ -35,4 +35,18 @@
 		 * @return bool
 		 */
 		public function supportsRegexpLike(): bool;
+		
+		/**
+		 * Returns true if the database engine supports SQL window functions (OVER clause).
+		 *
+		 * When true, ObjectQuel's aggregate optimizer may rewrite eligible aggregates
+		 * as window functions (e.g. COUNT(*) OVER()) for better performance.
+		 * When false, the optimizer falls back to correlated subqueries.
+		 *
+		 * MySQL: supported from 8.0.0 onward.
+		 * MariaDB: supported from 10.2 onward.
+		 *
+		 * @return bool
+		 */
+		public function supportsWindowFunctions(): bool;
 	}

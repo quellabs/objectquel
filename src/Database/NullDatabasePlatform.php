@@ -18,4 +18,11 @@
 		public function supportsRegexpLike(): bool {
 			return false;
 		}
+		
+		/**
+		 * @inheritDoc
+		 */
+		public function supportsWindowFunctions(): bool {
+			return false;
+		}
 	}

@@ -41,9 +41,6 @@
 		/** @var array Cached index definitions for tables */
 		protected array $indexes;
 		
-		/** @var bool|null Cached result of window function support detection (null = not yet tested) */
-		private ?bool $supportsWindowFunctionsCache;
-		
 		/** @var string|null Cached database type identifier (null = not yet determined) */
 		private ?string $databaseTypeCache;
 		
@@ -62,7 +59,6 @@
 			$this->last_error = 0;
 			$this->last_error_message = '';
 			$this->transaction_depth = 0;
-			$this->supportsWindowFunctionsCache = null;
 			$this->databaseTypeCache = null;
 		}
 		
@@ -145,40 +141,6 @@
 		}
 		
 		// ==================== Database Capability Detection ====================
-		
-		/**
-		 * Tests whether the database supports SQL window functions (OVER clause)
-		 *
-		 * Performs feature detection by executing a test query. Result is cached
-		 * for the lifetime of the adapter instance.
-		 *
-		 * @return bool True if window functions are supported, false otherwise
-		 */
-		public function supportsWindowFunctions(): bool {
-			if ($this->supportsWindowFunctionsCache !== null) {
-				return $this->supportsWindowFunctionsCache;
-			}
-			
-			// Portable probe: COUNT(...) OVER () over a single-row derived table.
-			// If window functions aren't supported, this will raise a syntax error.
-			$probeSql = 'SELECT COUNT(1) OVER () AS __wf FROM (SELECT 1) t';
-			
-			try {
-				// Bypass our execute() wrapper so we don't set last_error on capability checks
-				$stmt = $this->connection->execute($probeSql);
-				
-				// Some drivers need an explicit close to free the cursor
-				$stmt->closeCursor();
-				
-				// Return true if window functions are supported
-				$this->supportsWindowFunctionsCache = true;
-				return true;
-			} catch (\Throwable $e) {
-				// Window functions not supported (or extremely old engine quirks) → treat as false
-				$this->supportsWindowFunctionsCache = false;
-				return false;
-			}
-		}
 		
 		/**
 		 * Checks whether the database supports native ENUM column types
