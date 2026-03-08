@@ -88,13 +88,24 @@
 			$primaryKeyValues = $this->extractPrimaryKeyValueMap($entity, $primaryKeys, $primaryKeyColumns);
 			
 			// Construct the SQL query for deleting the entity, using each primary key value
-			// in the WHERE clause to target this specific entity
-			// Uses `AND` to ensure all conditions must match
-			$sql = implode(" AND ", array_map(fn($key) => "`{$key}`=:{$key}", array_keys($primaryKeyValues)));
+			// in the WHERE clause to target this specific entity.
+			// Parameters are prefixed with "pk_" to ensure valid PDO parameter names
+			// regardless of the underlying column name (consistent with UpdatePersister).
+			$params = [];
+			$whereParts = [];
+			
+			foreach ($primaryKeyValues as $columnName => $value) {
+				$paramName = "pk_{$columnName}";
+				$whereParts[] = "`{$columnName}`=:{$paramName}";
+				$params[$paramName] = $value;
+			}
+			
+			// Put all WHERE parts in a string to use in the query
+			$sql = implode(" AND ", $whereParts);
 			
 			// Execute the DELETE query with the constructed conditions
 			// Use the primary key values as parameters for the prepared statement to prevent SQL injection
-			if (!$this->connection->execute("DELETE FROM `{$tableNameEscaped}` WHERE {$sql}", $primaryKeyValues)) {
+			if (!$this->connection->execute("DELETE FROM `{$tableNameEscaped}` WHERE {$sql}", $params)) {
 				// If execution fails, throw an exception with the last error message and error code
 				// from the database connection to help identify and resolve the issue
 				throw new OrmException("Error deleting entity: " . $this->connection->getLastErrorMessage(), $this->connection->getLastError());
