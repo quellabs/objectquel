@@ -257,13 +257,24 @@
 				return '';
 			}
 
-			// Strip all leading whitespace from each line individually, then re-apply
-			// the target indent uniformly. This handles mixed tabs/spaces in source files.
+			// Strip all leading whitespace from each line, then re-apply the target indent.
+			// Lines starting with '* ' (the interior doc comment lines) get an extra leading
+			// space so they render as ' * ' rather than '* ', matching PSR-5 doc comment style.
 			$lines = explode("\n", $docComment);
 
 			$normalized = array_map(function (string $line) use ($indent): string {
 				$stripped = ltrim($line);
-				return $stripped !== '' ? $indent . $stripped : '';
+
+				if ($stripped === '') {
+					return '';
+				}
+
+				// Interior and closing doc comment lines: preserve the conventional ' * ' / ' */' format.
+				if (str_starts_with($stripped, '* ') || $stripped === '*' || $stripped === '*/') {
+					return $indent . ' ' . $stripped;
+				}
+
+				return $indent . $stripped;
 			}, $lines);
 
 			return implode("\n", $normalized);
