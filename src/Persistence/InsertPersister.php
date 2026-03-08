@@ -89,7 +89,7 @@
 			// Gather the necessary information for the insert operation
 			// Get the table name where the entity should be stored
 			$tableName = $this->entityStore->getOwningTable($entity);
-			$tableNameEscaped = str_replace('`', '``', $tableName);
+			$tableNameEscaped = $this->valueHandler->escapeIdentifier($tableName);
 			
 			// Fetch the column map
 			$columnMap = array_flip($this->entityStore->getColumnMap($entity));

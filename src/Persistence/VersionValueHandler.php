@@ -14,18 +14,18 @@
 		 * The EntityStore that maintains metadata about entities and their mappings
 		 * Used to retrieve information about entity tables, columns and identifiers
 		 */
-		private EntityStore $entity_store;
+		private EntityStore $entityStore;
 		
 		/**
 		 * Reference to the UnitOfWork that manages persistence operations
 		 */
-		private UnitOfWork $unit_of_work;
+		private UnitOfWork $unitOfWork;
 		
 		/**
 		 * Utility for handling entity property access and manipulation
 		 * Provides methods to get and set entity properties regardless of their visibility
 		 */
-		private PropertyHandler $property_handler;
+		private PropertyHandler $propertyHandler;
 		
 		/**
 		 * Database connection adapter used for executing SQL queries
@@ -38,34 +38,35 @@
 		 * @param DatabaseAdapter $connection
 		 * @param EntityStore $entityStore
 		 * @param UnitOfWork $unitOfWork
-		 * @param PropertyHandler $property_handler
+		 * @param PropertyHandler $propertyHandler
 		 */
-		public function __construct(DatabaseAdapter $connection, EntityStore $entityStore, UnitOfWork $unitOfWork, PropertyHandler $property_handler) {
+		public function __construct(DatabaseAdapter $connection, EntityStore $entityStore, UnitOfWork $unitOfWork, PropertyHandler $propertyHandler) {
 			$this->connection = $connection;
-			$this->entity_store = $entityStore;
-			$this->unit_of_work = $unitOfWork;
-			$this->property_handler = $property_handler;
+			$this->entityStore = $entityStore;
+			$this->unitOfWork = $unitOfWork;
+			$this->propertyHandler = $propertyHandler;
 		}
 		
 		/**
 		 * Fetches version values back from the database after update
 		 * Required to ensure in-memory entity matches database state exactly
-		 * @param string $tableName Escaped table name
+		 * @param string $tableName Raw (unescaped) table name
 		 * @param array $versionColumns All version column metadata
 		 * @param array $primaryKeyColumnNames Primary key column names
 		 * @param array $primaryKeyValues Primary key values
 		 * @return array Fetched version values as property_name => value pairs
 		 */
 		public function fetchUpdatedVersionValues(string $tableName, array $versionColumns, array $primaryKeyColumnNames, array $primaryKeyValues): array {
-			// Do nothing when no version columns exist
+			// Nothing to fetch if this entity has no version columns
 			if (empty($versionColumns)) {
 				return [];
 			}
 			
-			// Build a SELECT query to retrieve all version columns
+			// Build the SELECT column list from the version column names
 			$selectColumns = array_map(fn($vc) => $this->escapeIdentifier($vc['name']), $versionColumns);
 			
-			// Build WHERE clause using only primary keys to identify the row we just updated
+			// Build the WHERE clause and parameter list from the primary keys
+			// Parameters are prefixed with "pk_" to avoid collisions with version column names
 			$whereClauseParts = [];
 			$selectParams = [];
 			
@@ -75,17 +76,18 @@
 				$selectParams[$paramName] = $primaryKeyValues[$columnName];
 			}
 			
-			// Build select query
-			$selectSql = "SELECT " . implode(", ", $selectColumns) . " FROM {$tableName} WHERE " . implode(" AND ", $whereClauseParts);
+			// Assemble query
+			$selectSql = "SELECT " . implode(", ", $selectColumns) . " FROM " . $this->escapeIdentifier($tableName) . " WHERE " . implode(" AND ", $whereClauseParts);
 			
-			// Execute select query
+			// Execute query
 			$result = $this->connection->Execute($selectSql, $selectParams);
 			
-			// Collect fetched datetime values
+			// Return empty if the query failed or the row has already been removed
 			if (!$result || !($row = $result->fetchAssoc())) {
 				return [];
 			}
 			
+			// Map each version column back to its fetched value, keyed by property name
 			return array_map(function ($vc) use ($row) {
 				return $row[$vc['name']];
 			}, $versionColumns);
@@ -98,15 +100,19 @@
 		 * @return void
 		 */
 		public function updateEntityVersionValues(object $entity, array $fetchedValues): void {
+			// Nothing to do if the insert/update produced no version values
 			if (empty($fetchedValues)) {
 				return;
 			}
 			
-			$annotations = $this->entity_store->getAnnotations($entity, Column::class);
+			// Fetch Column annotations so the serializer can normalize each raw database value
+			// to the correct PHP type (e.g. datetime string → DateTimeImmutable)
+			$annotations = $this->entityStore->getAnnotations($entity, Column::class);
 			
 			foreach ($fetchedValues as $property => $newValue) {
-				$normalizedValue = $this->unit_of_work->getSerializer()->normalizeValue($annotations[$property], $newValue);
-				$this->property_handler->set($entity, $property, $normalizedValue);
+				// Normalize the raw database value to its PHP representation before writing it back
+				$normalizedValue = $this->unitOfWork->getSerializer()->normalizeValue($annotations[$property], $newValue);
+				$this->propertyHandler->set($entity, $property, $normalizedValue);
 			}
 		}
 		
@@ -116,6 +122,7 @@
 		 * @return string The escaped identifier wrapped in backticks
 		 */
 		public function escapeIdentifier(string $identifier): string {
+			// Wrap in backticks and double any internal backticks to produce a valid MySQL identifier
 			return '`' . str_replace('`', '``', $identifier) . '`';
 		}
 	}
