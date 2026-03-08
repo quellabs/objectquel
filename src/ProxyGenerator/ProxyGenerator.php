@@ -246,6 +246,30 @@
 		}
 		
 		/**
+		 * Strips leading whitespace from every line of a doc comment so it renders
+		 * flush with the target indentation in the generated file, regardless of
+		 * how it was indented in the original source.
+		 * @param string $docComment
+		 * @return string
+		 */
+		private function normalizeDocComment(string $docComment, string $indent = ''): string {
+			if ($docComment === '') {
+				return '';
+			}
+
+			// Strip all leading whitespace from each line individually, then re-apply
+			// the target indent uniformly. This handles mixed tabs/spaces in source files.
+			$lines = explode("\n", $docComment);
+
+			$normalized = array_map(function (string $line) use ($indent): string {
+				$stripped = ltrim($line);
+				return $stripped !== '' ? $indent . $stripped : '';
+			}, $lines);
+
+			return implode("\n", $normalized);
+		}
+
+		/**
 		 * Returns the Heredoc template used to render a file-based proxy class.
 		 * The autoloader is responsible for loading the parent entity class;
 		 * no include_once is emitted.
@@ -263,13 +287,21 @@
 			string $fqcn,
 			string $methods
 		): string {
+			// Normalise the class doc comment: strip per-line leading whitespace so it sits
+			// flush with the class declaration regardless of the source file's indentation.
+			$normalizedDocComment = $this->normalizeDocComment($docComment, '');
+
+			// The backslash before the FQCN must sit outside the interpolation block;
+			// otherwise PHP treats \{ as an escape sequence and emits it literally.
+			$extends = '\\' . $fqcn;
+
 			return trim(<<<PHP
 <?php
 
 namespace {$namespace};
 
-{$docComment}
-class {$shortName} extends \{$fqcn} implements \Quellabs\ObjectQuel\ProxyGenerator\ProxyInterface {
+{$normalizedDocComment}
+class {$shortName} extends {$extends} implements \Quellabs\ObjectQuel\ProxyGenerator\ProxyInterface {
 {$methods}
 }
 PHP);
@@ -390,30 +422,45 @@ PHP);
 			
 			['declaration' => $ctorDeclaration, 'passthrough' => $ctorPassthrough] =
 				$this->buildParentConstructorArgs($entity);
-			
-			$parentCtorCall = $ctorPassthrough !== ''
-				? "parent::__construct({$ctorPassthrough});"
-				: ($this->reflectionHandler->hasConstructor($entity) ? "parent::__construct();" : "");
-			
+
+			// Only forward args to parent when the entity actually declares a constructor.
+			// When there are no parameters, omit the call entirely rather than emitting
+			// a bare parent::__construct() that may not exist on the entity.
+			if ($ctorPassthrough !== '') {
+				$parentCtorCall = "parent::__construct({$ctorPassthrough});";
+			} elseif ($this->reflectionHandler->hasConstructor($entity)) {
+				$parentCtorCall = "parent::__construct();";
+			} else {
+				$parentCtorCall = "";
+			}
+
+			// Append entity constructor args after $entityManager only when present,
+			// avoiding a trailing comma in the signature when the entity has none.
+			$ctorExtraArgs = $ctorDeclaration !== '' ? ", {$ctorDeclaration}" : '';
+
+			// The backslash before the FQCN must sit outside the interpolation block;
+			// otherwise PHP treats \{ as an escape sequence and emits it literally.
+			$entityClass = '\\' . $entity;
+
 			$result[] = <<<PHP
 
     /**
      * The EntityManager instance used to lazy-load entity data from the database.
      * @var \Quellabs\ObjectQuel\EntityManager
      */
-    private \Quellabs\ObjectQuel\EntityManager \$entityManager;
+    protected \Quellabs\ObjectQuel\EntityManager \$entityManager;
 
     /**
-     * Whether the proxy has been initialised with actual entity data.
+     * Whether the proxy has been initialized with actual entity data.
      * @var bool
      */
-    private bool \$initialized;
+    protected bool \$initialized;
 
     /**
      * Creates an uninitialised proxy. Entity data is loaded on first access.
      * @param \Quellabs\ObjectQuel\EntityManager \$entityManager
      */
-    public function __construct(\Quellabs\ObjectQuel\EntityManager \$entityManager, {$ctorDeclaration}) {
+    public function __construct(\Quellabs\ObjectQuel\EntityManager \$entityManager{$ctorExtraArgs}) {
         \$this->entityManager = \$entityManager;
         \$this->initialized   = false;
         {$parentCtorCall}
@@ -424,7 +471,7 @@ PHP);
      * @return void
      */
     protected function doInitialize(): void {
-        \$this->entityManager->find(\{$entity}::class, \$this->{$identifierKeysGetterMethod}());
+        \$this->entityManager->find({$entityClass}::class, \$this->{$identifierKeysGetterMethod}());
         \$this->setInitialized();
     }
 
@@ -461,7 +508,7 @@ PHP;
 				// Gather everything needed to reconstruct the method signature in the proxy.
 				$returnType         = $this->reflectionHandler->getMethodReturnType($entity, $method);
 				$returnTypeNullable = $this->reflectionHandler->methodReturnTypeIsNullable($entity, $method);
-				$docComment         = $this->reflectionHandler->getMethodDocComment($entity, $method);
+				$docComment         = $this->normalizeDocComment($this->reflectionHandler->getMethodDocComment($entity, $method), '    ');
 				$parameters         = $this->reflectionHandler->getMethodParameters($entity, $method);
 				
 				$parameterList  = [];  // typed declarations, e.g. "string $name = 'foo'"
@@ -497,7 +544,7 @@ PHP;
 				// Add function
 				$result[] = <<<PHP
 
-    {$docComment}
+{$docComment}
     {$visibility} function {$method}({$parameterString}){$returnTypeHint} {
         \$this->doInitialize();
         {$returnStatement}parent::{$method}({$parameterNamesString});
