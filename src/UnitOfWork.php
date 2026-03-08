@@ -59,7 +59,6 @@
 		/**
 		 * UnitOfWork constructor.
 		 * @param EntityManager $entityManager
-		 * @throws \Exception
 		 */
 		public function __construct(EntityManager $entityManager) {
 			$this->signalHub = SignalHubLocator::getInstance();
