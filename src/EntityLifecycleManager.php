@@ -57,7 +57,6 @@
 		/**
 		 * Constructor
 		 * @param UnitOfWork $unitOfWork
-		 * @throws \Exception
 		 */
 		public function __construct(UnitOfWork $unitOfWork) {
 			$this->unitOfWork = $unitOfWork;
