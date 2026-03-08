@@ -77,7 +77,8 @@
 		 */
 		public function persist(object $entity): void {
 			// Get the name of the table where the entity is stored
-			$tableName = $this->escapeIdentifier($this->entityStore->getOwningTable($entity));
+			$tableName = $this->entityStore->getOwningTable($entity);
+			$tableNameEscaped = $this->escapeIdentifier($tableName);
 			
 			// Obtain the primary keys and corresponding column names of the entity
 			$primaryKeys = $this->entityStore->getIdentifierKeys($entity);
@@ -104,7 +105,7 @@
 			
 			// Execute the DELETE query with the constructed conditions
 			// Use the primary key values as parameters for the prepared statement to prevent SQL injection
-			if (!$this->connection->execute("DELETE FROM {$tableName} WHERE {$sql}", $params)) {
+			if (!$this->connection->execute("DELETE FROM {$tableNameEscaped} WHERE {$sql}", $params)) {
 				// If execution fails, throw an exception with the last error message and error code
 				// from the database connection to help identify and resolve the issue
 				throw new OrmException("Error deleting entity: " . $this->connection->getLastErrorMessage(), $this->connection->getLastError());

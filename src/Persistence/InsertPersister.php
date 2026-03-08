@@ -170,7 +170,7 @@
 			$sql = implode(",", $sqlParts);
 			
 			// Execute the insert query with the serialized entity data as parameters
-			$rs = $this->connection->Execute("INSERT INTO `{$tableNameEscaped}` SET {$sql}", $serializedEntity);
+			$rs = $this->connection->Execute("INSERT INTO {$tableNameEscaped} SET {$sql}", $serializedEntity);
 			
 			// If the query fails, throw an exception with the error details
 			if (!$rs) {
