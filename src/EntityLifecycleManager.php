@@ -78,7 +78,7 @@
 			$this->unitOfWork->signalPostDelete->disconnect([$this, 'handlePostDelete']);
 			$this->unitOfWork->signalPreDelete->disconnect([$this, 'handlePreDelete']);
 			$this->unitOfWork->signalPostUpdate->disconnect([$this, 'handlePostUpdate']);
-			$this->unitOfWork->signalPostUpdate->disconnect([$this, 'handlePostUpdate']);
+			$this->unitOfWork->signalPreUpdate->disconnect([$this, 'handlePreUpdate']);
 			$this->unitOfWork->signalPostPersist->disconnect([$this, 'handlePostPersist']);
 			$this->unitOfWork->signalPrePersist->disconnect([$this, 'handlePrePersist']);
 		}
