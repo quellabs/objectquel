@@ -38,9 +38,9 @@
 	
 	class UnitOfWork {
 		
-		protected array $original_entity_data;
-		protected array $identity_map;
-		protected array $entity_removal_list;
+		protected array $originalEntityData;
+		protected array $identityMap;
+		protected array $entityRemovalList;
 		private SignalHub $signalHub;
 		protected EntityManager $entityManager;
 		protected EntityStore $entityStore;
@@ -48,6 +48,9 @@
 		protected ?SQLSerializer $serializer;
 		protected ?DatabaseAdapter $connection;
 		protected EntityLifecycleManager $lifecycleManager;
+		protected InsertPersister $insertPersister;
+		protected UpdatePersister $updatePersister;
+		protected DeletePersister $deletePersister;
 		
 		public Signal $signalPrePersist;
 		public Signal $signalPostPersist;
@@ -67,9 +70,9 @@
 			$this->entityStore = $entityManager->getEntityStore();
 			$this->propertyHandler = new PropertyHandler();
 			$this->serializer = new SQLSerializer($entityManager->getEntityStore());
-			$this->original_entity_data = [];
-			$this->entity_removal_list = [];
-			$this->identity_map = [];
+			$this->originalEntityData = [];
+			$this->entityRemovalList = [];
+			$this->identityMap = [];
 			
 			// Register the signals
 			$this->signalPrePersist = new Signal('orm.prePersist');
@@ -79,6 +82,7 @@
 			$this->signalPreDelete = new Signal('orm.preDelete');
 			$this->signalPostDelete = new Signal('orm.postDelete');
 			
+			// Hook the signals up
 			$this->signalHub->registerSignal($this->signalPrePersist);
 			$this->signalHub->registerSignal($this->signalPostPersist);
 			$this->signalHub->registerSignal($this->signalPreUpdate);
@@ -88,6 +92,12 @@
 			
 			// Create the EntityLifecycleManager instance
 			$this->lifecycleManager = new EntityLifecycleManager($this);
+			
+			// Instantiate persisters once for reuse across commits
+			$primaryKeyFactory = new PrimaryKeyFactory();
+			$this->insertPersister = new InsertPersister($this, $primaryKeyFactory);
+			$this->updatePersister = new UpdatePersister($this);
+			$this->deletePersister = new DeletePersister($this);
 		}
 		
 		/**
@@ -154,7 +164,7 @@
 			$normalizedEntityName = $this->getEntityStore()->normalizeEntityName($entityType);
 			
 			// Check if the class exists in the identity map and return null if it doesn't
-			if (empty($this->identity_map[$normalizedEntityName])) {
+			if (empty($this->identityMap[$normalizedEntityName])) {
 				return null;
 			}
 			
@@ -162,8 +172,8 @@
 			$primaryKeyString = $this->convertPrimaryKeysToString($primaryKeys);
 			
 			// Check if the entity exists in the identity map
-			$hash = $this->identity_map[$normalizedEntityName]['index'][$primaryKeyString] ?? null;
-			return $hash !== null ? $this->identity_map[$normalizedEntityName][$hash] : null;
+			$hash = $this->identityMap[$normalizedEntityName]['index'][$primaryKeyString] ?? null;
+			return $hash !== null ? $this->identityMap[$normalizedEntityName][$hash] : null;
 		}
 
 		/**
@@ -173,7 +183,7 @@
 		 * @return array|null
 		 */
 		public function getOriginalEntityData(mixed $entity): ?array {
-			return $this->original_entity_data[spl_object_hash($entity)] ?? null;
+			return $this->originalEntityData[spl_object_hash($entity)] ?? null;
 		}
 		
 		/**
@@ -201,8 +211,8 @@
 			
 			// Initialize the index structure for this entity class if it doesn't exist yet
 			// The index allows for quick entity lookups by primary key without iterating through all entities
-			if (!isset($this->identity_map[$class]['index'])) {
-				$this->identity_map[$class]['index'] = [];
+			if (!isset($this->identityMap[$class]['index'])) {
+				$this->identityMap[$class]['index'] = [];
 			}
 			
 			// Generate a unique object identifier using PHP's built-in function
@@ -219,15 +229,15 @@
 			
 			// Store the hash in the index for quick lookup by primary key
 			// This mapping enables finding entities by their database identifiers
-			$this->identity_map[$class]['index'][$primaryKeysString] = $hash;
+			$this->identityMap[$class]['index'][$primaryKeysString] = $hash;
 			
 			// Add the actual entity object to the identity map
 			// This creates a two-way reference system: hash→entity and primaryKey→hash
-			$this->identity_map[$class][$hash] = $entity;
+			$this->identityMap[$class][$hash] = $entity;
 			
 			// Create a snapshot of the entity's current state by serializing it
 			// This baseline is used later to detect changes when flush() is called
-			$this->original_entity_data[$hash] = $this->getSerializer()->serialize($entity);
+			$this->originalEntityData[$hash] = $this->getSerializer()->serialize($entity);
 		}
 		
 		/**
@@ -269,16 +279,16 @@
 			
 			// Add the entity object to the identity map using its hash as the key
 			// This registers the entity for tracking in the current unit of work
-			$this->identity_map[$class][$hash] = $entity;
+			$this->identityMap[$class][$hash] = $entity;
 			
 			// Only index by primary key if the entity already has primary key values
 			// This handles both cases: entities with manually set IDs and those awaiting generated IDs
 			if (!empty($primaryKeysString)) {
 				// Initialize the index array if it doesn't exist yet (using null coalescing operator)
-				$this->identity_map[$class]['index'] ??= [];
+				$this->identityMap[$class]['index'] ??= [];
 				
 				// Store a reference to the entity by its primary key for quick lookups
-				$this->identity_map[$class]['index'][$primaryKeysString] = $hash;
+				$this->identityMap[$class]['index'][$primaryKeysString] = $hash;
 			}
 			
 			// Return true to indicate successful registration of the new entity
@@ -309,12 +319,6 @@
 				}
 				
 				if (!empty($sortedEntities)) {
-					// Instantiate helper classes
-					$primaryKeyFactory = new PrimaryKeyFactory();
-					$insertPersister = new InsertPersister($this, $primaryKeyFactory);
-					$updatePersister = new UpdatePersister($this);
-					$deletePersister = new DeletePersister($this);
-					
 					// Start a database transaction.
 					$this->connection->beginTrans();
 					
@@ -340,9 +344,9 @@
 
 								$changed[] = $entity; // Add entity to the changed list
 								
-								$this->getSignalHub()->getSignal('orm.prePersist')->emit($entity);
-								$insertPersister->persist($entity); // Insert if the entity is new.
-								$this->getSignalHub()->getSignal('orm.postPersist')->emit($entity);
+								$this->signalPrePersist->emit($entity);
+								$this->insertPersister->persist($entity); // Insert if the entity is new.
+								$this->signalPostPersist->emit($entity);
 								break;
 							
 							case DirtyState::Dirty:
@@ -354,9 +358,9 @@
 								
 								$changed[] = $entity; // Add entity to the changed list
 								
-								$this->getSignalHub()->getSignal('orm.preUpdate')->emit($entity);
-								$updatePersister->persist($entity); // Update if the entity has been modified.
-								$this->getSignalHub()->getSignal('orm.postUpdate')->emit($entity);
+								$this->signalPreUpdate->emit($entity);
+								$this->updatePersister->persist($entity); // Update if the entity has been modified.
+								$this->signalPostUpdate->emit($entity);
 								break;
 							
 							case DirtyState::Deleted:
@@ -368,9 +372,9 @@
 
 								$deleted[] = $entity; // Add entity to the deleted list
 								
-								$this->getSignalHub()->getSignal('orm.preDelete')->emit($entity);
-								$deletePersister->persist($entity); // Delete if the entity is marked for deletion.
-								$this->getSignalHub()->getSignal('orm.postDelete')->emit($entity);
+								$this->signalPreDelete->emit($entity);
+								$this->deletePersister->persist($entity); // Delete if the entity is marked for deletion.
+								$this->signalPostDelete->emit($entity);
 								break;
 						}
 					}
@@ -381,11 +385,15 @@
 					// Update the identity map and reset change tracking
 					$this->updateIdentityMapAndResetChangeTracking($changed, $deleted);
 				}
-			} catch (OrmException $e) {
-				// Roll back the transaction if an error occurs.
+			} catch (\Throwable $e) {
+				// Roll back the transaction if any error or exception occurs.
 				$this->connection->rollbackTrans();
 				
-				// Re-throw the exception to allow handling elsewhere.
+				// Wrap non-ORM exceptions for a consistent exception contract
+				if (!$e instanceof OrmException) {
+					throw new OrmException($e->getMessage(), (int) $e->getCode(), $e);
+				}
+				
 				throw $e;
 			}
 		}
@@ -395,14 +403,12 @@
 		 * @return void
 		 */
 		public function clear(): void {
-			$this->identity_map = [];
-			$this->original_entity_data = [];
-			$this->entity_removal_list = [];
+			$this->identityMap = [];
+			$this->originalEntityData = [];
+			$this->entityRemovalList = [];
 			
 			// Add garbage collection hint for large datasets
-			if (extension_loaded('gc')) {
-				gc_collect_cycles();
-			}
+			gc_collect_cycles();
 		}
 		
 		/**
@@ -423,25 +429,25 @@
 			
 			// Remove the entity from the main identity map using its hash
 			// This stops the entity from being included in any future persistence operations
-			unset($this->identity_map[$class][$hash]);
+			unset($this->identityMap[$class][$hash]);
 			
 			// Search for this entity's hash in the primary key index
 			// The index maps primary key strings to object hashes for quick lookups
-			$index = array_search($hash, $this->identity_map[$class]['index']);
+			$index = array_search($hash, $this->identityMap[$class]['index']);
 			
 			// If found in the index, remove it to prevent the detached entity from being
 			// retrieved via its primary key in future operations
 			if ($index !== false) {
-				unset($this->identity_map[$class]['index'][$index]);
+				unset($this->identityMap[$class]['index'][$index]);
 			}
 			
 			// Remove the entity's original data snapshot used for change detection
 			// This effectively stops tracking any changes to the entity's properties
-			unset($this->original_entity_data[$hash]);
+			unset($this->originalEntityData[$hash]);
 			
 			// If the entity was previously scheduled for deletion, remove it from that list
 			// This prevents it from being included in the next DELETE operation
-			unset($this->entity_removal_list[$hash]);
+			unset($this->entityRemovalList[$hash]);
 		}
 		
 		/**
@@ -458,7 +464,7 @@
 			}
 			
 			// Mark entity for deletion first (prevents infinite recursion with circular references)
-			$this->entity_removal_list[$entityId] = true;
+			$this->entityRemovalList[$entityId] = true;
 			
 			// Process dependent entities that should be cascade deleted
 			$this->processCascadingDeletions($entity);
@@ -484,7 +490,7 @@
 			}
 			
 			// Checks if the entity is new based on the absence of original data.
-			if (!isset($this->original_entity_data[$entityHash])) {
+			if (!isset($this->originalEntityData[$entityHash])) {
 				return DirtyState::New;
 			}
 			
@@ -544,7 +550,7 @@
 		 */
 		private function isEntityDirty(array $extractedEntity, array $originalData): bool {
 			foreach ($extractedEntity as $key => $value) {
-				if ($value !== $originalData[$key]) {
+				if ($value !== ($originalData[$key] ?? null)) {
 					return true;
 				}
 			}
@@ -558,7 +564,7 @@
 		 * @return bool
 		 */
 		private function isEntityScheduledForDeletion(string $entityId): bool {
-			return isset($this->entity_removal_list[$entityId]);
+			return isset($this->entityRemovalList[$entityId]);
 		}
 		
 		/**
@@ -593,8 +599,8 @@
 			$result = [];
 			
 			// Loop through each entity class in the identity map
-			// The identity_map is structured as [entityClass => [objectId => entity, ...], ...]
-			foreach ($this->identity_map as $subArray) {
+			// The identityMap is structured as [entityClass => [objectId => entity, ...], ...]
+			foreach ($this->identityMap as $subArray) {
 				// For each class, loop through all the stored entities and meta-entries
 				foreach ($subArray as $key => $value) {
 					// Skip the special 'index' entry which contains lookup maps for primary keys
@@ -746,12 +752,12 @@
 			$normalizedEntityName = $this->getEntityStore()->normalizeEntityName(get_class($entity));
 			
 			// Check if the class name does not exist in the identity map.
-			if (!isset($this->identity_map[$normalizedEntityName])) {
+			if (!isset($this->identityMap[$normalizedEntityName])) {
 				return false;
 			}
 			
 			// Check if the object itself exists in the identity map using its unique ID.
-			return isset($this->identity_map[$normalizedEntityName][spl_object_hash($entity)]);
+			return isset($this->identityMap[$normalizedEntityName][spl_object_hash($entity)]);
 		}
 		
 		/**
@@ -771,11 +777,11 @@
 				// Add primary key to index cache for easy lookup
 				$primaryKeys = $this->getIdentifiers($entity);
 				$primaryKeysString = $this->convertPrimaryKeysToString($primaryKeys);
-				$this->identity_map[$class]['index'][$primaryKeysString] = $hash;
+				$this->identityMap[$class]['index'][$primaryKeysString] = $hash;
 				
 				// Store the original data of the entity for later comparison
 				// This helps track changes in the entity over time
-				$this->original_entity_data[$hash] = $this->getSerializer()->serialize($entity);
+				$this->originalEntityData[$hash] = $this->getSerializer()->serialize($entity);
 			}
 			
 			// Remove deleted entities from tracking
@@ -1032,8 +1038,13 @@
 			// This returns an array of primary key field names and their values
 			$parentPrimaryKeys = $this->getIdentifiers($parentEntity);
 			
-			// Get the first (and typically only) primary key value
-			// array_key_first() returns the first key, then we use that to get the corresponding value
+			// Composite primary keys are not supported for cascade delete lookup;
+			// the dependent objects query expects a single scalar foreign key value.
+			if (count($parentPrimaryKeys) !== 1) {
+				return;
+			}
+			
+			// Get the first (and only) primary key value
 			$parentId = $parentPrimaryKeys[array_key_first($parentPrimaryKeys)];
 			
 			// Query the entity manager to find all dependent objects
@@ -1198,13 +1209,5 @@
 				// Recursively process the related entity's own cascading relationships
 				$this->processCascadingPersistsForEntity($relatedEntity);
 			}
-		}
-		
-		/**
-		 * Create the lifetime signals
-		 * @return void
-		 */
-		private function registerLifecycleSignals(): void {
-			// Define standard ORM lifecycle signals
 		}
 	}

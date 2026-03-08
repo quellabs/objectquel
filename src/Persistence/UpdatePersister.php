@@ -59,7 +59,8 @@
 		public function persist(object $entity): void {
 			// Retrieve basic information needed for the update
 			// Get the table name where the entity is stored
-			$tableName = $this->valueHandler->escapeIdentifier($this->entityStore->getOwningTable($entity));
+			$tableName = $this->entityStore->getOwningTable($entity);
+			$tableNameEscaped = $this->valueHandler->escapeIdentifier($tableName);
 			
 			// Serialize the entity's current state into an array of column name => value pairs
 			$serializedEntity = $this->unitOfWork->getSerializer()->serialize($entity);
@@ -94,7 +95,7 @@
 			$whereClause = $this->buildWhereClause($primaryKeyColumnNames, $primaryKeyValues, $versionColumns, $originalData, $params);
 			
 			// Build query
-			$query = "UPDATE {$tableName} SET " . implode(", ", $setClauseParts) . " WHERE {$whereClause}";
+			$query = "UPDATE {$tableNameEscaped} SET " . implode(", ", $setClauseParts) . " WHERE {$whereClause}";
 			
 			// Execute the UPDATE query with the merged parameters
 			$rs = $this->connection->Execute($query, $params);

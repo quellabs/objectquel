@@ -22,24 +22,24 @@
 		 * Reference to the EntityManager
 		 * @var EntityManager
 		 */
-		private EntityManager $entity_manager;
+		private EntityManager $entityManager;
 		
 		/**
 		 * The EntityStore that maintains metadata about entities and their mappings
 		 * Used to retrieve information about entity tables, columns and identifiers
 		 */
-		private EntityStore $entity_store;
+		private EntityStore $entityStore;
 		
 		/**
 		 * Reference to the UnitOfWork that manages persistence operations
 		 */
-		private UnitOfWork $unit_of_work;
+		private UnitOfWork $unitOfWork;
 		
 		/**
 		 * Utility for handling entity property access and manipulation
 		 * Provides methods to get and set entity properties regardless of their visibility
 		 */
-		private PropertyHandler $property_handler;
+		private PropertyHandler $propertyHandler;
 		
 		/**
 		 * Database connection adapter used for executing SQL queries
@@ -51,12 +51,12 @@
 		 * Factory for creating primary key values
 		 * @var PrimaryKeyFactory
 		 */
-		private PrimaryKeyFactory $primary_key_factory;
+		private PrimaryKeyFactory $primaryKeyFactory;
 		
 		/**
 		 * @var array Cache for primary key strategy fetcher
 		 */
-		private array $strategy_column_cache;
+		private array $strategyColumnCache;
 		
 		/**
 		 * Handles values with @Orm\Version annotations
@@ -70,14 +70,14 @@
 		 * @param PrimaryKeyFactory|null $factory Factory for creating primary keys
 		 */
 		public function __construct(UnitOfWork $unitOfWork, ?PrimaryKeyFactory $factory = null) {
-			$this->unit_of_work = $unitOfWork;
-			$this->entity_manager = $unitOfWork->getEntityManager();
-			$this->entity_store = $unitOfWork->getEntityStore();
-			$this->property_handler = $unitOfWork->getPropertyHandler();
+			$this->unitOfWork = $unitOfWork;
+			$this->entityManager = $unitOfWork->getEntityManager();
+			$this->entityStore = $unitOfWork->getEntityStore();
+			$this->propertyHandler = $unitOfWork->getPropertyHandler();
 			$this->connection = $unitOfWork->getConnection();
 			$this->valueHandler = new VersionValueHandler($unitOfWork->getConnection(), $unitOfWork->getEntityStore(), $unitOfWork, $unitOfWork->getPropertyHandler());
-			$this->primary_key_factory = $factory ?? new PrimaryKeyFactory();
-			$this->strategy_column_cache = [];
+			$this->primaryKeyFactory = $factory ?? new PrimaryKeyFactory();
+			$this->strategyColumnCache = [];
 		}
 		
 		/**
@@ -88,23 +88,23 @@
 		public function persist(object $entity): void {
 			// Gather the necessary information for the insert operation
 			// Get the table name where the entity should be stored
-			$tableName = $this->entity_store->getOwningTable($entity);
+			$tableName = $this->entityStore->getOwningTable($entity);
 			$tableNameEscaped = str_replace('`', '``', $tableName);
 			
 			// Fetch the column map
-			$columnMap = array_flip($this->entity_store->getColumnMap($entity));
+			$columnMap = array_flip($this->entityStore->getColumnMap($entity));
 			
 			// Get the primary key property names and their corresponding column names
-			$primaryKeys = $this->entity_store->getIdentifierKeys($entity);
+			$primaryKeys = $this->entityStore->getIdentifierKeys($entity);
 			
 			// Get the column names that make up the primary key
-			$primaryKeyColumnNames = $this->entity_store->getIdentifierColumnNames($entity);
+			$primaryKeyColumnNames = $this->entityStore->getIdentifierColumnNames($entity);
 			
 			// Iterate through each identified primary key for the entity
 			foreach ($primaryKeys as $primaryKey) {
 				// First check if the primary key already has a value
 				// This prevents overwriting manually set primary keys
-				$currentValue = $this->property_handler->get($entity, $primaryKey);
+				$currentValue = $this->propertyHandler->get($entity, $primaryKey);
 				
 				// Only generate a new primary key if the current value is null or an empty string
 				// This respects existing values while ensuring all primary keys have values
@@ -120,7 +120,7 @@
 					
 					// Generate a new primary key value using the appropriate generator
 					// Passes context (entity manager and entity) for generators that need it
-					$value = $this->primary_key_factory->generate($this->entity_manager, $entity, $strategy);
+					$value = $this->primaryKeyFactory->generate($this->entityManager, $entity, $strategy);
 					
 					// Make sure the generator returned a valid value
 					if ($value === null) {
@@ -129,16 +129,16 @@
 					
 					// Update the entity with the newly generated primary key value
 					// Uses the property handler to respect access rules for private/protected properties
-					$this->property_handler->set($entity, $primaryKey, $value);
+					$this->propertyHandler->set($entity, $primaryKey, $value);
 				}
 			}
 			
 			// Get the primary key property names and their corresponding column names
-			$versionColumns = $this->entity_store->getVersionColumnNames($entity);
+			$versionColumns = $this->entityStore->getVersionColumnNames($entity);
 			$versionColumnNames = array_flip(array_column($versionColumns, 'name'));
 			
 			// Serialize the entity into an array of column name => value pairs
-			$serializedEntity = $this->unit_of_work->getSerializer()->serialize($entity);
+			$serializedEntity = $this->unitOfWork->getSerializer()->serialize($entity);
 
 			// Create the SQL query for insertion
 			$sqlParts = [];
@@ -179,7 +179,7 @@
 			
 			// After successful query execution, check if the entity has a primary key with identity/auto-increment strategy
 			// This identifies columns marked either with @PrimaryKeyStrategy(strategy="identity") or primary keys with no strategy
-			$autoincrementColumn = $this->entity_store->findAutoIncrementPrimaryKey($entity);
+			$autoincrementColumn = $this->entityStore->findAutoIncrementPrimaryKey($entity);
 			
 			if ($autoincrementColumn !== null) {
 				// Entity has an identity primary key column that should receive the auto-generated ID from the database
@@ -191,7 +191,7 @@
 					// Non-zero ID was returned, indicating the database successfully generated a new primary key value
 					// Update the entity's property with the database-generated ID
 					// This ensures the entity's state is synchronized with its database representation
-					$this->property_handler->set($entity, $autoincrementColumn, (int)$autoIncrementId);
+					$this->propertyHandler->set($entity, $autoincrementColumn, (int)$autoIncrementId);
 					
 					// Also set it in $serializedEntity
 					$serializedEntity[$autoincrementColumn] = (int)$autoIncrementId;
@@ -226,19 +226,19 @@
 		 */
 		protected function getPrimaryKeyStrategy(object $entity, string $primaryKey): string {
 			// Fetch owning table
-			$table = $this->entity_store->getOwningTable($entity);
+			$table = $this->entityStore->getOwningTable($entity);
 			
 			// Fetch key from cache if present
-			if (isset($this->strategy_column_cache[$table][$primaryKey])) {
-				return $this->strategy_column_cache[$table][$primaryKey];
+			if (isset($this->strategyColumnCache[$table][$primaryKey])) {
+				return $this->strategyColumnCache[$table][$primaryKey];
 			}
 			
 			// Get all annotations for the entity from the entity store
-			$annotations = $this->entity_store->getAnnotations($entity);
+			$annotations = $this->entityStore->getAnnotations($entity);
 			
 			// If no annotations exist for the specified primary key, return "identity"
 			if (empty($annotations[$primaryKey])) {
-				return $this->strategy_column_cache[$table][$primaryKey] = "identity";
+				return $this->strategyColumnCache[$table][$primaryKey] = "identity";
 			}
 			
 			// Iterate through all annotations for the primary key
@@ -246,12 +246,12 @@
 				// Check if the current annotation is a PrimaryKeyStrategy instance
 				if ($annotation instanceof PrimaryKeyStrategy) {
 					// Return the value of the PrimaryKeyStrategy annotation
-					return $this->strategy_column_cache[$table][$primaryKey] = $annotation->getValue();
+					return $this->strategyColumnCache[$table][$primaryKey] = $annotation->getValue();
 				}
 			}
 			
 			// No PrimaryKeyStrategy annotation found for this primary key
-			return $this->strategy_column_cache[$table][$primaryKey] = "identity";
+			return $this->strategyColumnCache[$table][$primaryKey] = "identity";
 		}
 		
 		protected function getInitialVersionValue(string $columnType): \DateTime|int|string {
