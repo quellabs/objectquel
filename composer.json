@@ -40,7 +40,6 @@
     "quellabs/signal-hub": "^1.",
     "quellabs/annotation-reader": "^1.",
     "quellabs/sculpt": "^1.",
-    "quellabs/dependency-injection": "^1.",
     "robmorgan/phinx": "*",
     "cakephp/database": "*",
     "softcreatr/jsonpath": "*"
