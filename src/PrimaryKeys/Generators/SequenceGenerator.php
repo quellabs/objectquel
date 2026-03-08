@@ -34,10 +34,18 @@
 			
 			// Execute a SQL query to get the next sequence value
 			// This query finds the maximum current value and adds 1
-			return $connection->GetOne("
+			$rs = $connection->execute("
 				 SELECT
 					COALESCE(MAX(`{$primaryKey}`), 0) + 1
 				 FROM `{$tableName}`
 			  ");
+			
+			// execute() returns StatementInterface|false
+			if ($rs === false) {
+				return null;
+			}
+			
+			// Fetch the single scalar result and return it
+			return $rs->fetchColumn(0);
 		}
 	}
