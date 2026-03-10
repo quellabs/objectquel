@@ -38,9 +38,9 @@
 	
 	class UnitOfWork {
 		
-		protected array $originalEntityData;
 		protected array $identityMap;
-		protected array $entityRemovalList;
+		protected \WeakMap $originalEntityData;
+		protected \WeakMap $entityRemovalList;
 		private SignalHub $signalHub;
 		protected EntityManager $entityManager;
 		protected EntityStore $entityStore;
@@ -70,8 +70,8 @@
 			$this->entityStore = $entityManager->getEntityStore();
 			$this->propertyHandler = new PropertyHandler();
 			$this->serializer = new SQLSerializer($entityManager->getEntityStore());
-			$this->originalEntityData = [];
-			$this->entityRemovalList = [];
+			$this->originalEntityData = new \WeakMap();
+			$this->entityRemovalList = new \WeakMap();
 			$this->identityMap = [];
 			
 			// Register the signals
@@ -183,7 +183,7 @@
 		 * @return array|null
 		 */
 		public function getOriginalEntityData(mixed $entity): ?array {
-			return $this->originalEntityData[spl_object_hash($entity)] ?? null;
+			return $this->originalEntityData[$entity] ?? null;
 		}
 		
 		/**
@@ -237,7 +237,7 @@
 			
 			// Create a snapshot of the entity's current state by serializing it
 			// This baseline is used later to detect changes when flush() is called
-			$this->originalEntityData[$hash] = $this->getSerializer()->serialize($entity);
+			$this->originalEntityData[$entity] = $this->getSerializer()->serialize($entity);
 		}
 		
 		/**
@@ -404,8 +404,8 @@
 		 */
 		public function clear(): void {
 			$this->identityMap = [];
-			$this->originalEntityData = [];
-			$this->entityRemovalList = [];
+			$this->originalEntityData = new \WeakMap();
+			$this->entityRemovalList = new \WeakMap();
 			
 			// Add garbage collection hint for large datasets
 			gc_collect_cycles();
@@ -443,11 +443,11 @@
 			
 			// Remove the entity's original data snapshot used for change detection
 			// This effectively stops tracking any changes to the entity's properties
-			unset($this->originalEntityData[$hash]);
+			unset($this->originalEntityData[$entity]);
 			
 			// If the entity was previously scheduled for deletion, remove it from that list
 			// This prevents it from being included in the next DELETE operation
-			unset($this->entityRemovalList[$hash]);
+			unset($this->entityRemovalList[$entity]);
 		}
 		
 		/**
@@ -456,15 +456,13 @@
 		 * @return void
 		 */
 		public function scheduleForDelete(object $entity): void {
-			$entityId = spl_object_hash($entity);
-			
 			// Skip if already scheduled for deletion to prevent duplicate processing
-			if ($this->isEntityScheduledForDeletion($entityId)) {
+			if ($this->isEntityScheduledForDeletion($entity)) {
 				return;
 			}
 			
 			// Mark entity for deletion first (prevents infinite recursion with circular references)
-			$this->entityRemovalList[$entityId] = true;
+			$this->entityRemovalList[$entity] = true;
 			
 			// Process dependent entities that should be cascade deleted
 			$this->processCascadingDeletions($entity);
@@ -481,16 +479,13 @@
 				return DirtyState::NotManaged;
 			}
 			
-			// Class and hash of the entity object for identification.
-			$entityHash = spl_object_hash($entity);
-			
 			// Checks if the entity appears in the deleted list, if so, then the state is Deleted
-			if ($this->isEntityScheduledForDeletion($entityHash)) {
+			if ($this->isEntityScheduledForDeletion($entity)) {
 				return DirtyState::Deleted;
 			}
 			
 			// Checks if the entity is new based on the absence of original data.
-			if (!isset($this->originalEntityData[$entityHash])) {
+			if (!isset($this->originalEntityData[$entity])) {
 				return DirtyState::New;
 			}
 			
@@ -560,11 +555,11 @@
 		
 		/**
 		 * Checks if an entity is already scheduled for deletion
-		 * @param string $entityId The entity's object ID
+		 * @param object $entity The entity object
 		 * @return bool
 		 */
-		private function isEntityScheduledForDeletion(string $entityId): bool {
-			return isset($this->entityRemovalList[$entityId]);
+		private function isEntityScheduledForDeletion(object $entity): bool {
+			return isset($this->entityRemovalList[$entity]);
 		}
 		
 		/**
@@ -781,7 +776,7 @@
 				
 				// Store the original data of the entity for later comparison
 				// This helps track changes in the entity over time
-				$this->originalEntityData[$hash] = $this->getSerializer()->serialize($entity);
+				$this->originalEntityData[$entity] = $this->getSerializer()->serialize($entity);
 			}
 			
 			// Remove deleted entities from tracking
@@ -1077,12 +1072,9 @@
 			// Process each entity for cascade persists
 			// We need to examine every managed entity to check for cascade relationships
 			foreach ($entitiesToProcess as $entity) {
-				// Fetch the object id of this entity
-				$entityId = spl_object_hash($entity);
-				
 				// Skip if the entity is scheduled for deletion
 				// No need to process cascade persists for entities that will be removed anyway
-				if ($this->isEntityScheduledForDeletion($entityId)) {
+				if ($this->isEntityScheduledForDeletion($entity)) {
 					continue;
 				}
 				
