@@ -25,7 +25,6 @@
 	 */
 	class MakeEntityFromTableCommand extends CommandBase {
 		private Configuration $configuration;
-		private ?DatabaseAdapter $connection = null;
 		
 		/**
 		 * MakeEntityFromTableCommand constructor

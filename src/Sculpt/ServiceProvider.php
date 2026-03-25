@@ -33,6 +33,8 @@
 					\Quellabs\ObjectQuel\Sculpt\Commands\QuelMigrateCommand::class,
 					\Quellabs\ObjectQuel\Sculpt\Commands\QuelCreatePhinxConfigCommand::class,
 					\Quellabs\ObjectQuel\Sculpt\Commands\PacGenerateEntityCommand::class,
+					\Quellabs\ObjectQuel\Sculpt\Commands\QuelIndexHideCommand::class,
+					\Quellabs\ObjectQuel\Sculpt\Commands\QuelIndexShowCommand::class,
 				]);
 			}
 		}
@@ -59,7 +61,7 @@
 				'metadata_cache_path' => ''
 			];
 		}
-
+		
 		/**
 		 * Creates a configuration object out of the user provided data
 		 * @return Configuration
@@ -72,7 +74,7 @@
 			$configuration->setEntityPath($config['entity_path'] ?? $defaults['entity_path'] ?? '');
 			$configuration->setEntityNameSpace($config['entity_namespace'] ?? $defaults['entity_namespace'] ?? '');
 			$configuration->setMigrationsPath($config['migrations_path'] ?? $defaults['migrations_path'] ?? '');
-
+			
 			return $configuration;
 		}
 		
@@ -85,7 +87,7 @@
 			if ($this->adapter !== null) {
 				return $this->adapter;
 			}
-
+			
 			// Build the connection configuration from config file and defaults
 			$config = $this->buildConnectionConfig();
 			
@@ -148,13 +150,13 @@
 			
 			// Build final configuration with defaults as fallback
 			return [
-				'driver'        => $driver,
-				'host'          => $configData['host'] ?? $defaults['host'],
-				'username'      => $configData['username'] ?? $defaults['username'],
-				'password'      => $configData['password'] ?? $defaults['password'],
-				'database'      => $configData['database'] ?? $defaults['database'],
-				'port'          => $configData['port'] ?? $defaults['port'],
-				'encoding'      => $configData['encoding'] ?? $defaults['encoding']
+				'driver'   => $driver,
+				'host'     => $configData['host'] ?? $defaults['host'],
+				'username' => $configData['username'] ?? $defaults['username'],
+				'password' => $configData['password'] ?? $defaults['password'],
+				'database' => $configData['database'] ?? $defaults['database'],
+				'port'     => $configData['port'] ?? $defaults['port'],
+				'encoding' => $configData['encoding'] ?? $defaults['encoding']
 			];
 		}
 		
