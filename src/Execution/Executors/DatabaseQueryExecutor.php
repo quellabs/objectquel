@@ -17,12 +17,17 @@
 	 * Handles database-specific query execution including SQL conversion and temp tables
 	 */
 	class DatabaseQueryExecutor {
-		private EntityManager $entityManager;
-		private DatabaseAdapter $connection;
-		private QueryTransformer $queryTransformer;
-		private QueryOptimizer $queryOptimizer;
-		private PlatformCapabilities $platform;
+		protected EntityManager $entityManager;
+		protected DatabaseAdapter $connection;
+		protected QueryTransformer $queryTransformer;
+		protected QueryOptimizer $queryOptimizer;
+		protected PlatformCapabilities $platform;
+		protected array $lastExecutedSql = [];
 		
+		/**
+		 * Constructor
+		 * @param EntityManager $entityManager
+		 */
 		public function __construct(EntityManager $entityManager) {
 			$this->entityManager = $entityManager;
 			$this->connection = $entityManager->getConnection();
@@ -46,6 +51,9 @@
 			// Convert the query to SQL
 			$sql = $this->convertToSQL($stage->getQuery(), $initialParams);
 			
+			// Store SQL
+			$this->lastExecutedSql[] = $sql;
+			
 			// Execute the SQL query
 			$rs = $this->connection->execute($sql, $initialParams);
 			
@@ -62,6 +70,22 @@
 			
 			return $result;
 		}
+		
+		/**
+		 * Return the last executed SQL
+		 * @return array
+		 */
+		public function getLastExecutedSql(): array {
+			return $this->lastExecutedSql;
+		}
+
+		/**
+		 * Clear the lastExecutedSql list
+		 * @return void
+		 */
+		public function resetLastExecutedSql(): void {
+			$this->lastExecutedSql = [];
+		}
 
 		/**
 		 * Convert AstRetrieve node to SQL
@@ -69,8 +93,9 @@
 		 * @param array $parameters Query parameters (passed by reference)
 		 * @return string The generated SQL query
 		 */
-		private function convertToSQL(AstRetrieve $retrieve, array &$parameters): string {
+		protected function convertToSQL(AstRetrieve $retrieve, array &$parameters): string {
 			$quelToSQL = new QuelToSQL($this->entityManager->getEntityStore(), $parameters, $this->platform);
 			return $quelToSQL->convertToSQL($retrieve);
 		}
+	
 	}

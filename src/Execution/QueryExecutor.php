@@ -25,7 +25,12 @@
 		private JsonQueryExecutor $jsonExecutor;
 		private TempTableExecutor $tempTableExecutor;
 		
-		public function __construct(EntityManager $entityManager) {
+		/**
+		 * Constructor
+		 * @param EntityManager $entityManager
+		 * @param DatabaseQueryExecutor|null $databaseExecutor
+		 */
+		public function __construct(EntityManager $entityManager, ?DatabaseQueryExecutor $databaseExecutor = null) {
 			$this->entityManager = $entityManager;
 			$this->connection = $entityManager->getConnection();
 			$this->objectQuel = new ObjectQuel($entityManager);
@@ -33,7 +38,7 @@
 			// Create specialized executors
 			$conditionEvaluator = new ConditionEvaluator();
 			$this->planExecutor = new PlanExecutor($this, $conditionEvaluator);
-			$this->databaseExecutor = new DatabaseQueryExecutor($entityManager);
+			$this->databaseExecutor = $databaseExecutor ?? new DatabaseQueryExecutor($entityManager);
 			$this->jsonExecutor = new JsonQueryExecutor($conditionEvaluator);
 			$this->tempTableExecutor = new TempTableExecutor($this->planExecutor, $this->connection);
 		}
@@ -96,6 +101,9 @@
 		 * @throws QuelException
 		 */
 		public function executeQuery(string $query, array $parameters = []): QuelResult {
+			// Clear SQL list
+			$this->databaseExecutor->resetLastExecutedSql();
+			
 			// Parse the input query string into an Abstract Syntax Tree (AST)
 			$ast = $this->getObjectQuel()->parse(trim($query));
 			
@@ -108,5 +116,13 @@
 			
 			// QuelResult gebruikt de AST om de ontvangen data te transformeren naar entities
 			return new QuelResult($this->entityManager, $ast, $result);
+		}
+		
+		/**
+		 * Return the executed SQL
+		 * @return array
+		 */
+		public function getLastExecutedSql(): array {
+			return $this->databaseExecutor->getLastExecutedSql();
 		}
 	}

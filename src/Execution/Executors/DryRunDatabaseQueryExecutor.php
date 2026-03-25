@@ -1,0 +1,40 @@
+<?php
+	
+	namespace Quellabs\ObjectQuel\Execution\Executors;
+	
+	use Quellabs\ObjectQuel\Execution\ExecutionStage;
+	
+	/**
+	 * A dry-run executor that captures generated SQL without executing it.
+	 * Used by the demo endpoint to show visitors what SQL ObjectQuel produces
+	 * for a given query, including all stages of a decomposed execution plan.
+	 */
+	class DryRunDatabaseQueryExecutor extends DatabaseQueryExecutor {
+		
+		/**
+		 * SQL statements captured across all executed stages
+		 */
+		private array $capturedSql = [];
+		
+		/**
+		 * Optimizes and transforms the query, captures the generated SQL,
+		 * and returns an empty result set without touching the database.
+		 * @param ExecutionStage $stage
+		 * @param array $initialParams
+		 * @return array Always returns an empty array
+		 */
+		public function execute(ExecutionStage $stage, array $initialParams = []): array {
+			$this->queryOptimizer->optimize($stage->getQuery());
+			$this->queryTransformer->transform($stage->getQuery(), $initialParams);
+			$this->capturedSql[] = $this->convertToSQL($stage->getQuery(), $initialParams);
+			return [];
+		}
+		
+		/**
+		 * Returns all SQL statements captured during execution, one per decomposed stage.
+		 * @return array
+		 */
+		public function getCapturedSql(): array {
+			return $this->capturedSql;
+		}
+	}

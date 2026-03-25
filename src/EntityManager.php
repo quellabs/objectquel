@@ -151,7 +151,7 @@
 		public function detach(object $entity): void {
 			$this->unitOfWork->detach($entity);
 		}
-
+		
 		/**
 		 * Execute a decomposed query plan
 		 * @param string $query The query to execute
@@ -174,6 +174,7 @@
 			$this->debugQuerySignal->emit([
 				'driver'            => 'objectquel',
 				'query'             => $query,
+				'sql'               => $this->queryExecutor->getLastExecutedSql(),
 				'bound_parameters'  => $parameters,
 				'execution_time_ms' => round(($end - $start) * 1000, 0, PHP_ROUND_HALF_UP),
 				'timestamp'         => date('Y-m-d H:i:s'),
@@ -231,7 +232,7 @@
 			// Iterate through each row in the result set
 			$result = [];
 			$keys = null;
-
+			
 			while ($row = $rs->fetchRow()) {
 				// Get column names from the first row (cached for performance)
 				if ($keys === null) {
