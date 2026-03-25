@@ -728,10 +728,6 @@
 		
 		/**
 		 * Extract relationship annotations of a specific type from property annotations.
-		 *
-		 * Scans through all property annotations and filters out relationships matching
-		 * the specified annotation type (ManyToOne, OneToMany, or OneToOne).
-		 *
 		 * @param array $annotations Property name => AnnotationCollection mapping
 		 * @param string $annotationType The relationship annotation class to extract
 		 * @return array Property name => relationship annotation mapping
@@ -742,6 +738,10 @@
 			foreach ($annotations as $property => $annotationCollection) {
 				foreach ($annotationCollection as $annotation) {
 					if ($annotation instanceof $annotationType) {
+						// Normalize the entity name
+						$annotation->setTargetEntity($this->normalizeEntityName($annotation->getTargetEntity()));
+						
+						// Add to relations
 						$relations[$property] = $annotation;
 						break;
 					}
@@ -753,10 +753,6 @@
 		
 		/**
 		 * Extract index annotations from class level.
-		 *
-		 * Retrieves both regular @Index and @UniqueIndex annotations defined
-		 * on the entity class itself (not on properties).
-		 *
 		 * @param string $className The fully qualified class name
 		 * @return array Array of Index and UniqueIndex annotation objects
 		 */

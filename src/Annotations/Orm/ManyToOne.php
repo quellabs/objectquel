@@ -37,6 +37,15 @@
 		}
 		
 		/**
+		 * Retrieve the target entity.
+		 * @param string $targetEntity
+		 * @return void The full namespace of the target entity.
+		 */
+		public function setTargetEntity(string $targetEntity): void {
+			$this->parameters["targetEntity"] = $targetEntity;
+		}
+		
+		/**
 		 * Retrieves the 'inversedBy' parameter, if present.
 		 * @return string|null The name of the field in the target entity that refers to the current entity, or null if it is not set.
 		 */

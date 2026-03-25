@@ -37,6 +37,15 @@
 		}
 		
 		/**
+		 * Retrieve the target entity.
+		 * @param string $targetEntity
+		 * @return void The full namespace of the target entity.
+		 */
+		public function setTargetEntity(string $targetEntity): void {
+			$this->parameters["targetEntity"] = $targetEntity;
+		}
+		
+		/**
 		 * Retrieves the 'mappedBy' parameter.
 		 * @return string The value of the 'mappedBy' parameter or an empty string if it is not set.
 		 */
