@@ -67,7 +67,48 @@
 			// And perform the analysis
 			$allChanges = $entitySchemaAnalyzer->analyzeEntityChanges($entityMap);
 			
-			// Step 3: Generate a migration file based on changes
+			// Step 3: Report detected changes to the user
+			if (empty($allChanges)) {
+				$this->output->writeLn("No changes detected. Migration file not created.");
+				return 0;
+			}
+			
+			$this->output->writeLn("\n Changes detected:");
+			
+			foreach ($allChanges as $tableName => $changes) {
+				if (!empty($changes['table_not_exists'])) {
+					$this->output->writeLn(" ✓ New table: {$tableName}");
+				}
+				
+				foreach ($changes['added'] ?? [] as $columnName => $definition) {
+					$this->output->writeLn(" ✓ New column: {$tableName}.{$columnName}");
+				}
+				
+				foreach ($changes['modified'] ?? [] as $columnName => $diff) {
+					$description = $this->describeColumnChange($diff);
+					$this->output->writeLn(" ✓ Modified column: {$tableName}.{$columnName}{$description}");
+				}
+				
+				foreach ($changes['deleted'] ?? [] as $columnName => $definition) {
+					$this->output->writeLn(" ✓ Dropped column: {$tableName}.{$columnName}");
+				}
+				
+				foreach ($changes['indexes']['added'] ?? [] as $indexName => $indexConfig) {
+					$this->output->writeLn(" ✓ New index: {$tableName}.{$indexName}");
+				}
+				
+				foreach ($changes['indexes']['modified'] ?? [] as $indexName => $indexConfig) {
+					$this->output->writeLn(" ✓ Modified index: {$tableName}.{$indexName}");
+				}
+				
+				foreach ($changes['indexes']['deleted'] ?? [] as $indexName => $indexConfig) {
+					$this->output->writeLn(" ✓ Dropped index: {$tableName}.{$indexName}");
+				}
+			}
+			
+			$this->output->writeLn("");
+			
+			// Step 4: Generate a migration file based on changes
 			$migrationBuilder = new PhinxMigrationBuilder($databaseAdapter, $this->migrationsPath);
 			$result = $migrationBuilder->generateMigrationFile($allChanges);
 			
@@ -76,7 +117,7 @@
 				return 1;
 			}
 			
-			$this->output->writeLn($result['message'] . ": " . $result['path']);
+			$this->output->writeLn(" Success! Created: " . $result['path']);
 			return 0;
 		}
 		
@@ -104,6 +145,37 @@
 			return "Creates a new database migration file by comparing entity definitions with current database schema to synchronize changes.";
 		}
 
+		/**
+		 * Produce a human-readable summary of what changed in a modified column
+		 * @param array $diff Column diff with 'from' and 'to' keys
+		 * @return string Parenthesised description, or empty string if no description can be inferred
+		 */
+		private function describeColumnChange(array $diff): string {
+			$from = $diff['from'] ?? [];
+			$to   = $diff['to']   ?? [];
+			$parts = [];
+			
+			if (($from['type'] ?? null) !== ($to['type'] ?? null)) {
+				$parts[] = "type changed to " . ($to['type'] ?? 'unknown');
+			}
+			
+			if (($from['limit'] ?? null) !== ($to['limit'] ?? null)) {
+				$parts[] = "length changed to " . ($to['limit'] ?? 'default');
+			}
+			
+			if (($from['nullable'] ?? null) !== ($to['nullable'] ?? null)) {
+				$parts[] = ($to['nullable'] ?? false) ? "now nullable" : "now not nullable";
+			}
+			
+			if (empty($from['unique']) && !empty($to['unique'])) {
+				$parts[] = "added unique constraint";
+			} elseif (!empty($from['unique']) && empty($to['unique'])) {
+				$parts[] = "removed unique constraint";
+			}
+			
+			return empty($parts) ? "" : " (" . implode(", ", $parts) . ")";
+		}
+		
 		/**
 		 * Returns the EntityStore object
 		 * @return EntityStore

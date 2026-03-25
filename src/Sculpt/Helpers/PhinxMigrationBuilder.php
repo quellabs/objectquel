@@ -45,11 +45,11 @@
 			
 			// Create timestamp and name components for the migration file
 			$timestamp = time();
-			$migrationName = 'EntitySchemaMigration' . date('YmdHis', $timestamp);
-			$className = 'EntitySchemaMigration' . date('YmdHis', $timestamp);
+			$className = 'EntitySchemaMigration';
 			
 			// Construct the full filepath for the migration
-			$filename = $this->migrationsPath . '/' . date('YmdHis', $timestamp) . '_' . $migrationName . '.php';
+			// Format: 20250603145623_EntitySchemaMigration.php
+			$filename = $this->migrationsPath . '/' . date('YmdHis', $timestamp) . '_' . $className . '.php';
 			
 			// Generate the PHP code content for the migration file
 			$migrationContent = $this->buildMigrationContent($className, $allChanges);
