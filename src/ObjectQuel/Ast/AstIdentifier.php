@@ -157,6 +157,7 @@
 		 */
 		public function setNext(?AstIdentifier $next): void {
 			$this->next = $next;
+			$next?->setParent($this);
 		}
 		
 		// =========================================================================

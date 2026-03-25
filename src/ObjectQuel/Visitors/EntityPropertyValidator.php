@@ -54,9 +54,10 @@
 			$entityName = $node->getParent()->getEntityName();
 			$propertyName = $node->getName();
 			$columnMap = $this->entityStore->getColumnMap($entityName);
+			$relations = $this->entityStore->getOneToManyDependencies($entityName);
 			
 			// Check if the property exists in the entity.
-			if (!isset($columnMap[$propertyName])) {
+			if (!isset($columnMap[$propertyName]) && !isset($relations[$propertyName])) {
 				throw new QuelException("The property {$propertyName} does not exist in entity {$entityName}. Please check for typos or verify that the correct entity is being referenced in the query.");
 			}
 		}

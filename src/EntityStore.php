@@ -420,7 +420,6 @@
 		/**
 		 * Return true if the entity is immutable (readonly), false if not.
 		 * An immutable entity is marked with the @Immutable annotation.
-		 *
 		 * @param mixed $entity The entity to check
 		 * @return bool True if the entity is immutable, false otherwise
 		 */

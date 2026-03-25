@@ -16,8 +16,8 @@
 	use Quellabs\ObjectQuel\ObjectQuel\AstVisitorInterface;
 	
 	/**
-	 * Class TransformRelationInViaToPropertyLookup
-	 * Validates the existence of entities within an AST.
+	 * Transforms 'via' relationship references in the AST into direct property lookups
+	 * suitable for SQL JOIN condition generation.
 	 */
 	class TransformRelationInViaToPropertyLookup implements AstVisitorInterface {
 		
@@ -35,12 +35,13 @@
 		}
 		
 		/**
-		 * Returns true if the given identifier targets a relation, false if not
+		 * Returns true if the given identifier targets a relation property on the given entity.
 		 * @param AstIdentifier $node
+		 * @param string|null $entityName Fully qualified entity name; falls back to node's own entity name
 		 * @return bool
 		 */
-		public function isRelationProperty(AstIdentifier $node): bool {
-			$entityName = $node->getEntityName();
+		public function isRelationProperty(AstIdentifier $node, string $entityName = null): bool {
+			$entityName = $entityName ?? $node->getEntityName();
 			$propertyName = $node->getName();
 			
 			return array_key_exists($propertyName, array_merge(
@@ -51,117 +52,125 @@
 		}
 		
 		/**
-		 * Returns a new expression
-		 * @param string $propertyA
-		 * @param AstRange|AstRangeDatabase|AstRangeJsonSource $rangeB
-		 * @param string $propertyB
-		 * @return AstExpression
+		 * Builds an AstExpression representing a direct property-to-property JOIN condition.
+		 * Side A is always on $this->range (the joining entity), side B is on $rangeB.
+		 * @param string $propertyA Property name on $this->range
+		 * @param AstRange|AstRangeDatabase|AstRangeJsonSource $rangeB The other range
+		 * @param string $propertyB Property name on $rangeB
+		 * @return AstInterface
 		 */
 		public function createPropertyLookupAst(string $propertyA, AstRange|AstRangeDatabase|AstRangeJsonSource $rangeB, string $propertyB): AstInterface {
 			$identifierA = new AstIdentifier($this->range->getEntityName());
+			$identifierA->setRange($this->range);
 			$identifierA->setNext(new AstIdentifier($propertyA));
 			
 			$identifierB = new AstIdentifier($rangeB->getEntityName());
+			$identifierB->setRange($rangeB);
 			$identifierB->setNext(new AstIdentifier($propertyB));
 			
 			return new AstExpression($identifierA, $identifierB, '=');
 		}
 		
 		/**
-		 * Creates a Property Lookup AST (Abstract Syntax Tree) using a relation.
-		 * @param AstIdentifier $joinProperty The join property with which the relation is made.
-		 * @param mixed $relation The relation used to create the property lookup.
-		 * @return AstInterface The generated AST object.
+		 * Creates a JOIN condition AST from a relation annotation.
+		 * Resolves the correct FK/PK columns based on the relation type.
+		 * @param AstIdentifier $joinProperty The property node (e.g. 'addresses') whose parent is the range identifier
+		 * @param mixed $relation The relation annotation
+		 * @return AstInterface
 		 */
 		public function createPropertyLookupAstUsingRelation(AstIdentifier $joinProperty, mixed $relation): AstInterface {
-			// Get the entity and range from the join property
+			// The parent of the property node is the range identifier (e.g. 'c')
 			$entity = $joinProperty->getParent();
-
-			// Type check to ensure we have the correct entity type
+			
 			if (!$entity instanceof AstIdentifier) {
 				throw new \InvalidArgumentException('Expected parent to be an AstIdentifier');
 			}
-
-			// Fetch range and relationColumn
+			
+			// Get the range object and resolve the relation column
 			$range = $entity->getRange();
 			$relationColumn = $relation->getRelationColumn();
 			
-			// If the relation column is null, use the first identifier key of the entity
+			// Fall back to the first primary key of the parent entity using the fully qualified name
 			if ($relationColumn === null) {
-				$identifierKeys = $this->entityStore->getIdentifierKeys($entity->getName());
+				$identifierKeys = $this->entityStore->getIdentifierKeys($entity->getEntityName());
 				$relationColumn = $identifierKeys[0];
 			}
 			
-			// For ManyToOne relations, use the 'inversedBy' value
+			// ManyToOne: FK is on $this->range, PK is on the parent range
 			if ($relation instanceof ManyToOne) {
 				return $this->createPropertyLookupAst($relationColumn, $range, $relation->getInversedBy());
 			}
 			
-			// For OneToMany relations, use the 'mappedBy' value
+			// OneToMany: FK is on $this->range (the child), PK is on the parent range
 			if ($relation instanceof OneToMany) {
-				return $this->createPropertyLookupAst($relationColumn, $range, $relation->getMappedBy());
+				return $this->createPropertyLookupAst($relation->getMappedBy(), $range, $relationColumn);
 			}
 			
-			// For relations with an 'inversedBy' value, use this
+			// OneToOne with inversedBy
 			if (!empty($relation->getInversedBy())) {
 				return $this->createPropertyLookupAst($relationColumn, $range, $relation->getInversedBy());
 			}
 			
-			// For all other cases, use the 'mappedBy' value
-			return $this->createPropertyLookupAst($relationColumn, $range, $relation->getMappedBy());
+			// OneToOne with mappedBy
+			return $this->createPropertyLookupAst($relation->getMappedBy(), $range, $relationColumn);
 		}
 		
 		/**
-		 * Processes a single side (left or right) of the node and adjusts it if necessary.
-		 * If the side is an AstIdentifier and matches a relation property, it is
-		 * replaced by a new node that represents the relation. Otherwise, the original
-		 * side is returned unchanged.
-		 * @param AstInterface $side The left or right side of the node to be processed.
-		 * @return AstInterface The original or modified side of the node.
+		 * Processes a join property node and replaces relation references with direct
+		 * property lookups. Expects a root identifier with a next node (e.g. c.addresses).
+		 * @param AstInterface $side
+		 * @return AstInterface
 		 */
 		public function processNodeSide(AstInterface $side): AstInterface {
-			// Check if the side is an AstIdentifier and represents a relation property.
-			if (!($side instanceof AstIdentifier) || !$this->isRelationProperty($side)) {
-				return $side; // No adjustments needed if it's not an AstIdentifier or not a relation property.
+			// Only process identifier chains with at least two segments (e.g. 'c.addresses')
+			// Single identifiers or non-identifiers cannot be relation references
+			if (!($side instanceof AstIdentifier) || !$side->hasNext()) {
+				return $side;
 			}
 			
-			// Get the entity name and property name from the side.
+			// The relation property is on the next node (e.g. 'addresses'), not the root ('c')
+			// The root node is the range alias; the next node is the property being accessed
+			$propertyNode = $side->getNext();
 			$entityName = $side->getEntityName();
-			$propertyName = $side->getName();
 			
-			// Combine all relation dependencies for the given entity name.
+			// Check if the property refers to a relation (OneToOne, ManyToOne, OneToMany)
+			// rather than a regular column — only relations need to be transformed
+			if (!$this->isRelationProperty($propertyNode, $entityName)) {
+				return $side;
+			}
+			
+			$propertyName = $propertyNode->getName();
+			
+			// Collect all relation types for this entity into a single flat map
+			// keyed by property name so we can look up the annotation directly
 			$relations = array_merge(
 				$this->entityStore->getOneToOneDependencies($entityName),
 				$this->entityStore->getManyToOneDependencies($entityName),
 				$this->entityStore->getOneToManyDependencies($entityName)
 			);
 			
-			// Check if the property name exists in the relations before using it.
+			// Safeguard: isRelationProperty confirmed it exists, but verify before using
 			if (!isset($relations[$propertyName])) {
-				return $side; // No adjustments needed if the property doesn't exist in the relations.
+				return $side;
 			}
 			
-			// Replace the side with a new node that represents the relation.
-			return $this->createPropertyLookupAstUsingRelation($side, $relations[$propertyName]);
+			// Replace the relation reference with a direct FK/PK property lookup
+			// that SQL can understand as a JOIN condition
+			return $this->createPropertyLookupAstUsingRelation($propertyNode, $relations[$propertyName]);
 		}
 		
 		/**
-		 * Visit a node in the AST (Abstract Syntax Tree).
-		 * This function is responsible for visiting a node in the AST and validating it. The type of node
-		 * determines what kind of validation is performed.
-		 * @param AstInterface $node The node to visit.
+		 * Visits a binary operator node and transforms any relation references on
+		 * either side into direct property lookups.
+		 * @param AstInterface $node
 		 * @return void
 		 */
 		public function visitNode(AstInterface $node): void {
-			// If the node is not of type AstBinaryOperator, we do nothing.
 			if (!$node instanceof AstBinaryOperator) {
 				return;
 			}
 			
-			// Process and update the left side of the node if necessary
 			$node->setLeft($this->processNodeSide($node->getLeft()));
-			
-			// Process and update the right side of the node if necessary
 			$node->setRight($this->processNodeSide($node->getRight()));
 		}
 	}
