@@ -132,7 +132,11 @@
 					// If the indexed column does not exist, throw an error and abort migration creation
 					if (!isset($columnMap[$column])) {
 						$tableName = $this->entityStore->getOwningTable($entity);
-						throw new \Exception("Column '$column' not found in '$tableName'.");
+						
+						throw new \Exception(
+							"Index column '{$column}' on '{$tableName}' does not match any property name. " .
+							"@Index columns must use PHP property names (e.g. 'customerId'), not database column names (e.g. 'customer_id')."
+						);
 					}
 					
 					$databaseColumns[] = $columnMap[$column];
