@@ -55,12 +55,12 @@
 			$migrationContent = $this->buildMigrationContent($className, $allChanges);
 			
 			// Create migrations directory if it doesn't exist
-			if (!is_dir($this->migrationsPath)) {
-				mkdir($this->migrationsPath, 0755, true);
+			if (!is_dir($this->migrationsPath) && !mkdir($this->migrationsPath, 0755, true) && !is_dir($this->migrationsPath)) {
+				return ['success' => false, 'message' => "Failed to create migrations directory."];
 			}
 			
 			// Write the migration file
-			if (file_put_contents($filename, $migrationContent)) {
+			if (file_put_contents($filename, $migrationContent) !== false) {
 				return [
 					'success' => true,
 					'message' => "Migration file created",
@@ -190,7 +190,9 @@ PHP;
 				'table_not_exists' => false
 			];
 			
-			return array_merge($defaults, $changes);
+			$merged = array_merge($defaults, $changes);
+			$merged['indexes'] = array_merge($defaults['indexes'], $changes['indexes'] ?? []);
+			return $merged;
 		}
 		
 		/**
@@ -352,7 +354,8 @@ PHP;
 			
 			// Add unique index for auto-increment column if needed
 			if ($autoIncrementColumn) {
-				$tableCode .= "\n            ->addIndex(['$autoIncrementColumn'], ['unique' => true, 'name' => 'uidx_{$tableName}_{$autoIncrementColumn}'])";
+				$indexName = $this->buildAutoIncrementIndexName($tableName, $autoIncrementColumn);
+				$tableCode .= "\n            ->addIndex(['$autoIncrementColumn'], ['unique' => true, 'name' => '$indexName'])";
 			}
 			
 			// Add user-defined indexes
@@ -437,7 +440,7 @@ PHP;
 			// Only add if this column isn't already part of the primary key
 			if ($hasAutoIncrement && !in_array($autoIncrementColumn, $newPrimaryKeys)) {
 				// Generate a unique index name to avoid collisions
-				$indexName = 'uidx_' . $tableName . '_' . $autoIncrementColumn . '_' . substr(md5($tableName . $autoIncrementColumn), 0, 8);
+				$indexName = $this->buildAutoIncrementIndexName($tableName, $autoIncrementColumn);
 				$tableCode .= "\n            ->addIndex(['$autoIncrementColumn'], ['unique' => true, 'name' => '$indexName'])";
 			}
 			
@@ -487,7 +490,9 @@ PHP;
 				$optionsStr = empty($options) ? "" : ", [" . implode(", ", $options) . "]";
 				
 				// Add column modification statement
-				$columnDefs[] = "            ->changeColumn('$columnName', '$type'$optionsStr)";
+				// With this:
+				$resolvedType = ($type === 'enum' && !$this->connection->supportsNativeEnums()) ? 'string' : $type;
+				$columnDefs[] = "            ->changeColumn('$columnName', '$resolvedType'$optionsStr)";
 			}
 			
 			// Generate complete table modification code with method chaining
@@ -649,7 +654,7 @@ PHP;
 		 * @param array $propertyDef Property definition
 		 */
 		private function addDefaultOption(array &$options, array $propertyDef): void {
-			if (!empty($propertyDef['default'])) {
+			if (isset($propertyDef['default'])) {
 				$options[] = "'default' => " . TypeMapper::formatValue($propertyDef['default']);
 			}
 		}
@@ -707,5 +712,9 @@ PHP;
 				$enumValues = array_map(function ($value) { return "'" . addslashes($value) . "'"; }, $propertyDef["values"]);
 				$options[] = "'values' => [" . implode(', ', $enumValues) . "]";
 			}
+		}
+		
+		private function buildAutoIncrementIndexName(string $tableName, string $column): string {
+			return "uidx_{$tableName}_{$column}";
 		}
 	}
