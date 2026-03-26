@@ -159,12 +159,24 @@
 			$output .= "    /**\n";
 			$output .= "     * Class {$tableCamelCase}Entity\n";
 			$output .= "     * @package {$this->configuration->getEntityNameSpace()}\n";
-			$output .= "     * @Orm\Table(name=\"{$tableName}\")\n";
+			$output .= "     * @Orm\\Table(name=\"{$tableName}\")\n";
 			
 			foreach ($this->getTableIndexes($tableName) as $name => $indexConfig) {
-				$columns = "'" . implode("', '", $indexConfig['columns']) . "'";
+				// Index annotations use PHP property names, not database column names.
+				// The database stores 'customer_id' but the entity declares '$customerId',
+				// so we apply the same column→property transform used throughout this class.
+				$propertyNames = array_map(
+					fn(string $col) => lcfirst($this->camelCase($col)),
+					$indexConfig['columns']
+				);
+				
+				// Format as a comma-separated list of single-quoted strings for the annotation
+				$columns = "'" . implode("', '", $propertyNames) . "'";
+				
+				// UniqueIndex and Index are separate annotation classes — pick the right one
 				$annotationType = $indexConfig['unique'] ? "UniqueIndex" : "Index";
 				
+				// Add to output
 				$output .= "     * @Orm\\{$annotationType}(name=\"{$name}\", columns={{$columns}})\n";
 			}
 			

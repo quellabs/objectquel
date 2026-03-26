@@ -567,16 +567,12 @@
 		 * @return void
 		 */
 		private function initializeEntities(): void {
-			try {
-				$entityLocator = new EntityLocator($this->configuration, $this->annotationReader);
-				
-				foreach ($entityLocator->discoverEntities() as $entityName) {
-					$classAnnotations = $this->annotationReader->getClassAnnotations($entityName);
-					$tableName = $classAnnotations["Quellabs\\ObjectQuel\\Annotations\\Orm\\Table"]->getName();
-					$this->entityRegistry[$entityName] = $tableName;
-				}
-			} catch (\Exception $e) {
-				error_log("Error initializing entities: " . $e->getMessage());
+			$entityLocator = new EntityLocator($this->configuration, $this->annotationReader);
+			
+			foreach ($entityLocator->discoverEntities() as $entityName) {
+				$classAnnotations = $this->annotationReader->getClassAnnotations($entityName);
+				$tableName = $classAnnotations["Quellabs\\ObjectQuel\\Annotations\\Orm\\Table"]->getName();
+				$this->entityRegistry[$entityName] = $tableName;
 			}
 		}
 		
