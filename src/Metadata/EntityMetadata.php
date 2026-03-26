@@ -18,7 +18,7 @@
 	 * ╚═══════════════════════════════════════════════════════════════════════════════════════╝
 	 */
 
-	namespace Quellabs\ObjectQuel;
+	namespace Quellabs\ObjectQuel\Metadata;
 	
 	use Quellabs\AnnotationReader\Collection\AnnotationCollection;
 	use Quellabs\ObjectQuel\Annotations\Orm\Column;

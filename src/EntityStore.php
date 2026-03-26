@@ -34,6 +34,7 @@
 	use Quellabs\ObjectQuel\Annotations\Orm\UniqueIndex;
 	use Quellabs\ObjectQuel\Annotations\Orm\Version;
 	use Quellabs\ObjectQuel\DatabaseAdapter\TypeMapper;
+	use Quellabs\ObjectQuel\Metadata\EntityMetadataBuilder;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRetrieve;
 	use Quellabs\ObjectQuel\ProxyGenerator\ProxyGenerator;
 	use Quellabs\ObjectQuel\ReflectionManagement\EntityLocator;
@@ -55,6 +56,7 @@
 		private AnnotationReader $annotationReader;
 		private ReflectionHandler $reflectionHandler;
 		private ProxyGenerator $proxyGenerator;
+		private EntityMetadataBuilder $metadataBuilder;
 		
 		private string $proxyNamespace;
 		private string $entityNamespace;
@@ -93,6 +95,14 @@
 			$this->reflectionHandler = new ReflectionHandler();
 			$this->proxyNamespace = 'Quellabs\\ObjectQuel\\Proxy\\Runtime';
 			$this->entityNamespace = $configuration->getEntityNameSpace();
+
+			// Fetch builder
+			$this->metadataBuilder = new EntityMetadataBuilder(
+				$this->annotationReader,
+				$this->reflectionHandler,
+				$this->proxyNamespace,
+				$this->entityNamespace
+			);
 			
 			// Discover and register all entities
 			$this->entityLocator = new EntityLocator($configuration, $this->annotationReader);
@@ -158,7 +168,7 @@
 			// Return cached metadata if available
 			// Otherwise build and cache the metadata
 			if (!isset($this->metadataCache[$className])) {
-				$this->metadataCache[$className] = $this->buildMetadata($className);
+				$this->metadataCache[$className] = $this->metadataBuilder->build($className);
 			}
 			
 			return $this->metadataCache[$className];
@@ -543,144 +553,6 @@
 		}
 		
 		// ==================== Private Helper Methods ====================
-		
-		/**
-		 * Build complete EntityMetadata for a given class.
-		 *
-		 * This method consolidates all the metadata extraction logic that was previously
-		 * scattered across multiple methods in the old EntityStore. It extracts information
-		 * from entity annotations and reflection to build a complete, immutable metadata object.
-		 *
-		 * The metadata includes:
-		 * - Table name from @Table annotation
-		 * - All entity properties and their annotations
-		 * - Column mappings (property names to database column names)
-		 * - Primary key information (both property and column names)
-		 * - Version tracking columns (for optimistic locking)
-		 * - Relationship annotations (ManyToOne, OneToMany, OneToOne)
-		 * - Index definitions
-		 * - Auto-increment primary key detection
-		 * - Full column definitions for schema generation
-		 *
-		 * @param string $className Fully qualified, normalized entity class name
-		 * @return EntityMetadata Immutable metadata object containing all entity information
-		 * @throws \RuntimeException If metadata extraction fails
-		 */
-		private function buildMetadata(string $className): EntityMetadata {
-			try {
-				// Get table name from @Table annotation
-				$classAnnotations = $this->annotationReader->getClassAnnotations($className);
-				$tableName = $classAnnotations["Quellabs\\ObjectQuel\\Annotations\\Orm\\Table"]->getName();
-				
-				// Get all entity properties using reflection
-				$properties = $this->reflectionHandler->getProperties($className);
-				
-				// Get all property annotations
-				// This builds a map of property name => AnnotationCollection
-				$annotations = [];
-				foreach ($properties as $property) {
-					$annotations[$property] = $this->annotationReader->getPropertyAnnotations($className, $property);
-				}
-				
-				// Build column map (property name => column name)
-				// Loop through all annotations, linked to their respective properties
-				$columnMap = [];
-				foreach ($annotations as $property => $annotationCollection) {
-					// Get the column name from the annotations
-					foreach ($annotationCollection as $annotation) {
-						if ($annotation instanceof Column) {
-							$columnMap[$property] = $annotation->getName();
-							break;
-						}
-					}
-				}
-				
-				// Extract identifier keys (property names that are primary keys)
-				$identifierKeys = [];
-				foreach ($annotations as $property => $annotationCollection) {
-					foreach ($annotationCollection as $annotation) {
-						if ($annotation instanceof Column && $annotation->isPrimaryKey()) {
-							$identifierKeys[] = $property;
-							break;
-						}
-					}
-				}
-				
-				// Extract identifier columns (column names that are primary keys)
-				$identifierColumns = [];
-				foreach ($annotations as $annotationCollection) {
-					foreach ($annotationCollection as $annotation) {
-						if ($annotation instanceof Column && $annotation->isPrimaryKey()) {
-							$identifierColumns[] = $annotation->getName();
-						}
-					}
-				}
-				
-				// Extract version columns (for optimistic locking)
-				// Version columns must have both @Column and @Version annotations
-				$versionColumns = [];
-				foreach ($annotations as $property => $annotationCollection) {
-					$column = null;
-					$version = null;
-					
-					foreach ($annotationCollection as $annotation) {
-						if ($annotation instanceof Column) {
-							$column = $annotation;
-						} elseif ($annotation instanceof Version) {
-							$version = $annotation;
-						}
-					}
-					
-					// Only include if both annotations are present
-					if ($column !== null && $version !== null) {
-						$versionColumns[$property] = [
-							'name'    => $column->getName(),
-							'column'  => $column,
-							'version' => $version,
-						];
-					}
-				}
-				
-				// Extract relationships (ManyToOne, OneToMany, OneToOne)
-				$manyToOneRelations = $this->extractRelations($annotations, ManyToOne::class);
-				$oneToManyRelations = $this->extractRelations($annotations, OneToMany::class);
-				$oneToOneRelations = $this->extractRelations($annotations, OneToOne::class);
-				
-				// Extract indexes (both regular and unique indexes from class-level annotations)
-				$indexes = $this->extractIndexes($className);
-				
-				// Find auto-increment column (primary key with identity strategy or no strategy)
-				$autoIncrementColumn = null;
-				foreach ($annotations as $property => $annotationCollection) {
-					if ($this->isIdentityColumn($annotationCollection->toArray())) {
-						$autoIncrementColumn = $property;
-						break;
-					}
-				}
-				
-				// Extract column definitions (for schema generation and migrations)
-				$columnDefinitions = $this->extractColumnDefinitions($className, $annotations);
-				
-				return new EntityMetadata(
-					className: $className,
-					tableName: $tableName,
-					properties: $properties,
-					annotations: $annotations,
-					columnMap: $columnMap,
-					identifierKeys: $identifierKeys,
-					identifierColumns: $identifierColumns,
-					versionColumns: $versionColumns,
-					manyToOneRelations: $manyToOneRelations,
-					oneToManyRelations: $oneToManyRelations,
-					oneToOneRelations: $oneToOneRelations,
-					indexes: $indexes,
-					autoIncrementColumn: $autoIncrementColumn,
-					columnDefinitions: $columnDefinitions,
-				);
-			} catch (\Exception $e) {
-				throw new \RuntimeException("Failed to build metadata for {$className}: " . $e->getMessage(), 0, $e);
-			}
-		}
 		
 		/**
 		 * Extract class name from various entity representations.
