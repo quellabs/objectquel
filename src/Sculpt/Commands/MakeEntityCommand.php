@@ -111,11 +111,21 @@
 		 * @param string $entityName Name of the entity (without 'Entity' suffix)
 		 */
 		private function displayEntityOperationMessage(string $entityName): void {
-			$entityNamePlus = $entityName . "Entity";
+			$modifier = $this->getEntityModifier();
 			$entityPath = realpath($this->configuration->getEntityPath());
-			$action = $this->getEntityModifier()->entityExists($entityNamePlus) ? "Updating existing" : "Creating new";
 			
-			$this->output->writeLn("\n{$action} entity: {$entityPath}/{$entityNamePlus}.php\n");
+			if ($modifier->entityExists($entityName . "Entity")) {
+				$displayName = $entityName . "Entity";
+				$action = "Updating existing";
+			} elseif ($modifier->entityExists($entityName)) {
+				$displayName = $entityName;
+				$action = "Updating existing";
+			} else {
+				$displayName = $entityName . "Entity"; // default for new files
+				$action = "Creating new";
+			}
+			
+			$this->output->writeLn("\n{$action} entity: {$entityPath}/{$displayName}.php\n");
 		}
 		
 		/**
@@ -136,8 +146,12 @@
 				}
 				
 				$entityFileName = pathinfo($file, PATHINFO_FILENAME);
+				
+				// Support both ElephantEntity.php and Elephant.php
 				if (str_ends_with($entityFileName, 'Entity')) {
 					$entities[] = substr($entityFileName, 0, -6);
+				} else {
+					$entities[] = $entityFileName;
 				}
 			}
 			

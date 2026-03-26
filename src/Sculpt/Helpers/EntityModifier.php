@@ -51,9 +51,9 @@
 		 * @return bool True if operation succeeded
 		 */
 		public function createOrUpdateEntity(string $entityName, array $properties, array $indexes = []): bool {
-			$fullEntityName = $entityName . "Entity";
-			
-			if ($this->entityExists($fullEntityName)) {
+			if ($this->entityExists($entityName . "Entity")) {
+				return $this->updateEntity($entityName . "Entity", $properties);
+			} elseif ($this->entityExists($entityName)) {
 				return $this->updateEntity($entityName, $properties);
 			} else {
 				return $this->createNewEntity($entityName, $properties, $indexes);
@@ -85,20 +85,24 @@
 		 * @return bool True if file was updated successfully
 		 */
 		public function updateEntity(string $entityName, array $properties): bool {
-			$filePath = $this->getEntityPath($entityName . "Entity");
+			// Resolve the full file path for the given entity name (with or without "Entity" suffix)
+			$filePath = $this->getEntityPath($entityName);
+			
+			// Read the file
 			$content = file_get_contents($filePath);
 			
 			if ($content === false) {
 				return false;
 			}
 			
+			// Split the file into header, properties section, methods section, and footer
 			$classContent = $this->parseClassContent($content);
 			
 			if (!$classContent) {
 				return false;
 			}
 			
-			// Extract OneToMany relationships that need collection initialization
+			// OneToMany properties need collection initialization in the constructor
 			$oneToManyProperties = array_filter($properties, fn($p) => ($p['relationshipType'] ?? null) === 'OneToMany');
 			
 			$updatedContent = $content;
@@ -106,18 +110,15 @@
 				$updatedContent = $this->updateConstructor($updatedContent, $oneToManyProperties);
 			}
 			
-			// Reparse to get accurate insertion points after constructor modifications
-			$updatedContent = $this->insertProperties(
-				$this->parseClassContent($updatedContent),
-				$properties
-			);
+			// Reparse after constructor changes, as insertion points may have shifted
+			$updatedContent = $this->insertProperties($this->parseClassContent($updatedContent), $properties);
 			
-			$updatedContent = $this->insertGettersAndSetters($updatedContent, $properties, $entityName);
-			
-			// Return true if write was successful
+			// Strip suffix before passing to insertGettersAndSetters, which uses the name for method bodies
+			$bareName = str_ends_with($entityName, 'Entity') ? substr($entityName, 0, -6) : $entityName;
+			$updatedContent = $this->insertGettersAndSetters($updatedContent, $properties, $bareName);
 			return file_put_contents($filePath, $updatedContent) !== false;
 		}
-		
+
 		/**
 		 * Parses class file to identify structural sections
 		 * @param string $content Complete entity file content
