@@ -187,6 +187,10 @@ For other frameworks, configure the `EntityManager` directly — it has no frame
 
 Full query language reference, entity mapping guide, and architecture docs: **[objectquel.com/docs](https://objectquel.com/docs)**
 
+## Support
+
+If ObjectQuel saves you time, consider [sponsoring development](https://github.com/sponsors/quellabs).
+
 ## License
 
 MIT
