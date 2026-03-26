@@ -56,5 +56,11 @@
         "config": ["config/app.php", "config/database.php"]
       }
     }
-  }
+  },
+  "funding": [
+    {
+      "type": "github",
+      "url": "https://github.com/sponsors/quellabs"
+    }
+  ]
 }
