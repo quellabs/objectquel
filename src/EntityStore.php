@@ -254,6 +254,7 @@
 			
 			// Loop through each entity and its dependencies to check for the specified class
 			$result = [];
+			
 			foreach ($dependencies as $entityClass => $entityDependencies) {
 				// If the specified class exists in the dependencies list, add it to the result
 				if (in_array($normalizedClass, $entityDependencies, true)) {
