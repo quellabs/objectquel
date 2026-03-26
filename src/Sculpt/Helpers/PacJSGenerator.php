@@ -8,7 +8,15 @@
 	/**
 	 * This class creates JavaScript abstractions for entities that can be used
 	 * with the WakaPAC framework for reactive data binding and component management.
-	 * Modified to work with JSON:API standard.
+	 *
+	 * HTTP transport uses the WakaSync plugin (this._http), which is injected by
+	 * wakaPAC.use(wakaSync) before any component is created. Requests are fire-and-
+	 * forget: each method stores its request ID and results are delivered to msgProc()
+	 * as MSG_HTTP_SUCCESS / MSG_HTTP_ERROR / MSG_HTTP_ABORT messages.
+	 *
+	 * The server speaks plain JSON: requests send a flat payload object and responses
+	 * are flat objects of the form { id, ...attributes }. Error responses are expected
+	 * to be of the form { error: '...' }.
 	 */
 	class PacJSGenerator extends PacGenerator {
 		
@@ -43,14 +51,10 @@
 				$hasDefault = $entityData['columnAnnotations'][$property]->hasDefault();
 				$defaultValue = $entityData['columnAnnotations'][$property]->getDefault();
 				
-				// Handle ID separately since it's at data.id level in JSON:API
-				if ($property === 'id') {
-					$assignAfterLoad[] = "this.{$property} = data.data.id;";
-					$assignAfterSave[] = "if (typeof data.data.id !== 'undefined') { this.{$property} = data.data.id; }";
-				} else {
-					$assignAfterLoad[] = "this.{$property} = data.data.attributes.{$property} ?? null;";
-					$assignAfterSave[] = "if (typeof data.data.attributes.{$property} !== 'undefined') { this.{$property} = data.data.attributes.{$property}; }";
-				}
+				$assignAfterLoad[] = "this.{$property} = data.{$property} ?? null;";
+				$assignAfterSave[] = "if (typeof data.{$property} !== 'undefined') {";
+				$assignAfterSave[] = "    this.{$property} = data.{$property};";
+				$assignAfterSave[] = "}";
 				
 				if (in_array($property, $entityData['identifiers']) || !$hasDefault) {
 					$properties[] = "{$property}: null";
@@ -62,9 +66,14 @@
 				}
 				
 				if ($lastKey == $property) {
-					$changes[] = "return (this.{$property} !== this._originalData.{$property});";
+					$changes[] = "if (this.{$property} !== this._originalData.{$property}) {";
+					$changes[] = "    return true;";
+					$changes[] = "}";
+					$changes[] = "return false;";
 				} else {
-					$changes[] = "if (this.{$property} !== this._originalData.{$property}) return true;";
+					$changes[] = "if (this.{$property} !== this._originalData.{$property}) {";
+					$changes[] = "    return true;";
+					$changes[] = "}";
 				}
 			}
 			
@@ -78,14 +87,32 @@
 				'properties'      => $properties,
 				'reset'           => $reset,
 				'changes'         => $changes,
-				'toJsonApiData'   => $this->generateToJsonApiStatements($entityData['columns'], $entityData['columnAnnotations']),
+				'toPayload'       => $this->generateSerializeStatements($entityData['columns'], $entityData['columnAnnotations']),
 				'assignAfterLoad' => $assignAfterLoad,
 				'assignAfterSave' => $assignAfterSave,
 			];
 		}
 		
 		/**
-		 * Builds the complete JavaScript abstraction code from all components
+		 * Builds the complete JavaScript abstraction code from all components.
+		 *
+		 * Architecture notes (current WakaPAC / WakaSync API):
+		 *
+		 *   - HTTP transport is provided by the WakaSync plugin, which injects
+		 *     this._http into every abstraction via onComponentCreated().
+		 *     Prerequisite: wakaPAC.use(wakaSync) must be called before any
+		 *     wakaPAC('#…', …) call.
+		 *
+		 *   - this._http.get/post/put/delete() are fire-and-forget. Each returns
+		 *     a numeric request ID that is stored on _pendingLoad / _pendingSave /
+		 *     _pendingDelete so msgProc() can correlate the response.
+		 *
+		 *   - Responses arrive as PAC messages in msgProc():
+		 *       wakaPAC.MSG_HTTP_SUCCESS  event.detail.data  — parsed response body
+		 *       wakaPAC.MSG_HTTP_ERROR    event.lParam       — HTTP status code,
+		 *                                event.detail.error  — Error object
+		 *       wakaPAC.MSG_HTTP_ABORT                       — request was cancelled
+		 *
 		 * @param string $baseName The clean entity name (e.g., 'User', 'Product')
 		 * @param array $components All generated code components from generateCodeComponents()
 		 * @return string The complete, formatted JavaScript abstraction code
@@ -95,36 +122,42 @@
 			$baseNamePlural = StringInflector::pluralize($baseNameLower);
 			
 			return sprintf(trim("
-// Auto-generated WakaPAC abstraction for {$this->entityName} (JSON:API)
+// Auto-generated WakaPAC abstraction for {$this->entityName}
 // Generated on " . date('Y-m-d H:i:s') . "
-// Usage: wakaPAC('#my-{$baseNameLower}', {$baseName}Abstraction);
+// Usage:
+//   wakaPAC.use(wakaSync);          // must come first — injects this._http
+//   wakaPAC('#my-{$baseNameLower}', {$baseName}Abstraction);
 
 const {$baseName}Abstraction = {
 %s,
 
     /**
-     * Base url for ajax load
+     * Base URL for AJAX requests
      */
     _baseUrl: '/{$baseNamePlural}',
 
-	/**
-	 * Resource type for JSON:API
-	 */
-    _resourceType: '{$baseName}',
+    /**
+     * Pending request IDs for response correlation in msgProc().
+     * Initialised to null; set to the numeric ID returned by this._http.*()
+     * and cleared back to null once the response has been handled.
+     */
+    _pendingLoad:   null,
+    _pendingSave:   null,
+    _pendingDelete: null,
 
-	/**
-	 * Add computed properties here
-	 */
+    /**
+     * Add computed properties here
+     */
     computed: {
     },
 
-	/**
-	 * Reset all properties to their default values
-	 */
+    /**
+     * Reset all properties to their default values
+     */
     reset() {
 %s
     },
-    
+
     /**
      * Check if any properties have changed from original data
      */
@@ -133,177 +166,212 @@ const {$baseName}Abstraction = {
 %s
     },
 
-	/**
-	 * Converts the model instance to JSON API format
-	 * @returns {Object} JSON API compliant data object with type, attributes, and optional id
-	 */
-	toJsonApiData() {
-	    const jsonApiData = {
-	        data: {
-	            type: this._resourceType,
-	            attributes: {}
-	        }
-	    };
-	    
-	    // Add ID if it exists (for updates)
-	    if (this.id) {
-	        jsonApiData.data.id = String(this.id);
-	    }
-	    
-	%s
-	    
-	    return jsonApiData;
-	},
-
-	/**
-	 * Load the entity from the server
-	 */
-    load(id) {
-        return this.control(`\${this._baseUrl}/\${id}`, {
-            method: 'GET',
-            headers: {
-                'Accept': 'application/vnd.api+json',
-                'Content-Type': 'application/vnd.api+json',
-                'X-Requested-With': 'WakaPAC',
-                'X-PAC-Version': '1.0'
-            },
-            onSuccess: (data) => {
-                // Validate JSON:API response structure
-                if (!data.data || !data.data.type || !data.data.id) {
-                    console.error('Invalid JSON:API response structure');
-                    return;
-                }
-                
-                if (data.data.type !== this._resourceType) {
-                    console.error(`Resource type mismatch: expected '\${this._resourceType}', got '\${data.data.type}'`);
-                    return;
-                }
-
-%s
-
-                // Store original data for change tracking
-                this._originalData = this._extractAttributesForTracking(data);
-            },
-            onError: (error) => {
-                this._handleJsonApiError(error, 'Failed to load {$baseName}');
-            }
-        });
-    },
-    
     /**
-     * Stores the entity data on the server
+     * Serializes the model to a plain JSON payload for POST / PUT requests.
+     * @returns {Object}
+     */
+    toPayload() {
+        const payload = {};
+
+    %s
+
+        return payload;
+    },
+
+    /**
+     * Loads the entity from the server (GET /{$baseNamePlural}/{id}).
+     * The response is processed asynchronously in msgProc() when
+     * MSG_HTTP_SUCCESS arrives with wParam === this._pendingLoad.
+     * @param {string|number} id
+     */
+    load(id) {
+        this._pendingLoad = this._http.get(
+            `\${this._baseUrl}/\${id}`,
+            {
+                headers: {
+                    'Accept':           'application/json',
+                    'X-Requested-With': 'WakaPAC',
+                    'X-PAC-Version':    '1.0'
+                }
+            }
+        );
+    },
+
+    /**
+     * Saves the entity to the server (POST for new, PUT for existing).
+     * The response is processed asynchronously in msgProc() when
+     * MSG_HTTP_SUCCESS arrives with wParam === this._pendingSave.
      */
     save() {
-        const url = this.id ? `\${this._baseUrl}/\${this.id}` : this._baseUrl;
-        const method = this.id ? 'PUT' : 'POST';
-        const jsonApiData = this.toJsonApiData();
-        
-        return this.control(url, {
-            method,
+        const url  = this.id ? `\${this._baseUrl}/\${this.id}` : this._baseUrl;
+        const body = JSON.stringify(this.toPayload());
+        const opts = {
             headers: {
-                'Accept': 'application/vnd.api+json',
-                'Content-Type': 'application/vnd.api+json',
+                'Accept':           'application/json',
+                'Content-Type':     'application/json',
                 'X-Requested-With': 'WakaPAC',
-                'X-PAC-Version': '1.0'
-            },
-            data: JSON.stringify(jsonApiData),
-            onSuccess: (data) => {
-                // Validate JSON:API response structure
-                if (!data.data || !data.data.type || !data.data.id) {
-                    console.error('Invalid JSON:API response structure');
-                    return;
+                'X-PAC-Version':    '1.0'
+            }
+        };
+
+        this._pendingSave = this.id
+            ? this._http.put(url,  body, opts)
+            : this._http.post(url, body, opts);
+    },
+
+    /**
+     * Deletes the entity from the server (DELETE /{$baseNamePlural}/{id}).
+     * The response is processed asynchronously in msgProc() when
+     * MSG_HTTP_SUCCESS arrives with wParam === this._pendingDelete.
+     */
+    delete() {
+        if (!this.id) {
+            throw new Error('Cannot delete {$baseName} without an ID');
+        }
+
+        this._pendingDelete = this._http.delete(
+            `\${this._baseUrl}/\${this.id}`,
+            {
+                headers: {
+                    'Accept':           'application/json',
+                    'X-Requested-With': 'WakaPAC',
+                    'X-PAC-Version':    '1.0'
+                }
+            }
+        );
+    },
+
+    /**
+     * Central message handler (Win32-style WndProc).
+     *
+     * Handles HTTP responses delivered by WakaSync:
+     *
+     *   MSG_HTTP_SUCCESS  wParam = requestId, event.detail.data = parsed body
+     *   MSG_HTTP_ERROR    wParam = requestId, lParam = HTTP status code,
+     *                     event.detail.error = Error object
+     *   MSG_HTTP_ABORT    wParam = requestId
+     *
+     * @param {Object} event - PAC message event
+     */
+    msgProc(event) {
+        switch (event.message) {
+
+            case wakaPAC.MSG_HTTP_SUCCESS: {
+                const data = event.detail.data;
+                const rid  = event.wParam;
+
+                if (rid === this._pendingLoad) {
+                    this._pendingLoad = null;
+                    this._onLoadSuccess(data);
+
+                } else if (rid === this._pendingSave) {
+                    this._pendingSave = null;
+                    this._onSaveSuccess(data);
+
+                } else if (rid === this._pendingDelete) {
+                    this._pendingDelete = null;
+                    this._onDeleteSuccess();
                 }
 
+                return true;
+            }
+
+            case wakaPAC.MSG_HTTP_ERROR: {
+                const rid = event.wParam;
+
+                if (rid === this._pendingLoad)   this._pendingLoad   = null;
+                if (rid === this._pendingSave)    this._pendingSave   = null;
+                if (rid === this._pendingDelete)  this._pendingDelete = null;
+
+                this._handleError(event.detail.error, event.lParam);
+                return true;
+            }
+
+            case wakaPAC.MSG_HTTP_ABORT: {
+                const rid = event.wParam;
+
+                if (rid === this._pendingLoad)   this._pendingLoad   = null;
+                if (rid === this._pendingSave)    this._pendingSave   = null;
+                if (rid === this._pendingDelete)  this._pendingDelete = null;
+
+                return true;
+            }
+        }
+    },
+
+    /**
+     * Called by msgProc() after a successful load response.
+     * Assigns properties from the flat response object and snapshots
+     * the data for change tracking.
+     * @param {Object} data - Parsed response body
+     */
+    _onLoadSuccess(data) {
 %s
 
-                // Update original data for change tracking
-                this._originalData = this._extractAttributesForTracking(data);
-            },
-            onError: (error) => {
-                this._handleJsonApiError(error, 'Failed to save {$baseName}');
-            }
-        });
+        this._originalData = { ...data };
     },
-    
+
     /**
-     * Deletes the entity from the server
+     * Called by msgProc() after a successful save response.
+     * Assigns any server-side changes (e.g. generated ID, timestamps)
+     * back onto the abstraction and refreshes the change-tracking snapshot.
+     * @param {Object} data - Parsed response body
      */
-	delete() {
-	    if (!this.id) {
-	        throw new Error('Cannot delete entity without ID');
-        }
-	       
-	    return this.control(`\${this._baseUrl}/\${this.id}`, {
-	        method: 'DELETE',
-	        headers: {
-                'Accept': 'application/vnd.api+json',
-                'X-Requested-With': 'WakaPAC',
-                'X-PAC-Version': '1.0'
-            },
-	        onSuccess: (data) => {
-                // JSON:API DELETE should return 204 No Content (empty response)
-                this.reset();
-                this._originalData = null;
-            },
-            onError: (error) => {
-                this._handleJsonApiError(error, 'Failed to delete {$baseName}');
-            }
-	    });
-	},
-	
-	/**
-	 * Helper method to extract attributes for change tracking
-	 */
-	_extractAttributesForTracking(jsonApiResponse) {
-	    const tracking = {};
-	    if (jsonApiResponse.data && jsonApiResponse.data.attributes) {
-	        Object.assign(tracking, jsonApiResponse.data.attributes);
-	    }
-	    if (jsonApiResponse.data && jsonApiResponse.data.id) {
-	        tracking.id = jsonApiResponse.data.id;
-	    }
-	    return tracking;
-	},
-	
-	/**
-	 * Helper method to handle JSON:API errors
-	 */
-	_handleJsonApiError(error, defaultMessage) {
-	    if (error.errors && Array.isArray(error.errors)) {
-	        error.errors.forEach(err => {
-	            console.error(`{$baseName} Error [\${err.status || 'Unknown'}]: \${err.title || defaultMessage}`, err.detail || '');
-	        });
-	    } else {
-	        console.error(defaultMessage + ':', error);
-	    }
-	}
+    _onSaveSuccess(data) {
+%s
+
+        this._originalData = { ...data };
+    },
+
+    /**
+     * Called by msgProc() after a successful delete response.
+     * DELETE returns 204 No Content, so there is no body to process.
+     */
+    _onDeleteSuccess() {
+        this.reset();
+        this._originalData = null;
+    },
+
+    /**
+     * Centralised error handler.
+     * Reads the { error: '...' } body when available, otherwise logs the raw error.
+     * @param {Error|Object} error
+     * @param {number}       httpStatus
+     */
+    _handleError(error, httpStatus) {
+        const body = error && error.response && error.response.data;
+        const message = (body && body.error) ? body.error : (error && error.message) || 'Request failed';
+        console.error(`{$baseName} Error [\${httpStatus || 'Unknown'}]: \${message}`);
+    }
 }
 
 /**
- * Helper to merge with custom data
+ * Factory helper — merges custom data / computed properties into a fresh
+ * copy of the base abstraction and pre-seeds _originalData when initial
+ * values are provided.
+ * @param {Object} [customData={}]
+ * @returns {Object}
  */
 const create{$baseName}Abstraction = (customData = {}) => {
     const abstraction = {
         ...{$baseName}Abstraction,
         ...customData,
-        
-        // Merge computed properties
+
         computed: {
             ...{$baseName}Abstraction.computed,
             ...(customData.computed || {})
         }
     };
-    
-    // Store original data for change tracking
+
     if (customData && Object.keys(customData).length > 0) {
         abstraction._originalData = { ...customData };
     }
-    
+
     return abstraction;
 };
 
 /**
- * Export for module systems (CommonJS)
+ * CommonJS export
  */
 if (typeof module !== 'undefined' && module.exports) {
     module.exports = { {$baseName}Abstraction, create{$baseName}Abstraction };
@@ -312,21 +380,22 @@ if (typeof module !== 'undefined' && module.exports) {
 				implode(",\n", array_map(fn($e) => str_repeat(" ", 4) . $e, $components['properties'])),
 				implode("\n", array_map(fn($e) => str_repeat(" ", 8) . $e, $components['reset'])),
 				implode("\n", array_map(fn($e) => str_repeat(" ", 8) . $e, $components['changes'])),
-				implode("\n", array_map(fn($e) => str_repeat(" ", 8) . $e, $components['toJsonApiData'])),
-				implode("\n", array_map(fn($e) => str_repeat(" ", 16) . $e, $components['assignAfterLoad'])),
-				implode("\n", array_map(fn($e) => str_repeat(" ", 16) . $e, $components['assignAfterSave'])),
+				implode("\n", array_map(fn($e) => str_repeat(" ", 8) . $e, $components['toPayload'])),
+				implode("\n", array_map(fn($e) => str_repeat(" ", 8) . $e, $components['assignAfterLoad'])),
+				implode("\n", array_map(fn($e) => str_repeat(" ", 8) . $e, $components['assignAfterSave'])),
 			);
 		}
 		
 		/**
-		 * Creates JavaScript code that converts entity properties into JSON:API format
-		 * for HTTP POST/PUT requests. Skips the 'id' field as it's handled separately.
+		 * Creates JavaScript statements that serialize entity properties into a flat
+		 * payload object for POST / PUT requests. Skips 'id' — the server assigns it
+		 * on create and it is sent via the URL on update.
 		 * @param array $columns Column mappings from entity metadata
 		 * @param array $columnAnnotations Column annotation objects with type information
-		 * @return array Array of JavaScript statements for JSON:API serialization
+		 * @return array Array of JavaScript statements
 		 */
-		private function generateToJsonApiStatements(array $columns, array $columnAnnotations): array {
-			$jsonApiLines = [];
+		private function generateSerializeStatements(array $columns, array $columnAnnotations): array {
+			$lines = [];
 			
 			foreach ($columns as $property => $column) {
 				if ($property === 'id') {
@@ -336,19 +405,20 @@ if (typeof module !== 'undefined' && module.exports) {
 				$annotation = $columnAnnotations[$property] ?? null;
 				$columnType = $annotation ? $annotation->getType() : 'string';
 				
-				$jsonApiLines = array_merge($jsonApiLines, $this->generateJsonApiForType($property, $columnType));
+				$lines = array_merge($lines, $this->generateSerializeForType($property, $columnType));
 			}
 			
-			return $jsonApiLines;
+			return $lines;
 		}
 		
 		/**
-		 * Generates JSON:API attribute statements for a specific property type
+		 * Generates serialization statements for a specific property type.
+		 * Writes to a flat `payload` object.
 		 * @param string $property
 		 * @param string $columnType
 		 * @return string[]
 		 */
-		private function generateJsonApiForType(string $property, string $columnType): array {
+		private function generateSerializeForType(string $property, string $columnType): array {
 			$baseCondition = "if (this.{$property} !== undefined && this.{$property} !== null) {";
 			$closeCondition = "}";
 			
@@ -357,7 +427,7 @@ if (typeof module !== 'undefined' && module.exports) {
 				case 'bool':
 					return [
 						$baseCondition,
-						"    jsonApiData.data.attributes.{$property} = Boolean(this.{$property});",
+						"    payload.{$property} = Boolean(this.{$property});",
 						$closeCondition
 					];
 				
@@ -365,7 +435,7 @@ if (typeof module !== 'undefined' && module.exports) {
 				case 'json':
 					return [
 						$baseCondition,
-						"    jsonApiData.data.attributes.{$property} = Array.isArray(this.{$property}) ? this.{$property} : JSON.parse(this.{$property});",
+						"    payload.{$property} = Array.isArray(this.{$property}) ? this.{$property} : JSON.parse(this.{$property});",
 						$closeCondition
 					];
 				
@@ -373,7 +443,7 @@ if (typeof module !== 'undefined' && module.exports) {
 				case 'date':
 					return [
 						$baseCondition,
-						"    jsonApiData.data.attributes.{$property} = this.{$property} instanceof Date ? this.{$property}.toISOString() : this.{$property};",
+						"    payload.{$property} = this.{$property} instanceof Date ? this.{$property}.toISOString() : this.{$property};",
 						$closeCondition
 					];
 				
@@ -381,7 +451,7 @@ if (typeof module !== 'undefined' && module.exports) {
 				case 'int':
 					return [
 						$baseCondition,
-						"    jsonApiData.data.attributes.{$property} = parseInt(this.{$property}, 10);",
+						"    payload.{$property} = parseInt(this.{$property}, 10);",
 						$closeCondition
 					];
 				
@@ -390,14 +460,14 @@ if (typeof module !== 'undefined' && module.exports) {
 				case 'double':
 					return [
 						$baseCondition,
-						"    jsonApiData.data.attributes.{$property} = parseFloat(this.{$property});",
+						"    payload.{$property} = parseFloat(this.{$property});",
 						$closeCondition
 					];
 				
 				default:
 					return [
 						$baseCondition,
-						"    jsonApiData.data.attributes.{$property} = String(this.{$property});",
+						"    payload.{$property} = String(this.{$property});",
 						$closeCondition
 					];
 			}
