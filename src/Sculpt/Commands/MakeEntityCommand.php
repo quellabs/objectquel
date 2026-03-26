@@ -71,14 +71,18 @@
 		 * @return int Exit code (0 for success)
 		 */
 		public function execute(ConfigurationManager $config): int {
-			$entityName = $this->input->ask("Class name of the entity to create or update (e.g. AgreeableElephant)");
+			// Allow passing the entity name directly on the command line (e.g. `sculpt make:entity Elephant`),
+			// falling back to an interactive prompt if omitted
+			$entityName = $config->getPositional(0) ?? $this->input->ask("Class name of the entity to create or update (e.g. AgreeableElephant)");
 			
 			if (empty($entityName)) {
 				return 0;
 			}
 			
+			// Show message that we are making a new or modifying an exising entiy
 			$this->displayEntityOperationMessage($entityName);
 			
+			// Scan the entity directory so relationship prompts can offer existing entities as choices
 			$availableEntities = $this->getAvailableEntities();
 			$properties = $this->collectProperties($availableEntities, $entityName);
 			
