@@ -107,11 +107,10 @@
 		 * @return string The name of the inverse relationship property.
 		 */
 		private function getInversedPropertyName(object $dependency): string {
-			// Check the dependency type and determine the appropriate property
 			if ($dependency instanceof OneToOne) {
-				return $dependency->getInversedBy() ?: $dependency->getMappedBy();
+				return $dependency->getInversedBy() ?: $dependency->getMappedBy() ?: '';
 			} elseif ($dependency instanceof ManyToOne) {
-				return $dependency->getInversedBy(); // ManyToOne typically only has getInversedBy
+				return $dependency->getInversedBy() ?? $this->entityStore->getPrimaryKey($dependency->getTargetEntity()) ?? '';
 			} else {
 				return '';
 			}
