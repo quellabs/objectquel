@@ -455,7 +455,7 @@
 				$acceptType = $this->getColumnType($column);
 				
 				$output .= $this->generateGetter($fieldCamelCase, $variableCamelCase, $acceptType);
-				$output .= $this->generateSetter($column, $fieldCamelCase, $variableCamelCase, $acceptType, $tableCamelCase);
+				$output .= $this->generateSetter($column, $fieldCamelCase, $variableCamelCase, $acceptType);
 			}
 			
 			return $output;
@@ -489,15 +489,14 @@
 		 * @param string $fieldCamelCase The camelCase field name
 		 * @param string $variableCamelCase The camelCase variable name
 		 * @param string $acceptType The PHP type for the column
-		 * @param string $tableCamelCase The camelCase table name
 		 * @return string The generated setter method
 		 */
-		private function generateSetter(array $column, string $fieldCamelCase, string $variableCamelCase, string $acceptType, string $tableCamelCase): string {
+		private function generateSetter(array $column, string $fieldCamelCase, string $variableCamelCase, string $acceptType): string {
 			$output = "\n";
 			
 			// Only generate setters for non-autoincrement primary keys
 			if (!$column["primary_key"] || !$column["identity"]) {
-				$output .= "        public function set{$fieldCamelCase}({$acceptType} \$value): {$tableCamelCase}Entity {\n";
+				$output .= "        public function set{$fieldCamelCase}({$acceptType} \$value): self {\n";
 				$output .= "            \$this->{$variableCamelCase} = \$value;\n";
 				$output .= "            return \$this;\n";
 				$output .= "        }\n";
