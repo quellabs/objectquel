@@ -72,7 +72,7 @@
 			$entityCode .= "    class {$tableCamelCase}Entity {\n";
 			$entityCode .= $this->generateMemberVariables($tableDescription);
 			$entityCode .= $this->generateConstructor($tableDescription);
-			$entityCode .= $this->generateGettersAndSetters($tableDescription, $tableCamelCase);
+			$entityCode .= $this->generateGettersAndSetters($tableDescription);
 			$entityCode .= "    }\n"; // Class closing brace
 			
 			// Store the file
@@ -443,10 +443,9 @@
 		/**
 		 * Generate the getters and setters for the entity class
 		 * @param array $tableDescription The table description
-		 * @param string $tableCamelCase The camelCase version of the table name
 		 * @return string The generated getters and setters code
 		 */
-		private function generateGettersAndSetters(array $tableDescription, string $tableCamelCase): string {
+		private function generateGettersAndSetters(array $tableDescription): string {
 			$output = "";
 			
 			foreach ($tableDescription as $columnName => $column) {
