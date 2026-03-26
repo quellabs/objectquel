@@ -51,9 +51,20 @@
 		 * @return bool True if operation succeeded
 		 */
 		public function createOrUpdateEntity(string $entityName, array $properties, array $indexes = []): bool {
-			if ($this->entityExists($entityName . "Entity")) {
+			// Check both naming conventions: ElephantEntity.php (default) and Elephant.php (renamed)
+			$suffixedExists = $this->entityExists($entityName . "Entity");
+			$bareExists = $this->entityExists($entityName);
+			
+			// Both files existing is an unresolvable ambiguity — bail out rather than silently pick one
+			if ($suffixedExists && $bareExists) {
+				throw new \RuntimeException(
+					"Ambiguous entity: both '{$entityName}.php' and '{$entityName}Entity.php' exist. Remove one before proceeding."
+				);
+			}
+			
+			if ($suffixedExists) {
 				return $this->updateEntity($entityName . "Entity", $properties);
-			} elseif ($this->entityExists($entityName)) {
+			} elseif ($bareExists) {
 				return $this->updateEntity($entityName, $properties);
 			} else {
 				return $this->createNewEntity($entityName, $properties, $indexes);
