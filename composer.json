@@ -25,24 +25,21 @@
   },
   "config": {
     "platform": {
-      "php": "8.2"
+      "php": "8.4"
     }
   },
   "require": {
+    "php": ">=8.4",
     "ext-json": "*",
-    "ext-mysqli": "*",
     "ext-pdo": "*",
-    "ext-curl": "*",
-    "ext-gd": "*",
-    "ext-fileinfo": "*",
+    "robmorgan/phinx": "^0.16",
+    "cakephp/database": "^5.3",
+    "softcreatr/jsonpath": "^1.0",
     "quellabs/contracts": "^1",
     "quellabs/support": "^1",
     "quellabs/signal-hub": "^1",
     "quellabs/annotation-reader": "^1",
-    "quellabs/sculpt": "^1",
-    "robmorgan/phinx": "*",
-    "cakephp/database": "*",
-    "softcreatr/jsonpath": "*"
+    "quellabs/sculpt": "^1"
   },
   "autoload": {
     "psr-4": {
@@ -53,7 +50,10 @@
     "discover": {
       "sculpt": {
         "provider": "Quellabs\\ObjectQuel\\Sculpt\\ServiceProvider",
-        "config": ["config/app.php", "config/database.php"]
+        "config": [
+          "config/app.php",
+          "config/database.php"
+        ]
       }
     }
   },
