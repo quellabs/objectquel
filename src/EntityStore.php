@@ -34,7 +34,7 @@
 	use Quellabs\ObjectQuel\Annotations\Orm\UniqueIndex;
 	use Quellabs\ObjectQuel\Annotations\Orm\Version;
 	use Quellabs\ObjectQuel\DatabaseAdapter\TypeMapper;
-	use Quellabs\ObjectQuel\Metadata\EntityMetadata;
+	use Quellabs\ObjectQuel\Metadata\EntityMetadataRecord;
 	use Quellabs\ObjectQuel\Metadata\EntityMetadataBuilder;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRetrieve;
 	use Quellabs\ObjectQuel\ProxyGenerator\ProxyGenerator;
@@ -161,9 +161,9 @@
 		 * Get complete metadata for an entity.
 		 * This is the main access point - all other methods delegate to this.
 		 * @param mixed $entity Entity object, class name, or ReflectionClass
-		 * @return EntityMetadata Immutable metadata object containing all entity information
+		 * @return EntityMetadataRecord Immutable metadata object containing all entity information
 		 */
-		public function getMetadata(mixed $entity): EntityMetadata {
+		public function getMetadata(mixed $entity): EntityMetadataRecord {
 			$className = $this->normalizeEntityName($entity);
 			
 			// Return cached metadata if available

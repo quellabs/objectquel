@@ -41,10 +41,10 @@
 	 * All properties are readonly to ensure immutability and prevent accidental
 	 * modification of cached metadata.
 	 */
-	readonly class EntityMetadata {
+	readonly class EntityMetadataRecord {
 		
 		/**
-		 * Constructor for EntityMetadata.
+		 * Constructor for EntityMetadataRecord.
 		 * @param string $className Fully qualified, normalized class name
 		 * @param string $tableName Database table name from @Table annotation
 		 * @param array<string, mixed> $properties Property names and their reflection info

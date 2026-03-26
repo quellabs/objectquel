@@ -40,10 +40,10 @@
 		/**
 		 * Build complete EntityMetadata for a given class.
 		 * @param string $className Fully qualified, normalized entity class name
-		 * @return EntityMetadata
+		 * @return EntityMetadataRecord
 		 * @throws \RuntimeException If metadata extraction fails
 		 */
-		public function build(string $className): EntityMetadata {
+		public function build(string $className): EntityMetadataRecord {
 			try {
 				// Fetch class-level annotations to extract the @Table name
 				$classAnnotations = $this->annotationReader->getClassAnnotations($className);
@@ -71,7 +71,7 @@
 					$autoIncrementColumn,
 				] = $this->extractColumnData($annotations);
 				
-				return new EntityMetadata(
+				return new EntityMetadataRecord(
 					className:           $className,
 					tableName:           $tableName,
 					properties:          $properties,
