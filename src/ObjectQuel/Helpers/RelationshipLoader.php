@@ -108,12 +108,30 @@
 		 */
 		private function getInversedPropertyName(object $dependency): string {
 			if ($dependency instanceof OneToOne) {
-				return $dependency->getInversedBy() ?: $dependency->getMappedBy() ?: '';
-			} elseif ($dependency instanceof ManyToOne) {
-				return $dependency->getInversedBy() ?? $this->entityStore->getPrimaryKey($dependency->getTargetEntity()) ?? '';
-			} else {
-				return '';
+				// inversedBy names the property on the target entity that owns the relationship
+				if (!empty($dependency->getInversedBy())) {
+					return $dependency->getInversedBy();
+					// mappedBy names the property on the target entity that holds the FK
+				} elseif (!empty($dependency->getMappedBy())) {
+					return $dependency->getMappedBy();
+					// No explicit property defined — fall back to the target entity's primary key
+				} else {
+					return $this->entityStore->getPrimaryKey($dependency->getTargetEntity()) ?? '';
+				}
 			}
+			
+			if ($dependency instanceof ManyToOne) {
+				// inversedBy explicitly names which property on the target entity to look up by
+				if (!empty($dependency->getInversedBy())) {
+					return $dependency->getInversedBy();
+					// No inversedBy defined — the target entity is almost always joined on its primary key
+				} else {
+					return $this->entityStore->getPrimaryKey($dependency->getTargetEntity()) ?? '';
+				}
+			}
+			
+			// OneToMany and other relation types are not resolved this way
+			return '';
 		}
 		
 		/**
