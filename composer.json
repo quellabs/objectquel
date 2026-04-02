@@ -34,7 +34,7 @@
     "ext-pdo": "*",
     "robmorgan/phinx": "^0.16",
     "cakephp/database": "^5.3",
-    "softcreatr/jsonpath": "^1.0",
+    "softcreatr/jsonpath": "^0.8",
     "quellabs/contracts": "^1",
     "quellabs/support": "^1",
     "quellabs/signal-hub": "^1",
