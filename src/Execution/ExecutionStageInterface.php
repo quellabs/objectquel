@@ -2,6 +2,8 @@
 	
 	namespace Quellabs\ObjectQuel\Execution;
 	
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRetrieve;
+	
 	/**
 	 * Interface for execution stages in a query execution plan.
 	 *
@@ -49,4 +51,10 @@
 		 * @return array Associative array of parameter names to values
 		 */
 		public function getStaticParams(): array;
+		
+		/**
+		 * Returns the query AST to execute for this stage
+		 * @return AstRetrieve The ObjectQuel query AST associated with this stage
+		 */
+		public function getQuery(): AstRetrieve;
 	}
