@@ -11,7 +11,6 @@
 	 *
 	 * Common stage types include:
 	 * - Database queries (ExecutionStage)
-	 * - Temporary table creation (ExecutionStageTempTable)
 	 * - In-memory processing of non-database ranges
 	 */
 	interface ExecutionStageInterface {

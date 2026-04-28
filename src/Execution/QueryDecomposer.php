@@ -53,39 +53,15 @@
 			$this->clearCache();
 			$plan = new ExecutionPlan();
 			
-			// 1. Extract and sort temp ranges by dependency
-			$temporaryRanges = $this->extractTemporaryRanges($query);
-			$sortedTempRanges = $this->sortByDependency($temporaryRanges);
-			
-			// 2. Recursively decompose each temp range
-			foreach($sortedTempRanges as $tempRange) {
-				// Recursively build plan for inner query
-				$innerPlan = $this->buildExecutionPlan($tempRange->getQuery(), $staticParams);
-				
-				// Generate unique table name
-				$tempTableName = 'temp_' . $tempRange->getName() . '_' . uniqid();
-				
-				// Convert from definition to materialized range
-				$tempRange->setTableName($tempTableName);
-				//$tempRange->setQuery(null);
-				
-				// Add plan as a stage
-				$plan->addStage(new ExecutionStageTempTable(
-					$tempRange->getName(),
-					$innerPlan,
-					$tempRange
-				));
-			}
-			
-			// 3. Build main query stage (treating temp tables as available ranges)
+			// Build main database query stage
 			$databaseStage = $this->createDatabaseExecutionStage($query, $staticParams);
 			
 			if ($databaseStage) {
 				$plan->addStage($databaseStage);
 			}
 			
-			// 4. JSON stages
-			foreach($query->getOtherRanges() as $otherRange) {
+			// JSON stages
+			foreach ($query->getOtherRanges() as $otherRange) {
 				$plan->addStage($this->createRangeExecutionStage($query, $otherRange, $staticParams));
 			}
 			

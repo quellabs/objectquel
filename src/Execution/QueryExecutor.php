@@ -23,7 +23,6 @@
 		private ObjectQuel $objectQuel;
 		private DatabaseQueryExecutor $databaseExecutor;
 		private JsonQueryExecutor $jsonExecutor;
-		private TempTableExecutor $tempTableExecutor;
 		
 		/**
 		 * Constructor
@@ -40,7 +39,6 @@
 			$this->planExecutor = new PlanExecutor($this, $conditionEvaluator);
 			$this->databaseExecutor = $databaseExecutor ?? new DatabaseQueryExecutor($entityManager);
 			$this->jsonExecutor = new JsonQueryExecutor($conditionEvaluator);
-			$this->tempTableExecutor = new TempTableExecutor($this->planExecutor, $this->connection);
 		}
 		
 		/**
@@ -75,22 +73,12 @@
 		 * @throws QuelException
 		 */
 		public function executeStage(ExecutionStageInterface $stage, array $initialParams = []): array {
-			// Handle temp table stages
-			if ($stage instanceof ExecutionStageTempTable) {
-				return $this->tempTableExecutor->execute($stage, $initialParams);
-			}
+			$queryType = $stage->getRange() instanceof AstRangeJsonSource ? 'json' : 'database';
 			
-			// Handle regular stages
-			if ($stage instanceof ExecutionStage) {
-				$queryType = $stage->getRange() instanceof AstRangeJsonSource ? 'json' : 'database';
-				
-				return match ($queryType) {
-					'json' => $this->jsonExecutor->execute($stage, $initialParams),
-					'database' => $this->databaseExecutor->execute($stage, $initialParams),
-				};
-			}
-			
-			throw new QuelException('Unknown stage type: ' . get_class($stage));
+			return match ($queryType) {
+				'json' => $this->jsonExecutor->execute($stage, $initialParams),
+				'database' => $this->databaseExecutor->execute($stage, $initialParams),
+			};
 		}
 		
 		/**

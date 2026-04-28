@@ -180,12 +180,13 @@
 				// Modify query to get only primary keys
 				$ast->setUnique(true);
 				$astIdentifier = $this->createPrimaryKeyIdentifier($primaryKeyInfo);
-				$ast->setValues([new AstAlias("primary", $astIdentifier)]);
+				$ast->setValues([new AstAlias("pk", $astIdentifier)]);
 				
 				// Execute modified query
 				$sql = $this->convertToSQL($ast, $parameters);
-				return $this->connection->GetCol($sql, $parameters);
 				
+				// Execute the query and return the first column
+				return array_column($this->connection->execute($sql, $parameters)->fetchAll(), 0);
 			} finally {
 				// Always restore original state
 				$ast->setValues($originalValues);

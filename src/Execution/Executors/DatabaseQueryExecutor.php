@@ -6,6 +6,7 @@
 	use Quellabs\ObjectQuel\EntityManager;
 	use Quellabs\ObjectQuel\DatabaseAdapter\DatabaseAdapter;
 	use Quellabs\ObjectQuel\Execution\ExecutionStage;
+	use Quellabs\ObjectQuel\Execution\ExecutionStageInterface;
 	use Quellabs\ObjectQuel\Execution\QueryOptimizer;
 	use Quellabs\ObjectQuel\Capabilities\PlatformCapabilities;
 	use Quellabs\ObjectQuel\Execution\QueryTransformer;
@@ -43,7 +44,7 @@
 		 * @return array
 		 * @throws QuelException
 		 */
-		public function execute(ExecutionStage $stage, array $initialParams = []): array {
+		public function execute(ExecutionStageInterface $stage, array $initialParams = []): array {
 			// Transform and optimize the query
 			$this->queryOptimizer->optimize($stage->getQuery());
 			$this->queryTransformer->transform($stage->getQuery(), $initialParams);

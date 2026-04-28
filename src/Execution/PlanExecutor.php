@@ -174,11 +174,6 @@
 					continue;
 				}
 				
-				// Skip temporary tables - they're internal only, not part of final output
-				if ($stage instanceof ExecutionStageTempTable) {
-					continue;
-				}
-				
 				// Skip everything that's not a ExecutionStage.
 				// There are no other stages at this moment, but this is to keep PhpStan happy
 				if (!($stage instanceof ExecutionStage)) {

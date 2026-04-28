@@ -5,6 +5,7 @@
 	use Flow\JSONPath\JSONPathException;
 	use Quellabs\ObjectQuel\Execution\ConditionEvaluator;
 	use Quellabs\ObjectQuel\Execution\ExecutionStage;
+	use Quellabs\ObjectQuel\Execution\ExecutionStageInterface;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRangeJsonSource;
 	use Quellabs\ObjectQuel\ObjectQuel\QuelException;
 	
@@ -25,7 +26,7 @@
 		 * @return array
 		 * @throws QuelException
 		 */
-		public function execute(ExecutionStage $stage, array $initialParams = []): array {
+		public function execute(ExecutionStageInterface $stage, array $initialParams = []): array {
 			// Load the JSON file and perform initial filtering
 			$contents = $this->loadAndFilterJsonFile($stage->getRange());
 			

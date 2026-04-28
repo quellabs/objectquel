@@ -73,10 +73,6 @@
 			$this->joinOptimizer->optimize($ast);
 			$this->rangeOptimizer->removeUnusedLeftJoinRanges($ast, false);
 			$this->JoinConditionFieldInjector->optimize($ast);
-			
-			// Normalize structure first
-			$this->rangeOptimizer->promoteEntityRangeToMainFrom($ast);
-			$this->rangeOptimizer->promoteWhereToEntityRange($ast);
 		}
 		
 		/**

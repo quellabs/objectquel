@@ -153,7 +153,7 @@
 			$tableNames = [];
 			
 			// Loop through all ranges (entities) in the retrieve query.
-			foreach($ranges as $range) {
+			foreach ($ranges as $range) {
 				// Skip JSON ranges
 				if (!$range instanceof AstRangeDatabase) {
 					continue;
@@ -167,11 +167,18 @@
 				// Get the name of the range
 				$rangeName = $range->getName();
 				
-				// Get the corresponding table name for the entity.
-				$owningTable = $this->resolveOwningTable($range);
-				
-				// Add the table name and alias to the list for the FROM clause.
-				$tableNames[] = "`{$owningTable}` as `{$rangeName}`";
+				// Subquery ranges are emitted as derived tables inline in the FROM clause.
+				// Regular ranges reference a physical table looked up from the entity store.
+				if ($range->getQuery() !== null) {
+					$subSQL = $this->convertToSQL($range->getQuery());
+					$tableNames[] = "({$subSQL}) as `{$rangeName}`";
+				} else {
+					// Get the corresponding table name for the entity.
+					$owningTable = $this->resolveOwningTable($range);
+					
+					// Add the table name and alias to the list for the FROM clause.
+					$tableNames[] = "`{$owningTable}` as `{$rangeName}`";
+				}
 			}
 			
 			// Return nothing if no tables are referenced
@@ -344,7 +351,7 @@
 			$ranges = $retrieve->getRanges();
 			
 			// Loop through all entities (ranges) and process those with join properties.
-			foreach($ranges as $range) {
+			foreach ($ranges as $range) {
 				// Skip the range if it is a json data-source
 				if (!$range instanceof AstRangeDatabase) {
 					continue;
@@ -356,7 +363,6 @@
 				}
 				
 				// Skip the range if the includeAsJoin flag is clear
-				// We will probably use this range as a subquery then
 				if (!$range->includeAsJoin()) {
 					continue;
 				}
@@ -364,20 +370,23 @@
 				// Get the name and join property of the entity.
 				$rangeName = $range->getName();
 				$joinProperty = $range->getJoinProperty();
-				
-				// Find the table associated with the entity.
-				$owningTable = $this->resolveOwningTable($range);
+				$joinType = $range->isRequired() ? "INNER" : "LEFT";
 				
 				// Convert the join condition to a SQL string.
 				// This involves translating the join condition to a format that SQL understands.
 				$visitor = new QuelToSQLConvertToString($this->entityStore, $this->parameters, "CONDITION", $this->platform);
 				$joinProperty->accept($visitor);
 				$joinColumn = $visitor->getResult();
-				$joinType = $range->isRequired() ? "INNER" : "LEFT";
 				
-				// Add the SQL JOIN instruction to the result.
-				// This results in a LEFT JOIN instruction for the relevant entity.
-				$result[] = "{$joinType} JOIN `{$owningTable}` as `{$rangeName}` ON {$joinColumn}";
+				// Subquery ranges are emitted as derived tables inline in the JOIN clause.
+				// Regular ranges reference a physical table looked up from the entity store.
+				if ($range->getQuery() !== null) {
+					$subSQL = $this->convertToSQL($range->getQuery());
+					$result[] = "{$joinType} JOIN ({$subSQL}) as `{$rangeName}` ON {$joinColumn}";
+				} else {
+					$owningTable = $this->resolveOwningTable($range);
+					$result[] = "{$joinType} JOIN `{$owningTable}` as `{$rangeName}` ON {$joinColumn}";
+				}
 			}
 			
 			// Convert the list of JOIN instructions to a single string.
