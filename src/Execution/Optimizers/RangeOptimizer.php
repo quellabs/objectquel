@@ -454,8 +454,9 @@
 		/**
 		 * Checks if an annotation matches the current join relationship for required relations.
 		 *
-		 * This method implements the core matching logic for determining when a LEFT JOIN
-		 * should be converted to an INNER JOIN based on ORM annotations.
+		 * This is the highest-impact method in the optimizer: a false positive here causes an
+		 * incorrect LEFT JOIN → INNER JOIN conversion, which silently drops rows from query
+		 * results. A false negative is safe (missed optimization), a false positive is not.
 		 *
 		 * Matching Criteria (ALL must be true):
 		 * 1. Annotation type: ManyToOne or OneToOne relationship
@@ -464,21 +465,37 @@
 		 *
 		 * 2. Target entity match: annotation.targetEntity === relatedEntityName
 		 *    - Ensures we're talking about the same destination entity
-		 *    - Prevents cross-wiring of different relationships
+		 *    - Prevents cross-wiring of different relationships to the same entity
 		 *
 		 * 3. Relation column match: annotation.relationColumn === ownPropertyName
-		 *    - The foreign key field must match the JOIN condition
-		 *    - Ensures semantic consistency between ORM and SQL
+		 *    - The foreign key property name on the owning entity must match the JOIN condition
+		 *    - Both sides operate in ORM property-name space, not database column-name space
+		 *    - INVARIANT: AstIdentifier::getName() returns the ORM property name, not the
+		 *      mapped column name. If the AST ever returns column names here, this comparison
+		 *      will silently fail to match even when the relationship is correct.
 		 *
 		 * 4. Inverse property match: annotation.inversedBy === relatedPropertyName
-		 *    - The back-reference field must match the other side of JOIN
-		 *    - Provides bidirectional relationship verification
+		 *    - inversedBy names the property on the related entity that references back
+		 *    - relatedPropertyName is derived from the JOIN condition's right-hand identifier
+		 *    - INVARIANT: This only matches when the JOIN condition uses the inverse-side
+		 *      property name (e.g. "id" on Department), not an arbitrary column. If a JOIN
+		 *      is written against a non-standard property on the related entity, this will
+		 *      not match, which is the correct safe behavior (no optimization applied).
+		 *
+		 * Known limitations:
+		 * - Composite keys: not supported. A JOIN on multiple columns cannot be expressed as
+		 *   a single binary equi-join and will be excluded earlier by shouldSetRangeRequired().
+		 * - Custom column mappings: if relationColumn in the annotation differs from the ORM
+		 *   property name used in the query, this match will fail. This is currently safe
+		 *   (false negative) but means some valid optimizations are missed.
+		 * - This method does NOT verify that a @RequiredRelation annotation is also present;
+		 *   that check is the caller's responsibility (see checkAndSetRangeRequired).
 		 *
 		 * @param mixed $annotation The annotation to check
-		 * @param string $relatedEntityName Entity being joined to
-		 * @param string $ownPropertyName Property on the owning side of the relationship
-		 * @param string $relatedPropertyName Property on the related side of the relationship
-		 * @return bool True if this annotation requires the relation
+		 * @param string $relatedEntityName Entity being joined to (ORM class name)
+		 * @param string $ownPropertyName ORM property name on the owning side of the relationship
+		 * @param string $relatedPropertyName ORM property name on the related side of the relationship
+		 * @return bool True if this annotation describes the current join relationship
 		 */
 		private function isMatchingRequiredRelation(
 			mixed  $annotation,
