@@ -13,9 +13,9 @@
 	/**
 	 * Visitor that checks if a temporary range reference contains any non-nullable fields.
 	 *
-	 * Used during outer join validation to ensure that fields from the inner side of an outer join
-	 * that are marked as non-nullable in the entity definition are not used in a context that could
-	 * produce nulls. Throws an exception when such a violation is detected.
+	 * Used during outer join validation to determine whether a LEFT JOIN to a subquery
+	 * can be safely converted to an INNER JOIN. A non-nullable field in the join condition
+	 * means the join can never produce a useful NULL row, making the conversion safe.
 	 */
 	class ContainsNonNullableFieldForRangeTemporary implements AstVisitorInterface {
 		
@@ -27,6 +27,9 @@
 		
 		/** @var EntityStore Store for accessing entity metadata and annotations */
 		private EntityStore $entityStore;
+		
+		/** @var bool True once a non-nullable field reference has been found */
+		private bool $nonNullableFound = false;
 		
 		/**
 		 * @param string $rangeName The temporary range name to validate
@@ -40,15 +43,16 @@
 		}
 		
 		/**
-		 * Visits an AST node to check for non-nullable field references.
-		 *
-		 * Only processes AstIdentifier nodes that reference the target temporary range.
-		 * When found, validates that the referenced field is nullable in its source definition.
-		 *
+		 * Visits an AST node and records whether it references a non-nullable field
+		 * from the target temporary range.
 		 * @param mixed $node The AST node to visit
-		 * @throws \Exception If a non-nullable field reference is found
 		 */
 		public function visitNode($node): void {
+			// Short-circuit once a match is already recorded
+			if ($this->nonNullableFound) {
+				return;
+			}
+			
 			// Only interested in identifiers that reference our temporary range
 			if (!($node instanceof AstIdentifier)) {
 				return;
@@ -74,10 +78,17 @@
 				return; // Field not found in retrieve list
 			}
 			
-			// Check if the retrieved expression is non-nullable
+			// Record if the retrieved expression is non-nullable
 			if ($this->isExpressionNonNullable($expression)) {
-				throw new \Exception("Found non-nullable field reference");
+				$this->nonNullableFound = true;
 			}
+		}
+		
+		/**
+		 * Returns true if a non-nullable field reference was found during traversal.
+		 */
+		public function isNonNullable(): bool {
+			return $this->nonNullableFound;
 		}
 		
 		/**
@@ -105,49 +116,53 @@
 		 * @return bool True if the expression is a non-nullable field reference
 		 */
 		private function isExpressionNonNullable(AstInterface $expression): bool {
-			// If it's a direct field reference (e.g., x.id)
-			if ($expression instanceof AstIdentifier) {
-				$rangeName = $expression->getRange()->getName();
-				$fieldName = $expression->getNext()->getName();
-				
-				// Find the source range in the subquery
-				$sourceRange = null;
-				foreach ($this->subquery->getRanges() as $range) {
-					if ($range->getName() === $rangeName) {
-						$sourceRange = $range;
-						break;
-					}
-				}
-				
-				if ($sourceRange === null) {
-					return false; // Can't determine, assume nullable
-				}
-				
-				// If source is an entity (not another subquery)
-				if ($sourceRange instanceof AstRangeDatabase && !$sourceRange->containsQuery()) {
-					$entityName = $sourceRange->getEntityName();
-					
-					if ($entityName === null || !$this->entityStore->exists($entityName)) {
-						return false; // No entity metadata available
-					}
-					
-					// Get annotations for this property
-					$annotations = $this->entityStore->getAnnotations($entityName);
-					
-					if (!isset($annotations[$fieldName])) {
-						return false; // Property not found
-					}
-					
-					// Check if the Column annotation marks this as non-nullable
-					foreach ($annotations[$fieldName] as $annotation) {
-						if ($annotation instanceof Column) {
-							return !$annotation->isNullable();
-						}
-					}
+			// Only check direct field references (e.g., x.id)
+			// For computed expressions, functions, or subquery references, assume nullable (safe default)
+			if (!$expression instanceof AstIdentifier) {
+				return false;
+			}
+			
+			$rangeName = $expression->getRange()->getName();
+			$fieldName = $expression->getNext()->getName();
+			
+			// Find the source range in the subquery
+			$sourceRange = null;
+			foreach ($this->subquery->getRanges() as $range) {
+				if ($range->getName() === $rangeName) {
+					$sourceRange = $range;
+					break;
 				}
 			}
 			
-			// For expressions, functions, subquery references, etc. - assume nullable (safe default)
+			if ($sourceRange === null) {
+				return false; // Can't determine, assume nullable
+			}
+			
+			// Only analyze entity ranges, not nested subqueries
+			if (!($sourceRange instanceof AstRangeDatabase) || $sourceRange->containsQuery()) {
+				return false;
+			}
+			
+			$entityName = $sourceRange->getEntityName();
+			
+			if ($entityName === null || !$this->entityStore->exists($entityName)) {
+				return false; // No entity metadata available
+			}
+			
+			// Get annotations for this property
+			$annotations = $this->entityStore->getAnnotations($entityName);
+			
+			if (!isset($annotations[$fieldName])) {
+				return false; // Property not found
+			}
+			
+			// Check if the Column annotation marks this as non-nullable
+			foreach ($annotations[$fieldName] as $annotation) {
+				if ($annotation instanceof Column) {
+					return !$annotation->isNullable();
+				}
+			}
+			
 			return false;
 		}
 	}

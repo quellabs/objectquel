@@ -12,11 +12,12 @@
 	 * Class ContainsCheckIsNullForRange
 	 *
 	 * AST visitor that detects when a null check (IS NULL/IS NOT NULL) is being
-	 * performed on a specific range/table alias. This is used for query validation
-	 * to prevent certain null checks on designated ranges.
+	 * performed on a specific range/table alias. This is used during JOIN optimization
+	 * to determine whether a range has explicit null checks that prevent LEFT JOIN
+	 * to INNER JOIN conversion.
 	 *
 	 * Implements the visitor pattern to traverse an Abstract Syntax Tree and
-	 * throws an exception when it finds a null check operation on the specified range.
+	 * records whether a null check operation on the specified range was found.
 	 */
 	class ContainsCheckIsNullForRange implements AstVisitorInterface {
 		
@@ -25,6 +26,9 @@
 		 * @var string
 		 */
 		private string $rangeName;
+		
+		/** @var bool True once a null check on the target range has been found */
+		private bool $found = false;
 		
 		/**
 		 * ContainsCheckIsNullForRange constructor.
@@ -35,12 +39,15 @@
 		}
 		
 		/**
-		 * Visits a node in the AST and checks if it's a null check on the target range.
+		 * Visits a node in the AST and records if it's a null check on the target range.
 		 * @param AstInterface $node The AST node to examine
-		 * @return void
-		 * @throws \Exception When a null check is found on the specified range
 		 */
 		public function visitNode(AstInterface $node): void {
+			// Short-circuit once a match is already recorded
+			if ($this->found) {
+				return;
+			}
+			
 			// Early return if this isn't a null check node
 			if (!$node instanceof AstCheckNull) {
 				return;
@@ -52,10 +59,17 @@
 				return;
 			}
 			
-			// Check if the identifier belongs to our target range
-			// If so, this is the prohibited null check we're looking for
+			// Record if the identifier belongs to our target range
 			if ($node->getExpression()->getRange()->getName() === $this->rangeName) {
-				throw new \Exception("Contains {$this->rangeName}");
+				$this->found = true;
 			}
+		}
+		
+		/**
+		 * Returns true if a null check on the target range was found during traversal.
+		 * @return bool
+		 */
+		public function isFound(): bool {
+			return $this->found;
 		}
 	}

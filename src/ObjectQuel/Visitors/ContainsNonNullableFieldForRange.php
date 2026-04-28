@@ -8,37 +8,51 @@
 	use Quellabs\ObjectQuel\ObjectQuel\AstVisitorInterface;
 	
 	/**
-	 * Throws an exception if the given range uses any non-nullable fields in the AST.
-	 * This is used to determine if a LEFT JOIN can be safely converted to INNER JOIN.
+	 * Visitor that checks if a range references any non-nullable fields in the AST.
+	 * Used to determine if a LEFT JOIN can be safely converted to an INNER JOIN.
 	 */
 	class ContainsNonNullableFieldForRange implements AstVisitorInterface {
 		
+		/** @var string Name of the range */
 		private string $rangeName;
+		
+		/** @var EntityStore EntityStore reference */
 		private EntityStore $entityStore;
 		
+		/** @var bool True once a non-nullable field reference has been found */
+		private bool $nonNullableFound = false;
+		
+		/**
+		 * Constructor
+		 * @param string $rangeName
+		 * @param EntityStore $entityStore
+		 */
 		public function __construct(string $rangeName, EntityStore $entityStore) {
 			$this->rangeName = $rangeName;
 			$this->entityStore = $entityStore;
 		}
 		
 		/**
-		 * Visits a node and checks if it's a non-nullable field reference for the target range.
+		 * Visits a node and records whether it is a non-nullable field reference for the target range.
 		 * @param AstInterface $node
-		 * @return void
-		 * @throws \Exception When a non-nullable field reference is found
 		 */
 		public function visitNode(AstInterface $node): void {
+			// Short-circuit once a match is already recorded
+			if ($this->nonNullableFound) {
+				return;
+			}
+			
 			// Skip if not an identifier
 			if (!$node instanceof AstIdentifier) {
 				return;
 			}
 			
-			// Skip if no range
+			// Skip if the node doesn't have a range
 			if ($node->getRange() === null) {
 				return;
 			}
 			
-			// Skip if no next
+			// Skip if there's no field name component
 			if ($node->getNext() === null) {
 				return;
 			}
@@ -63,9 +77,16 @@
 			$columnMap = $this->entityStore->getColumnMap($entityName);
 			$columnName = $columnMap[$fieldName] ?? $fieldName;
 			
-			// Check if this column is non-nullable
+			// Record if this column is non-nullable
 			if (isset($columnDefinitions[$columnName]) && !$columnDefinitions[$columnName]['nullable']) {
-				throw new \Exception("Contains non-nullable field {$this->rangeName}.{$fieldName}");
+				$this->nonNullableFound = true;
 			}
+		}
+		
+		/**
+		 * Returns true if a non-nullable field reference was found during traversal.
+		 */
+		public function isNonNullable(): bool {
+			return $this->nonNullableFound;
 		}
 	}

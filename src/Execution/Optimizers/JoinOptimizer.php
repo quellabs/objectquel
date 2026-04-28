@@ -74,7 +74,7 @@
 			
 			// If currently LEFT JOIN but has field references, consider INNER JOIN conversion
 			if (!$range->isRequired() && $hasFieldReferences && !$hasNullChecks) {
-				// Only convert if the referenced fields are non-nullable
+				// Only convert if the referenced fields are non-nullable.
 				// Non-nullable field references effectively filter out NULL rows anyway
 				$hasNonNullableReferences = $this->conditionListHasNonNullableReferences($ast, $range);
 				
@@ -86,70 +86,50 @@
 		}
 		
 		/**
-		 * Uses visitor pattern to detect NULL checks for the specified range.
-		 * Visitor throws exception when match is found (early termination pattern).
+		 * Detects whether the WHERE clause contains NULL checks for the specified range.
 		 * @param AstRetrieve $ast The query AST to search
 		 * @param AstRange $range The range to check for NULL conditions
 		 * @return bool True if NULL checks exist for this range
 		 */
 		private function rangeHasNullChecks(AstRetrieve $ast, AstRange $range): bool {
-			try {
-				// Visitor pattern with exception-based early termination
-				$visitor = new ContainsCheckIsNullForRange($range->getName());
-				$ast->getConditions()->accept($visitor);
-				// If we get here, no NULL checks were found
-				return false;
-			} catch (\Exception $e) {
-				// Exception indicates NULL check was found
-				return true;
-			}
+			$visitor = new ContainsCheckIsNullForRange($range->getName());
+			$ast->getConditions()->accept($visitor);
+			return $visitor->isFound();
 		}
 		
 		/**
-		 * Determines if fields from the specified range are referenced in WHERE clause.
-		 *
+		 * Determines if fields from the specified range are referenced in the WHERE clause.
 		 * @param AstRetrieve $ast The query AST to search
 		 * @param AstRange $range The range to check for field references
 		 * @return bool True if any fields from this range are referenced
 		 */
 		private function conditionsListHasFieldReferences(AstRetrieve $ast, AstRange $range): bool {
-			try {
-				// Use visitor pattern to traverse condition tree
-				$visitor = new UsesRange($range->getName());
-				$ast->getConditions()->accept($visitor);
-				// No references found if we reach here
-				return false;
-			} catch (\Exception $e) {
-				// Exception indicates field reference was found
-				return true;
-			}
+			$visitor = new UsesRange($range->getName());
+			$ast->getConditions()->accept($visitor);
+			return $visitor->isFound();
 		}
 		
 		/**
-		 * Identifies whether WHERE conditions reference non-nullable fields.
+		 * Identifies whether WHERE conditions reference non-nullable fields from the range.
 		 * Non-nullable field references can affect join elimination.
 		 * @param AstRetrieve $ast The query AST to analyze
 		 * @param AstRange $range The range to check for non-nullable field usage
 		 * @return bool True if non-nullable fields are referenced
 		 */
 		private function conditionListHasNonNullableReferences(AstRetrieve $ast, AstRange $range): bool {
-			try {
-				// For temporary ranges (subqueries), use custom visitor
-				if ($range instanceof AstRangeDatabase && $range->containsQuery()) {
-					$visitor = new ContainsNonNullableFieldForRangeTemporary(
-						$range->getName(),
-						$range->getQuery(),
-						$this->entityStore
-					);
-				} else {
-					// Regular entity ranges use normal entity metadata
-					$visitor = new ContainsNonNullableFieldForRange($range->getName(), $this->entityStore);
-				}
-				
-				$ast->getConditions()->accept($visitor);
-				return false;
-			} catch (\Exception $e) {
-				return true;
+			// For temporary ranges (subqueries), use custom visitor
+			if ($range instanceof AstRangeDatabase && $range->containsQuery()) {
+				$visitor = new ContainsNonNullableFieldForRangeTemporary(
+					$range->getName(),
+					$range->getQuery(),
+					$this->entityStore
+				);
+			} else {
+				// Regular entity ranges use normal entity metadata
+				$visitor = new ContainsNonNullableFieldForRange($range->getName(), $this->entityStore);
 			}
+			
+			$ast->getConditions()->accept($visitor);
+			return $visitor->isNonNullable();
 		}
 	}
