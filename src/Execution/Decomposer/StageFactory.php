@@ -48,7 +48,7 @@
 		 * @return AstRange[]
 		 */
 		public function findDatabaseSourceRanges(AstRetrieve $query): array {
-			return array_filter($query->getRanges(), function($range) {
+			return array_filter($query->getRanges(), function ($range) {
 				return $range instanceof AstRangeDatabase;
 			});
 		}
@@ -58,7 +58,7 @@
 		 * @return array<AstRangeDatabase>
 		 */
 		public function extractTemporaryRanges(AstRetrieve $query): array {
-			return array_filter($query->getRanges(), function($range) {
+			return array_filter($query->getRanges(), function ($range) {
 				return
 					$range instanceof AstRangeDatabase &&
 					$range->getQuery() !== null;
@@ -73,8 +73,8 @@
 			$result = [];
 			$databaseRanges = $this->findDatabaseSourceRanges($query);
 			
-			foreach($query->getValues() as $value) {
-				foreach($databaseRanges as $range) {
+			foreach ($query->getValues() as $value) {
+				foreach ($databaseRanges as $range) {
 					if ($this->analyzer->doesConditionInvolveRangeCached($value, $range)) {
 						$result[] = $value;
 					}
@@ -91,7 +91,7 @@
 		public function extractProjectionsForRange(AstRetrieve $query, AstRange $range): array {
 			$result = [];
 			
-			foreach($query->getValues() as $value) {
+			foreach ($query->getValues() as $value) {
 				if ($this->analyzer->doesConditionInvolveRangeCached($value, $range)) {
 					$result[] = $value;
 				}
@@ -147,10 +147,57 @@
 				
 				if ($joinCondition !== null) {
 					$range->setJoinProperty($joinCondition);
+					continue;
 				}
 				
-				// If no join condition exists, the ranges are disconnected. Leave the
-				// range as-is — a cross join is correct and FROM order is irrelevant.
+				// No join condition was found. For a cross join, FROM order is irrelevant
+				// so we can leave things as-is. For a LEFT JOIN, however, putting the
+				// temp-table range first would make it the driving table and invert the
+				// join direction, producing wrong results. In that case we reorder the
+				// range list so that a real database table (one without a joinProperty
+				// and not itself a temp-table range) comes first.
+				if ($range->isRequired()) {
+					// INNER JOIN / cross join — FROM order does not affect correctness
+					continue;
+				}
+				
+				// Find the first non-temp database range that also lacks a joinProperty
+				// (i.e. another candidate for the FROM position).
+				$ranges = $dbQuery->getRanges();
+				$swapIndex = null;
+				
+				foreach ($ranges as $index => $candidate) {
+					if (!($candidate instanceof AstRangeDatabase)) {
+						continue;
+					}
+					
+					if (in_array($candidate->getName(), $tempRangeNames, true)) {
+						continue;
+					}
+					
+					if ($candidate->getJoinProperty() !== null) {
+						continue;
+					}
+					
+					$swapIndex = $index;
+					break;
+				}
+				
+				if ($swapIndex === null) {
+					// No real database table without a joinProperty exists — the temp table
+					// legitimately becomes the FROM, nothing to reorder.
+					continue;
+				}
+				
+				// Move the real database table to the front of the range list so that
+				// QuelToSQL::getFrom() picks it as the FROM. The temp-table range stays
+				// in the list without a joinProperty, which QuelToSQL will emit as a
+				// comma-separated FROM entry (implicit cross join) — semantically correct
+				// since there is no join condition connecting them anyway.
+				$realTable = $ranges[$swapIndex];
+				unset($ranges[$swapIndex]);
+				array_unshift($ranges, $realTable);
+				$dbQuery->setRanges(array_values($ranges));
 			}
 		}
 		
