@@ -5,17 +5,9 @@
 	use Quellabs\ObjectQuel\Execution\Decomposer\ConditionAnalyzer;
 	use Quellabs\ObjectQuel\Execution\Decomposer\ConditionFilter;
 	use Quellabs\ObjectQuel\Execution\Decomposer\StageFactory;
-	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstAlias;
-	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstBinaryOperator;
-	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstExpression;
-	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstFactor;
-	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstIdentifier;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRangeDatabase;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRangeJsonSource;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRetrieve;
-	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstTerm;
-	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstUnaryOperation;
-	use Quellabs\ObjectQuel\ObjectQuel\AstInterface;
 	use Quellabs\ObjectQuel\ObjectQuel\QuelException;
 	
 	/**
@@ -81,16 +73,46 @@
 			// dependency edges can be registered correctly.
 			$tempRanges = $this->stageFactory->extractTemporaryRanges($query);
 			
-			// Sort temp ranges by their interdependencies (a temp range's inner query
+			// Sort temp ranges by their inter-dependencies (a temp range's inner query
 			// might reference another temp range; it must come after its dependency).
 			if (!empty($tempRanges)) {
 				$tempRanges = $this->sortByDependency($tempRanges);
 			}
 			
-			// Create TempTableStages for external-source ranges.
-			// Track which temp range names have a corresponding TempTableStage so we
-			// can register dependencies on the outer database stage.
-			$tempTableStageNames = []; // rangeName → TempTableStage name
+			// Build TempTableStages and register inter-stage dependencies
+			$tempTableStageNames = $this->buildTempTableStages($plan, $tempRanges, $staticParams);
+			
+			// Build the main database stage and wire its dependencies on all TempTableStages
+			$this->buildDatabaseStage($plan, $query, $staticParams, $tempTableStageNames);
+			
+			// JSON stages
+			foreach ($query->getOtherRanges() as $otherRange) {
+				$plan->addStage($this->stageFactory->createRangeExecutionStage($query, $otherRange, $staticParams));
+			}
+			
+			return $plan;
+		}
+		
+		// =========================================================================
+		// Plan construction helpers
+		// =========================================================================
+		
+		/**
+		 * Creates TempTableStages for all external-source temporary ranges and registers
+		 * their inter-dependencies in the plan.
+		 *
+		 * Returns a map of rangeName → TempTableStage name so the database stage can
+		 * declare its own dependencies on them.
+		 *
+		 * @param ExecutionPlan $plan
+		 * @param AstRangeDatabase[] $tempRanges Already dependency-sorted temp ranges
+		 * @param array $staticParams
+		 * @return string[] Map of rangeName → TempTableStage name
+		 */
+		private function buildTempTableStages(ExecutionPlan $plan, array $tempRanges, array $staticParams): array {
+			// rangeName → TempTableStage name, built up as stages are added so inter-stage
+			// dependency checks can refer to stages that were created earlier in the loop.
+			$tempTableStageNames = [];
 			
 			foreach ($tempRanges as $tempRange) {
 				if (!$this->rangeQueryContainsExternalSource($tempRange)) {
@@ -99,47 +121,53 @@
 				}
 				
 				$tempStageName = uniqid('tmp_stage_');
-				$tempStage = new TempTableStage($tempStageName, $tempRange, $staticParams);
-				$plan->addStage($tempStage);
+				$plan->addStage(new TempTableStage($tempStageName, $tempRange, $staticParams));
 				$tempTableStageNames[$tempRange->getName()] = $tempStageName;
 				
 				// If this TempTableStage itself depends on another TempTableStage
 				// (because its inner query references another external-source range),
 				// register that dependency so ordering is preserved.
-				foreach ($tempRanges as $otherTempRange) {
-					if ($otherTempRange->getName() === $tempRange->getName()) {
-						continue;
-					}
-					
-					if (isset($tempTableStageNames[$otherTempRange->getName()])) {
-						$innerQuery = $tempRange->getQuery();
+				$innerQuery = $tempRange->getQuery();
+				
+				if ($innerQuery !== null) {
+					foreach ($tempTableStageNames as $otherRangeName => $otherStageName) {
+						if ($otherRangeName === $tempRange->getName()) {
+							continue;
+						}
 						
-						if ($innerQuery !== null && $this->innerQueryReferencesRange($innerQuery, $otherTempRange->getName())) {
-							$plan->addDependency($tempStageName, $tempTableStageNames[$otherTempRange->getName()]);
+						if ($this->innerQueryReferencesRange($innerQuery, $otherRangeName)) {
+							$plan->addDependency($tempStageName, $otherStageName);
 						}
 					}
 				}
 			}
 			
-			// Build main database query stage
+			return $tempTableStageNames;
+		}
+		
+		/**
+		 * Creates the main database ExecutionStage and registers its dependencies on
+		 * every TempTableStage that must be materialised before it runs.
+		 *
+		 * @param ExecutionPlan $plan
+		 * @param AstRetrieve $query
+		 * @param array $staticParams
+		 * @param string[] $tempTableStageNames Map of rangeName → TempTableStage name
+		 */
+		private function buildDatabaseStage(ExecutionPlan $plan, AstRetrieve $query, array $staticParams, array $tempTableStageNames): void {
 			$databaseStage = $this->stageFactory->createDatabaseExecutionStage($query, $staticParams, array_keys($tempTableStageNames));
 			
-			if ($databaseStage) {
-				$plan->addStage($databaseStage);
-				
-				// The main database stage depends on every TempTableStage, because
-				// those must be fully materialised before the outer SQL can execute.
-				foreach ($tempTableStageNames as $rangeName => $tempStageName) {
-					$plan->addDependency($databaseStage->getName(), $tempStageName);
-				}
+			if ($databaseStage === null) {
+				return;
 			}
 			
-			// JSON stages
-			foreach ($query->getOtherRanges() as $otherRange) {
-				$plan->addStage($this->stageFactory->createRangeExecutionStage($query, $otherRange, $staticParams));
-			}
+			$plan->addStage($databaseStage);
 			
-			return $plan;
+			// The main database stage depends on every TempTableStage, because
+			// those must be fully materialised before the outer SQL can execute.
+			foreach ($tempTableStageNames as $rangeName => $tempStageName) {
+				$plan->addDependency($databaseStage->getName(), $tempStageName);
+			}
 		}
 		
 		// =========================================================================
@@ -156,6 +184,9 @@
 		 *
 		 * Extensibility: add new external source types (e.g. AstRangeCsvSource) to
 		 * the instanceof check inside the loop.
+		 *
+		 * Recursion safety: the AST is guaranteed acyclic by the parser, so no depth
+		 * guard is needed.
 		 *
 		 * @param AstRangeDatabase $range The range whose embedded query is to be checked
 		 * @return bool True if any range in the inner query (recursively) is external
@@ -207,12 +238,24 @@
 		// =========================================================================
 		
 		/**
-		 * Sorts temporary ranges by their dependencies.
-		 * Since temp ranges can't reference other temp ranges in their range declarations,
-		 * we only need to check if inner queries reference other temp ranges in WHERE/retrieve.
+		 * Topologically sorts temporary ranges so that each range appears after all
+		 * ranges it depends on, using Kahn's algorithm (BFS-based).
+		 *
+		 * Assumptions:
+		 *   - The dependency graph is acyclic. A QuelException is thrown if a cycle is
+		 *     detected, which indicates a query construction error rather than user input.
+		 *   - Temp ranges cannot reference other temp ranges in their range declarations;
+		 *     dependencies are detected only in WHERE conditions and retrieve expressions.
+		 *
+		 * Ordering guarantees:
+		 *   - All dependencies of a range appear before it in the output.
+		 *   - Among ranges at the same dependency depth (no ordering constraint between
+		 *     them), output order follows insertion order of the input array. This is
+		 *     deterministic but arbitrary — any valid topological order is correct here.
+		 *
 		 * @param AstRangeDatabase[] $temporaryRanges
 		 * @return AstRangeDatabase[] Sorted array where dependencies come before ranges that use them
-		 * @throws QuelException If circular dependency detected
+		 * @throws QuelException If a circular dependency is detected
 		 */
 		protected function sortByDependency(array $temporaryRanges): array {
 			// Build a name → range lookup so we can retrieve ranges by name during sorting
@@ -227,19 +270,28 @@
 			$dependencies = [];
 			
 			foreach ($temporaryRanges as $range) {
-				$rangeName = $range->getName();
-				$deps = $this->findTempRangeDependenciesInConditions(
+				$dependencies[$range->getName()] = $this->analyzer->findTempRangeDependencies(
 					$range->getQuery(),
 					array_keys($rangesByName)
 				);
-				$dependencies[$rangeName] = $deps;
+			}
+			
+			// Precompute a reverse adjacency list: dependents[$dep] = list of ranges that depend on $dep.
+			// This lets the main loop decrement in-degrees in O(k) per step rather than O(n) per step,
+			// reducing the overall sort from O(n²) to O(n + e) where e is the number of dependency edges.
+			$dependents = [];
+			
+			foreach ($dependencies as $rangeName => $deps) {
+				foreach ($deps as $dep) {
+					$dependents[$dep][] = $rangeName;
+				}
 			}
 			
 			// Kahn's algorithm: compute in-degree (number of unresolved dependencies)
 			// for each range. Ranges with in-degree 0 have no dependencies and can run first.
 			$inDegree = [];
 			
-			foreach ($rangesByName as $name => $range) {
+			foreach ($rangesByName as $name => $_) {
 				$inDegree[$name] = count($dependencies[$name]);
 			}
 			
@@ -260,15 +312,12 @@
 				$sorted[] = $rangesByName[$current];
 				
 				// Decrement the in-degree of every range that depended on $current.
-				// If a range's in-degree reaches 0, all its dependencies are now scheduled
-				// and it is ready to run.
-				foreach ($dependencies as $rangeName => $deps) {
-					if (in_array($current, $deps)) {
-						$inDegree[$rangeName]--;
-						
-						if ($inDegree[$rangeName] === 0) {
-							$queue[] = $rangeName;
-						}
+				// Using the precomputed reverse adjacency list avoids scanning all dependencies.
+				foreach ($dependents[$current] ?? [] as $dependent) {
+					$inDegree[$dependent]--;
+					
+					if ($inDegree[$dependent] === 0) {
+						$queue[] = $dependent;
 					}
 				}
 			}
@@ -279,74 +328,5 @@
 			}
 			
 			return $sorted;
-		}
-		
-		/**
-		 * Finds temp range names referenced in WHERE conditions and retrieve expressions
-		 * @param AstRetrieve $query
-		 * @param array $tempRangeNames List of temp range names to check for
-		 * @return array Temp range names this query depends on
-		 */
-		protected function findTempRangeDependenciesInConditions(AstRetrieve $query, array $tempRangeNames): array {
-			$dependencies = [];
-			
-			// Check WHERE conditions
-			if ($query->getConditions() !== null) {
-				$deps = $this->extractRangeNamesFromAst($query->getConditions(), $tempRangeNames);
-				$dependencies = array_merge($dependencies, $deps);
-			}
-			
-			// Check retrieve expressions
-			foreach ($query->getValues() as $value) {
-				$deps = $this->extractRangeNamesFromAst($value, $tempRangeNames);
-				$dependencies = array_merge($dependencies, $deps);
-			}
-			
-			return array_unique($dependencies);
-		}
-		
-		/**
-		 * Recursively extracts temp range names from an AST node
-		 * @param AstInterface $node
-		 * @param array $tempRangeNames
-		 * @return array
-		 */
-		protected function extractRangeNamesFromAst(AstInterface $node, array $tempRangeNames): array {
-			$found = [];
-			
-			// An identifier is a leaf node that directly references a range (e.g. x.id).
-			// If its range is one of the temp ranges we're tracking, record it.
-			if ($node instanceof AstIdentifier) {
-				$range = $node->getRange();
-				
-				if ($range !== null && in_array($range->getName(), $tempRangeNames)) {
-					$found[] = $range->getName();
-				}
-			}
-			
-			// Binary nodes (comparisons, logical operators, arithmetic) have two children.
-			// Recurse into both sides to find any temp range references within.
-			if ($node instanceof AstBinaryOperator ||
-				$node instanceof AstExpression ||
-				$node instanceof AstTerm ||
-				$node instanceof AstFactor) {
-				$found = array_merge(
-					$found,
-					$this->extractRangeNamesFromAst($node->getLeft(), $tempRangeNames),
-					$this->extractRangeNamesFromAst($node->getRight(), $tempRangeNames)
-				);
-			}
-			
-			// Unary nodes (NOT, IS NULL, etc.) and aliases wrap a single inner expression.
-			// Recurse into that expression to continue the search.
-			if ($node instanceof AstUnaryOperation || $node instanceof AstAlias) {
-				$found = array_merge(
-					$found,
-					$this->extractRangeNamesFromAst($node->getExpression(), $tempRangeNames)
-				);
-			}
-			
-			// Add other AST node types as needed
-			return $found;
 		}
 	}

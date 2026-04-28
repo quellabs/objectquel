@@ -16,6 +16,7 @@
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstMax;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstMin;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRange;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRetrieve;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstSearch;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstSearchScore;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstSum;
@@ -32,12 +33,20 @@
 	 * This class is a dependency of ConditionFilter and StageFactory. It carries
 	 * the cache so that a single cache lifetime spans an entire plan-build pass —
 	 * clearCache() should be called at the start of each buildExecutionPlan() call.
+	 *
+	 * Recursion safety:
+	 *   The recursive methods (rangeNamesFromAst, containsAnyRangeReference, etc.)
+	 *   assume the AST is acyclic, which is guaranteed by the parser. No depth guard
+	 *   is therefore needed.
 	 */
 	class ConditionAnalyzer {
 		
 		/**
 		 * Cache of results for expensive does-condition-involve-range checks.
 		 * Keyed by spl_object_hash pairs to avoid redundant AST traversals.
+		 * Lifetime is strictly per plan-build pass: clearCache() is called at the
+		 * start of every buildExecutionPlan() call, so destroyed-and-reused objects
+		 * cannot produce stale cache hits.
 		 * @var array
 		 */
 		private array $cache = [];
@@ -50,6 +59,87 @@
 		public function clearCache(): void {
 			$this->cache = [];
 		}
+		
+		// =========================================================================
+		// Temp-range dependency scanning
+		// =========================================================================
+		
+		/**
+		 * Finds temp range names referenced in WHERE conditions and retrieve expressions.
+		 * Used by QueryDecomposer to build the inter-temp-range dependency graph.
+		 * @param AstRetrieve $query
+		 * @param string[] $tempRangeNames List of temp range names to check for
+		 * @return string[] Temp range names this query depends on
+		 */
+		public function findTempRangeDependencies(AstRetrieve $query, array $tempRangeNames): array {
+			$dependencies = [];
+			
+			// Check WHERE conditions
+			if ($query->getConditions() !== null) {
+				$deps = $this->rangeNamesFromAst($query->getConditions(), $tempRangeNames);
+				$dependencies = array_merge($dependencies, $deps);
+			}
+			
+			// Check retrieve expressions
+			foreach ($query->getValues() as $value) {
+				$deps = $this->rangeNamesFromAst($value, $tempRangeNames);
+				$dependencies = array_merge($dependencies, $deps);
+			}
+			
+			return array_unique($dependencies);
+		}
+		
+		/**
+		 * Recursively extracts temp range names from an AST node.
+		 * Private implementation detail of findTempRangeDependencies — callers should
+		 * use that method rather than calling this one directly.
+		 * @param AstInterface $node
+		 * @param string[] $tempRangeNames
+		 * @return string[]
+		 */
+		private function rangeNamesFromAst(AstInterface $node, array $tempRangeNames): array {
+			$found = [];
+			
+			// An identifier is a leaf node that directly references a range (e.g. x.id).
+			// If its range is one of the temp ranges we're tracking, record it.
+			if ($node instanceof AstIdentifier) {
+				$range = $node->getRange();
+				
+				if ($range !== null && in_array($range->getName(), $tempRangeNames)) {
+					$found[] = $range->getName();
+				}
+			}
+			
+			// Binary nodes (comparisons, logical operators, arithmetic) have two children.
+			// Recurse into both sides to find any temp range references within.
+			if ($node instanceof AstBinaryOperator ||
+				$node instanceof AstExpression ||
+				$node instanceof AstTerm ||
+				$node instanceof AstFactor) {
+				$found = array_merge(
+					$found,
+					$this->rangeNamesFromAst($node->getLeft(), $tempRangeNames),
+					$this->rangeNamesFromAst($node->getRight(), $tempRangeNames)
+				);
+			}
+			
+			// Unary nodes (NOT, IS NULL, etc.) and aliases wrap a single inner expression.
+			// Recurse into that expression to continue the search.
+			if ($node instanceof AstUnaryOperation || $node instanceof AstAlias) {
+				$found = array_merge(
+					$found,
+					$this->rangeNamesFromAst($node->getExpression(), $tempRangeNames)
+				);
+			}
+			
+			// Add other AST node types as needed
+			
+			return $found;
+		}
+		
+		// =========================================================================
+		// Range-reference analysis
+		// =========================================================================
 		
 		/**
 		 * Determines if an AST node involves any data range (database table or other data source).
@@ -164,7 +254,7 @@
 		/**
 		 * Checks if a condition involves any of the specified ranges
 		 * @param AstInterface $condition The condition to check
-		 * @param array $ranges Array of AstRange objects
+		 * @param AstRange[] $ranges Array of AstRange objects
 		 * @return bool True if the condition involves any of the ranges
 		 */
 		public function hasReferenceToAnyRange(AstInterface $condition, array $ranges): bool {
