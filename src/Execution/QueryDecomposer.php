@@ -31,6 +31,25 @@
 	/**
 	 * QueryDecomposer is responsible for breaking down complex queries into simpler
 	 * execution stages that can be managed by an ExecutionPlan.
+	 *
+	 * Temp-table detection:
+	 *   When a subquery range (AstRangeDatabase with getQuery() !== null) contains
+	 *   any external data source (JSON, and in the future CSV etc.), it cannot be
+	 *   passed to MySQL as an inline subquery. Instead, QueryDecomposer:
+	 *     1. Creates a TempTableStage for the range, which TempTableExecutor will
+	 *        materialise before the outer query runs.
+	 *     2. Creates the outer ExecutionStage as normal — by the time it executes,
+	 *        the AstRangeDatabase will have been mutated to reference the temp table.
+	 *     3. Registers a dependency edge so the TempTableStage always runs first.
+	 *
+	 * FROM determination for temp-table ranges:
+	 *   QuelToSQL picks the FROM table as the first AstRangeDatabase with no joinProperty.
+	 *   If a temp-table range also lacks a joinProperty, it would incorrectly become the
+	 *   FROM instead of the real database table. To prevent this, promoteTempTableRanges()
+	 *   is called on the cloned database query before it is handed to QuelToSQL: it finds
+	 *   any temp-table range without a joinProperty and promotes it to a JOIN by extracting
+	 *   a join condition from the WHERE clause. If no join condition exists, the ranges are
+	 *   genuinely disconnected (cross join) and the ordering doesn't matter.
 	 */
 	class QueryDecomposer {
 		
@@ -44,20 +63,81 @@
 		 * Decomposes a query into separate execution stages for different data sources.
 		 * This function takes a mixed-source query and creates an execution plan with
 		 * appropriate stages for database and JSON sources.
+		 *
+		 * Stage construction order:
+		 *   1. For each temporary range (AstRangeDatabase with embedded subquery):
+		 *      a. If it contains external sources → add a TempTableStage first, then
+		 *         register a dependency so the outer database stage runs after it.
+		 *      b. If it is pure SQL → leave as-is (inline subquery handled by QuelToSQL).
+		 *   2. Add the main database stage (which references temp tables as plain tables
+		 *      by the time it executes, because all TempTableStages will have run first).
+		 *   3. Add JSON/other non-database range stages (existing behaviour).
+		 *
 		 * @param AstRetrieve $query The ObjectQuel query to decompose
 		 * @param array $staticParams Optional static parameters for the query
-		 * @return ExecutionPlan|null The execution plan containing all stages, or null if decomposition failed
+		 * @return ExecutionPlan The execution plan containing all stages
 		 * @throws QuelException If the query cannot be properly decomposed
 		 */
-		public function buildExecutionPlan(AstRetrieve $query, array $staticParams = []): ?ExecutionPlan {
+		public function buildExecutionPlan(AstRetrieve $query, array $staticParams = []): ExecutionPlan {
 			$this->clearCache();
 			$plan = new ExecutionPlan();
 			
+			// Detect which temporary ranges need materialisation as real temp tables.
+			// We must process these BEFORE creating the main database stage so that
+			// dependency edges can be registered correctly.
+			$tempRanges = $this->extractTemporaryRanges($query);
+			
+			// Sort temp ranges by their inter-dependencies (a temp range's inner query
+			// might reference another temp range; it must come after its dependency).
+			if (!empty($tempRanges)) {
+				$tempRanges = $this->sortByDependency($tempRanges);
+			}
+			
+			// Create TempTableStages for external-source ranges.
+			// Track which temp range names have a corresponding TempTableStage so we
+			// can register dependencies on the outer database stage.
+			$tempTableStageNames = []; // rangeName → TempTableStage name
+			
+			foreach ($tempRanges as $tempRange) {
+				if (!$this->rangeQueryContainsExternalSource($tempRange)) {
+					// Pure SQL subquery — QuelToSQL handles it inline, no stage needed
+					continue;
+				}
+				
+				$tempStageName = uniqid('tmp_stage_');
+				$tempStage = new TempTableStage($tempStageName, $tempRange, $staticParams);
+				$plan->addStage($tempStage);
+				$tempTableStageNames[$tempRange->getName()] = $tempStageName;
+				
+				// If this TempTableStage itself depends on another TempTableStage
+				// (because its inner query references another external-source range),
+				// register that dependency so ordering is preserved.
+				foreach ($tempRanges as $otherTempRange) {
+					if ($otherTempRange->getName() === $tempRange->getName()) {
+						continue;
+					}
+					
+					if (isset($tempTableStageNames[$otherTempRange->getName()])) {
+						$innerQuery = $tempRange->getQuery();
+						
+						if ($innerQuery !== null && $this->innerQueryReferencesRange($innerQuery, $otherTempRange->getName())) {
+							$plan->addDependency($tempStageName, $tempTableStageNames[$otherTempRange->getName()]);
+						}
+					}
+				}
+			}
+			
 			// Build main database query stage
-			$databaseStage = $this->createDatabaseExecutionStage($query, $staticParams);
+			$databaseStage = $this->createDatabaseExecutionStage($query, $staticParams, array_keys($tempTableStageNames));
 			
 			if ($databaseStage) {
 				$plan->addStage($databaseStage);
+				
+				// The main database stage depends on every TempTableStage, because
+				// those must be fully materialised before the outer SQL can execute.
+				foreach ($tempTableStageNames as $rangeName => $tempStageName) {
+					$plan->addDependency($databaseStage->getName(), $tempStageName);
+				}
 			}
 			
 			// JSON stages
@@ -67,14 +147,134 @@
 			
 			return $plan;
 		}
-
+		
+		// =========================================================================
+		// External-source detection
+		// =========================================================================
+		
+		/**
+		 * Recursively determines whether a temporary range's embedded query contains
+		 * any external (non-database) data source, such as AstRangeJsonSource.
+		 *
+		 * This is the primary gate for the temp-table materialisation path. A range
+		 * that returns false here is a pure SQL subquery and is left to QuelToSQL to
+		 * handle as an inline derived table.
+		 *
+		 * Extensibility: add new external source types (e.g. AstRangeCsvSource) to
+		 * the instanceof check inside the loop.
+		 *
+		 * @param AstRangeDatabase $range The range whose embedded query is to be checked
+		 * @return bool True if any range in the inner query (recursively) is external
+		 */
+		protected function rangeQueryContainsExternalSource(AstRangeDatabase $range): bool {
+			$innerQuery = $range->getQuery();
+			
+			if ($innerQuery === null) {
+				return false;
+			}
+			
+			foreach ($innerQuery->getRanges() as $innerRange) {
+				// Direct external source — JSON today, others in the future
+				if ($innerRange instanceof AstRangeJsonSource) {
+					return true;
+				}
+				
+				// Nested subquery: recurse to check its ranges as well
+				if ($innerRange instanceof AstRangeDatabase && $innerRange->getQuery() !== null) {
+					if ($this->rangeQueryContainsExternalSource($innerRange)) {
+						return true;
+					}
+				}
+			}
+			
+			return false;
+		}
+		
+		/**
+		 * Checks whether an inner query's ranges include a reference to a specific
+		 * range name. Used to detect inter-TempTableStage dependencies when one
+		 * external-source subquery depends on another.
+		 * @param AstRetrieve $innerQuery
+		 * @param string $rangeName The range name to look for
+		 * @return bool
+		 */
+		protected function innerQueryReferencesRange(AstRetrieve $innerQuery, string $rangeName): bool {
+			foreach ($innerQuery->getRanges() as $range) {
+				if ($range->getName() === $rangeName) {
+					return true;
+				}
+			}
+			
+			return false;
+		}
+		
+		// =========================================================================
+		// Temp-table FROM promotion
+		// =========================================================================
+		
+		/**
+		 * Ensures that no temp-table range incorrectly ends up as the FROM table.
+		 *
+		 * QuelToSQL::getFrom() picks the FROM by finding the first AstRangeDatabase
+		 * with no joinProperty. If a temp-table range also lacks a joinProperty, it
+		 * would become the FROM instead of the real database table, which is wrong.
+		 *
+		 * This method promotes any such range to a JOIN by extracting a join condition
+		 * from the WHERE clause. If no join condition exists in the WHERE (the ranges
+		 * are genuinely disconnected), no promotion is possible and the ordering is
+		 * left as-is — a cross join is the only semantically valid option in that case,
+		 * and which table is FROM makes no difference.
+		 *
+		 * This operates on the cloned query inside createDatabaseExecutionStage,
+		 * never on the original AST.
+		 *
+		 * @param AstRetrieve $dbQuery The cloned database query to modify in place
+		 * @param string[] $tempRangeNames Names of ranges that will become temp tables
+		 */
+		protected function promoteTempTableRanges(AstRetrieve $dbQuery, array $tempRangeNames): void {
+			if (empty($tempRangeNames)) {
+				return;
+			}
+			
+			foreach ($dbQuery->getRanges() as $range) {
+				if (!($range instanceof AstRangeDatabase)) {
+					continue;
+				}
+				
+				// Only act on temp-table ranges that currently have no joinProperty.
+				// Ranges that already have a joinProperty are already JOINs — correct.
+				if (!in_array($range->getName(), $tempRangeNames, true)) {
+					continue;
+				}
+				
+				if ($range->getJoinProperty() !== null) {
+					continue;
+				}
+				
+				// Try to extract a join condition from the WHERE clause that connects
+				// this range to another range. If found, promote the range to a JOIN.
+				$joinCondition = $this->isolateJoinConditionsForRange($range, $dbQuery->getConditions());
+				
+				if ($joinCondition !== null) {
+					$range->setJoinProperty($joinCondition);
+				}
+				
+				// If no join condition exists, the ranges are disconnected. Leave the
+				// range as-is — a cross join is correct and FROM order is irrelevant.
+			}
+		}
+		
+		// =========================================================================
+		// Range classification helpers
+		// =========================================================================
+		
 		/**
 		 * Returns database ranges
 		 * @param AstRetrieve $query
 		 * @return AstRange[]
 		 */
 		protected function findDatabaseSourceRanges(AstRetrieve $query): array {
-			return array_filter($query->getRanges(), function($range) {
+			return array_filter($query->getRanges(), function ($range) {
 				return $range instanceof AstRangeDatabase;
 			});
 		}
@@ -87,8 +287,8 @@
 			$result = [];
 			$databaseRanges = $this->findDatabaseSourceRanges($query);
 			
-			foreach($query->getValues() as $value) {
-				foreach($databaseRanges as $range) {
+			foreach ($query->getValues() as $value) {
+				foreach ($databaseRanges as $range) {
 					if ($this->doesConditionInvolveRangeCached($value, $range)) {
 						$result[] = $value;
 					}
@@ -103,7 +303,7 @@
 		 * @return array<AstRangeDatabase>
 		 */
 		protected function extractTemporaryRanges(AstRetrieve $query): array {
-			return array_filter($query->getRanges(), function($range) {
+			return array_filter($query->getRanges(), function ($range) {
 				return
 					$range instanceof AstRangeDatabase &&
 					$range->getQuery() !== null;
@@ -117,7 +317,7 @@
 		protected function extractProjectionsForRange(AstRetrieve $query, AstRange $range): array {
 			$result = [];
 			
-			foreach($query->getValues() as $value) {
+			foreach ($query->getValues() as $value) {
 				if ($this->doesConditionInvolveRangeCached($value, $range)) {
 					$result[] = $value;
 				}
@@ -127,9 +327,9 @@
 		}
 		
 		/**
-		 * Sorts temporary ranges by their dependencies
+		 * Sorts temporary ranges by their dependencies.
 		 * Since temp ranges can't reference other temp ranges in their range declarations,
-		 * we only need to check if inner queries reference other temp ranges in WHERE/retrieve
+		 * we only need to check if inner queries reference other temp ranges in WHERE/retrieve.
 		 * @param AstRangeDatabase[] $temporaryRanges
 		 * @return AstRangeDatabase[] Sorted array where dependencies come before ranges that use them
 		 * @throws QuelException If circular dependency detected
@@ -137,12 +337,14 @@
 		protected function sortByDependency(array $temporaryRanges): array {
 			// Build lookup: name -> range
 			$rangesByName = [];
+			
 			foreach ($temporaryRanges as $range) {
 				$rangesByName[$range->getName()] = $range;
 			}
 			
 			// Build dependency graph by checking WHERE/retrieve for temp range references
 			$dependencies = [];
+			
 			foreach ($temporaryRanges as $range) {
 				$rangeName = $range->getName();
 				$deps = $this->findTempRangeDependenciesInConditions(
@@ -154,11 +356,13 @@
 			
 			// Topological sort (rest is same as before)
 			$inDegree = [];
+			
 			foreach ($rangesByName as $name => $range) {
 				$inDegree[$name] = count($dependencies[$name]);
 			}
 			
 			$queue = [];
+			
 			foreach ($inDegree as $name => $degree) {
 				if ($degree === 0) {
 					$queue[] = $name;
@@ -166,6 +370,7 @@
 			}
 			
 			$sorted = [];
+			
 			while (!empty($queue)) {
 				$current = array_shift($queue);
 				$sorted[] = $rangesByName[$current];
@@ -173,6 +378,7 @@
 				foreach ($dependencies as $rangeName => $deps) {
 					if (in_array($current, $deps)) {
 						$inDegree[$rangeName]--;
+						
 						if ($inDegree[$rangeName] === 0) {
 							$queue[] = $rangeName;
 						}
@@ -222,6 +428,7 @@
 			
 			if ($node instanceof AstIdentifier) {
 				$range = $node->getRange();
+				
 				if ($range !== null && in_array($range->getName(), $tempRangeNames)) {
 					$found[] = $range->getName();
 				}
@@ -247,18 +454,28 @@
 			}
 			
 			// Add other AST node types as needed
-			
 			return $found;
 		}
+		
+		// =========================================================================
+		// Stage construction
+		// =========================================================================
 		
 		/**
 		 * This method creates a version of the original query that only includes
 		 * operations that can be handled directly by the database engine,
 		 * removing any parts that would require in-memory processing.
+		 *
+		 * When temp-table ranges are present, promoteTempTableRanges() is called on
+		 * the cloned query to ensure that no temp-table range incorrectly ends up as
+		 * the FROM table. See promoteTempTableRanges() for full details.
+		 *
 		 * @param AstRetrieve $query The original query to be analyzed
+		 * @param array $staticParams
+		 * @param string[] $tempRangeNames Names of ranges that will become temp tables
 		 * @return ExecutionStage|null The execution stage, or null if there is none
 		 */
-		protected function createDatabaseExecutionStage(AstRetrieve $query, array $staticParams=[]): ?ExecutionStage {
+		protected function createDatabaseExecutionStage(AstRetrieve $query, array $staticParams = [], array $tempRangeNames = []): ?ExecutionStage {
 			// Clone the query to avoid modifying the original
 			// This ensures we preserve the complete query for potential in-memory operations later
 			$dbQuery = clone $query;
@@ -275,6 +492,10 @@
 			// Remove any non-database ranges (e.g., in-memory collections, JSON data)
 			// The resulting query will only reference actual database tables/views
 			$dbQuery->setRanges($dbRanges);
+			
+			// Ensure temp-table ranges that lack a joinProperty are promoted to JOINs,
+			// so that a real database table becomes the FROM instead.
+			$this->promoteTempTableRanges($dbQuery, $tempRangeNames);
 			
 			// Get the database-compatible projections (columns/expressions to select)
 			$dbProjections = $this->extractDatabaseCompatibleProjections($query);
@@ -328,6 +549,10 @@
 			// Return the optimized query that can be fully executed by the database
 			return new ExecutionStage(uniqid(), $dbQuery, $range, $staticParams, $joinConditions);
 		}
+		
+		// =========================================================================
+		// Condition filtering
+		// =========================================================================
 		
 		/**
 		 * Extracts conditions that can be executed directly by the database engine.
@@ -386,7 +611,6 @@
 				// If expression involves JSON ranges or other non-DB operations, exclude it
 				return null;
 			}
-			
 			
 			// Handle full-text search conditions — they belong to the database
 			if ($condition instanceof AstSearch) {
@@ -559,10 +783,10 @@
 						return true;
 					}
 				}
-
+				
 				return false;
 			}
-
+			
 			// Literals (numbers, strings) and other node types don't involve ranges
 			return false;
 		}
@@ -602,7 +826,6 @@
 			) {
 				return $this->hasReferenceToRange($condition->getIdentifier(), $range);
 			}
-			
 			
 			// Full-text search nodes — check if any identifier belongs to this range
 			if ($condition instanceof AstSearch || $condition instanceof AstSearchScore) {

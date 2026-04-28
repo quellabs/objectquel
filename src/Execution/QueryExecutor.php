@@ -4,7 +4,6 @@
 	
 	use Quellabs\ObjectQuel\EntityManager;
 	use Quellabs\ObjectQuel\DatabaseAdapter\DatabaseAdapter;
-	use Quellabs\ObjectQuel\Execution\Executors\TempTableExecutor;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRangeJsonSource;
 	use Quellabs\ObjectQuel\ObjectQuel\ObjectQuel;
 	use Quellabs\ObjectQuel\ObjectQuel\QuelException;
@@ -13,7 +12,11 @@
 	use Quellabs\ObjectQuel\Execution\Executors\JsonQueryExecutor;
 	
 	/**
-	 * Orchestrates query execution by delegating to specialized executors
+	 * Orchestrates query execution by delegating to specialized executors.
+	 *
+	 * TempTableStages are NOT routed through executeStage() — they are handled
+	 * exclusively by PlanExecutor before result-producing stages run. executeStage()
+	 * only ever receives ExecutionStage instances (database or JSON ranges).
 	 */
 	class QueryExecutor {
 		
@@ -79,6 +82,21 @@
 				'json' => $this->jsonExecutor->execute($stage, $initialParams),
 				'database' => $this->databaseExecutor->execute($stage, $initialParams),
 			};
+		}
+		
+		/**
+		 * Execute an already-built execution plan and return raw result rows.
+		 *
+		 * This lower-level entry point is used by PlanExecutor's inner query runner
+		 * when materialising a TempTableStage. It accepts a pre-built ExecutionPlan so
+		 * that the inner AstRetrieve is not re-parsed from a string.
+		 *
+		 * @param ExecutionPlan $plan The plan to execute
+		 * @return array Raw result rows
+		 * @throws QuelException
+		 */
+		public function executePlan(ExecutionPlan $plan): array {
+			return $this->planExecutor->execute($plan);
 		}
 		
 		/**

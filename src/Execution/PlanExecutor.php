@@ -3,16 +3,24 @@
 	namespace Quellabs\ObjectQuel\Execution;
 	
 	use Quellabs\ObjectQuel\EntityStore;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRetrieve;
 	use Quellabs\ObjectQuel\ObjectQuel\QuelException;
 	use Quellabs\ObjectQuel\Execution\Joins\JoinStrategyInterface;
 	use Quellabs\ObjectQuel\Execution\Joins\CrossJoinStrategy;
 	use Quellabs\ObjectQuel\Execution\Joins\LeftJoinStrategy;
 	use Quellabs\ObjectQuel\Execution\Joins\InnerJoinStrategy;
+	use Quellabs\ObjectQuel\Execution\Executors\TempTableExecutor;
 	
 	/**
 	 * The PlanExecutor handles the actual execution of ExecutionStages within an ExecutionPlan,
 	 * respecting the dependencies between stages and combining their results into a final output.
 	 * It manages parameter passing between stages and handles error conditions during execution.
+	 *
+	 * TempTableStage handling:
+	 *   TempTableStages are executed as a side-effect before result-producing stages run.
+	 *   They do not produce result rows and are excluded from the result-combination step.
+	 *   After all stages complete (success or failure), TempTableExecutor::cleanup() is
+	 *   called in a finally block to DROP all temporary tables created during execution.
 	 */
 	class PlanExecutor {
 		
@@ -33,6 +41,13 @@
 		 * @var array<string, JoinStrategyInterface>
 		 */
 		private array $joinStrategyCache = [];
+		
+		/**
+		 * Executor responsible for materialising external-source subqueries as temp tables.
+		 * Created lazily on first use and reused for the lifetime of this PlanExecutor.
+		 * @var TempTableExecutor|null
+		 */
+		private ?TempTableExecutor $tempTableExecutor = null;
 		
 		/**
 		 * Create a new plan executor
@@ -62,27 +77,102 @@
 			// Get stages in execution order (respecting dependencies)
 			$stagesInOrder = $plan->getStagesInOrder();
 			
-			// Optimization: If there's only one stage, perform a simple query execution
-			// This avoids unnecessary overhead of the multi-stage execution process
-			if (count($stagesInOrder) === 1) {
+			// Check whether any TempTableStages are present. If so, we cannot use the
+			// single-stage fast path, and we must run cleanup in a finally block.
+			$hasTempTableStages = false;
+			
+			foreach ($stagesInOrder as $stage) {
+				if ($stage instanceof TempTableStage) {
+					$hasTempTableStages = true;
+					break;
+				}
+			}
+			
+			// Optimization: If there's only one stage and no temp tables, perform a
+			// simple query execution. This avoids unnecessary overhead of the multi-stage
+			// execution process.
+			if (!$hasTempTableStages && count($stagesInOrder) === 1) {
 				return $this->queryExecutor->executeStage($stagesInOrder[0], $stagesInOrder[0]->getStaticParams());
 			}
 			
 			// Multi-stage execution: execute each stage in the correct order and combine the results
 			$intermediateResults = [];
 			
-			// Execute each stage sequentially, maintaining dependency order
-			foreach ($stagesInOrder as $stage) {
-				try {
-					$intermediateResults[$stage->getName()] = $this->executeStage($stage);
-				} catch (QuelException $e) {
-					// Wrap any execution errors with stage context information
-					throw new QuelException("Stage '{$stage->getName()}' failed: {$e->getMessage()}");
+			try {
+				// Execute each stage sequentially, maintaining dependency order
+				foreach ($stagesInOrder as $stage) {
+					if ($stage instanceof TempTableStage) {
+						// Materialise the inner query into a temp table before the outer
+						// database stage runs. This mutates the stage's AstRangeDatabase
+						// so QuelToSQL emits a plain table reference in subsequent stages.
+						// TempTableStages contribute no rows to intermediate results.
+						$this->getTempTableExecutor()->execute(
+							$stage,
+							$this->buildInnerQueryRunner(),
+							$stage->getStaticParams()
+						);
+					} else {
+						try {
+							$intermediateResults[$stage->getName()] = $this->executeStage($stage);
+						} catch (QuelException $e) {
+							// Wrap any execution errors with stage context information
+							throw new QuelException("Stage '{$stage->getName()}' failed: {$e->getMessage()}", 0, $e);
+						}
+					}
+				}
+				
+				// Optimisation: skip the join machinery when only one result-producing stage ran
+				if (count($intermediateResults) === 1) {
+					return reset($intermediateResults);
+				}
+				
+				// Combine all intermediate results into a single final result
+				return $this->combineResults($plan, $intermediateResults);
+			} finally {
+				// Always clean up temp tables, whether execution succeeded or failed.
+				if ($hasTempTableStages) {
+					$this->getTempTableExecutor()->cleanup();
 				}
 			}
+		}
+		
+		/**
+		 * Builds the callable that TempTableExecutor uses to run an inner query.
+		 *
+		 * The callable receives an AstRetrieve and a params array, re-decomposes the
+		 * inner query into its own ExecutionPlan, and executes it through a fresh
+		 * PlanExecutor. Using a fresh PlanExecutor ensures that inner temp tables
+		 * get their own independent cleanup scope and do not interfere with the outer
+		 * execution's finally block.
+		 *
+		 * @return callable(AstRetrieve $query, array $params): array
+		 */
+		private function buildInnerQueryRunner(): callable {
+			return function (AstRetrieve $innerQuery, array $params): array {
+				// Decompose and execute the inner query as a self-contained plan.
+				// This reuses the full pipeline: QueryDecomposer → ExecutionPlan →
+				// PlanExecutor → DatabaseQueryExecutor / JsonQueryExecutor.
+				$decomposer = new QueryDecomposer();
+				$innerPlan = $decomposer->buildExecutionPlan($innerQuery, $params);
+				
+				// Fresh PlanExecutor so inner temp tables have their own cleanup scope
+				$innerPlanExecutor = new self($this->queryExecutor, $this->conditionEvaluator);
+				return $innerPlanExecutor->execute($innerPlan);
+			};
+		}
+		
+		/**
+		 * Returns the TempTableExecutor instance, creating it lazily on first use.
+		 * @return TempTableExecutor
+		 */
+		private function getTempTableExecutor(): TempTableExecutor {
+			if ($this->tempTableExecutor === null) {
+				$this->tempTableExecutor = new TempTableExecutor(
+					$this->queryExecutor->getConnection()
+				);
+			}
 			
-			// Combine all intermediate results into a single final result
-			return $this->combineResults($plan, $intermediateResults);
+			return $this->tempTableExecutor;
 		}
 		
 		/**
@@ -100,9 +190,9 @@
 			}
 			
 			// Create and cache the strategy
-			$strategy = match($joinType) {
+			$strategy = match ($joinType) {
 				'cross' => new CrossJoinStrategy(),                          // Cartesian product join
-				'left'  => new LeftJoinStrategy($this->conditionEvaluator),  // Left outer join
+				'left' => new LeftJoinStrategy($this->conditionEvaluator),   // Left outer join
 				'inner' => new InnerJoinStrategy($this->conditionEvaluator), // Inner join
 				default => throw new QuelException("Unsupported join type: {$joinType}")
 			};
@@ -174,8 +264,9 @@
 					continue;
 				}
 				
-				// Skip everything that's not a ExecutionStage.
-				// There are no other stages at this moment, but this is to keep PhpStan happy
+				// Skip everything that's not an ExecutionStage.
+				// TempTableStages are not in $intermediateResults so this is defensive,
+				// but it also keeps PhpStan happy.
 				if (!($stage instanceof ExecutionStage)) {
 					continue;
 				}
@@ -227,8 +318,8 @@
 					return $stage;
 				}
 			}
+			
 			// Return null if stage not found
 			return null;
 		}
-
 	}
