@@ -63,6 +63,7 @@
 		private array $createdTables = [];
 		
 		/**
+		 * Constructor
 		 * @param DatabaseAdapter $connection
 		 */
 		public function __construct(DatabaseAdapter $connection) {

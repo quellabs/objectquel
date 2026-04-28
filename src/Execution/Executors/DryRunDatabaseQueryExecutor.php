@@ -2,7 +2,7 @@
 	
 	namespace Quellabs\ObjectQuel\Execution\Executors;
 	
-	use Quellabs\ObjectQuel\Execution\ExecutionStage;
+	use Quellabs\ObjectQuel\Execution\ExecutionStageInterface;
 	
 	/**
 	 * A dry-run executor that captures generated SQL without executing it.
@@ -19,11 +19,11 @@
 		/**
 		 * Optimizes and transforms the query, captures the generated SQL,
 		 * and returns an empty result set without touching the database.
-		 * @param ExecutionStage $stage
+		 * @param ExecutionStageInterface $stage
 		 * @param array $initialParams
 		 * @return array Always returns an empty array
 		 */
-		public function execute(ExecutionStage $stage, array $initialParams = []): array {
+		public function execute(ExecutionStageInterface $stage, array $initialParams = []): array {
 			$this->queryOptimizer->optimize($stage->getQuery());
 			$this->queryTransformer->transform($stage->getQuery(), $initialParams);
 			$this->capturedSql[] = $this->convertToSQL($stage->getQuery(), $initialParams);

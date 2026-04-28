@@ -15,6 +15,10 @@
 	class JsonQueryExecutor {
 		private ConditionEvaluator $conditionEvaluator;
 		
+		/**
+		 * Constructor
+		 * @param ConditionEvaluator $conditionEvaluator
+		 */
 		public function __construct(ConditionEvaluator $conditionEvaluator) {
 			$this->conditionEvaluator = $conditionEvaluator;
 		}
