@@ -11,6 +11,7 @@
 	use Quellabs\ObjectQuel\ObjectQuel\Visitors\MacroExpander;
 	use Quellabs\ObjectQuel\ObjectQuel\Visitors\EntityProcessRange;
 	use Quellabs\ObjectQuel\ObjectQuel\Visitors\TransformRelationInViaToPropertyLookup;
+	use Quellabs\ObjectQuel\ObjectQuel\Visitors\UnqualifiedPropertyResolver;
 	
 	/**
 	 * This class orchestrates a multi-step transformation process that converts high-level
@@ -56,6 +57,10 @@
 			// Step 3: Process range definitions (table joins, aliases, and FROM clauses)
 			// Converts range specifications into proper join conditions and table references
 			$this->processWithVisitor($ast, EntityProcessRange::class, $ast->getRanges());
+			
+			// Step 3.5: Resolve unqualified property names to range-prefixed identifiers
+			// Allows bare names like 'name' to be written instead of 'p.name' when unambiguous
+			$this->processWithVisitor($ast, UnqualifiedPropertyResolver::class, $this->entityStore, $ast->getRanges());
 			
 			// Step 4: Expand macro definitions with their actual implementations
 			// Replaces macro placeholder nodes with the full macro body/logic
