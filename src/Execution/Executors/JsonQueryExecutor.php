@@ -25,7 +25,7 @@
 		
 		/**
 		 * Execute a JSON query and returns the result
-		 * @param ExecutionStage $stage
+		 * @param ExecutionStageInterface $stage
 		 * @param array $initialParams
 		 * @return array
 		 * @throws QuelException

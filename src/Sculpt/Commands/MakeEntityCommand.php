@@ -539,7 +539,7 @@
 			$precision = null;
 			
 			while ($precision === null || $precision <= 0) {
-				$precision = (int)$this->input->ask("\nPrecision (total digits, e.g. 10)?", 10);
+				$precision = (int)$this->input->ask("\nPrecision (total digits, e.g. 10)?", "10");
 				
 				if ($precision <= 0) {
 					$this->output->warning("Precision must be greater than 0.");
@@ -549,7 +549,7 @@
 			$scale = null;
 			
 			while ($scale === null || $scale < 0 || $scale > $precision) {
-				$scale = (int)$this->input->ask("\nScale (decimal digits, e.g. 2)?", 2);
+				$scale = (int)$this->input->ask("\nScale (decimal digits, e.g. 2)?", "2");
 				
 				if ($scale < 0) {
 					$this->output->warning("Scale cannot be negative.");

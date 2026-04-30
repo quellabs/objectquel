@@ -39,7 +39,7 @@
 		
 		/**
 		 * Execute a database query stage
-		 * @param ExecutionStage $stage
+		 * @param ExecutionStageInterface $stage
 		 * @param array $initialParams
 		 * @return array
 		 * @throws QuelException
