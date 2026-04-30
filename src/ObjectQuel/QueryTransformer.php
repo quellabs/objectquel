@@ -56,9 +56,9 @@
 			$this->processWithVisitor($ast, RangeDatabaseEntityNormalizer::class, $this->entityStore);
 			
 			// Step 2.5: Inject discriminator conditions for single-table inheritance
-			// For any range whose entity has @DiscriminatorValue, appends
-			// AND <discriminator_column> = '<value>' to the WHERE clause automatically
-			$this->processWithVisitor($ast, DiscriminatorConditionInjector::class, $this->entityStore);
+			// Iterates ranges directly — no need for a full AST traversal since
+			// ranges only ever appear in AstRetrieve::$ranges.
+			$this->injectDiscriminatorConditions($ast);
 
 			// Step 3: Process range definitions (table joins, aliases, and FROM clauses)
 			// Converts range specifications into proper join conditions and table references
@@ -122,6 +122,23 @@
 			return $visitor;
 		}
 		
+		/**
+		 * Injects discriminator conditions into the WHERE clause for STI subclass ranges.
+		 * @param AstRetrieve $ast
+		 * @return void
+		 */
+		private function injectDiscriminatorConditions(AstRetrieve $ast): void {
+			$injector = new DiscriminatorConditionInjector($this->entityStore);
+
+			foreach ($ast->getRanges() as $range) {
+				if (!$range instanceof AstRangeDatabase) {
+					continue;
+				}
+
+				$injector->process($range, $ast);
+			}
+		}
+
 		/**
 		 * Transforms complex 'via' relations into simple property lookups for SQL generation.
 		 * @param AstRetrieve $ast The query AST containing ranges with potential 'via' relations

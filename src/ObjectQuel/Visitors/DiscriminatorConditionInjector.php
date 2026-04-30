@@ -11,22 +11,19 @@
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRangeDatabase;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRetrieve;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstString;
-	use Quellabs\ObjectQuel\ObjectQuel\AstInterface;
-	use Quellabs\ObjectQuel\ObjectQuel\AstVisitorInterface;
 	
 	/**
-	 * AST visitor that injects discriminator conditions for single-table inheritance.
+	 * Injects discriminator conditions into the WHERE clause for single-table inheritance.
 	 *
-	 * When a range targets an entity that has a @DiscriminatorValue annotation, this
-	 * visitor locates the @DiscriminatorColumn on the parent class and appends
-	 * `AND <discriminator_column> = '<discriminator_value>'` to the query's WHERE clause.
+	 * When a range targets an entity that has a @DiscriminatorValue annotation,
+	 * this class appends `AND <discriminator_column> = '<value>'` to the query's
+	 * WHERE clause automatically.
 	 *
-	 * This runs as a transformer pass after entity names have been normalized (Step 2),
-	 * so entity names are always fully qualified when we inspect annotations.
-	 *
-	 * Only AstRangeDatabase nodes are examined — JSON sources are never STI entities.
+	 * Called directly by QueryTransformer, which iterates ranges itself —
+	 * there is no need to traverse the full AST since ranges only ever
+	 * appear in AstRetrieve::$ranges.
 	 */
-	class DiscriminatorConditionInjector implements AstVisitorInterface {
+	class DiscriminatorConditionInjector {
 		
 		/**
 		 * @var EntityStore Entity metadata registry
@@ -42,44 +39,31 @@
 		}
 		
 		/**
-		 * Visit an AST node. Only acts on AstRangeDatabase nodes whose entity
-		 * carries a @DiscriminatorValue annotation.
-		 * @param AstInterface $node
+		 * Inspect a single range and, if it maps to an STI subclass, inject the
+		 * discriminator condition into the retrieve's WHERE clause.
+		 * @param AstRangeDatabase $range The range to inspect
+		 * @param AstRetrieve $retrieve The query whose conditions will be updated
 		 * @return void
 		 */
-		public function visitNode(AstInterface $node): void {
-			// We only care about database ranges
-			if (!$node instanceof AstRangeDatabase) {
-				return;
-			}
-			
-			$entityName = $node->getEntityName();
+		public function process(AstRangeDatabase $range, AstRetrieve $retrieve): void {
+			$entityName = $range->getEntityName();
 			
 			if (empty($entityName)) {
 				return;
 			}
 			
-			// Look up the discriminator info for this entity.
-			// Returns null when the entity is not an STI subclass.
 			$discriminatorInfo = $this->getDiscriminatorInfo($entityName);
 			
 			if ($discriminatorInfo === null) {
 				return;
 			}
 			
-			// We have a discriminator column name and value — build the condition node
-			// and AND it into the retrieve's WHERE clause.
-			$columnName         = $discriminatorInfo['column'];
-			$discriminatorValue = $discriminatorInfo['value'];
+			$condition = $this->buildDiscriminatorCondition(
+				$range->getName(),
+				$discriminatorInfo['column'],
+				$discriminatorInfo['value']
+			);
 			
-			$rangeAlias = $node->getName();
-			$retrieve   = $this->getParentRetrieve($node);
-			
-			if ($retrieve === null) {
-				return;
-			}
-			
-			$condition = $this->buildDiscriminatorCondition($rangeAlias, $columnName, $discriminatorValue);
 			$condition->setParent($retrieve);
 			
 			$existingConditions = $retrieve->getConditions();
@@ -103,7 +87,7 @@
 		 * (declared on the subclass) and @DiscriminatorColumn (declared on the parent).
 		 *
 		 * @param string $entityName Fully qualified entity class name
-		 * @return array|null [columnName, discriminatorValue], or null if not an STI subclass
+		 * @return array|null ['column' => columnName, 'value' => discriminatorValue], or null if not an STI subclass
 		 */
 		private function getDiscriminatorInfo(string $entityName): ?array {
 			// One call covers both the subclass and all parent class annotations
@@ -127,25 +111,6 @@
 		}
 		
 		/**
-		 * Walk up the AST parent chain to find the AstRetrieve that owns this range.
-		 * @param AstInterface $node Starting node
-		 * @return AstRetrieve|null
-		 */
-		private function getParentRetrieve(AstInterface $node): ?AstRetrieve {
-			$current = $node->getParent();
-			
-			while ($current !== null) {
-				if ($current instanceof AstRetrieve) {
-					return $current;
-				}
-				
-				$current = $current->getParent();
-			}
-			
-			return null;
-		}
-		
-		/**
 		 * Build the AST subtree for `<rangeAlias>.<columnName> = '<value>'`.
 		 * @param string $rangeAlias The range alias (e.g. 't')
 		 * @param string $columnName The discriminator column name (e.g. 'type')
@@ -153,15 +118,12 @@
 		 * @return AstExpression
 		 */
 		private function buildDiscriminatorCondition(string $rangeAlias, string $columnName, string $value): AstExpression {
-			// Build the left side: rangeAlias.columnName identifier chain
 			$rangeIdentifier  = new AstIdentifier($rangeAlias);
 			$columnIdentifier = new AstIdentifier($columnName);
 			$rangeIdentifier->setNext($columnIdentifier);
 			
-			// Build the right side: the discriminator value as a string literal
 			$valueNode = new AstString($value, "'");
 			
-			// Combine into an equality expression
 			return new AstExpression($rangeIdentifier, $valueNode, '=');
 		}
 	}
