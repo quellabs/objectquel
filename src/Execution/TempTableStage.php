@@ -84,6 +84,14 @@
 		 * rangeQueryContainsExternalSource() returned true, which requires getQuery() !== null.
 		 * @return AstRetrieve
 		 */
+		public function getQuery(): AstRetrieve {
+			return $this->getInnerQuery();
+		}
+		
+		/**
+		 * Returns the inner AstRetrieve query (alias kept for backwards compatibility).
+		 * @return AstRetrieve
+		 */
 		public function getInnerQuery(): AstRetrieve {
 			/** @var AstRetrieve $query */
 			$query = $this->range->getQuery();

@@ -26,6 +26,9 @@
 	class MakeEntityFromTableCommand extends CommandBase {
 		private Configuration $configuration;
 		
+		/** @var ServiceProvider|null */
+		protected ?ProviderInterface $provider;
+		
 		/**
 		 * MakeEntityFromTableCommand constructor
 		 * @param ConsoleInput $input
@@ -287,7 +290,7 @@
 				if ($column["primary_key"] && $column["identity"]) {
 					$output .= "         * @Orm\PrimaryKeyStrategy(strategy=\"identity\")\n";
 				}
-
+				
 				// Add special note for columns that are nullable in PHP but NOT NULL in database
 				if ($this->isNullableInPhpOnly($column)) {
 					$output .= "         * @note Field made nullable in PHP due to missing default value in database\n";
@@ -420,7 +423,7 @@
 		private function hasColumnDefaultValue(array $column): bool {
 			return $column["default"] !== null && $column["default"] !== '';
 		}
-			
+		
 		/**
 		 * Get the default value for a column
 		 * @param array $column The column description

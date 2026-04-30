@@ -192,7 +192,7 @@
 				$this->getRangesUsedInJoinConditions($ast)
 			);
 			
-			return array_flip(array_map(fn($r) => $r->getName(), $allUsedRanges));
+			return array_fill_keys(array_map(fn($r) => $r->getName(), $allUsedRanges), true);
 		}
 		
 		/**

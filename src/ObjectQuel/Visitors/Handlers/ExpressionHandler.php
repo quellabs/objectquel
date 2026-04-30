@@ -9,7 +9,7 @@
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstConcat;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstExpression;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstFactor;
-	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstIfnull;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstIfNull;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstIn;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstIsEmpty;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstIsFloat;
@@ -373,10 +373,10 @@
 		
 		/**
 		 * IFNULL() serves as a simple COALESCE. If the expression returns NULL, use the alt value.
-		 * @param AstIfnull $ast
+		 * @param AstIfNull $ast
 		 * @return string
 		 */
-		public function handleIfnull(AstIfnull $ast): string {
+		public function handleIfNull(AstIfNull $ast): string {
 			return sprintf(
 				'COALESCE(%s, %s)',
 				$this->visitNodeAndReturnSQL($ast->getExpression()),

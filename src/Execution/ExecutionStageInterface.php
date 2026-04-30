@@ -2,6 +2,8 @@
 	
 	namespace Quellabs\ObjectQuel\Execution;
 	
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRangeDatabase;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRangeJsonSource;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRetrieve;
 	
 	/**
@@ -57,4 +59,11 @@
 		 * @return AstRetrieve The ObjectQuel query AST associated with this stage
 		 */
 		public function getQuery(): AstRetrieve;
+		
+		/**
+		 * Returns the range associated with this execution stage.
+		 * For database stages this is the primary range used to detect JSON vs database execution.
+		 * @return AstRangeDatabase|AstRangeJsonSource|null
+		 */
+		public function getRange(): AstRangeDatabase|AstRangeJsonSource|null;
 	}

@@ -173,9 +173,7 @@
 			$columns = [];
 			
 			foreach ($query->getValues() as $value) {
-				if ($value instanceof AstAlias) {
-					$columns[] = $value->getName();
-				}
+				$columns[] = $value->getName();
 			}
 			
 			return $columns;

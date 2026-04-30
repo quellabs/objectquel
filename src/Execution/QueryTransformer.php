@@ -28,7 +28,7 @@
 		 */
 		public function __construct(EntityManager $entityManager, PlatformCapabilitiesInterface $platform) {
 			$this->entityStore = $entityManager->getEntityStore();
-			$this->entityStore = $entityManager->getEntityStore();
+			$this->connection = $entityManager->getConnection();
 			$this->platform = $platform;
 		}
 		

@@ -2,6 +2,7 @@
 	
 	namespace Quellabs\ObjectQuel\Sculpt\Commands;
 	
+	use Quellabs\Contracts\Discovery\ProviderInterface;
 	use Quellabs\ObjectQuel\Configuration;
 	use Quellabs\ObjectQuel\EntityStore;
 	use Quellabs\ObjectQuel\Sculpt\ServiceProvider;
@@ -28,10 +29,13 @@
 		/** @var Configuration ORM configuration passed in via the service provider */
 		private Configuration $configuration;
 		
+		/** @var ServiceProvider|null */
+		protected ?ProviderInterface $provider;
+		
 		/**
 		 * Constructor
-		 * @param ConsoleInput      $input    Console input handler
-		 * @param ConsoleOutput     $output   Console output handler
+		 * @param ConsoleInput $input Console input handler
+		 * @param ConsoleOutput $output Console output handler
 		 * @param ServiceProvider|null $provider Service provider exposing configuration and the DB adapter
 		 */
 		public function __construct(ConsoleInput $input, ConsoleOutput $output, ?ServiceProvider $provider = null) {
@@ -57,7 +61,7 @@
 		public function execute(ConfigurationManager $config): int {
 			// Prefer positional CLI arguments; fall back to interactive prompts
 			$entityName = $config->getPositional(0);
-			$indexName  = $config->getPositional(1);
+			$indexName = $config->getPositional(1);
 			
 			if (empty($entityName)) {
 				$entityName = $this->input->ask("Entity name");
@@ -84,7 +88,7 @@
 			$tableName = $entityStore->getOwningTable($entityName);
 			
 			$databaseAdapter = $this->provider->getDatabaseAdapter();
-			$dbType          = $databaseAdapter->getDatabaseType();
+			$dbType = $databaseAdapter->getDatabaseType();
 			
 			// Invisible indexes are a MySQL/MariaDB-only feature
 			if (!in_array($dbType, ['mysql', 'mariadb'])) {
@@ -113,10 +117,11 @@
 			// Each dialect uses different syntax to hide an index from the optimizer:
 			//   MySQL   → INVISIBLE  (standard SQL extension)
 			//   MariaDB → IGNORED    (MariaDB-specific terminology)
-			$sql = match($dbType) {
-				'mysql'   => "ALTER TABLE `{$tableName}` ALTER INDEX `{$indexName}` INVISIBLE",
-				'mariadb' => "ALTER TABLE `{$tableName}` ALTER INDEX `{$indexName}` IGNORED",
-			};
+			if ($dbType === 'mysql') {
+				$sql = "ALTER TABLE `{$tableName}` ALTER INDEX `{$indexName}` INVISIBLE";
+			} else {
+				$sql = "ALTER TABLE `{$tableName}` ALTER INDEX `{$indexName}` IGNORED";
+			}
 			
 			$result = $databaseAdapter->execute($sql);
 			

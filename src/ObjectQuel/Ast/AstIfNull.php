@@ -6,9 +6,9 @@
 	use Quellabs\ObjectQuel\ObjectQuel\AstVisitorInterface;
 	
 	/**
-	 * Class AstIfnull
+	 * Class AstIfNull
 	 */
-	class AstIfnull extends Ast {
+	class AstIfNull extends Ast {
 		
 		/**
 		 * @var AstInterface The expression

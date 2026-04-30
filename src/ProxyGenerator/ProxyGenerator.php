@@ -21,7 +21,7 @@
 		private string|false $proxyPath;
 		
 		/** Namespace to use for generated proxy classes, or false if not configured. */
-		private string|false $proxyNamespace;
+		private string $proxyNamespace;
 		
 		/** Cache of entity class name → proxy class name for proxies generated at runtime via eval(). */
 		private array $runtimeProxies = [];

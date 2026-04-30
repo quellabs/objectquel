@@ -12,7 +12,7 @@
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstExpression;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstFactor;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstIdentifier;
-	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstIfnull;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstIfNull;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstMax;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstMin;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRange;
@@ -205,7 +205,7 @@
 			if (
 				$condition instanceof AstAlias ||
 				$condition instanceof AstUnaryOperation ||
-				$condition instanceof AstIfnull
+				$condition instanceof AstIfNull
 			) {
 				return $this->hasReferenceToRange($condition->getExpression(), $range);
 			}

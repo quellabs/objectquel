@@ -24,10 +24,12 @@
 	 * synchronize the database with entity changes.
 	 */
 	class MakeMigrationsCommand extends CommandBase {
-		private ?DatabaseAdapter $connection = null;
 		private ?EntityStore $entityStore = null;
 		private string $migrationsPath;
 		private Configuration $configuration;
+		
+		/** @var ServiceProvider|null */
+		protected ?ProviderInterface $provider;
 		
 		/**
 		 * MakeEntityCommand constructor
@@ -144,7 +146,7 @@
 		public function getHelp(): string {
 			return "Creates a new database migration file by comparing entity definitions with current database schema to synchronize changes.";
 		}
-
+		
 		/**
 		 * Produce a human-readable summary of what changed in a modified column
 		 * @param array $diff Column diff with 'from' and 'to' keys
@@ -152,7 +154,7 @@
 		 */
 		private function describeColumnChange(array $diff): string {
 			$from = $diff['from'] ?? [];
-			$to   = $diff['to']   ?? [];
+			$to = $diff['to'] ?? [];
 			$parts = [];
 			
 			if (($from['type'] ?? null) !== ($to['type'] ?? null)) {

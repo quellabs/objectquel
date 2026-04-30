@@ -323,11 +323,15 @@
 		
 		/**
 		 * Rewrites duplicate named parameters so PDO can bind them.
-		 * @param string $sql The SQL query, modified in place
+		 * @param string|null $sql The SQL query, modified in place
 		 * @param array $parameters The parameter bindings, expanded in place
 		 * @return void
 		 */
-		protected function deduplicateParameters(string &$sql, array &$parameters): void {
+		protected function deduplicateParameters(?string &$sql, array &$parameters): void {
+			if ($sql === null) {
+				return;
+			}
+			
 			// Track how many times each named parameter has been seen so far
 			$seen = [];
 			
@@ -338,7 +342,7 @@
 				"/'[^']*'|\"[^\"]*\"|:([a-zA-Z_][a-zA-Z0-9_]*)/",
 				function (array $match) use (&$seen, &$parameters): string {
 					// No capture group means this was a string literal — return it unchanged
-					if (!isset($match[1]) || $match[1] === '') {
+					if (!isset($match[1])) {
 						return $match[0];
 					}
 					

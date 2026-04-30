@@ -6,7 +6,7 @@
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstAny;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstAvg;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstAvgU;
-	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstIfnull;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstIfNull;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstMax;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstMin;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstConcat;
@@ -294,7 +294,7 @@
 		
 		/**
 		 * Parse ifnull() function. This functions as a simple COALESCE in SQL
-		 * @return AstIfnull
+		 * @return AstIfNull
 		 * @throws LexerException
 		 * @throws ParserException
 		 */
@@ -447,9 +447,11 @@
 			
 			do {
 				// Not an identifier — stop here, the caller will parse the search term next
-				if ($this->lexer->lookahead() !== Token::Identifier) {
+				$next = $this->lexer->lookahead();
+				
+				if ($next !== Token::Identifier) {
 					// A closing paren after a comma is a genuine trailing comma error: search(p.content, )
-					if (!empty($identifiers) && $this->lexer->lookahead() === Token::ParenthesesClose) {
+					if (!empty($identifiers) && $next === Token::ParenthesesClose) {
 						throw new ParserException("Unexpected token after comma in SEARCH() identifier list. Expected a field identifier or search string.");
 					}
 					

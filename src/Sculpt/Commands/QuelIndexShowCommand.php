@@ -2,6 +2,7 @@
 	
 	namespace Quellabs\ObjectQuel\Sculpt\Commands;
 	
+	use Quellabs\Contracts\Discovery\ProviderInterface;
 	use Quellabs\ObjectQuel\Configuration;
 	use Quellabs\ObjectQuel\EntityStore;
 	use Quellabs\ObjectQuel\Sculpt\ServiceProvider;
@@ -26,6 +27,9 @@
 		
 		/** @var Configuration ORM configuration passed in via the service provider */
 		private Configuration $configuration;
+		
+		/** @var ServiceProvider|null */
+		protected ?ProviderInterface $provider;
 		
 		/**
 		 * Constructor
@@ -112,10 +116,11 @@
 			// Each dialect uses different syntax to restore an index to optimizer visibility:
 			//   MySQL   → VISIBLE      (standard SQL extension)
 			//   MariaDB → NOT IGNORED  (MariaDB-specific terminology)
-			$sql = match($dbType) {
-				'mysql'   => "ALTER TABLE `{$tableName}` ALTER INDEX `{$indexName}` VISIBLE",
-				'mariadb' => "ALTER TABLE `{$tableName}` ALTER INDEX `{$indexName}` NOT IGNORED",
-			};
+			if ($dbType === 'mysql') {
+				$sql = "ALTER TABLE `{$tableName}` ALTER INDEX `{$indexName}` VISIBLE";
+			} else {
+				$sql = "ALTER TABLE `{$tableName}` ALTER INDEX `{$indexName}` NOT IGNORED";
+			}
 			
 			$result = $databaseAdapter->execute($sql);
 			
