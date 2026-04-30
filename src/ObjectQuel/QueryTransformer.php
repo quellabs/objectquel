@@ -12,6 +12,7 @@
 	use Quellabs\ObjectQuel\ObjectQuel\Visitors\EntityProcessRange;
 	use Quellabs\ObjectQuel\ObjectQuel\Visitors\TransformRelationInViaToPropertyLookup;
 	use Quellabs\ObjectQuel\ObjectQuel\Visitors\UnqualifiedPropertyResolver;
+	use Quellabs\ObjectQuel\ObjectQuel\Visitors\DiscriminatorConditionInjector;
 	
 	/**
 	 * This class orchestrates a multi-step transformation process that converts high-level
@@ -54,6 +55,11 @@
 			// Resolves entity names to their fully qualified forms using the entity store
 			$this->processWithVisitor($ast, RangeDatabaseEntityNormalizer::class, $this->entityStore);
 			
+			// Step 2.5: Inject discriminator conditions for single-table inheritance
+			// For any range whose entity has @DiscriminatorValue, appends
+			// AND <discriminator_column> = '<value>' to the WHERE clause automatically
+			$this->processWithVisitor($ast, DiscriminatorConditionInjector::class, $this->entityStore);
+
 			// Step 3: Process range definitions (table joins, aliases, and FROM clauses)
 			// Converts range specifications into proper join conditions and table references
 			$this->processWithVisitor($ast, EntityProcessRange::class, $ast->getRanges());

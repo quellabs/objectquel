@@ -2,7 +2,10 @@
 	
 	namespace Quellabs\ObjectQuel\Persistence;
 	
+	use Quellabs\AnnotationReader\Exception\AnnotationReaderException;
 	use Quellabs\ObjectQuel\Annotations\Orm\PrimaryKeyStrategy;
+	use Quellabs\ObjectQuel\Annotations\Orm\DiscriminatorColumn;
+	use Quellabs\ObjectQuel\Annotations\Orm\DiscriminatorValue;
 	use Quellabs\ObjectQuel\DatabaseAdapter\DatabaseAdapter;
 	use Quellabs\ObjectQuel\EntityManager;
 	use Quellabs\ObjectQuel\EntityStore;
@@ -84,6 +87,7 @@
 		 * Persists (inserts) an entity into the database
 		 * @param object $entity The entity to be inserted into the database
 		 * @throws OrmException If the database query fails
+		 * @throws AnnotationReaderException
 		 */
 		public function persist(object $entity): void {
 			// Gather the necessary information for the insert operation
@@ -139,7 +143,18 @@
 			
 			// Serialize the entity into an array of column name => value pairs
 			$serializedEntity = $this->unitOfWork->getSerializer()->serialize($entity);
-
+			
+			// If this entity is a Single-Table Inheritance subclass, inject the discriminator
+			// column value so the INSERT always writes the correct type marker without the
+			// entity needing to declare the column as a mapped property.
+			$discriminatorInfo = $this->getDiscriminatorInfo($entity);
+			
+			if ($discriminatorInfo !== null) {
+				$columnName         = $discriminatorInfo['column'];
+				$discriminatorValue = $discriminatorInfo['value'];
+				$serializedEntity[$columnName] = $discriminatorValue;
+			}
+			
 			// Create the SQL query for insertion
 			$sqlParts = [];
 			
@@ -272,5 +287,36 @@
 				default:
 					throw new \RuntimeException("Invalid column type {$columnType} for Version annotation");
 			}
+		}
+		
+		/**
+		 * Resolves discriminator column name and value for STI subclasses.
+		 *
+		 * Returns null when the entity is not an STI subclass (the common case),
+		 * so the caller can short-circuit with a simple null check.
+		 *
+		 * @param object $entity The entity being persisted
+		 * @return array|null [columnName, discriminatorValue] or null
+		 * @throws AnnotationReaderException
+		 */
+		protected function getDiscriminatorInfo(object $entity): ?array {
+			// One call covers both the subclass and all parent class annotations
+			$classAnnotations = $this->entityStore->getAnnotationReader()->getClassAnnotations(get_class($entity));
+			$discriminatorValue = $classAnnotations[DiscriminatorValue::class] ?? null;
+			$discriminatorColumn = $classAnnotations[DiscriminatorColumn::class] ?? null;
+			
+			// Not an STI subclass if either annotation is missing
+			if ($discriminatorValue === null || $discriminatorColumn === null) {
+				return null;
+			}
+			
+			$value = $discriminatorValue->getValue();
+			$columnName = $discriminatorColumn->getName();
+			
+			if ($value === '' || $columnName === '') {
+				return null;
+			}
+			
+			return ['column' => $columnName, 'value' => $value];
 		}
 	}
