@@ -46,33 +46,45 @@
 		 * @return void
 		 */
 		public function process(AstRangeDatabase $range, AstRetrieve $retrieve): void {
+			// Ranges backed by subqueries have no entity name — nothing to check
 			$entityName = $range->getEntityName();
 			
 			if (empty($entityName)) {
 				return;
 			}
 			
+			// Look up discriminator metadata for this entity. Returns null for the
+			// common case where the entity is not an STI subclass, so we exit early
+			// and add no overhead to ordinary queries.
 			$discriminatorInfo = $this->getDiscriminatorInfo($entityName);
 			
 			if ($discriminatorInfo === null) {
 				return;
 			}
 			
+			// Build the AST node for `<alias>.<discriminatorColumn> = '<discriminatorValue>'`,
+			// e.g. `t.type = 'truck'` for a TruckEntity range aliased as 't'
 			$condition = $this->buildDiscriminatorCondition(
 				$range->getName(),
 				$discriminatorInfo['column'],
 				$discriminatorInfo['value']
 			);
 			
+			// The condition node must know its parent in the tree so that
+			// ancestor-walking utilities (e.g. getLocationOfChild) work correctly
 			$condition->setParent($retrieve);
 			
+			// Retrieve the current conditions
 			$existingConditions = $retrieve->getConditions();
 			
+			// Set new conditions
 			if ($existingConditions === null) {
+				// No WHERE clause yet — the discriminator condition becomes the entire clause
 				$retrieve->setConditions($condition);
 			} else {
 				// Prepend the discriminator condition so it appears at the start of the WHERE
-				// clause and can be used as an early filter by the query optimizer.
+				// clause. Putting it first lets the query optimizer use it as an early filter
+				// before evaluating any user-supplied conditions.
 				$combined = new AstBinaryOperator($condition, $existingConditions, 'AND');
 				$combined->setParent($retrieve);
 				$retrieve->setConditions($combined);
@@ -90,16 +102,21 @@
 		 * @return array|null ['column' => columnName, 'value' => discriminatorValue], or null if not an STI subclass
 		 */
 		private function getDiscriminatorInfo(string $entityName): ?array {
-			// One call covers both the subclass and all parent class annotations
+			// A single getClassAnnotations() call returns annotations from the entire
+			// inheritance chain, so @DiscriminatorColumn on the parent class and
+			// @DiscriminatorValue on the subclass are both available here
 			$classAnnotations    = $this->entityStore->getAnnotationReader()->getClassAnnotations($entityName);
 			$discriminatorValue  = $classAnnotations[DiscriminatorValue::class] ?? null;
 			$discriminatorColumn = $classAnnotations[DiscriminatorColumn::class] ?? null;
 			
-			// Not an STI subclass if either annotation is missing
+			// If either annotation is absent the entity is not an STI subclass —
+			// @DiscriminatorColumn alone means this is the base class (no filter needed),
+			// @DiscriminatorValue alone would be a misconfigured entity
 			if ($discriminatorValue === null || $discriminatorColumn === null) {
 				return null;
 			}
 			
+			// Guard against incomplete annotation declarations
 			$value      = $discriminatorValue->getValue();
 			$columnName = $discriminatorColumn->getName();
 			
@@ -118,12 +135,17 @@
 		 * @return AstExpression
 		 */
 		private function buildDiscriminatorCondition(string $rangeAlias, string $columnName, string $value): AstExpression {
+			// Build the left-hand side as a chained identifier: rangeAlias.columnName
+			// AstIdentifier chains represent dotted property access the same way
+			// user-written expressions like `t.type` are represented in the AST
 			$rangeIdentifier  = new AstIdentifier($rangeAlias);
 			$columnIdentifier = new AstIdentifier($columnName);
 			$rangeIdentifier->setNext($columnIdentifier);
 			
+			// The right-hand side is a plain string literal for the discriminator value
 			$valueNode = new AstString($value, "'");
 			
+			// Combine into an equality expression: <rangeAlias>.<columnName> = '<value>'
 			return new AstExpression($rangeIdentifier, $valueNode, '=');
 		}
 	}
