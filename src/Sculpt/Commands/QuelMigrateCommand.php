@@ -258,40 +258,57 @@ HELP;
 		private function performRollback(Manager $manager, ConfigurationManager $config): int {
 			$steps = (int)$config->get('steps', 1);
 			$target = $config->get('target');
+			$force = $config->hasFlag('force') || $config->hasFlag('f');
+			$isDryRun = $config->hasFlag('dry-run') || $config->hasFlag('d');
 			
-			// Prompt for confirmation if not in force mode or dry-run mode
-			if (!$config->hasFlag('force') && !$config->hasFlag('f') && !$config->hasFlag('dry-run') && !$config->hasFlag('d')) {
+			// If steps > 1 and no explicit target, resolve the target version ourselves.
+			// Phinx's Manager::rollback() has no steps parameter — it only accepts a target version.
+			if (!$target && $steps > 1) {
+				$adapter = $manager->getEnvironment($this->environment)->getAdapter();
+				$versions = $adapter->getVersions(); // oldest-to-newest order
+				
+				if (count($versions) < $steps) {
+					$this->output->error("Cannot roll back {$steps} migrations: only " . count($versions) . " have been applied.");
+					return 1;
+				}
+				
+				// Roll back N steps means go back to the version just before the last N applied ones.
+				// Target is the version that should remain applied (the one before our window).
+				$target = (string)$versions[count($versions) - $steps - 1];
+			}
+			
+			// Prompt for confirmation if not in force or dry-run mode
+			if (!$force && !$isDryRun) {
 				if ($target) {
 					$message = "Are you sure you want to roll back to version {$target}?";
 				} else {
 					$message = "Are you sure you want to roll back {$steps} " . ($steps === 1 ? "migration" : "migrations") . "?";
 				}
 				
-				// Show cancel message if the user entered 'n'
 				if (!$this->input->confirm($message, false)) {
 					$this->output->writeLn("Rollback operation canceled.");
 					return 0;
 				}
 			}
 			
-			// Show message
+			// Output line
 			$this->output->writeLn("Rolling back migrations...");
 			
-			// Check for dry run
-			if ($config->hasFlag('dry-run') || $config->hasFlag('d')) {
+			// Warning if user uses dry-run
+			if ($isDryRun) {
 				$this->output->writeLn("Dry run mode - no database changes will be made.");
 			}
 			
-			// Get the target version and steps
+			// Rollback
 			if ($target) {
 				$this->output->writeLn("Rolling back to version: {$target}");
-				$manager->rollback($this->environment, $target);
+				$manager->rollback($this->environment, $target, $force);
 			} else {
-				$this->output->writeLn("Rolling back {$steps} " . ($steps === 1 ? "migration" : "migrations"));
-				$manager->rollback($this->environment, null, $steps);
+				// No target, no steps > 1: roll back the single most recent migration
+				$this->output->writeLn("Rolling back 1 migration");
+				$manager->rollback($this->environment, null, $force);
 			}
 			
-			// Output success message
 			$this->output->success("Rollback completed successfully.");
 			return 0;
 		}
