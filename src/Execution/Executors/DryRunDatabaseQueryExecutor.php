@@ -13,6 +13,7 @@
 		
 		/**
 		 * SQL statements captured across all executed stages
+		 * @var list<string>
 		 */
 		private array $capturedSql = [];
 		
@@ -20,8 +21,8 @@
 		 * Optimizes and transforms the query, captures the generated SQL,
 		 * and returns an empty result set without touching the database.
 		 * @param ExecutionStageInterface $stage
-		 * @param array $initialParams
-		 * @return array Always returns an empty array
+		 * @param array<int|string, mixed> $initialParams
+		 * @return list<array<string, mixed>> Always returns an empty array
 		 */
 		public function execute(ExecutionStageInterface $stage, array $initialParams = []): array {
 			$this->queryOptimizer->optimize($stage->getQuery());
@@ -32,7 +33,7 @@
 		
 		/**
 		 * Returns all SQL statements captured during execution, one per decomposed stage.
-		 * @return array
+		 * @return list<string>
 		 */
 		public function getCapturedSql(): array {
 			return $this->capturedSql;

@@ -214,7 +214,7 @@
 		 * Batching avoids hitting MySQL's max_allowed_packet limit on large result sets.
 		 * @param string $tableName
 		 * @param string[] $columns
-		 * @param list<list<bool|float|int|string|null>> $rows
+		 * @param list<array<string, bool|float|int|string|null>> $rows
 		 * @throws QuelException
 		 */
 		private function insertRows(string $tableName, array $columns, array $rows): void {
@@ -231,8 +231,7 @@
 				
 				foreach ($batch as $row) {
 					foreach ($columns as $col) {
-						$value = $row[$col] ?? null;
-						$params[] = is_scalar($value) || $value === null ? $value : (string)$value;
+						$params[] = $row[$col] ?? null;
 					}
 				}
 				

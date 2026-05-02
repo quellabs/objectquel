@@ -23,6 +23,8 @@
 		protected QueryTransformer $queryTransformer;
 		protected QueryOptimizer $queryOptimizer;
 		protected PlatformCapabilities $platform;
+		
+		/** @var list<string> */
 		protected array $lastExecutedSql = [];
 		
 		/**
@@ -40,8 +42,8 @@
 		/**
 		 * Execute a database query stage
 		 * @param ExecutionStageInterface $stage
-		 * @param array $initialParams
-		 * @return array
+		 * @param array<int|string, mixed> $initialParams
+		 * @return list<array<string, mixed>>
 		 * @throws QuelException
 		 */
 		public function execute(ExecutionStageInterface $stage, array $initialParams = []): array {
@@ -74,7 +76,7 @@
 		
 		/**
 		 * Return the last executed SQL
-		 * @return array
+		 * @return list<string>
 		 */
 		public function getLastExecutedSql(): array {
 			return $this->lastExecutedSql;
@@ -91,7 +93,7 @@
 		/**
 		 * Convert AstRetrieve node to SQL
 		 * @param AstRetrieve $retrieve The AST to convert
-		 * @param array $parameters Query parameters (passed by reference)
+		 * @param array<int|string, mixed> $parameters Query parameters (passed by reference)
 		 * @return string The generated SQL query
 		 */
 		protected function convertToSQL(AstRetrieve $retrieve, array &$parameters): string {
