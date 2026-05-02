@@ -7,8 +7,9 @@
 		/**
 		 * ValidationInterface constructor
 		 * @param array $conditions
+		 * @param string|null $errorMessage
 		 */
-		public function __construct(array $conditions=[]);
+		public function __construct(array $conditions=[], ?string $errorMessage = null);
 		
 		/**
 		 * The value to validate

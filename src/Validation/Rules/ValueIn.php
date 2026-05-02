@@ -6,38 +6,48 @@
 	
 	class ValueIn implements ValidationInterface {
 		
-		protected mixed $conditions;
+		/** @var array<int|string, scalar> */
+		protected array $conditions;
+		
+		/** @var string|null Error to show */
+		protected ?string $errorMessage;
 		
 		/**
-		 * Email constructor
-		 * @param array $conditions
+		 * ValueIn constructor
+		 * @param array<int|string, scalar> $conditions
+		 * @param string|null $errorMessage
 		 */
-		public function __construct(array $conditions = []) {
-			$this->conditions = $conditions["values"] ?? [];
+		public function __construct(array $conditions=[], ?string $errorMessage = null) {
+			$this->conditions = $conditions;
+			$this->errorMessage = $errorMessage;
 		}
 		
 		/**
 		 * Returns the conditions used in this Rule
-		 * @return array
+		 * @return array<int|string, scalar>
 		 */
-		public function getConditions() : array {
+		public function getConditions(): array {
 			return $this->conditions;
 		}
 		
 		public function validate($value): bool {
-			if (empty($this->conditions["values"]) || ($value == "") || ($value == null)) {
+			if (empty($this->conditions) || ($value == "") || ($value == null)) {
 				return true;
 			}
 			
-			return in_array($value, $this->conditions);
+			return in_array($value, $this->conditions, true);
 		}
 		
 		public function getError(): string {
-			if (!isset($this->conditions["message"])) {
-				return "Value should be any of these: " . implode(",", array_map(function($e) { return "'{$e}'"; }, $this->conditions["values"]));
+			if ($this->errorMessage !== null) {
+				return $this->errorMessage;
 			}
-
-			return $this->conditions["message"];
+			
+			$allowedValues = implode(
+				',',
+				array_map(fn($e) => "'{$e}'", $this->conditions)
+			);
+			
+			return "Value should be any of these: {$allowedValues}";
 		}
-		
 	}
