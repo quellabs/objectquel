@@ -6,11 +6,22 @@
 	
 	class RegExp implements AnnotationInterface {
 		
+		/**
+		 * @var array{
+		 *     property?: string,
+		 *     regexp?: string|null,
+		 *     message?: string|null
+		 * }
+		 */
 		protected array $parameters;
 		
 		/**
 		 * RegExp constructor.
-		 * @param array $parameters
+		 * @param array{
+		 *      property?: string,
+		 *      regexp?: string|null,
+		 *      message?: string|null
+		 *  } $parameters
 		 */
 		public function __construct(array $parameters) {
 			$this->parameters = $parameters;
@@ -18,7 +29,11 @@
 		
 		/**
 		 * Returns all parameters
-		 * @return array
+		 * @return array{
+		 *     property?: string,
+		 *     regexp?: string|null,
+		 *     message?: string|null
+		 * }
 		 */
 		public function getParameters(): array {
 			return $this->parameters;
