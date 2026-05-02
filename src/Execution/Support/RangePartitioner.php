@@ -57,9 +57,9 @@
 		 * Computes live ranges by filtering ranges based on their usage in expressions or conditions.
 		 * This function performs liveness analysis to determine which variable ranges are actively
 		 * used and should be considered "live" for further processing (e.g., optimization passes).
-		 * @param array $ranges Array of range objects, each having a getName() method
+		 * @param AstRange[] $ranges Array of range objects, each having a getName() method
 		 * @param QueryAnalysisResult $analysis Query analysis class
-		 * @return array Associative array of live ranges keyed by variable name
+		 * @return array<string, AstRange> Associative array of live ranges keyed by variable name
 		 */
 		public static function computeLiveRanges(array $ranges, QueryAnalysisResult $analysis): array {
 			$liveRanges = [];
@@ -80,10 +80,10 @@
 		 * Computes correlation-only ranges by identifying ranges used solely for join relationships.
 		 * This function performs correlation analysis to determine which variable ranges exist only
 		 * to establish join predicates and are not actively used in expressions or conditions.
-		 * @param array $ranges Array of range objects, each having a getName() method
-		 * @param array $joinReferences Array mapping join predicates to their referenced ranges
+		 * @param AstRange[] $ranges Array of range objects, each having a getName() method
+		 * @param array<string, array<string, bool>> $joinReferences Array mapping join predicates to their referenced ranges
 		 * @param QueryAnalysisResult $analysis
-		 * @return array Associative array of correlation-only ranges keyed by variable name
+		 * @return array<string, AstRange> Associative array of correlation-only ranges keyed by variable name
 		 */
 		public static function computeCorrelationOnlyRanges(array $ranges, array $joinReferences, QueryAnalysisResult $analysis): array {
 			$correlationOnly = [];

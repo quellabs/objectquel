@@ -3,12 +3,17 @@
 	namespace Quellabs\ObjectQuel\Execution\Support;
 	
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstBinaryOperator;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRange;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRetrieve;
+	use Quellabs\ObjectQuel\ObjectQuel\AstInterface;
 	
 	class RangeRemover {
 		
 		/**
 		 * Collects ranges directly referenced in SELECT, WHERE, and JOIN predicates.
+		 * @param AstRetrieve $root
+		 * @param AstRange[] $allRanges
+		 * @return AstRange[]
 		 */
 		public static function collectDirectlyUsedRanges(AstRetrieve $root, array $allRanges): array {
 			$used = [];
@@ -25,6 +30,7 @@
 			// Ranges used in JOIN predicates
 			foreach ($allRanges as $range) {
 				$joinPredicate = $range->getJoinProperty();
+				
 				if ($joinPredicate) {
 					$used = array_merge($used, RangeUtilities::collectRangesFromNode($joinPredicate));
 				}
@@ -33,9 +39,10 @@
 			return array_unique($used, SORT_REGULAR);
 		}
 		
-		
 		/**
 		 * Optimizes queries with a single range by folding self-referencing joins into WHERE.
+		 * @param AstRetrieve $root
+		 * @return void
 		 */
 		public static function optimizeSingleRangeQuery(AstRetrieve $root): void {
 			$remainingRanges = $root->getRanges();
@@ -60,11 +67,11 @@
 		
 		/**
 		 * Checks if a join predicate only references the given range.
-		 * @param $joinPredicate
-		 * @param $targetRange
+		 * @param AstInterface $joinPredicate
+		 * @param AstRange $targetRange
 		 * @return bool
 		 */
-		public static function joinPredicateReferencesOnlySelf($joinPredicate, $targetRange): bool {
+		public static function joinPredicateReferencesOnlySelf(AstInterface $joinPredicate, AstRange $targetRange): bool {
 			$referencedRanges = RangeUtilities::collectRangesFromNode($joinPredicate);
 			
 			foreach ($referencedRanges as $range) {
@@ -79,10 +86,10 @@
 		/**
 		 * Folds a join predicate into the WHERE clause using AND.
 		 * @param AstRetrieve $root
-		 * @param $joinPredicate
+		 * @param AstInterface $joinPredicate
 		 * @return void
 		 */
-		public static function foldJoinPredicateIntoWhere(AstRetrieve $root, $joinPredicate): void {
+		public static function foldJoinPredicateIntoWhere(AstRetrieve $root, AstInterface $joinPredicate): void {
 			$existingWhere = $root->getConditions();
 			
 			if ($existingWhere) {

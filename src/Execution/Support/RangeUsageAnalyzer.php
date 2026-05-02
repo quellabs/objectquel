@@ -162,8 +162,13 @@
 		 * - hasIsNullInCond: table has IS NULL checks (affects LEFT JOIN safety)
 		 * - nonNullableUse: table is used in a way that requires non-null values
 		 *
-		 * @param array $usage Raw usage analysis from performUsageAnalysis
-		 * @return QueryAnalysisResult Structured analysis object
+		 * @param array{
+		 *     usedInExpr: array<string,bool>,
+		 *     usedInCond: array<string,bool>,
+		 *     hasIsNullInCond: array<string,bool>,
+		 *     nonNullableUse: array<string,bool>
+		 * } $usage
+		 * @return QueryAnalysisResult
 		 */
 		private function createAnalysisFromUsage(array $usage): QueryAnalysisResult {
 			$tableUsageMap = [];
@@ -171,10 +176,10 @@
 			// Collect all table names mentioned in any usage category
 			// This ensures we don't miss tables that appear in only one category
 			$allTableNames = array_unique(array_merge(
-				array_keys($usage['usedInExpr'] ?? []),
-				array_keys($usage['usedInCond'] ?? []),
-				array_keys($usage['hasIsNullInCond'] ?? []),
-				array_keys($usage['nonNullableUse'] ?? [])
+				array_keys($usage['usedInExpr']),
+				array_keys($usage['usedInCond']),
+				array_keys($usage['hasIsNullInCond']),
+				array_keys($usage['nonNullableUse'])
 			));
 			
 			// Create structured TableUsageInfo objects for each table
