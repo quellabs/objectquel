@@ -45,12 +45,12 @@
 		private EntityStore $entityStore;
 		
 		/**
-		 * @var array Cache of entity classes that have lifecycle callbacks
+		 * @var array<string, bool> Cache of entity classes that have lifecycle callbacks
 		 */
 		private array $lifecycleAwareCache = [];
 		
 		/**
-		 * @var array Cache of entity lifecycle methods by class and event type
+		 * @var array<string, string[]> Cache of entity lifecycle methods by class and event type
 		 */
 		private array $lifecycleMethodsCache = [];
 		
@@ -178,7 +178,7 @@
 		 * Get all methods with a specific lifecycle annotation for an entity class
 		 * @param string $entityClass The entity class name
 		 * @param string $annotationClass The annotation class to look for
-		 * @return array List of method names
+		 * @return string[] List of method names
 		 */
 		private function getLifecycleMethods(string $entityClass, string $annotationClass): array {
 			// Create a cache key
