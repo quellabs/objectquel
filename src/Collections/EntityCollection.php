@@ -20,8 +20,13 @@
 		protected EntityManager $entity_manager;
 		protected EntityStore $entity_store;
 		protected PropertyHandler $property_handler;
+		
+		/** @var Collection<T> */
 		protected Collection $collection;
-		protected mixed $target_entity;
+		
+		/** @var class-string<T> */
+		protected string $target_entity;
+		
 		protected mixed $property_name;
 		protected mixed $id;
 		protected bool $initialized;
@@ -30,7 +35,7 @@
 		/**
 		 * EntityCollection constructor.
 		 * @param EntityManager $entityManager The entity manager handling database operations
-		 * @param string $targetEntity The fully qualified class name of the target entity
+		 * @param class-string<T> $targetEntity The fully qualified class name of the target entity
 		 * @param string $propertyName The property name in the target entity that maps to the parent id
 		 * @param mixed $id The id value of the parent entity
 		 * @param string $sortOrder Optional sort order for the collection
