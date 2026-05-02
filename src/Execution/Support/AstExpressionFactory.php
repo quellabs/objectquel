@@ -26,10 +26,7 @@
 		 * @param string|null $origin Optional origin identifier for debugging/tracing
 		 * @return AstSubquery             Window function subquery with empty ranges and no WHERE conditions
 		 */
-		public static function createWindowFunction(
-			AstAggregate $expression,
-			?string      $origin = null
-		): AstSubquery {
+		public static function createWindowFunction(AstAggregate $expression, ?string $origin = null): AstSubquery {
 			return new AstSubquery(
 				AstSubquery::TYPE_WINDOW,
 				$expression,
@@ -47,7 +44,7 @@
 		 * and WHERE conditions that reference outer query columns.
 		 *
 		 * @param AstAggregate $expression The scalar expression to evaluate (often an aggregate)
-		 * @param array $ranges Array of table/range references that establish correlation
+		 * @param array<int, AstInterface> $ranges Array of table/range references that establish correlation
 		 * @param AstInterface|null $whereConditions Optional WHERE clause conditions for filtering
 		 * @param string|null $origin Optional origin identifier for debugging/tracing
 		 * @return AstSubquery                       Correlated scalar subquery that returns a single value
@@ -75,7 +72,7 @@
 		 * and are often more efficient than IN clauses for large datasets.
 		 *
 		 * @param AstAggregate|AstNumber $expression The expression to check for existence (often just a column or constant)
-		 * @param array $ranges Array of table/range references for the subquery FROM clause
+		 * @param array<int, AstInterface> $ranges Array of table/range references for the subquery FROM clause
 		 * @param AstInterface|null $whereConditions WHERE clause conditions that typically correlate with outer query
 		 * @param string|null $origin Optional origin identifier for debugging/tracing
 		 * @return AstSubquery                       EXISTS subquery that returns boolean existence result
@@ -106,7 +103,7 @@
 		 * The expression typically evaluates to:
 		 * CASE WHEN EXISTS(SELECT ... FROM ranges WHERE conditions) THEN 1 ELSE 0 END
 		 *
-		 * @param array $ranges Array of table/range references for the subquery FROM clause
+		 * @param array<int, AstInterface> $ranges Array of table/range references for the subquery FROM clause
 		 * @param AstInterface|null $whereConditions WHERE clause conditions that determine the CASE condition
 		 * @param string|null $origin Optional origin identifier for debugging/tracing
 		 * @return AstSubquery                       CASE WHEN subquery expression
