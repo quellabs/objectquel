@@ -20,13 +20,16 @@
 	
 	namespace Quellabs\ObjectQuel;
 	
+	use Quellabs\AnnotationReader\AnnotationInterface;
 	use Quellabs\AnnotationReader\AnnotationReader;
 	use Quellabs\AnnotationReader\Collection\AnnotationCollection;
+	use Quellabs\ObjectQuel\Annotations\Orm\Column;
 	use Quellabs\ObjectQuel\Annotations\Orm\Immutable;
 	use Quellabs\ObjectQuel\Annotations\Orm\FullTextIndex;
 	use Quellabs\ObjectQuel\Annotations\Orm\ManyToOne;
 	use Quellabs\ObjectQuel\Annotations\Orm\OneToMany;
 	use Quellabs\ObjectQuel\Annotations\Orm\OneToOne;
+	use Quellabs\ObjectQuel\Annotations\Orm\Version;
 	use Quellabs\ObjectQuel\Metadata\EntityMetadataRecord;
 	use Quellabs\ObjectQuel\Metadata\EntityMetadataBuilder;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRetrieve;
@@ -55,15 +58,19 @@
 		private string $entityNamespace;
 		
 		// Simple registry of normalized class name => table name
+		/** @var array<string, string> */
 		private array $entityRegistry = [];
 		
 		// Cache for normalized entity names
+		/** @var array<string, string> */
 		private array $normalizedNameCache = [];
 		
 		// Cache for EntityMetadata objects (replaces all the old separate caches)
+		/** @var array<string, EntityMetadataRecord> */
 		private array $metadataCache = [];
 		
 		// Dependency graph (calculated once on demand)
+		/** @var array<string, array<int, string>>|null */
 		private ?array $dependencyGraph = null;
 		
 		/**
@@ -140,7 +147,7 @@
 		
 		/**
 		 * Get all registered entities as className => tableName map
-		 * @return array
+		 * @return array<string, string>
 		 */
 		public function getEntityMap(): array {
 			return $this->entityRegistry;
@@ -242,7 +249,7 @@
 		 * Useful for determining cascade deletion order and relationship integrity.
 		 *
 		 * @param mixed $entity The entity for which you want to find dependent entities
-		 * @return array A list of entity class names that depend on the specified entity
+		 * @return array<int, string> A list of entity class names that depend on the specified entity
 		 */
 		public function getDependentEntities(mixed $entity): array {
 			// Determine the class name of the entity
@@ -269,7 +276,11 @@
 		/**
 		 * Retrieves the primary key of the main range from an AstRetrieve object.
 		 * @param AstRetrieve $astRetrieve A reference to the AstRetrieve object representing the query
-		 * @return array|null An array with information about the range and primary key, or null if no suitable range is found
+		 * @return array{
+		 *      range: mixed,
+		 *      entityName: string,
+		 *      primaryKey: string|null
+		 *  }|null An array with information about the range and primary key, or null if no suitable range is found
 		 */
 		public function fetchPrimaryKeyOfMainRange(AstRetrieve $astRetrieve): ?array {
 			foreach ($astRetrieve->getRanges() as $range) {
@@ -314,7 +325,7 @@
 		/**
 		 * This function retrieves the primary keys of a given entity.
 		 * @param mixed $entity The entity from which the primary keys are retrieved
-		 * @return array An array with the names of the properties that are the primary keys
+		 * @return array<int, string> An array with the names of the properties that are the primary keys
 		 */
 		public function getIdentifierKeys(mixed $entity): array {
 			return $this->getMetadata($entity)->identifierKeys;
@@ -323,19 +334,19 @@
 		/**
 		 * Retrieves the column names that serve as primary keys for a specific entity.
 		 * @param mixed $entity The entity for which the primary key columns are retrieved
-		 * @return array An array with the names of the columns that serve as primary keys
+		 * @return array<int, string> An array with the names of the columns that serve as primary keys
 		 */
 		public function getIdentifierColumnNames(mixed $entity): array {
 			return $this->getMetadata($entity)->identifierColumns;
 		}
 		
 		/**
-		 * Retrieves the column names that serve as version columns for a specific entity.
+		 * Retrieves the columns that serve as version columns for a specific entity.
 		 * Version columns are used for optimistic locking.
 		 * @param mixed $entity The entity for which the version columns are retrieved
-		 * @return array An array with the names of the columns that serve as version columns
+		 * @return array<string, array{name: string, column: Column, version: Version}> An array with the names of the columns that serve as version columns
 		 */
-		public function getVersionColumnNames(mixed $entity): array {
+		public function getVersionColumns(mixed $entity): array {
 			return $this->getMetadata($entity)->versionColumns;
 		}
 		
@@ -345,7 +356,7 @@
 		 * to their respective column names in the database. The results are cached
 		 * to prevent repeated calculations.
 		 * @param mixed $entity The object or class name of the entity
-		 * @return array An associative array with the property as key and the column name as value
+		 * @return array<string, string> An associative array with the property as key and the column name as value
 		 */
 		public function getColumnMap(mixed $entity): array {
 			return $this->getMetadata($entity)->columnMap;
@@ -353,38 +364,29 @@
 		
 		/**
 		 * Returns the entity's annotations.
+		 * @template T of AnnotationInterface
 		 * @param mixed $entity The entity object or class name string to get annotations for
-		 * @param string|null $annotationType Optional class name to filter annotations by specific type
-		 * @return array<string, AnnotationCollection> Array of annotation objects, optionally filtered by type
+		 * @param class-string<T>|null $annotationType $annotationType Optional class name to filter annotations by specific type
+		 * @return array<string, array<int, T>> Array of annotation objects, optionally filtered by type
 		 */
 		public function getAnnotations(mixed $entity, ?string $annotationType = null): array {
-			$annotations = $this->getMetadata($entity)->annotations;
+			$result = [];
 			
-			// Check if we need to filter by a specific annotation type
-			if ($annotationType !== null) {
-				$filteredList = [];
-				
-				foreach ($annotations as $property => $annotationCollection) {
-					foreach ($annotationCollection as $annotation) {
-						// Check if the current annotation is an instance of the requested type
-						// is_a() compares the annotation object against the class name string
-						if (is_a($annotation, $annotationType)) {
-							$filteredList[$property] = $annotation;
-						}
+			foreach ($this->getMetadata($entity)->annotations as $property => $annotationCollection) {
+				foreach ($annotationCollection as $annotation) {
+					if ($annotationType === null || is_a($annotation, $annotationType)) {
+						$result[$property][] = $annotation;
 					}
 				}
-				
-				return $filteredList;
 			}
 			
-			// No specific type requested, return all annotations for this entity
-			return $annotations;
+			return $result;
 		}
 		
 		/**
 		 * Returns all properties of an entity.
 		 * @param mixed $entity The entity object or class name string
-		 * @return array An array of property names
+		 * @return array<string, mixed> An array of property names
 		 */
 		public function getProperties(mixed $entity): array {
 			return $this->getMetadata($entity)->properties;
@@ -396,28 +398,28 @@
 		 * are related to the given entity class via a ManyToOne relationship.
 		 * The names of these related entities are returned as an array.
 		 * @param mixed $entity The name of the entity class to inspect
-		 * @return ManyToOne[] An array of entity names with which the given class has a ManyToOne relationship
+		 * @return array<string, ManyToOne> An array of entity names with which the given class has a ManyToOne relationship
 		 */
 		public function getManyToOneDependencies(mixed $entity): array {
-			return $this->getMetadata($entity)->manyToOneRelations;
+			return $this->getMetadata($entity)->getManyToOneDependencies();
 		}
 		
 		/**
 		 * Retrieves all OneToMany dependencies for a specific entity.
 		 * @param mixed $entity The name of the entity for which you want to get the OneToMany dependencies
-		 * @return OneToMany[] An associative array with the name of the target entity as key and the annotation as value
+		 * @return array<string, OneToMany> An associative array with the name of the target entity as key and the annotation as value
 		 */
 		public function getOneToManyDependencies(mixed $entity): array {
-			return $this->getMetadata($entity)->oneToManyRelations;
+			return $this->getMetadata($entity)->getOneToManyDependencies();
 		}
 		
 		/**
 		 * Retrieves all OneToOne dependencies for a specific entity.
 		 * @param mixed $entity The name of the entity for which you want to get the OneToOne dependencies
-		 * @return OneToOne[] An associative array with the name of the target entity as key and the annotation as value
+		 * @return array<string, OneToOne> An associative array with the name of the target entity as key and the annotation as value
 		 */
 		public function getOneToOneDependencies(mixed $entity): array {
-			return $this->getMetadata($entity)->oneToOneRelations;
+			return $this->getMetadata($entity)->getOneToOneDependencies();
 		}
 		
 		/**
@@ -435,7 +437,7 @@
 		 * Internal helper function for retrieving properties with a specific annotation.
 		 * Returns all relationship annotations (ManyToOne, OneToMany, OneToOne) for the entity.
 		 * @param mixed $entity The name of the entity for which you want to get dependencies
-		 * @return array Property name => array of relationship annotations
+		 * @return array<string, array<int, ManyToOne|OneToOne|OneToMany>> Property name => array of relationship annotations
 		 */
 		public function getAllDependencies(mixed $entity): array {
 			$metadata = $this->getMetadata($entity);
@@ -462,7 +464,7 @@
 		/**
 		 * Retrieves all index annotations defined for a given entity class.
 		 * @param mixed $entity The entity class to analyze (can be string classname or object instance)
-		 * @return array A collection of Index, UniqueIndex and FullTextIndex annotation objects
+		 * @return array<int, object> A collection of Index, UniqueIndex and FullTextIndex annotation objects
 		 */
 		public function getIndexes(mixed $entity): array {
 			return $this->getMetadata($entity)->indexes;
@@ -479,7 +481,7 @@
 		 * not database column names. This method compares at the property level.
 		 *
 		 * @param mixed $entity The entity to inspect
-		 * @param array $propertyNames The property names passed to search() or search_score()
+		 * @param array<int, string> $propertyNames $propertyNames The property names passed to search() or search_score()
 		 * @return FullTextIndex|null The matching index, or null if none covers all columns
 		 */
 		public function getFullTextIndexForColumns(mixed $entity, array $propertyNames): ?FullTextIndex {
@@ -526,7 +528,7 @@
 		/**
 		 * Extracts database column definitions from an entity class using reflection and annotations.
 		 * @param string $className The fully qualified class name of the entity
-		 * @return array An associative array of column definitions indexed by column name
+		 * @return array<string, mixed> An associative array of column definitions indexed by column name
 		 */
 		public function extractEntityColumnDefinitions(string $className): array {
 			return $this->getMetadata($className)->columnDefinitions;
@@ -539,7 +541,7 @@
 		 * based on the entity type.
 		 * @param mixed $primaryKey The primary key to be normalized
 		 * @param string $entityType The type of entity for which the primary key is needed
-		 * @return array A normalized representation of the primary key as an array
+		 * @return array<string, mixed> A normalized representation of the primary key as an array
 		 */
 		public function formatPrimaryKeyAsArray(mixed $primaryKey, string $entityType): array {
 			return $this->getMetadata($entityType)->formatPrimaryKeyAsArray($primaryKey);
@@ -578,7 +580,7 @@
 		
 		/**
 		 * Build dependency graph for all entities.
-		 * @return array Entity class name => array of dependent entity class names
+		 * @return array<string, array<int, string>> Entity class name => array of dependent entity class names
 		 */
 		private function getAllEntityDependencies(): array {
 			// Build the dependency graph only once, then cache it

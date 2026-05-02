@@ -98,17 +98,25 @@
 		/**
 		 * Retrieve the ManyToOne dependencies for this entity.
 		 * These represent entities that this entity has a foreign key reference to.
-		 * @return ManyToOne[] Array of ManyToOne annotations
+		 * @return array<string, ManyToOne> Array of ManyToOne annotations
 		 */
 		public function getManyToOneDependencies(): array {
-			return array_values($this->manyToOneRelations);
+			return $this->manyToOneRelations;
+		}
+		
+		/**
+		 * Retrieve the OneToMany dependencies for this entity.
+		 * @return array<string, OneToMany>
+		 */
+		public function getOneToManyDependencies(): array {
+			return $this->oneToManyRelations;
 		}
 		
 		/**
 		 * Retrieve the OneToOne dependencies where this entity is the owning side.
 		 * Only returns OneToOne relations that have an inversedBy property set,
 		 * indicating this entity owns the relationship.
-		 * @return OneToOne[] Array of OneToOne annotations for owned relationships
+		 * @return array<string, OneToOne> Array of OneToOne annotations for owned relationships
 		 */
 		public function getOneToOneDependencies(): array {
 			return array_filter($this->oneToOneRelations, fn($relation) => !empty($relation->getInversedBy()));

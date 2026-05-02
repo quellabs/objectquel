@@ -138,7 +138,7 @@
 			}
 			
 			// Get the primary key property names and their corresponding column names
-			$versionColumns = $this->entityStore->getVersionColumnNames($entity);
+			$versionColumns = $this->entityStore->getVersionColumns($entity);
 			$versionColumnNames = array_flip(array_column($versionColumns, 'name'));
 			
 			// Serialize the entity into an array of column name => value pairs

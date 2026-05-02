@@ -72,7 +72,7 @@
 			$primaryKeyColumnNames = $this->entityStore->getIdentifierColumnNames($entity);
 			
 			// Get the version column names. These will auto update
-			$versionColumns = $this->entityStore->getVersionColumnNames($entity);
+			$versionColumns = $this->entityStore->getVersionColumns($entity);
 			$versionColumnNames = array_column($versionColumns, 'name');
 			
 			// Extract the primary key values from the original data

@@ -135,7 +135,7 @@
 		/**
 		 * Flush all changed entities to the database
 		 * If an error occurs, an OrmException is thrown.
-		 * @param object|array|null $entity
+		 * @param object|array<int, object>|null $entity
 		 * @return void
 		 * @throws OrmException
 		 */
@@ -155,7 +155,7 @@
 		/**
 		 * Execute a decomposed query plan
 		 * @param string $query The query to execute
-		 * @param array $parameters Initial parameters for the plan
+		 * @param array<string, mixed> $parameters Initial parameters for the plan
 		 * @return QuelResult|null The results of the execution plan
 		 * @throws QuelException
 		 */
@@ -188,8 +188,8 @@
 		/**
 		 * Retrieves all results from an executed ObjectQuel query.
 		 * @param string $query The ObjectQuel query string to execute
-		 * @param array $parameters Optional parameters to bind to the query (default: empty array)
-		 * @return array Array of all rows returned by the query, or empty array if no results
+		 * @param array<string, mixed> $parameters Optional parameters to bind to the query (default: empty array)
+		 * @return array<int, array<string, mixed>> Array of all rows returned by the query, or empty array if no results
 		 * @throws QuelException When query execution fails or encounters an error
 		 */
 		public function getAll(string $query, array $parameters = []): array {
@@ -216,8 +216,8 @@
 		 * Executes an ObjectQuel query and returns an array of objects from the
 		 * first column of each result, with duplicates removed.
 		 * @param string $query The ObjectQuel query to execute.
-		 * @param array $parameters Optional parameters for the query.
-		 * @return array An array of unique objects from the first column of query results.
+		 * @param array<string, mixed> $parameters Optional parameters for the query.
+		 * @return array<int, mixed> An array of unique objects from the first column of query results.
 		 * @throws QuelException
 		 */
 		public function getCol(string $query, array $parameters = []): array {
@@ -327,7 +327,7 @@
 		/**
 		 * Returns the validation rules of a given entity
 		 * @param object $entity
-		 * @return array
+		 * @return array<string, mixed>
 		 */
 		public function getValidationRules(object $entity): array {
 			$validate = new EntityToValidation();
