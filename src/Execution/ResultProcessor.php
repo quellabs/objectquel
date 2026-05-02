@@ -10,8 +10,8 @@
 		/**
 		 * Removes duplicate objects from an array based on their object hash.
 		 * Non-objects in the array are left unchanged.
-		 * @param array $array The input array with possibly duplicate objects.
-		 * @return array An array with unique objects and all original non-object elements.
+		 * @param array<int, mixed> $array The input array with possibly duplicate objects.
+		 * @return array<int, mixed> An array with unique objects and all original non-object elements.
 		 */
 		public static function deDuplicateObjects(array $array): array {
 			// Storage for the hashes of objects that have already been seen.
