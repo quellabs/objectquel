@@ -17,7 +17,7 @@
 	 * ║                                                                                       ║
 	 * ╚═══════════════════════════════════════════════════════════════════════════════════════╝
 	 */
-
+	
 	namespace Quellabs\ObjectQuel\Metadata;
 	
 	use Quellabs\AnnotationReader\Collection\AnnotationCollection;
@@ -58,7 +58,20 @@
 		 * @param array<string, OneToOne> $oneToOneRelations Property => OneToOne annotation mapping
 		 * @param array<Index|UniqueIndex|FullTextIndex> $indexes Index annotations from class level
 		 * @param string|null $autoIncrementColumn Property name of auto-increment primary key (if any)
-		 * @param array<string, array> $columnDefinitions Full column definitions for schema generation
+		 * @param array<string, array{
+		 *     property_name: string,
+		 *     type: string,
+		 *     php_type: \ReflectionType|null,
+		 *     limit: mixed,
+		 *     nullable: bool,
+		 *     unsigned: bool,
+		 *     default: mixed,
+		 *     primary_key: bool,
+		 *     scale: mixed,
+		 *     precision: mixed,
+		 *     identity: bool,
+		 *     values: mixed
+		 * }> $columnDefinitions
 		 */
 		public function __construct(
 			public string  $className,
@@ -75,7 +88,8 @@
 			public array   $indexes,
 			public ?string $autoIncrementColumn,
 			public array   $columnDefinitions,
-		) {}
+		) {
+		}
 		
 		/**
 		 * Retrieves the primary key of the entity.
@@ -166,7 +180,7 @@
 		 * If not, it converts the primary key into an array with the proper key
 		 * based on the entity's identifier keys.
 		 * @param mixed $primaryKey The primary key to be normalized
-		 * @return array A normalized representation of the primary key as an array
+		 * @return array<string, mixed> A normalized representation of the primary key as an array
 		 */
 		public function formatPrimaryKeyAsArray(mixed $primaryKey): array {
 			// If the primary key is already an array, return it directly
