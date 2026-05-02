@@ -38,10 +38,7 @@
 	
 	class UnitOfWork {
 		
-		protected array $identityMap;
-		protected \WeakMap $originalEntityData;
-		protected \WeakMap $entityRemovalList;
-		private SignalHub $signalHub;
+		protected SignalHub $signalHub;
 		protected EntityManager $entityManager;
 		protected EntityStore $entityStore;
 		protected PropertyHandler $propertyHandler;
@@ -51,6 +48,15 @@
 		protected InsertPersister $insertPersister;
 		protected UpdatePersister $updatePersister;
 		protected DeletePersister $deletePersister;
+		
+		/** @var array<string, array<string, object|array<string, string>>> */
+		protected array $identityMap;
+		
+		/** @var \WeakMap<object, array<string, mixed>> */
+		protected \WeakMap $originalEntityData;
+		
+		/** @var \WeakMap<object, bool> */
+		protected \WeakMap $entityRemovalList;
 		
 		public Signal $signalPrePersist;
 		public Signal $signalPostPersist;
@@ -156,7 +162,7 @@
 		 * Find an entity based on its class and primary keys.
 		 * @template T of object
 		 * @param class-string<T> $entityType The type of entity being searched for.
-		 * @param array $primaryKeys The serialized primary key data of the entity
+		 * @param array<string, mixed> $primaryKeys The serialized primary key data of the entity
 		 * @return object|null The found entity or null if it is not found.
 		 */
 		public function findEntity(string $entityType, array $primaryKeys): ?object {
@@ -180,7 +186,7 @@
 		 * Gets the original data of an entity. The original data is the data that was
 		 * present at the time the entity was reconstituted from the database.
 		 * @param mixed $entity
-		 * @return array|null
+		 * @return array<string, mixed>|null
 		 */
 		public function getOriginalEntityData(mixed $entity): ?array {
 			return $this->originalEntityData[$entity] ?? null;
@@ -300,7 +306,7 @@
 		 * This includes starting a transaction, performing the necessary operations (insert, update, delete)
 		 * based on the state of each entity, and committing the transaction. In case of an error,
 		 * the transaction is rolled back and the error is forwarded.
-		 * @param object|array|null $entity
+		 * @param object|array<int, object>|null $entity
 		 * @return void
 		 * @throws OrmException if an error occurs during the database process.
 		 */
@@ -510,7 +516,7 @@
 		
 		/**
 		 * Convert primary keys to a string
-		 * @param array $primaryKeys
+		 * @param array<string, mixed> $primaryKeys
 		 * @return string
 		 */
 		private function convertPrimaryKeysToString(array $primaryKeys): string {
@@ -524,7 +530,7 @@
 		/**
 		 * Returns true if the entity has no populated primary keys, false if it does.
 		 * @param object $entity
-		 * @param array $primaryKeys
+		 * @param array<string, string> $primaryKeys
 		 * @return bool
 		 */
 		private function hasNullPrimaryKeys(object $entity, array $primaryKeys): bool {
@@ -539,8 +545,8 @@
 		
 		/**
 		 * Returns true if any of the entity columns changed, false if not.
-		 * @param array $extractedEntity
-		 * @param array $originalData
+		 * @param array<string, mixed> $extractedEntity
+		 * @param array<string, mixed> $originalData
 		 * @return bool
 		 */
 		private function isEntityDirty(array $extractedEntity, array $originalData): bool {

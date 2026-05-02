@@ -12,13 +12,17 @@
 	
 	class Serializer {
 		
-		protected array $normalizers;
-		protected array $methodExistsCache;
 		protected string $serializationGroupName;
 		protected EntityStore $entityStore;
 		protected PropertyHandler $propertyHandler;
 		protected ReflectionHandler $reflectionHandler;
 		protected AnnotationReader $annotationReader;
+		
+		/** @var string[] */
+		protected array $normalizers;
+		
+		/** @var array<string, bool> */
+		protected array $methodExistsCache;
 		
 		/**
 		 * Serializer constructor
@@ -163,7 +167,7 @@
 		 * Checks if a property belongs to a specific serialization group.
 		 * This function determines whether a given property should be included in the serialization
 		 * based on the specified serialization group and the annotations of the property.
-		 * @param array $annotations An array of annotations associated with the property.
+		 * @param object[] $annotations An array of annotations associated with the property.
 		 * @return bool True if the property should be serialized, otherwise false.
 		 */
 		public function propertyInSerializeGroup(array $annotations): bool {
@@ -187,7 +191,7 @@
 		/**
 		 * Extracts all values from the entity that are marked as Column.
 		 * @param object $entity The entity from which the values must be extracted.
-		 * @return array An array with property names as keys and their values.
+		 * @return array<string, mixed> An array with property names as keys and their values.
 		 */
 		public function serialize(object $entity): array {
 			// Early return if the entity does not exist in the entity store.
@@ -231,7 +235,7 @@
 		/**
 		 * Injecteert de gegeven waarden in de entiteit.
 		 * @param object $entity De entiteit waarin de waarden geïnjecteerd moeten worden.
-		 * @param array $values De te injecteren waarden, met property namen als keys.
+		 * @param array<string, mixed> $values De te injecteren waarden, met property namen als keys.
 		 * @return void
 		 */
 		public function deserialize(object $entity, array $values): void {
