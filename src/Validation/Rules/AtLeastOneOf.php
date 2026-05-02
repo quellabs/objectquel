@@ -5,42 +5,53 @@
 	use Quellabs\ObjectQuel\Validation\ValidationInterface;
 	
 	class AtLeastOneOf implements ValidationInterface {
-		
+
+		/** @var array<ValidationInterface> List of validation rules to evaluate */
 		protected array $conditions;
 		
+		/** Optional custom error message returned when validation fails */
+		protected ?string $message;
+		
 		/**
-		 * Email constructor
-		 * @param array $conditions
+		 * Initializes the rule with a set of conditions and an optional custom error message.
+		 * @param array<ValidationInterface> $conditions Validation rules to evaluate
+		 * @param string|null $message Custom error message (optional)
 		 */
-		public function __construct(array $conditions = []) {
+		public function __construct(array $conditions = [], ?string $message = null) {
 			$this->conditions = $conditions;
+			$this->message = $message;
 		}
 		
 		/**
-		 * Returns the conditions used in this Rule
-		 * @return array
+		 * Returns all validation conditions associated with this rule.
+		 * @return array<ValidationInterface>
 		 */
-		public function getConditions() : array {
+		public function getConditions(): array {
 			return $this->conditions;
 		}
 		
-		public function validate($value): bool {
-			$counter = 0;
-			
-			foreach($this->conditions as $condition) {
+		/**
+		 * Validates the given value against all conditions.
+		 * Returns true as soon as at least one condition passes.
+		 * @param mixed $value Value to validate
+		 * @return bool True if at least one condition is satisfied, false otherwise
+		 */
+		public function validate(mixed $value): bool {
+			foreach ($this->conditions as $condition) {
 				if ($condition->validate($value)) {
-					++$counter;
+					return true;
 				}
 			}
 			
-			return $counter > 0;
+			return false;
 		}
 		
+		/**
+		 * Returns the validation error message.
+		 * Uses the custom message if provided, otherwise falls back to a default message.
+		 * @return string
+		 */
 		public function getError(): string {
-			if (!isset($this->conditions["message"])) {
-				return "At least one of the conditions should be fulfilled.";
-			}
-			
-			return $this->conditions["message"];
+			return $this->message ?? 'At least one of the conditions should be fulfilled.';
 		}
 	}

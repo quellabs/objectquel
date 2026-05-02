@@ -34,7 +34,7 @@
 		private string $proxyDir = '';
 		
 		/**
-		 * @var array Paths to entity classes
+		 * @var array<int|string, string> Paths to entity classes
 		 * Array of directory paths where entity classes are located.
 		 * Supports multiple paths to allow for modular entity organization.
 		 * The 'core' key is maintained for backwards compatibility.
@@ -113,7 +113,7 @@
 		
 		/**
 		 * Returns all entity paths
-		 * @return array Array of directory paths containing entity classes
+		 * @return array<int, string> Array of directory paths containing entity classes
 		 */
 		public function getEntityPaths(): array {
 			return array_values($this->entityPaths);
