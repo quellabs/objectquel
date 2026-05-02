@@ -12,7 +12,7 @@
 		
 		/**
 		 * Default limits for column types
-		 * @var array
+		 * @var array<string, int|array<int, int>>
 		 */
 		private static array $defaultLimits = [
 			// Integer types
@@ -36,7 +36,7 @@
 		/**
 		 * Get the default limit for a column type
 		 * @param string $type Column type
-		 * @return int|array|null The default limit (null if not applicable)
+		 * @return int|array<int, int>|null The default limit (null if not applicable)
 		 */
 		public static function getDefaultLimit(string $type): int|array|null {
 			return self::$defaultLimits[$type] ?? null;
@@ -169,7 +169,7 @@
 		/**
 		 * Get relevant properties for column comparison based on type
 		 * @param string $type
-		 * @return array
+		 * @return string[]
 		 */
 		public static function getRelevantProperties(string $type): array {
 			// Base properties all columns have
@@ -237,7 +237,7 @@
 		/**
 		 * Extracts all enum cases from a Column annotation's enum type.
 		 * @param string|null $enumType
-		 * @return array Array of enum case values for backed enums, or names for unit enums
+		 * @return array<int, int|string> Array of enum case values for backed enums, or names for unit enums
 		 */
 		public static function getEnumCases(?string $enumType): array {
 			// Return empty array if no enum type is defined

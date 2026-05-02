@@ -4,6 +4,8 @@
 	
 	/**
 	 * @template T of object
+	 * @extends \ArrayAccess<int, T>
+	 * @extends \Iterator<int, T>
 	 */
 	interface CollectionInterface extends \ArrayAccess, \Iterator, \Countable {
 

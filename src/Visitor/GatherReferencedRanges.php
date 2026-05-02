@@ -12,6 +12,7 @@
 	 */
 	class GatherReferencedRanges implements AstVisitorInterface {
 		
+		/** @var string[] */
 		private array $ranges;
 		
 		/**

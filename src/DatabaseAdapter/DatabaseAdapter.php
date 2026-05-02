@@ -14,6 +14,28 @@
 	 * Database adapter that ties ObjectQuel and CakePHP Database together
 	 * Wraps CakePHP's database connection to provide ObjectQuel-specific functionality
 	 * including schema introspection, transaction management, and cross-database compatibility.
+	 *
+	 * @phpstan-type ColumnDefinition array{
+	 *     type: string,
+	 *     php_type: string,
+	 *     limit: int|array<int, int>|null,
+	 *     default: mixed,
+	 *     nullable: bool,
+	 *     precision: int|null,
+	 *     scale: int|null,
+	 *     unsigned: bool,
+	 *     generated: mixed,
+	 *     identity: bool,
+	 *     primary_key: bool,
+	 *     values: array<int, string>|null
+	 * }
+	 *
+	 * @phpstan-type IndexDefinition array{
+	 *     type: 'primary'|'unique'|'index',
+	 *     columns: string[],
+	 *     length: array<int, int>|null,
+	 *     name?: string
+	 * }
 	 */
 	class DatabaseAdapter {
 		
@@ -22,12 +44,6 @@
 		
 		/** @var Connection CakePHP database connection instance */
 		protected Connection $connection;
-		
-		/** @var array Cached table descriptions for schema introspection */
-		protected array $descriptions;
-		
-		/** @var array Cached extended column descriptions */
-		protected array $columns_ex_descriptions;
 		
 		/** @var int Error code from the last failed database operation (0 = no error) */
 		protected int $last_error;
@@ -38,7 +54,7 @@
 		/** @var int Current nesting level of active transactions (0 = no active transaction) */
 		protected int $transaction_depth;
 		
-		/** @var array Cached index definitions for tables */
+		/** @var array<string, array<string, mixed>> Cached index definitions for tables */
 		protected array $indexes;
 		
 		/** @var string|null Cached database type identifier (null = not yet determined) */
@@ -53,8 +69,6 @@
 			$this->connection = $connection;
 			
 			// setup ORM
-			$this->descriptions = [];
-			$this->columns_ex_descriptions = [];
 			$this->indexes = [];
 			$this->last_error = 0;
 			$this->last_error_message = '';
@@ -84,9 +98,9 @@
 			$driver = $this->connection->getDriver();
 			
 			$this->databaseTypeCache = match (get_class($driver)) {
-				'Cake\Database\Driver\Postgres'   => 'pgsql',
-				'Cake\Database\Driver\Sqlite'     => 'sqlite',
-				'Cake\Database\Driver\Sqlserver'  => 'sqlsrv',
+				'Cake\Database\Driver\Postgres' => 'pgsql',
+				'Cake\Database\Driver\Sqlite' => 'sqlite',
+				'Cake\Database\Driver\Sqlserver' => 'sqlsrv',
 				default => stripos($driver->version(), 'mariadb') !== false ? 'mariadb' : 'mysql'
 			};
 			
@@ -161,7 +175,7 @@
 		
 		/**
 		 * Retrieves a list of all tables in the database (excluding views)
-		 * @return array List of table names
+		 * @return string[] List of table names
 		 */
 		public function getTables(): array {
 			$schemaCollection = $this->getSchemaCollection();
@@ -170,14 +184,8 @@
 		
 		/**
 		 * Retrieves detailed column definitions for a database table
-		 *
-		 * Returns comprehensive metadata for each column including type, constraints,
-		 * defaults, and special properties like auto-increment and primary key status.
-		 *
 		 * @param string $tableName Name of the table to analyze
-		 * @return array Associative array of column definitions indexed by column name,
-		 *               each containing: type, php_type, limit, default, nullable, precision,
-		 *               scale, unsigned, generated, identity, primary_key, values
+		 * @return array<string, ColumnDefinition>
 		 */
 		public function getColumns(string $tableName): array {
 			// Fetch the Phinx adapter
@@ -267,7 +275,7 @@
 		 * Retrieves all columns that make up the primary key for a table
 		 * Supports both single-column and composite primary keys.
 		 * @param string $tableName Name of the table
-		 * @return array List of column names in the primary key, or empty array if none exists
+		 * @return string[] List of column names in the primary key, or empty array if none exists
 		 */
 		public function getPrimaryKeyColumns(string $tableName): array {
 			// Get the schema descriptor for the specified table
@@ -294,8 +302,7 @@
 		/**
 		 * Retrieves index definitions for a database table
 		 * @param string $tableName Name of the table
-		 * @return array Associative array of index configurations indexed by index name,
-		 *               each containing: columns, type (PRIMARY, UNIQUE, INDEX), and other properties
+		 * @return array<string, IndexDefinition>
 		 */
 		public function getIndexes(string $tableName): array {
 			// Get the schema collection which provides access to database metadata
@@ -324,7 +331,7 @@
 		/**
 		 * Rewrites duplicate named parameters so PDO can bind them.
 		 * @param string|null $sql The SQL query, modified in place
-		 * @param array $parameters The parameter bindings, expanded in place
+		 * @param array<int|string, mixed> $parameters The parameter bindings, expanded in place
 		 * @return void
 		 */
 		protected function deduplicateParameters(?string &$sql, array &$parameters): void {
@@ -369,7 +376,7 @@
 		/**
 		 * Executes a SQL query with optional parameter binding
 		 * @param string $query SQL query to execute
-		 * @param array $parameters Parameter values for prepared statement placeholders
+		 * @param array<int|string, mixed> $parameters Parameter values for prepared statement placeholders
 		 * @return StatementInterface|false Statement object on success, false on failure
 		 */
 		public function execute(string $query, array $parameters = []): StatementInterface|false {
