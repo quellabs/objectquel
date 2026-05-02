@@ -12,13 +12,14 @@
 		
 		/**
 		 * Array to store annotation parameters
+		 * @var array<string, mixed>
 		 */
 		protected array $parameters;
 		
 		/**
 		 * SerializationGroups constructor.
 		 * Initializes the class with the provided annotation parameters
-		 * @param array $parameters Parameters passed to this annotation
+		 * @param array<string, mixed> $parameters Parameters passed to this annotation
 		 */
 		public function __construct(array $parameters) {
 			$this->parameters = $parameters;
@@ -27,7 +28,7 @@
 		/**
 		 * Returns the parameters for this annotation
 		 * Used by the annotation reader to access all parameters
-		 * @return array All parameters stored in this annotation
+		 * @return array<string, mixed> All parameters stored in this annotation
 		 */
 		public function getParameters(): array {
 			return $this->parameters;
@@ -36,7 +37,7 @@
 		/**
 		 * Returns the specific serialization groups defined in the parameters
 		 * Provides direct access to the "groups" parameter array
-		 * @return array List of serialization groups this annotation defines
+		 * @return array<string> List of serialization groups this annotation defines
 		 */
 		public function getGroups(): array {
 			return $this->parameters["groups"];
