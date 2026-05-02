@@ -20,7 +20,7 @@
 		 * When SELECT is aggregates-only, rewrite join edges that merely filter
 		 * (and do not feed aggregates/WHERE) into EXISTS subqueries.
 		 * @param AstRetrieve $root Query to mutate
-		 * @param array $aggregateRangeMap Map of range hashes to ranges that feed aggregates
+		 * @param array<string, true> $aggregateRangeMap Map of range hashes to ranges that feed aggregates
 		 * @return void
 		 */
 		public static function rewriteFilterOnlyJoinsAsExists(AstRetrieve $root, array $aggregateRangeMap): void {
@@ -299,7 +299,7 @@
 		
 		/**
 		 * Validates that all join pairs represent a self-join on the same entity and properties.
-		 * @param array $joinPairs
+		 * @param array<int, array{0: AstIdentifier, 1: AstIdentifier}> $joinPairs
 		 * @return bool
 		 */
 		public static function isValidSelfJoin(array $joinPairs): bool {
@@ -348,7 +348,7 @@
 		
 		/**
 		 * Builds a chain of IS NOT NULL conditions connected by AND operators.
-		 * @param array $joinPairs
+		 * @param array<int, array{0: AstIdentifier, 1: AstIdentifier}> $joinPairs
 		 * @return AstInterface|null
 		 */
 		public static function buildNotNullChain(array $joinPairs): ?AstInterface {
