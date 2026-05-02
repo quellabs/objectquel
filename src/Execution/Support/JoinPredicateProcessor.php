@@ -17,9 +17,17 @@
 	 */
 	class JoinPredicateProcessor {
 		
+		/** @var array<string, AstRange> */
 		private array $liveRanges;
+		
+		/** @var array<string, AstRange> */
 		private array $correlationOnlyRanges;
 		
+		/**
+		 * JoinPredicateProcessor constructor
+		 * @param array<string, AstRange> $liveRanges
+		 * @param array<string, AstRange> $correlationOnlyRanges
+		 */
 		public function __construct(
 			array $liveRanges,
 			array $correlationOnlyRanges
@@ -28,6 +36,11 @@
 			$this->liveRanges = $liveRanges;
 		}
 		
+		/**
+		 * @param AstRange[] $allRanges
+		 * @return AstRange[]
+		 * @throws \Exception
+		 */
 		public function buildUpdatedRanges(array $allRanges): array {
 			$liveRangeNames = array_keys($this->liveRanges);
 			$correlationRangeNames = array_keys($this->correlationOnlyRanges);
@@ -40,6 +53,10 @@
 			);
 		}
 		
+		/**
+		 * @param AstRange[] $allRanges
+		 * @return AstInterface[]
+		 */
 		public function gatherPromotedPredicates(array $allRanges): array {
 			$liveRangeNames = array_keys($this->liveRanges);
 			$correlationRangeNames = array_keys($this->correlationOnlyRanges);
