@@ -243,7 +243,9 @@
 			
 			// Create a snapshot of the entity's current state by serializing it
 			// This baseline is used later to detect changes when flush() is called
-			$this->originalEntityData[$entity] = $this->getSerializer()->serialize($entity);
+			/** @var array<string, mixed> $serialized */
+			$serialized = $this->getSerializer()->serialize($entity);
+			$this->originalEntityData[$entity] = $serialized;
 		}
 		
 		/**
@@ -592,7 +594,7 @@
 		 * Flattens the identity map while preserving unique keys.
 		 * This method converts the nested identity map structure into a simple hash => entity mapping,
 		 * which is useful for operations that need to iterate through all managed entities regardless of class.
-		 * @return array An associative array of entity object IDs to entity objects
+		 * @return array<string, object> An associative array of entity object IDs to entity objects
 		 */
 		private function getFlattenedIdentityMap(): array {
 			// Initialize the result array that will hold all entities
@@ -638,7 +640,7 @@
 		 * For example, if Entity B has a foreign key to Entity A, Entity A must be
 		 * persisted first to have a valid ID for Entity B to reference.
 		 *
-		 * @return array The sorted entities in the correct insertion/update order.
+		 * @return array<int, object> The sorted entities in the correct insertion/update order.
 		 * @throws OrmException When a cycle is detected in the entity relations,
 		 * indicating an unresolvable dependency between entities (e.g., A depends on B, B depends on A).
 		 */
@@ -763,8 +765,8 @@
 		
 		/**
 		 * Update the tracking information
-		 * @param array $changed List of changed entities
-		 * @param array $deleted List of deleted entities
+		 * @param array<int, object> $changed List of changed entities
+		 * @param array<int, object> $deleted List of deleted entities
 		 * @return void
 		 */
 		private function updateIdentityMapAndResetChangeTracking(array $changed, array $deleted): void {
@@ -782,7 +784,9 @@
 				
 				// Store the original data of the entity for later comparison
 				// This helps track changes in the entity over time
-				$this->originalEntityData[$entity] = $this->getSerializer()->serialize($entity);
+				/** @var array<string, mixed> $serialized */
+				$serialized = $this->getSerializer()->serialize($entity);
+				$this->originalEntityData[$entity] = $serialized;
 			}
 			
 			// Remove deleted entities from tracking
@@ -795,7 +799,7 @@
 		 * This function retrieves the parent entity and the corresponding ManyToOne annotation
 		 * for the given entity. If the parent entity doesn't exist, null is returned.
 		 * @param mixed $entity The entity for which to retrieve the parent entity and annotation.
-		 * @return array An associative array with 'entity' and 'annotation' as keys, or null if not found.
+		 * @return array<int, array{entity: object, property: string, value: mixed}> An associative array with 'entity' and 'annotation' as keys, or null if not found.
 		 */
 		private function fetchParentEntitiesPrimaryKeyData(mixed $entity): array {
 			// Initialize an empty array to store the results.
@@ -863,7 +867,7 @@
 		/**
 		 * Retrieves the identifiers (primary keys) of the given entity.
 		 * @param mixed $entity The entity from which to retrieve the primary keys.
-		 * @return array An associative array where the keys are the primary key names and
+		 * @return array<string, mixed> An associative array where the keys are the primary key names and
 		 *               the values are their corresponding values from the entity.
 		 */
 		private function getIdentifiers(mixed $entity): array {
@@ -1029,7 +1033,7 @@
 		
 		/**
 		 * Find and schedule deletion of dependent objects
-		 * @param string $dependentEntityClass Class name of dependent entity
+		 * @param class-string $dependentEntityClass Class name of dependent entity
 		 * @param string $property Property name with the relationship
 		 * @param object $parentEntity The parent entity object
 		 * @return void

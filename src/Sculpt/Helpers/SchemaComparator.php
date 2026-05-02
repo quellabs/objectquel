@@ -30,9 +30,9 @@
 		/**
 		 * Main public method to compare entity properties with table columns
 		 * Identifies added, modified, and deleted columns
-		 * @param array $entityColumns Map of property names to definitions from entity model
-		 * @param array $tableColumns Map of column names to definitions from database
-		 * @return array Structured array of all detected changes
+		 * @param array<string, array<string, mixed>> $entityColumns Map of property names to definitions from entity model
+		 * @param array<string, array<string, mixed>> $tableColumns Map of column names to definitions from database
+		 * @return array{added: array<string, array<string, mixed>>, modified: array<string, array{from: array<string, mixed>, to: array<string, mixed>, changes: array<string, array{from: mixed, to: mixed}>}>, deleted: array<string, array<string, mixed>>}
 		 * @throws \InvalidArgumentException If input arrays are malformed
 		 */
 		public function analyzeSchemaChanges(array $entityColumns, array $tableColumns): array {
@@ -48,9 +48,9 @@
 		
 		/**
 		 * Get columns that exist in entity but not in table
-		 * @param array $entityColumns Map of property names to definitions from entity model
-		 * @param array $tableColumns Map of column names to definitions from database
-		 * @return array Columns that need to be added to the table
+		 * @param array<string, array<string, mixed>> $entityColumns Map of property names to definitions from entity model
+		 * @param array<string, array<string, mixed>> $tableColumns Map of column names to definitions from database
+		 * @return array<string, array<string, mixed>> Columns that need to be added to the table
 		 */
 		private function getAddedColumns(array $entityColumns, array $tableColumns): array {
 			return array_diff_key($entityColumns, $tableColumns);
@@ -58,9 +58,9 @@
 		
 		/**
 		 * Get columns that exist in table but not in entity
-		 * @param array $entityColumns Map of property names to definitions from entity model
-		 * @param array $tableColumns Map of column names to definitions from database
-		 * @return array Columns that need to be deleted from the table
+		 * @param array<string, array<string, mixed>> $entityColumns Map of property names to definitions from entity model
+		 * @param array<string, array<string, mixed>> $tableColumns Map of column names to definitions from database
+		 * @return array<string, array<string, mixed>> Columns that need to be deleted from the table
 		 */
 		private function getDeletedColumns(array $entityColumns, array $tableColumns): array {
 			return array_diff_key($tableColumns, $entityColumns);
@@ -68,9 +68,9 @@
 		
 		/**
 		 * Get columns that exist in both but have differences
-		 * @param array $entityColumns Definition of properties from the entity model
-		 * @param array $tableColumns Definition of columns from the database table
-		 * @return array Columns that need to be modified in the table
+		 * @param array<string, array<string, mixed>> $entityColumns Definition of properties from the entity model
+		 * @param array<string, array<string, mixed>> $tableColumns Definition of columns from the database table
+		 * @return array<string, array{from: array<string, mixed>, to: array<string, mixed>, changes: array<string, array{from: mixed, to: mixed}>}> Columns that need to be modified in the table
 		 */
 		private function getModifiedColumns(array $entityColumns, array $tableColumns): array {
 			$result = [];
@@ -93,9 +93,9 @@
 		
 		/**
 		 * Identify specific properties that changed between two column definitions
-		 * @param array $from Original column definition (normalized)
-		 * @param array $to New column definition (normalized)
-		 * @return array Map of property names to their before/after values
+		 * @param array<string, mixed> $from Original column definition (normalized)
+		 * @param array<string, mixed> $to New column definition (normalized)
+		 * @return array<string, array{from: mixed, to: mixed}> Map of property names to their before/after values
 		 */
 		private function identifySpecificChanges(array $from, array $to): array {
 			$changes = [];
@@ -118,8 +118,8 @@
 		
 		/**
 		 * Normalize column definition for consistent comparison
-		 * @param array $columnDefinition The column definition to normalize
-		 * @return array Normalized column definition
+		 * @param array<string, mixed> $columnDefinition The column definition to normalize
+		 * @return array<string, mixed> Normalized column definition
 		 */
 		private function normalizeColumnDefinition(array $columnDefinition): array {
 			// Step 1: Add any missing default values to ensure all required properties are present
@@ -149,8 +149,8 @@
 		
 		/**
 		 * Add default values where missing
-		 * @param array $columnDefinition Raw column definition
-		 * @return array Column definition with default values added
+		 * @param array<string, mixed> $columnDefinition Raw column definition
+		 * @return array<string, mixed> Column definition with default values added
 		 */
 		private function addDefaultValues(array $columnDefinition): array {
 			$result = $columnDefinition;
@@ -170,8 +170,8 @@
 		
 		/**
 		 * Filter to only include properties relevant to the column type
-		 * @param array $columnDefinition Column definition with all properties
-		 * @return array Column definition with only type-relevant properties
+		 * @param array<string, mixed> $columnDefinition Column definition with all properties
+		 * @return array<string, mixed> Column definition with only type-relevant properties
 		 */
 		private function filterRelevantProperties(array $columnDefinition): array {
 			$columnType = $columnDefinition['type'] ?? 'string';
@@ -182,8 +182,8 @@
 		
 		/**
 		 * Normalize property values for consistent comparison
-		 * @param array $columnDefinition Column definition to normalize
-		 * @return array Column definition with normalized property values
+		 * @param array<string, mixed> $columnDefinition Column definition to normalize
+		 * @return array<string, mixed> Column definition with normalized property values
 		 */
 		private function normalizePropertyValues(array $columnDefinition): array {
 			// Extract column type, defaulting to 'string' if not specified
@@ -270,7 +270,7 @@
 		
 		/**
 		 * Validate input arrays to ensure they have the expected structure
-		 * @param array $columns Array of column definitions to validate
+		 * @param array<string, mixed> $columns Array of column definitions to validate
 		 * @param string $parameterName Name of the parameter being validated (for error messages)
 		 * @return void
 		 * @throws \InvalidArgumentException If validation fails
