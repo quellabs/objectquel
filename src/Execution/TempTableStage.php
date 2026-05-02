@@ -44,14 +44,14 @@
 		
 		/**
 		 * Static parameters forwarded to the inner query execution
-		 * @var array
+		 * @var array<string, mixed>
 		 */
 		private array $staticParams;
 		
 		/**
 		 * @param string $name Unique stage name
 		 * @param AstRangeDatabase $range The range whose inner query must be materialised
-		 * @param array $staticParams Parameters passed through to inner query execution
+		 * @param array<string, mixed> $staticParams Parameters passed through to inner query execution
 		 */
 		public function __construct(string $name, AstRangeDatabase $range, array $staticParams = []) {
 			$this->name = $name;
@@ -116,7 +116,7 @@
 		
 		/**
 		 * Returns the static parameters to forward to inner query execution
-		 * @return array
+		 * @return array<string, mixed>
 		 */
 		public function getStaticParams(): array {
 			return $this->staticParams;

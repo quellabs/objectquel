@@ -175,7 +175,7 @@
 		 * reintroduced to restrict traversal.
 		 *
 		 * @param AstRange $range Starting range to expand from
-		 * @param \WeakMap<AstRange, true> $required Collected set of required ranges
+		 * @param \WeakMap<AstRange, AstRange> $required Collected set of required ranges
 		 * @param \WeakMap<AstRange, true> $processed DFS cycle detection guard
 		 * @return void
 		 */
@@ -224,7 +224,10 @@
 		 * @return \WeakMap<AstRange, AstRange>
 		 */
 		public static function expandWithAllJoinDependencies(array $directlyUsed): \WeakMap {
+			/** @var \WeakMap<AstRange, AstRange> $required */
 			$required = new \WeakMap();
+			
+			/** @var \WeakMap<AstRange, true> $processed */
 			$processed = new \WeakMap();
 			
 			foreach ($directlyUsed as $range) {
@@ -241,7 +244,10 @@
 		 * @return \WeakMap<AstRange, AstRange> Minimal set of ranges needed for correctness
 		 */
 		public static function computeMinimalRangeSet(array $seedRanges): \WeakMap {
+			/** @var \WeakMap<AstRange, AstRange> $required */
 			$required = new \WeakMap();
+			
+			/** @var \WeakMap<AstRange, true> $processed */
 			$processed = new \WeakMap();
 			
 			// For each seed range (directly referenced by the aggregate), expand to include
