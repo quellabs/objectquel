@@ -10,11 +10,12 @@
 	class OneToOne implements AnnotationInterface {
 		
 		// Contains parameters that provide additional information about the relationship
+		/** @var array<string, mixed> */
 		protected array $parameters;
 		
 		/**
 		 * Constructor to initialize the parameters.
-		 * @param array $parameters Array with parameters that describe the relationship.
+		 * @param array<string, mixed> $parameters Array with parameters that describe the relationship.
 		 */
 		public function __construct(array $parameters) {
 			$this->parameters = $parameters;
@@ -22,7 +23,7 @@
 		
 		/**
 		 * Returns the parameters for this annotation
-		 * @return array
+		 * @return array<string, mixed>
 		 */
 		public function getParameters(): array {
 			return $this->parameters;

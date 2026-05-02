@@ -14,13 +14,13 @@
 		
 		/**
 		 * Array containing all column parameters
-		 * @var array
+		 * @var array<string, mixed>
 		 */
 		protected array $parameters;
 		
 		/**
 		 * Column constructor
-		 * @param array $parameters Associative array of column parameters
+		 * @param array<string, mixed> $parameters Associative array of column parameters
 		 */
 		public function __construct(array $parameters) {
 			$this->parameters = $parameters;
@@ -28,7 +28,7 @@
 		
 		/**
 		 * Returns all parameters for this column annotation
-		 * @return array The complete parameters array
+		 * @return array<string, mixed> The complete parameters array
 		 */
 		public function getParameters(): array {
 			return $this->parameters;

@@ -28,13 +28,13 @@
 		
 		/**
 		 * Contains all parameters defined in the full-text index annotation
-		 * @var array
+		 * @var array<string, mixed>
 		 */
 		protected array $parameters;
 		
 		/**
 		 * FullTextIndex constructor.
-		 * @param array $parameters Array of parameters from the annotation
+		 * @param array<string, mixed> $parameters Array of parameters from the annotation
 		 */
 		public function __construct(array $parameters) {
 			$this->parameters = $parameters;
@@ -42,7 +42,7 @@
 		
 		/**
 		 * Returns all parameters for this full-text index annotation
-		 * @return array All parameters defined in the annotation
+		 * @return array<string, mixed> All parameters defined in the annotation
 		 */
 		public function getParameters(): array {
 			return $this->parameters;
@@ -59,7 +59,7 @@
 		/**
 		 * Returns the columns covered by this full-text index.
 		 * These are property names on the entity, not database column names.
-		 * @return array List of property names included in the full-text index
+		 * @return array<int, string> List of property names included in the full-text index
 		 */
 		public function getColumns(): array {
 			return $this->parameters['columns'] ?? [];

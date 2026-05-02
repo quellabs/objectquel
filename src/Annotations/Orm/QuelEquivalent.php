@@ -10,12 +10,13 @@
 	class QuelEquivalent implements AnnotationInterface {
 		
 		// Protected variable that will contain the parameters.
+		/** @var array<string, mixed> */
 		protected array $parameters;
 		
 		/**
 		 * Constructor for QuelEquivalent.
 		 * This method initializes the class with the provided parameters.
-		 * @param array $parameters
+		 * @param array<string, mixed> $parameters
 		 */
 		public function __construct(array $parameters) {
 			$this->parameters = $parameters;
@@ -23,7 +24,7 @@
 		
 		/**
 		 * Returns the parameters for this annotation
-		 * @return array
+		 * @return array<string, mixed>
 		 */
 		public function getParameters(): array {
 			return $this->parameters;

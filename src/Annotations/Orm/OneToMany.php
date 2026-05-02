@@ -12,13 +12,13 @@
 	class OneToMany implements AnnotationInterface {
 		
 		/**
-		 * @var array The parameters that were passed with the annotation.
+		 * @var array<string, mixed> The parameters that were passed with the annotation.
 		 */
 		protected array $parameters;
 		
 		/**
 		 * OneToMany constructor.
-		 * @param array $parameters The parameters of the OneToMany annotation.
+		 * @param array<string, mixed> $parameters The parameters of the OneToMany annotation.
 		 */
 		public function __construct(array $parameters) {
 			$this->parameters = $parameters;
@@ -26,7 +26,7 @@
 		
 		/**
 		 * Returns the parameters for this annotation
-		 * @return array
+		 * @return array<string, mixed>
 		 */
 		public function getParameters(): array {
 			return $this->parameters;

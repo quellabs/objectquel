@@ -22,13 +22,13 @@
 		
 		/**
 		 * Contains all parameters defined in the unique index annotation
-		 * @var array
+		 * @var array<string, mixed>
 		 */
 		protected array $parameters;
 		
 		/**
 		 * UniqueIndex constructor.
-		 * @param array $parameters Array of parameters from the annotation
+		 * @param array<string, mixed> $parameters Array of parameters from the annotation
 		 */
 		public function __construct(array $parameters) {
 			$this->parameters = $parameters;
@@ -36,7 +36,7 @@
 		
 		/**
 		 * Returns all parameters for this unique index annotation
-		 * @return array All parameters defined in the annotation
+		 * @return array<string, mixed> All parameters defined in the annotation
 		 */
 		public function getParameters(): array {
 			return $this->parameters;
@@ -52,7 +52,7 @@
 		
 		/**
 		 * Returns the columns to create a unique index on
-		 * @return array List of column names to be uniquely indexed
+		 * @return array<int, string> List of column names to be uniquely indexed
 		 */
 		public function getColumns(): array {
 			return $this->parameters['columns'] ?? [];
