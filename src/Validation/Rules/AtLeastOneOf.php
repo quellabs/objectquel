@@ -10,16 +10,16 @@
 		protected array $conditions;
 		
 		/** Optional custom error message returned when validation fails */
-		protected ?string $message;
+		protected ?string $errorMessage;
 		
 		/**
 		 * Initializes the rule with a set of conditions and an optional custom error message.
 		 * @param array<ValidationInterface> $conditions Validation rules to evaluate
-		 * @param string|null $message Custom error message (optional)
+		 * @param string|null $errorMessage Custom error message (optional)
 		 */
-		public function __construct(array $conditions = [], ?string $message = null) {
+		public function __construct(array $conditions = [], ?string $errorMessage = null) {
 			$this->conditions = $conditions;
-			$this->message = $message;
+			$this->errorMessage = $errorMessage;
 		}
 		
 		/**
@@ -52,6 +52,6 @@
 		 * @return string
 		 */
 		public function getError(): string {
-			return $this->message ?? 'At least one of the conditions should be fulfilled.';
+			return $this->errorMessage ?? 'At least one of the conditions should be fulfilled.';
 		}
 	}

@@ -6,51 +6,52 @@
 	
 	class Type implements ValidationInterface {
 		
-		protected $conditions;
-		protected $error;
-		protected $is_a_types;
-		protected $ctype_types;
+		protected array $conditions;
+		protected ?string $errorMessage;
+		protected string $error = "";
+		protected array $is_a_types = [
+			'bool',
+			'boolean',
+			'int',
+			'integer',
+			'long',
+			'float',
+			'double',
+			'real',
+			'numeric',
+			'string',
+			'scalar',
+			'array',
+			'iterable',
+			'countable',
+			'callable',
+			'object',
+			'resource',
+			'null',
+		];
+		
+		protected array $ctype_types = [
+			'alnum',
+			'alpha',
+			'cntrl',
+			'digit',
+			'graph',
+			'lower',
+			'print',
+			'punct',
+			'space',
+			'upper',
+			'xdigit',
+		];
 		
 		/**
 		 * Email constructor
 		 * @param array $conditions
+		 * @param string|null $errorMessage
 		 */
-		public function __construct(array $conditions = []) {
+		public function __construct(array $conditions = [], ?string $errorMessage = null) {
 			$this->conditions = $conditions;
-			$this->error = "";
-			$this->is_a_types = [
-				'bool',
-				'boolean',
-				'int',
-				'integer',
-				'long',
-				'float',
-				'double',
-				'real',
-				'numeric',
-				'string',
-				'scalar',
-				'array',
-				'iterable',
-				'countable',
-				'callable',
-				'object',
-				'resource',
-				'null',
-			];
-			$this->ctype_types = [
-				'alnum',
-				'alpha',
-				'cntrl',
-				'digit',
-				'graph',
-				'lower',
-				'print',
-				'punct',
-				'space',
-				'upper',
-				'xdigit',
-			];
+			$this->errorMessage = $errorMessage;
 		}
 		
 		/**
@@ -104,10 +105,10 @@
 		}
 
 		public function getError(): string {
-			if (!isset($this->conditions["message"])) {
-				return $this->error;
+			if (!empty($this->errorMessage)) {
+				return $this->errorMessage;
 			}
 			
-			return $this->conditions["message"];
+			return $this->error;
 		}
 	}
