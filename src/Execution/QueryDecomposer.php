@@ -41,8 +41,7 @@
 		 */
 		public function __construct() {
 			$this->analyzer = new ConditionAnalyzer();
-			$conditionFilter = new ConditionFilter($this->analyzer);
-			$this->stageFactory = new StageFactory($this->analyzer, $conditionFilter);
+			$this->stageFactory = new StageFactory($this->analyzer, new ConditionFilter($this->analyzer));
 		}
 		
 		/**
@@ -60,7 +59,7 @@
 		 *   3. Add JSON/other non-database range stages (existing behaviour).
 		 *
 		 * @param AstRetrieve $query The ObjectQuel query to decompose
-		 * @param array $staticParams Optional static parameters for the query
+		 * @param array<int|string, mixed> $staticParams Optional static parameters for the query
 		 * @return ExecutionPlan The execution plan containing all stages
 		 * @throws QuelException If the query cannot be properly decomposed
 		 */
@@ -106,7 +105,7 @@
 		 *
 		 * @param ExecutionPlan $plan
 		 * @param AstRangeDatabase[] $tempRanges Already dependency-sorted temp ranges
-		 * @param array $staticParams
+		 * @param array<int|string, mixed> $staticParams
 		 * @return string[] Map of rangeName → TempTableStage name
 		 */
 		private function buildTempTableStages(ExecutionPlan $plan, array $tempRanges, array $staticParams): array {
@@ -151,7 +150,7 @@
 		 *
 		 * @param ExecutionPlan $plan
 		 * @param AstRetrieve $query
-		 * @param array $staticParams
+		 * @param array<int|string, mixed> $staticParams
 		 * @param string[] $tempTableStageNames Map of rangeName → TempTableStage name
 		 */
 		private function buildDatabaseStage(ExecutionPlan $plan, AstRetrieve $query, array $staticParams, array $tempTableStageNames): void {

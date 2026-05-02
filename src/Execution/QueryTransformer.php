@@ -35,7 +35,7 @@
 		/**
 		 * Transform the query
 		 * @param AstRetrieve $ast
-		 * @param array $parameters
+		 * @param array<int|string, mixed> $parameters
 		 * @return void
 		 */
 		public function transform(AstRetrieve $ast, array $parameters): void {
@@ -64,7 +64,7 @@
 		/**
 		 * Processes pagination for the query.
 		 * @param AstRetrieve $ast
-		 * @param array $parameters
+		 * @param array<int|string, mixed> $parameters
 		 * @return void
 		 */
 		private function processPagination(AstRetrieve $ast, array $parameters): void {
@@ -101,8 +101,12 @@
 		/**
 		 * Processes pagination by directly manipulating existing IN() values.
 		 * @param AstRetrieve $ast
-		 * @param array $parameters
-		 * @param array $primaryKeyInfo
+		 * @param array<int|string, mixed> $parameters
+		 * @param array{
+		 *     range: mixed,
+		 *     entityName: string,
+		 *     primaryKey: string|null
+		 * } $primaryKeyInfo
 		 * @return void
 		 */
 		private function processPaginationSkippingValidation(AstRetrieve $ast, array $parameters, array $primaryKeyInfo): void {
@@ -131,8 +135,12 @@
 		/**
 		 * Processes pagination by fetching all primary keys first.
 		 * @param AstRetrieve $ast
-		 * @param array $parameters
-		 * @param array $primaryKeyInfo
+		 * @param array<int|string, mixed> $parameters
+		 * @param array{
+		 *     range: mixed,
+		 *     entityName: string,
+		 *     primaryKey: string|null
+		 * } $primaryKeyInfo
 		 * @return void
 		 */
 		private function processPaginationWithValidation(AstRetrieve $ast, array $parameters, array $primaryKeyInfo): void {
@@ -167,9 +175,13 @@
 		/**
 		 * Fetches all primary keys for pagination by temporarily modifying the query.
 		 * @param AstRetrieve $ast
-		 * @param array $parameters
-		 * @param array $primaryKeyInfo
-		 * @return array
+		 * @param array<int|string, mixed> $parameters
+		 * @param array{
+		 *     range: mixed,
+		 *     entityName: string,
+		 *     primaryKey: string|null
+		 * } $primaryKeyInfo
+		 * @return list<int|string>
 		 */
 		private function fetchAllPrimaryKeysForPagination(AstRetrieve $ast, array $parameters, array $primaryKeyInfo): array {
 			// Store original state
@@ -196,10 +208,10 @@
 
 		/**
 		 * Gets the subset of primary keys for the current page.
-		 * @param array $primaryKeys
+		 * @param list<int|string> $primaryKeys
 		 * @param int $window
 		 * @param int $windowSize
-		 * @return array
+		 * @return list<int|string>
 		 */
 		private function getPageSubset(array $primaryKeys, int $window, int $windowSize): array {
 			return array_slice($primaryKeys, $window * $windowSize, $windowSize);
@@ -208,7 +220,7 @@
 		/**
 		 * Convert AstRetrieve node to SQL
 		 * @param AstRetrieve $retrieve The AST to convert
-		 * @param array $parameters Query parameters (passed by reference)
+		 * @param array<int|string, mixed> $parameters Query parameters (passed by reference)
 		 * @return string The generated SQL query
 		 */
 		private function convertToSQL(AstRetrieve $retrieve, array &$parameters): string {
@@ -218,7 +230,11 @@
 		
 		/**
 		 * Factory method to create primary key identifiers.
-		 * @param array $primaryKeyInfo
+		 * @param array{
+		 *     range: mixed,
+		 *     entityName: string,
+		 *     primaryKey: string|null
+		 * } $primaryKeyInfo
 		 * @return AstIdentifier
 		 */
 		private function createPrimaryKeyIdentifier(array $primaryKeyInfo): AstIdentifier {
@@ -231,8 +247,12 @@
 		/**
 		 * Adds IN condition for pagination filtering.
 		 * @param AstRetrieve $ast
-		 * @param array $primaryKeyInfo
-		 * @param array $filteredKeys
+		 * @param array{
+		 *     range: mixed,
+		 *     entityName: string,
+		 *     primaryKey: string|null
+		 * } $primaryKeyInfo
+		 * @param list<int|string> $filteredKeys
 		 * @return void
 		 */
 		private function addInConditionForPagination(AstRetrieve $ast, array $primaryKeyInfo, array $filteredKeys): void {

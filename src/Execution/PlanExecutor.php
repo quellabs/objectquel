@@ -70,7 +70,7 @@
 		/**
 		 * Execute a complete execution plan
 		 * @param ExecutionPlan $plan The plan containing stages to execute
-		 * @return array Results from executing the plan
+		 * @return array<string|int, mixed> Results from executing the plan
 		 * @throws QuelException When any stage execution fails
 		 */
 		public function execute(ExecutionPlan $plan): array {
@@ -145,7 +145,7 @@
 		 * get their own independent cleanup scope and do not interfere with the outer
 		 * execution's finally block.
 		 *
-		 * @return callable(AstRetrieve $query, array $params): array
+		 * @return callable(AstRetrieve, array<string|int, mixed>): array<string|int, mixed>
 		 */
 		private function buildInnerQueryRunner(): callable {
 			return function (AstRetrieve $innerQuery, array $params): array {
@@ -204,7 +204,7 @@
 		/**
 		 * Process an individual stage with dependencies
 		 * @param ExecutionStageInterface $stage The stage to execute
-		 * @return array The result of this stage's execution
+		 * @return array<string|int, mixed> The result of this stage's execution
 		 * @throws QuelException When dependencies cannot be satisfied or execution fails
 		 */
 		private function executeStage(ExecutionStageInterface $stage): array {
@@ -229,8 +229,8 @@
 		 * based on their join types and conditions. It starts with the main stage result
 		 * and progressively joins other stage results to build the final combined result.
 		 * @param ExecutionPlan $plan The execution plan with stage information
-		 * @param array $intermediateResults Results from all stages, indexed by stage name
-		 * @return array The combined result after performing all necessary joins
+		 * @param array<string, array<string|int, mixed>> $intermediateResults Results from all stages, indexed by stage name
+		 * @return array<string|int, mixed> The combined result after performing all necessary joins
 		 * @throws QuelException
 		 */
 		private function combineResults(ExecutionPlan $plan, array $intermediateResults): array {
@@ -285,11 +285,11 @@
 		
 		/**
 		 * Perform a join using the appropriate strategy
-		 * @param array $leftResult The left result set (typically the accumulated result)
-		 * @param array $rightResult The right result set (current stage result to join)
+		 * @param array<string|int, mixed> $leftResult The left result set (typically the accumulated result)
+		 * @param array<string|int, mixed> $rightResult The right result set (current stage result to join)
 		 * @param string $joinType The type of join to perform (cross, left, inner)
 		 * @param mixed|null $joinConditions The join conditions (if applicable)
-		 * @return array The joined result set
+		 * @return array<string|int, mixed> The joined result set
 		 * @throws QuelException When join type is unsupported or join fails
 		 */
 		private function performJoin(array $leftResult, array $rightResult, string $joinType, mixed $joinConditions = null): array {
@@ -307,7 +307,7 @@
 		
 		/**
 		 * Find a stage by name from the stages array
-		 * @param array $stages Array of ExecutionStage objects
+		 * @param array<int, ExecutionStageInterface> $stages Array of ExecutionStage objects
 		 * @param string $stageName Name of the stage to find
 		 * @return ExecutionStageInterface|null The found stage or null if not found
 		 */

@@ -23,7 +23,7 @@
 		 * of the entity's relationships. If there are no ManyToOne dependencies,
 		 * the main entity is added as a stand-alone range.
 		 * @param string $entityType The entity type for which relationships should be retrieved.
-		 * @return array An array with range definitions for the entity and its relationships.
+		 * @return array<string, string> An array with range definitions for the entity and its relationships.
 		 */
 		private function getRelationRanges(string $entityType): array {
 			// The first range is always 'main'
@@ -77,7 +77,7 @@
 		 * Processes OneToOne dependencies for a given entity type.
 		 * @param string $entityType The type of entity for which relationships are being processed.
 		 * @param string $dependentEntityType
-		 * @param array $ranges An array of existing ranges that needs to be extended.
+		 * @param array<string, string> $ranges An array of existing ranges that needs to be extended.
 		 * @param int $rangeCounter A counter to create unique aliases for ranges.
 		 * @return void
 		 */
@@ -116,7 +116,7 @@
 		 * is set with a 'via' clause if ManyToOne relationships exist.
 		 * @param string $entityType The type of entity for which relationships are being processed.
 		 * @param string $dependentEntityType
-		 * @param array $ranges An array of existing ranges that needs to be extended.
+		 * @param array<string, string> $ranges An array of existing ranges that needs to be extended.
 		 * @param int $rangeCounter A counter to create unique aliases for ranges.
 		 * @return void
 		 */
@@ -151,7 +151,7 @@
 		 * This function generates a query string that can be used to retrieve an entity
 		 * and its related entities.
 		 * @param string $entityType The type of entity for which the query is being prepared.
-		 * @param array $primaryKeys The primary keys for the entity.
+		 * @param array<string, mixed> $primaryKeys The primary keys for the entity.
 		 * @return string The composed query string.
 		 */
 		public function prepareQuery(string $entityType, array $primaryKeys): string {

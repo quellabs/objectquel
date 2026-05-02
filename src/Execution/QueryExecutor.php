@@ -71,8 +71,8 @@
 		/**
 		 * Execute a database query and return the results
 		 * @param ExecutionStageInterface $stage
-		 * @param array $initialParams (Optional) An array of parameters to bind to the query
-		 * @return array
+		 * @param array<int|string, mixed> $initialParams (Optional) An array of parameters to bind to the query
+		 * @return list<array<string, mixed>>
 		 * @throws QuelException
 		 */
 		public function executeStage(ExecutionStageInterface $stage, array $initialParams = []): array {
@@ -92,7 +92,7 @@
 		 * that the inner AstRetrieve is not re-parsed from a string.
 		 *
 		 * @param ExecutionPlan $plan The plan to execute
-		 * @return array Raw result rows
+		 * @return list<array<string, mixed>>
 		 * @throws QuelException
 		 */
 		public function executePlan(ExecutionPlan $plan): array {
@@ -102,8 +102,8 @@
 		/**
 		 * Execute a decomposed query plan
 		 * @param string $query The query to execute
-		 * @param array $parameters Initial parameters for the plan
-		 * @return QuelResult The results of the execution plan
+		 * @param array<int|string, mixed> $parameters
+		 * @return QuelResult
 		 * @throws QuelException
 		 */
 		public function executeQuery(string $query, array $parameters = []): QuelResult {
@@ -126,7 +126,7 @@
 		
 		/**
 		 * Return the executed SQL
-		 * @return array
+		 * @return list<string>
 		 */
 		public function getLastExecutedSql(): array {
 			return $this->databaseExecutor->getLastExecutedSql();
