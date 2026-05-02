@@ -95,7 +95,7 @@
 			$this->reflectionHandler = new ReflectionHandler();
 			$this->proxyNamespace = 'Quellabs\\ObjectQuel\\Proxy\\Runtime';
 			$this->entityNamespace = $configuration->getEntityNameSpace();
-
+			
 			// Fetch builder
 			$this->metadataBuilder = new EntityMetadataBuilder(
 				$this->annotationReader,
@@ -154,7 +154,7 @@
 		}
 		
 		// ==================== Meta data ====================
-
+		
 		/**
 		 * Get complete metadata for an entity.
 		 * This is the main access point - all other methods delegate to this.
@@ -172,7 +172,7 @@
 			
 			return $this->metadataCache[$className];
 		}
-
+		
 		/**
 		 * Checks if the entity or its parent exists in the entity registry.
 		 * @param mixed $entity The entity to check, either as an object or as a string class name
@@ -231,7 +231,7 @@
 			
 			// Try resolving short class name
 			$resolved = NamespaceResolver::resolveClassName($className);
-
+			
 			if ($resolved === $className) {
 				$fullyQualifiedClassName = "{$this->entityNamespace}\\{$className}";
 			} else {
@@ -363,18 +363,35 @@
 		}
 		
 		/**
-		 * Returns the entity's annotations.
-		 * @template T of AnnotationInterface
-		 * @param mixed $entity The entity object or class name string to get annotations for
-		 * @param class-string<T>|null $annotationType $annotationType Optional class name to filter annotations by specific type
-		 * @return array<string, array<int, T>> Array of annotation objects, optionally filtered by type
+		 * Returns all annotations grouped by property.
+		 * @param mixed $entity
+		 * @return array<string, array<int, AnnotationInterface>>
 		 */
-		public function getAnnotations(mixed $entity, ?string $annotationType = null): array {
+		public function getAnnotations(mixed $entity): array {
 			$result = [];
 			
 			foreach ($this->getMetadata($entity)->annotations as $property => $annotationCollection) {
 				foreach ($annotationCollection as $annotation) {
-					if ($annotationType === null || is_a($annotation, $annotationType)) {
+					$result[$property][] = $annotation;
+				}
+			}
+			
+			return $result;
+		}
+		
+		/**
+		 * Returns annotations filtered by a specific type.
+		 * @template T of AnnotationInterface
+		 * @param mixed $entity
+		 * @param class-string<T> $annotationType
+		 * @return array<string, array<int, T>>
+		 */
+		public function getAnnotationsOfType(mixed $entity, string $annotationType): array {
+			$result = [];
+			
+			foreach ($this->getMetadata($entity)->annotations as $property => $annotationCollection) {
+				foreach ($annotationCollection as $annotation) {
+					if (is_a($annotation, $annotationType)) {
 						$result[$property][] = $annotation;
 					}
 				}
@@ -429,7 +446,7 @@
 		 * @return bool True if the entity is immutable, false otherwise
 		 */
 		public function isImmutable(mixed $entity): bool {
-			$annotationList = $this->getAnnotations($entity, Immutable::class);
+			$annotationList = $this->getAnnotationsOfType($entity, Immutable::class);
 			return !empty($annotationList);
 		}
 		

@@ -169,10 +169,10 @@
 		 *
 		 * Each step is delegated to specialized classes to maintain separation of concerns.
 		 *
-		 * @param array $ranges Cloned query ranges to work with
+		 * @param array<int, AstRange> $ranges Cloned query ranges to work with
 		 * @param AstAny $node The ANY node being optimized
 		 * @param QueryAnalysisResult $analysis Structured usage analysis
-		 * @return array [optimized_ranges, final_where_clause]
+		 * @return array{0: array<int, AstRange>, 1: AstInterface|null}
 		 * @throws QuelException
 		 */
 		private function buildOptimizedSubquery(array $ranges, AstAny $node, QueryAnalysisResult $analysis): array {
@@ -231,7 +231,7 @@
 		 * @param AstRetrieve $ast Root query AST
 		 * @param AstAny $node ANY node to replace
 		 * @param string $subQueryType Type of subquery to generate
-		 * @param array $optimized [ranges, where_clause] from buildOptimizedSubquery
+		 * @param array{0: array<int, AstRange>, 1: AstInterface|null} $optimized
 		 * @return void
 		 */
 		private function applyOptimization(AstRetrieve $ast, AstAny $node, string $subQueryType, array $optimized): void {
@@ -332,7 +332,7 @@
 		 * The subquery uses the optimized ranges and WHERE clause from the optimization pipeline.
 		 *
 		 * @param string $subQueryType Type of subquery (EXISTS or CASE WHEN)
-		 * @param AstRange[] $correlatedRanges Ranges to include in subquery
+		 * @param array<int, AstRange> $correlatedRanges Ranges to include in subquery
 		 * @param AstInterface|null $conditions WHERE clause for subquery
 		 * @param AstAny $node ANY node to replace
 		 * @return void
@@ -368,7 +368,7 @@
 		 * In such cases, ANY() becomes redundant since it's just checking if the anchor table
 		 * has any rows, which is already guaranteed by the outer query context.
 		 *
-		 * @param array $correlatedRanges Available table ranges in the subquery scope
+		 * @param array<int, AstRange> $correlatedRanges Available table ranges in the subquery scope
 		 * @param ?AstInterface $conditions WHERE clause conditions (null if none)
 		 * @param AstAny $node The ANY() AST node being analyzed
 		 * @return bool True if this is a simplifiable ANY() on anchor with no conditions

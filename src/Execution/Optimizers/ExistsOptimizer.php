@@ -77,7 +77,7 @@
 		 * binary operation trees containing EXISTS operators.
 		 * @param AstRetrieve $ast The main query AST (used for setting conditions)
 		 * @param AstInterface $conditions The condition tree to process
-		 * @return array Array of extracted AstExists objects
+		 * @return array<int, AstExists> Array of extracted AstExists objects
 		 */
 		private function extractExistsOperators(AstRetrieve $ast, AstInterface $conditions): array {
 			// Simple case: single EXISTS operator
@@ -103,7 +103,7 @@
 		 * extracts them into a list, and reconstructs the tree without them.
 		 * @param AstInterface|null $parent The parent node (null for root)
 		 * @param AstInterface $item Current node being processed
-		 * @param array &$list Reference to list collecting EXISTS operators
+		 * @param array<int, AstExists> $list Reference to list collecting EXISTS operators
 		 * @param bool $parentLeft Whether current item is left child of parent
 		 */
 		private function extractExistsFromBinaryOperator(

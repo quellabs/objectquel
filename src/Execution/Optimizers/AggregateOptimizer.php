@@ -8,6 +8,7 @@
 	use Quellabs\ObjectQuel\Execution\Support\AggregateRewriter;
 	use Quellabs\ObjectQuel\Execution\Support\AstUtilities;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstAggregate;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstAlias;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRetrieve;
 	use Quellabs\ObjectQuel\Execution\Support\ExistsRewriter;
 	use Quellabs\ObjectQuel\Execution\Support\RangeRemover;
@@ -161,7 +162,7 @@
 		 * @param AstRetrieve $root
 		 * @param AstAggregate $aggregate Aggregate node to analyze
 		 * @param bool $isAggregateOnly Pre-computed query shape flag
-		 * @param array $nonAggItems Pre-computed non-aggregate SELECT items (invariant per query)
+		 * @param array<int, AstAlias> $nonAggItems Pre-computed non-aggregate SELECT items (invariant per query)
 		 * @return string One of self::STRATEGY_* constants
 		 */
 		private function chooseStrategy(AstRetrieve $root, AstAggregate $aggregate, bool $isAggregateOnly, array $nonAggItems): string {

@@ -62,7 +62,7 @@
 			return [
 				'columns'           => $entityStore->getColumnMap($this->entityName),
 				'identifiers'       => $entityStore->getIdentifierKeys($this->entityName),
-				'columnAnnotations' => $entityStore->getAnnotations($this->entityName, Column::class),
+				'columnAnnotations' => $entityStore->getAnnotationsOfType($this->entityName, Column::class),
 				'relationships'     => $this->extractManyToOneRelationShips()
 			];
 		}

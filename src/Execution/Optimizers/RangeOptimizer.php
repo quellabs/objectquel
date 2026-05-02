@@ -2,6 +2,7 @@
 	
 	namespace Quellabs\ObjectQuel\Execution\Optimizers;
 	
+	use Quellabs\AnnotationReader\AnnotationInterface;
 	use Quellabs\ObjectQuel\Annotations\Orm\ManyToOne;
 	use Quellabs\ObjectQuel\Annotations\Orm\OneToOne;
 	use Quellabs\ObjectQuel\Annotations\Orm\RequiredRelation;
@@ -152,7 +153,7 @@
 		 * by traversing the AST nodes for SELECT values, ORDER BY clauses, and WHERE conditions
 		 * @param AstRetrieve $ast The query AST to analyze
 		 * @param bool $traverseSubqueries
-		 * @return array Array of range nodes that are referenced in the query
+		 * @return array<int, AstRange> Array of range nodes that are referenced in the query
 		 */
 		private function getUsedRanges(AstRetrieve $ast, bool $traverseSubqueries = true): array {
 			// Initialize visitor pattern to collect range references
@@ -254,7 +255,7 @@
 		/**
 		 * Collects ranges used in join conditions (via clauses)
 		 * @param AstRetrieve $ast
-		 * @return array
+		 * @return array<int, AstRange>
 		 */
 		private function getRangesUsedInJoinConditions(AstRetrieve $ast): array {
 			$visitor = new CollectRanges(false);
@@ -350,15 +351,18 @@
 				return;
 			}
 			
-			// Get all annotations for the entity that owns the relationship
-			// Annotations are grouped by property/method they're applied to
+			/**
+			 * Get all annotations for the entity that owns the relationship
+			 * Annotations are grouped by property/method they're applied to
+			 * @var array<string, array<int, AnnotationInterface>> $entityAnnotations
+			 */
 			$entityAnnotations = $this->entityStore->getAnnotations($ownEntityName);
 			
 			// Search through all annotation groups for this entity
 			foreach ($entityAnnotations as $annotations) {
 				// Performance optimization: quick check for RequiredRelation annotations
 				// Avoids detailed processing if no relevant annotations exist
-				if (!$this->containsRequiredRelationAnnotation($annotations->toArray())) {
+				if (!$this->containsRequiredRelationAnnotation($annotations)) {
 					continue;
 				}
 				
@@ -439,7 +443,7 @@
 		 * - Early filtering prevents unnecessary detailed analysis
 		 * - Reduces overall optimization time for complex entities
 		 *
-		 * @param array $annotations Array of annotations to check
+		 * @param array<int, AnnotationInterface> $annotations Array of annotations to check
 		 * @return bool True if any RequiredRelation annotations are found
 		 */
 		private function containsRequiredRelationAnnotation(array $annotations): bool {
@@ -448,6 +452,7 @@
 					return true;
 				}
 			}
+			
 			return false;
 		}
 		
