@@ -36,7 +36,7 @@
 		/**
 		 * Static parameters that are provided at the plan creation time
 		 * These are fixed values that don't depend on the execution of other stages
-		 * @var array
+		 * @var array<string, mixed>
 		 */
 		private array $staticParams = [];
 		
@@ -67,7 +67,7 @@
 		 * @param string $name Unique identifier for this stage within the execution plan
 		 * @param AstRetrieve $query The ObjectQuel query AST for this stage
 		 * @param AstRangeDatabase|AstRangeJsonSource|null $range The data source range, or null if to be determined later
-		 * @param array $staticParams Fixed parameters that don't depend on other stages' results
+		 * @param array<string, mixed> $staticParams Fixed parameters that don't depend on other stages' results
 		 * @param AstInterface|null $joinConditions The conditions for joining this stage with other stages
 		 */
 		public function __construct(string $name, AstRetrieve $query, AstRangeDatabase|AstRangeJsonSource|null $range, array $staticParams = [], ?AstInterface $joinConditions = null) {
@@ -122,7 +122,7 @@
 		
 		/**
 		 * Get the static parameters configured for this stage
-		 * @return array Associative array of parameter names to values
+		 * @return array<string, mixed> Associative array of parameter names to values
 		 */
 		public function getStaticParams(): array {
 			return $this->staticParams;

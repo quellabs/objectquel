@@ -50,7 +50,7 @@
 		 * Static parameters are values that don't change between executions and can be
 		 * safely included in cache keys (e.g., user-provided filter values).
 		 *
-		 * @return array Associative array of parameter names to values
+		 * @return array<string, mixed> Associative array of parameter names to values
 		 */
 		public function getStaticParams(): array;
 		

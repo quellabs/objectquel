@@ -47,7 +47,7 @@
 		 * Lifetime is strictly per plan-build pass: clearCache() is called at the
 		 * start of every buildExecutionPlan() call, so destroyed-and-reused objects
 		 * cannot produce stale cache hits.
-		 * @var array
+		 * @var array<string, bool>
 		 */
 		private array $cache = [];
 		

@@ -29,8 +29,8 @@
 		 * literals, identifiers, parameters, expressions, and binary operations.
 		 *
 		 * @param AstInterface $ast The AST condition to evaluate
-		 * @param array $row The data row to evaluate against (key-value pairs)
-		 * @param array $initialParams Optional parameters that can be referenced in the AST
+		 * @param array<string, mixed> $row The data row to evaluate against (key-value pairs)
+		 * @param array<string, mixed> $initialParams Optional parameters that can be referenced in the AST
 		 * @return mixed The result of the evaluation (could be boolean, string, number, etc.)
 		 * @throws QuelException When an unknown AST node or operator is encountered
 		 */

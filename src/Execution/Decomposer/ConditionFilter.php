@@ -44,7 +44,7 @@
 		 * evaluated by the database (based on the provided database ranges), removing any
 		 * parts that would require in-memory processing (like JSON operations).
 		 * @param AstInterface|null $condition The condition AST to filter
-		 * @param array $dbRanges Array of ranges that can be handled by the database
+		 * @param array<int, AstRange> $dbRanges Array of ranges that can be handled by the database
 		 * @return AstInterface|null The filtered condition AST, or null if nothing can be handled by DB
 		 */
 		public function filterDatabaseCompatibleConditions(?AstInterface $condition, array $dbRanges): ?AstInterface {

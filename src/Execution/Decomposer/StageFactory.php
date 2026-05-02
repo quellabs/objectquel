@@ -211,7 +211,7 @@
 		 * the FROM table. See promoteTempTableRanges() for full details.
 		 *
 		 * @param AstRetrieve $query The original query to be analyzed
-		 * @param array $staticParams
+		 * @param array<string, mixed> $staticParams
 		 * @param string[] $tempRangeNames Names of ranges that will become temp tables
 		 * @return ExecutionStage|null The execution stage, or null if there is none
 		 */
@@ -259,7 +259,7 @@
 		 * removing any parts that would require in-memory processing.
 		 * @param AstRetrieve $query The original query to be analyzed
 		 * @param AstRangeDatabase|AstRangeJsonSource $range
-		 * @param array $staticParams
+		 * @param array<string, mixed> $staticParams
 		 * @return ExecutionStage A new query containing only database-executable operations
 		 */
 		public function createRangeExecutionStage(AstRetrieve $query, AstRangeDatabase|AstRangeJsonSource $range, array $staticParams): ExecutionStage {
