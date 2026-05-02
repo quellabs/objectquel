@@ -28,10 +28,10 @@
 		
 		/**
 		 * Performs a left join between two result sets based on join conditions
-		 * @param array $leftResult The left result set (array of associative arrays)
-		 * @param array $rightResult The right result set (array of associative arrays)
+		 * @param list<array<string, mixed>> $leftResult The left result set (array of associative arrays)
+		 * @param list<array<string, mixed>> $rightResult The right result set (array of associative arrays)
 		 * @param AstInterface|null $conditions Join conditions to evaluate
-		 * @return array The joined result set
+		 * @return list<array<string, mixed>> The joined result set
 		 * @throws QuelException When conditions are required but not provided
 		 */
 		public function join(array $leftResult, array $rightResult, ?AstInterface $conditions = null): array {
@@ -69,10 +69,10 @@
 		
 		/**
 		 * Performs the actual left join operation
-		 * @param array $leftResult The left result set
-		 * @param array $rightResult The right result set
+		 * @param list<array<string, mixed>> $leftResult The left result set
+		 * @param list<array<string, mixed>> $rightResult The right result set
 		 * @param AstInterface $conditions The join conditions
-		 * @return array The joined result set
+		 * @return list<array<string, mixed>> The joined result set
 		 * @throws QuelException When condition evaluation fails
 		 */
 		private function performLeftJoin(array $leftResult, array $rightResult, AstInterface $conditions): array {
@@ -110,8 +110,8 @@
 		
 		/**
 		 * Adds null columns for all right-side columns when no right result exists
-		 * @param array $leftResult The left result set
-		 * @return array Left result with null placeholders for right columns
+		 * @param list<array<string, mixed>> $leftResult The left result set
+		 * @return list<array<string, mixed>> Left result with null placeholders for right columns
 		 */
 		private function addNullColumnsToLeftResult(array $leftResult): array {
 			// Since there's no right result, we can't determine what columns to add
@@ -121,9 +121,9 @@
 		
 		/**
 		 * Adds null values for right-side columns to a left row
-		 * @param array $leftRow The left row
-		 * @param array $rightResult The right result set (used to determine column names)
-		 * @return array Left row with null placeholders for right columns
+		 * @param array<string, mixed> $leftRow The left row
+		 * @param list<array<string, mixed>> $rightResult The right result set (used to determine column names)
+		 * @return array<string, mixed> Left row with null placeholders for right columns
 		 */
 		private function addNullColumnsToRow(array $leftRow, array $rightResult): array {
 			if (empty($rightResult)) {

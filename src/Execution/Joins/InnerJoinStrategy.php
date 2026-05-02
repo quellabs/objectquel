@@ -28,10 +28,10 @@
 		
 		/**
 		 * Performs an inner join between two result sets based on join conditions
-		 * @param array $leftResult The left result set (array of associative arrays)
-		 * @param array $rightResult The right result set (array of associative arrays)
+		 * @param list<array<string, mixed>> $leftResult The left result set (array of associative arrays)
+		 * @param list<array<string, mixed>> $rightResult The right result set (array of associative arrays)
 		 * @param AstInterface|null $conditions Join conditions to evaluate
-		 * @return array The joined result set containing only matching rows
+		 * @return list<array<string, mixed>> The joined result set containing only matching rows
 		 * @throws QuelException When conditions are required but not provided or evaluation fails
 		 */
 		public function join(array $leftResult, array $rightResult, ?AstInterface $conditions = null): array {
@@ -65,10 +65,10 @@
 		
 		/**
 		 * Performs the actual inner join operation
-		 * @param array $leftResult The left result set
-		 * @param array $rightResult The right result set
+		 * @param list<array<string, mixed>> $leftResult The left result set
+		 * @param list<array<string, mixed>> $rightResult The right result set
 		 * @param AstInterface $conditions The join conditions
-		 * @return array The joined result set containing only matching rows
+		 * @return list<array<string, mixed>> The joined result set containing only matching rows
 		 * @throws QuelException When condition evaluation fails
 		 */
 		private function performInnerJoin(array $leftResult, array $rightResult, AstInterface $conditions): array {

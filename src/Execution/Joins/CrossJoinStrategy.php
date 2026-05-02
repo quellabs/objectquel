@@ -14,10 +14,10 @@
 		
 		/**
 		 * Performs a cross join between two result sets
-		 * @param array $leftResult The left result set (array of associative arrays)
-		 * @param array $rightResult The right result set (array of associative arrays)
+		 * @param list<array<string, mixed>> $leftResult The left result set (array of associative arrays)
+		 * @param list<array<string, mixed>> $rightResult The right result set (array of associative arrays)
 		 * @param AstInterface|null $conditions Join conditions (ignored for cross joins)
-		 * @return array The combined result set containing all possible combinations
+		 * @return list<array<string, mixed>> The combined result set containing all possible combinations
 		 */
 		public function join(array $leftResult, array $rightResult, ?AstInterface $conditions = null): array {
 			// Handle empty result sets
@@ -57,9 +57,9 @@
 		
 		/**
 		 * Performs the actual Cartesian product operation
-		 * @param array $leftResult The left result set
-		 * @param array $rightResult The right result set
-		 * @return array The combined result set
+		 * @param list<array<string, mixed>> $leftResult The left result set
+		 * @param list<array<string, mixed>> $rightResult The right result set
+		 * @return list<array<string, mixed>> The combined result set
 		 */
 		private function performCartesianProduct(array $leftResult, array $rightResult): array {
 			$combined = [];

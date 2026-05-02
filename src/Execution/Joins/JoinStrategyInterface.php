@@ -13,10 +13,10 @@
 
 		/**
 		 * Performs a join between two result sets
-		 * @param array $leftResult The left result set (array of associative arrays)
-		 * @param array $rightResult The right result set (array of associative arrays)
+		 * @param list<array<string, mixed>> $leftResult The left result set (array of associative arrays)
+		 * @param list<array<string, mixed>> $rightResult The right result set (array of associative arrays)
 		 * @param AstInterface|null $conditions Join conditions (may be null for some join types)
-		 * @return array The joined result set
+		 * @return list<array<string, mixed>> The joined result set
 		 * @throws QuelException When the join operation fails
 		 */
 		public function join(array $leftResult, array $rightResult, ?AstInterface $conditions = null): array;
