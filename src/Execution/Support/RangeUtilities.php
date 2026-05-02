@@ -164,26 +164,35 @@
 		 * This function performs a depth-first search to collect all ranges that are
 		 * transitively required by the given starting range through join dependencies.
 		 * It maintains cycle detection to prevent infinite recursion.
+		 *
+		 * NOTE:
+		 * This relies on the invariant that join predicates only reference ranges
+		 * declared within the same RETRIEVE statement.
+		 *
+		 * If correlated joins across query scopes are introduced, this DFS will
+		 * incorrectly pull outer-scope ranges into the inner required set.
+		 * At that point, a "universe" constraint (allowed range set) must be
+		 * reintroduced to restrict traversal.
+		 *
 		 * @param AstRange $range Starting range to expand from
-		 * @param AstRange[] $universe All known ranges (currently unused but kept for interface compatibility)
-		 * @param array<int,AstRange> $required Collected set of required ranges (modified by reference)
-		 * @param array<int,AstRange> $processed DFS cycle detection guard (modified by reference)
+		 * @param \WeakMap<AstRange, true> $required Collected set of required ranges
+		 * @param \WeakMap<AstRange, true> $processed DFS cycle detection guard
 		 * @return void
 		 */
-		public static function expandWithJoinDependencies(AstRange $range, array $universe, array &$required, array &$processed): void {
+		public static function expandWithJoinDependencies(AstRange $range, \WeakMap $required, \WeakMap $processed): void {
 			// Cycle detection: if we've already processed this range in the current DFS path,
 			// we've found a cycle and should terminate this branch to avoid infinite recursion
-			if (in_array($range, $processed, true)) {
-				return; // avoid cycles
+			if (isset($processed[$range])) {
+				return;
 			}
 			
 			// Mark this range as processed in the current DFS path
-			$processed[] = $range;
+			$processed[$range] = true;
 			
 			// Add the current range to the required set if not already present
-			// Using strict comparison to ensure object identity matching
-			if (!in_array($range, $required, true)) {
-				$required[] = $range;
+			// WeakMap keyed by object identity guarantees no duplicates
+			if (!isset($required[$range])) {
+				$required[$range] = $range;
 			}
 			
 			// Get the join predicate (condition) for this range
@@ -204,24 +213,23 @@
 				// This prevents trivial cycles and unnecessary work
 				if ($ref !== $range) {
 					// Recursive call to expand dependencies of the referenced range
-					self::expandWithJoinDependencies($ref, $universe, $required, $processed);
+					self::expandWithJoinDependencies($ref, $required, $processed);
 				}
 			}
 		}
 		
 		/**
 		 * Expands the set of ranges to include all join dependencies transitively.
-		 * @param array $directlyUsed
-		 * @param array $allRanges
-		 * @return array
+		 * @param AstRange[] $directlyUsed
+		 * @return \WeakMap<AstRange, AstRange>
 		 */
-		public static function expandWithAllJoinDependencies(array $directlyUsed, array $allRanges): array {
-			$required = [];
-			$processed = [];
+		public static function expandWithAllJoinDependencies(array $directlyUsed): \WeakMap {
+			$required = new \WeakMap();
+			$processed = new \WeakMap();
 			
 			foreach ($directlyUsed as $range) {
-				$required[spl_object_hash($range)] = $range;
-				self::expandWithJoinDependencies($range, $allRanges, $required, $processed);
+				$required[$range] = $range;
+				self::expandWithJoinDependencies($range, $required, $processed);
 			}
 			
 			return $required;
@@ -229,20 +237,19 @@
 		
 		/**
 		 * Compute minimal range set (seed ranges + join dependency closure).
-		 * @param AstRange[] $allRanges All ranges in the outer query
 		 * @param AstRange[] $seedRanges Ranges referenced by the aggregate
-		 * @return AstRange[] Minimal set of ranges needed for correctness
+		 * @return \WeakMap<AstRange, AstRange> Minimal set of ranges needed for correctness
 		 */
-		public static function computeMinimalRangeSet(array $allRanges, array $seedRanges): array {
-			$required = [];
-			$processed = [];
+		public static function computeMinimalRangeSet(array $seedRanges): \WeakMap {
+			$required = new \WeakMap();
+			$processed = new \WeakMap();
 			
 			// For each seed range (directly referenced by the aggregate), expand to include
 			// all transitively dependent ranges through join conditions
 			foreach ($seedRanges as $seed) {
 				// Recursively add this seed and all ranges it depends on via joins
 				// This ensures we maintain referential integrity in the subquery
-				self::expandWithJoinDependencies($seed, $allRanges, $required, $processed);
+				self::expandWithJoinDependencies($seed, $required, $processed);
 			}
 			
 			// Return the minimal set of ranges that preserves query semantics
@@ -252,13 +259,13 @@
 		/**
 		 * Removes ranges that are not in the required set.
 		 * @param AstRetrieve $root
-		 * @param array $allRanges
-		 * @param array $requiredRanges
+		 * @param AstRange[] $allRanges
+		 * @param \WeakMap<AstRange, AstRange> $requiredRanges
 		 * @return void
 		 */
-		public static function removeRangesNotInSet(AstRetrieve $root, array $allRanges, array $requiredRanges): void {
+		public static function removeRangesNotInSet(AstRetrieve $root, array $allRanges, \WeakMap $requiredRanges): void {
 			foreach ($allRanges as $range) {
-				if (!isset($requiredRanges[spl_object_hash($range)])) {
+				if (!isset($requiredRanges[$range])) {
 					$root->removeRange($range);
 				}
 			}

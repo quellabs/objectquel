@@ -37,20 +37,19 @@
 			// This includes any tables or aliases that the aggregate depends on
 			$aggRanges = RangeUtilities::collectRangesFromNode($aggregate);
 			
-			// Get the ranges available in the outer query context
-			// These are the tables/aliases that can be correlated between outer and inner queries
-			$outerRanges = $root->getRanges();
-			
 			// Determine the minimal set of ranges needed for correlation
 			// This ensures we only include necessary table references in the subquery
 			// to maintain proper correlation with the outer query
-			$neededRanges = RangeUtilities::computeMinimalRangeSet($outerRanges, $aggRanges);
+			$neededRanges = RangeUtilities::computeMinimalRangeSet($aggRanges);
 			
 			// Deep clone the needed ranges to avoid reference issues
 			// Each range in the subquery must be independent of the outer query ranges
-			$clonedRanges = array_map(static fn(AstRange $r) => $r->deepClone(), $neededRanges);
+			$clonedRanges = [];
+			foreach ($neededRanges as $range => $ignored) {
+				$clonedRanges[] = $range->deepClone();
+			}
 			
-			// Extract any WHERE conditions from the original aggregate
+			// Extract any `WHERE` conditions from the original aggregate
 			// These will become the subquery's WHERE clause
 			$subWhere = $aggregate->getConditions();
 			

@@ -2,7 +2,6 @@
 	
 	namespace Quellabs\ObjectQuel\Execution\Support;
 	
-	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstBinaryOperator;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRange;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRetrieve;
 	use Quellabs\ObjectQuel\ObjectQuel\AstInterface;
@@ -114,13 +113,14 @@
 		 * @return void
 		 */
 		public static function removeUnusedRangesInAggregateOnlyQueries(AstRetrieve $root): void {
+			// Fetch all ranges
 			$allRanges = $root->getRanges();
 			
 			// Collect all directly referenced ranges
 			$directlyUsed = self::collectDirectlyUsedRanges($root, $allRanges);
 			
 			// Expand to include join dependencies
-			$requiredRanges = RangeUtilities::expandWithAllJoinDependencies($directlyUsed, $allRanges);
+			$requiredRanges = RangeUtilities::expandWithAllJoinDependencies($directlyUsed);
 			
 			// Remove unused ranges
 			RangeUtilities::removeRangesNotInSet($root, $allRanges, $requiredRanges);
