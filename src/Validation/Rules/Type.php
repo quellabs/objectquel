@@ -10,6 +10,8 @@
 		protected array $conditions;
 		protected ?string $errorMessage;
 		protected string $error = "";
+		
+		/** @var string[] */
 		protected array $is_a_types = [
 			'bool',
 			'boolean',
@@ -31,6 +33,7 @@
 			'null',
 		];
 		
+		/** @var string[] */
 		protected array $ctype_types = [
 			'alnum',
 			'alpha',
