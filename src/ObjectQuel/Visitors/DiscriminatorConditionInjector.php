@@ -2,7 +2,6 @@
 	
 	namespace Quellabs\ObjectQuel\ObjectQuel\Visitors;
 	
-	use Quellabs\AnnotationReader\AnnotationInterface;
 	use Quellabs\ObjectQuel\Annotations\Orm\DiscriminatorColumn;
 	use Quellabs\ObjectQuel\Annotations\Orm\DiscriminatorValue;
 	use Quellabs\ObjectQuel\EntityStore;
