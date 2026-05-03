@@ -36,7 +36,7 @@
 		/**
 		 * Parse a single token from the search string.
 		 * @param string $token The token to parse
-		 * @return array An array containing the token type and value
+		 * @return array{type: 'exact'|'required'|'excluded'|'regular', value: string}
 		 */
 		private function parseToken(string $token): array {
 			if (preg_match('/^"(.+)"$/', $token, $matches)) {
@@ -90,7 +90,12 @@
 		
 		/**
 		 * Extract search data from the search string.
-		 * @return array An array containing parsed terms and operators
+		 * @param array<string, string> $parameters An array containing parsed terms and operators
+		 * @return array{
+		 *     or_terms: list<string>,
+		 *     and_terms: list<string>,
+		 *     not_terms: list<string>
+		 * }
 		 */
 		public function parseSearchData(array $parameters): array {
 			// Fetch search string contents
