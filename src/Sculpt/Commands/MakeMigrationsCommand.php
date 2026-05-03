@@ -82,16 +82,16 @@
 					$this->output->writeLn(" ✓ New table: {$tableName}");
 				}
 				
-				foreach ($changes['added'] ?? [] as $columnName => $definition) {
+				foreach ($changes['added'] as $columnName => $definition) {
 					$this->output->writeLn(" ✓ New column: {$tableName}.{$columnName}");
 				}
 				
-				foreach ($changes['modified'] ?? [] as $columnName => $diff) {
+				foreach ($changes['modified'] as $columnName => $diff) {
 					$description = $this->describeColumnChange($diff);
 					$this->output->writeLn(" ✓ Modified column: {$tableName}.{$columnName}{$description}");
 				}
 				
-				foreach ($changes['deleted'] ?? [] as $columnName => $definition) {
+				foreach ($changes['deleted'] as $columnName => $definition) {
 					$this->output->writeLn(" ✓ Dropped column: {$tableName}.{$columnName}");
 				}
 				
