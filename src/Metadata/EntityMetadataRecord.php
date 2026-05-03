@@ -47,7 +47,7 @@
 		 * Constructor for EntityMetadataRecord.
 		 * @param string $className Fully qualified, normalized class name
 		 * @param string $tableName Database table name from @Table annotation
-		 * @param array<string, mixed> $properties Property names and their reflection info
+		 * @param array<int, string> $properties Property names
 		 * @param array<string, AnnotationCollection> $annotations Property name => annotation collection mapping
 		 * @param array<string, string> $columnMap Property name => column name mapping
 		 * @param array<string> $identifierKeys Property names that serve as primary keys

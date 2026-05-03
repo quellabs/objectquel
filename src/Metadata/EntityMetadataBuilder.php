@@ -27,6 +27,11 @@
 	 */
 	class EntityMetadataBuilder {
 		
+		private readonly AnnotationReader $annotationReader;
+		private readonly ReflectionHandler $reflectionHandler;
+		private readonly string $proxyNamespace;
+		private readonly string $entityNamespace;
+
 		/** @var array<string, string> */
 		private array $normalizedNameCache = [];
 		
@@ -38,14 +43,16 @@
 		 * @param string $entityNamespace
 		 */
 		public function __construct(
-			private readonly AnnotationReader  $annotationReader,
-			private readonly ReflectionHandler $reflectionHandler,
-			private readonly string            $proxyNamespace,
-			private readonly string            $entityNamespace,
+			AnnotationReader  $annotationReader,
+			ReflectionHandler $reflectionHandler,
+			string            $proxyNamespace,
+			string            $entityNamespace,
 		) {
+			$this->entityNamespace = $entityNamespace;
+			$this->proxyNamespace = $proxyNamespace;
+			$this->reflectionHandler = $reflectionHandler;
+			$this->annotationReader = $annotationReader;
 		}
-		
-		// ==================== Public API ====================
 		
 		/**
 		 * Build complete EntityMetadata for a given class.
@@ -93,7 +100,7 @@
 					manyToOneRelations: $this->extractRelations($annotations, ManyToOne::class),
 					oneToManyRelations: $this->extractRelations($annotations, OneToMany::class),
 					oneToOneRelations: $this->extractRelations($annotations, OneToOne::class),
-					indexes: $this->extractIndexes($className),        // class-level annotations only
+					indexes: $this->extractIndexes($className),
 					autoIncrementColumn: $autoIncrementColumn,
 					columnDefinitions: $this->extractColumnDefinitions($className, $annotations),
 				);
@@ -238,9 +245,10 @@
 		
 		/**
 		 * Extract relationship annotations of a specific type from property annotations.
-		 * @param array<string, AnnotationCollection> $annotations Property name => AnnotationCollection mapping
-		 * @param class-string $annotationType The relationship annotation class to extract
-		 * @return array<string, object> Property name => relationship annotation mapping
+		 * @template T of object
+		 * @param array<string, AnnotationCollection> $annotations
+		 * @param class-string<T> $annotationType
+		 * @return array<string, T>
 		 */
 		private function extractRelations(array $annotations, string $annotationType): array {
 			$relations = [];
