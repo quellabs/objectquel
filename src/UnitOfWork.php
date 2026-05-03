@@ -532,7 +532,7 @@
 		/**
 		 * Returns true if the entity has no populated primary keys, false if it does.
 		 * @param object $entity
-		 * @param array<string, string> $primaryKeys
+		 * @param array<int, string> $primaryKeys
 		 * @return bool
 		 */
 		private function hasNullPrimaryKeys(object $entity, array $primaryKeys): bool {
@@ -993,7 +993,7 @@
 			
 			// Filter annotations to find only those that are instances of the Cascade class
 			// This separates cascade annotations from other annotation types
-			$cascadeAnnotations = array_filter($entityAnnotations[$property]->toArray(), function ($a) {
+			$cascadeAnnotations = array_filter($entityAnnotations[$property], function ($a) {
 				return $a instanceof Cascade;
 			});
 			

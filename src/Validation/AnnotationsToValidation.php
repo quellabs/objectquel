@@ -2,13 +2,7 @@
 	
 	namespace Quellabs\ObjectQuel\Validation;
 	
-	use Quellabs\ObjectQuel\Validation\Rules\Date;
-	use Quellabs\ObjectQuel\Validation\Rules\Email;
-	use Quellabs\ObjectQuel\Validation\Rules\Length;
-	use Quellabs\ObjectQuel\Validation\Rules\NotBlank;
-	use Quellabs\ObjectQuel\Validation\Rules\RegExp;
-	use Quellabs\ObjectQuel\Validation\Rules\Type;
-	use Quellabs\ObjectQuel\Validation\Rules\ValueIn;
+	use Quellabs\ObjectQuel\Annotations\Validation\PropertyValidationInterface;
 	
 	class AnnotationsToValidation {
 		
@@ -17,40 +11,43 @@
 		 * This function takes an entity object and converts the annotations of its properties
 		 * to corresponding validation rules. It uses a predefined mapping
 		 * between annotation classes and validation rule classes.
-		 * @param array $annotations
-		 * @return array An array with validation rules for each property of the entity
+		 * @param array<int, PropertyValidationInterface> $annotations
+		 * @return array<string, array<int, ValidationInterface>>
 		 */
 		public function convert(array $annotations): array {
-			// Mapping of annotation classes to validation rule classes
+			// Maps annotation classes to their corresponding validation rule classes
 			$annotationMap = [
-				Date::class     => Rules\Date::class,
-				Email::class    => Rules\Email::class,
-				Length::class   => Rules\Length::class,
-				NotBlank::class => Rules\NotBlank::class,
-				RegExp::class   => Rules\RegExp::class,
-				Type::class     => Rules\Type::class,
-				ValueIn::class  => Rules\ValueIn::class,
+				\Quellabs\ObjectQuel\Annotations\Validation\Date::class     => Rules\Date::class,
+				\Quellabs\ObjectQuel\Annotations\Validation\Email::class    => Rules\Email::class,
+				\Quellabs\ObjectQuel\Annotations\Validation\Length::class   => Rules\Length::class,
+				\Quellabs\ObjectQuel\Annotations\Validation\NotBlank::class => Rules\NotBlank::class,
+				\Quellabs\ObjectQuel\Annotations\Validation\RegExp::class   => Rules\RegExp::class,
+				\Quellabs\ObjectQuel\Annotations\Validation\Type::class     => Rules\Type::class,
+				\Quellabs\ObjectQuel\Annotations\Validation\ValueIn::class  => Rules\ValueIn::class,
 			];
 			
-			// Loop through all properties of the entity
 			$result = [];
 			
 			foreach ($annotations as $annotation) {
 				$annotationClass = get_class($annotation);
 				
-				// The property parameter must be present. This is the property that needs to be checked
+				// Skip annotations that don't target a specific property
 				if (!$annotation->hasProperty()) {
 					continue;
 				}
 				
-				// Check if there is a corresponding validation rule for this annotation
-				if (isset($annotationMap[$annotationClass])) {
-					// Add a new instance of the validation rule to the result
-					$result[$annotation->getProperty()] = new $annotationMap[$annotationClass]($annotation->getParameters());
+				// Skip annotations that have no corresponding validation rule
+				if (!isset($annotationMap[$annotationClass])) {
+					continue;
 				}
+				
+				$parameters = $annotation->getParameters();
+				$property = $annotation->getProperty();
+				
+				// Append the rule so multiple validators can apply to the same property
+				$result[$property][] = new $annotationMap[$annotationClass]($parameters, $annotation->getMessage());
 			}
 			
-			// Return the array with validation rules
 			return $result;
 		}
 	}

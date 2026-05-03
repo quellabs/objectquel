@@ -4,7 +4,7 @@
 	
 	use Quellabs\AnnotationReader\AnnotationInterface;
 	
-	class Date implements AnnotationInterface {
+	class Date implements PropertyValidationInterface {
 		
 		/**
 		 * @var array{
