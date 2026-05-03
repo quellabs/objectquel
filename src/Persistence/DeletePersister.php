@@ -54,9 +54,9 @@
 		 * Extracts primary key values from an entity into a column-to-value mapping
 		 * This mapping is used to build the WHERE clause for the DELETE statement
 		 * @param object $entity The entity from which to extract primary key values
-		 * @param array $primaryKeys The property names that represent primary keys in the entity
-		 * @param array $primaryKeyColumns The corresponding database column names for the primary keys
-		 * @return array Associative array with column names as keys and their values from the entity
+		 * @param string[] $primaryKeys The property names that represent primary keys in the entity
+		 * @param string[] $primaryKeyColumns The corresponding database column names for the primary keys
+		 * @return array<string, mixed> Associative array with column names as keys and their values from the entity
 		 */
 		private function extractPrimaryKeyValueMap(object $entity, array $primaryKeys, array $primaryKeyColumns): array {
 			$result = [];

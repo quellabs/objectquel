@@ -57,7 +57,7 @@
 		private PrimaryKeyFactory $primaryKeyFactory;
 		
 		/**
-		 * @var array Cache for primary key strategy fetcher
+		 * @var array<string, array<string, string>> Cache for primary key strategy fetcher
 		 */
 		private array $strategyColumnCache;
 		
@@ -294,9 +294,8 @@
 		 *
 		 * Returns null when the entity is not an STI subclass (the common case),
 		 * so the caller can short-circuit with a simple null check.
-		 *
 		 * @param object $entity The entity being persisted
-		 * @return array|null [columnName, discriminatorValue] or null
+		 * @return array{column: string, value: string}|null
 		 * @throws AnnotationReaderException
 		 */
 		protected function getDiscriminatorInfo(object $entity): ?array {
