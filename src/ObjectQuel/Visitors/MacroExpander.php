@@ -17,13 +17,13 @@
 		
 		/**
 		 * Array of macros
-		 * @var array $ranges
+		 * @var array<string, AstInterface>
 		 */
 		private array $macros;
 		
 		/**
 		 * EntityProcessMacro constructor.
-		 * @param array $macros
+		 * @param array<string, AstInterface> $macros
 		 */
 		public function __construct(array $macros) {
 			$this->macros = $macros;
