@@ -26,7 +26,7 @@
 		/** @var array<string, mixed> Compiler directives that control query compilation behavior */
 		protected array $directives;
 		
-		/** @var AstInterface[] Values/expressions to be retrieved (SELECT clause) */
+		/** @var AstAlias[] Values/expressions to be retrieved (SELECT clause) */
 		protected array $values;
 		
 		/** @var array<string, AstInterface|null> Named macros that can be referenced in the query */
@@ -131,17 +131,16 @@
 		
 		/**
 		 * Add a value to be retrieved in the SELECT clause.
-		 * @param AstInterface $ast The value/expression to add to the SELECT clause
+		 * @param AstAlias $ast The value/expression to add to the SELECT clause
 		 */
-		public function addValue(AstInterface $ast): void {
+		public function addValue(AstAlias $ast): void {
 			$ast->setParent($this);
-
 			$this->values[] = $ast;
 		}
 		
 		/**
 		 * Get all values to be retrieved in the SELECT clause.
-		 * @return AstInterface[] The array of values/expressions
+		 * @return AstAlias[] The array of values/expressions
 		 */
 		public function getValues(): array {
 			return $this->values;
@@ -149,7 +148,7 @@
 		
 		/**
 		 * Replace all current values with a new set of values.
-		 * @param AstInterface[] $values New array of values to retrieve
+		 * @param AstAlias[] $values New array of values to retrieve
 		 * @return void
 		 */
 		public function setValues(array $values): void {
