@@ -80,7 +80,7 @@
 		/** @var TypeInferenceHelper Helper for determining data types from AST nodes */
 		private TypeInferenceHelper $typeInference;
 		
-		/** @var array Reference to the parameter array for prepared statements */
+		/** @var array<string, mixed> Reference to the parameter array for prepared statements */
 		private array $parameters;
 		
 		/** @var mixed Reference to the main visitor to avoid circular dependencies */
@@ -93,7 +93,7 @@
 		 * Constructor - Initialize the expression handler with required dependencies
 		 * @param SqlBuilderHelper $sqlBuilder Helper for SQL construction operations
 		 * @param TypeInferenceHelper $typeInference Helper for type analysis
-		 * @param array &$parameters Reference to parameters array for prepared statements
+		 * @param array<string, mixed> $parameters Reference to parameters array for prepared statements
 		 * @param mixed $mainVisitor Reference to the main AST visitor (avoids circular dependency)
 		 * @param PlatformCapabilitiesInterface $platform Database engine capability descriptor
 		 */
