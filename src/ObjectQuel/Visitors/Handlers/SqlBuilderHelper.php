@@ -29,7 +29,7 @@
 		/** @var PlatformCapabilitiesInterface Database engine capability descriptor */
 		private PlatformCapabilitiesInterface $platform;
 		
-		/** @var array Reference to query parameters array for prepared statements */
+		/** @var array<string, mixed> Reference to query parameters array for prepared statements */
 		private array $parameters;
 		
 		/** @var string Current part of query being processed (SELECT, WHERE, SORT, etc.) */
@@ -41,15 +41,15 @@
 		/**
 		 * Constructor - initializes the SQL builder helper with required dependencies
 		 * @param EntityStore $entityStore Entity metadata store
-		 * @param array $parameters Reference to parameters array for prepared statements
+		 * @param array<string, mixed> $parameters Reference to parameters array for prepared statements
 		 * @param string $partOfQuery Current query part being processed
 		 * @param mixed|null $mainVisitor Optional reference to main visitor instance
 		 */
 		public function __construct(
-			EntityStore $entityStore,
-			array &$parameters,
-			string $partOfQuery,
-			mixed $mainVisitor = null,
+			EntityStore                   $entityStore,
+			array                         &$parameters,
+			string                        $partOfQuery,
+			mixed                         $mainVisitor = null,
 			PlatformCapabilitiesInterface $platform = new NullPlatformCapabilities()
 		) {
 			$this->entityStore = $entityStore;
@@ -246,9 +246,13 @@
 		 * Otherwise falls back to LIKE chains for maximum compatibility.
 		 *
 		 * @param AstSearch $search The search AST node containing identifiers
-		 * @param array $parsed Parsed search terms (or_terms, and_terms, not_terms)
+		 * @param array{
+		 *     or_terms: string[],
+		 *     and_terms: string[],
+		 *     not_terms: string[]
+		 * } $parsed
 		 * @param string $searchKey Unique key for parameter naming
-		 * @return array Array of SQL condition strings
+		 * @return string[] Array of SQL condition strings
 		 */
 		public function buildSearchConditions(AstSearch $search, array $parsed, string $searchKey): array {
 			$fullTextIndex = $this->detectFullTextIndex($search->getIdentifiers());
@@ -350,7 +354,7 @@
 		private function buildFullTextCondition(array $identifiers, AstString|AstParameter $searchString, string $searchKey): string {
 			// MATCH() requires bare column names — no table alias prefix.
 			// buildColumnName() returns `alias.column`; we extract only the column part.
-			$columns = array_map(function($id) {
+			$columns = array_map(function ($id) {
 				$full = $this->buildColumnName($id);
 				// Strip "alias." prefix if present — MATCH(content) not MATCH(p.content)
 				$dotPos = strpos($full, '.');
@@ -427,7 +431,7 @@
 			$annotations = $this->entityStore->getAnnotations($entityName);
 			
 			$annotationsOfProperty = array_values(array_filter(
-				$annotations[$propertyName]->toArray(),
+				$annotations[$propertyName],
 				function ($e) {
 					return $e instanceof Column;
 				}
@@ -467,9 +471,13 @@
 		 * Handles three types of search logic: OR (any term matches), AND (all terms
 		 * must match), and NOT (terms must not match).
 		 * @param string $columnName The SQL column name to search in
-		 * @param array $parsed Parsed search terms with or_terms, and_terms, not_terms
+		 * @param array{
+		 *     or_terms: string[],
+		 *     and_terms: string[],
+		 *     not_terms: string[]
+		 * } $parsed
 		 * @param string $searchKey Unique key for parameter naming
-		 * @return array Array of SQL condition groups
+		 * @return string[] Array of SQL condition groups
 		 */
 		private function buildFieldConditions(string $columnName, array $parsed, string $searchKey): array {
 			$fieldConditions = [];
@@ -505,11 +513,11 @@
 		 * Creates individual SQL LIKE/NOT LIKE conditions for each search term
 		 * and adds the corresponding parameters to the parameters array.
 		 * @param string $columnName The SQL column name to search in
-		 * @param array $terms Array of search terms for this type
-		 * @param array $config Configuration with operator and comparison type
+		 * @param string[] $terms Array of search terms for this type
+		 * @param array{operator: string, comparison: string} $config Configuration with operator and comparison type
 		 * @param string $termType The type of terms being processed
 		 * @param string $searchKey Unique key for parameter naming
-		 * @return array Array of individual SQL conditions
+		 * @return string[] Array of individual SQL conditions
 		 */
 		private function buildTermConditions(
 			string $columnName,
