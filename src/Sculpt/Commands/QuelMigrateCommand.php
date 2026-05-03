@@ -4,6 +4,7 @@
 	
 	use Phinx\Config\Config;
 	use Phinx\Migration\Manager;
+	use Phinx\Migration\MigrationInterface;
 	use Quellabs\Contracts\Discovery\ProviderInterface;
 	use Quellabs\ObjectQuel\Sculpt\ServiceProvider;
 	use Quellabs\Sculpt\Contracts\CommandBase;
@@ -127,7 +128,7 @@ HELP;
 		/**
 		 * Prepare input arguments for Phinx commands
 		 * @param ConfigurationManager $config
-		 * @return array
+		 * @return array<string, bool>
 		 */
 		private function prepareInputArgs(ConfigurationManager $config): array {
 			$args = [];
@@ -143,7 +144,7 @@ HELP;
 		/**
 		 * Get pending migrations to display to the user
 		 * @param Manager $manager
-		 * @return array Array of pending migrations
+		 * @return array<int, MigrationInterface>
 		 */
 		private function getPendingMigrations(Manager $manager): array {
 			// Get all migrations

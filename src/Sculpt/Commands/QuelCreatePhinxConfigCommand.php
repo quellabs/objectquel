@@ -132,7 +132,7 @@ EOT;
 		
 		/**
 		 * Recursively build formatted array export string
-		 * @param array $array The array to export
+		 * @param array<int|string, mixed> $array The array to export
 		 * @param string &$output The output string being built
 		 * @param int $depth Current nesting level
 		 * @return void
