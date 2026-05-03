@@ -11,8 +11,8 @@
 		
 		/**
 		 * Sorts the results array based on provided sort criteria
-		 * @param array &$results Reference to the array of results to be sorted (passed by reference for in-place sorting)
-		 * @param array $sortItems Array of sort specifications, each containing AST nodes and order direction
+		 * @param array<int, array<string, mixed>> $results Reference to the array of results to be sorted
+		 * @param array<int, array{ast: object, order: string}> $sortItems Array of sort specifications
 		 * @return void This method modifies the input array directly and doesn't return a value
 		 */
 		public function sortResults(array &$results, array $sortItems): void {
