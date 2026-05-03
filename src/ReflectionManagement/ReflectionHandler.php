@@ -6,7 +6,14 @@
 	
 	class ReflectionHandler {
 		
+		/**
+		 * @var array<string, ReflectionClass<object>>
+		 */
 		private array $reflection_classes;
+		
+		/**
+		 * @var array<string, array<int, string>>
+		 */
 		private array $file_cache;
 		
 		/**
@@ -21,7 +28,7 @@
 		 * Retrieves the content of a file and stores it in a cache.
 		 * If the file is already in the cache, the cached version is returned.
 		 * @param string $filename The name of the file to be read.
-		 * @return array An array of lines from the file.
+		 * @return array<int, string> An array of lines from the file.
 		 */
 		protected function getCachedFile(string $filename): array {
 			if (!isset($this->file_cache[$filename])) {
@@ -33,8 +40,9 @@
 		
 		/**
 		 * Retrieves a ReflectionClass instance for the specified class.
-		 * @param mixed $class The object or the name of the class to reflect.
-		 * @return ReflectionClass A ReflectionClass instance.
+		 * @template T of object
+		 * @param class-string<T>|T $class The object or the name of the class to reflect.
+		 * @return ReflectionClass<T> A ReflectionClass instance.
 		 * @throws \ReflectionException
 		 */
 		protected function getReflectionClass(mixed $class): ReflectionClass {
@@ -136,11 +144,11 @@
 				return "";
 			}
 		}
-
+		
 		/**
 		 * Returns an array containing the names of all interfaces implemented by a given class.
 		 * @param mixed $class The class name to inspect.
-		 * @return array An array containing the names of all implemented interfaces, or an empty array if not found or an error occurs.
+		 * @return array<int, string> An array containing the names of all implemented interfaces, or an empty array if not found or an error occurs.
 		 */
 		public function getInterfaces(mixed $class): array {
 			try {
@@ -158,9 +166,9 @@
 		 * Get the names of all properties of a given class.
 		 * @param mixed $class The class name to inspect.
 		 * @param bool $onlyCurrentClass Only list the properties in the current class, not of parents
-		 * @return array An array containing the names of all properties.
+		 * @return array<int, string> An array containing the names of all properties.
 		 */
-		public function getProperties(mixed $class, bool $onlyCurrentClass=false): array {
+		public function getProperties(mixed $class, bool $onlyCurrentClass = false): array {
 			try {
 				// Initialize ReflectionClass for the given class name
 				$reflectionClass = $this->getReflectionClass($class);
@@ -172,7 +180,7 @@
 				if ($onlyCurrentClass) {
 					// Store the reflection class name
 					$reflectionClassName = $reflectionClass->getName();
-
+					
 					// Perform the filter action
 					$properties = array_filter(
 						$properties,
@@ -184,7 +192,7 @@
 				
 				// Loop through each property and store its name in the result array
 				$result = [];
-
+				
 				foreach ($properties as $property) {
 					$result[] = $property->getName();
 				}
@@ -281,9 +289,9 @@
 		 * Returns an array containing the names of all methods of a given class.
 		 * @param mixed $class The class name to inspect.
 		 * @param bool $onlyCurrentClass Only list the methods in the current class, not of parents
-		 * @return array An array containing the names of all methods.
+		 * @return array<int, string> An array containing the names of all methods.
 		 */
-		public function getMethods(mixed $class, bool $onlyCurrentClass=false): array {
+		public function getMethods(mixed $class, bool $onlyCurrentClass = false): array {
 			try {
 				// Initialize ReflectionClass for the given class name
 				$reflectionClass = $this->getReflectionClass($class);
@@ -370,7 +378,7 @@
 				return false;
 			}
 		}
-
+		
 		/**
 		 * Returns the visibility (public, protected, or private) of a specified method in a given class.
 		 * @param mixed $class The class name to inspect.
@@ -448,7 +456,15 @@
 		 * Returns an array containing the parameters of a specified method in a given class.
 		 * @param mixed $class The class name to inspect.
 		 * @param string $method The method name to fetch parameters for.
-		 * @return array An array containing details about each parameter (name, type, nullability, default value).
+		 * @return array<int, array{
+		 *     index: int,
+		 *     name: string,
+		 *     type: string,
+		 *     nullable: bool,
+		 *     has_default: bool,
+		 *     default: mixed,
+		 *     passed_by_reference: bool
+		 * }>
 		 */
 		public function getMethodParameters(mixed $class, string $method): array {
 			try {
@@ -492,8 +508,8 @@
 		 * This function uses the Reflection API to find the filename and the start and end lines of the method.
 		 * It then reads the source code of the file and extracts the method body.
 		 * The function also accounts for different coding styles for placing braces.
-		 * @param mixed $class  The name of the class or an instance of the class.
-		 * @param string $method  The name of the method whose body should be retrieved.
+		 * @param mixed $class The name of the class or an instance of the class.
+		 * @param string $method The name of the method whose body should be retrieved.
 		 * @return string  The body of the specified method as a string.
 		 */
 		public function getMethodBody(mixed $class, string $method): string {

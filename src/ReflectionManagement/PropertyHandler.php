@@ -9,7 +9,14 @@
 	 */
 	class PropertyHandler {
 		
+		/**
+		 * @var array<class-string, \ReflectionClass<object>>
+		 */
 		protected array $reflection_classes;
+		
+		/**
+		 * @var array<string, \ReflectionProperty>
+		 */
 		protected array $reflection_properties;
 		
 		/**
@@ -22,8 +29,8 @@
 
 		/**
 		 * Retrieves a ReflectionClass instance for the specified class.
-		 * @param mixed $class The object or the name of the class to reflect.
-		 * @return \ReflectionClass A ReflectionClass instance.
+		 * @param object|string $class The object or the name of the class to reflect.
+		 * @return \ReflectionClass<object> A ReflectionClass instance.
 		 * @throws \ReflectionException
 		 */
 		private function getReflectionClass(mixed $class): \ReflectionClass {
