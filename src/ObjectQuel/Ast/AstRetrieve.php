@@ -141,7 +141,7 @@
 		
 		/**
 		 * Get all values to be retrieved in the SELECT clause.
-		 * @return AstAlias[] The array of values/expressions
+		 * @return AstInterface[] The array of values/expressions
 		 */
 		public function getValues(): array {
 			return $this->values;
@@ -374,7 +374,7 @@
 		/**
 		 * Returns all compiler directives for this query.
 		 * Directives control how the query is compiled and optimized.
-		 * @return array Associative array of directive names to values
+		 * @return array<string, mixed> Associative array of directive names to values
 		 */
 		public function getDirectives(): array {
 			return $this->directives;
@@ -443,7 +443,7 @@
 			if ($useIncludedTag) {
 				// Count only ranges that should be included as joins
 				$filter = array_filter($this->ranges, function($range) {
-					return $range->includeAsJoin();
+					return $range instanceof AstRangeDatabase && $range->includeAsJoin();
 				});
 
 				return count($filter) === 1;
