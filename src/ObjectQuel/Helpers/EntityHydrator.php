@@ -13,6 +13,16 @@
 	use Quellabs\ObjectQuel\ProxyGenerator\ProxyInterface;
 	use Quellabs\ObjectQuel\Serialization\Serializers\Serializer;
 	
+	/**
+	 * @phpstan-type RelationCacheEntry array{
+	 *     identifiers: array<int, string>,
+	 *     identifiers_flipped: array<string, int>,
+	 *     keys: array<int, string>,
+	 *     keys_flipped: array<string, int>
+	 * }
+	 *
+	 * @phpstan-type RelationCache array<string, RelationCacheEntry>
+	 */
 	class EntityHydrator {
 		
 		private UnitOfWork $unitOfWork;
@@ -61,7 +71,7 @@
 		/**
 		 * Initializes a proxy object with data
 		 * @param ProxyInterface $proxy The proxy object to initialize
-		 * @param array $data The data to populate the proxy with
+		 * @param array<string, mixed> $data The data to populate the proxy with
 		 * @return void
 		 */
 		private function initializeProxy(ProxyInterface $proxy, array $data): void {
@@ -81,8 +91,8 @@
 		/**
 		 * Processes a row of data into an entity object
 		 * @param AstAlias $value The alias representing the entity to process
-		 * @param array $filteredRow Data row containing entity properties
-		 * @param array $relationCache Cache containing relationship information
+		 * @param array<string, mixed> $filteredRow Data row containing entity properties
+		 * @param RelationCacheEntry $relationCache Cache containing relationship information
 		 * @return object|null The processed entity object or null if no data
 		 * @throws QuelException
 		 */
@@ -95,7 +105,7 @@
 			
 			// Extract metadata about the entity from the expression
 			$expression = $value->getExpression();
-
+			
 			// The expression has to be an AstIdentifier
 			if (!$expression instanceof AstIdentifier) {
 				throw new QuelException("expression should be of type AstIdentifier");
@@ -145,9 +155,9 @@
 		/**
 		 * Extract all values out of the JSON row
 		 * @param AstAlias $value
-		 * @param array $row
-		 * @param array|null $relationCache
-		 * @return array
+		 * @param array<string, mixed> $row
+		 * @param RelationCacheEntry|null $relationCache
+		 * @return array<string, mixed>
 		 */
 		private function processJsonAllValue(AstAlias $value, array $row, ?array $relationCache): array {
 			return $this->removeRangeFromRow($value->getName(), $row);
@@ -266,11 +276,12 @@
 		
 		/**
 		 * Processes a database result row into a structured result based on the AST.
-		 * @param array $ast Abstract Syntax Tree representing the query structure.
-		 * @param array $row Raw database row from the query result.
-		 * @param array $relationCache Cache of relationship information for entity mapping.
-		 * @param array &$entities Reference to collection of unique entity objects for tracking.
-		 * @return array Processed row with values mapped according to the AST.
+		 * @param array<int, AstAlias> $ast Abstract Syntax Tree representing the query structure.
+		 * @param array<string, mixed> $row Raw database row from the query result.
+		 * @param RelationCache $relationCache Cache of relationship information for entity mapping.
+		 * @param array<string, object> $entities Reference to collection of unique entity objects for tracking.
+		 * @param-out array<string, object> $entities
+		 * @return array<string, mixed> Processed row with values mapped according to the AST.
 		 */
 		private function processRow(array $ast, array $row, array $relationCache, array &$entities): array {
 			// Initialize the result row as an empty array
@@ -310,7 +321,7 @@
 				
 				// If the value is an entity and not null, track it in the entities collection
 				// This helps avoid duplicate processing and enables relationship loading
-				if ($isEntity && ($processedValue !== null)) {
+				if ($isEntity && is_object($processedValue)) {
 					// Generate a unique hash for the entity object
 					$hash = spl_object_hash($processedValue);
 					
@@ -328,9 +339,9 @@
 		
 		/**
 		 * Initialiseer de relation cache op basis van de eerste rij en het AST.
-		 * @param array $ast
-		 * @param array $row
-		 * @return array
+		 * @param array<int, AstAlias> $ast
+		 * @param array<string, mixed> $row
+		 * @return RelationCache
 		 */
 		private function buildRelationCache(array $ast, array $row): array {
 			$relationCache = [];
@@ -376,15 +387,21 @@
 		
 		/**
 		 * Converts raw database query results into hydrated entity objects.
-		 * @param array $ast Abstract Syntax Tree representing the query structure.
-		 * @param array $data Raw database rows from the query result.
-		 * @return array An associative array containing processed result rows and unique entity objects.
+		 * @param array<int, AstAlias> $ast Abstract Syntax Tree representing the query structure.
+		 * @param array<int, array<string, mixed>> $data Raw database rows from the query result.
+		 * @return array{
+		 *     result: array<int, array<string, mixed>>,
+		 *     entities: array<string, object>
+		 * } An associative array containing processed result rows and unique entity objects.
 		 */
 		public function hydrateEntities(array $ast, array $data): array {
 			// Flag to identify the first row (used for initializing relation cache)
 			$first = true;
 			
-			// Collection to track unique entity objects across all rows
+			/**
+			 * Collection to track unique entity objects across all rows
+			 * @var array<string, object> $entities
+			 */
 			$entities = [];
 			
 			// Storage for processed result rows
