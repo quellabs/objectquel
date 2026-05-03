@@ -9,14 +9,22 @@
         protected int $previousPreviousPos;
         protected int $lineNumber;
         protected int $length;
+	    protected Token $next_token;
+	    protected Token $lookahead;
+
+	    /** @var array<string, int> */
         protected array $keywords;
-        protected array $tokens;
+	    
+	    /** @var array<string, int> */
         protected array $single_tokens;
+	    
+	    /** @var array<string, int> */
         protected array $two_char_tokens;
-        protected $retrieve;
-        protected Token $next_token;
-        protected Token $lookahead;
+	    
+	    /** @var array<string, string> */
 		protected array $escapeMapSingleQuote;
+	    
+	    /** @var array<string, string> */
 		protected array $escapeMapDoubleQuote;
         
         /**
