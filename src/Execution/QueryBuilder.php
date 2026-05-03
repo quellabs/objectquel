@@ -61,18 +61,7 @@
 			
 			return implode(" AND ", $resultParts);
 		}
-		
-		/**
-		 * Creates a unique alias for a range based on a provided counter.
-		 * This method generates an alias by representing the current value of the range counter
-		 * with an 'r' prefix. This alias is used to uniquely identify ranges within a query.
-		 * @param int $rangeCounter A reference to the counter used to generate a unique alias.
-		 * @return string The generated unique alias for the range.
-		 */
-		private function createAlias(int &$rangeCounter): string {
-			return "r{$rangeCounter}";
-		}
-		
+
 		/**
 		 * Processes OneToOne dependencies for a given entity type.
 		 * @param string $entityType The type of entity for which relationships are being processed.
@@ -92,7 +81,7 @@
 			
 			foreach ($oneToOneDependenciesFiltered as $property => $relation) {
 				// Create a unique alias for the range.
-				$alias = $this->createAlias($rangeCounter);
+				$alias = "r{$rangeCounter}";
 				
 				// Relation column in the current entity
 				$relationColumn = $relation->getRelationColumn() ?? "{$property}Id";
@@ -130,13 +119,15 @@
 			
 			foreach ($manyToOneDependenciesFiltered as $property => $relation) {
 				// Create a unique alias for the range.
-				$alias = $this->createAlias($rangeCounter);
+				$alias = "r{$rangeCounter}";
 				
 				// Fetch the column in this entity
 				$relationColumn = $relation->getRelationColumn() ?? "{$property}Id";
 				
 				// Get the relation column from the relation
-				$foreignColumn = $relation->getForeignColumn() ?? $this->entityStore->getPrimaryKey($entityType);
+				$foreignColumn = $relation->getForeignColumn()
+					?? $this->entityStore->getPrimaryKey($entityType)
+					?? throw new \RuntimeException("Entity '{$entityType}' has no primary key defined.");
 				
 				// Add the new range to the list.
 				$ranges[$alias] = "range of {$alias} is {$dependentEntityType} via {$alias}.{$relationColumn}=main.{$foreignColumn}";
