@@ -23,22 +23,25 @@
 	 */
 	class AstRetrieve extends Ast {
 		
-		/** @var array Compiler directives that control query compilation behavior */
+		/** @var array<string, mixed> Compiler directives that control query compilation behavior */
 		protected array $directives;
 		
-		/** @var array Values/expressions to be retrieved (SELECT clause) */
+		/** @var AstInterface[] Values/expressions to be retrieved (SELECT clause) */
 		protected array $values;
 		
-		/** @var array Named macros that can be referenced in the query */
+		/** @var array<string, AstInterface|null> Named macros that can be referenced in the query */
 		protected array $macros;
 		
-		/** @var array Data source ranges (FROM and JOIN clauses) */
+		/** @var AstRange[] Data source ranges (FROM and JOIN clauses) */
 		protected array $ranges;
 		
 		/** @var AstInterface|null Filtering conditions (WHERE clause) */
 		protected ?AstInterface $conditions;
 		
-		/** @var array Sorting specifications with AST nodes and direction */
+		/**
+		 * Sorting specifications with AST nodes and direction
+		 * @var array<int, array{ast: AstInterface, direction?: string}>
+		 */
 		protected array $sort;
 		
 		/** @var bool Whether sorting should be handled in application logic instead of database */
@@ -53,12 +56,12 @@
 		/** @var int|null Maximum number of results to return (LIMIT) */
 		protected ?int $window_size;
 		
-		/** @var array Grouping specifications (GROUP BY clause) */
+		/** @var AstInterface[] Grouping specifications (GROUP BY clause) */
 		protected array $group_by;
 		
 		/**
 		 * AstRetrieve constructor.
-		 * @param array $directives Compiler directives for query optimization
+		 * @param array<string, mixed> $directives Compiler directives for query optimization
 		 * @param AstRangeDatabase[] $ranges Data source ranges (tables, subqueries)
 		 * @param bool $unique True if the results should be unique (DISTINCT), false otherwise
 		 */
@@ -146,7 +149,7 @@
 		
 		/**
 		 * Replace all current values with a new set of values.
-		 * @param array $values New array of values to retrieve
+		 * @param AstInterface[] $values New array of values to retrieve
 		 * @return void
 		 */
 		public function setValues(array $values): void {
@@ -177,7 +180,7 @@
 		
 		/**
 		 * Returns all non-database ranges (e.g., subqueries, temporary tables).
-		 * @return array Array of ranges that are not database tables
+		 * @return AstRange[] Array of ranges that are not database tables
 		 */
 		public function getOtherRanges(): array {
 			return array_filter($this->ranges, function($range) {
@@ -187,7 +190,7 @@
 		
 		/**
 		 * Returns all ranges used in the retrieve statement.
-		 * @return array All ranges in the FROM and JOIN clauses
+		 * @return AstRange[] All ranges in the FROM and JOIN clauses
 		 */
 		public function getRanges(): array {
 			return $this->ranges;
@@ -195,7 +198,7 @@
 		
 		/**
 		 * Replaces all current ranges with a new set.
-		 * @param array $ranges New array of ranges to use as data sources
+		 * @param AstRange[] $ranges New array of ranges to use as data sources
 		 * @return void
 		 */
 		public function setRanges(array $ranges): void {
@@ -275,7 +278,7 @@
 		
 		/**
 		 * Returns all defined macros in this query.
-		 * @return array Associative array of macro names to AST nodes
+		 * @return array<string, AstInterface|null> Associative array of macro names to AST nodes
 		 */
 		public function getMacros(): array {
 			return $this->macros;
@@ -302,7 +305,7 @@
 		
 		/**
 		 * Sets the sorting specifications for the ORDER BY clause.
-		 * @param array $sortArray Array of sort specifications, each containing 'ast' and direction
+		 * @param array<int, array{ast: AstInterface, direction?: string}> $sortArray
 		 * @return void
 		 */
 		public function setSort(array $sortArray): void {
@@ -311,7 +314,7 @@
 		
 		/**
 		 * Returns the current sorting specifications.
-		 * @return array Array of sort specifications for the ORDER BY clause
+		 * @return array<int, array{ast: AstInterface, direction?: string}>
 		 */
 		public function getSort(): array {
 			return $this->sort;
@@ -380,7 +383,7 @@
 		/**
 		 * Returns a specific compiler directive value.
 		 * @param string $name The directive name
-		 * @return mixed The directive value or null if not found
+		 * @return array<string, mixed> The directive value or null if not found
 		 */
 		public function getDirective(string $name): mixed {
 			return $this->directives[$name] ?? null;
@@ -483,7 +486,7 @@
 		
 		/**
 		 * Returns the GROUP BY specifications.
-		 * @return array Array of grouping expressions
+		 * @return AstInterface[] Array of grouping expressions
 		 */
 		public function getGroupBy(): array {
 			return $this->group_by;
@@ -491,7 +494,7 @@
 		
 		/**
 		 * Sets the GROUP BY specifications.
-		 * @param array $groups Array of grouping expressions
+		 *@param AstInterface[] $groups Array of grouping expressions
 		 * @return void
 		 */
 		public function setGroupBy(array $groups): void {
@@ -553,8 +556,8 @@
 		
 		/**
 		 * Helper method to clone the sort array structure.
-		 * @param array $sortArray The sort array to clone
-		 * @return array A deep copy of the sort array
+		 * @param array<int, array{ast: AstInterface, direction?: string}> $sortArray
+		 * @return array<int, array{ast: AstInterface, direction?: string}>
 		 */
 		protected function cloneSortArray(array $sortArray): array {
 			$cloned = [];
