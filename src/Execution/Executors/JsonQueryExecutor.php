@@ -33,8 +33,15 @@
 		 * @throws QuelException
 		 */
 		public function execute(ExecutionStageInterface $stage, array $initialParams = []): array {
+			// Fetch the range
+			$jsonRange = $stage->getRange();
+			
+			// It's guaranteed to be AstRangeJsonSource, but phpstan does not know that.
+			// That's why this check was added. To satisfy phpstan's static analysis.
+			assert($jsonRange instanceof AstRangeJsonSource);
+			
 			// Load the JSON file and perform initial filtering
-			$contents = $this->loadAndFilterJsonFile($stage->getRange());
+			$contents = $this->loadAndFilterJsonFile($jsonRange);
 			
 			// Use the conditions to further filter the file
 			$result = [];

@@ -2,6 +2,7 @@
 	
 	namespace Quellabs\ObjectQuel\Execution;
 	
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRange;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRangeDatabase;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRangeJsonSource;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRetrieve;
@@ -51,26 +52,25 @@
 		 * The conditions for a join operation with other stages
 		 * @var AstInterface|null
 		 */
-		private ?AstInterface $joinConditions = null;
+		private ?AstInterface $joinConditions;
 		
 		/**
 		 * Defines where this stage should execute its query:
 		 * - AstRangeDatabase: Query executes against a database table/view
 		 * - AstRangeJsonSource: Query executes against JSON data source
 		 * - null: Range will be determined dynamically or inherited
-		 * @var AstRangeDatabase|AstRangeJsonSource|null
 		 */
-		private AstRangeDatabase|AstRangeJsonSource|null $range;
+		private ?AstRange $range;
 		
 		/**
 		 * Create a new execution stage
 		 * @param string $name Unique identifier for this stage within the execution plan
 		 * @param AstRetrieve $query The ObjectQuel query AST for this stage
-		 * @param AstRangeDatabase|AstRangeJsonSource|null $range The data source range, or null if to be determined later
+		 * @param ?AstRange $range The data source range, or null if to be determined later
 		 * @param array<string, mixed> $staticParams Fixed parameters that don't depend on other stages' results
 		 * @param AstInterface|null $joinConditions The conditions for joining this stage with other stages
 		 */
-		public function __construct(string $name, AstRetrieve $query, AstRangeDatabase|AstRangeJsonSource|null $range, array $staticParams = [], ?AstInterface $joinConditions = null) {
+		public function __construct(string $name, AstRetrieve $query, ?AstRange $range, array $staticParams = [], ?AstInterface $joinConditions = null) {
 			$this->name = $name;
 			$this->query = $query;
 			$this->range = $range;
@@ -147,18 +147,18 @@
 		
 		/**
 		 * Gets the data source range/target for this stage's query
-		 * @return AstRangeDatabase|AstRangeJsonSource|null The configured range
+		 * @return AstRange|null The configured range
 		 */
-		public function getRange(): AstRangeDatabase|AstRangeJsonSource|null {
+		public function getRange(): ?AstRange {
 			return $this->range;
 		}
 		
 		/**
 		 * Sets the data source range for this stage
-		 * @param AstRangeDatabase|AstRangeJsonSource|null $range New range or null
+		 * @param AstRange|null $range New range or null
 		 * @return void
 		 */
-		public function setRange(AstRangeDatabase|AstRangeJsonSource|null $range): void {
+		public function setRange(?AstRange $range): void {
 			$this->range = $range;
 		}
 		

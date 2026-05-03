@@ -258,11 +258,11 @@
 		 * operations that can be handled directly by the database engine,
 		 * removing any parts that would require in-memory processing.
 		 * @param AstRetrieve $query The original query to be analyzed
-		 * @param AstRangeDatabase|AstRangeJsonSource $range
+		 * @param AstRange $range
 		 * @param array<string, mixed> $staticParams
 		 * @return ExecutionStage A new query containing only database-executable operations
 		 */
-		public function createRangeExecutionStage(AstRetrieve $query, AstRangeDatabase|AstRangeJsonSource $range, array $staticParams): ExecutionStage {
+		public function createRangeExecutionStage(AstRetrieve $query, AstRange $range, array $staticParams): ExecutionStage {
 			// Clone the query to avoid modifying the original
 			// This ensures we preserve the complete query for potential in-memory operations later
 			$dbQuery = clone $query;
@@ -285,6 +285,9 @@
 			
 			// Extract join conditions
 			$joinConditions = $this->filter->isolateJoinConditionsForRange($range, $query->getConditions());
+			
+			// Assert that range of the correct type
+			assert($range instanceof AstRangeDatabase || $range instanceof AstRangeJsonSource);
 			
 			// Return the optimized query that can be fully executed by the database
 			return new ExecutionStage(uniqid(), $dbQuery, $range, $staticParams, $joinConditions);

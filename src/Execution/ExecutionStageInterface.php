@@ -2,6 +2,7 @@
 	
 	namespace Quellabs\ObjectQuel\Execution;
 	
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRange;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRangeDatabase;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRangeJsonSource;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRetrieve;
@@ -22,7 +23,6 @@
 		/**
 		 * Get the unique identifier for this execution stage.
 		 * Used for logging, debugging, and tracking stage execution order.
-		 *
 		 * @return string Unique stage identifier
 		 */
 		public function getName(): string;
@@ -31,7 +31,6 @@
 		 * Check if this stage has a custom result processor.
 		 * Result processors transform raw query results into the desired output format,
 		 * such as joining with other stage results or applying post-query filtering.
-		 *
 		 * @return bool True if stage has a result processor, false otherwise
 		 */
 		public function hasResultProcessor(): bool;
@@ -40,7 +39,6 @@
 		 * Get the result processor callable for this stage.
 		 * The processor receives raw results and transforms them according to stage requirements.
 		 * Returns null if no custom processing is needed.
-		 *
 		 * @return callable|null Result processing function or null
 		 */
 		public function getResultProcessor(): ?callable;
@@ -49,7 +47,6 @@
 		 * Get static parameters to be bound to the query.
 		 * Static parameters are values that don't change between executions and can be
 		 * safely included in cache keys (e.g., user-provided filter values).
-		 *
 		 * @return array<string, mixed> Associative array of parameter names to values
 		 */
 		public function getStaticParams(): array;
@@ -63,7 +60,7 @@
 		/**
 		 * Returns the range associated with this execution stage.
 		 * For database stages this is the primary range used to detect JSON vs database execution.
-		 * @return AstRangeDatabase|AstRangeJsonSource|null
+		 * @return AstRange|null
 		 */
-		public function getRange(): AstRangeDatabase|AstRangeJsonSource|null;
+		public function getRange(): ?AstRange;
 	}
