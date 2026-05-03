@@ -26,6 +26,41 @@
 	 *
 	 * An indexConfig is an associative array with keys:
 	 *   columns (string[]), type ('INDEX'|'UNIQUE'|'FULLTEXT'), unique (bool, optional)
+	 *
+	 * @phpstan-type ColumnDefinition array{
+	 *     type: string,
+	 *     limit?: int|string,
+	 *     nullable?: bool,
+	 *     default?: mixed,
+	 *     precision?: int,
+	 *     scale?: int,
+	 *     unsigned?: bool,
+	 *     identity?: bool,
+	 *     primary_key?: bool,
+	 *     values?: array<int, string>
+	 * }
+	 *
+	 * @phpstan-type IndexConfig array{
+	 *     columns: array<int, string>,
+	 *     type: string,
+	 *     unique?: bool
+	 * }
+	 *
+	 * @phpstan-type IndexChanges array{
+	 *     added: array<string, IndexConfig>,
+	 *     modified: array<string, array{entity: IndexConfig, database: IndexConfig}>,
+	 *     deleted: array<string, IndexConfig>
+	 * }
+	 *
+	 * @phpstan-type TableChanges array{
+	 *     table_not_exists?: bool,
+	 *     added?: array<string, ColumnDefinition>,
+	 *     modified?: array<string, array{from: ColumnDefinition, to: ColumnDefinition}>,
+	 *     deleted?: array<string, ColumnDefinition>,
+	 *     indexes?: IndexChanges
+	 * }
+	 *
+	 * @phpstan-type AllChanges array<string, TableChanges>
 	 */
 	class PhinxMigrationBuilder {
 		
@@ -54,7 +89,7 @@
 		 * The file is written to $migrationsPath with the format:
 		 *   20250603145623_EntitySchemaMigration.php
 		 *
-		 * @param array $allChanges Table-keyed change descriptors (see class docblock)
+		 * @param AllChanges $allChanges Table-keyed change descriptors (see class docblock)
 		 * @return array{success: bool, message: string, path?: string}
 		 */
 		public function generateMigrationFile(array $allChanges): array {
@@ -91,7 +126,7 @@
 		 * (down) method bodies are built in a single pass.
 		 *
 		 * @param string $className Class name embedded in the generated file
-		 * @param array $allChanges Table-keyed change descriptors
+		 * @param AllChanges $allChanges Table-keyed change descriptors
 		 * @return string Complete PHP source ready to write to disk
 		 */
 		private function buildMigrationContent(string $className, array $allChanges): string {
@@ -103,7 +138,7 @@
 				
 				if ($changes['table_not_exists']) {
 					// New table: up creates it, down drops it entirely
-					$up[] = $this->buildCreateTableCode($tableName, $changes['added'], $changes['indexes']);
+					$up[] = $this->buildCreateTableCode($tableName, $changes['added'], $changes['indexes']['added']);
 					$down[] = "        \$this->table('{$tableName}')->drop()->save();";
 					continue;
 				}
@@ -177,8 +212,14 @@ PHP;
 		 * 'added' provided) doesn't wipe out the 'modified' and 'deleted' sub-keys
 		 * that a shallow array_merge would silently discard.
 		 *
-		 * @param array $changes Raw change descriptor, possibly missing optional keys
-		 * @return array Normalised descriptor with all keys present
+		 * @param TableChanges $changes Raw change descriptor, possibly missing optional keys
+		 * @return array{
+		 *     added: array<string, ColumnDefinition>,
+		 *     modified: array<string, array{from: ColumnDefinition, to: ColumnDefinition}>,
+		 *     deleted: array<string, ColumnDefinition>,
+		 *     indexes: IndexChanges,
+		 *     table_not_exists: bool
+		 * }
 		 */
 		private function normalizeChanges(array $changes): array {
 			$defaults = [
@@ -201,8 +242,8 @@ PHP;
 		 * Inverting them lets buildModifyIndexesCode() reuse the same logic for both
 		 * the forward and reverse migration without any special-casing.
 		 *
-		 * @param array $modified array<indexName, ['entity' => config, 'database' => config]>
-		 * @return array The same structure with entity and database sides swapped
+		 * @param array<string, array{entity: IndexConfig, database: IndexConfig}> $modified
+		 * @return array<string, array{entity: IndexConfig, database: IndexConfig}>
 		 */
 		private function invertIndexModifications(array $modified): array {
 			$inverted = [];
@@ -230,11 +271,13 @@ PHP;
 		 * of an index on AUTO_INCREMENT columns is satisfied.
 		 *
 		 * @param string $tableName Table to create
-		 * @param array $columns Column definitions keyed by column name
-		 * @param array $indexes Index configurations keyed by index name
+		 * @param array<string, ColumnDefinition> $columns
+		 * @param array<string, IndexConfig> $indexes
 		 */
 		private function buildCreateTableCode(string $tableName, array $columns, array $indexes = []): string {
-			['primaryKeys' => $primaryKeys, 'autoIncrementColumn' => $autoIncrementColumn] = $this->analyzeColumns($columns);
+			$result = $this->analyzeColumns($columns);
+			$primaryKeys = $result['primaryKeys'];
+			$autoIncrementColumn = $result['autoIncrementColumn'];
 			
 			// Always disable Phinx's implicit 'id' column
 			$tableOptions = ["'id' => false"];
@@ -269,10 +312,12 @@ PHP;
 		 * primary key columns.
 		 *
 		 * @param string $tableName Table to modify
-		 * @param array $columns New column definitions keyed by column name
+		 * @param array<string, ColumnDefinition> $columns New column definitions keyed by column name
 		 */
 		private function buildAddColumnsCode(string $tableName, array $columns): string {
-			['primaryKeys' => $newPrimaryKeys, 'autoIncrementColumn' => $autoIncrementColumn] = $this->analyzeColumns($columns);
+			$result = $this->analyzeColumns($columns);
+			$newPrimaryKeys = $result['primaryKeys'];
+			$autoIncrementColumn = $result['autoIncrementColumn'];
 			
 			$builder = new MigrationCodeBuilder($tableName);
 			$this->applyColumnDefinitions($builder, $columns);
@@ -298,7 +343,7 @@ PHP;
 		/**
 		 * Generate code to remove columns from a table.
 		 * @param string $tableName Table to modify
-		 * @param array $columns Columns to remove, keyed by column name (values are ignored)
+		 * @param array<string, ColumnDefinition> $columns Columns to remove, keyed by column name (values are ignored)
 		 */
 		private function buildRemoveColumnsCode(string $tableName, array $columns): string {
 			$builder = new MigrationCodeBuilder($tableName);
@@ -317,7 +362,7 @@ PHP;
 		 * selects which side of each change to apply ('to' = forward, 'from' = rollback).
 		 *
 		 * @param string $tableName Table to modify
-		 * @param array $modifiedColumns array<columnName, ['from' => definition, 'to' => definition]>
+		 * @param array<string, array{from: ColumnDefinition, to: ColumnDefinition}> $modifiedColumns
 		 * @param string $direction 'to' for up(), 'from' for down()
 		 */
 		private function buildChangeColumnsCode(string $tableName, array $modifiedColumns, string $direction): string {
@@ -334,7 +379,7 @@ PHP;
 		/**
 		 * Generate code to add new indexes to a table.
 		 * @param string $tableName Table to modify
-		 * @param array $indexes Index configurations keyed by index name
+		 * @param array<string, IndexConfig> $indexes
 		 */
 		private function buildAddIndexesCode(string $tableName, array $indexes): string {
 			$builder = new MigrationCodeBuilder($tableName);
@@ -349,7 +394,8 @@ PHP;
 		/**
 		 * Generate code to remove indexes from a table by name.
 		 * @param string $tableName Table to modify
-		 * @param array $indexes Indexes to remove, keyed by index name (values are ignored)
+		 * @param array<string, IndexConfig> $indexes
+		 * @return string
 		 */
 		private function buildRemoveIndexesCode(string $tableName, array $indexes): string {
 			$builder = new MigrationCodeBuilder($tableName);
@@ -370,23 +416,19 @@ PHP;
 		 * migration runs).
 		 *
 		 * @param string $tableName Table to modify
-		 * @param array $indexes array<indexName, ['entity' => indexConfig, 'database' => indexConfig]>
+		 * @param array<string, array{entity: IndexConfig, database: IndexConfig}> $indexes
 		 * @throws \InvalidArgumentException When an index entry is missing required structure
 		 */
 		private function buildModifyIndexesCode(string $tableName, array $indexes): string {
 			$builder = new MigrationCodeBuilder($tableName);
 			
 			foreach ($indexes as $name => $configs) {
-				if (!isset($configs['entity']['columns'], $configs['entity']['type'])) {
-					throw new \InvalidArgumentException(
-						"Invalid index configuration for '{$name}' in table '{$tableName}'. " .
-						"Expected 'entity' key with 'columns' and 'type' properties."
-					);
-				}
-				
-				// Drop then recreate — Phinx has no modify-index primitive
 				$builder->removeIndexByName($name);
-				$builder->addIndex($configs['entity']['columns'], $this->buildIndexOptions($name, $configs['entity']));
+				
+				$builder->addIndex(
+					$configs['entity']['columns'],
+					$this->buildIndexOptions($name, $configs['entity'])
+				);
 			}
 			
 			return $builder->update();
@@ -404,7 +446,7 @@ PHP;
 		 * (create() vs update()).
 		 *
 		 * @param MigrationCodeBuilder $builder Builder to populate
-		 * @param array $columns Column definitions keyed by column name
+		 * @param array<string, ColumnDefinition> $columns
 		 */
 		private function applyColumnDefinitions(MigrationCodeBuilder $builder, array $columns): void {
 			foreach ($columns as $columnName => $definition) {
@@ -424,7 +466,7 @@ PHP;
 		 * Databases that don't support native ENUMs (e.g. SQLite, older PostgreSQL
 		 * configurations) fall back to 'string'. All other types pass through unchanged.
 		 *
-		 * @param array $definition Column definition containing at least 'type'
+		 * @param ColumnDefinition $definition
 		 * @return string Phinx type string
 		 */
 		private function resolveType(array $definition): string {
@@ -437,8 +479,8 @@ PHP;
 		
 		/**
 		 * Scan a set of column definitions and extract primary key and auto-increment metadata.
-		 * @param array $columns Column definitions keyed by column name
-		 * @return array{primaryKeys: string[], autoIncrementColumn: string|null}
+		 * @param array<string, ColumnDefinition> $columns
+		 * @return array{primaryKeys: array<int, string>, autoIncrementColumn: string|null}
 		 */
 		private function analyzeColumns(array $columns): array {
 			$primaryKeys = [];
@@ -468,8 +510,8 @@ PHP;
 		 * Enum columns on databases without native enum support have their 'limit'
 		 * and 'values' options suppressed, since the column is emitted as 'string'.
 		 *
-		 * @param array $definition Column definition
-		 * @return string[]
+		 * @param ColumnDefinition $definition
+		 * @return array<int, string>
 		 */
 		private function buildColumnOptions(array $definition): array {
 			$options = [];
@@ -525,18 +567,19 @@ PHP;
 		 * for removal (removeIndexByName relies on having a known name).
 		 *
 		 * @param string $indexName Index name — always emitted as 'name'
-		 * @param array $indexConfig Configuration containing 'type' and optionally 'unique'
-		 * @return string[]
+		 * @param IndexConfig $indexConfig
+		 * @return array<int, string>
 		 */
 		private function buildIndexOptions(string $indexName, array $indexConfig): array {
-			$options = ["'name' => '{$indexName}'"];
-			$type = strtoupper($indexConfig['type'] ?? 'INDEX');
+			$type = strtoupper($indexConfig['type']);
 			
-			if ($type === 'FULLTEXT') {
-				$options[] = "'type' => 'fulltext'";
-			} elseif ($type === 'UNIQUE' || !empty($indexConfig['unique'])) {
-				$options[] = "'unique' => true";
-			}
+			$options = ["'name' => '{$indexName}'"];
+			
+			match ($type) {
+				'FULLTEXT' => $options[] = "'type' => 'fulltext'",
+				'UNIQUE'   => $options[] = "'unique' => true",
+				default    => !empty($indexConfig['unique']) && $options[] = "'unique' => true",
+			};
 			
 			return $options;
 		}
