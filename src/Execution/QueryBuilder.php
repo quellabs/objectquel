@@ -87,7 +87,6 @@
 				$relationColumn = $relation->getRelationColumn() ?? "{$property}Id";
 				
 				// Get the relation column from the relation
-				// Get the relation column from the relation
 				$foreignColumn = $relation->getForeignColumn()
 					?? $this->entityStore->getPrimaryKey($entityType)
 					?? throw new \RuntimeException("Entity '{$entityType}' has no primary key defined.");
