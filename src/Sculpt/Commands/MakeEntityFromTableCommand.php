@@ -9,7 +9,6 @@
 	use Quellabs\Contracts\Discovery\ProviderInterface;
 	use Quellabs\ObjectQuel\Configuration;
 	use Quellabs\ObjectQuel\DatabaseAdapter\DatabaseAdapter;
-	use Quellabs\ObjectQuel\OrmException;
 	use Quellabs\ObjectQuel\Sculpt\ServiceProvider;
 	use Quellabs\Sculpt\Contracts\CommandBase;
 	use Quellabs\Sculpt\ConfigurationManager;
@@ -22,6 +21,9 @@
 	 * This command allows users to interactively create or update entity classes
 	 * through a command-line interface, collecting properties with their types
 	 * and constraints, including relationship definitions with primary key selection.
+	 *
+	 * @phpstan-import-type ColumnDefinition from DatabaseAdapter
+	 * @phpstan-import-type IndexDefinition from DatabaseAdapter
 	 */
 	class MakeEntityFromTableCommand extends CommandBase {
 		private Configuration $configuration;
@@ -202,8 +204,8 @@
 		 * This function analyzes table column definitions and creates PHP code statements
 		 * that will properly initialize entity properties with their database default values.
 		 * These statements are intended to be included in the entity class constructor.
-		 * @param array $tableDescription An associative array containing column definitions from the database schema
-		 * @return array List of PHP code statements for initializing properties with default values
+		 * @param array<string, ColumnDefinition> $tableDescription Column definitions from the database schema
+		 * @return list<string> List of PHP code statements for initializing properties with default values
 		 */
 		private function buildPropertyDefaultInitializers(array $tableDescription): array {
 			$result = [];
@@ -230,7 +232,7 @@
 		
 		/**
 		 * Generates the constructor method for the entity class.
-		 * @param array $tableDescription An associative array containing column definitions from the database schema
+		 * @param array<string, ColumnDefinition> $tableDescription
 		 * @return string The complete constructor method code, or an empty string if no initializations are needed
 		 */
 		private function generateConstructor(array $tableDescription): string {
@@ -263,7 +265,7 @@
 		
 		/**
 		 * Generate the member variables for the entity class
-		 * @param array $tableDescription The table description with column details
+		 * @param array<string, ColumnDefinition> $tableDescription
 		 * @return string The generated member variables code with proper ORM annotations
 		 */
 		private function generateMemberVariables(array $tableDescription): string {
@@ -319,10 +321,12 @@
 		 * even if they can't be NULL in the database. This reflects that new entities will have
 		 * null IDs until they're persisted to the database and receive their auto-generated value.
 		 *
-		 * @param array $column The column description array containing metadata such as:
-		 *                     - php_type: The base PHP type (string, int, float, etc.)
-		 *                     - nullable: Whether the column allows NULL values in the database
-		 *                     - identity: Whether the column is an auto-increment/identity column
+		 * @param array $column
+		 * @phpstan-param ColumnDefinition $column
+		 *     The column description array containing metadata such as:
+		 *     - php_type: The base PHP type (string, int, float, etc.)
+		 *     - nullable: Whether the column allows NULL values in the database
+		 *     - identity: Whether the column is an auto-increment/identity column
 		 *
 		 * @return string The PHP type declaration to use in entity properties:
 		 *                - For nullable or identity columns: "?type" (e.g., "?int", "?string")
@@ -350,6 +354,7 @@
 		 * Determines if a column should be made nullable in PHP despite being NOT NULL in the database
 		 * This occurs when complex types have no default value but are marked as NOT NULL
 		 * @param array $column Column metadata from database schema
+		 * @phpstan-param ColumnDefinition $column Column metadata from database schema
 		 * @return bool True if the column should be made nullable in PHP despite database constraints
 		 */
 		private function isNullableInPhpOnly(array $column): bool {
@@ -368,6 +373,7 @@
 		/**
 		 * Get the column annotation details
 		 * @param array $column The column description
+		 * @phpstan-param ColumnDefinition $column
 		 * @return string The column annotation details
 		 */
 		private function getColumnAnnotationDetails(array $column): string {
@@ -375,13 +381,13 @@
 			$details = [];
 			
 			// Add limit annotation if specified
-			if (!empty($column["limit"])) {
-				if (is_numeric($column["limit"])) {
-					// For numeric limits, don't use quotes
+			if ($column["limit"] !== null) {
+				if (is_int($column["limit"])) {
 					$details[] = "limit={$column["limit"]}";
 				} else {
-					// For non-numeric limits, use quotes
-					$details[] = "limit=\"{$column["limit"]}\"";
+					// must be array<int,int>
+					$values = implode(', ', $column["limit"]);
+					$details[] = "limit={{$values}}";
 				}
 			}
 			
@@ -418,6 +424,7 @@
 		/**
 		 * Returns true if the column has a default value
 		 * @param array $column The column description
+		 * @phpstan-param ColumnDefinition $column The column description
 		 * @return bool
 		 */
 		private function hasColumnDefaultValue(array $column): bool {
@@ -427,6 +434,7 @@
 		/**
 		 * Get the default value for a column
 		 * @param array $column The column description
+		 * @phpstan-param ColumnDefinition $column The column description
 		 * @return string The default value expression
 		 */
 		private function getColumnDefaultValue(array $column): string {
@@ -457,7 +465,7 @@
 		
 		/**
 		 * Generate the getters and setters for the entity class
-		 * @param array $tableDescription The table description
+		 * @param array<string, ColumnDefinition> $tableDescription
 		 * @return string The generated getters and setters code
 		 */
 		private function generateGettersAndSetters(array $tableDescription): string {
@@ -500,6 +508,7 @@
 		/**
 		 * Generate a setter method for a column
 		 * @param array $column The column description
+		 * @phpstan-param ColumnDefinition $column The column description
 		 * @param string $fieldCamelCase The camelCase field name
 		 * @param string $variableCamelCase The camelCase variable name
 		 * @param string $acceptType The PHP type for the column
@@ -534,7 +543,11 @@
 		/**
 		 * Retrieves all database indexes defined for a specific table
 		 * @param string $tableName The name of the database table to get indexes for
-		 * @return array Formatted array of database indexes with their configurations
+		 * @return array<string, array{
+		 *     columns: string[],
+		 *     type: string,
+		 *     unique: bool
+		 * }>
 		 */
 		private function getTableIndexes(string $tableName): array {
 			return array_map(function ($index) {
