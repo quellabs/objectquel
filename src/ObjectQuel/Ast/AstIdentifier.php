@@ -227,18 +227,18 @@
 		
 		/**
 		 * Returns the range (data source) directly attached to this identifier.
-		 * @return AstRange|AstRangeDatabase|null
+		 * @return AstRange|null
 		 */
-		public function getRange(): AstRange|AstRangeDatabase|null {
+		public function getRange(): ?AstRange {
 			return $this->range;
 		}
 		
 		/**
 		 * Sets or clears the range (data source) for this identifier.
-		 * @param AstRange|AstRangeDatabase|null $range
+		 * @param AstRange|null $range
 		 * @return void
 		 */
-		public function setRange(AstRange|AstRangeDatabase|null $range): void {
+		public function setRange(AstRange|null $range): void {
 			$this->range = $range;
 		}
 		
@@ -246,9 +246,9 @@
 		 * Returns the range this identifier belongs to by traversing to the base identifier.
 		 * For "user.id", returns the range attached to "user".
 		 * For "c.title", returns the range attached to "c".
-		 * @return AstRange|AstRangeDatabase|AstRangeJsonSource|null The range this identifier chain belongs to.
+		 * @return AstRange|null The range this identifier chain belongs to.
 		 */
-		public function getSourceRange(): AstRange|AstRangeDatabase|AstRangeJsonSource|null {
+		public function getSourceRange(): ?AstRange {
 			$baseIdentifier = $this->getBaseIdentifier();
 			return $baseIdentifier?->getRange();
 		}

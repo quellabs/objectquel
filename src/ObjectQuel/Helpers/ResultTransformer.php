@@ -2,6 +2,7 @@
 	
 	namespace Quellabs\ObjectQuel\ObjectQuel\Helpers;
 	
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstIdentifier;
 	use Quellabs\ObjectQuel\ObjectQuel\AstInterface;
 	
 	/**
@@ -28,10 +29,16 @@
 			// O(n log n) times, which is expensive on large result sets.
 			$normalizedSort = array_map(
 				static function (array $item): array {
-					$entity = $item['ast']->getParentIdentifier();
+					$ast = $item['ast'];
+					
+					if (!$ast instanceof AstIdentifier) {
+						throw new \UnexpectedValueException(
+							'Sort AST must be an AstIdentifier'
+						);
+					}
 					
 					return [
-						'range'     => $entity->getRange()->getName(),
+						'range'     => $ast->getSourceRangeName(),
 						'direction' => strtolower($item['direction'] ?? 'asc'),
 					];
 				},
