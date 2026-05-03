@@ -8,7 +8,7 @@
 	
 	class IdentifierCollector implements AstVisitorInterface {
 		
-		/** @var array All nodes */
+		/** @var AstIdentifier[] All nodes */
 		private array $collectedNodes;
 		
 		/**
@@ -40,7 +40,7 @@
 		
 		/**
 		 * Returns all collected nodes
-		 * @return array
+		 * @return AstIdentifier[]
 		 */
 		public function getCollectedNodes(): array {
 			return $this->collectedNodes;
