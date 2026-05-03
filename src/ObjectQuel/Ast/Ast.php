@@ -14,6 +14,7 @@
 	 */
 	abstract class Ast implements AstInterface {
 		
+		/** @var AstInterface|null Parent node */
 		private ?AstInterface $parent = null;
 		
 		/**
@@ -99,7 +100,7 @@
 		
 		/**
 		 * Returns true if one the parents is $className
-		 * @param array $classNames
+		 * @param array<class-string> $classNames
 		 * @return bool
 		 */
 		public function parentIsOneOf(array $classNames): bool {
@@ -152,9 +153,9 @@
 		
 		/**
 		 * Helper method for cloning arrays of AST nodes
-		 * @param array $array Array potentially containing AST nodes
+		 * @param array<array-key, mixed> $array Array potentially containing AST nodes
 		 * @param Ast|null $newParent The parent for cloned nodes
-		 * @return array Cloned array
+		 * @return array<array-key, mixed> Cloned array
 		 */
 		protected function cloneArray(array $array, ?Ast $newParent = null): array {
 			$cloned = [];
