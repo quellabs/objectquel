@@ -2,6 +2,8 @@
 	
 	namespace Quellabs\ObjectQuel\Persistence;
 	
+	use Quellabs\ObjectQuel\Annotations\Orm\Column;
+	use Quellabs\ObjectQuel\Annotations\Orm\Version;
 	use Quellabs\ObjectQuel\DatabaseAdapter\DatabaseAdapter;
 	use Quellabs\ObjectQuel\EntityStore;
 	use Quellabs\ObjectQuel\OrmException;
@@ -132,11 +134,11 @@
 		/**
 		 * Extracts only the fields that have changed compared to the original entity data
 		 * Version columns are excluded as they are handled separately
-		 * @param array $serializedEntity Current entity state as column => value pairs
-		 * @param array $originalData Original entity snapshot
-		 * @param array $primaryKeyColumnNames Primary key column names
-		 * @param array $versionColumnNames Version column names to exclude
-		 * @return array Changed fields as column => value pairs
+		 * @param array<string, mixed> $serializedEntity Current entity state as column => value pairs
+		 * @param array<string, mixed> $originalData Original entity snapshot
+		 * @param array<int, string> $primaryKeyColumnNames Primary key column names
+		 * @param array<int, string> $versionColumnNames Version column names to exclude
+		 * @return array<string, mixed> Changed fields as column => value pairs
 		 */
 		protected function extractChangedFields(array $serializedEntity, array $originalData, array $primaryKeyColumnNames, array $versionColumnNames): array {
 			// Create a list of changed fields by comparing current values with original values
@@ -155,9 +157,9 @@
 		/**
 		 * Builds the SET clause for version columns
 		 * Each version column type (integer, datetime, uuid) has different update logic
-		 * @param array $versionColumns Version column metadata indexed by property name
-		 * @param array &$params Reference to parameters array to add version parameters to
-		 * @return array Array of SQL SET clause parts
+		 * @param array<string, array{name: string, column: Column, version: Version}> $versionColumns
+		 * @param array<string, mixed> $params Reference to parameters array to add version parameters to
+		 * @return array<int, string> Array of SQL SET clause parts
 		 * @throws OrmException
 		 */
 		protected function buildVersionSetClause(array $versionColumns, array &$params): array {
@@ -196,9 +198,9 @@
 		/**
 		 * Builds the SET clause for regular changed fields
 		 * Each field gets a prefixed parameter name to avoid collisions with other parameters
-		 * @param array $changedFields Changed fields as column => value pairs
-		 * @param array &$params Reference to parameters array to add field parameters to
-		 * @return array Array of SQL SET clause parts
+		 * @param array<string, mixed> $changedFields Changed fields as column => value pairs
+		 * @param array<string, mixed> $params Reference to parameters array to add field parameters to
+		 * @return array<int, string> Array of SQL SET clause parts
 		 */
 		protected function buildFieldsSetClause(array $changedFields, array &$params): array {
 			// Add the regular changed fields to the SET clause
@@ -216,11 +218,11 @@
 		/**
 		 * Builds the WHERE clause for the UPDATE statement
 		 * Includes primary key conditions and version column conditions for optimistic locking
-		 * @param array $primaryKeyColumnNames Primary key column names
-		 * @param array $primaryKeyValues Primary key values
-		 * @param array $versionColumns Version column metadata
-		 * @param array $originalData Original entity data for version values
-		 * @param array &$params Reference to parameters array to add WHERE parameters to
+		 * @param array<int, string> $primaryKeyColumnNames Primary key column names
+		 * @param array<string, mixed> $primaryKeyValues Primary key values
+		 * @param array<string, array{name: string, column: Column, version: Version}> $versionColumns Version column metadata
+		 * @param array<string, mixed> $originalData Original entity data for version values
+		 * @param array<string, mixed> $params Reference to parameters array to add WHERE parameters to
 		 * @return string Complete WHERE clause SQL
 		 */
 		protected function buildWhereClause(array $primaryKeyColumnNames, array $primaryKeyValues, array $versionColumns, array $originalData, array &$params): string {
