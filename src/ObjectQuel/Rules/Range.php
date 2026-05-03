@@ -58,7 +58,7 @@
 		
 		/**
 		 * Parse ranges
-		 * @return array
+		 * @return AstRange[]
 		 * @throws LexerException
 		 * @throws ParserException
 		 */
