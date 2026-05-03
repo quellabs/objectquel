@@ -13,12 +13,15 @@
 	 * This visitor is used to identify mixed data source references in query conditions
 	 */
 	class CollectJoinConditionIdentifiers implements AstVisitorInterface {
-		
-		private array $identifiers = [];
+
+		/** @var AstRetrieve Retrieve AST Node */
 		private AstRetrieve $retrieve;
+
+		/** @var array<int, AstIdentifier> */
+		private array $identifiers = [];
 		
 		/**
-		 * Constructor
+		 * CollectJoinConditionIdentifiers Constructor
 		 * @param AstRetrieve $retrieve
 		 */
 		public function __construct(AstRetrieve $retrieve) {

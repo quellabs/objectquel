@@ -14,7 +14,7 @@
 	class AggregateCollector implements AstVisitorInterface {
 		
 		/**
-		 * @var array All collected aggregate function nodes
+		 * @var array<int, AstAggregate> All collected aggregate function nodes
 		 */
 		private array $collectedNodes;
 		

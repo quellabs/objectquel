@@ -82,6 +82,8 @@
 		protected int $type;
 		protected mixed $value;
 		protected int $lineNumber;
+		
+		/** @var array<string, mixed> */
 		protected array $extraData;
 		
 		/**
@@ -89,7 +91,7 @@
 		 * @param int $type
 		 * @param mixed $value
 		 * @param int $lineNumber
-		 * @param array $extraData
+		 * @param array<string, mixed> $extraData
 		 */
 		public function __construct(int $type, mixed $value = null, int $lineNumber = 0, array $extraData = []) {
 			$this->type = $type;
@@ -124,7 +126,7 @@
 		
 		/**
 		 * Returns the (optional) extra data for this token
-		 * @return array
+		 * @return array<string, mixed>
 		 */
 		public function getExtraData(): array {
 			return $this->extraData;

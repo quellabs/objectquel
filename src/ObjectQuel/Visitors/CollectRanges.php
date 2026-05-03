@@ -3,16 +3,17 @@
 	namespace Quellabs\ObjectQuel\ObjectQuel\Visitors;
 	
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstIdentifier;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRange;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstSubquery;
 	use Quellabs\ObjectQuel\ObjectQuel\AstInterface;
 	use Quellabs\ObjectQuel\ObjectQuel\AstVisitorInterface;
 	
 	class CollectRanges implements AstVisitorInterface {
 		
-		/** @var array All nodes */
+		/** @var AstRange[] All nodes */
 		private array $collectedNodes;
 		
-		/** @var array All nodes */
+		/** @var string[] All nodes */
 		private array $handledRanges;
 		
 		/**
@@ -60,7 +61,7 @@
 		
 		/**
 		 * Returns all collected nodes
-		 * @return array
+		 * @return AstRange[]
 		 */
 		public function getCollectedNodes(): array {
 			return $this->collectedNodes;
