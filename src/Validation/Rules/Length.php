@@ -6,13 +6,14 @@
 	
 	class Length implements ValidationInterface {
 		
+		/** @var array{min?: int, max?: int} */
 		protected array $conditions;
 		protected string $error;
 		protected ?string $errorMessage;
 		
 		/**
 		 * Email constructor
-		 * @param array $conditions
+		 * @param array{min?: int, max?: int} $conditions
 		 * @param string|null $errorMessage
 		 */
 		public function __construct(array $conditions = [], ?string $errorMessage = null) {
@@ -23,7 +24,7 @@
 		
 		/**
 		 * Returns the conditions used in this Rule
-		 * @return array
+		 * @return array{min?: int, max?: int}
 		 */
 		public function getConditions(): array {
 			return $this->conditions;

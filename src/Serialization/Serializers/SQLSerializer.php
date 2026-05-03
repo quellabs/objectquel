@@ -18,7 +18,7 @@
 		/**
 		 * Extracts all values from the entity that are marked as Column.
 		 * @param object $entity The entity from which the values must be extracted.
-		 * @return array An array with property names as keys and their values.
+		 * @return array<string, mixed> An array with property names as keys and their values.
 		 */
 		public function serialize(object $entity): array {
 			// Serialize the data
@@ -37,7 +37,7 @@
 		/**
 		 * Injects the given values into the entity.
 		 * @param object $entity The entity into which the values must be injected.
-		 * @param array $values The values to be injected, with property names as keys.
+		 * @param array<string, mixed> $values The values to be injected, with property names as keys.
 		 * @return void
 		 */
 		public function deserialize(object $entity, array $values): void {

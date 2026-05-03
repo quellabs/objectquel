@@ -6,12 +6,13 @@
 	
 	class RegExp implements ValidationInterface {
 		
+		/** @var array<string, mixed> */
 		protected array $conditions;
 		protected ?string $errorMessage;
 		
 		/**
 		 * Email constructor
-		 * @param array $conditions
+		 * @param array<string, mixed> $conditions
 		 * @param string|null $errorMessage
 		 */
 		public function __construct(array $conditions = [], ?string $errorMessage = null) {
@@ -21,7 +22,7 @@
 		
 		/**
 		 * Returns the conditions used in this Rule
-		 * @return array
+		 * @return array<string, mixed>
 		 */
 		public function getConditions(): array {
 			return $this->conditions;
