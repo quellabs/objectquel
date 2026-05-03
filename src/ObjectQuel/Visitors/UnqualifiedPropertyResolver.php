@@ -4,6 +4,7 @@
 	
 	use Quellabs\ObjectQuel\EntityStore;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstIdentifier;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRange;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRangeDatabase;
 	use Quellabs\ObjectQuel\ObjectQuel\AstInterface;
 	use Quellabs\ObjectQuel\ObjectQuel\AstVisitorInterface;
@@ -41,18 +42,18 @@
 		 * Only AstRangeDatabase entries that reference a concrete entity are considered;
 		 * subquery ranges and JSON ranges are skipped because they have no EntityStore
 		 * metadata to inspect.
-		 * @var array
+		 * @var AstRange[]
 		 */
 		private array $ranges;
 		
 		/**
 		 * Constructor
 		 * @param EntityStore $entityStore Store containing entity/property metadata
-		 * @param array       $ranges      All ranges from the AstRetrieve node
+		 * @param AstRange[] $ranges All ranges from the AstRetrieve node
 		 */
 		public function __construct(EntityStore $entityStore, array $ranges) {
 			$this->entityStore = $entityStore;
-			$this->ranges      = $ranges;
+			$this->ranges = $ranges;
 		}
 		
 		/**
@@ -103,7 +104,7 @@
 		/**
 		 * Search all concrete entity ranges for one that exposes the given property.
 		 * Returns the single matching range, or throws if zero or more than one match.
-		 * @param  string             $propertyName The bare property name to look up
+		 * @param string $propertyName The bare property name to look up
 		 * @return AstRangeDatabase   The unique range that owns this property
 		 * @throws QuelException      On ambiguity or when no range owns the property
 		 */
