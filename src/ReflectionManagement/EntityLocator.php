@@ -24,7 +24,7 @@
 		private AnnotationReader $annotationReader;
 		
 		/**
-		 * @var array Discovered entity classes
+		 * @var string[] Discovered entity classes
 		 */
 		private array $entityClasses = [];
 		
@@ -51,7 +51,7 @@
 		
 		/**
 		 * Discover all entity classes in configured paths, including subdirectories
-		 * @return array List of discovered entity class names
+		 * @return string[] List of discovered entity class names
 		 * @throws AnnotationReaderException
 		 */
 		public function discoverEntities(): array {
@@ -81,6 +81,7 @@
 		/**
 		 * Recursively process a directory and its subdirectories for entity files
 		 * @param string $directory The directory path to process
+		 * @param string[] $result
 		 * @throws AnnotationReaderException
 		 */
 		private function processDirectory(string $directory, array &$result): void {
