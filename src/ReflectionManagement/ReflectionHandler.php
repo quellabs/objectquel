@@ -45,7 +45,7 @@
 		 * @return ReflectionClass<T> A ReflectionClass instance.
 		 * @throws \ReflectionException
 		 */
-		protected function getReflectionClass(mixed $class): ReflectionClass {
+		protected function getReflectionClass(object|string $class): ReflectionClass {
 			// Determine the class name from the object or directly use the provided class name
 			$className = is_object($class) ? get_class($class) : $class;
 			
@@ -61,10 +61,10 @@
 		
 		/**
 		 * Retrieves the name of the parent class for a given class.
-		 * @param mixed $class The class name or object to inspect.
+		 * @param object|string $class The class name or object to inspect.
 		 * @return string|null The name of the parent class as a string, or null if it doesn't exist or an error occurs.
 		 */
-		public function getParent(mixed $class): ?string {
+		public function getParent(object|string $class): ?string {
 			try {
 				// Initialize ReflectionClass for the specified class name or object.
 				$reflectionClass = $this->getReflectionClass($class);
@@ -87,10 +87,10 @@
 		
 		/**
 		 * Retrieves the file path where a specific class is defined.
-		 * @param mixed $class The name of the class whose file path we want to look up.
+		 * @param object|string $class The name of the class whose file path we want to look up.
 		 * @return string|null The full path to the file where the class is defined, or null if the class is not found.
 		 */
-		public function getFilename(mixed $class): ?string {
+		public function getFilename(object|string $class): ?string {
 			try {
 				// Initialize ReflectionClass for the specified class name.
 				$reflectionClass = $this->getReflectionClass($class);
@@ -105,10 +105,10 @@
 		
 		/**
 		 * Fetch the namespace of a given class.
-		 * @param mixed $class The fully qualified class name.
+		 * @param object|string $class The fully qualified class name.
 		 * @return string|null The namespace name if it exists, otherwise null
 		 */
-		public function getNamespace(mixed $class): ?string {
+		public function getNamespace(object|string $class): ?string {
 			try {
 				// Initialize ReflectionClass for the given class name.
 				$reflectionClass = $this->getReflectionClass($class);
@@ -127,10 +127,10 @@
 		
 		/**
 		 * Returns the DocComment for a given class if it exists.
-		 * @param mixed $class The class name to fetch the DocComment for.
+		 * @param object|string $class The class name to fetch the DocComment for.
 		 * @return string The DocComment as a string, or an empty string if not found or an error occurs.
 		 */
-		public function getDocComment(mixed $class): string {
+		public function getDocComment(object|string $class): string {
 			try {
 				// Initialize ReflectionClass for the given class name
 				$reflectionClass = $this->getReflectionClass($class);
@@ -147,10 +147,10 @@
 		
 		/**
 		 * Returns an array containing the names of all interfaces implemented by a given class.
-		 * @param mixed $class The class name to inspect.
+		 * @param object|string $class The class name to inspect.
 		 * @return array<int, string> An array containing the names of all implemented interfaces, or an empty array if not found or an error occurs.
 		 */
-		public function getInterfaces(mixed $class): array {
+		public function getInterfaces(object|string $class): array {
 			try {
 				// Initialize ReflectionClass for the given class name
 				$reflectionClass = $this->getReflectionClass($class);
@@ -164,11 +164,11 @@
 		
 		/**
 		 * Get the names of all properties of a given class.
-		 * @param mixed $class The class name to inspect.
+		 * @param object|string $class The class name to inspect.
 		 * @param bool $onlyCurrentClass Only list the properties in the current class, not of parents
 		 * @return array<int, string> An array containing the names of all properties.
 		 */
-		public function getProperties(mixed $class, bool $onlyCurrentClass = false): array {
+		public function getProperties(object|string $class, bool $onlyCurrentClass = false): array {
 			try {
 				// Initialize ReflectionClass for the given class name
 				$reflectionClass = $this->getReflectionClass($class);
@@ -206,11 +206,11 @@
 		
 		/**
 		 * Returns the type of the specified property in a given class.
-		 * @param mixed $class The class name to inspect.
+		 * @param object|string $class The class name to inspect.
 		 * @param string $property The property name to fetch the type for.
 		 * @return string|null The type of the property, or null if not found or an error occurs.
 		 */
-		public function getPropertyType(mixed $class, string $property): ?string {
+		public function getPropertyType(object|string $class, string $property): ?string {
 			try {
 				// Initialize ReflectionClass for the given class name
 				$reflectionClass = $this->getReflectionClass($class);
@@ -236,11 +236,11 @@
 		
 		/**
 		 * Returns the visibility (public, protected, or private) of a specified property in a given class.
-		 * @param mixed $class The class name to inspect.
+		 * @param object|string $class The class name to inspect.
 		 * @param string $property The property name to fetch the visibility for.
 		 * @return string|null The visibility of the property ("public", "protected", or "private"), or null if not found or an error occurs.
 		 */
-		public function getPropertyVisibility(mixed $class, string $property): ?string {
+		public function getPropertyVisibility(object|string $class, string $property): ?string {
 			try {
 				// Initialize ReflectionClass for the given class name
 				$reflectionClass = $this->getReflectionClass($class);
@@ -263,11 +263,11 @@
 		
 		/**
 		 * Returns the doc comment of the given property
-		 * @param mixed $class The class name to inspect.
+		 * @param object|string $class The class name to inspect.
 		 * @param string $property The property name to fetch the return type for.
 		 * @return string The doc comments of the property, or an empty string if there's none
 		 */
-		public function getPropertyDocComment(mixed $class, string $property): string {
+		public function getPropertyDocComment(object|string $class, string $property): string {
 			try {
 				// Initialize ReflectionClass for the given class name
 				$reflectionClass = $this->getReflectionClass($class);
@@ -287,11 +287,11 @@
 		
 		/**
 		 * Returns an array containing the names of all methods of a given class.
-		 * @param mixed $class The class name to inspect.
+		 * @param object|string $class The class name to inspect.
 		 * @param bool $onlyCurrentClass Only list the methods in the current class, not of parents
 		 * @return array<int, string> An array containing the names of all methods.
 		 */
-		public function getMethods(mixed $class, bool $onlyCurrentClass = false): array {
+		public function getMethods(object|string $class, bool $onlyCurrentClass = false): array {
 			try {
 				// Initialize ReflectionClass for the given class name
 				$reflectionClass = $this->getReflectionClass($class);
@@ -329,11 +329,11 @@
 		
 		/**
 		 * Returns the return type of the specified method in a given class.
-		 * @param mixed $class The class name to inspect.
+		 * @param object|string $class The class name to inspect.
 		 * @param string $method The method name to fetch the return type for.
 		 * @return string The return type of the method
 		 */
-		public function getMethodReturnType(mixed $class, string $method): string {
+		public function getMethodReturnType(object|string $class, string $method): string {
 			try {
 				// Initialize ReflectionClass for the given class name
 				$reflectionClass = $this->getReflectionClass($class);
@@ -355,11 +355,11 @@
 		
 		/**
 		 * Returns if the return method type is nullable
-		 * @param mixed $class The class name to inspect.
+		 * @param object|string $class The class name to inspect.
 		 * @param string $method The method name to fetch the return type for.
 		 * @return bool True if the return type is nullable, false if not
 		 */
-		public function methodReturnTypeIsNullable(mixed $class, string $method): bool {
+		public function methodReturnTypeIsNullable(object|string $class, string $method): bool {
 			try {
 				// Initialize ReflectionClass for the given class name
 				$reflectionClass = $this->getReflectionClass($class);
@@ -381,11 +381,11 @@
 		
 		/**
 		 * Returns the visibility (public, protected, or private) of a specified method in a given class.
-		 * @param mixed $class The class name to inspect.
+		 * @param object|string $class The class name to inspect.
 		 * @param string $method The method name to fetch the visibility for.
 		 * @return string|null The visibility of the method ("public", "protected", or "private"), or null if not found or an error occurs.
 		 */
-		public function getMethodVisibility(mixed $class, string $method): ?string {
+		public function getMethodVisibility(object|string $class, string $method): ?string {
 			try {
 				// Initialize ReflectionClass for the given class name
 				$reflectionClass = $this->getReflectionClass($class);
@@ -408,11 +408,11 @@
 		
 		/**
 		 * Returns the doc comment of the given method
-		 * @param mixed $class The class name to inspect.
+		 * @param object|string $class The class name to inspect.
 		 * @param string $method The method name to fetch the return type for.
 		 * @return string The doc comments of the methods, or an empty string if there are none
 		 */
-		public function getMethodDocComment(mixed $class, string $method): string {
+		public function getMethodDocComment(object|string $class, string $method): string {
 			try {
 				// Initialize ReflectionClass for the given class name
 				$reflectionClass = $this->getReflectionClass($class);
@@ -432,11 +432,11 @@
 		
 		/**
 		 * Determines whether a specific method returns a reference.
-		 * @param mixed $class The class name to inspect.
+		 * @param object|string $class The class name to inspect.
 		 * @param string $method The method name to check.
 		 * @return bool True if the method returns a reference, false otherwise.
 		 */
-		public function methodReturnsReference(mixed $class, string $method): bool {
+		public function methodReturnsReference(object|string $class, string $method): bool {
 			try {
 				// Initialize ReflectionClass for the given class name
 				$reflectionClass = $this->getReflectionClass($class);
@@ -454,7 +454,7 @@
 		
 		/**
 		 * Returns an array containing the parameters of a specified method in a given class.
-		 * @param mixed $class The class name to inspect.
+		 * @param object|string $class The class name to inspect.
 		 * @param string $method The method name to fetch parameters for.
 		 * @return array<int, array{
 		 *     index: int,
@@ -466,7 +466,7 @@
 		 *     passed_by_reference: bool
 		 * }>
 		 */
-		public function getMethodParameters(mixed $class, string $method): array {
+		public function getMethodParameters(object|string $class, string $method): array {
 			try {
 				// Initialize ReflectionClass for the given class name
 				$reflectionClass = $this->getReflectionClass($class);
@@ -508,11 +508,11 @@
 		 * This function uses the Reflection API to find the filename and the start and end lines of the method.
 		 * It then reads the source code of the file and extracts the method body.
 		 * The function also accounts for different coding styles for placing braces.
-		 * @param mixed $class The name of the class or an instance of the class.
+		 * @param object|string $class The name of the class or an instance of the class.
 		 * @param string $method The name of the method whose body should be retrieved.
 		 * @return string  The body of the specified method as a string.
 		 */
-		public function getMethodBody(mixed $class, string $method): string {
+		public function getMethodBody(object|string $class, string $method): string {
 			try {
 				// Create a ReflectionClass object of the specified class
 				$reflectionClass = new \ReflectionClass($class);
@@ -567,10 +567,10 @@
 		
 		/**
 		 * Returns true if the class has a constructor, false if not.
-		 * @param mixed $class
+		 * @param object|string $class
 		 * @return bool
 		 */
-		public function hasConstructor(mixed $class): bool {
+		public function hasConstructor(object|string $class): bool {
 			return in_array("__construct", $this->getMethods($class));
 		}
 		

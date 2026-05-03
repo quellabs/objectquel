@@ -403,7 +403,7 @@
 		/**
 		 * Returns all properties of an entity.
 		 * @param mixed $entity The entity object or class name string
-		 * @return array<string, mixed> An array of property names
+		 * @return array<int, string> An array of property names
 		 */
 		public function getProperties(mixed $entity): array {
 			return $this->getMetadata($entity)->properties;
