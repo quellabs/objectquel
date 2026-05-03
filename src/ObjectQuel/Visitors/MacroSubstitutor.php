@@ -20,12 +20,13 @@
 		
 		/**
 		 * An array of macros where keys are entity names and values are their replacements
+		 * @var array<string, AstInterface>
 		 */
 		private array $macros;
 		
 		/**
 		 * EntityPlugMacros constructor
-		 * @param array $macros Array of macro definitions to be used for replacement
+		 * @param array<string, AstInterface> $macros Array of macro definitions to be used for replacement
 		 */
 		public function __construct(array $macros) {
 			$this->macros = $macros;
