@@ -378,7 +378,7 @@
 						// Complete short entity names to their full namespace form
 						$targetEntity = $this->entityStore->normalizeEntityName($dependency->getTargetEntity());
 						
-						// Fetch the relation column. If absent use the primart key
+						// Fetch the relation column. If absent use the primary key
 						$relationColumn = $dependency->getRelationColumn() ?? $this->entityStore->getPrimaryKey($entity);
 						
 						// Check if OneToMany has mappedBy. If not error out
