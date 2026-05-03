@@ -14,7 +14,10 @@
 		/** Reflection handler for inspecting entity methods, parameters, and return types. */
 		private ReflectionHandler $reflectionHandler;
 		
-		/** List of filesystem paths to scan for entity source files. */
+		/**
+		 * List of filesystem paths to scan for entity source files.
+		 * @var string[]
+		 */
 		private array $servicesPaths;
 		
 		/** Absolute path to the directory where proxy files are written, or false if not configured. */
@@ -23,7 +26,10 @@
 		/** Namespace to use for generated proxy classes, or false if not configured. */
 		private string $proxyNamespace;
 		
-		/** Cache of entity class name → proxy class name for proxies generated at runtime via eval(). */
+		/**
+		 * Cache of entity class name → proxy class name for proxies generated at runtime via eval().
+		 * @var array<string, string>
+		 */
 		private array $runtimeProxies = [];
 		
 		/**
