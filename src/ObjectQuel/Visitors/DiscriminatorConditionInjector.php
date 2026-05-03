@@ -99,7 +99,7 @@
 		 * (declared on the subclass) and @DiscriminatorColumn (declared on the parent).
 		 *
 		 * @param string $entityName Fully qualified entity class name
-		 * @return array|null ['column' => columnName, 'value' => discriminatorValue], or null if not an STI subclass
+		 * @return array{column: string, value: string}|null
 		 */
 		private function getDiscriminatorInfo(string $entityName): ?array {
 			// A single getClassAnnotations() call returns annotations from the entire

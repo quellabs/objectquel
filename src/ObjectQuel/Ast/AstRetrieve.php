@@ -277,7 +277,7 @@
 		
 		/**
 		 * Returns all defined macros in this query.
-		 * @return array<string, AstInterface|null> Associative array of macro names to AST nodes
+		 * @return array<string, AstInterface> Associative array of macro names to AST nodes
 		 */
 		public function getMacros(): array {
 			return $this->macros;
@@ -286,10 +286,10 @@
 		/**
 		 * Adds a new macro definition.
 		 * @param string $name The macro name
-		 * @param AstInterface|null $ast The AST node representing the macro value
+		 * @param AstInterface $ast The AST node representing the macro value
 		 * @return void
 		 */
-		public function addMacro(string $name, ?AstInterface $ast): void {
+		public function addMacro(string $name, AstInterface $ast): void {
 			$this->macros[$name] = $ast;
 		}
 		

@@ -5,6 +5,7 @@
 	
 	use Quellabs\ObjectQuel\EntityStore;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstIdentifier;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRange;
 	use Quellabs\ObjectQuel\ObjectQuel\AstInterface;
 	use Quellabs\ObjectQuel\ObjectQuel\AstVisitorInterface;
 	
@@ -21,19 +22,21 @@
 		
 		/**
 		 * The macros used
+		 * @var array<string, AstInterface>
 		 */
 		private array $macros;
 		
 		/**
 		 * The ranges used
+		 * @var AstRange[]
 		 */
 		private array $ranges;
 		
 		/**
 		 * EntityExistenceValidator constructor.
 		 * @param EntityStore $entityStore
-		 * @param array $ranges
-		 * @param array $macros
+		 * @param AstRange[] $ranges
+		 * @param array<string, AstInterface> $macros
 		 */
 		public function __construct(EntityStore $entityStore, array $ranges, array $macros) {
 			$this->entityStore = $entityStore;
