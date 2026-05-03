@@ -23,7 +23,7 @@
 		private EntityStore $entityStore;
 		
 		/**
-		 * @var array Tracks already visited nodes to prevent infinite loops
+		 * @var array<string, bool> Tracks already visited nodes
 		 * during AST traversal. Keys are object IDs, values are boolean true.
 		 */
 		private array $visitedNodes;
