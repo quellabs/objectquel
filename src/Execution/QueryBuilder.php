@@ -70,6 +70,15 @@
 		}
 		
 		/**
+		 * Extract body using regex
+		 * @param string $range
+		 * @return string
+		 */
+		private function extractRangeBody(string $range): string {
+			return preg_replace('/^range of \S+ /', '', $range) ?? $range;
+		}
+		
+		/**
 		 * Builds the range definition string for a dependent entity joined via a relation column.
 		 * @param string $alias The alias to use for the dependent entity range.
 		 * @param string $dependentEntityType The fully-qualified class name of the dependent entity.
@@ -136,10 +145,11 @@
 			// everything from "is <Type> via ..." onward. Two ranges with different
 			// aliases but identical bodies represent the same join and must not both
 			// be emitted — the query executor would treat them as duplicate joins.
-			$existingRangeBodies = array_map(
-				static fn(string $r): string => preg_replace('/^range of \S+ /', '', $r),
-				$ranges
-			);
+			$existingRangeBodies = [];
+			
+			foreach ($ranges as $r) {
+				$existingRangeBodies[$this->extractRangeBody($r)] = true;
+			}
 			
 			foreach ($relations as $property => $relation) {
 				// LAZY relations are intentionally excluded: they are resolved at
@@ -162,25 +172,28 @@
 					continue;
 				}
 				
+				// Create alias
 				$alias = $this->createAlias($rangeCounter);
+				
+				// Create range string
 				$rangeString = $this->buildRangeString($alias, $dependentEntityType, $entityType, $property, $relation);
 				
 				// Strip the alias token from the new range string so we can compare its
 				// body against the pre-built lookup. The alias itself is irrelevant for
 				// determining whether the join clause is a duplicate.
-				$rangeBody = preg_replace('/^range of \S+ /', '', $rangeString);
+				$rangeBody = $this->extractRangeBody($rangeString);
 				
 				// Skip if an identical join clause is already in $ranges. This can happen
 				// when two different dependent entities both declare a relation to $entityType
 				// through the same column pair.
-				if (in_array($rangeBody, $existingRangeBodies, true)) {
+				if (isset($existingRangeBodies[$rangeBody])) {
 					continue;
 				}
 				
 				// Register the new range and keep the body lookup in sync so subsequent
 				// iterations within this call can also detect duplicates against it.
 				$ranges[$alias] = $rangeString;
-				$existingRangeBodies[] = $rangeBody;
+				$existingRangeBodies[$rangeBody] = true;
 				
 				// Advance the counter only when a range is actually added so that
 				// alias numbers remain gapless (r0, r1, r2, ...) regardless of how
@@ -203,11 +216,12 @@
 			// 'main' is always the first and anchor range — the entity being retrieved.
 			// All other ranges are joins relative to it.
 			$ranges = ['main' => "range of main is {$entityType}"];
-			$rangeCounter = 0;
 			
 			// getDependentEntities returns every entity type that declares a relationship
 			// pointing at $entityType. We inspect each one for eagerly-fetchable relations
 			// and add a range for each qualifying join.
+			$rangeCounter = 0;
+
 			foreach ($this->entityStore->getDependentEntities($entityType) as $dependentEntityType) {
 				// OneToOne: pass requireNoInversedBy=true so only the owning side
 				// (the entity that actually holds the FK column) generates a range.
@@ -249,7 +263,7 @@
 		private function parametersToString(array $parameters): string {
 			$parts = [];
 			
-			foreach ($parameters as $key => $value) {
+			foreach ($parameters as $key => $_) {
 				// Produces a condition like "main.id=:id".
 				// The ":key" syntax is the named-placeholder convention understood by the
 				// ObjectQuel query executor — binding happens downstream, not here.
