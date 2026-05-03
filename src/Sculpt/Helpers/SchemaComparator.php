@@ -277,12 +277,6 @@
 		 */
 		private function validateInput(array $columns, string $parameterName): void {
 			foreach ($columns as $columnName => $columnDefinition) {
-				if (!is_string($columnName)) {
-					throw new \InvalidArgumentException(
-						"Invalid column name in {$parameterName}: expected string, got " . gettype($columnName)
-					);
-				}
-				
 				if (!is_array($columnDefinition)) {
 					throw new \InvalidArgumentException(
 						"Invalid column definition for '{$columnName}' in {$parameterName}: expected array, got " . gettype($columnDefinition)
