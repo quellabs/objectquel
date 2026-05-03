@@ -375,8 +375,11 @@
 					
 					// Create and set a collection of entities for each valid dependency
 					foreach ($validDependencies as $dependency) {
+						// Complete short entity names to their full namespace form
 						$targetEntity = $this->entityStore->normalizeEntityName($dependency->getTargetEntity());
-						$relationColumn = $dependency->getRelationColumn() ?? "{$property}Id";;
+						
+						// Fetch the relation column. If absent use the primart key
+						$relationColumn = $dependency->getRelationColumn() ?? $this->entityStore->getPrimaryKey($entity);
 						
 						// Check if OneToMany has mappedBy. If not error out
 						$mappedBy = $dependency->getMappedBy();
