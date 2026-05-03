@@ -115,6 +115,11 @@
 			
 			// Check each joined range for required annotations
 			foreach ($ast->getRanges() as $range) {
+				// Only include database ranges
+				if (!$range instanceof AstRangeDatabase) {
+					continue;
+				}
+				
 				// Skip ranges that don't have proper binary join conditions
 				// (e.g., CROSS JOINs, subqueries, etc.)
 				if (!$this->shouldSetRangeRequired($range)) {
