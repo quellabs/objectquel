@@ -71,7 +71,7 @@
 		/**
 		 * Collect all identifier values for the given entity.
 		 * @param object $entity The entity to extract identifiers from
-		 * @return array Array of identifier values in the order they're defined
+		 * @return array<int, mixed> Array of identifier values in the order they're defined
 		 */
 		protected function getIdentifierValues(object $entity): array {
 			$result = [];
@@ -94,7 +94,10 @@
 		 *
 		 * @param object $entity The entity whose relationships are to be serialized
 		 * @param mixed $identifierValue The primary identifier value for relationship queries
-		 * @return array JSON:API compliant relationships array
+		 * @return array<string, array{
+		 *      data: array<int, array{type: string, id: string}>,
+		 *      links: array<string, string>
+		 *  }>
 		 * @throws QuelException
 		 */
 		public function serializeRelationships(object $entity, mixed $identifierValue): array {
@@ -107,18 +110,22 @@
 			
 			$result = [];
 			$entityName = $this->normalizeEntityName(get_class($entity));
+			
 			// Create composite ID string for URL generation
 			$entityId = implode("_", $this->getIdentifierValues($entity));
 			
 			// Process each relationship mapping
 			foreach ($relationships as $property => $relationship) {
+				// Fetch the target entity
+				$targetEntity = $relationship->getTargetEntity();
+				
 				// Get the target entity's resource type name
-				$relationshipEntityName = $this->normalizeEntityName($relationship->getTargetEntity());
+				$relationshipEntityName = $this->normalizeEntityName($targetEntity);
 				
 				// Query for all related entities using the mapped relationship
 				// Uses the inverse side property (mappedBy) to find related records
 				$relationshipEntities = $this->entityManager->findBy(
-					$relationship->getTargetEntity(),
+					$targetEntity,
 					[$relationship->getMappedBy() => $identifierValue]
 				);
 				
@@ -158,7 +165,21 @@
 		 * - links: Self-link for the resource
 		 *
 		 * @param object $entity The entity to be serialized
-		 * @return array Complete JSON:API document with data wrapper
+		 * @return array{
+		 *     data: array{
+		 *         type: string,
+		 *         id: string,
+		 *         attributes: array<string, mixed>,
+		 *         links: array{self: string},
+		 *         relationships?: array<string, array{
+		 *             data: array<int, array{
+		 *                 type: string,
+		 *                 id: string
+		 *             }>,
+		 *             links: array<string, string>
+		 *         }>
+		 *     }
+		 * }
 		 * @throws \InvalidArgumentException If entity has no identifier keys
 		 */
 		public function serialize(object $entity): array {

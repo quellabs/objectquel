@@ -31,7 +31,7 @@
 		
 		/**
 		 * Retrieves the target entity.
-		 * @return string The full namespace of the target entity.
+		 * @return class-string The full namespace of the target entity.
 		 */
 		public function getTargetEntity(): string {
 			return $this->parameters["targetEntity"];
@@ -39,8 +39,8 @@
 		
 		/**
 		 * Retrieve the target entity.
-		 * @param string $targetEntity
-		 * @return void The full namespace of the target entity.
+		 * @param class-string $targetEntity
+		 * @return void
 		 */
 		public function setTargetEntity(string $targetEntity): void {
 			$this->parameters["targetEntity"] = $targetEntity;

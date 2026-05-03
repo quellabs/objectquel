@@ -31,7 +31,7 @@
 		
 		/**
 		 * Retrieves the target entity.
-		 * @return string The full namespace of the target entity.
+		 * @return class-string The full namespace of the target entity.
 		 */
 		public function getTargetEntity(): string {
 			return $this->parameters["targetEntity"];
@@ -39,7 +39,7 @@
 		
 		/**
 		 * Retrieve the target entity.
-		 * @param string $targetEntity
+		 * @param class-string $targetEntity
 		 * @return void The full namespace of the target entity.
 		 */
 		public function setTargetEntity(string $targetEntity): void {
@@ -48,7 +48,7 @@
 		
 		/**
 		 * Retrieves the 'mappedBy' parameter.
-		 * @return string The value of the 'mappedBy' parameter or an empty string if it is not set.
+		 * @return string|null The value of the 'mappedBy' parameter or an empty string if it is not set.
 		 */
 		public function getMappedBy(): ?string {
 			return $this->parameters["mappedBy"] ?? null;
