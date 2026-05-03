@@ -28,7 +28,7 @@
 			return $this->conditions;
 		}
 		
-		public function validate($value): bool {
+		public function validate(mixed $value): bool {
 			return strlen(trim($value)) > 0;
 		}
 		

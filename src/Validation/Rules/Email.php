@@ -28,7 +28,7 @@
 			return $this->conditions;
 		}
 		
-		public function validate($value): bool {
+		public function validate(mixed $value): bool {
 			if (($value === "") || is_null($value)) {
 				return true;
 			}

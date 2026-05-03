@@ -30,7 +30,7 @@
 			return $this->conditions;
 		}
 		
-		public function validate($value): bool {
+		public function validate(mixed $value): bool {
 			if (empty($this->conditions) || ($value == "") || ($value == null)) {
 				return true;
 			}

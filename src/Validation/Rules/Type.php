@@ -66,7 +66,7 @@
 			return $this->conditions;
 		}
 		
-		public function validate($value): bool {
+		public function validate(mixed $value): bool {
 			// no value
             if ($value == '') {
                 return true;

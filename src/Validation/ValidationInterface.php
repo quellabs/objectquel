@@ -13,10 +13,10 @@
 		
 		/**
 		 * The value to validate
-		 * @param $value
+		 * @param mixed  $value
 		 * @return bool
 		 */
-		public function validate($value) : bool;
+		public function validate(mixed $value) : bool;
 		
 		/**
 		 * Returns the conditions used in this Rule
