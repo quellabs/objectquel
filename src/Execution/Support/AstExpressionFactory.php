@@ -4,6 +4,7 @@
 	
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstAggregate;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstNumber;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRange;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstSubquery;
 	use Quellabs\ObjectQuel\ObjectQuel\AstInterface;
 	
@@ -44,10 +45,10 @@
 		 * and WHERE conditions that reference outer query columns.
 		 *
 		 * @param AstAggregate $expression The scalar expression to evaluate (often an aggregate)
-		 * @param array<int, AstInterface> $ranges Array of table/range references that establish correlation
+		 * @param AstRange[] $ranges Array of table/range references that establish correlation
 		 * @param AstInterface|null $whereConditions Optional WHERE clause conditions for filtering
 		 * @param string|null $origin Optional origin identifier for debugging/tracing
-		 * @return AstSubquery                       Correlated scalar subquery that returns a single value
+		 * @return AstSubquery Correlated scalar subquery that returns a single value
 		 */
 		public static function createCorrelatedScalar(
 			AstAggregate  $expression,
@@ -72,10 +73,10 @@
 		 * and are often more efficient than IN clauses for large datasets.
 		 *
 		 * @param AstAggregate|AstNumber $expression The expression to check for existence (often just a column or constant)
-		 * @param array<int, AstInterface> $ranges Array of table/range references for the subquery FROM clause
+		 * @param AstRange[] $ranges Array of table/range references for the subquery FROM clause
 		 * @param AstInterface|null $whereConditions WHERE clause conditions that typically correlate with outer query
 		 * @param string|null $origin Optional origin identifier for debugging/tracing
-		 * @return AstSubquery                       EXISTS subquery that returns boolean existence result
+		 * @return AstSubquery EXISTS subquery that returns boolean existence result
 		 */
 		public static function createExists(
 			AstAggregate|AstNumber $expression,
@@ -103,10 +104,10 @@
 		 * The expression typically evaluates to:
 		 * CASE WHEN EXISTS(SELECT ... FROM ranges WHERE conditions) THEN 1 ELSE 0 END
 		 *
-		 * @param array<int, AstInterface> $ranges Array of table/range references for the subquery FROM clause
+		 * @param AstRange[] $ranges Array of table/range references for the subquery FROM clause
 		 * @param AstInterface|null $whereConditions WHERE clause conditions that determine the CASE condition
 		 * @param string|null $origin Optional origin identifier for debugging/tracing
-		 * @return AstSubquery                       CASE WHEN subquery expression
+		 * @return AstSubquery CASE WHEN subquery expression
 		 */
 		public static function createCaseWhen(
 			array         $ranges,
@@ -115,7 +116,7 @@
 		): AstSubquery {
 			return new AstSubquery(
 				AstSubquery::TYPE_CASE_WHEN,
-				null,                  // CASE WHEN expressions don't have a direct aggregation expression
+				null, // CASE WHEN expressions don't have a direct aggregation expression
 				$ranges,
 				$whereConditions,
 				$origin
