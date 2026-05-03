@@ -291,7 +291,12 @@
 				
 				// Save the query result
 				$direction = $s['direction'] ?? '';
-				$sqlSort[] = $retrieveEntitiesVisitor->getResult() . ($direction !== '' ? " {$direction}" : '');
+				
+				if ($direction !== '') {
+					$sqlSort[] = $retrieveEntitiesVisitor->getResult() . " " . $direction;
+				} else {
+					$sqlSort[] = $retrieveEntitiesVisitor->getResult();
+				}
 			}
 			
 			// Combine sort expressions into the ORDER BY clause.
