@@ -11,6 +11,40 @@
 	 * EntitySchemaAnalyzer - Analyzes differences between entity definitions and database schema
 	 * This class compares entity class definitions (properties, indexes) against the actual
 	 * database schema to detect structural differences that need migration.
+	 *
+	 * @phpstan-type ColumnDefinition array<string, mixed>
+	 *
+	 * @phpstan-type SchemaChangeSet array{
+	 *      added: array<string, ColumnDefinition>,
+	 *      modified: array<string, array{
+	 *          from: ColumnDefinition,
+	 *          to: ColumnDefinition,
+	 *          changes: array<string, array{from: mixed, to: mixed}>
+	 *      }>,
+	 *      deleted: array<string, ColumnDefinition>
+	 *  }
+	 *
+	 * @phpstan-type IndexChangeSet array{
+	 *      added: array<string, array{columns: string[], type: string, unique: bool}>,
+	 *      modified: array<string, array{
+	 *          database: array{columns: string[], type: string, unique: bool},
+	 *          entity: array{columns: string[], type: string, unique: bool}
+	 *      }>,
+	 *      deleted: array<string, array{columns: string[], type: string, unique: bool}>
+	 *  }
+	 *
+	 * @phpstan-type EntityChangeSet array{
+	 *      table_not_exists?: bool,
+	 *      added: array<string, ColumnDefinition>,
+	 *      modified: array<string, array{
+	 *          from: ColumnDefinition,
+	 *          to: ColumnDefinition,
+	 *          changes: array<string, array{from: mixed, to: mixed}>
+	 *      }>,
+	 *      deleted: array<string, ColumnDefinition>,
+	 *      indexes: IndexChangeSet|array<string, array{columns: string[], type: string, unique: bool}>,
+	 *      constraints: array
+	 *  }
 	 */
 	class EntitySchemaAnalyzer {
 		
@@ -26,7 +60,10 @@
 		/** @var SchemaComparator Handles comparison of column definitions and structures */
 		private SchemaComparator $schemaComparator;
 		
-		/** @var array<string, array> Cache to avoid redundant schema analysis operations */
+		/**
+		 * Cache to avoid redundant schema analysis operations
+		 * @var array<string, array<string, EntityChangeSet>>
+		 */
 		private array $analysisCache = [];
 		
 		/**
@@ -45,7 +82,7 @@
 		 * Analyzes schema differences for multiple entity classes
 		 * @param array<string, string> $entityClasses Map of entity class names to table names
 		 * @param bool $useCache Whether to use cached analysis results
-		 * @return array<string, array> Map of table names to their detected changes
+		 * @return array<string, EntityChangeSet> Map of table names to their detected changes
 		 * @throws RuntimeException If schema analysis fails
 		 */
 		public function analyzeEntityChanges(array $entityClasses, bool $useCache = true): array {
@@ -94,7 +131,7 @@
 		 * @param string $tableName Name of the database table
 		 * @param string $className Fully qualified entity class name
 		 * @param array<int, string> $existingTables List of all existing database tables
-		 * @return array Schema change information including added, modified, deleted columns and indexes
+		 * @return EntityChangeSet Schema change information including added, modified, deleted columns and indexes
 		 * @throws RuntimeException If entity has no properties defined
 		 * @throws \Exception
 		 */
@@ -136,7 +173,7 @@
 		
 		/**
 		 * Determines if a change set contains any actual modifications
-		 * @param array $changes Change set from compareSchemas()
+		 * @param EntityChangeSet $changes Change set from compareSchemas()
 		 * @return bool True if any changes are detected, false otherwise
 		 */
 		private function hasChanges(array $changes): bool {
