@@ -13,21 +13,18 @@
 		/**
 		 * Cache for storing reflection constants to avoid repeated reflection calls
 		 * Static property shared across all child classes
-		 * @var array|null
+		 * @var array<string, mixed>
 		 */
-		private static ?array $constCache = null;
+		private static array $constCache = [];
 		
 		/**
 		 * Returns all the constants defined in the calling enum class
-		 * @return array|null Array of constant name => value pairs, or null if none found
+		 * @return array<string, mixed> Array of constant name => value pairs, or null if none found
 		 */
-		public static function getConstants(): ?array {
+		public static function getConstants(): array {
 			// Check if constants are already cached to avoid repeated reflection
-			if (self::$constCache === null) {
-				// Use late static binding to get the actual calling class (not BasicEnum)
+			if (self::$constCache === []) {
 				$reflect = new \ReflectionClass(get_called_class());
-				
-				// Cache all constants for future use
 				self::$constCache = $reflect->getConstants();
 			}
 			
