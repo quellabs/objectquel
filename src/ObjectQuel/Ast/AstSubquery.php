@@ -15,19 +15,19 @@
 		public const string TYPE_CASE_WHEN = 'case_when';  // CASE WHEN EXISTS(...) THEN 1 ELSE 0 END
 		public const string TYPE_WINDOW = 'window';
 		
-		protected ?AstInterface $aggregation;
 		private string $type;
-		
-		/** @var AstInterface[] */
-		private array $correlatedRanges;
-		private ?AstInterface $conditions;
 		private ?string $origin;
+		private ?AstInterface $conditions;
+		protected ?AstInterface $aggregation;
+		
+		/** @var AstRange[] */
+		private array $correlatedRanges;
 		
 		/**
 		 * AstSubquery constructor
 		 * @param AstAggregate|null $aggregation
 		 * @param string $type
-		 * @param AstInterface[] $correlatedRanges
+		 * @param AstRange[] $correlatedRanges
 		 * @param AstInterface|null $conditions
 		 * @param string|null $origin
 		 */

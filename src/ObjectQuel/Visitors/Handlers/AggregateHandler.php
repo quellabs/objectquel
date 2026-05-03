@@ -601,7 +601,7 @@
 		 * Example output:
 		 * `departments` d INNER JOIN `employees` e ON e.dept_id = d.id LEFT JOIN `addresses` a ON a.emp_id = e.id
 		 *
-		 * @param array $ranges Array of AstRange objects containing entity and join information
+		 * @param AstRange[] $ranges Array of AstRange objects containing entity and join information
 		 * @return string Complete FROM clause content (without the "FROM" keyword)
 		 * @throws \InvalidArgumentException When no main range is found
 		 */
