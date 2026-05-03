@@ -7,6 +7,22 @@
 	use Quellabs\ObjectQuel\DatabaseAdapter\DatabaseAdapter;
 	use Quellabs\ObjectQuel\EntityStore;
 	
+	/**
+	 * @phpstan-type IndexDefinition array{
+	 *     columns: array<int, string>,
+	 *     type: string,
+	 *     unique: bool
+	 * }
+	 *
+	 * @phpstan-type IndexChangeSet array{
+	 *     added: array<string, IndexDefinition>,
+	 *     modified: array<string, array{
+	 *         database: IndexDefinition,
+	 *         entity: IndexDefinition
+	 *     }>,
+	 *     deleted: array<string, IndexDefinition>
+	 * }
+	 */
 	class IndexComparator {
 		
 		/**
@@ -40,7 +56,7 @@
 		 * - Indexes that exist in both but have different configurations
 		 *
 		 * @param mixed $entity The entity class to analyze
-		 * @return array An array containing differences between DB and entity indexes
+		 * @return IndexChangeSet An array containing differences between DB and entity indexes
 		 */
 		public function compareIndexes(mixed $entity): array {
 			// Fetch the owning table of this entity
@@ -87,7 +103,7 @@
 		/**
 		 * Retrieves all database indexes defined for a specific table
 		 * @param string $tableName The name of the database table to get indexes for
-		 * @return array Formatted array of database indexes with their configurations
+		 * @return array<string, IndexDefinition> Formatted array of database indexes with their configurations
 		 */
 		public function getTableIndexes(string $tableName): array {
 			return array_map(function ($index) {
@@ -102,7 +118,7 @@
 		/**
 		 * Retrieves database index configurations for an entity
 		 * @param mixed $entity The entity object or class to get indexes for
-		 * @return array Formatted array of database indexes with their configurations
+		 * @return array<string, IndexDefinition> Formatted array of database indexes with their configurations
 		 * @throws \Exception
 		 */
 		public function getEntityIndexes(mixed $entity): array {
@@ -155,8 +171,8 @@
 		
 		/**
 		 * Compares two index configurations to check if they differ
-		 * @param array $dbConfig Database index configuration
-		 * @param array $entityConfig Entity index configuration
+		 * @param IndexDefinition $dbConfig Database index configuration
+		 * @param IndexDefinition $entityConfig Entity index configuration
 		 * @return bool True if configurations differ, false otherwise
 		 */
 		private function indexConfigDiffers(array $dbConfig, array $entityConfig): bool {

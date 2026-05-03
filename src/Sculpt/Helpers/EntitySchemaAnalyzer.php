@@ -43,7 +43,7 @@
 	 *      }>,
 	 *      deleted: array<string, ColumnDefinition>,
 	 *      indexes: IndexChangeSet|array<string, array{columns: string[], type: string, unique: bool}>,
-	 *      constraints: array
+	 *      constraints: array<mixed>
 	 *  }
 	 */
 	class EntitySchemaAnalyzer {
