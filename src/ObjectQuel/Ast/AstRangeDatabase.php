@@ -4,7 +4,6 @@
 	
 	use Quellabs\ObjectQuel\ObjectQuel\AstInterface;
 	use Quellabs\ObjectQuel\ObjectQuel\AstVisitorInterface;
-	use Quellabs\ObjectQuel\ObjectQuel\Visitors\IdentifierLocator;
 	
 	/**
 	 * Class AstRangeDatabase
@@ -29,13 +28,6 @@
 		 * @var string|null
 		 */
 		private ?string $tableName;
-		
-		/**
-		 * Expression defining how to join this range to its parent
-		 * Contains the join condition (e.g., "parent.id = child.parent_id")
-		 * @var AstInterface|null
-		 */
-		private ?AstInterface $joinProperty;
 		
 		/**
 		 * Whether this range should be included as a JOIN in the query
@@ -66,16 +58,11 @@
 			bool $required = false,
 			bool $includeAsJoin = true
 		) {
-			parent::__construct($name, $required);
+			parent::__construct($name, $required, $joinProperty);
 			$this->entityName = $entityName;
-			$this->joinProperty = $joinProperty;
 			$this->includeAsJoin = $includeAsJoin;
 			$this->tableName = null;
 			$this->query = null;
-			
-			if ($this->joinProperty) {
-				$this->joinProperty->setParent($this);
-			}
 		}
 		
 		/**
@@ -86,8 +73,8 @@
 		public function accept(AstVisitorInterface $visitor): void {
 			parent::accept($visitor);
 			
-			if ($this->joinProperty !== null) {
-				$this->joinProperty->accept($visitor);
+			if ($this->getJoinProperty() !== null) {
+				$this->getJoinProperty()->accept($visitor);
 			}
 			
 			if ($this->query !== null) {
@@ -100,7 +87,7 @@
 		 * @return static A new instance with cloned child nodes
 		 */
 		public function deepClone(): static {
-			$joinProperty = $this->joinProperty?->deepClone();
+			$joinProperty = $this->getJoinProperty()?->deepClone();
 			$query = $this->query?->deepClone();
 			
 			// @phpstan-ignore-next-line new.static
@@ -156,47 +143,6 @@
 		public function setTableName(?string $tableName): AstRangeDatabase {
 			$this->tableName = $tableName;
 			return $this;
-		}
-		
-		// ========================================
-		// Join Property Accessors
-		// ========================================
-		
-		/**
-		 * Get the expression that defines how to join this range
-		 * @return AstInterface|null The join condition expression
-		 */
-		public function getJoinProperty(): ?AstInterface {
-			return $this->joinProperty;
-		}
-		
-		/**
-		 * Set the expression that defines how to join this range
-		 * @param AstInterface|null $joinExpression The join condition expression
-		 * @return void
-		 */
-		public function setJoinProperty(?AstInterface $joinExpression): void {
-			$this->joinProperty = $joinExpression;
-		}
-		
-		/**
-		 * Check if the join property contains a reference to a specific entity property
-		 * @param string $entityName The entity name to search for
-		 * @param string $property The property name to search for
-		 * @return bool True if the join property references the given entity.property
-		 */
-		public function hasJoinProperty(string $entityName, string $property): bool {
-			if ($this->joinProperty === null) {
-				return false;
-			}
-			
-			try {
-				$findVisitor = new IdentifierLocator($entityName, $property);
-				$this->joinProperty->accept($findVisitor);
-				return false;
-			} catch (\Exception $exception) {
-				return true;
-			}
 		}
 		
 		// ========================================

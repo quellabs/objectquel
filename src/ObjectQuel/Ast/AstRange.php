@@ -27,13 +27,29 @@
 		private bool $required;
 		
 		/**
+		 * Expression defining how to join this range to its parent
+		 * Contains the join condition (e.g., "parent.id = child.parent_id")
+		 * @var AstInterface|null
+		 */
+		private ?AstInterface $joinProperty;
+		
+		/**
 		 * AstRange constructor.
 		 * @param string $name The name/alias for this range (used as table alias)
 		 * @param bool $required Whether this is a required join (INNER) or optional (LEFT)
 		 */
-		public function __construct(string $name, bool $required = false) {
+		public function __construct(
+			string        $name,
+			bool          $required = false,
+			?AstInterface $joinProperty = null
+		) {
 			$this->name = $name;
 			$this->required = $required;
+			$this->joinProperty = $joinProperty;
+			
+			if ($joinProperty) {
+				$this->joinProperty->setParent($this);
+			}
 		}
 		
 		/**
@@ -52,12 +68,46 @@
 			return null;
 		}
 		
+		
+		// ========================================
+		// Join Property Accessors
+		// ========================================
+		
 		/**
-		 * Get the join property expression.
-		 * @return AstInterface|null The join condition expression, or null if no specific join property
+		 * Get the expression that defines how to join this range
+		 * @return AstInterface|null The join condition expression
 		 */
 		public function getJoinProperty(): ?AstInterface {
-			return null;
+			return $this->joinProperty;
+		}
+		
+		/**
+		 * Set the expression that defines how to join this range
+		 * @param AstInterface|null $joinExpression The join condition expression
+		 * @return void
+		 */
+		public function setJoinProperty(?AstInterface $joinExpression): void {
+			$this->joinProperty = $joinExpression;
+		}
+		
+		/**
+		 * Check if the join property contains a reference to a specific entity property
+		 * @param string $entityName The entity name to search for
+		 * @param string $property The property name to search for
+		 * @return bool True if the join property references the given entity.property
+		 */
+		public function hasJoinProperty(string $entityName, string $property): bool {
+			if ($this->joinProperty === null) {
+				return false;
+			}
+			
+			try {
+				$findVisitor = new IdentifierLocator($entityName, $property);
+				$this->joinProperty->accept($findVisitor);
+				return false;
+			} catch (\Exception $exception) {
+				return true;
+			}
 		}
 		
 		/**
@@ -78,10 +128,17 @@
 		public function isRequired(): bool {
 			return $this->required;
 		}
-
+		
+		/**
+		 * Create a deep copy of this range including all child nodes
+		 * @return static
+		 */
 		public function deepClone(): static {
+			// Clone the join property
+			$joinProperty = $this->getJoinProperty()?->deepClone();
+			
 			// @phpstan-ignore-next-line new.static
-			$clone = new static($this->name, $this->required);
+			$clone = new static($this->name, $this->required, $joinProperty);
 			$clone->setParent($this);
 			return $clone;
 		}
