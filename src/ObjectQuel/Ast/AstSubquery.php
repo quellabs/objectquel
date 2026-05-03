@@ -97,7 +97,7 @@
 		
 		/**
 		 * Get all ranges referenced in this subquery
-		 * @return AstInterface[]
+		 * @return AstRange[]
 		 */
 		public function getCorrelatedRanges(): array {
 			return $this->correlatedRanges;
