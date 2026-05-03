@@ -43,9 +43,13 @@
 				
 				$parameters = $annotation->getParameters();
 				$property = $annotation->getProperty();
+				$message = $annotation->getMessage();
+				
+				// Unset parameters for clean data for the validator
+				unset($parameters['message'], $parameters['property']);
 				
 				// Append the rule so multiple validators can apply to the same property
-				$result[$property][] = new $annotationMap[$annotationClass]($parameters, $annotation->getMessage());
+				$result[$property][] = new $annotationMap[$annotationClass]($parameters, $message);
 			}
 			
 			return $result;
