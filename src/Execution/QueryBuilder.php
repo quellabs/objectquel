@@ -87,7 +87,10 @@
 				$relationColumn = $relation->getRelationColumn() ?? "{$property}Id";
 				
 				// Get the relation column from the relation
-				$foreignColumn = $relation->getForeignColumn() ?? $this->entityStore->getPrimaryKey($entityType);
+				// Get the relation column from the relation
+				$foreignColumn = $relation->getForeignColumn()
+					?? $this->entityStore->getPrimaryKey($entityType)
+					?? throw new \RuntimeException("Entity '{$entityType}' has no primary key defined.");
 				
 				// Add the range
 				$ranges[$alias] = "range of {$alias} is {$dependentEntityType} via {$alias}.{$relationColumn}=main.{$foreignColumn}";
