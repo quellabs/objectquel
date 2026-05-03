@@ -11,6 +11,37 @@
 	 *
 	 * Handles creating new entity classes with properties, relationships, and accessors,
 	 * as well as updating existing entities with new properties while preserving existing code.
+	 *
+	 * @phpstan-type PropertyDefinition array{
+	 *     name: string,
+	 *     type: string,
+	 *     nullable?: bool,
+	 *     readonly?: bool,
+	 *     relationshipType?: 'OneToOne'|'OneToMany'|'ManyToOne',
+	 *     targetEntity?: string,
+	 *     mappedBy?: string|null,
+	 *     inversedBy?: string|null,
+	 *     relationColumn?: string|null,
+	 *     foreignColumn?: string,
+	 *     unsigned?: bool,
+	 *     limit?: int|string,
+	 *     precision?: int,
+	 *     scale?: int,
+	 *     enumType?: string
+	 * }
+	 *
+	 * @phpstan-type IndexDefinition array{
+	 *     type?: 'INDEX'|'UNIQUE'|'FULLTEXT',
+	 *     name: string,
+	 *     columns: array<int, string>
+	 * }
+	 *
+	 * @phpstan-type ParsedClassContent array{
+	 *     header: string,
+	 *     properties: string,
+	 *     methods: string,
+	 *     footer: string
+	 * }
 	 */
 	class EntityModifier {
 		
@@ -46,8 +77,8 @@
 		/**
 		 * Creates a new entity or updates an existing one based on file existence
 		 * @param string $entityName Entity name without "Entity" suffix
-		 * @param array $properties Property metadata with type, nullable, relationship info
-		 * @param array $indexes Optional index definitions (regular, unique, full-text)
+		 * @param array<int, PropertyDefinition> $properties Property metadata with type, nullable, relationship info
+		 * @param array<int, IndexDefinition> $indexes Optional index definitions (regular, unique, full-text)
 		 * @return bool True if operation succeeded
 		 */
 		public function createOrUpdateEntity(string $entityName, array $properties, array $indexes = []): bool {
@@ -74,8 +105,8 @@
 		/**
 		 * Generates a complete entity class file from scratch
 		 * @param string $entityName Entity name without "Entity" suffix
-		 * @param array $properties Property definitions with metadata
-		 * @param array $indexes Optional index definitions (regular, unique, full-text)
+		 * @param array<int, PropertyDefinition> $properties Property definitions with metadata
+		 * @param array<int, IndexDefinition> $indexes Optional index definitions (regular, unique, full-text)
 		 * @return bool True if file was created successfully
 		 */
 		public function createNewEntity(string $entityName, array $properties, array $indexes = []): bool {
@@ -92,7 +123,7 @@
 		/**
 		 * Updates an existing entity with new properties and methods
 		 * @param string $entityName Entity name without "Entity" suffix
-		 * @param array $properties New properties to add with full metadata
+		 * @param array<int, PropertyDefinition> $properties New properties to add with full metadata
 		 * @return bool True if file was updated successfully
 		 */
 		public function updateEntity(string $entityName, array $properties): bool {
@@ -129,11 +160,11 @@
 			$updatedContent = $this->insertGettersAndSetters($updatedContent, $properties, $bareName);
 			return file_put_contents($filePath, $updatedContent) !== false;
 		}
-
+		
 		/**
 		 * Parses class file to identify structural sections
 		 * @param string $content Complete entity file content
-		 * @return array|false Array with keys: header, properties, methods, footer; or false on parse error
+		 * @return ParsedClassContent|false Array with keys: header, properties, methods, footer; or false on parse error
 		 */
 		protected function parseClassContent(string $content): false|array {
 			// Locate class declaration with optional extends/implements
@@ -180,8 +211,8 @@
 		
 		/**
 		 * Inserts new property declarations into the class
-		 * @param array $classContent Parsed class sections from parseClassContent()
-		 * @param array $properties Properties to add
+		 * @param ParsedClassContent $classContent Parsed class sections from parseClassContent()
+		 * @param array<int, PropertyDefinition> $properties Properties to add
 		 * @return string Updated class content with new properties
 		 */
 		protected function insertProperties(array $classContent, array $properties): string {
@@ -213,7 +244,7 @@
 		/**
 		 * Inserts getter/setter methods and collection adder/remover methods
 		 * @param string $content Current class content
-		 * @param array $properties Properties needing accessors
+		 * @param array<int, PropertyDefinition> $properties Properties needing accessors
 		 * @param string $entityName Current entity name for relationship methods
 		 * @return string Updated class content with new methods
 		 */
@@ -263,8 +294,8 @@
 		/**
 		 * Generates complete entity class file content
 		 * @param string $entityName Entity name without "Entity" suffix
-		 * @param array $properties All properties for this entity
-		 * @param array $indexes Optional index definitions. Each entry: ['type' => 'INDEX'|'UNIQUE'|'FULLTEXT', 'name' => '...', 'columns' => [...]]
+		 * @param array<int, PropertyDefinition> $properties All properties for this entity
+		 * @param array<int, IndexDefinition> $indexes Optional index definitions. Each entry: ['type' => 'INDEX'|'UNIQUE'|'FULLTEXT', 'name' => '...', 'columns' => [...]]
 		 * @return string Complete PHP class file content
 		 */
 		protected function generateEntityContent(string $entityName, array $properties, array $indexes = []): string {
@@ -299,9 +330,9 @@
 				$indexType = strtoupper($index['type'] ?? 'INDEX');
 				
 				$annotationClass = match ($indexType) {
-					'UNIQUE'   => 'UniqueIndex',
+					'UNIQUE' => 'UniqueIndex',
 					'FULLTEXT' => 'FullTextIndex',
-					default    => 'Index',
+					default => 'Index',
 				};
 				
 				$content .= "     * @Orm\\{$annotationClass}(name=\"{$indexName}\", columns={$indexColumns})\n";
@@ -380,12 +411,12 @@
 		
 		/**
 		 * Generates ORM Column annotation docblock for regular properties
-		 * @param array $property Property metadata (name, type, nullable, limit, precision, etc.)
+		 * @param PropertyDefinition $property Property metadata (name, type, nullable, limit, precision, etc.)
 		 * @return string PHPDoc comment with @Orm\Column annotation
 		 */
 		protected function generatePropertyDocComment(array $property): string {
 			$nullable = $property['nullable'] ?? false;
-			$type = $property['type'] ?? 'string';
+			$type = $property['type'];
 			$snakeCaseName = StringInflector::snakeCase($property['name']);
 			
 			$properties = [
@@ -407,11 +438,11 @@
 				$properties[] = "unsigned=" . ($property['unsigned'] ? "true" : "false");
 			}
 			
-			if (isset($property['precision']) && is_numeric($property['precision'])) {
+			if (isset($property['precision'])) {
 				$properties[] = "precision={$property['precision']}";
 			}
 			
-			if (isset($property['scale']) && is_numeric($property['scale'])) {
+			if (isset($property['scale'])) {
 				$properties[] = "scale={$property['scale']}";
 			}
 			
@@ -425,7 +456,7 @@
 		
 		/**
 		 * Generates ORM relationship annotation docblock
-		 * @param array $property Relationship metadata (targetEntity, mappedBy, inversedBy, etc.)
+		 * @param PropertyDefinition $property Relationship metadata (targetEntity, mappedBy, inversedBy, etc.)
 		 * @return string PHPDoc comment with relationship annotation
 		 */
 		protected function generateRelationshipDocComment(array $property): string {
@@ -483,7 +514,7 @@
 		
 		/**
 		 * Generates typed property declaration
-		 * @param array $property Property metadata
+		 * @param PropertyDefinition $property Property metadata
 		 * @return string Property declaration with type hint
 		 */
 		protected function generatePropertyDefinition(array $property): string {
@@ -497,7 +528,7 @@
 			}
 			
 			// Regular properties map database type to PHP type
-			$type = $property['type'] ?? 'string';
+			$type = $property['type'];
 			
 			if ($type === "enum") {
 				$phpType = "\\" . ltrim($property["enumType"], "\\");
@@ -510,7 +541,7 @@
 		
 		/**
 		 * Generates getter method with proper type hints and docblock
-		 * @param array $property Property metadata
+		 * @param PropertyDefinition $property Property metadata
 		 * @return string Complete getter method
 		 */
 		protected function generateGetter(array $property): string {
@@ -547,7 +578,7 @@
 			
 			// Regular property getters
 			$nullable = $property['nullable'] ?? false;
-			$type = $property['type'] ?? 'string';
+			$type = $property['type'];
 			$nullableIndicator = $nullable ? '?' : '';
 			
 			if ($type === "enum") {
@@ -567,7 +598,7 @@
 		
 		/**
 		 * Generates setter method with fluent interface and bidirectional sync
-		 * @param array $property Property metadata
+		 * @param PropertyDefinition $property Property metadata
 		 * @return string Complete setter method
 		 */
 		protected function generateSetter(array $property): string {
@@ -581,7 +612,7 @@
 				$nullableIndicator = $nullable ? '?' : '';
 				
 				// Identity check prevents infinite loops in bidirectional relationships
-				$setterBody  = "            // Prevent redundant updates\n";
+				$setterBody = "            // Prevent redundant updates\n";
 				$setterBody .= "            if (\$this->{$propertyName} === \${$propertyName}) {\n";
 				$setterBody .= "                return \$this;\n";
 				$setterBody .= "            }\n";
@@ -633,7 +664,7 @@
 			
 			// Regular property setters
 			$nullable = $property['nullable'] ?? false;
-			$type = $property['type'] ?? 'string';
+			$type = $property['type'];
 			$nullableIndicator = $nullable ? '?' : '';
 			
 			if ($type === "enum") {
@@ -659,7 +690,7 @@
 		 *
 		 * Checks for duplicates and syncs the inverse side of bidirectional relationships.
 		 *
-		 * @param array $property Collection property metadata
+		 * @param PropertyDefinition $property Collection property metadata
 		 * @param string $entityName Current entity name
 		 * @return string Complete adder method
 		 */
@@ -692,7 +723,7 @@
 		
 		/**
 		 * Generates method to remove item from OneToMany collection
-		 * @param array $property Collection property metadata
+		 * @param PropertyDefinition $property Collection property metadata
 		 * @param string $entityName Current entity name
 		 * @return string Complete remover method
 		 */
@@ -732,7 +763,7 @@
 		/**
 		 * Updates constructor to initialize OneToMany collections
 		 * @param string $content Entity file content
-		 * @param array $oneToManyProperties OneToMany properties needing initialization
+		 * @param array<int, PropertyDefinition> $oneToManyProperties OneToMany properties needing initialization
 		 * @return string Updated content with constructor modifications
 		 */
 		protected function updateConstructor(string $content, array $oneToManyProperties): string {
@@ -768,7 +799,7 @@
 		/**
 		 * Modifies existing constructor to add collection initialization statements
 		 * @param string $content Entity file content
-		 * @param array $oneToManyProperties Collections to initialize
+		 * @param array<int, PropertyDefinition> $oneToManyProperties Collections to initialize
 		 * @return string Updated content with modified constructor
 		 */
 		protected function updateExistingConstructor(string $content, array $oneToManyProperties): string {
@@ -825,7 +856,7 @@
 		/**
 		 * Generates collection initialization code for constructor body
 		 * @param string $content Entity file content
-		 * @param array $oneToManyProperties Collections needing initialization
+		 * @param array<int, PropertyDefinition> $oneToManyProperties Collections needing initialization
 		 * @return string Initialization code statements
 		 */
 		protected function generateCollectionInitializations(string $content, array $oneToManyProperties): string {
@@ -846,7 +877,7 @@
 		/**
 		 * Creates a new constructor with collection initializations
 		 * @param string $content Entity file content
-		 * @param array $oneToManyProperties Collections to initialize
+		 * @param array<int, PropertyDefinition> $oneToManyProperties Collections to initialize
 		 * @return string Updated content with new constructor
 		 */
 		protected function addNewConstructor(string $content, array $oneToManyProperties): string {
