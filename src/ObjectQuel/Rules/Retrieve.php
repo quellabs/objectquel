@@ -4,9 +4,8 @@
 	
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstAlias;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRange;
-	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRangeDatabase;
-	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRegExp;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRetrieve;
+	use Quellabs\ObjectQuel\ObjectQuel\AstInterface;
 	use Quellabs\ObjectQuel\ObjectQuel\Lexer;
 	use Quellabs\ObjectQuel\ObjectQuel\LexerException;
 	use Quellabs\ObjectQuel\ObjectQuel\ParserException;
@@ -48,7 +47,7 @@
 		
 		/**
 		 * Parse a complete 'retrieve' statement from the ObjectQuel language.
-		 * @param array $directives Query modification directives affecting behavior
+		 * @param array<mixed> $directives Query modification directives affecting behavior
 		 * @param AstRange[] $ranges Database ranges to query from
 		 * @return AstRetrieve Complete AST representation of the retrieve operation
 		 * @throws LexerException|ParserException on parsing or lexical errors
@@ -220,7 +219,7 @@
 		
 		/**
 		 * Parse individual sort expressions and their order specifications.
-		 * @return array[] Array of sort specifications with 'ast' and 'order' keys
+		 * @return array<int, array{ast: AstInterface, order: string}> Array of sort specifications with 'ast' and 'order' keys
 		 * @throws LexerException|ParserException on expression parsing errors
 		 */
 		private function parseSortExpressions(): array {
