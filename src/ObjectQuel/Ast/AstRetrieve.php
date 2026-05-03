@@ -29,7 +29,7 @@
 		/** @var AstAlias[] Values/expressions to be retrieved (SELECT clause) */
 		protected array $values;
 		
-		/** @var array<string, AstInterface|null> Named macros that can be referenced in the query */
+		/** @var array<string, AstInterface> Named macros that can be referenced in the query */
 		protected array $macros;
 		
 		/** @var AstRange[] Data source ranges (FROM and JOIN clauses) */

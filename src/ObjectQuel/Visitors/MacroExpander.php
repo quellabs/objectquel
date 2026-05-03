@@ -48,19 +48,35 @@
 		 * @eeturn void
 		 */
 		public function visitNode(AstInterface $node): void {
+			// Only handle identifiers
 			if (!$node instanceof AstIdentifier) {
 				return;
 			}
 			
+			// If the identifier is attached to an entity, this is definitely not a macro
 			$entityName = $node->getEntityName();
 			
 			if ($entityName === null) {
 				return;
 			}
 			
-			if (array_key_exists($entityName, $this->macros) && $this->identifierIsEntity($this->macros[$entityName])) {
-				$node->setName($this->macros[$entityName]->getName());
-				$node->setRange($this->macros[$entityName]->getRange());
+			// Check if the macro exists
+			if (!array_key_exists($entityName, $this->macros)) {
+				return;
 			}
+
+			// Check if the macro is an identifier of the correct type
+			$macro = $this->macros[$entityName];
+				
+			if (
+				!$macro instanceof AstIdentifier ||
+				!$this->identifierIsEntity($macro)
+			) {
+				return;
+			}
+
+			// Update the node with the macro contents
+			$node->setName($macro->getName());
+			$node->setRange($macro->getRange());
 		}
 	}
