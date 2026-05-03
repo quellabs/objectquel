@@ -103,7 +103,25 @@
 		
 		/**
 		 * Returns a Phinx configuration array
-		 * @return array
+		 * @return array{
+		 *     paths: array{
+		 *         migrations: string
+		 *     },
+		 *     environments: array{
+		 *         default_migration_table: string,
+		 *         default_environment: string,
+		 *         development: array{
+		 *             adapter: string,
+		 *             host: string,
+		 *             name: string,
+		 *             user: string,
+		 *             pass: string,
+		 *             port: int,
+		 *             charset: string,
+		 *             collation: string
+		 *         }
+		 *     }
+		 * }
 		 */
 		public function createPhinxConfig(): array {
 			// Fetch default values
