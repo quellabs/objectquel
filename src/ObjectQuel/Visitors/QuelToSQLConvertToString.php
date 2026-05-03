@@ -57,10 +57,10 @@
 		/** @var EntityStore Entity storage for metadata and schema information */
 		private EntityStore $entityStore;
 		
-		/** @var array SQL fragments that will be concatenated to form the final query */
+		/** @var array<int, string> SQL fragments that will be concatenated to form the final query */
 		private array $result;
 		
-		/** @var array Track visited nodes to prevent infinite recursion and duplicate processing */
+		/** @var array<string, bool> Track visited nodes to prevent infinite recursion and duplicate processing */
 		private array $visitedNodes;
 		
 		/** @var array<string, mixed> Reference to query parameters for parameterized queries */
