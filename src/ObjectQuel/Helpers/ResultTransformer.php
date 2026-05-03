@@ -2,6 +2,8 @@
 	
 	namespace Quellabs\ObjectQuel\ObjectQuel\Helpers;
 	
+	use Quellabs\ObjectQuel\ObjectQuel\AstInterface;
+	
 	/**
 	 * Class ResultTransformer
 	 * Transforms query results based on specified criteria
@@ -10,48 +12,77 @@
 	class ResultTransformer {
 		
 		/**
-		 * Sorts the results array based on provided sort criteria
+		 * Sorts the results array based on provided sort criteria.
+		 * Sort items are taken directly from AstRetrieve::getSort(), so the
+		 * key is 'direction' (optional) rather than 'order'.
+		 * AST traversal is precomputed once before the comparator runs to
+		 * avoid O(n log n) repeated traversal.
 		 * @param array<int, array<string, mixed>> $results Reference to the array of results to be sorted
-		 * @param array<int, array{ast: object, order: string}> $sortItems Array of sort specifications
+		 * @param array<int, array{ast: AstInterface, direction?: string}> $sortItems Array of sort specifications from AstRetrieve::getSort()
 		 * @return void This method modifies the input array directly and doesn't return a value
+		 * @throws \UnexpectedValueException If a sort key resolves to a non-scalar value
 		 */
 		public function sortResults(array &$results, array $sortItems): void {
-			// Use PHP's usort function with a custom comparison callback
-			usort($results, function ($a, $b) use ($sortItems) {
-				// Iterate through each sort item in the specified order
-				foreach ($sortItems as $sortItem) {
-					// Extract the Abstract Syntax Tree node from the sort item
-					$ast = $sortItem['ast'];
+			// Precompute range names and normalized directions once.
+			// Doing this inside the comparator would repeat AST traversal
+			// O(n log n) times, which is expensive on large result sets.
+			$normalizedSort = array_map(
+				static function (array $item): array {
+					$entity = $item['ast']->getParentIdentifier();
 					
-					// Extract the sort direction ('asc' or 'desc')
-					$order = $sortItem['order'];
+					return [
+						'range'     => $entity->getRange()->getName(),
+						'direction' => strtolower($item['direction'] ?? 'asc'),
+					];
+				},
+				$sortItems
+			);
+			
+			usort($results, static function (array $a, array $b) use ($normalizedSort): int {
+				foreach ($normalizedSort as $sortItem) {
+					$range = $sortItem['range'];
 					
-					// Get the parent identifier from the AST node
-					// This likely represents the entity or field to sort by
-					$entity = $ast->getParentIdentifier();
+					// Use null-coalescing to avoid undefined index notices when the
+					// hydrated result row does not contain this key
+					$valueA = $a[$range] ?? null;
+					$valueB = $b[$range] ?? null;
 					
-					// Get the range name from the entity
-					// This represents the actual property/key in the result array to compare
-					$range = $entity->getRange()->getName();
-					
-					// Compare the values of the current field in both items
-					if ($a[$range] < $b[$range]) {
-						// If the first item's value is less than the second's
-						// For 'desc' order, return 1 (b comes before a)
-						// For 'asc' order, return -1 (a comes before b)
-						return $order === 'desc' ? 1 : -1;
-					} elseif ($a[$range] > $b[$range]) {
-						// If the first item's value is greater than the second's
-						// For 'desc' order, return -1 (a comes before b)
-						// For 'asc' order, return 1 (b comes before a)
-						return $order === 'desc' ? -1 : 1;
+					// Equal values (including both null) fall through to the next
+					// sort criterion, implementing stable multi-level sorting
+					if ($valueA === $valueB) {
+						continue;
 					}
 					
-					// If values are equal, continue to the next sort criteria
-					// This implements multi-level sorting
+					// Null on one side only: treat null as less than any scalar so
+					// that null-bearing rows sort consistently to the front (asc) or
+					// back (desc) rather than producing undefined behavior
+					if ($valueA === null || $valueB === null) {
+						$nullFirst = ($valueA === null) ? -1 : 1;
+						return $sortItem['direction'] === 'desc' ? -$nullFirst : $nullFirst;
+					}
+					
+					// Non-scalar values in a sort position are a programming error:
+					// silently continuing would produce incorrect, invisible results.
+					// Throw so the problem is surfaced at the call site instead.
+					if (!is_scalar($valueA) || !is_scalar($valueB)) {
+						throw new \UnexpectedValueException(
+							sprintf(
+								"Sort key '%s' contains a non-scalar value (%s vs %s); only scalar values can be compared",
+								$range,
+								get_debug_type($valueA),
+								get_debug_type($valueB)
+							)
+						);
+					}
+					
+					if ($valueA < $valueB) {
+						return $sortItem['direction'] === 'desc' ? 1 : -1;
+					}
+					
+					return $sortItem['direction'] === 'desc' ? -1 : 1;
 				}
 				
-				// If all sort criteria result in equality, items maintain their relative positions
+				// All criteria were equal; maintain original relative order
 				return 0;
 			});
 		}

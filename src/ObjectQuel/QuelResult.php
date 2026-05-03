@@ -12,6 +12,8 @@
 	 * Represents a Quel result.
 	 * This class handles the hydration, relationship loading, and transformation of database query results.
 	 * It implements ArrayAccess and IteratorAggregate to allow array-like access and iteration over the result set.
+	 * @implements \ArrayAccess<int, array<string, mixed>>
+	 * @implements \IteratorAggregate<int, array<string, mixed>>
 	 */
 	class QuelResult implements \ArrayAccess, \IteratorAggregate, \JsonSerializable, \Countable {
 		
@@ -32,6 +34,7 @@
 		
 		/**
 		 * The actual result set containing hydrated entities and data
+		 * @var array<int, array<string, mixed>>
 		 */
 		private array $result;
 		
@@ -49,7 +52,7 @@
 		 * Constructor initializes helpers and processes the raw data into structured results
 		 * @param entityManager $entityManager Entity manager for data handling
 		 * @param AstRetrieve $retrieve AST object containing query information
-		 * @param array $data Raw data from the database query
+		 * @param array<int, array<string, mixed>> $data Raw data from the database query
 		 */
 		public function __construct(EntityManager $entityManager, AstRetrieve $retrieve, array $data) {
 			// Initialize helper objects
@@ -78,7 +81,7 @@
 			$this->result = $result['result'];
 			
 			// Load relationships between entities
-			$this->relationShipLoader->loadRelationships($result['entities']);
+			$this->relationShipLoader->loadRelationships(array_values($result['entities']));
 			
 			// Sort the results if needed:
 			// 1) A method is called in SORT BY clause
@@ -115,7 +118,7 @@
 		 * Returns the value of $columnName for all rows at once
 		 * Similar to PDO's fetchColumn() but returns all matching values
 		 * @param string|int $columnName Column name or index to fetch
-		 * @return array Array of values from the specified column
+		 * @return array<int, mixed> Array of values from the specified column
 		 */
 		public function fetchCol(string|int $columnName=0): array {
 			// If index specifies column, convert to column name
@@ -140,7 +143,7 @@
 		/**
 		 * Resets the pointer and returns all rows as an array
 		 * Useful for getting the full result set at once
-		 * @return array All rows in the result set
+		 * @return array<int, array<string, mixed>> All rows in the result set
 		 */
 		public function fetchAll(): array {
 			$this->index = 0; // Reset the pointer
@@ -150,7 +153,7 @@
 		/**
 		 * Returns the raw data in this recordset
 		 * Provides direct access to the underlying result array
-		 * @return array The complete result set
+		 * @return array<int, array<string, mixed>> The complete result set
 		 */
 		public function getResults(): array {
 			return $this->result;
@@ -159,7 +162,7 @@
 		/**
 		 * Merge another QuelResult or array of rows into this one
 		 * Useful for combining multiple result sets
-		 * @param array|QuelResult $otherResult The result to merge
+		 * @param array<int, array<string, mixed>>|QuelResult $otherResult The result to merge
 		 * @return static Returns a new QuelResult with merged data
 		 */
 		public function merge(array|QuelResult $otherResult): static {
@@ -178,7 +181,7 @@
 		/**
 		 * IteratorAggregate implementation: Gets an iterator for this object
 		 * This allows foreach iteration over the result set
-		 * @return \ArrayIterator An iterator for the result set
+		 * @return \ArrayIterator<int, array<string, mixed>> An iterator for the result set
 		 */
 		public function getIterator(): \Traversable {
 			return new \ArrayIterator($this->result);
@@ -196,7 +199,7 @@
 		/**
 		 * ArrayAccess implementation: Gets value at offset
 		 * @param mixed $offset The offset to retrieve
-		 * @return mixed The value at the specified offset or null if not found
+		 * @return array<string, mixed>|null The value at the specified offset or null if not found
 		 */
 		public function offsetGet(mixed $offset): mixed {
 			return $this->result[$offset] ?? null;
@@ -204,8 +207,8 @@
 		
 		/**
 		 * ArrayAccess implementation: Sets value at offset
-		 * @param mixed $offset The offset to set
-		 * @param mixed $value The value to set
+		 * @param int|null $offset The offset to set
+		 * @param array<string, mixed> $value The value to set
 		 * @return void
 		 */
 		public function offsetSet(mixed $offset, mixed $value): void {
@@ -227,7 +230,7 @@
 		
 		/**
 		 * JsonSerializable implementation: Returns data which can be serialized by json_encode()
-		 * @return array The result set that can be JSON serialized
+		 * @return array<int, array<string, mixed>> The result set that can be JSON serialized
 		 */
 		public function jsonSerialize(): array {
 			return $this->result;
