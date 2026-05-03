@@ -134,7 +134,7 @@
 		
 		/**
 		 * Scan entity directory and return list of existing entity names (without 'Entity' suffix).
-		 * @return array List of entity names
+		 * @return string[] List of entity names
 		 */
 		private function getAvailableEntities(): array {
 			$entityPath = realpath($this->configuration->getEntityPath());
@@ -165,9 +165,9 @@
 		/**
 		 * Interactively collect all properties for the entity.
 		 * Loops until user presses enter without entering a property name.
-		 * @param array $availableEntities List of available entity names
+		 * @param string[] $availableEntities List of available entity names
 		 * @param string $entityName Name of the current entity being created
-		 * @return array Array of property definitions
+		 * @return array<int, array<string, mixed>> Array of property definitions
 		 */
 		private function collectProperties(array $availableEntities, string $entityName): array {
 			$properties = [];
@@ -201,9 +201,9 @@
 		/**
 		 * Collect configuration for a relationship property.
 		 * Returns array of properties (relationship + FK column if applicable).
-		 * @param array $availableEntities List of available entity names
+		 * @param string[] $availableEntities List of available entity names
 		 * @param string $entityName Name of the current entity being created
-		 * @return array Array of property definitions for the relationship
+		 * @return array<int, array<string, mixed>> Array of property definitions for the relationship
 		 */
 		private function collectRelationshipProperties(string $propertyName, array $availableEntities, string $entityName): array {
 			$relationshipType = $this->input->choice("\nRelationship type", ['OneToOne', 'OneToMany', 'ManyToOne']);
@@ -273,7 +273,14 @@
 		 * @param string $relationshipType Type of relationship (OneToOne, OneToMany, ManyToOne)
 		 * @param string $entityName Name of the current entity
 		 * @param string $targetEntity Name of the target entity
-		 * @return array Mapping configuration with 'mappedBy', 'inversedBy', and optional creation flags
+		 * @return array{
+		 *     mappedBy: string|null,
+		 *     inversedBy: string|null,
+		 *     createInTarget?: bool,
+		 *     targetPropertyName?: string,
+		 *     targetRelationType?: string,
+		 *     targetInversedBy?: string|null
+		 * }
 		 */
 		private function collectRelationshipMapping(string $relationshipType, string $entityName, string $targetEntity): array {
 			// OneToMany: always inverse side
@@ -295,7 +302,14 @@
 		 * @param string $targetEntity Name of the target entity (contains the owning side)
 		 * @param string $currentEntity Name of the current entity (inverse side)
 		 * @param string $targetRelationType Relationship type on the target side (ManyToOne or OneToOne)
-		 * @return array Mapping configuration
+		 * @return array{
+		 *     mappedBy: string|null,
+		 *     inversedBy: string|null,
+		 *     createInTarget?: bool,
+		 *     targetPropertyName?: string,
+		 *     targetRelationType?: string,
+		 *     targetInversedBy?: string|null
+		 * }
 		 */
 		private function handleInverseSideMapping(string $targetEntity, string $currentEntity, string $targetRelationType): array {
 			// Try to find existing owning side property
@@ -343,7 +357,14 @@
 		 * @param string $relationshipType Type of relationship (ManyToOne or OneToOne)
 		 * @param string $entityName Name of the current entity (owning side)
 		 * @param string $targetEntity Name of the target entity
-		 * @return array Mapping configuration
+		 * @return array{
+		 *     mappedBy: string|null,
+		 *     inversedBy: string|null,
+		 *     createInTarget?: bool,
+		 *     targetPropertyName?: string,
+		 *     targetRelationType?: string,
+		 *     targetInversedBy?: string|null
+		 * }
 		 */
 		private function handleOwningSideMapping(string $relationshipType, string $entityName, string $targetEntity): array {
 			$bidirectional = $this->input->confirm("\nIs this a bidirectional relationship?", false);
@@ -492,7 +513,7 @@
 		 * Collect configuration for a standard (non-relationship) property.
 		 * @param string $propertyName Name of the property
 		 * @param string $propertyType Type of the property (string, integer, decimal, etc.)
-		 * @return array Property definition array
+		 * @return array<string, mixed> Property definition array
 		 */
 		private function collectStandardProperty(string $propertyName, string $propertyType): array {
 			$property = [
@@ -533,7 +554,7 @@
 		
 		/**
 		 * Collect and validate decimal precision and scale configuration.
-		 * @return array Array with 'precision' and 'scale' keys
+		 * @return array{precision:int, scale:int}
 		 */
 		private function collectDecimalConfiguration(): array {
 			$precision = null;
@@ -579,8 +600,12 @@
 		
 		/**
 		 * Get target entity name and its primary key information.
-		 * @param array $availableEntities List of available entity names
-		 * @return array Array with 'targetEntity', 'referencedField', and 'foreignColumn' keys
+		 * @param string[] $availableEntities List of available entity names
+		 * @return array{
+		 *     targetEntity: string,
+		 *     referencedField: string,
+		 *     foreignColumn: string
+		 * }
 		 */
 		private function getTargetEntityInfo(array $availableEntities): array {
 			$targetEntity = $this->selectTargetEntity($availableEntities);
@@ -610,7 +635,7 @@
 		
 		/**
 		 * Prompt user to select target entity from available entities or enter manually.
-		 * @param array $availableEntities List of available entity names
+		 * @param string[] $availableEntities List of available entity names
 		 * @return string Selected entity name
 		 */
 		private function selectTargetEntity(array $availableEntities): string {
@@ -631,7 +656,7 @@
 		/**
 		 * Get primary key field names for an entity.
 		 * @param string $entityName Name of the entity (without 'Entity' suffix)
-		 * @return array Array of primary key field names
+		 * @return string[] Array of primary key field names
 		 */
 		public function getEntityPrimaryKeys(string $entityName): array {
 			$fullEntityName = $this->configuration->getEntityNameSpace() . '\\' . $entityName . 'Entity';
@@ -647,7 +672,7 @@
 		 * Determine the column type and unsigned flag for a foreign key based on the referenced column.
 		 * @param string $targetEntity Name of the target entity
 		 * @param string $referencedField Name of the referenced field in the target entity
-		 * @return array Array with 'type' and 'unsigned' keys
+		 * @return array{type:string, unsigned:bool}
 		 */
 		private function determineForeignKeyType(string $targetEntity, string $referencedField): array {
 			$result = ['type' => 'integer', 'unsigned' => true];
