@@ -17,13 +17,13 @@
 		
 		/**
 		 * Array of available ranges (aliases) that can be matched against identifiers
-		 * @var array Array containing AstRange objects that represent predefined ranges
+		 * @var AstRange[] Array containing AstRange objects that represent predefined ranges
 		 */
 		private array $ranges;
 		
 		/**
 		 * EntityProcessRange constructor.
-		 * @param array $ranges Table of ranges (should contain AstRangeDatabase objects)
+		 * @param AstRange[] $ranges Table of ranges (should contain AstRangeDatabase objects)
 		 */
 		public function __construct(array $ranges) {
 			$this->ranges = $ranges;
