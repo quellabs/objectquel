@@ -62,7 +62,7 @@
 		/**
 		 * AstRetrieve constructor.
 		 * @param array<string, mixed> $directives Compiler directives for query optimization
-		 * @param AstRangeDatabase[] $ranges Data source ranges (tables, subqueries)
+		 * @param AstRange[] $ranges Data source ranges (tables, subqueries)
 		 * @param bool $unique True if the results should be unique (DISTINCT), false otherwise
 		 */
 		public function __construct(array $directives, array $ranges, bool $unique) {

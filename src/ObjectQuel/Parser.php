@@ -2,6 +2,7 @@
     
     namespace Quellabs\ObjectQuel\ObjectQuel;
 
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRange;
 	use Quellabs\ObjectQuel\ObjectQuel\Rules\Range;
 	use Quellabs\ObjectQuel\ObjectQuel\Rules\Retrieve;
     
@@ -44,7 +45,7 @@
 		
 		/**
 		 * Parser compiler directives
-		 * @return array
+		 * @return array<string, bool|int|float|string>
 		 * @throws LexerException|ParserException
 		 */
 		protected function parseCompilerDirectives(): array {
@@ -63,7 +64,7 @@
 		
 		/**
 		 * Parse ranges
-		 * @return array
+		 * @return AstRange[]
 		 * @throws LexerException
 		 * @throws ParserException
 		 */

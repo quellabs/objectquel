@@ -3,6 +3,7 @@
 	namespace Quellabs\ObjectQuel\ObjectQuel\Rules;
 	
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstAlias;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRange;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRangeDatabase;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRegExp;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRetrieve;
@@ -48,7 +49,7 @@
 		/**
 		 * Parse a complete 'retrieve' statement from the ObjectQuel language.
 		 * @param array $directives Query modification directives affecting behavior
-		 * @param AstRangeDatabase[] $ranges Database ranges to query from
+		 * @param AstRange[] $ranges Database ranges to query from
 		 * @return AstRetrieve Complete AST representation of the retrieve operation
 		 * @throws LexerException|ParserException on parsing or lexical errors
 		 */
