@@ -2,6 +2,7 @@
 	
 	namespace Quellabs\ObjectQuel\Sculpt\Helpers;
 	
+	use Quellabs\ObjectQuel\Annotations\Orm\Column;
 	use Quellabs\ObjectQuel\DatabaseAdapter\TypeMapper;
 	use Quellabs\Support\StringInflector;
 	
@@ -35,8 +36,21 @@
 		
 		/**
 		 * Generates all JavaScript code components from entity metadata
-		 * @param array $entityData Entity metadata from prepareEntityData()
-		 * @return array Associative array containing code components
+		 * @param array{
+		 *      columns: array<string, string>,
+		 *      identifiers: array<int, string>,
+		 *      columnAnnotations: array<string, array<int, Column>>,
+		 *      relationships: array<int, string>
+		 *  } $entityData
+		 *
+		 * @return array{
+		 *      properties: array<int, string>,
+		 *      reset: array<int, string>,
+		 *      changes: array<int, string>,
+		 *      toPayload: array<int, string>,
+		 *      assignAfterLoad: array<int, string>,
+		 *      assignAfterSave: array<int, string>
+		 *  }
 		 */
 		private function generateCodeComponents(array $entityData): array {
 			$properties = [];
@@ -48,8 +62,10 @@
 			
 			// Process columns
 			foreach ($entityData['columns'] as $property => $column) {
-				$hasDefault = $entityData['columnAnnotations'][$property]->hasDefault();
-				$defaultValue = $entityData['columnAnnotations'][$property]->getDefault();
+				$annotations = $entityData['columnAnnotations'][$property] ?? [];
+				$annotation = $annotations[0] ?? null;
+				$hasDefault = $annotation?->hasDefault() ?? false;
+				$defaultValue = $annotation?->getDefault();
 				
 				$assignAfterLoad[] = "this.{$property} = data.{$property} ?? null;";
 				$assignAfterSave[] = "if (typeof data.{$property} !== 'undefined') {";
@@ -114,7 +130,14 @@
 		 *       wakaPAC.MSG_HTTP_ABORT                       — request was cancelled
 		 *
 		 * @param string $baseName The clean entity name (e.g., 'User', 'Product')
-		 * @param array $components All generated code components from generateCodeComponents()
+		 * @param array{
+		 *      properties: array<int, string>,
+		 *      reset: array<int, string>,
+		 *      changes: array<int, string>,
+		 *      toPayload: array<int, string>,
+		 *      assignAfterLoad: array<int, string>,
+		 *      assignAfterSave: array<int, string>
+		 *  } $components
 		 * @return string The complete, formatted JavaScript abstraction code
 		 */
 		private function buildJavaScriptCode(string $baseName, array $components): string {
@@ -390,9 +413,9 @@ if (typeof module !== 'undefined' && module.exports) {
 		 * Creates JavaScript statements that serialize entity properties into a flat
 		 * payload object for POST / PUT requests. Skips 'id' — the server assigns it
 		 * on create and it is sent via the URL on update.
-		 * @param array $columns Column mappings from entity metadata
-		 * @param array $columnAnnotations Column annotation objects with type information
-		 * @return array Array of JavaScript statements
+		 * @param array<string, string> $columns
+		 * @param array<string, array<int, Column>> $columnAnnotations
+		 * @return array<int, string>
 		 */
 		private function generateSerializeStatements(array $columns, array $columnAnnotations): array {
 			$lines = [];
@@ -402,8 +425,10 @@ if (typeof module !== 'undefined' && module.exports) {
 					continue;
 				}
 				
-				$annotation = $columnAnnotations[$property] ?? null;
-				$columnType = $annotation ? $annotation->getType() : 'string';
+				$annotations = $columnAnnotations[$property] ?? [];
+				$annotation = $annotations[0] ?? null;
+				
+				$columnType = $annotation instanceof Column ? $annotation->getType() : 'string';
 				
 				$lines = array_merge($lines, $this->generateSerializeForType($property, $columnType));
 			}
@@ -416,7 +441,7 @@ if (typeof module !== 'undefined' && module.exports) {
 		 * Writes to a flat `payload` object.
 		 * @param string $property
 		 * @param string $columnType
-		 * @return string[]
+		 * @return array<int, string>
 		 */
 		private function generateSerializeForType(string $property, string $columnType): array {
 			$baseCondition = "if (this.{$property} !== undefined && this.{$property} !== null) {";
