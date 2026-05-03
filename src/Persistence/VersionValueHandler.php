@@ -3,6 +3,7 @@
 	namespace Quellabs\ObjectQuel\Persistence;
 	
 	use Quellabs\ObjectQuel\Annotations\Orm\Column;
+	use Quellabs\ObjectQuel\Annotations\Orm\Version;
 	use Quellabs\ObjectQuel\DatabaseAdapter\DatabaseAdapter;
 	use Quellabs\ObjectQuel\EntityStore;
 	use Quellabs\ObjectQuel\ReflectionManagement\PropertyHandler;
@@ -51,10 +52,10 @@
 		 * Fetches version values back from the database after update
 		 * Required to ensure in-memory entity matches database state exactly
 		 * @param string $tableName Raw (unescaped) table name
-		 * @param array $versionColumns All version column metadata
-		 * @param array $primaryKeyColumnNames Primary key column names
-		 * @param array $primaryKeyValues Primary key values
-		 * @return array Fetched version values as property_name => value pairs
+		 * @param array<string, array{name: string, column: Column, version: Version}> $versionColumns All version column metadata
+		 * @param array<int, string> $primaryKeyColumnNames Primary key column names
+		 * @param array<string, mixed> $primaryKeyValues Primary key values
+		 * @return array<string, mixed> Fetched version values as property_name => value pairs
 		 */
 		public function fetchUpdatedVersionValues(string $tableName, array $versionColumns, array $primaryKeyColumnNames, array $primaryKeyValues): array {
 			// Nothing to fetch if this entity has no version columns
@@ -88,15 +89,20 @@
 			}
 			
 			// Map each version column back to its fetched value, keyed by property name
-			return array_map(function ($vc) use ($row) {
-				return $row[$vc['name']];
-			}, $versionColumns);
+			$resultValues = [];
+			
+			/** @noinspection PhpLoopCanBeConvertedToArrayMapInspection */
+			foreach ($versionColumns as $property => $vc) {
+				$resultValues[$property] = $row[$vc['name']];
+			}
+			
+			return $resultValues;
 		}
 		
 		/**
 		 * Updates the entity with new version values from the database
 		 * @param object $entity The entity to update
-		 * @param array $fetchedValues Fetched version values as property_name => value pairs
+		 * @param array<string, mixed> $fetchedValues Fetched version values as property_name => value pairs
 		 * @return void
 		 */
 		public function updateEntityVersionValues(object $entity, array $fetchedValues): void {
@@ -110,8 +116,18 @@
 			$annotations = $this->entityStore->getAnnotationsOfType($entity, Column::class);
 			
 			foreach ($fetchedValues as $property => $newValue) {
-				// Normalize the raw database value to its PHP representation before writing it back
-				$normalizedValue = $this->unitOfWork->getSerializer()->normalizeValue($annotations[$property], $newValue);
+				// Fetch first column annotation
+				$columnAnnotation = $annotations[$property][0] ?? null;
+				
+				// If none found, continue to the next
+				if ($columnAnnotation === null) {
+					continue;
+				}
+				
+				// Normalize the raw database value to its PHP representation
+				$normalizedValue = $this->unitOfWork->getSerializer()->normalizeValue($columnAnnotation, $newValue);
+				
+				// Write it back
 				$this->propertyHandler->set($entity, $property, $normalizedValue);
 			}
 		}
