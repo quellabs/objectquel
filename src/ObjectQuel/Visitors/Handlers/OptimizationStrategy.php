@@ -27,13 +27,13 @@
 		/** @var string The current strategy type */
 		private string $type;
 		
-		/** @var array Additional metadata and context for the strategy */
+		/** @var array<string, mixed> Additional metadata and context for the strategy */
 		private array $metadata;
 		
 		/**
 		 * Creates a new optimization strategy instance.
 		 * @param string $type The strategy type (should be one of the class constants)
-		 * @param array $metadata Optional metadata to store additional context
+		 * @param array<string, mixed> $metadata Optional metadata to store additional context
 		 */
 		public function __construct(string $type, array $metadata = []) {
 			$this->type = $type;
@@ -50,7 +50,7 @@
 		
 		/**
 		 * Gets the strategy metadata.
-		 * @return array The metadata array containing additional context
+		 * @return array<string, mixed> The metadata array containing additional context
 		 */
 		public function getMetadata(): array {
 			return $this->metadata;
