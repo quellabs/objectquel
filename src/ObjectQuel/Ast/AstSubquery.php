@@ -17,6 +17,8 @@
 		
 		protected ?AstInterface $aggregation;
 		private string $type;
+		
+		/** @var AstInterface[] */
 		private array $correlatedRanges;
 		private ?AstInterface $conditions;
 		private ?string $origin;
@@ -25,7 +27,7 @@
 		 * AstSubquery constructor
 		 * @param AstAggregate|null $aggregation
 		 * @param string $type
-		 * @param array $correlatedRanges
+		 * @param AstInterface[] $correlatedRanges
 		 * @param AstInterface|null $conditions
 		 * @param string|null $origin
 		 */
@@ -95,11 +97,16 @@
 		
 		/**
 		 * Get all ranges referenced in this subquery
+		 * @return AstInterface[]
 		 */
 		public function getCorrelatedRanges(): array {
 			return $this->correlatedRanges;
 		}
 		
+		/**
+		 * Returns contents of WHERE
+		 * @return AstInterface|null
+		 */
 		public function getConditions(): ?AstInterface {
 			return $this->conditions;
 		}
