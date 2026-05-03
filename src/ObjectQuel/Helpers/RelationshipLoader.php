@@ -144,7 +144,7 @@
 		 */
 		private function createAndSetProxy(object $entity, string $property, object $dependency): void {
 			// Determine the relation column (the column containing the foreign key)
-			$relationColumn = $dependency->getRelationColumn() ?? $this->entityStore->getPrimaryKey($entity);
+			$relationColumn = $dependency->getRelationColumn() ?? "{$property}Id";
 			
 			// Get the primary key value. If it's empty, clear the relationship
 			$relationColumnValue = $this->propertyHandler->get($entity, $relationColumn);
@@ -376,7 +376,7 @@
 					// Create and set a collection of entities for each valid dependency
 					foreach ($validDependencies as $dependency) {
 						$targetEntity = $this->entityStore->normalizeEntityName($dependency->getTargetEntity());
-						$relationColumn = $dependency->getRelationColumn() ?? $this->entityStore->getPrimaryKey($entity);
+						$relationColumn = $dependency->getRelationColumn() ?? "{$property}Id";;
 						
 						// Check if OneToMany has mappedBy. If not error out
 						$mappedBy = $dependency->getMappedBy();
