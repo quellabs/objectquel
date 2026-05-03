@@ -15,14 +15,15 @@
 		
 		/**
 		 * Array of node type class names to check for during AST traversal
-		 * @var array Array of fully qualified class names representing restricted node types
+		 * @var array<class-string<AstInterface>> Array of fully qualified class names representing restricted node types
 		 */
 		private array $nodeTypes;
 		
 		/**
 		 * Constructor - Initialize the visitor with node types to detect
-		 * @param array $nodeTypes Array of class names (strings) representing the node types
-		 *                         that should trigger an exception when encountered during traversal
+		 * @param array<class-string<AstInterface>> $nodeTypes
+		 *      Array of class names (strings) representing the node types
+		 *      that should trigger an exception when encountered during traversal
 		 */
 		public function __construct(array $nodeTypes) {
 			$this->nodeTypes = $nodeTypes;
