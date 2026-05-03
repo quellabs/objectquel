@@ -147,6 +147,11 @@
 		private function transformViaRelations(AstRetrieve $ast): void {
 			// Process each table/range in the query to handle 'via' relationship definitions
 			foreach ($ast->getRanges() as $range) {
+				// Only handle database ranges
+				if (!$range instanceof AstRangeDatabase) {
+					continue;
+				}
+				
 				// Get the join property that defines how this range connects to other tables
 				// Join properties specify the relationship/connection logic between entities
 				$joinProperty = $range->getJoinProperty();
