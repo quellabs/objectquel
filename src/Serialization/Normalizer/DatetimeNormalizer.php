@@ -13,14 +13,14 @@
 		
 		/**
 		 * Parameters as passed by the annotation
-		 * @var array
+		 * @var array<string, mixed>
 		 * @phpstan-ignore-next-line property.onlyWritten
 		 */
 		private array $parameters;
 		
 		/**
 		 * Passed annotation parameters
-		 * @param array $parameters
+		 * @param array<string, mixed> $parameters
 		 */
 		public function __construct(array $parameters) {
 			$this->parameters = $parameters;

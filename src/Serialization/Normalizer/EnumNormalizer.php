@@ -7,7 +7,14 @@
 	 * Handles bidirectional conversion between enum instances and their scalar values.
 	 */
 	class EnumNormalizer implements NormalizerInterface {
-
+		
+		/**
+		 * Parameters as passed by the annotation
+		 * @var array<string, mixed>
+		 * @phpstan-ignore-next-line property.onlyWritten
+		 */
+		private array $parameters;
+		
 		/**
 		 * Fully qualified class name of the enum type to work with.
 		 * Must be a BackedEnum implementation.
@@ -17,10 +24,12 @@
 		
 		/**
 		 * Initializes the normalizer with enum type configuration.
-		 * @param array $parameters Configuration array, must contain 'enumType' key
+		 * @param array<string, mixed> $parameters Configuration array, must contain 'enumType' key
 		 * @throws \RuntimeException If 'enumType' parameter is missing
 		 */
 		public function __construct(array $parameters) {
+			$this->parameters = $parameters;
+			
 			if (!isset($parameters['enumType'])) {
 				throw new \RuntimeException(
 					"EnumNormalizer requires 'enumType' parameter"
