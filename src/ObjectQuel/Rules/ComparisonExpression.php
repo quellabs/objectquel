@@ -32,13 +32,13 @@
 		
 		/**
 		 * Parse a relational operator
-		 * @param $lookahead
+		 * @param int $lookahead
 		 * @param AstInterface $term
 		 * @return AstExpression
 		 * @throws LexerException
 		 * @throws ParserException
 		 */
-		protected function parseRelationalOperator($lookahead, AstInterface $term): AstExpression {
+		protected function parseRelationalOperator(int $lookahead, AstInterface $term): AstExpression {
 			// Consume the operator token and store its value
 			$operatorToken = $this->lexer->match($lookahead);
 			
