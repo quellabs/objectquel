@@ -2,6 +2,7 @@
 	
 	namespace Quellabs\ObjectQuel\ObjectQuel\Ast;
 	
+	use Quellabs\ObjectQuel\ObjectQuel\AstInterface;
 	use Quellabs\ObjectQuel\ObjectQuel\AstVisitorInterface;
 	
 	/**
@@ -13,14 +14,14 @@
 		
 		/**
 		 * Stores the list of parameters for the concat operation.
-		 * @var array
+		 * @var AstInterface[]
 		 */
 		protected array $parameterList;
 		
 		/**
 		 * AstConcat constructor.
 		 * Initializes the node with an array of parameters for the concat operation.
-		 * @param array $parameterList The list of parameters.
+		 * @param AstInterface[] $parameterList
 		 */
 		public function __construct(array $parameterList) {
 			$this->parameterList = $parameterList;
@@ -45,7 +46,7 @@
 		
 		/**
 		 * Retrieves the list of parameters used in the concat operation.
-		 * @return array The list of parameters.
+		 * @return AstInterface[] The list of parameters.
 		 */
 		public function getParameters(): array {
 			return $this->parameterList;
@@ -60,9 +61,11 @@
 		}
 		
 		/**
+		 * Clone this node
 		 * @return static
 		 */
 		public function deepClone(): static {
+			// Clone the parameter list
 			$clonedParameterList = $this->cloneArray($this->parameterList);
 			
 			// @phpstan-ignore-next-line new.static
