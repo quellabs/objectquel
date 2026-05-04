@@ -9,6 +9,7 @@
 	use Quellabs\ObjectQuel\DatabaseAdapter\DatabaseAdapter;
 	use Quellabs\ObjectQuel\EntityManager;
 	use Quellabs\ObjectQuel\EntityStore;
+	use Quellabs\ObjectQuel\ObjectQuel\QuelException;
 	use Quellabs\ObjectQuel\OrmException;
 	use Quellabs\ObjectQuel\PrimaryKeys\PrimaryKeyFactory;
 	use Quellabs\ObjectQuel\ReflectionManagement\PropertyHandler;
@@ -150,7 +151,7 @@
 			$discriminatorInfo = $this->getDiscriminatorInfo($entity);
 			
 			if ($discriminatorInfo !== null) {
-				$columnName         = $discriminatorInfo['column'];
+				$columnName = $discriminatorInfo['column'];
 				$discriminatorValue = $discriminatorInfo['value'];
 				$serializedEntity[$columnName] = $discriminatorValue;
 			}
@@ -269,7 +270,7 @@
 			return $this->strategyColumnCache[$table][$primaryKey] = "identity";
 		}
 		
-		protected function getInitialVersionValue(string $columnType): \DateTime|int|string {
+		protected function getInitialVersionValue(string $columnType): int|string {
 			switch ($columnType) {
 				case 'int':
 				case 'integer':
@@ -290,32 +291,61 @@
 		}
 		
 		/**
-		 * Resolves discriminator column name and value for STI subclasses.
+		 * Resolves the discriminator column name and value for STI (Single Table Inheritance) subclasses.
 		 *
-		 * Returns null when the entity is not an STI subclass (the common case),
-		 * so the caller can short-circuit with a simple null check.
-		 * @param object $entity The entity being persisted
-		 * @return array{column: string, value: string}|null
-		 * @throws AnnotationReaderException
+		 * Both @DiscriminatorValue and @DiscriminatorColumn must be present with non-empty values
+		 * for STI persistence to function. Either annotation may be defined on the class itself or
+		 * on any ancestor — getClassAnnotations() walks the full inheritance chain.
+		 *
+		 * Returns null when the class is not participating in STI (the common case), allowing
+		 * the caller to short-circuit with a simple null check.
+		 *
+		 * @param object $entity The entity being persisted.
+		 * @return array{column: non-empty-string, value: non-empty-string}|null
+		 *     Null if the entity is not an STI subclass.
+		 * @throws AnnotationReaderException If annotation metadata cannot be read.
+		 * @throws \InvalidArgumentException If STI annotations are present but contain empty values,
+		 * @throws QuelException
+		 *     indicating a misconfigured entity class.
 		 */
 		protected function getDiscriminatorInfo(object $entity): ?array {
-			// One call covers both the subclass and all parent class annotations
-			$classAnnotations = $this->entityStore->getAnnotationReader()->getClassAnnotations(get_class($entity));
+			// Fetch class annotations
+			$classAnnotations = $this->entityStore
+				->getAnnotationReader()
+				->getClassAnnotations(get_class($entity));
+			
+			// Retrieve DiscriminatorValue and DiscriminatorColumn
 			$discriminatorValue = $classAnnotations[DiscriminatorValue::class] ?? null;
 			$discriminatorColumn = $classAnnotations[DiscriminatorColumn::class] ?? null;
 			
-			// Not an STI subclass if either annotation is missing
-			if ($discriminatorValue === null || $discriminatorColumn === null) {
+			// Both annotations must be present for this to be a valid STI subclass.
+			// If neither is defined, this is a regular (non-STI) entity — not an error.
+			if (
+				!$discriminatorValue instanceof DiscriminatorValue ||
+				!$discriminatorColumn instanceof DiscriminatorColumn
+			) {
 				return null;
 			}
 			
+			// Fetch the discriminator values
 			$value = $discriminatorValue->getValue();
 			$columnName = $discriminatorColumn->getName();
 			
+			// Annotations exist but have empty values — this is a configuration error,
+			// not a "not an STI entity" situation. Fail loudly rather than silently
+			// returning null and causing a hard-to-trace persistence bug downstream.
 			if ($value === '' || $columnName === '') {
-				return null;
+				throw new QuelException(sprintf(
+					'Entity "%s" has STI annotations but %s is empty. Check your @DiscriminatorValue and @DiscriminatorColumn definitions.',
+					get_class($entity),
+					$value === '' ? '@DiscriminatorValue' : '@DiscriminatorColumn'
+				));
 			}
 			
-			return ['column' => $columnName, 'value' => $value];
+			// Return the values
+			return [
+				'column' => $columnName,
+				'value'  => $value
+			];
 		}
 	}
