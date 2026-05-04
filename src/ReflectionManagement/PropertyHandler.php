@@ -26,16 +26,93 @@
 			$this->reflection_properties = [];
 			$this->reflection_classes = [];
 		}
+		
+		
+		/**
+		 * Returns true if the property exists, false if not
+		 * @param mixed $objectOrClass
+		 * @param string $propertyName
+		 * @return bool
+		 */
+		public function exists(mixed $objectOrClass, string $propertyName): bool {
+			try {
+				$reflection = $this->getReflectionClass($objectOrClass);
+				return $reflection->hasProperty($propertyName);
+			} catch (\ReflectionException $e) {
+				return false;
+			}
+		}
+		
+		/**
+		 * Gets a property value from an object using reflection
+		 * @param object $object The object instance to get the property from
+		 * @param string $propertyName The name of the property to retrieve
+		 * @return mixed The property value if accessible, null if uninitialized, false on error
+		 */
+		public function get(object $object, string $propertyName): mixed {
+			try {
+				// Get the reflection property object for the given property name
+				$reflection = $this->getReflectionProperty($object, $propertyName);
+				
+				// Critical check: Determine if the property has been initialized
+				// This prevents the "must not be accessed before initialization" Error
+				// that occurs with typed properties in PHP 7.4+
+				if (!$reflection->isInitialized($object)) {
+					return null;
+				}
+				
+				// Property is initialized, so it's safe to access its value
+				return $reflection->getValue($object);
+			} catch (\ReflectionException $e) {
+				// Property doesn't exist or isn't accessible
+				// In a production system, you might want to log this exception
+				return false;
+			}
+		}
+		
+		/**
+		 * Sets a property value
+		 * @param object $object
+		 * @param string $propertyName
+		 * @param mixed $value
+		 * @return bool
+		 */
+		public function set(object $object, string $propertyName, mixed $value): bool {
+			try {
+				$reflection = $this->getReflectionProperty($object, $propertyName);
+				$reflection->setValue($object, $value);
+				return true;
+			} catch (\ReflectionException $e) {
+				return false;
+			}
+		}
 
 		/**
+		 * @param object|class-string $class
+		 * @return class-string
+		 * @throws \ReflectionException
+		 */
+		private function normalizeClassName(object|string $class): string {
+			if (is_object($class)) {
+				return get_class($class);
+			}
+			
+			if (!class_exists($class)) {
+				throw new \ReflectionException("Class {$class} does not exist");
+			}
+			
+			return $class;
+		}
+		
+		/**
 		 * Retrieves a ReflectionClass instance for the specified class.
-		 * @param object|string $class The object or the name of the class to reflect.
+		 * @param object|class-string $class The object or the name of the class to reflect.
 		 * @return \ReflectionClass<object> A ReflectionClass instance.
 		 * @throws \ReflectionException
 		 */
 		private function getReflectionClass(mixed $class): \ReflectionClass {
 			// Determine the class name from the object or directly use the provided class name
-			$className = is_object($class) ? get_class($class) : $class;
+			$className = $this->normalizeClassName($class);
 			
 			// Check if the ReflectionClass already exists in cache
 			if (!array_key_exists($className, $this->reflection_classes)) {
@@ -98,64 +175,5 @@
 			
 			// Return the cached or newly created ReflectionProperty
 			return $this->reflection_properties[$key];
-		}
-		
-		/**
-		 * Returns true if the property exists, false if not
-		 * @param mixed $objectOrClass
-		 * @param string $propertyName
-		 * @return bool
-		 */
-		public function exists(mixed $objectOrClass, string $propertyName): bool {
-			try {
-				$reflection = $this->getReflectionClass($objectOrClass);
-				return $reflection->hasProperty($propertyName);
-			} catch (\ReflectionException $e) {
-				return false;
-			}
-		}
-		
-		/**
-		 * Gets a property value from an object using reflection
-		 * @param object $object The object instance to get the property from
-		 * @param string $propertyName The name of the property to retrieve
-		 * @return mixed The property value if accessible, null if uninitialized, false on error
-		 */
-		public function get(object $object, string $propertyName): mixed {
-			try {
-				// Get the reflection property object for the given property name
-				$reflection = $this->getReflectionProperty($object, $propertyName);
-				
-				// Critical check: Determine if the property has been initialized
-				// This prevents the "must not be accessed before initialization" Error
-				// that occurs with typed properties in PHP 7.4+
-				if (!$reflection->isInitialized($object)) {
-					return null;
-				}
-				
-				// Property is initialized, so it's safe to access its value
-				return $reflection->getValue($object);
-			} catch (\ReflectionException $e) {
-				// Property doesn't exist or isn't accessible
-				// In a production system, you might want to log this exception
-				return false;
-			}
-		}
-		
-		/**
-		 * Sets a property value
-		 * @param object $object
-		 * @param string $propertyName
-		 * @param mixed $value
-		 * @return bool
-		 */
-		public function set(object $object, string $propertyName, mixed $value): bool {
-			try {
-				$reflection = $this->getReflectionProperty($object, $propertyName);
-				$reflection->setValue($object, $value);
-				return true;
-			} catch (\ReflectionException $e) {
-				return false;
-			}
 		}
 	}
