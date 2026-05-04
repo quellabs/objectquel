@@ -106,7 +106,7 @@
 			}
 			
 			// Split the search string into tokens, preserving quoted phrases
-			$tokens = preg_split('/\s+(?=(?:[^"]*"[^"]*")*[^"]*$)/', $searchString);
+			$tokens = preg_split('/\s+(?=(?:[^"]*"[^"]*")*[^"]*$)/', $searchString) ?: [];
 			
 			// Put the result of the parsing here
 			$parsed = [
