@@ -137,6 +137,7 @@
 		 * @param Token|null $aliasToken The explicit alias token if present, null for auto-generated
 		 * @param int $startPos Starting position for source slice calculation
 		 * @return string The resolved alias name
+		 * @throws ParserException
 		 */
 		private function determineAliasName(?Token $aliasToken, int $startPos): string {
 			// Explicit aliases are used as-is and never rewritten
@@ -147,6 +148,11 @@
 			
 			// Auto-generated aliases are derived from source text
 			$sourceSlice = $this->lexer->getSourceSlice($startPos, $this->lexer->getPos() - $startPos);
+			
+			// Validate that we received a valid source slide
+			if ($sourceSlice === false) {
+				throw new ParserException('Failed to extract source slice for alias generation');
+			}
 			
 			// For temporary tables, strip range prefix from property access (x.id -> id)
 			// But NOT for entity retrievals (x) which will be expanded
