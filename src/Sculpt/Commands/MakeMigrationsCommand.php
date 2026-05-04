@@ -95,22 +95,22 @@
 					$this->output->writeLn(" ✓ Dropped column: {$tableName}.{$columnName}");
 				}
 				
-				foreach ($changes['indexes']['added'] ?? [] as $indexName => $indexConfig) {
+				foreach ($changes['indexes']['added'] as $indexName => $indexConfig) {
 					$this->output->writeLn(" ✓ New index: {$tableName}.{$indexName}");
 				}
 				
-				foreach ($changes['indexes']['modified'] ?? [] as $indexName => $indexConfig) {
+				foreach ($changes['indexes']['modified'] as $indexName => $indexConfig) {
 					$this->output->writeLn(" ✓ Modified index: {$tableName}.{$indexName}");
 				}
 				
-				foreach ($changes['indexes']['deleted'] ?? [] as $indexName => $indexConfig) {
+				foreach ($changes['indexes']['deleted'] as $indexName => $indexConfig) {
 					$this->output->writeLn(" ✓ Dropped index: {$tableName}.{$indexName}");
 				}
 			}
 			
 			$this->output->writeLn("");
 			
-			// Step 4: Generate a migration file based on changes
+			// Step 4: Generate a migration file based on changes.
 			$migrationBuilder = new PhinxMigrationBuilder($databaseAdapter, $this->migrationsPath);
 			$result = $migrationBuilder->generateMigrationFile($allChanges);
 			
@@ -119,7 +119,8 @@
 				return 1;
 			}
 			
-			$this->output->writeLn(" Success! Created: " . $result['path']);
+			$path = $result['path'] ?? '';
+			$this->output->writeLn(" Success! Created: " . $path);
 			return 0;
 		}
 		
@@ -153,16 +154,17 @@
 		 * @param array{
 		 *     from?: array{
 		 *         type?: string|null,
-		 *         limit?: int|null,
+		 *         limit?: int|string|null,
 		 *         nullable?: bool|null,
 		 *         unique?: bool|null
 		 *     },
 		 *     to?: array{
 		 *         type?: string|null,
-		 *         limit?: int|null,
+		 *         limit?: int|string|null,
 		 *         nullable?: bool|null,
 		 *         unique?: bool|null
-		 *     }
+		 *     },
+		 *     changes?: array<string, array{from: mixed, to: mixed}>
 		 * } $diff
 		 *
 		 * @return string Parenthesised description, or empty string if no description can be inferred
@@ -192,6 +194,7 @@
 			
 			return empty($parts) ? "" : " (" . implode(", ", $parts) . ")";
 		}
+		
 		
 		/**
 		 * Returns the EntityStore object

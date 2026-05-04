@@ -12,7 +12,18 @@
 	 * This class compares entity class definitions (properties, indexes) against the actual
 	 * database schema to detect structural differences that need migration.
 	 *
-	 * @phpstan-type ColumnDefinition array<string, mixed>
+	 * @phpstan-type ColumnDefinition array{
+	 *     type: string,
+	 *     limit?: int|string,
+	 *     nullable?: bool,
+	 *     default?: mixed,
+	 *     precision?: int,
+	 *     scale?: int,
+	 *     unsigned?: bool,
+	 *     identity?: bool,
+	 *     primary_key?: bool,
+	 *     values?: array<int, string>
+	 * }
 	 *
 	 * @phpstan-type SchemaChangeSet array{
 	 *      added: array<string, ColumnDefinition>,
@@ -25,12 +36,12 @@
 	 *  }
 	 *
 	 * @phpstan-type IndexChangeSet array{
-	 *      added: array<string, array{columns: string[], type: string, unique: bool}>,
+	 *      added: array<string, array{columns: array<int, string>, type: string, unique?: bool}>,
 	 *      modified: array<string, array{
-	 *          database: array{columns: string[], type: string, unique: bool},
-	 *          entity: array{columns: string[], type: string, unique: bool}
+	 *          database: array{columns: array<int, string>, type: string, unique?: bool},
+	 *          entity: array{columns: array<int, string>, type: string, unique?: bool}
 	 *      }>,
-	 *      deleted: array<string, array{columns: string[], type: string, unique: bool}>
+	 *      deleted: array<string, array{columns: array<int, string>, type: string, unique?: bool}>
 	 *  }
 	 *
 	 * @phpstan-type EntityChangeSet array{
@@ -42,8 +53,7 @@
 	 *          changes: array<string, array{from: mixed, to: mixed}>
 	 *      }>,
 	 *      deleted: array<string, ColumnDefinition>,
-	 *      indexes: IndexChangeSet|array<string, array{columns: string[], type: string, unique: bool}>,
-	 *      constraints: array<mixed>
+	 *      indexes: IndexChangeSet
 	 *  }
 	 */
 	class EntitySchemaAnalyzer {
@@ -150,8 +160,11 @@
 					'added'            => $entityColumns,
 					'modified'         => [],
 					'deleted'          => [],
-					'indexes'          => $this->indexComparator->getEntityIndexes($className),
-					'constraints'      => []
+					'indexes'          => [
+						'added'    => $this->indexComparator->getEntityIndexes($className),
+						'modified' => [],
+						'deleted'  => [],
+					],
 				];
 			}
 			
@@ -163,9 +176,6 @@
 			
 			// Add index comparisons to the change set
 			$changes['indexes'] = $this->indexComparator->compareIndexes($className);
-			
-			// Placeholder for future constraint comparison logic
-			$changes['constraints'] = [];
 			
 			// Return results
 			return $changes;

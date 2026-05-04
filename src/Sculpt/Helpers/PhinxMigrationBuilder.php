@@ -55,7 +55,7 @@
 	 * @phpstan-type TableChanges array{
 	 *     table_not_exists?: bool,
 	 *     added?: array<string, ColumnDefinition>,
-	 *     modified?: array<string, array{from: ColumnDefinition, to: ColumnDefinition}>,
+	 *     modified?: array<string, array{from: ColumnDefinition, to: ColumnDefinition, changes?: array<string, array{from: mixed, to: mixed}>}>,
 	 *     deleted?: array<string, ColumnDefinition>,
 	 *     indexes?: IndexChanges
 	 * }
