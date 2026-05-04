@@ -6,7 +6,7 @@
 	 * Generates proxy classes at runtime via eval() for environments where
 	 * no proxy directory is configured.
 	 */
-	class RuntimeProxyGenerator {
+	class RuntimeProxyGenerator implements ProxyGeneratorInterface {
 		
 		/** Shared code generator for building proxy source. */
 		private ProxyCodeGenerator $codeGenerator;

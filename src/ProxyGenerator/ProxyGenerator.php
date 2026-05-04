@@ -6,6 +6,7 @@
 	use Quellabs\ObjectQuel\EntityStore;
 	use Quellabs\ObjectQuel\ProxyGenerator\Generator\FileProxyGenerator;
 	use Quellabs\ObjectQuel\ProxyGenerator\Generator\ProxyCodeGenerator;
+	use Quellabs\ObjectQuel\ProxyGenerator\Generator\ProxyGeneratorInterface;
 	use Quellabs\ObjectQuel\ProxyGenerator\Generator\RuntimeProxyGenerator;
 	
 	/**
@@ -18,41 +19,39 @@
 		/** Shared code generator for building proxy source. */
 		private ProxyCodeGenerator $codeGenerator;
 		
-		/** File-based proxy strategy, or null when no proxy directory is configured. */
-		private ?FileProxyGenerator $fileProxyGenerator;
-		
-		/** Runtime eval-based proxy strategy, or null when a proxy directory is configured. */
-		private ?RuntimeProxyGenerator $runtimeProxyGenerator;
+		/** Active proxy strategy — file-based or runtime depending on configuration. */
+		private ProxyGeneratorInterface $generator;
 		
 		/**
-		 * ProxyGenerator constructor
+		 * ProxyGenerator constructor.
+		 * When a proxy directory is configured, proxies are written to disk and served
+		 * from there. When no proxy directory is configured, proxies are generated
+		 * at runtime via eval() and never persisted.
 		 * @param EntityStore $entityStore
 		 * @param Configuration $configuration
 		 */
 		public function __construct(EntityStore $entityStore, Configuration $configuration) {
+			// Null means no proxy directory was configured — runtime generation will be used.
 			$proxyPath = $configuration->getProxyDir() ?: null;
-			
-			if ($proxyPath === null) {
-				throw new \InvalidArgumentException('Proxy path must be configured.');
-			}
-			
 			$proxyNamespace = $entityStore->getProxyNamespace();
-			$servicesPaths = $configuration->getEntityPaths();
 			
+			// Shared source generator used by both strategies.
 			$this->codeGenerator = new ProxyCodeGenerator($entityStore);
 			
-			if (!empty($servicesPaths)) {
-				$this->fileProxyGenerator = new FileProxyGenerator(
+			if ($proxyPath !== null) {
+				// A proxy directory is configured: generate proxy files on disk and serve
+				// them from there. Stale proxies are refreshed automatically on boot.
+				$this->generator = new FileProxyGenerator(
 					$entityStore,
 					$this->codeGenerator,
-					$servicesPaths,
+					$configuration->getEntityPaths(),
 					$proxyPath,
 					$proxyNamespace
 				);
-				$this->runtimeProxyGenerator = null;
 			} else {
-				$this->fileProxyGenerator = null;
-				$this->runtimeProxyGenerator = new RuntimeProxyGenerator($this->codeGenerator, $proxyNamespace);
+				// No proxy directory: generate proxies on-the-fly via eval() and cache
+				// them in memory for the duration of the request.
+				$this->generator = new RuntimeProxyGenerator($this->codeGenerator, $proxyNamespace);
 			}
 		}
 		
@@ -64,11 +63,7 @@
 		 * @return string Fully-qualified proxy class name
 		 */
 		public function getProxyClass(string $entityClass): string {
-			if ($this->fileProxyGenerator !== null) {
-				return $this->fileProxyGenerator->getProxyClass($entityClass);
-			}
-			
-			return $this->runtimeProxyGenerator->getProxyClass($entityClass);
+			return $this->generator->getProxyClass($entityClass);
 		}
 		
 		/**
@@ -79,10 +74,10 @@
 		 * @throws \LogicException When called without a file-based proxy strategy active
 		 */
 		public function getProxyFilePath(string $targetEntity): string {
-			if ($this->fileProxyGenerator === null) {
+			if (!$this->generator instanceof FileProxyGenerator) {
 				throw new \LogicException('getProxyFilePath() requires a configured proxy directory.');
 			}
 			
-			return $this->fileProxyGenerator->getProxyFilePath($targetEntity);
+			return $this->generator->getProxyFilePath($targetEntity);
 		}
 	}

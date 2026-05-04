@@ -9,7 +9,7 @@
 	 * Scans entity paths, detects stale proxies, and writes refreshed files
 	 * with per-entity locking to handle concurrent PHP-FPM workers safely.
 	 */
-	class FileProxyGenerator {
+	class FileProxyGenerator implements ProxyGeneratorInterface {
 		
 		/** The entity store, used to check entity registration and normalize names. */
 		private EntityStore $entityStore;
