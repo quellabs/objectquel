@@ -14,7 +14,7 @@
 	 *
 	 * @phpstan-type ColumnDefinition array{
 	 *     type: string,
-	 *     limit?: int|string,
+	 *     limit?: int|string|array<int, int>,
 	 *     nullable?: bool,
 	 *     default?: mixed,
 	 *     precision?: int,
@@ -25,6 +25,9 @@
 	 *     values?: array<int, string>
 	 * }
 	 *
+	 * @phpstan-import-type IndexDefinition from IndexComparator
+	 * @phpstan-import-type IndexChangeSet from IndexComparator
+	 *
 	 * @phpstan-type SchemaChangeSet array{
 	 *      added: array<string, ColumnDefinition>,
 	 *      modified: array<string, array{
@@ -33,15 +36,6 @@
 	 *          changes: array<string, array{from: mixed, to: mixed}>
 	 *      }>,
 	 *      deleted: array<string, ColumnDefinition>
-	 *  }
-	 *
-	 * @phpstan-type IndexChangeSet array{
-	 *      added: array<string, array{columns: array<int, string>, type: string, unique?: bool}>,
-	 *      modified: array<string, array{
-	 *          database: array{columns: array<int, string>, type: string, unique?: bool},
-	 *          entity: array{columns: array<int, string>, type: string, unique?: bool}
-	 *      }>,
-	 *      deleted: array<string, array{columns: array<int, string>, type: string, unique?: bool}>
 	 *  }
 	 *
 	 * @phpstan-type EntityChangeSet array{

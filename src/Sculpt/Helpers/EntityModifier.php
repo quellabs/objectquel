@@ -4,31 +4,17 @@
 	
 	use Quellabs\ObjectQuel\Configuration;
 	use Quellabs\ObjectQuel\DatabaseAdapter\TypeMapper;
+	use Quellabs\ObjectQuel\Sculpt\Commands\MakeEntityCommand;
 	use Quellabs\Support\StringInflector;
 	
 	/**
-	 * Manages entity class file generation and modification
-	 *
 	 * Handles creating new entity classes with properties, relationships, and accessors,
 	 * as well as updating existing entities with new properties while preserving existing code.
 	 *
-	 * @phpstan-type PropertyDefinition array{
-	 *     name: string,
-	 *     type: string,
-	 *     nullable?: bool,
-	 *     readonly?: bool,
-	 *     relationshipType?: 'OneToOne'|'OneToMany'|'ManyToOne',
-	 *     targetEntity?: string,
-	 *     mappedBy?: string|null,
-	 *     inversedBy?: string|null,
-	 *     relationColumn?: string|null,
-	 *     foreignColumn?: string,
-	 *     unsigned?: bool,
-	 *     limit?: int|string,
-	 *     precision?: int,
-	 *     scale?: int,
-	 *     enumType?: string
-	 * }
+	 * @phpstan-import-type BaseProperty from MakeEntityCommand
+	 * @phpstan-import-type EnumProperty from MakeEntityCommand
+	 * @phpstan-import-type RelationProperty from MakeEntityCommand
+	 * @phpstan-import-type PropertyDefinition from MakeEntityCommand
 	 *
 	 * @phpstan-type IndexDefinition array{
 	 *     type?: 'INDEX'|'UNIQUE'|'FULLTEXT',
@@ -153,7 +139,13 @@
 			}
 			
 			// Reparse after constructor changes, as insertion points may have shifted
-			$updatedContent = $this->insertProperties($this->parseClassContent($updatedContent), $properties);
+			$reparsed = $this->parseClassContent($updatedContent);
+			
+			if ($reparsed === false) {
+				return false;
+			}
+			
+			$updatedContent = $this->insertProperties($reparsed, $properties);
 			
 			// Strip suffix before passing to insertGettersAndSetters, which uses the name for method bodies
 			$bareName = str_ends_with($entityName, 'Entity') ? substr($entityName, 0, -6) : $entityName;
@@ -227,9 +219,11 @@
 					continue;
 				}
 				
-				$docComment = isset($property['relationshipType'])
-					? $this->generateRelationshipDocComment($property)
-					: $this->generatePropertyDocComment($property);
+				if (isset($property['relationshipType'])) {
+					$docComment = $this->generateRelationshipDocComment($property);
+				} else {
+					$docComment = $this->generatePropertyDocComment($property);
+				}
 				
 				$propertyDefinition = $this->generatePropertyDefinition($property);
 				
@@ -257,23 +251,11 @@
 			$methodsToAdd = '';
 			
 			foreach ($properties as $property) {
-				$isOneToMany = isset($property['relationshipType']) && $property['relationshipType'] === 'OneToMany';
-				
 				$getterName = 'get' . ucfirst($property['name']);
 				$setterName = 'set' . ucfirst($property['name']);
 				
-				// Generate getter if not OneToMany and doesn't exist
-				if (!$isOneToMany && !preg_match('/function\s+' . $getterName . '\s*\(/i', $content)) {
-					$methodsToAdd .= $this->generateGetter($property);
-				}
-				
-				// Generate setter if not OneToMany, not readonly, and doesn't exist
-				if (!$isOneToMany && !($property['readonly'] ?? false) && !preg_match('/function\s+' . $setterName . '\s*\(/i', $content)) {
-					$methodsToAdd .= $this->generateSetter($property);
-				}
-				
 				// For OneToMany, generate collection management methods
-				if ($isOneToMany) {
+				if (isset($property['relationshipType']) && $property['relationshipType'] === 'OneToMany') {
 					$singularName = StringInflector::singularize($property['name']);
 					$addMethodName = 'add' . ucfirst($singularName);
 					$removeMethodName = 'remove' . ucfirst($singularName);
@@ -285,6 +267,18 @@
 					if (!preg_match('/function\s+' . $removeMethodName . '\s*\(/i', $content)) {
 						$methodsToAdd .= $this->generateCollectionRemover($property, $entityName);
 					}
+					
+					continue;
+				}
+				
+				// Generate getter if not already present
+				if (!preg_match('/function\s+' . $getterName . '\s*\(/i', $content)) {
+					$methodsToAdd .= $this->generateGetter($property);
+				}
+				
+				// Generate setter if not readonly and not already present
+				if (!($property['readonly'] ?? false) && !preg_match('/function\s+' . $setterName . '\s*\(/i', $content)) {
+					$methodsToAdd .= $this->generateSetter($property);
 				}
 			}
 			
@@ -389,9 +383,8 @@
 			// Accessors for all properties
 			foreach ($properties as $property) {
 				$readOnly = $property['readonly'] ?? false;
-				$isOneToMany = isset($property['relationshipType']) && $property['relationshipType'] === 'OneToMany';
 				
-				if ($isOneToMany) {
+				if (isset($property['relationshipType']) && $property['relationshipType'] === 'OneToMany') {
 					$content .= $this->generateCollectionAdder($property, $entityName);
 					$content .= $this->generateCollectionRemover($property, $entityName);
 					continue;
@@ -456,7 +449,7 @@
 		
 		/**
 		 * Generates ORM relationship annotation docblock
-		 * @param PropertyDefinition $property Relationship metadata (targetEntity, mappedBy, inversedBy, etc.)
+		 * @param RelationProperty $property Relationship metadata (targetEntity, mappedBy, inversedBy, etc.)
 		 * @return string PHPDoc comment with relationship annotation
 		 */
 		protected function generateRelationshipDocComment(array $property): string {
@@ -513,6 +506,21 @@
 		}
 		
 		/**
+		 * Resolves the PHP type string for a non-relationship property.
+		 * Accepts only BaseProperty|EnumProperty so PHPStan can verify that
+		 * enumType is present whenever type === 'enum'.
+		 * @param BaseProperty|EnumProperty $property
+		 * @return string PHP type string (e.g. 'int', 'string', '\App\Enum\Status')
+		 */
+		private function resolvePhpType(array $property): string {
+			if ($property['type'] === 'enum') {
+				return "\\" . ltrim($property['enumType'], "\\");
+			}
+			
+			return TypeMapper::phinxTypeToPhpType($property['type']);
+		}
+		
+		/**
 		 * Generates typed property declaration
 		 * @param PropertyDefinition $property Property metadata
 		 * @return string Property declaration with type hint
@@ -528,15 +536,9 @@
 			}
 			
 			// Regular properties map database type to PHP type
-			$type = $property['type'];
+			$phpType = $this->resolvePhpType($property);
 			
-			if ($type === "enum") {
-				$phpType = "\\" . ltrim($property["enumType"], "\\");
-			} else {
-				$phpType = TypeMapper::phinxTypeToPhpType($type);
-			}
-			
-			return "protected {$nullableIndicator}{$phpType} \${$property['name']};";
+			return "protected {$nullableIndicator}{$phpType} \${$property['name']}";
 		}
 		
 		/**
@@ -578,14 +580,8 @@
 			
 			// Regular property getters
 			$nullable = $property['nullable'] ?? false;
-			$type = $property['type'];
 			$nullableIndicator = $nullable ? '?' : '';
-			
-			if ($type === "enum") {
-				$phpType = "\\" . ltrim($property["enumType"], "\\");
-			} else {
-				$phpType = TypeMapper::phinxTypeToPhpType($type);
-			}
+			$phpType = $this->resolvePhpType($property);
 			
 			return "\n        /**\n" .
 				"         * Gets the {$propertyName} value\n" .
@@ -664,14 +660,8 @@
 			
 			// Regular property setters
 			$nullable = $property['nullable'] ?? false;
-			$type = $property['type'];
 			$nullableIndicator = $nullable ? '?' : '';
-			
-			if ($type === "enum") {
-				$phpType = "\\" . ltrim($property["enumType"], "\\");
-			} else {
-				$phpType = TypeMapper::phinxTypeToPhpType($type);
-			}
+			$phpType = $this->resolvePhpType($property);
 			
 			return "\n" .
 				"        /**\n" .
@@ -690,7 +680,7 @@
 		 *
 		 * Checks for duplicates and syncs the inverse side of bidirectional relationships.
 		 *
-		 * @param PropertyDefinition $property Collection property metadata
+		 * @param RelationProperty $property Collection property metadata
 		 * @param string $entityName Current entity name
 		 * @return string Complete adder method
 		 */
@@ -723,7 +713,7 @@
 		
 		/**
 		 * Generates method to remove item from OneToMany collection
-		 * @param PropertyDefinition $property Collection property metadata
+		 * @param RelationProperty $property Collection property metadata
 		 * @param string $entityName Current entity name
 		 * @return string Complete remover method
 		 */

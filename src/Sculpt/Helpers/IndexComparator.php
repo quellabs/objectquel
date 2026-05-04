@@ -3,6 +3,7 @@
 	namespace Quellabs\ObjectQuel\Sculpt\Helpers;
 	
 	use Quellabs\ObjectQuel\Annotations\Orm\FullTextIndex;
+	use Quellabs\ObjectQuel\Annotations\Orm\Index;
 	use Quellabs\ObjectQuel\Annotations\Orm\UniqueIndex;
 	use Quellabs\ObjectQuel\DatabaseAdapter\DatabaseAdapter;
 	use Quellabs\ObjectQuel\EntityStore;
@@ -129,6 +130,7 @@
 			$result = [];
 
 			foreach ($this->entityStore->getIndexes($entity) as $annotation) {
+				/** @var FullTextIndex|UniqueIndex|\Quellabs\ObjectQuel\Annotations\Orm\Index $annotation */
 				// Determine the index type from the annotation class
 				if ($annotation instanceof FullTextIndex) {
 					$indexType = 'FULLTEXT';

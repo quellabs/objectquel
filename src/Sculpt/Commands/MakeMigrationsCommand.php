@@ -22,6 +22,8 @@
 	 * This command uses the EntitySchemaAnalyzer to detect differences between entity definitions
 	 * and the database schema, then uses PhinxMigrationBuilder to create migration files that
 	 * synchronize the database with entity changes.
+	 *
+	 * @phpstan-import-type ColumnDefinition from EntitySchemaAnalyzer
 	 */
 	class MakeMigrationsCommand extends CommandBase {
 		private ?EntityStore $entityStore = null;
@@ -152,18 +154,8 @@
 		 * Produce a human-readable summary of what changed in a modified column
 		 *
 		 * @param array{
-		 *     from?: array{
-		 *         type?: string|null,
-		 *         limit?: int|string|null,
-		 *         nullable?: bool|null,
-		 *         unique?: bool|null
-		 *     },
-		 *     to?: array{
-		 *         type?: string|null,
-		 *         limit?: int|string|null,
-		 *         nullable?: bool|null,
-		 *         unique?: bool|null
-		 *     },
+		 *     from?: ColumnDefinition,
+		 *     to?: ColumnDefinition,
 		 *     changes?: array<string, array{from: mixed, to: mixed}>
 		 * } $diff
 		 *
@@ -179,22 +171,17 @@
 			}
 			
 			if (($from['limit'] ?? null) !== ($to['limit'] ?? null)) {
-				$parts[] = "length changed to " . ($to['limit'] ?? 'default');
+				$toLimit = $to['limit'] ?? null;
+				$limitStr = is_array($toLimit) ? json_encode($toLimit) : (string)($toLimit ?? 'default');
+				$parts[] = "length changed to " . $limitStr;
 			}
 			
 			if (($from['nullable'] ?? null) !== ($to['nullable'] ?? null)) {
 				$parts[] = ($to['nullable'] ?? false) ? "now nullable" : "now not nullable";
 			}
 			
-			if (empty($from['unique']) && !empty($to['unique'])) {
-				$parts[] = "added unique constraint";
-			} elseif (!empty($from['unique']) && empty($to['unique'])) {
-				$parts[] = "removed unique constraint";
-			}
-			
 			return empty($parts) ? "" : " (" . implode(", ", $parts) . ")";
 		}
-		
 		
 		/**
 		 * Returns the EntityStore object

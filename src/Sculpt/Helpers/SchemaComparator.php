@@ -10,6 +10,7 @@
 	 * Class SchemaComparator
 	 * Compares entity schema (object properties) with database schema (table columns)
 	 * to identify changes such as added, modified, or deleted columns.
+	 * @phpstan-import-type ColumnDefinition from EntitySchemaAnalyzer
 	 */
 	class SchemaComparator {
 		
@@ -30,9 +31,9 @@
 		/**
 		 * Main public method to compare entity properties with table columns
 		 * Identifies added, modified, and deleted columns
-		 * @param array<string, array<string, mixed>> $entityColumns Map of property names to definitions from entity model
-		 * @param array<string, array<string, mixed>> $tableColumns Map of column names to definitions from database
-		 * @return array{added: array<string, array<string, mixed>>, modified: array<string, array{from: array<string, mixed>, to: array<string, mixed>, changes: array<string, array{from: mixed, to: mixed}>}>, deleted: array<string, array<string, mixed>>}
+		 * @param array<string, ColumnDefinition> $entityColumns Map of property names to definitions from entity model
+		 * @param array<string, ColumnDefinition> $tableColumns Map of column names to definitions from database
+		 * @return array{added: array<string, ColumnDefinition>, modified: array<string, array{from: ColumnDefinition, to: ColumnDefinition, changes: array<string, array{from: mixed, to: mixed}>}>, deleted: array<string, ColumnDefinition>}
 		 * @throws \InvalidArgumentException If input arrays are malformed
 		 */
 		public function analyzeSchemaChanges(array $entityColumns, array $tableColumns): array {
@@ -48,9 +49,9 @@
 		
 		/**
 		 * Get columns that exist in entity but not in table
-		 * @param array<string, array<string, mixed>> $entityColumns Map of property names to definitions from entity model
-		 * @param array<string, array<string, mixed>> $tableColumns Map of column names to definitions from database
-		 * @return array<string, array<string, mixed>> Columns that need to be added to the table
+		 * @param array<string, ColumnDefinition> $entityColumns Map of property names to definitions from entity model
+		 * @param array<string, ColumnDefinition> $tableColumns Map of column names to definitions from database
+		 * @return array<string, ColumnDefinition> Columns that need to be added to the table
 		 */
 		private function getAddedColumns(array $entityColumns, array $tableColumns): array {
 			return array_diff_key($entityColumns, $tableColumns);
@@ -58,9 +59,9 @@
 		
 		/**
 		 * Get columns that exist in table but not in entity
-		 * @param array<string, array<string, mixed>> $entityColumns Map of property names to definitions from entity model
-		 * @param array<string, array<string, mixed>> $tableColumns Map of column names to definitions from database
-		 * @return array<string, array<string, mixed>> Columns that need to be deleted from the table
+		 * @param array<string, ColumnDefinition> $entityColumns Map of property names to definitions from entity model
+		 * @param array<string, ColumnDefinition> $tableColumns Map of column names to definitions from database
+		 * @return array<string, ColumnDefinition> Columns that need to be deleted from the table
 		 */
 		private function getDeletedColumns(array $entityColumns, array $tableColumns): array {
 			return array_diff_key($tableColumns, $entityColumns);
@@ -68,9 +69,9 @@
 		
 		/**
 		 * Get columns that exist in both but have differences
-		 * @param array<string, array<string, mixed>> $entityColumns Definition of properties from the entity model
-		 * @param array<string, array<string, mixed>> $tableColumns Definition of columns from the database table
-		 * @return array<string, array{from: array<string, mixed>, to: array<string, mixed>, changes: array<string, array{from: mixed, to: mixed}>}> Columns that need to be modified in the table
+		 * @param array<string, ColumnDefinition> $entityColumns Definition of properties from the entity model
+		 * @param array<string, ColumnDefinition> $tableColumns Definition of columns from the database table
+		 * @return array<string, array{from: ColumnDefinition, to: ColumnDefinition, changes: array<string, array{from: mixed, to: mixed}>}> Columns that need to be modified in the table
 		 */
 		private function getModifiedColumns(array $entityColumns, array $tableColumns): array {
 			$result = [];
@@ -118,26 +119,22 @@
 		
 		/**
 		 * Normalize column definition for consistent comparison
-		 * @param array<string, mixed> $columnDefinition The column definition to normalize
-		 * @return array<string, mixed> Normalized column definition
+		 * @param ColumnDefinition $columnDefinition The column definition to normalize
+		 * @return ColumnDefinition Normalized column definition
 		 */
 		private function normalizeColumnDefinition(array $columnDefinition): array {
 			// Step 1: Add any missing default values to ensure all required properties are present
 			$normalized = $this->addDefaultValues($columnDefinition);
 			
 			// Step 2: If database does not support ENUM, normalize enum to string
-			if (
-				isset($normalized['type']) &&
-				$normalized['type'] === 'enum' &&
-				!$this->connection->supportsNativeEnums()
-			) {
+			if ($normalized['type'] === 'enum' && !$this->connection->supportsNativeEnums()) {
 				$normalized['type'] = 'string';
 			}
 			
-			// Step 4: Remove irrelevant or comparison-specific properties that shouldn't affect equality
+			// Step 3: Remove irrelevant or comparison-specific properties that shouldn't affect equality
 			$normalized = $this->filterRelevantProperties($normalized);
 			
-			// Step 5: Standardize property values to a consistent format - pass full context
+			// Step 4: Standardize property values to a consistent format
 			$normalized = $this->normalizePropertyValues($normalized);
 			
 			// Step 5: Sort the array keys alphabetically for consistent ordering
@@ -149,17 +146,18 @@
 		
 		/**
 		 * Add default values where missing
-		 * @param array<string, mixed> $columnDefinition Raw column definition
-		 * @return array<string, mixed> Column definition with default values added
+		 * @param ColumnDefinition $columnDefinition Raw column definition
+		 * @return ColumnDefinition Column definition with default values added
 		 */
 		private function addDefaultValues(array $columnDefinition): array {
 			$result = $columnDefinition;
-			$columnType = $result['type'] ?? 'string';
+			$columnType = $result['type'];
 			
 			// Add default limit if missing
 			if (!isset($result['limit'])) {
-				if ($result["type"] === 'enum' && !empty($columnDefinition['enumType'])) {
-					$result['limit'] = max(Tools::getMaxEnumValueLength($columnDefinition['enumType']), 32);
+				if ($result['type'] === 'enum' && !empty($result['values'])) {
+					// Derive max length from the actual enum values stored in the column definition
+					$result['limit'] = max(max(array_map('strlen', $result['values'])), 32);
 				} else {
 					$result['limit'] = TypeMapper::getDefaultLimit($columnType);
 				}
@@ -170,24 +168,28 @@
 		
 		/**
 		 * Filter to only include properties relevant to the column type
-		 * @param array<string, mixed> $columnDefinition Column definition with all properties
-		 * @return array<string, mixed> Column definition with only type-relevant properties
+		 * @param ColumnDefinition $columnDefinition Column definition with all properties
+		 * @return ColumnDefinition Column definition with only type-relevant properties
 		 */
 		private function filterRelevantProperties(array $columnDefinition): array {
-			$columnType = $columnDefinition['type'] ?? 'string';
+			$columnType = $columnDefinition['type'];
 			$relevantProperties = TypeMapper::getRelevantProperties($columnType);
 			
-			return array_intersect_key($columnDefinition, array_flip($relevantProperties));
+			// array_intersect_key always preserves 'type' because it is in every relevantProperties
+			// list, but PHPStan models the result as having all keys optional.
+			/** @var ColumnDefinition $filtered */
+			$filtered = array_intersect_key($columnDefinition, array_flip($relevantProperties));
+			return $filtered;
 		}
 		
 		/**
 		 * Normalize property values for consistent comparison
-		 * @param array<string, mixed> $columnDefinition Column definition to normalize
-		 * @return array<string, mixed> Column definition with normalized property values
+		 * @param ColumnDefinition $columnDefinition Column definition to normalize
+		 * @return ColumnDefinition Column definition with normalized property values
 		 */
 		private function normalizePropertyValues(array $columnDefinition): array {
-			// Extract column type, defaulting to 'string' if not specified
-			$columnType = $columnDefinition['type'] ?? 'string';
+			// Extract column type
+			$columnType = $columnDefinition['type'];
 			
 			// Normalize each property value based on its property name and the column type
 			$result = [];

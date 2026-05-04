@@ -27,23 +27,12 @@
 	 * An indexConfig is an associative array with keys:
 	 *   columns (string[]), type ('INDEX'|'UNIQUE'|'FULLTEXT'), unique (bool, optional)
 	 *
-	 * @phpstan-type ColumnDefinition array{
-	 *     type: string,
-	 *     limit?: int|string,
-	 *     nullable?: bool,
-	 *     default?: mixed,
-	 *     precision?: int,
-	 *     scale?: int,
-	 *     unsigned?: bool,
-	 *     identity?: bool,
-	 *     primary_key?: bool,
-	 *     values?: array<int, string>
-	 * }
+	 * @phpstan-import-type ColumnDefinition from EntitySchemaAnalyzer
 	 *
 	 * @phpstan-type IndexConfig array{
 	 *     columns: array<int, string>,
 	 *     type: string,
-	 *     unique?: bool
+	 *     unique: bool
 	 * }
 	 *
 	 * @phpstan-type IndexChanges array{

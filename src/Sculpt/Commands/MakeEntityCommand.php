@@ -18,7 +18,39 @@
 	 * Supports standard data types (string, integer, decimal, etc.) and ORM relationships
 	 * (OneToOne, OneToMany, ManyToOne) with automatic foreign key generation.
 	 *
-	 * @phpstan-import-type PropertyDefinition from EntityModifier
+	 * @phpstan-type BaseProperty array{
+	 *     name: string,
+	 *     type: 'tinyinteger'|'smallinteger'|'integer'|'biginteger'|'string'|'char'|'text'|'float'|'decimal'|'boolean'|'date'|'datetime'|'time'|'timestamp',
+	 *     nullable?: bool,
+	 *     readonly?: bool,
+	 *     unsigned?: bool,
+	 *     limit?: int|string,
+	 *     precision?: int,
+	 *     scale?: int
+	 * }
+	 *
+	 * @phpstan-type EnumProperty array{
+	 *     name: string,
+	 *     type: 'enum',
+	 *     nullable?: bool,
+	 *     readonly?: bool,
+	 *     enumType: string
+	 * }
+	 *
+	 * @phpstan-type RelationProperty array{
+	 *     name: string,
+	 *     type: string,
+	 *     nullable?: bool,
+	 *     readonly?: bool,
+	 *     relationshipType: 'OneToOne'|'OneToMany'|'ManyToOne',
+	 *     targetEntity: string,
+	 *     mappedBy?: string|null,
+	 *     inversedBy?: string|null,
+	 *     relationColumn?: string|null,
+	 *     foreignColumn?: string
+	 * }
+	 *
+	 * @phpstan-type PropertyDefinition BaseProperty|EnumProperty|RelationProperty
 	 */
 	class MakeEntityCommand extends CommandBase {
 		
@@ -89,6 +121,7 @@
 			$properties = $this->collectProperties($availableEntities, $entityName);
 			
 			if (!empty($properties)) {
+				$this->validateProperties($properties);
 				$this->getEntityModifier()->createOrUpdateEntity($entityName, $properties);
 				$this->output->writeLn("Entity details written");
 			}
@@ -193,6 +226,7 @@
 						$entityName
 					));
 				} else {
+					/** @var 'tinyinteger'|'smallinteger'|'integer'|'biginteger'|'string'|'char'|'text'|'float'|'decimal'|'boolean'|'date'|'datetime'|'time'|'timestamp'|'enum' $propertyType */
 					$properties[] = $this->collectStandardProperty($propertyName, $propertyType);
 				}
 			}
@@ -202,8 +236,6 @@
 		
 		/**
 		 * Build a relationship property definition.
-		 * PHPStan traces the return type through the PropertyDefinition import, so callers
-		 * don't need inline @var annotations when collecting these into an array.
 		 * @param string $propertyName Property name on the entity
 		 * @param string $phpType PHP type for the property (e.g. "OrderEntity" or "CollectionInterface")
 		 * @param 'OneToOne'|'OneToMany'|'ManyToOne' $relationshipType ORM relationship type
@@ -213,7 +245,7 @@
 		 * @param string|null $relationColumn FK column name on this entity's table, or null for inverse sides
 		 * @param string $foreignColumn Referenced column name on the target entity's table
 		 * @param bool $nullable Whether the relationship allows null
-		 * @return PropertyDefinition
+		 * @return RelationProperty
 		 */
 		private function buildRelationshipProperty(
 			string  $propertyName,
@@ -245,10 +277,10 @@
 		 * FK columns are always readonly because they are managed by the ORM through
 		 * the relationship property, not set directly by application code.
 		 * @param string $columnName Column name (e.g. "orderId")
-		 * @param string $type Column type matching the referenced PK (e.g. "integer", "biginteger")
+		 * @param 'tinyinteger'|'smallinteger'|'integer'|'biginteger'|'string'|'char'|'text'|'float'|'decimal'|'boolean'|'date'|'datetime'|'time'|'timestamp' $type Column type matching the referenced PK (e.g. "integer", "biginteger")
 		 * @param bool $unsigned Whether the column is unsigned (should match the referenced PK)
 		 * @param bool $nullable Whether the column allows null
-		 * @return PropertyDefinition
+		 * @return BaseProperty
 		 */
 		private function buildForeignKeyProperty(
 			string $columnName,
@@ -505,6 +537,7 @@
 				$properties[] = $this->buildForeignKeyProperty($propertyName . "Id", $fkInfo['type'], $fkInfo['unsigned'], true);
 			}
 			
+			$this->validateProperties($properties);
 			$this->getEntityModifier()->createOrUpdateEntity($targetEntity, $properties);
 			$this->output->writeLn("\nAdded property '{$propertyName}' to {$targetEntity}Entity");
 		}
@@ -564,10 +597,22 @@
 		/**
 		 * Collect configuration for a standard (non-relationship) property.
 		 * @param string $propertyName Name of the property
-		 * @param string $propertyType Type of the property (string, integer, decimal, etc.)
-		 * @return PropertyDefinition
+		 * @param 'tinyinteger'|'smallinteger'|'integer'|'biginteger'|'string'|'char'|'text'|'float'|'decimal'|'boolean'|'date'|'datetime'|'time'|'timestamp'|'enum' $propertyType Type of the property
+		 * @return BaseProperty|EnumProperty
 		 */
 		private function collectStandardProperty(string $propertyName, string $propertyType): array {
+			// Enum is handled separately: its shape (EnumProperty) differs structurally from
+			// BaseProperty and must be returned independently so PHPStan can verify each branch.
+			if ($propertyType === 'enum') {
+				return [
+					"name"     => $propertyName,
+					"type"     => 'enum',
+					"enumType" => $this->collectEnumType(),
+					"nullable" => $this->input->confirm("\nAllow this field to be empty/null in the database?", false),
+					"readonly" => false,
+				];
+			}
+			
 			$property = [
 				"name"     => $propertyName,
 				"type"     => $propertyType,
@@ -592,11 +637,6 @@
 				$decimalConfig = $this->collectDecimalConfiguration();
 				$property['precision'] = $decimalConfig['precision'];
 				$property['scale'] = $decimalConfig['scale'];
-			}
-			
-			// Enum type
-			if ($propertyType === 'enum') {
-				$property['enumType'] = $this->collectEnumType();
 			}
 			
 			$property['nullable'] = $this->input->confirm("\nAllow this field to be empty/null in the database?", false);
@@ -724,10 +764,11 @@
 		 * Determine the column type and unsigned flag for a foreign key based on the referenced column.
 		 * @param string $targetEntity Name of the target entity
 		 * @param string $referencedField Name of the referenced field in the target entity
-		 * @return array{type:string, unsigned:bool}
+		 * @return array{type: 'tinyinteger'|'smallinteger'|'integer'|'biginteger'|'string'|'char'|'text'|'float'|'decimal'|'boolean'|'date'|'datetime'|'time'|'timestamp', unsigned: bool}
 		 */
 		private function determineForeignKeyType(string $targetEntity, string $referencedField): array {
 			// Default to unsigned integer, which covers the most common auto-increment PK case
+			/** @var array{type: 'tinyinteger'|'smallinteger'|'integer'|'biginteger'|'string'|'char'|'text'|'float'|'decimal'|'boolean'|'date'|'datetime'|'time'|'timestamp', unsigned: bool} $result */
 			$result = ['type' => 'integer', 'unsigned' => true];
 			
 			try {
@@ -744,7 +785,9 @@
 				$referencedDbColumn = $columnMap[$referencedField] ?? null;
 				
 				if ($referencedDbColumn && isset($columnDefinitions[$referencedDbColumn])) {
-					$result['type'] = $columnDefinitions[$referencedDbColumn]['type'];
+					/** @var 'tinyinteger'|'smallinteger'|'integer'|'biginteger'|'string'|'char'|'text'|'float'|'decimal'|'boolean'|'date'|'datetime'|'time'|'timestamp' $colType */
+					$colType = $columnDefinitions[$referencedDbColumn]['type'];
+					$result['type'] = $colType;
 					$result['unsigned'] = $columnDefinitions[$referencedDbColumn]['unsigned'] ?? true;
 				}
 			} catch (\Exception $e) {
@@ -752,5 +795,34 @@
 			}
 			
 			return $result;
+		}
+		
+		/**
+		 * Validates collected property definitions before passing them to EntityModifier.
+		 * This is the single validation boundary for all property shapes produced by this command.
+		 * @param array<int, PropertyDefinition> $properties
+		 * @throws \InvalidArgumentException When a property definition is structurally invalid
+		 */
+		private function validateProperties(array $properties): void {
+			foreach ($properties as $property) {
+				// RelationProperty requires targetEntity; guard against any caller that bypasses
+				// the typed builders and passes a raw array with relationshipType but no targetEntity.
+				if (isset($property['relationshipType'])) {
+					if (empty($property['targetEntity'])) {
+						throw new \InvalidArgumentException(
+							"Property '{$property['name']}' with relationshipType requires targetEntity"
+						);
+					}
+				}
+				
+				// EnumProperty requires enumType; this is enforced by the type system (enumType is
+				// non-optional on EnumProperty) but kept here as a runtime safety net for callers
+				// that construct property arrays outside the typed builders.
+				if ($property['type'] === 'enum' && !isset($property['enumType'])) {
+					throw new \InvalidArgumentException(
+						"Enum property '{$property['name']}' requires enumType"
+					);
+				}
+			}
 		}
 	}
