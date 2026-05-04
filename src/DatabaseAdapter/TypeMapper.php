@@ -12,7 +12,7 @@
 		
 		/**
 		 * Default limits for column types
-		 * @var array<string, int|array<int, int>>
+		 * @var array<string, int>
 		 */
 		private static array $defaultLimits = [
 			// Integer types
@@ -27,18 +27,12 @@
 			'binary'       => 255,
 		];
 		
-		/**
-		 * Prevent instantiation
-		 */
-		private function __construct() {
-		}
-		
-		/**
+    	/**
 		 * Get the default limit for a column type
 		 * @param string $type Column type
-		 * @return int|array<int, int>|null The default limit (null if not applicable)
+		 * @return int|null The default limit (null if not applicable)
 		 */
-		public static function getDefaultLimit(string $type): int|array|null {
+		public static function getDefaultLimit(string $type): int|null {
 			return self::$defaultLimits[$type] ?? null;
 		}
 		
@@ -101,15 +95,18 @@
 			// Get limit if specified, otherwise use default
 			$limit = $annotation->getLimit() ?? TypeMapper::getDefaultLimit($phinxType);
 			
+			// Pre-compute the plain limit suffix; VARCHAR/VARBINARY handle their own default below
+			$limitSql = self::formatLimit($limit);
+			
 			return match ($phinxType) {
 				// Integer types
-				'tinyinteger' => 'TINYINT' . ($limit ? "({$limit})" : ''),
-				'smallinteger' => 'SMALLINT' . ($limit ? "({$limit})" : ''),
-				'integer' => 'INT' . ($limit ? "({$limit})" : ''),
-				'biginteger' => 'BIGINT' . ($limit ? "({$limit})" : ''),
+				'tinyinteger'  => 'TINYINT' . $limitSql,
+				'smallinteger' => 'SMALLINT' . $limitSql,
+				'integer'      => 'INT' . $limitSql,
+				'biginteger'   => 'BIGINT' . $limitSql,
 				
-				// String types
-				'string', 'char' => 'VARCHAR' . ($limit ? "({$limit})" : '(255)'),
+				// String types — VARCHAR requires a width, so fall back to (255) when none is set
+				'string', 'char' => 'VARCHAR' . self::formatLimit($limit, '(255)'),
 				'text' => 'TEXT',
 				
 				// Float/decimal types
@@ -125,8 +122,8 @@
 				'time' => 'TIME',
 				'timestamp' => 'TIMESTAMP',
 				
-				// Binary types
-				'binary' => 'VARBINARY' . ($limit ? "({$limit})" : '(255)'),
+				// Binary types — VARBINARY also requires a width, same fallback as VARCHAR
+				'binary' => 'VARBINARY' . self::formatLimit($limit, '(255)'),
 				'blob' => 'BLOB',
 				
 				// JSON type
@@ -210,6 +207,7 @@
 				'enum'         => ['limit', 'values'],
 			];
 			
+			// Unknown types get no extra properties beyond the base set
 			return array_merge($baseProperties, $typeProperties[$type] ?? []);
 		}
 		
@@ -231,6 +229,7 @@
 				return (string)$value;
 			}
 			
+			// Strings are single-quoted with internal single quotes escaped
 			return "'" . addslashes($value) . "'";
 		}
 		
@@ -274,6 +273,21 @@
 		}
 		
 		/**
+		 * Format an integer limit value as a SQL parenthesised suffix.
+		 * Returns $default when $limit is null or an array (not usable as a scalar width).
+		 * @param int|null $limit
+		 * @param string   $default Returned verbatim when $limit is not a plain int
+		 * @return string  e.g. "(255)" or ""
+		 */
+		private static function formatLimit(int|null $limit, string $default = ''): string {
+			if (is_int($limit)) {
+				return "({$limit})";
+			}
+			
+			return $default;
+		}
+		
+		/**
 		 * Build DECIMAL type with precision and scale
 		 * @param Column $annotation
 		 * @return string
@@ -292,10 +306,12 @@
 		private static function buildEnumType(Column $annotation): string {
 			$values = self::getEnumCases($annotation->getEnumType());
 			
+			// Fall back to VARCHAR when the enum has no cases or the class is invalid
 			if (empty($values)) {
 				return 'VARCHAR(255)';
 			}
 			
+			// Quote each value for use in the SQL ENUM definition
 			$quotedValues = array_map(fn($v) => "'{$v}'", $values);
 			return 'ENUM(' . implode(',', $quotedValues) . ')';
 		}
