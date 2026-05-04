@@ -224,7 +224,9 @@
 			// Proxy class → resolve to parent
 			// If the class name is a proxy, get the parent class name
 			if (str_contains($className, $this->proxyNamespace)) {
-				return $this->normalizedNameCache[$className] = $this->reflectionHandler->getParent($className);
+				return $this->normalizedNameCache[$className] = $this->reflectionHandler->getParent(
+					$this->resolveEntityClass($className)
+				);
 			}
 			
 			// Already fully qualified
