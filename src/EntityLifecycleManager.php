@@ -134,7 +134,7 @@
 		/**
 		 * Execute all lifecycle methods of a specific annotation type on an entity
 		 * @param object $entity The entity to execute methods on
-		 * @param string $annotationClass The annotation class to look for
+		 * @param class-string $annotationClass The annotation class to look for
 		 */
 		private function executeLifecycleMethods(object $entity, string $annotationClass): void {
 			// Skip if entity class doesn't have lifecycle callbacks
@@ -176,8 +176,8 @@
 		
 		/**
 		 * Get all methods with a specific lifecycle annotation for an entity class
-		 * @param string $entityClass The entity class name
-		 * @param string $annotationClass The annotation class to look for
+		 * @param class-string $entityClass The entity class name
+		 * @param class-string $annotationClass The annotation class to look for
 		 * @return string[] List of method names
 		 */
 		private function getLifecycleMethods(string $entityClass, string $annotationClass): array {
