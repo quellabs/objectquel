@@ -51,7 +51,7 @@
 			} else {
 				// No proxy directory: generate proxies on-the-fly via eval() and cache
 				// them in memory for the duration of the request.
-				$this->generator = new RuntimeProxyGenerator($this->codeGenerator, $proxyNamespace);
+				$this->generator = new RuntimeProxyGenerator($entityStore, $this->codeGenerator, $proxyNamespace);
 			}
 		}
 		

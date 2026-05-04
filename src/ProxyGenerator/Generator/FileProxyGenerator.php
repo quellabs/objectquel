@@ -111,7 +111,12 @@
 					
 					// Derive the FQCN from the file's namespace and class declarations.
 					$entityFilePath = $servicesPath . DIRECTORY_SEPARATOR . $fileName;
+					
+					// Use the filepath to construct an entity namespace
 					$entityName = $this->constructEntityName($entityFilePath);
+					
+					// resolveEntityClass throws an exception when the entity does not lead to an actual object
+					$entityName = $this->entityStore->resolveEntityClass($entityName);
 					
 					// Only generate proxies for classes the entity store actually knows about.
 					// Plain PHP files in the entity directory that aren't mapped entities are skipped.

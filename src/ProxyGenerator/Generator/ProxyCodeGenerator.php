@@ -36,7 +36,7 @@
 		
 		/**
 		 * Generates the complete proxy class source for a given entity.
-		 * @param string $entity Fully-qualified entity class name
+		 * @param class-string $entity Fully-qualified entity class name
 		 * @param string $namespace Proxy namespace to use
 		 * @param string|null $overrideClassName Use a different class name (for runtime proxies)
 		 * @return string
@@ -195,7 +195,7 @@ PHP
 		/**
 		 * Builds the constructor parameter string for forwarding arguments to the
 		 * parent entity constructor.
-		 * @param string $entity Fully-qualified entity class name
+		 * @param class-string $entity Fully-qualified entity class name
 		 * @return array{declaration: string, passthrough: string}
 		 */
 		private function buildParentConstructorArgs(string $entity): array {
@@ -232,7 +232,7 @@ PHP
 		
 		/**
 		 * Generates the PHP source for all proxy methods of the given entity.
-		 * @param string $entity Fully-qualified entity class name
+		 * @param class-string $entity Fully-qualified entity class name
 		 * @return string
 		 */
 		private function makeProxyMethods(string $entity): string {
