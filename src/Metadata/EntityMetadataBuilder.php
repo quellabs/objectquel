@@ -4,6 +4,7 @@
 	
 	use Quellabs\AnnotationReader\AnnotationReader;
 	use Quellabs\AnnotationReader\Collection\AnnotationCollection;
+	use Quellabs\AnnotationReader\Exception\AnnotationReaderException;
 	use Quellabs\AnnotationReader\Exception\ParserException;
 	use Quellabs\ObjectQuel\Annotations\Orm\Column;
 	use Quellabs\ObjectQuel\Annotations\Orm\FullTextIndex;
@@ -31,7 +32,7 @@
 		private readonly ReflectionHandler $reflectionHandler;
 		private readonly string $proxyNamespace;
 		private readonly string $entityNamespace;
-
+		
 		/** @var array<string, string> */
 		private array $normalizedNameCache = [];
 		
@@ -56,7 +57,7 @@
 		
 		/**
 		 * Build complete EntityMetadata for a given class.
-		 * @param string $className Fully qualified, normalized entity class name
+		 * @param class-string $className Fully qualified, normalized entity class name
 		 * @return EntityMetadataRecord
 		 * @throws \RuntimeException If metadata extraction fails
 		 */
@@ -64,7 +65,15 @@
 			try {
 				// Fetch class-level annotations to extract the @Table name
 				$classAnnotations = $this->annotationReader->getClassAnnotations($className);
-				$tableName = $classAnnotations["Quellabs\\ObjectQuel\\Annotations\\Orm\\Table"]->getName();
+				
+				// Extract table name
+				$tableAnnotation = $classAnnotations->getFirst(\Quellabs\ObjectQuel\Annotations\Orm\Table::class);
+				
+				if (!$tableAnnotation instanceof \Quellabs\ObjectQuel\Annotations\Orm\Table) {
+					throw new \RuntimeException("Missing @Table annotation on {$className}");
+				}
+				
+				$tableName = $tableAnnotation->getName();
 				
 				// Get the list of declared properties via reflection
 				$properties = $this->reflectionHandler->getProperties($className);
@@ -245,7 +254,7 @@
 		
 		/**
 		 * Extract relationship annotations of a specific type from property annotations.
-		 * @template T of object
+		 * @template T of ManyToOne|OneToMany|OneToOne
 		 * @param array<string, AnnotationCollection> $annotations
 		 * @param class-string<T> $annotationType
 		 * @return array<string, T>
@@ -256,10 +265,14 @@
 			foreach ($annotations as $property => $annotationCollection) {
 				foreach ($annotationCollection as $annotation) {
 					if ($annotation instanceof $annotationType) {
-						// Normalize the target entity name so it's always fully qualified.
-						// Annotations may contain short names (e.g. "Order") that need
-						// expanding to the full namespace before they can be used elsewhere.
-						$annotation->setTargetEntity($this->normalizeEntityName($annotation->getTargetEntity()));
+						/**
+						 * Normalize the target entity name so it's always fully qualified.
+						 * Annotations may contain short names (e.g. "Order") that need
+						 * expanding to the full namespace before they can be used elsewhere.
+						 */
+						$annotation->setTargetEntity(
+							$this->normalizeEntityName($annotation->getTargetEntity()) // @phpstan-ignore-line argument.type
+						);
 						
 						// One relation annotation per property — the first match wins
 						$relations[$property] = $annotation;
@@ -275,18 +288,23 @@
 		 * Extract index annotations from class-level annotations.
 		 * @param string $className The fully qualified class name
 		 * @return array<int, Index|UniqueIndex|FullTextIndex> Array of Index, UniqueIndex and FullTextIndex annotation objects
+		 * @throws AnnotationReaderException
 		 */
 		private function extractIndexes(string $className): array {
 			try {
+				// Extract class annotations
 				$classAnnotations = $this->annotationReader->getClassAnnotations($className);
 				
 				// Index annotations live at the class level, not on individual properties,
 				// so we filter the class annotation collection rather than the property map
-				return $classAnnotations->filter(function ($annotation) {
+				$result = $classAnnotations->filter(function ($annotation) {
 					return $annotation instanceof Index
 						|| $annotation instanceof UniqueIndex
 						|| $annotation instanceof FullTextIndex;
 				})->toArray();
+				
+				/** @var array<int, Index|UniqueIndex|FullTextIndex> $result */
+				return $result;
 			} catch (ParserException $e) {
 				// A parse failure here shouldn't block entity registration —
 				// return empty rather than propagating, the schema tool will catch it
@@ -295,83 +313,103 @@
 		}
 		
 		/**
-		 * Extract full column definitions for schema generation.
-		 * @param string $className The fully qualified class name
-		 * @param array<string, AnnotationCollection> $annotations Pre-extracted annotations (for performance)
+		 * Extracts column definitions for all mapped properties of the given class.
+		 *
+		 * Iterates over the class's properties via reflection, filters out any that
+		 * lack a {@see Column} annotation or have a misconfigured (empty) column name,
+		 * and delegates the actual definition shape to {@see buildColumnDefinition}.
+		 *
+		 * @param class-string $className Fully qualified name of the entity class to inspect.
+		 * @param array<string, AnnotationCollection> $annotations Pre-extracted annotations keyed by property name.
 		 * @return array<string, array{
 		 *     property_name: string,
-		 *     type: string,
-		 *     php_type: \ReflectionType|null,
-		 *     limit: mixed,
-		 *     nullable: bool,
-		 *     unsigned: bool,
-		 *     default: mixed,
-		 *     primary_key: bool,
-		 *     scale: mixed,
-		 *      precision: mixed,
-		 *     identity: bool,
-		 *     values: mixed
-		 * }>
+		 *     type:          string,
+		 *     php_type:      \ReflectionType|null,
+		 *     limit:         mixed,
+		 *     nullable:      bool,
+		 *     unsigned:      bool,
+		 *     default:       mixed,
+		 *     primary_key:   bool,
+		 *     scale:         mixed,
+		 *     precision:     mixed,
+		 *     identity:      bool,
+		 *     values:        mixed
+		 * }> Column definitions keyed by column name.
+		 * @throws AnnotationReaderException If annotation reading fails for any property.
+		 * @throws \ReflectionException      If the class does not exist or cannot be reflected.
 		 */
 		private function extractColumnDefinitions(string $className, array $annotations): array {
 			$definitions = [];
+			$reflection = new \ReflectionClass($className);
 			
-			try {
-				$reflection = new \ReflectionClass($className);
+			foreach ($reflection->getProperties() as $property) {
+				$propertyAnnotations = $this->annotationReader->getPropertyAnnotations(
+					$className,
+					$property->getName(),
+					Column::class
+				);
 				
-				foreach ($reflection->getProperties() as $property) {
-					try {
-						// Fetch only @Column annotations for this property — passing Column::class
-						// as a filter avoids loading annotations we won't use here
-						$propertyAnnotations = $this->annotationReader->getPropertyAnnotations(
-							$className,
-							$property->getName(),
-							Column::class
-						);
-						
-						// No @Column means this property has no database column — skip it
-						if ($propertyAnnotations->isEmpty()) {
-							continue;
-						}
-						
-						$columnAnnotation = $propertyAnnotations[Column::class];
-						$columnName = $columnAnnotation->getName();
-						
-						// A @Column without a name is misconfigured — skip rather than store a blank key
-						if (empty($columnName)) {
-							continue;
-						}
-						
-						$columnType = $columnAnnotation->getType();
-						$definitions[$columnName] = [
-							'property_name' => $property->getName(),
-							'type'          => $columnType,
-							'php_type'      => $property->getType(),                                          // PHP declared type (from reflection)
-							'limit'         => $columnAnnotation->getLimit() ?? TypeMapper::getDefaultLimit($columnType), // Fall back to type default if unset
-							'nullable'      => $columnAnnotation->isNullable(),
-							'unsigned'      => $columnAnnotation->isUnsigned(),
-							'default'       => $columnAnnotation->getDefault(),
-							'primary_key'   => $columnAnnotation->isPrimaryKey(),
-							'scale'         => $columnAnnotation->getScale(),                                 // Decimal scale (numeric types only)
-							'precision'     => $columnAnnotation->getPrecision(),                             // Decimal precision (numeric types only)
-							'identity'      => $this->isIdentityColumn($propertyAnnotations->toArray()),      // True if DB should generate this value
-							'values'        => TypeMapper::getEnumCases($columnAnnotation->getEnumType()),    // Allowed values for ENUM columns
-						];
-					} catch (ParserException $e) {
-						// Malformed annotation on one property shouldn't abort the whole class
-					}
+				$columnAnnotation = $propertyAnnotations->getFirst(Column::class);
+				
+				if (!$columnAnnotation instanceof Column || empty($columnAnnotation->getName())) {
+					continue;
 				}
-			} catch (\ReflectionException $e) {
-				// Class doesn't exist or can't be reflected — return whatever we collected so far
+				
+				$columnName = $columnAnnotation->getName();
+				$definitions[$columnName] = $this->buildColumnDefinition($columnAnnotation, $property, $propertyAnnotations);
 			}
 			
 			return $definitions;
 		}
 		
 		/**
+		 * Builds the definition array for a single mapped column.
+		 *
+		 * Combines metadata from the {@see Column} annotation, the PHP reflection of
+		 * the property, and the full annotation collection on that property. Type
+		 * defaults and enum cases are resolved via {@see TypeMapper}.
+		 *
+		 * @param Column $column The column annotation carrying mapping metadata.
+		 * @param \ReflectionProperty $property The reflected property this column maps to.
+		 * @param AnnotationCollection $annotations All annotations on the property, used to determine identity columns.
+		 * @return array{
+		 *     property_name: string,
+		 *     type:          string,
+		 *     php_type:      \ReflectionType|null,
+		 *     limit:         mixed,
+		 *     nullable:      bool,
+		 *     unsigned:      bool,
+		 *     default:       mixed,
+		 *     primary_key:   bool,
+		 *     scale:         mixed,
+		 *     precision:     mixed,
+		 *     identity:      bool,
+		 *     values:        mixed
+		 * }
+		 */
+		private function buildColumnDefinition(Column $column, \ReflectionProperty $property, AnnotationCollection $annotations): array {
+			$columnType = $column->getType();
+			
+			return [
+				'property_name' => $property->getName(),
+				'type'          => $columnType,
+				'php_type'      => $property->getType(),
+				'limit'         => $column->getLimit() ?? TypeMapper::getDefaultLimit($columnType),
+				'nullable'      => $column->isNullable(),
+				'unsigned'      => $column->isUnsigned(),
+				'default'       => $column->getDefault(),
+				'primary_key'   => $column->isPrimaryKey(),
+				'scale'         => $column->getScale(),
+				'precision'     => $column->getPrecision(),
+				'identity'      => $this->isIdentityColumn($annotations->toArray()),
+				'values'        => TypeMapper::getEnumCases($column->getEnumType()),
+			];
+		}
+		
+		/**
 		 * Determines if a property represents an auto-increment column.
 		 * True when: primary key AND (strategy = 'identity' OR no strategy defined).
-		 * @param array<class-string, object> $propertyAnnotations The annotations attached to the property
+		 * @param array<int|string, object> $propertyAnnotations $propertyAnnotations The annotations attached to the property
 		 * @return bool
 		 */
 		private function isIdentityColumn(array $propertyAnnotations): bool {
