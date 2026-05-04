@@ -244,6 +244,21 @@
 		}
 		
 		/**
+		 * Resolve an entity class
+		 * @param mixed $entity
+		 * @return class-string<object>
+		 */
+		public function resolveEntityClass(mixed $entity): string {
+			$className = $this->normalizeEntityName($entity);
+			
+			if (!class_exists($className)) {
+				throw new \RuntimeException("Invalid entity class: {$className}");
+			}
+			
+			return $className;
+		}
+		
+		/**
 		 * Returns all entities that depend on the specified entity.
 		 *
 		 * This method searches through the dependency graph to find entities that have
@@ -565,21 +580,6 @@
 		}
 		
 		// ==================== Private Helper Methods ====================
-		
-		/**
-		 * Resolve an entity class
-		 * @param mixed $entity
-		 * @return class-string
-		 */
-		private function resolveEntityClass(mixed $entity): string {
-			$className = $this->normalizeEntityName($entity);
-			
-			if (!class_exists($className)) {
-				throw new \RuntimeException("Invalid entity class: {$className}");
-			}
-			
-			return $className;
-		}
 		
 		/**
 		 * Extract class name from various entity representations.

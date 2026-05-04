@@ -111,7 +111,7 @@
 				throw new QuelException("expression should be of type AstIdentifier");
 			}
 			
-			$entity = $this->entityStore->normalizeEntityName($expression->getEntityName()); // The entity class name
+			$entity = $this->entityStore->resolveEntityClass($expression->getEntityName()); // The entity class name
 			$rangeName = $expression->getRange()->getName(); // The alias/range name in the query
 			
 			// Remove the range prefix from column names in the row data
@@ -156,10 +156,9 @@
 		 * Extract all values out of the JSON row
 		 * @param AstAlias $value
 		 * @param array<string, mixed> $row
-		 * @param RelationCacheEntry|null $relationCache
 		 * @return array<string, mixed>
 		 */
-		private function processJsonAllValue(AstAlias $value, array $row, ?array $relationCache): array {
+		private function processJsonAllValue(AstAlias $value, array $row): array {
 			return $this->removeRangeFromRow($value->getName(), $row);
 		}
 		
@@ -167,7 +166,7 @@
 		 * Processes a single value from the query result.
 		 * @param AstAlias $value The value to process.
 		 * @param array<string, mixed> $row The current database row.
-		 * @param array<string, mixed>|null $relationCache Cache containing relationship information.
+		 * @param RelationCacheEntry|null $relationCache Cache containing relationship information.
 		 * @return mixed The processed value (entity object, primitive value, or null).
 		 */
 		private function processValue(AstAlias $value, array $row, ?array $relationCache): mixed {
@@ -176,7 +175,7 @@
 			// Case 1: Process an entity (AstIdentifier with no next/parent nodes)
 			if ($node instanceof AstIdentifier && !$node->hasNext() && !$node->hasParent()) {
 				if ($node->getRange() instanceof AstRangeJsonSource) {
-					return $this->processJsonAllValue($value, $row, $relationCache);
+					return $this->processJsonAllValue($value, $row);
 				} else {
 					return $this->processEntityValue($value, $row, $relationCache);
 				}
@@ -195,7 +194,7 @@
 		 * Processes an entity value from the query result.
 		 * @param AstAlias $value The value representing the entity.
 		 * @param array<string, mixed> $row The current database row.
-		 * @param array<string, mixed>|null $relationCache Cache containing relationship information.
+		 * @param RelationCacheEntry|null $relationCache Cache containing relationship information.
 		 * @return object|null The processed entity object or null if no data.
 		 */
 		private function processEntityValue(AstAlias $value, array $row, ?array $relationCache): ?object {
