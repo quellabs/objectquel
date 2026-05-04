@@ -117,16 +117,15 @@
 				if (function_exists('preg_last_error_msg')) {
 					$errorMessage = preg_last_error_msg();
 				} else {
-					$errorMessage = 'PCRE error code ' . $errorCode;
+					$errorMessage = "PCRE error code {$errorCode}";
 				}
 				
-				throw new QuelException(sprintf(
-					'Search tokenization failed. Pattern: %s | Input: %s | PCRE error: %s',
-					$pattern,
-					$searchString,
-					$errorMessage
-				),
-					$errorCode
+				throw new QuelException(
+					sprintf(
+						'Failed to parse search string "%s": %s',
+						$searchString,
+						$errorMessage
+					)
 				);
 			}
 			
