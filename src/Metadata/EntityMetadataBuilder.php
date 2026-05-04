@@ -135,9 +135,11 @@
 			// Proxy classes are anonymous subclasses generated at runtime.
 			// Their real identity is the parent class, so unwrap one level.
 			if (str_contains($className, $this->proxyNamespace)) {
-				return $this->normalizedNameCache[$className] = $this->reflectionHandler->getParent(
-					$this->resolveEntityClass($className)
-				);
+				if (!class_exists($className)) {
+					throw new \RuntimeException("Invalid entity class: {$className}");
+				}
+				
+				return $this->normalizedNameCache[$className] = $this->reflectionHandler->getParent($className);
 			}
 			
 			// A backslash means the caller already passed a fully qualified name
@@ -159,21 +161,6 @@
 		}
 		
 		// ==================== Private Helpers ====================
-		
-		/**
-		 * Resolve an entity class
-		 * @param mixed $entity
-		 * @return class-string<object>
-		 */
-		public function resolveEntityClass(mixed $entity): string {
-			$className = $this->normalizeEntityName($entity);
-			
-			if (!class_exists($className)) {
-				throw new \RuntimeException("Invalid entity class: {$className}");
-			}
-			
-			return $className;
-		}
 		
 		/**
 		 * Extract class name from various entity representations.
