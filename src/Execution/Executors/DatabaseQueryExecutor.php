@@ -42,7 +42,7 @@
 		/**
 		 * Execute a database query stage
 		 * @param ExecutionStageInterface $stage
-		 * @param array<int|string, mixed> $initialParams
+		 * @param array<string, mixed> $initialParams
 		 * @return list<array<string, mixed>>
 		 * @throws QuelException
 		 */
@@ -93,12 +93,11 @@
 		/**
 		 * Convert AstRetrieve node to SQL
 		 * @param AstRetrieve $retrieve The AST to convert
-		 * @param array<int|string, mixed> $parameters Query parameters (passed by reference)
+		 * @param array<string, mixed> $parameters Query parameters (passed by reference)
 		 * @return string The generated SQL query
 		 */
 		protected function convertToSQL(AstRetrieve $retrieve, array &$parameters): string {
 			$quelToSQL = new QuelToSQL($this->entityManager->getEntityStore(), $parameters, $this->platform);
 			return $quelToSQL->convertToSQL($retrieve);
 		}
-	
 	}

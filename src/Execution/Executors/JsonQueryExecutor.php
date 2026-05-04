@@ -28,7 +28,7 @@
 		/**
 		 * Execute a JSON query and returns the result
 		 * @param ExecutionStageInterface $stage
-		 * @param array<int|string, mixed> $initialParams
+		 * @param array<string, mixed> $initialParams
 		 * @return list<array<string, mixed>>
 		 * @throws QuelException
 		 */

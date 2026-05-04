@@ -21,7 +21,7 @@
 		 * Optimizes and transforms the query, captures the generated SQL,
 		 * and returns an empty result set without touching the database.
 		 * @param ExecutionStageInterface $stage
-		 * @param array<int|string, mixed> $initialParams
+		 * @param array<string, mixed> $initialParams
 		 * @return list<array<string, mixed>> Always returns an empty array
 		 */
 		public function execute(ExecutionStageInterface $stage, array $initialParams = []): array {
