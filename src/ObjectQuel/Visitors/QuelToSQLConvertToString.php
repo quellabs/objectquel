@@ -604,6 +604,6 @@
 		 * @return string The simple class name without namespace
 		 */
 		private function extractClassName(object $node): string {
-			return ltrim(strrchr(get_class($node), '\\'), '\\');
+			return basename(str_replace('\\', '/', get_class($node)));
 		}
 	}
