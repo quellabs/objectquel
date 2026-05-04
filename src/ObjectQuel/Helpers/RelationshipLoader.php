@@ -41,11 +41,17 @@
 		
 		/**
 		 * Determines the correct property name on the proxy based on the dependency.
-		 * @param $dependency mixed The OneToOne dependency.
+		 * @param ManyToOne|OneToOne $dependency The OneToOne dependency.
 		 * @return string The name of the property.
 		 */
-		private function determineRelationPropertyName(mixed $dependency): string {
-			return !empty($dependency->getInversedBy()) ? $dependency->getInversedBy() : $dependency->getMappedBy();
+		private function determineRelationPropertyName(ManyToOne|OneToOne $dependency): string {
+			// ManyToOne
+			if ($dependency instanceof ManyToOne) {
+				return $dependency->getInversedBy() ?? '';
+			}
+			
+			// OneToOne
+			return $dependency->getInversedBy() ?? $dependency->getMappedBy() ?? '';
 		}
 		
 		/**
@@ -55,9 +61,9 @@
 		 * is found, the property of the current entity is updated to reflect this relationship.
 		 * @param object $entity The entity whose dependency is being processed.
 		 * @param string $property The property of the entity that needs to be updated.
-		 * @param mixed $dependency The dependency used to find the related entity.
+		 * @param ManyToOne|OneToOne $dependency The dependency used to find the related entity.
 		 */
-		private function processEntityDependency(object $entity, string $property, mixed $dependency): void {
+		private function processEntityDependency(object $entity, string $property, ManyToOne|OneToOne $dependency): void {
 			// Get the current value of the property.
 			$currentRelation = $this->propertyHandler->get($entity, $property);
 			
@@ -81,7 +87,7 @@
 			$inversedPropertyName = $this->getInversedPropertyName($dependency);
 			
 			// Add the namespace to the target entity name and find the related entity.
-			$targetEntity = $this->entityStore->normalizeEntityName($targetEntityName);
+			$targetEntity = $this->entityStore->resolveEntityClass($targetEntityName);
 			$relationEntity = $this->unitOfWork->findEntity($targetEntity, [$inversedPropertyName => $relationColumnValue]);
 			
 			// If a related entity is found, update the property of the current entity.
@@ -103,35 +109,35 @@
 		 * Determines the appropriate property name for the inverse relationship based on the dependency type.
 		 * This method extracts the correct property name that should be used when navigating
 		 * from the target entity back to the source entity.
-		 * @param object $dependency The relationship dependency (OneToOne or ManyToOne).
+		 * @param ManyToOne|OneToOne $dependency The relationship dependency (OneToOne or ManyToOne).
 		 * @return string The name of the inverse relationship property.
 		 */
-		private function getInversedPropertyName(object $dependency): string {
+		private function getInversedPropertyName(ManyToOne|OneToOne $dependency): string {
 			if ($dependency instanceof OneToOne) {
-				// inversedBy names the property on the target entity that owns the relationship
+				// OneToOne relationships can be either the owning or inverse side.
+				// The owning side declares inversedBy (points to the inverse side's property),
+				// while the inverse side declares mappedBy (points back to the owning side's property).
+				// Check inversedBy first, as it takes precedence on the owning side.
 				if (!empty($dependency->getInversedBy())) {
 					return $dependency->getInversedBy();
-					// mappedBy names the property on the target entity that holds the FK
-				} elseif (!empty($dependency->getMappedBy())) {
+				}
+				
+				// Fall back to mappedBy if this is the inverse side of the relationship.
+				if (!empty($dependency->getMappedBy())) {
 					return $dependency->getMappedBy();
-					// No explicit property defined — fall back to the target entity's primary key
-				} else {
-					return $this->entityStore->getPrimaryKey($dependency->getTargetEntity()) ?? '';
 				}
+				
+				// Neither side explicitly declared the inverse property name,
+				// so fall back to the target entity's primary key as the property name.
+				return $this->entityStore->getPrimaryKey($dependency->getTargetEntity()) ?? '';
 			}
 			
-			if ($dependency instanceof ManyToOne) {
-				// inversedBy explicitly names which property on the target entity to look up by
-				if (!empty($dependency->getInversedBy())) {
-					return $dependency->getInversedBy();
-					// No inversedBy defined — the target entity is almost always joined on its primary key
-				} else {
-					return $this->entityStore->getPrimaryKey($dependency->getTargetEntity()) ?? '';
-				}
-			}
-			
-			// OneToMany and other relation types are not resolved this way
-			return '';
+			// ManyToOne is always the owning side, so only inversedBy is relevant here —
+			// mappedBy is not valid on ManyToOne and is intentionally not checked.
+			// If inversedBy is absent, fall back to the target entity's primary key.
+			return $dependency->getInversedBy()
+				?? $this->entityStore->getPrimaryKey($dependency->getTargetEntity())
+				?? '';
 		}
 		
 		/**
@@ -140,9 +146,9 @@
 		 * that will load their data only when accessed.
 		 * @param object $entity The entity on which to set the proxy
 		 * @param string $property The name of the property where the proxy will be set
-		 * @param object $dependency The dependency object that describes the relationship
+		 * @param ManyToOne|OneToOne $dependency
 		 */
-		private function createAndSetProxy(object $entity, string $property, object $dependency): void {
+		private function createAndSetProxy(object $entity, string $property, ManyToOne|OneToOne $dependency): void {
 			// Determine the relation column (the column containing the foreign key)
 			$relationColumn = $dependency->getRelationColumn() ?? "{$property}Id";
 			
@@ -298,7 +304,7 @@
 		private function setDirectRelations(array $filteredEntities): void {
 			foreach ($filteredEntities as $entity) {
 				// Normalize the entity class name
-				$entityClass = $this->entityStore->normalizeEntityName(get_class($entity));
+				$entityClass = $this->entityStore->resolveEntityClass(get_class($entity));
 				
 				// Dependencies
 				$entityDependencies = $this->entityStore->getAllDependencies($entityClass);
@@ -336,7 +342,7 @@
 			// Loop through all filtered entities
 			foreach ($filteredRows as $value) {
 				// Get the normalized name of the entity class
-				$objectClass = $this->entityStore->normalizeEntityName(get_class($value));
+				$objectClass = $this->entityStore->resolveEntityClass(get_class($value));
 				
 				// Get all dependencies of the entity class
 				$entityDependencies = $this->entityStore->getAllDependencies($objectClass);
@@ -363,7 +369,7 @@
 			// Loop through all filtered rows
 			foreach ($filteredRows as $entity) {
 				// Get the normalized name of the entity class
-				$objectClass = $this->entityStore->normalizeEntityName(get_class($entity));
+				$objectClass = $this->entityStore->resolveEntityClass(get_class($entity));
 				
 				// Get all dependencies of the entity class
 				$entityDependencies = $this->entityStore->getAllDependencies($objectClass);
@@ -376,7 +382,7 @@
 					// Create and set a collection of entities for each valid dependency
 					foreach ($validDependencies as $dependency) {
 						// Complete short entity names to their full namespace form
-						$targetEntity = $this->entityStore->normalizeEntityName($dependency->getTargetEntity());
+						$targetEntity = $this->entityStore->resolveEntityClass($dependency->getTargetEntity());
 						
 						// Fetch the relation column. If absent use the primary key
 						$relationColumn = $dependency->getRelationColumn() ?? $this->entityStore->getPrimaryKey($entity);
