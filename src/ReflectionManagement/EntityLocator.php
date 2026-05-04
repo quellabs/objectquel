@@ -65,6 +65,11 @@
 				// Make absolute
 				$entityDirectory = realpath($entityPath);
 				
+				// Skip when the realpath could not be determined
+				if ($entityDirectory === false) {
+					continue;
+				}
+				
 				// Skip directory if it does not exist
 				if (!is_dir($entityDirectory) || !is_readable($entityDirectory)) {
 					continue;
@@ -86,7 +91,7 @@
 		 */
 		private function processDirectory(string $directory, array &$result): void {
 			// Get all PHP files in the current directory
-			$entityFiles = glob($directory . DIRECTORY_SEPARATOR . "*.php");
+			$entityFiles = glob($directory . DIRECTORY_SEPARATOR . "*.php") ?: [];
 			
 			// Process each entity file in the current directory
 			foreach ($entityFiles as $filePath) {
@@ -105,7 +110,7 @@
 			}
 			
 			// Get all subdirectories
-			$subdirectories = glob($directory . DIRECTORY_SEPARATOR . "*", GLOB_ONLYDIR);
+			$subdirectories = glob($directory . DIRECTORY_SEPARATOR . "*", GLOB_ONLYDIR) ?: [];
 			
 			// Process each subdirectory recursively
 			foreach ($subdirectories as $subdirectory) {
@@ -142,7 +147,13 @@
 			
 			// If no class found, use filename as class name (without .php extension)
 			$fileName = basename($filePath);
-			$className = substr($fileName, 0, strpos($fileName, '.php'));
+			$pos = strpos($fileName, '.php');
+			
+			if ($pos === false) {
+				return $namespace . '\\' . $fileName;
+			}
+			
+			$className = substr($fileName, 0, $pos);
 			return $namespace . '\\' . $className;
 		}
 		
