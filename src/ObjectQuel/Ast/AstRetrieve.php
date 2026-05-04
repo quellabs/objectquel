@@ -475,7 +475,7 @@
 			
 			// Check if it's in the ORDER BY clause
 			foreach($this->sort as $value) {
-				if ($ast['ast']->isAncestorOf($value)) {
+				if ($ast->isAncestorOf($value['ast'])) {
 					return "order_by";
 				}
 			}
