@@ -115,7 +115,7 @@
 		/**
 		 * Convert a string to camelcase
 		 * @param string $input
-		 * @param string $separator
+		 * @param non-empty-string $separator
 		 * @return string
 		 */
 		private function camelCase(string $input, string $separator = '_'): string {
@@ -456,7 +456,7 @@
 			
 			// For numeric values (integers, floats), return as-is without quotes
 			if (is_numeric($defaultValue)) {
-				return $defaultValue;
+				return (string)$defaultValue;
 			}
 			
 			// For all other values (strings, etc.), wrap in double quotes
