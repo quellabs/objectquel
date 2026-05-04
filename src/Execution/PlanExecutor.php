@@ -4,6 +4,7 @@
 	
 	use Quellabs\ObjectQuel\EntityStore;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRetrieve;
+	use Quellabs\ObjectQuel\ObjectQuel\AstInterface;
 	use Quellabs\ObjectQuel\ObjectQuel\QuelException;
 	use Quellabs\ObjectQuel\Execution\Joins\JoinStrategyInterface;
 	use Quellabs\ObjectQuel\Execution\Joins\CrossJoinStrategy;
@@ -70,7 +71,7 @@
 		/**
 		 * Execute a complete execution plan
 		 * @param ExecutionPlan $plan The plan containing stages to execute
-		 * @return array<string|int, mixed> Results from executing the plan
+		 * @return list<array<string, mixed>> Results from executing the plan
 		 * @throws QuelException When any stage execution fails
 		 */
 		public function execute(ExecutionPlan $plan): array {
@@ -96,13 +97,14 @@
 			}
 			
 			// Multi-stage execution: execute each stage in the correct order and combine the results
+			/** @var array<string, list<array<string, mixed>>> $intermediateResults */
 			$intermediateResults = [];
 			
 			try {
 				// Execute each stage sequentially, maintaining dependency order
 				foreach ($stagesInOrder as $stage) {
 					if ($stage instanceof TempTableStage) {
-						// Materialise the inner query into a temp table before the outer
+						// Materialize the inner query into a temp table before the outer
 						// database stage runs. This mutates the stage's AstRangeDatabase
 						// so QuelToSQL emits a plain table reference in subsequent stages.
 						// TempTableStages contribute no rows to intermediate results.
@@ -145,7 +147,7 @@
 		 * get their own independent cleanup scope and do not interfere with the outer
 		 * execution's finally block.
 		 *
-		 * @return callable(AstRetrieve, array<string|int, mixed>): array<string|int, mixed>
+		 * @return callable(AstRetrieve, array<string|int, mixed>): list<array<string, mixed>>
 		 */
 		private function buildInnerQueryRunner(): callable {
 			return function (AstRetrieve $innerQuery, array $params): array {
@@ -204,7 +206,7 @@
 		/**
 		 * Process an individual stage with dependencies
 		 * @param ExecutionStageInterface $stage The stage to execute
-		 * @return array<string|int, mixed> The result of this stage's execution
+		 * @return list<array<string, mixed>> The result of this stage's execution
 		 * @throws QuelException When dependencies cannot be satisfied or execution fails
 		 */
 		private function executeStage(ExecutionStageInterface $stage): array {
@@ -229,8 +231,8 @@
 		 * based on their join types and conditions. It starts with the main stage result
 		 * and progressively joins other stage results to build the final combined result.
 		 * @param ExecutionPlan $plan The execution plan with stage information
-		 * @param array<string, array<string|int, mixed>> $intermediateResults Results from all stages, indexed by stage name
-		 * @return array<string|int, mixed> The combined result after performing all necessary joins
+		 * @param array<string, list<array<string, mixed>>> $intermediateResults Results from all stages, indexed by stage name
+		 * @return list<array<string, mixed>> The combined result after performing all necessary joins
 		 * @throws QuelException
 		 */
 		private function combineResults(ExecutionPlan $plan, array $intermediateResults): array {
@@ -285,14 +287,14 @@
 		
 		/**
 		 * Perform a join using the appropriate strategy
-		 * @param array<string|int, mixed> $leftResult The left result set (typically the accumulated result)
-		 * @param array<string|int, mixed> $rightResult The right result set (current stage result to join)
+		 * @param list<array<string, mixed>> $leftResult The left result set (typically the accumulated result)
+		 * @param list<array<string, mixed>> $rightResult The right result set (current stage result to join)
 		 * @param string $joinType The type of join to perform (cross, left, inner)
-		 * @param mixed|null $joinConditions The join conditions (if applicable)
-		 * @return array<string|int, mixed> The joined result set
+		 * @param AstInterface|null $joinConditions The join conditions (if applicable)
+		 * @return list<array<string, mixed>> The joined result set
 		 * @throws QuelException When join type is unsupported or join fails
 		 */
-		private function performJoin(array $leftResult, array $rightResult, string $joinType, mixed $joinConditions = null): array {
+		private function performJoin(array $leftResult, array $rightResult, string $joinType, ?AstInterface $joinConditions = null): array {
 			try {
 				// Create the join strategy on-demand for the specific join type
 				$strategy = $this->createJoinStrategy($joinType);
