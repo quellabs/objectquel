@@ -247,7 +247,14 @@
 				// For enums put the max length in the column data.
 				// This is needed to be able to compare entity data with database data
 				if ($columnType === 'enum') {
-					$columnData['limit'] = max(max(array_map('strlen', $column->getValues())), 32);
+					$values = $column->getValues();
+					
+					if (!empty($values)) {
+						$maxLength = max(array_map('strlen', $values));
+						$columnData['limit'] = max($maxLength, 32);
+					} else {
+						$columnData['limit'] = 32;
+					}
 				}
 				
 				$result[$column->getName()] = $columnData;
@@ -300,27 +307,35 @@
 		}
 		
 		/**
-		 * Retrieves index definitions for a database table
-		 * @param string $tableName Name of the table
+		 * Retrieves index definitions for a database table.
+		 *
+		 * @param string $tableName
 		 * @return array<string, IndexDefinition>
 		 */
 		public function getIndexes(string $tableName): array {
-			// Get the schema collection which provides access to database metadata
-			$schemaCollection = $this->getSchemaCollection();
+			// Fetch table schema
+			$tableSchema = $this->getSchemaCollection()->describe($tableName);
 			
-			// Retrieve the table schema which contains structural information about the table
-			$tableSchema = $schemaCollection->describe($tableName);
-			
-			// Get an array of index names defined on this table
-			$indexes = $tableSchema->indexes();
-			
-			// Iterate through each index name and retrieve its detailed configuration
+			// Collect indexes
 			$result = [];
 			
-			foreach ($indexes as $index) {
+			foreach ($tableSchema->indexes() as $indexName) {
+				// Fetch index
+				$index = $tableSchema->getIndex($indexName);
+				
+				// getIndex() can theoretically return null on race conditions or
+				// schema inconsistencies, so guard defensively.
+				if ($index === null) {
+					continue;
+				}
+				
 				// Store the index details in the result array, using the index name as key
 				// Index details include columns, type (PRIMARY, UNIQUE, INDEX), and other properties
-				$result[$index] = $tableSchema->getIndex($index);
+				$result[$indexName] = [
+					'type'    => $index['type'] ?? 'index',
+					'columns' => $index['columns'] ?? [],
+					'length'  => $index['length'] ?: null,
+				];
 			}
 			
 			return $result;
