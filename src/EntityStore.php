@@ -22,13 +22,14 @@
 	
 	use Quellabs\AnnotationReader\AnnotationInterface;
 	use Quellabs\AnnotationReader\AnnotationReader;
-	use Quellabs\AnnotationReader\Collection\AnnotationCollection;
+	use Quellabs\AnnotationReader\Exception\AnnotationReaderException;
 	use Quellabs\ObjectQuel\Annotations\Orm\Column;
 	use Quellabs\ObjectQuel\Annotations\Orm\Immutable;
 	use Quellabs\ObjectQuel\Annotations\Orm\FullTextIndex;
 	use Quellabs\ObjectQuel\Annotations\Orm\ManyToOne;
 	use Quellabs\ObjectQuel\Annotations\Orm\OneToMany;
 	use Quellabs\ObjectQuel\Annotations\Orm\OneToOne;
+	use Quellabs\ObjectQuel\Annotations\Orm\Table;
 	use Quellabs\ObjectQuel\Annotations\Orm\Version;
 	use Quellabs\ObjectQuel\Metadata\EntityMetadataRecord;
 	use Quellabs\ObjectQuel\Metadata\EntityMetadataBuilder;
@@ -370,8 +371,8 @@
 		public function getAnnotations(mixed $entity): array {
 			$result = [];
 			
-			foreach ($this->getMetadata($entity)->annotations as $property => $annotationCollection) {
-				foreach ($annotationCollection as $annotation) {
+			foreach ($this->getMetadata($entity)->annotations as $property => $collection) {
+				foreach ($collection->ofType(AnnotationInterface::class) as $annotation) {
 					$result[$property][] = $annotation;
 				}
 			}
@@ -390,10 +391,8 @@
 			$result = [];
 			
 			foreach ($this->getMetadata($entity)->annotations as $property => $annotationCollection) {
-				foreach ($annotationCollection as $annotation) {
-					if (is_a($annotation, $annotationType)) {
-						$result[$property][] = $annotation;
-					}
+				foreach ($annotationCollection->ofType($annotationType) as $annotation) {
+					$result[$property][] = $annotation;
 				}
 			}
 			
@@ -584,14 +583,24 @@
 		/**
 		 * Initialize entity classes using the EntityLocator.
 		 * @return void
+		 * @throws AnnotationReaderException
 		 */
 		private function initializeEntities(): void {
 			$entityLocator = new EntityLocator($this->configuration, $this->annotationReader);
 			
 			foreach ($entityLocator->discoverEntities() as $entityName) {
-				$classAnnotations = $this->annotationReader->getClassAnnotations($entityName);
-				$tableName = $classAnnotations["Quellabs\\ObjectQuel\\Annotations\\Orm\\Table"]->getName();
-				$this->entityRegistry[$entityName] = $tableName;
+				// Find all table class annotations
+				$table = $this->annotationReader
+					->getClassAnnotations($entityName)
+					->getFirst(Table::class);
+				
+				// If none found, skip and continue to the next entity
+				if (!$table instanceof Table) {
+					continue;
+				}
+				
+				// Store in register
+				$this->entityRegistry[$entityName] = $table->getName();
 			}
 		}
 		
