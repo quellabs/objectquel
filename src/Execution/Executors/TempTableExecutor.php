@@ -109,8 +109,13 @@
 				$this->createTable($tempName, $columns);
 			} else {
 				// Infer column schema from the keys of the first result row
-				$columns = array_keys($rows[0]);
+				$columns = array_map(
+					fn($key) => (string)$key,
+					array_keys($rows[0])
+				);
+				
 				$tempName = 'tmp_' . $range->getName() . '_' . uniqid();
+				
 				$this->createTable($tempName, $columns);
 				$this->insertRows($tempName, $columns, $rows);
 			}
