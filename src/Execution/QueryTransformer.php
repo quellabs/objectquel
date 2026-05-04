@@ -11,6 +11,7 @@
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstIdentifier;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstIn;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstNumber;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRange;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRetrieve;
 	use Quellabs\ObjectQuel\ObjectQuel\QuelToSQL;
 	use Quellabs\ObjectQuel\ObjectQuel\Visitors\GetMainEntityInAst;
@@ -198,7 +199,13 @@
 				$sql = $this->convertToSQL($ast, $parameters);
 				
 				// Execute the query and return the first column
-				return array_column($this->connection->execute($sql, $parameters)->fetchAll(), 0);
+				$result = $this->connection->execute($sql, $parameters);
+				
+				if ($result === false) {
+					return [];
+				}
+				
+				return array_column($result->fetchAll(), 0);
 			} finally {
 				// Always restore original state
 				$ast->setValues($originalValues);
@@ -224,7 +231,14 @@
 		 * @return string The generated SQL query
 		 */
 		private function convertToSQL(AstRetrieve $retrieve, array &$parameters): string {
-			$quelToSQL = new QuelToSQL($this->entityStore, $parameters, $this->platform);
+			// Convert all keys to strings
+			$stringKeyedParameters = [];
+			foreach ($parameters as $key => $value) {
+				$stringKeyedParameters[(string)$key] = $value;
+			}
+			
+			// Transform the Quel query to SQL
+			$quelToSQL = new QuelToSQL($this->entityStore, $stringKeyedParameters, $this->platform);
 			return $quelToSQL->convertToSQL($retrieve);
 		}
 		
@@ -238,9 +252,27 @@
 		 * @return AstIdentifier
 		 */
 		private function createPrimaryKeyIdentifier(array $primaryKeyInfo): AstIdentifier {
+			// Root identifier node represents the entity (e.g. "Order" in Order.id)
 			$astIdentifier = new AstIdentifier($primaryKeyInfo['entityName']);
-			$astIdentifier->setRange(clone $primaryKeyInfo['range']);
+			
+			// Extract range separately for readability and type-checking below
+			$range = $primaryKeyInfo['range'];
+			
+			// Range must be AstRange — other types are not valid for primary key lookups
+			// and would silently produce incorrect AST nodes
+			if (!$range instanceof AstRange) {
+				throw new \InvalidArgumentException('Primary key range must be AstRange');
+			}
+			
+			// Clone the range so mutations to this identifier's range don't bleed
+			// into the original range node shared across the query AST
+			$astIdentifier->setRange(clone $range);
+			
+			// Attach the primary key field as a child identifier, forming the
+			// dotted path: <entityName>.<primaryKey> (e.g. "Order.id")
 			$astIdentifier->setNext(new AstIdentifier($primaryKeyInfo['primaryKey']));
+			
+			// Return the identifier
 			return $astIdentifier;
 		}
 		
@@ -256,8 +288,14 @@
 		 * @return void
 		 */
 		private function addInConditionForPagination(AstRetrieve $ast, array $primaryKeyInfo, array $filteredKeys): void {
+			// Create the primary key identifier
 			$astIdentifier = $this->createPrimaryKeyIdentifier($primaryKeyInfo);
-			$parameters = array_map(fn($item) => new AstNumber($item), $filteredKeys);
+			
+			// Transform filtered keys to AstNumbers
+			$parameters = array_map(
+				fn($item) => new AstNumber((string)$item),
+				$filteredKeys
+			);
 			
 			// Check if AstIn already exists and replace its parameters
 			try {
