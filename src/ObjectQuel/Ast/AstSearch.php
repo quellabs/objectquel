@@ -2,8 +2,8 @@
 	
 	namespace Quellabs\ObjectQuel\ObjectQuel\Ast;
 	
-	use Quellabs\ObjectQuel\ObjectQuel\AstInterface;
 	use Quellabs\ObjectQuel\ObjectQuel\AstVisitorInterface;
+	use Quellabs\ObjectQuel\ObjectQuel\QuelException;
 	
 	/**
 	 * Class AstSearch
@@ -96,6 +96,7 @@
 		 *     and_terms: list<string>,
 		 *     not_terms: list<string>
 		 * }
+		 * @throws QuelException
 		 */
 		public function parseSearchData(array $parameters): array {
 			// Fetch search string contents
@@ -105,8 +106,29 @@
 				$searchString = $parameters[$this->searchString->getName()] ?? '';
 			}
 			
-			// Split the search string into tokens, preserving quoted phrases
-			$tokens = preg_split('/\s+(?=(?:[^"]*"[^"]*")*[^"]*$)/', $searchString) ?: [];
+			// Split the pattern
+			$pattern = '/\s+(?=(?:[^"]*"[^"]*")*[^"]*$)/';
+			$tokens = preg_split($pattern, $searchString);
+			
+			// If that failed, throw exception
+			if ($tokens === false) {
+				$errorCode = preg_last_error();
+				
+				if (function_exists('preg_last_error_msg')) {
+					$errorMessage = preg_last_error_msg();
+				} else {
+					$errorMessage = 'PCRE error code ' . $errorCode;
+				}
+				
+				throw new QuelException(sprintf(
+					'Search tokenization failed. Pattern: %s | Input: %s | PCRE error: %s',
+					$pattern,
+					$searchString,
+					$errorMessage
+				),
+					$errorCode
+				);
+			}
 			
 			// Put the result of the parsing here
 			$parsed = [
