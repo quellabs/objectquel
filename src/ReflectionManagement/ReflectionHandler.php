@@ -485,14 +485,14 @@
 		 * (brace on signature line) and Allman style (brace on its own line).
 		 * Results are not cached here; file I/O is delegated to getCachedFile().
 		 *
-		 * @param object|string $class A class name or an instance of the class.
+		 * @param class-string|object $class A class name or an instance of the class.
 		 * @param string $method The method name to extract.
 		 * @return string               The raw method body, or an empty string on failure.
 		 */
 		public function getMethodBody(object|string $class, string $method): string {
 			try {
 				// Fetch method reflection data
-				$reflectionClass = new \ReflectionClass($class);
+				$reflectionClass = $this->getReflectionClass($class);
 				$reflectionMethod = $reflectionClass->getMethod($method);
 				
 				// Internal/built-in methods have no source file.
