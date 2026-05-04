@@ -56,10 +56,10 @@
 		 *      b. If it is pure SQL → leave as-is (inline subquery handled by QuelToSQL).
 		 *   2. Add the main database stage (which references temp tables as plain tables
 		 *      by the time it executes, because all TempTableStages will have run first).
-		 *   3. Add JSON/other non-database range stages (existing behaviour).
+		 *   3. Add JSON/other non-database range stages (existing behavior).
 		 *
 		 * @param AstRetrieve $query The ObjectQuel query to decompose
-		 * @param array<int|string, mixed> $staticParams Optional static parameters for the query
+		 * @param array<string, mixed> $staticParams Optional static parameters for the query
 		 * @return ExecutionPlan The execution plan containing all stages
 		 * @throws QuelException If the query cannot be properly decomposed
 		 */
@@ -105,7 +105,7 @@
 		 *
 		 * @param ExecutionPlan $plan
 		 * @param AstRangeDatabase[] $tempRanges Already dependency-sorted temp ranges
-		 * @param array<int|string, mixed> $staticParams
+		 * @param array<string, mixed> $staticParams
 		 * @return string[] Map of rangeName → TempTableStage name
 		 */
 		private function buildTempTableStages(ExecutionPlan $plan, array $tempRanges, array $staticParams): array {
@@ -146,11 +146,10 @@
 		
 		/**
 		 * Creates the main database ExecutionStage and registers its dependencies on
-		 * every TempTableStage that must be materialised before it runs.
-		 *
+		 * every TempTableStage that must be materialized before it runs.
 		 * @param ExecutionPlan $plan
 		 * @param AstRetrieve $query
-		 * @param array<int|string, mixed> $staticParams
+		 * @param array<string, mixed> $staticParams
 		 * @param string[] $tempTableStageNames Map of rangeName → TempTableStage name
 		 */
 		private function buildDatabaseStage(ExecutionPlan $plan, AstRetrieve $query, array $staticParams, array $tempTableStageNames): void {
