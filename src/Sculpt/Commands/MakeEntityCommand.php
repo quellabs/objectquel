@@ -17,6 +17,8 @@
 	 *
 	 * Supports standard data types (string, integer, decimal, etc.) and ORM relationships
 	 * (OneToOne, OneToMany, ManyToOne) with automatic foreign key generation.
+	 *
+	 * @phpstan-import-type PropertyDefinition from EntityModifier
 	 */
 	class MakeEntityCommand extends CommandBase {
 		
@@ -139,7 +141,7 @@
 		private function getAvailableEntities(): array {
 			$entityPath = realpath($this->configuration->getEntityPath());
 			
-			if (!is_dir($entityPath)) {
+			if ($entityPath === false || !is_dir($entityPath)) {
 				return [];
 			}
 			
@@ -167,7 +169,7 @@
 		 * Loops until user presses enter without entering a property name.
 		 * @param string[] $availableEntities List of available entity names
 		 * @param string $entityName Name of the current entity being created
-		 * @return array<int, array<string, mixed>> Array of property definitions
+		 * @return array<int, PropertyDefinition> Array of property definitions
 		 */
 		private function collectProperties(array $availableEntities, string $entityName): array {
 			$properties = [];
@@ -199,13 +201,79 @@
 		}
 		
 		/**
+		 * Build a relationship property definition.
+		 * PHPStan traces the return type through the PropertyDefinition import, so callers
+		 * don't need inline @var annotations when collecting these into an array.
+		 * @param string $propertyName Property name on the entity
+		 * @param string $phpType PHP type for the property (e.g. "OrderEntity" or "CollectionInterface")
+		 * @param 'OneToOne'|'OneToMany'|'ManyToOne' $relationshipType ORM relationship type
+		 * @param string $targetEntity Name of the related entity (without "Entity" suffix)
+		 * @param string|null $mappedBy Property name on the owning side (inverse side only)
+		 * @param string|null $inversedBy Property name on the inverse side (owning side only)
+		 * @param string|null $relationColumn FK column name on this entity's table, or null for inverse sides
+		 * @param string $foreignColumn Referenced column name on the target entity's table
+		 * @param bool $nullable Whether the relationship allows null
+		 * @return PropertyDefinition
+		 */
+		private function buildRelationshipProperty(
+			string  $propertyName,
+			string  $phpType,
+			string  $relationshipType,
+			string  $targetEntity,
+			?string $mappedBy,
+			?string $inversedBy,
+			?string $relationColumn,
+			string  $foreignColumn,
+			bool    $nullable
+		): array {
+			return [
+				"name"             => $propertyName,
+				"type"             => $phpType,
+				"relationshipType" => $relationshipType,
+				"targetEntity"     => $targetEntity,
+				"mappedBy"         => $mappedBy,
+				"inversedBy"       => $inversedBy,
+				"relationColumn"   => $relationColumn,
+				"foreignColumn"    => $foreignColumn,
+				"nullable"         => $nullable,
+				"readonly"         => false
+			];
+		}
+		
+		/**
+		 * Build a foreign key column property definition.
+		 * FK columns are always readonly because they are managed by the ORM through
+		 * the relationship property, not set directly by application code.
+		 * @param string $columnName Column name (e.g. "orderId")
+		 * @param string $type Column type matching the referenced PK (e.g. "integer", "biginteger")
+		 * @param bool $unsigned Whether the column is unsigned (should match the referenced PK)
+		 * @param bool $nullable Whether the column allows null
+		 * @return PropertyDefinition
+		 */
+		private function buildForeignKeyProperty(
+			string $columnName,
+			string $type,
+			bool   $unsigned,
+			bool   $nullable
+		): array {
+			return [
+				"name"     => $columnName,
+				"type"     => $type,
+				"unsigned" => $unsigned,
+				"nullable" => $nullable,
+				"readonly" => true
+			];
+		}
+		
+		/**
 		 * Collect configuration for a relationship property.
 		 * Returns array of properties (relationship + FK column if applicable).
 		 * @param string[] $availableEntities List of available entity names
 		 * @param string $entityName Name of the current entity being created
-		 * @return array<int, array<string, mixed>> Array of property definitions for the relationship
+		 * @return array<int, PropertyDefinition> Array of property definitions for the relationship
 		 */
 		private function collectRelationshipProperties(string $propertyName, array $availableEntities, string $entityName): array {
+			/** @var 'OneToOne'|'OneToMany'|'ManyToOne' $relationshipType */
 			$relationshipType = $this->input->choice("\nRelationship type", ['OneToOne', 'OneToMany', 'ManyToOne']);
 			
 			$targetInfo = $this->getTargetEntityInfo($availableEntities);
@@ -225,35 +293,30 @@
 			$propertyPhpType = ($relationshipType === 'OneToMany') ? "CollectionInterface" : $targetInfo['targetEntity'] . "Entity";
 			$nullable = $this->input->confirm("\nAllow this relationship to be null?", $relationshipType === 'ManyToOne');
 			
-			$properties = [];
-			
-			// Add relationship property
-			$properties[] = [
-				"name"             => $propertyName,
-				"type"             => $propertyPhpType,
-				"relationshipType" => $relationshipType,
-				"targetEntity"     => $targetInfo['targetEntity'],
-				"mappedBy"         => $mappingConfig['mappedBy'],
-				"inversedBy"       => $mappingConfig['inversedBy'],
-				"relationColumn"   => $relationColumn,
-				"foreignColumn"    => $targetInfo['foreignColumn'],
-				"nullable"         => $nullable,
-				"readonly"         => false
+			// Start with the relationship property itself
+			$properties = [
+				$this->buildRelationshipProperty(
+					$propertyName,
+					$propertyPhpType,
+					$relationshipType,
+					$targetInfo['targetEntity'],
+					$mappingConfig['mappedBy'],
+					$mappingConfig['inversedBy'],
+					$relationColumn,
+					$targetInfo['foreignColumn'],
+					$nullable
+				)
 			];
 			
-			// Add FK column for owning side
-			if ($isOwningSide && $relationColumn !== null && $mappingConfig['mappedBy'] === null) {
-				$properties[] = [
-					"name"     => $relationColumn,
-					"type"     => $fkInfo['type'],
-					"unsigned" => $fkInfo['unsigned'],
-					"nullable" => $nullable,
-					"readonly" => true
-				];
+			// Add FK column for owning side, but only when this is not the inverse side of a
+			// bidirectional relationship (mappedBy !== null means we're the inverse/non-owning side,
+			// so the FK lives in the other table and we must not generate a column here)
+			if ($isOwningSide && $relationColumn !== null && $mappingConfig['mappedBy'] === null && $fkInfo !== null) {
+				$properties[] = $this->buildForeignKeyProperty($relationColumn, $fkInfo['type'], $fkInfo['unsigned'], $nullable);
 			}
 			
 			// Create inverse/owning side in target entity if requested
-			if ($mappingConfig['createInTarget'] ?? false) {
+			if (($mappingConfig['createInTarget'] ?? false) === true) {
 				$this->createRelationshipInTargetEntity(
 					$targetInfo['targetEntity'],
 					$entityName,
@@ -270,17 +333,13 @@
 		/**
 		 * Collect bidirectional mapping configuration for a relationship.
 		 * Returns mappedBy/inversedBy values and whether to create property in target entity.
+		 * The return type is a union: when createInTarget is absent/false the optional keys are
+		 * absent; when createInTarget is true they are always present, so PHPStan won't flag
+		 * offsetAccess.notFound at the call site.
 		 * @param string $relationshipType Type of relationship (OneToOne, OneToMany, ManyToOne)
 		 * @param string $entityName Name of the current entity
 		 * @param string $targetEntity Name of the target entity
-		 * @return array{
-		 *     mappedBy: string|null,
-		 *     inversedBy: string|null,
-		 *     createInTarget?: bool,
-		 *     targetPropertyName?: string,
-		 *     targetRelationType?: string,
-		 *     targetInversedBy?: string|null
-		 * }
+		 * @return array{mappedBy: string|null, inversedBy: string|null}|array{mappedBy: string|null, inversedBy: string|null, createInTarget: true, targetPropertyName: string, targetRelationType: 'OneToOne'|'OneToMany'|'ManyToOne', targetInversedBy: string|null}
 		 */
 		private function collectRelationshipMapping(string $relationshipType, string $entityName, string $targetEntity): array {
 			// OneToMany: always inverse side
@@ -301,15 +360,8 @@
 		 * Handle mapping for the inverse side of a relationship.
 		 * @param string $targetEntity Name of the target entity (contains the owning side)
 		 * @param string $currentEntity Name of the current entity (inverse side)
-		 * @param string $targetRelationType Relationship type on the target side (ManyToOne or OneToOne)
-		 * @return array{
-		 *     mappedBy: string|null,
-		 *     inversedBy: string|null,
-		 *     createInTarget?: bool,
-		 *     targetPropertyName?: string,
-		 *     targetRelationType?: string,
-		 *     targetInversedBy?: string|null
-		 * }
+		 * @param 'OneToOne'|'OneToMany'|'ManyToOne' $targetRelationType Relationship type on the target side (ManyToOne or OneToOne)
+		 * @return array{mappedBy: string|null, inversedBy: string|null}|array{mappedBy: string|null, inversedBy: string|null, createInTarget: true, targetPropertyName: string, targetRelationType: 'OneToOne'|'OneToMany'|'ManyToOne', targetInversedBy: string|null}
 		 */
 		private function handleInverseSideMapping(string $targetEntity, string $currentEntity, string $targetRelationType): array {
 			// Try to find existing owning side property
@@ -336,6 +388,8 @@
 			
 			$targetPropertyName = $this->input->ask("\nNew property name inside {$targetEntity}Entity", lcfirst($currentEntity));
 			
+			// For ManyToOne the inversedBy on the owning side points to the plural collection property;
+			// for OneToOne it points to the single scalar property on the inverse side
 			if (($targetRelationType === 'ManyToOne')) {
 				$inversedBy = StringInflector::pluralize(lcfirst($currentEntity));
 			} else {
@@ -357,14 +411,7 @@
 		 * @param string $relationshipType Type of relationship (ManyToOne or OneToOne)
 		 * @param string $entityName Name of the current entity (owning side)
 		 * @param string $targetEntity Name of the target entity
-		 * @return array{
-		 *     mappedBy: string|null,
-		 *     inversedBy: string|null,
-		 *     createInTarget?: bool,
-		 *     targetPropertyName?: string,
-		 *     targetRelationType?: string,
-		 *     targetInversedBy?: string|null
-		 * }
+		 * @return array{mappedBy: string|null, inversedBy: string|null}|array{mappedBy: string|null, inversedBy: string|null, createInTarget: true, targetPropertyName: string, targetRelationType: 'OneToOne'|'OneToMany'|'ManyToOne', targetInversedBy: string|null}
 		 */
 		private function handleOwningSideMapping(string $relationshipType, string $entityName, string $targetEntity): array {
 			$bidirectional = $this->input->confirm("\nIs this a bidirectional relationship?", false);
@@ -373,6 +420,8 @@
 				return ['mappedBy' => null, 'inversedBy' => null];
 			}
 			
+			// inversedBy on the owning side names the property on the inverse entity:
+			// ManyToOne → inverse holds a collection, so pluralize; OneToOne → inverse holds a scalar
 			if (($relationshipType === 'ManyToOne')) {
 				$inversedBy = StringInflector::pluralize(lcfirst($entityName));
 			} else {
@@ -386,6 +435,7 @@
 			);
 			
 			if ($createTarget) {
+				// ManyToOne owning side → OneToMany inverse side; OneToOne stays OneToOne
 				$targetRelationType = ($relationshipType === 'ManyToOne') ? 'OneToMany' : 'OneToOne';
 				
 				return [
@@ -406,7 +456,7 @@
 		 * @param string $targetEntity Name of the target entity
 		 * @param string $currentEntity Name of the current entity
 		 * @param string $propertyName Name of the property to create
-		 * @param string $relationshipType Type of relationship (OneToOne, OneToMany, ManyToOne)
+		 * @param 'OneToOne'|'OneToMany'|'ManyToOne' $relationshipType Type of relationship
 		 * @param string|null $inversedBy Property name for the inverse side (if bidirectional)
 		 * @param string $foreignColumn Database column name being referenced
 		 */
@@ -426,7 +476,6 @@
 				return;
 			}
 			
-			$properties = [];
 			$isOwningSide = in_array($relationshipType, ['ManyToOne', 'OneToOne']);
 			$phpType = ($relationshipType === 'OneToMany') ? "CollectionInterface" : $currentEntity . "Entity";
 			
@@ -435,31 +484,25 @@
 			// The $inversedBy parameter contains the ManyToOne property name (e.g., "post")
 			$mappedBy = $isOwningSide ? null : $inversedBy;
 			
-			// Add relationship property
-			$properties[] = [
-				"name"             => $propertyName,
-				"type"             => $phpType,
-				"relationshipType" => $relationshipType,
-				"targetEntity"     => $currentEntity,
-				"mappedBy"         => $mappedBy,
-				"inversedBy"       => null,  // Inverse side doesn't have inversedBy
-				"relationColumn"   => $isOwningSide ? $propertyName . "Id" : null,
-				"foreignColumn"    => $foreignColumn,
-				"nullable"         => true,
-				"readonly"         => false
+			// Start with the relationship property
+			$properties = [
+				$this->buildRelationshipProperty(
+					$propertyName,
+					$phpType,
+					$relationshipType,
+					$currentEntity,
+					$mappedBy,
+					null,  // Inverse side doesn't have inversedBy
+					$isOwningSide ? $propertyName . "Id" : null,
+					$foreignColumn,
+					true
+				)
 			];
 			
-			// Add FK column for owning side
+			// Add FK column when this side owns the relationship (holds the FK in its table)
 			if ($isOwningSide) {
 				$fkInfo = $this->determineForeignKeyType($currentEntity, $this->getEntityPrimaryKeys($currentEntity)[0]);
-				
-				$properties[] = [
-					"name"     => $propertyName . "Id",
-					"type"     => $fkInfo['type'],
-					"unsigned" => $fkInfo['unsigned'],
-					"nullable" => true,
-					"readonly" => true
-				];
+				$properties[] = $this->buildForeignKeyProperty($propertyName . "Id", $fkInfo['type'], $fkInfo['unsigned'], true);
 			}
 			
 			$this->getEntityModifier()->createOrUpdateEntity($targetEntity, $properties);
@@ -476,11 +519,16 @@
 		private function findRelationshipProperty(string $targetEntity, string $currentEntity): ?string {
 			$fullTargetEntity = $this->configuration->getEntityNameSpace() . '\\' . $targetEntity . 'Entity';
 			
+			if (!class_exists($fullTargetEntity)) {
+				return null;
+			}
+			
 			if (!$this->getEntityStore()->exists($fullTargetEntity)) {
 				return null;
 			}
 			
 			$reflectionClass = new \ReflectionClass($fullTargetEntity);
+			
 			$currentEntityFullName = $this->configuration->getEntityNameSpace() . '\\' . $currentEntity . 'Entity';
 			$matchingProperties = [];
 			
@@ -493,6 +541,7 @@
 				
 				$typeName = $propertyType->getName();
 				
+				// Match both fully qualified (from autoloader) and short form (not yet loaded)
 				if ($typeName === $currentEntityFullName || $typeName === $currentEntity . 'Entity') {
 					$matchingProperties[] = $property->getName();
 				}
@@ -502,6 +551,9 @@
 				return $matchingProperties[0];
 			}
 			
+			// Multiple candidates means the target entity has more than one property pointing
+			// to the same entity (e.g. author + reviewer both → UserEntity); ask the user
+			// which one is the owning side of this particular relationship
 			if (count($matchingProperties) > 1) {
 				return $this->input->choice("\nMultiple properties found. Select the owning side property:", $matchingProperties);
 			}
@@ -513,7 +565,7 @@
 		 * Collect configuration for a standard (non-relationship) property.
 		 * @param string $propertyName Name of the property
 		 * @param string $propertyType Type of the property (string, integer, decimal, etc.)
-		 * @return array<string, mixed> Property definition array
+		 * @return PropertyDefinition
 		 */
 		private function collectStandardProperty(string $propertyName, string $propertyType): array {
 			$property = [
@@ -675,6 +727,7 @@
 		 * @return array{type:string, unsigned:bool}
 		 */
 		private function determineForeignKeyType(string $targetEntity, string $referencedField): array {
+			// Default to unsigned integer, which covers the most common auto-increment PK case
 			$result = ['type' => 'integer', 'unsigned' => true];
 			
 			try {
@@ -686,6 +739,8 @@
 				
 				$columnDefinitions = $this->getEntityStore()->extractEntityColumnDefinitions($fullEntityName);
 				$columnMap = $this->getEntityStore()->getColumnMap($fullEntityName);
+				
+				// Map the PHP field name to its database column name, then look up the column definition
 				$referencedDbColumn = $columnMap[$referencedField] ?? null;
 				
 				if ($referencedDbColumn && isset($columnDefinitions[$referencedDbColumn])) {
