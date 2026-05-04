@@ -30,6 +30,7 @@
 	use Quellabs\ObjectQuel\Execution\QueryExecutor;
 	use Quellabs\ObjectQuel\ReflectionManagement\PropertyHandler;
 	use Quellabs\ObjectQuel\Validation\EntityToValidation;
+	use Quellabs\ObjectQuel\Validation\ValidationInterface;
 	use Quellabs\SignalHub\Signal;
 	use Quellabs\SignalHub\SignalHub;
 	use Quellabs\SignalHub\SignalHubLocator;
@@ -280,7 +281,7 @@
 		/**
 		 * Searches for a single entity based on the given entity type and primary key.
 		 * @template T of object
-		 * @param class-string<T> $entityType The fully qualified class name of the container
+		 * @param class-string<T> $entityType The fully qualified class name of the entity
 		 * @param mixed $primaryKey The primary key of the entity
 		 * @return T|null The found entity or null if not found
 		 * @throws QuelException
@@ -295,15 +296,19 @@
 			// Normalize the primary key
 			$primaryKeys = $this->entityStore->formatPrimaryKeyAsArray($primaryKey, $entityType);
 			
-			// Try to find the entity in the current unit of work
+			// Return early if the entity is already tracked and fully initialized
 			$existingEntity = $this->unitOfWork->findEntity($entityType, $primaryKeys);
 			
 			// If the entity exists and is initialized, return it
-			if (!empty($existingEntity) && !($existingEntity instanceof ProxyInterface && !$existingEntity->isInitialized())) {
+			if (
+				$existingEntity !== null &&
+				!($existingEntity instanceof ProxyInterface && !$existingEntity->isInitialized())
+			) {
+				/** @var T $existingEntity */
 				return $existingEntity;
 			}
 			
-			// Retrieve results
+			// Fall back to a database query
 			$result = $this->findBy($entityType, $primaryKey);
 			
 			// If the query returns no results, return null
@@ -311,8 +316,12 @@
 				return null;
 			}
 			
-			// Get the results from the query and return the main entity
-			return $result[0] ?? null; // Use null-coalescing operator for safe access
+			/**
+			 * Get the results from the query and return the main entity
+			 * @var T $entity
+			 */
+			$entity = $result[0];
+			return $entity;
 		}
 		
 		/**
@@ -327,7 +336,7 @@
 		/**
 		 * Returns the validation rules of a given entity
 		 * @param object $entity
-		 * @return array<string, mixed>
+		 * @return array<int|string, array<int, ValidationInterface>>
 		 */
 		public function getValidationRules(object $entity): array {
 			$validate = new EntityToValidation();
