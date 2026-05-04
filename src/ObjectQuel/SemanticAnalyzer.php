@@ -103,14 +103,13 @@
 		/**
 		 * Generic method to process AST with a visitor pattern.
 		 * @param AstRetrieve $ast The AST to process
-		 * @param string $visitorClass The visitor class name to instantiate
+		 * @param class-string<AstVisitorInterface> $visitorClass The visitor class name to instantiate
 		 * @param mixed ...$args Arguments to pass to visitor constructor
-		 * @return object The visitor instance after processing
+		 * @return void The visitor instance after processing
 		 */
-		private function processWithVisitor(AstRetrieve $ast, string $visitorClass, ...$args): object {
+		private function processWithVisitor(AstRetrieve $ast, string $visitorClass, ...$args): void {
 			$visitor = new $visitorClass(...$args);
 			$ast->accept($visitor);
-			return $visitor;
 		}
 		
 		/**
