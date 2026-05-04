@@ -2,6 +2,8 @@
 	
 	namespace Quellabs\ObjectQuel\Execution;
 	
+	use Quellabs\ObjectQuel\Annotations\Orm\ManyToOne;
+	use Quellabs\ObjectQuel\Annotations\Orm\OneToOne;
 	use Quellabs\ObjectQuel\EntityStore;
 	
 	class QueryBuilder {
@@ -84,11 +86,16 @@
 		 * @param string $dependentEntityType The fully-qualified class name of the dependent entity.
 		 * @param string $entityType The main entity type (used to resolve the foreign/primary key).
 		 * @param string $property The property name on the dependent entity that holds the relation.
-		 * @param object $relation The relation annotation/metadata object.
+		 * @param ManyToOne|OneToOne $relation The relation annotation/metadata object.
 		 * @return string
-		 * @throws \RuntimeException If the main entity has no primary key and none is specified on the relation.
 		 */
-		private function buildRangeString(string $alias, string $dependentEntityType, string $entityType, string $property, object $relation): string {
+		private function buildRangeString(
+			string $alias,
+			string $dependentEntityType,
+			string $entityType,
+			string $property,
+			ManyToOne|OneToOne $relation
+		): string {
 			// The relation column is the foreign-key column on the *dependent* side.
 			// The annotation may declare it explicitly; if not, we fall back to the
 			// conventional "{propertyName}Id" naming (e.g. property "order" → "orderId").
@@ -126,7 +133,7 @@
 		 *
 		 * @param string $entityType The main entity type.
 		 * @param string $dependentEntityType The entity type on the dependent side.
-		 * @param iterable<string, object> $relations Keyed by property name, values are relation metadata.
+		 * @param iterable<string, ManyToOne|OneToOne> $relations Keyed by property name, values are relation metadata.
 		 * @param array<string,string> $ranges Accumulator array (modified in place).
 		 * @param int $rangeCounter Alias counter (modified in place).
 		 * @param bool $requireNoInversedBy When true, relations with a non-null inversedBy are skipped.
