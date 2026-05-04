@@ -24,7 +24,11 @@
 			
 			// Check if the generator class exists in the application
 			if (!class_exists($className)) {
-				// Return null if the requested generator type doesn't exist
+				return null;
+			}
+			
+			// Check that the class implements PrimaryKeyGeneratorInterface
+			if (!is_subclass_of($className, PrimaryKeyGeneratorInterface::class)) {
 				return null;
 			}
 			
