@@ -79,8 +79,8 @@
 			$queryType = $stage->getRange() instanceof AstRangeJsonSource ? 'json' : 'database';
 			
 			return match ($queryType) {
-				'json' => $this->jsonExecutor->execute($stage, $initialParams),
-				'database' => $this->databaseExecutor->execute($stage, $initialParams),
+				'json' => $this->jsonExecutor->execute($stage, $this->normalizeParams($initialParams)),
+				'database' => $this->databaseExecutor->execute($stage, $this->normalizeParams($initialParams)),
 			};
 		}
 		
@@ -115,7 +115,7 @@
 			
 			// Decompose the query
 			$decomposer = new QueryDecomposer();
-			$executionPlan = $decomposer->buildExecutionPlan($ast, $parameters);
+			$executionPlan = $decomposer->buildExecutionPlan($ast, $this->normalizeParams($parameters));
 			
 			// Execute the returned execution plan and return the QuelResult
 			$result = $this->planExecutor->execute($executionPlan);
@@ -130,5 +130,20 @@
 		 */
 		public function getLastExecutedSql(): array {
 			return $this->databaseExecutor->getLastExecutedSql();
+		}
+		
+		/**
+		 * Normalizes an array of parameters by casting all keys to strings.
+		 * @param array<int|string, mixed> $params The parameters to normalize.
+		 * @return array<string, mixed> The normalized parameters with string keys.
+		 */
+		private function normalizeParams(array $params): array {
+			$normalized = [];
+			
+			foreach ($params as $key => $value) {
+				$normalized[(string)$key] = $value;
+			}
+			
+			return $normalized;
 		}
 	}
