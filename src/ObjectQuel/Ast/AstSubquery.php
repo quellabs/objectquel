@@ -25,7 +25,7 @@
 		
 		/**
 		 * AstSubquery constructor
-		 * @param AstAggregate|null $aggregation
+		 * @param AstInterface|null $aggregation
 		 * @param string $type
 		 * @param AstRange[] $correlatedRanges
 		 * @param AstInterface|null $conditions
