@@ -85,6 +85,7 @@
 		 * 5. Initializing the proxy generator for lazy loading
 		 *
 		 * @param Configuration $configuration The ObjectQuel configuration object
+		 * @throws AnnotationReaderException
 		 */
 		public function __construct(Configuration $configuration) {
 			$annotationReaderConfiguration = new \Quellabs\AnnotationReader\Configuration();
