@@ -147,9 +147,11 @@
 			// then fall back to prepending the configured entity namespace
 			$resolved = NamespaceResolver::resolveClassName($className);
 			
-			$fullyQualifiedClassName = ($resolved === $className)
-				? "{$this->entityNamespace}\\{$className}"
-				: $resolved;
+			if (($resolved === $className)) {
+				$fullyQualifiedClassName = "{$this->entityNamespace}\\{$className}";
+			} else {
+				$fullyQualifiedClassName = $resolved;
+			}
 			
 			return $this->normalizedNameCache[$className] = $fullyQualifiedClassName;
 		}

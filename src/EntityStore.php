@@ -163,7 +163,8 @@
 		 * @return EntityMetadataRecord Immutable metadata object containing all entity information
 		 */
 		public function getMetadata(mixed $entity): EntityMetadataRecord {
-			$className = $this->normalizeEntityName($entity);
+			// Resolve entity name to a
+			$className = $this->resolveEntityClass($entity);
 			
 			// Return cached metadata if available
 			// Otherwise build and cache the metadata
@@ -181,7 +182,7 @@
 		 */
 		public function exists(mixed $entity): bool {
 			// Determine the class name of the entity
-			$normalizedClass = $this->normalizeEntityName($entity);
+			$normalizedClass = $this->resolveEntityClass($entity);
 			
 			// Check if the entity class exists in the entity registry
 			if (isset($this->entityRegistry[$normalizedClass])) {
@@ -564,6 +565,21 @@
 		}
 		
 		// ==================== Private Helper Methods ====================
+		
+		/**
+		 * Resolve an entity class
+		 * @param mixed $entity
+		 * @return class-string
+		 */
+		private function resolveEntityClass(mixed $entity): string {
+			$className = $this->normalizeEntityName($entity);
+			
+			if (!class_exists($className)) {
+				throw new \RuntimeException("Invalid entity class: {$className}");
+			}
+			
+			return $className;
+		}
 		
 		/**
 		 * Extract class name from various entity representations.
