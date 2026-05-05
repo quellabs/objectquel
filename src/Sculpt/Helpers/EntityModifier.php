@@ -98,6 +98,7 @@
 		public function createNewEntity(string $entityName, array $properties, array $indexes = []): bool {
 			$entityPath = $this->configuration->getEntityPath();
 			
+			// Ensure the entity directory exists before writing
 			if (!is_dir($entityPath)) {
 				mkdir($entityPath, 0755, true);
 			}
@@ -116,7 +117,7 @@
 			// Resolve the full file path for the given entity name (with or without "Entity" suffix)
 			$filePath = $this->getEntityPath($entityName);
 			
-			// Read the file
+			// Read the existing file content
 			$content = file_get_contents($filePath);
 			
 			if ($content === false) {
@@ -164,22 +165,27 @@
 				return false;
 			}
 			
+			// $classStartPos points to the first character inside the class body (after the opening brace)
 			$classStartPos = (int)$classMatch[0][1] + strlen($classMatch[0][0]);
+			
+			// Use the last closing brace in the file as the class end — assumes no code after the class
 			$lastBracePos = strrpos($content, '}');
 			
 			if ($lastBracePos === false) {
 				return false;
 			}
 			
+			// Extract everything between the class opening brace and its closing brace
 			$classBody = substr($content, $classStartPos, $lastBracePos - $classStartPos);
 			
-			// Find where methods begin (properties end at first method declaration)
+			// Find where methods begin — properties occupy everything before the first method declaration
 			$methodPattern = '/\s*(public|protected|private)?\s+function\s+\w+/';
 			
 			if (preg_match($methodPattern, $classBody, $methodMatch, PREG_OFFSET_CAPTURE)) {
 				$firstMethodPos = $methodMatch[0][1];
 				
-				// Check for docblock preceding the method
+				// If there's a docblock immediately before the method, include it in the methods section
+				// rather than the properties section to keep the split clean
 				$potentialDocBlockStart = strrpos(substr($classBody, 0, $firstMethodPos), '/**');
 				
 				if ($potentialDocBlockStart !== false && ($firstMethodPos - $potentialDocBlockStart) < 100) {
@@ -189,6 +195,7 @@
 				$propertiesSection = trim(substr($classBody, 0, $firstMethodPos));
 				$methodsSection = trim(substr($classBody, $firstMethodPos));
 			} else {
+				// No methods found — entire body is properties
 				$propertiesSection = trim($classBody);
 				$methodsSection = '';
 			}
@@ -214,11 +221,12 @@
 			foreach ($properties as $property) {
 				$propertyName = $property['name'];
 				
-				// Skip if property already declared
+				// Skip if a declaration for this property already exists in the class body
 				if (preg_match('/\s*(protected|private|public)\s+.*\$' . $propertyName . '\s*;/i', $propertyCode)) {
 					continue;
 				}
 				
+				// Relationship properties get a different docblock than plain column properties
 				if (isset($property['relationshipType'])) {
 					$docComment = $this->generateRelationshipDocComment($property);
 				} else {
@@ -232,6 +240,7 @@
 			
 			$updatedPropertyCode = $propertyCode . $newProperties;
 			
+			// Reassemble: header + updated properties + methods + closing brace
 			return $classContent['header'] . $updatedPropertyCode . "\n\n\t" . $classContent['methods'] . $classContent['footer'];
 		}
 		
@@ -254,12 +263,13 @@
 				$getterName = 'get' . ucfirst($property['name']);
 				$setterName = 'set' . ucfirst($property['name']);
 				
-				// For OneToMany, generate collection management methods
+				// OneToMany collections don't use get/set — they use add/remove instead
 				if (isset($property['relationshipType']) && $property['relationshipType'] === 'OneToMany') {
 					$singularName = StringInflector::singularize($property['name']);
 					$addMethodName = 'add' . ucfirst($singularName);
 					$removeMethodName = 'remove' . ucfirst($singularName);
 					
+					// Only generate each method if it doesn't already exist
 					if (!preg_match('/function\s+' . $addMethodName . '\s*\(/i', $content)) {
 						$methodsToAdd .= $this->generateCollectionAdder($property, $entityName);
 					}
@@ -276,12 +286,13 @@
 					$methodsToAdd .= $this->generateGetter($property);
 				}
 				
-				// Generate setter if not readonly and not already present
+				// Readonly properties get no setter
 				if (!($property['readonly'] ?? false) && !preg_match('/function\s+' . $setterName . '\s*\(/i', $content)) {
 					$methodsToAdd .= $this->generateSetter($property);
 				}
 			}
 			
+			// Splice new methods in before the final closing brace of the class
 			return substr($content, 0, $lastBracePos) . $methodsToAdd . "\n}" . substr($content, $lastBracePos + 1);
 		}
 		
@@ -310,7 +321,8 @@
 			$content .= "    use Quellabs\\ObjectQuel\\Collections\\Collection;\n";
 			$content .= "    use Quellabs\\ObjectQuel\\Collections\\CollectionInterface;\n";
 			
-			// Generate table name in snake_case plural form
+			// Derive the table name: pluralize the entity name, then convert to snake_case
+			// e.g. "ProductCategory" → "product_categories"
 			$tableNamePlural = StringInflector::pluralize($entityName);
 			$tableName = StringInflector::snakeCase($tableNamePlural);
 			
@@ -323,6 +335,7 @@
 				$indexColumns = '{"' . implode('", "', $index['columns']) . '"}';
 				$indexType = strtoupper($index['type'] ?? 'INDEX');
 				
+				// Map the index type string to its annotation class name
 				$annotationClass = match ($indexType) {
 					'UNIQUE' => 'UniqueIndex',
 					'FULLTEXT' => 'FullTextIndex',
@@ -335,14 +348,14 @@
 			$content .= "     */\n";
 			$content .= "    class {$entityName}Entity {\n";
 			
-			// Primary key property
+			// Every entity gets an auto-increment primary key
 			$content .= "\n        /**\n";
 			$content .= "         * @Orm\\Column(name=\"id\", type=\"integer\", unsigned=true, primary_key=true)\n";
 			$content .= "         * @Orm\\PrimaryKeyStrategy(strategy=\"identity\")\n";
 			$content .= "         */\n";
 			$content .= "        protected ?int \$id = null;\n";
 			
-			// Check if constructor needed for OneToMany initialization
+			// Check whether any property requires a constructor for collection initialization
 			$hasOneToMany = false;
 			foreach ($properties as $property) {
 				if (isset($property['relationshipType']) && $property['relationshipType'] === 'OneToMany') {
@@ -351,7 +364,8 @@
 				}
 			}
 			
-			// Add constructor if OneToMany relationships exist
+			// OneToMany properties must be initialized to an empty Collection in the constructor,
+			// otherwise accessing the collection before it's set would cause a null-dereference
 			if ($hasOneToMany) {
 				$content .= "\n        /**\n         * Constructor to initialize collections\n         */\n";
 				$content .= "        public function __construct() {\n";
@@ -365,7 +379,7 @@
 				$content .= "        }\n";
 			}
 			
-			// Add all properties with appropriate docblocks
+			// Emit all property declarations with their ORM annotation docblocks
 			foreach ($properties as $property) {
 				$docComment = isset($property['relationshipType'])
 					? $this->generateRelationshipDocComment($property)
@@ -377,13 +391,14 @@
 				$content .= "        " . $propertyDefinition . "\n";
 			}
 			
-			// Primary key getter
+			// Primary key getter — always present regardless of property list
 			$content .= $this->generateGetter(['name' => 'id', 'type' => 'integer']);
 			
-			// Accessors for all properties
+			// Generate accessors for every declared property
 			foreach ($properties as $property) {
 				$readOnly = $property['readonly'] ?? false;
 				
+				// OneToMany collections expose add/remove methods rather than a single setter
 				if (isset($property['relationshipType']) && $property['relationshipType'] === 'OneToMany') {
 					$content .= $this->generateCollectionAdder($property, $entityName);
 					$content .= $this->generateCollectionRemover($property, $entityName);
@@ -392,6 +407,7 @@
 				
 				$content .= $this->generateGetter($property);
 				
+				// Readonly properties intentionally have no setter
 				if (!$readOnly) {
 					$content .= $this->generateSetter($property);
 				}
@@ -410,6 +426,8 @@
 		protected function generatePropertyDocComment(array $property): string {
 			$nullable = $property['nullable'] ?? false;
 			$type = $property['type'];
+			
+			// Column name follows snake_case convention regardless of the PHP property name
 			$snakeCaseName = StringInflector::snakeCase($property['name']);
 			
 			$properties = [
@@ -417,12 +435,12 @@
 				"type=\"{$type}\""
 			];
 			
-			// Add enum class reference if applicable
+			// Enum columns reference the backing PHP enum class
 			if (!empty($property['enumType'])) {
 				$properties[] = "enumType=" . ltrim($property['enumType'], "\\") . "::class";
 			}
 			
-			// Optional column attributes
+			// Optional column attributes — only emit attributes that were explicitly provided
 			if (isset($property['limit']) && is_numeric($property['limit'])) {
 				$properties[] = "limit={$property['limit']}";
 			}
@@ -458,22 +476,22 @@
 			
 			$options = [];
 			
-			// Inverse side property name (for bidirectional relationships)
+			// mappedBy identifies the inverse side property in a bidirectional relationship
 			if (!empty($property['mappedBy'])) {
 				$options[] = "mappedBy=\"{$property['mappedBy']}\"";
 			}
 			
-			// Owning side property name (for bidirectional relationships)
+			// inversedBy identifies the owning side property in a bidirectional relationship
 			if (!empty($property['inversedBy'])) {
 				$options[] = "inversedBy=\"{$property['inversedBy']}\"";
 			}
 			
-			// Lazy loading for collections to avoid N+1 queries
+			// Collections are fetched lazily to avoid loading the entire related set on access
 			if ($relationshipType === 'OneToMany') {
 				$options[] = "fetch=\"LAZY\"";
 			}
 			
-			// Owning side owns the foreign key
+			// The owning side is the one without mappedBy — it holds the foreign key column
 			$isOwningSide = empty($property['mappedBy']);
 			
 			if ($isOwningSide) {
@@ -481,12 +499,12 @@
 					$options[] = "nullable=true";
 				}
 				
-				// Foreign key column in current table
+				// The column in the current table that stores the foreign key value
 				if (!empty($property['relationColumn'])) {
 					$options[] = "relationColumn=\"{$property['relationColumn']}\"";
 				}
 				
-				// Referenced column in target table (defaults to 'id')
+				// Only emit foreignColumn when it deviates from the default 'id'
 				if (isset($property['foreignColumn']) && $property['foreignColumn'] !== 'id') {
 					$options[] = "foreignColumn=\"{$property['foreignColumn']}\"";
 				}
@@ -495,7 +513,7 @@
 			$optionsStr = !empty($options) ? ', ' . implode(', ', $options) : '';
 			$comment = "/**\n         * @Orm\\{$relationshipType}(targetEntity=\"{$targetEntity}Entity\"{$optionsStr})";
 			
-			// Add collection type hint for OneToMany
+			// OneToMany gets an additional @var hint so IDEs know the collection's generic type
 			if ($relationshipType === 'OneToMany') {
 				$comment .= "\n         * @var CollectionInterface<{$targetEntity}Entity>";
 			}
@@ -513,10 +531,12 @@
 		 * @return string PHP type string (e.g. 'int', 'string', '\App\Enum\Status')
 		 */
 		private function resolvePhpType(array $property): string {
+			// Enum properties map directly to their PHP enum class rather than a primitive
 			if ($property['type'] === 'enum') {
 				return "\\" . ltrim($property['enumType'], "\\");
 			}
 			
+			// All other types go through the database-to-PHP type mapping table
 			return TypeMapper::phinxTypeToPhpType($property['type']);
 		}
 		
@@ -529,13 +549,13 @@
 			$nullable = $property['nullable'] ?? false;
 			$nullableIndicator = $nullable ? '?' : '';
 			
-			// Relationship properties use entity type
+			// Relationship properties use the entity class name as their type hint
 			if (isset($property['relationshipType'])) {
 				$type = $property['type'];
 				return "protected {$nullableIndicator}{$type} \${$property['name']};";
 			}
 			
-			// Regular properties map database type to PHP type
+			// Regular properties map the database column type to an equivalent PHP type
 			$phpType = $this->resolvePhpType($property);
 			return "protected {$nullableIndicator}{$phpType} \${$property['name']};";
 		}
@@ -549,13 +569,13 @@
 			$propertyName = $property['name'];
 			$methodName = 'get' . ucfirst($propertyName);
 			
-			// Relationship getters
+			// Relationship getters need the entity type rather than a primitive
 			if (isset($property['relationshipType'])) {
 				$type = $property['type'];
 				$nullable = $property['nullable'] ?? false;
 				$nullableIndicator = $nullable ? '?' : '';
 				
-				// OneToMany returns collection interface
+				// OneToMany returns a typed collection interface instead of a single entity
 				if ($property['relationshipType'] === 'OneToMany') {
 					$targetEntity = $property['targetEntity'] . 'Entity';
 					
@@ -568,6 +588,7 @@
 						"        }\n";
 				}
 				
+				// OneToOne / ManyToOne return a nullable entity reference
 				return "\n        /**\n" .
 					"         * Gets the {$propertyName} relationship\n" .
 					"         * @return {$nullableIndicator}{$type}\n" .
@@ -577,7 +598,7 @@
 					"        }\n";
 			}
 			
-			// Regular property getters
+			// Plain column getter
 			$nullable = $property['nullable'] ?? false;
 			$nullableIndicator = $nullable ? '?' : '';
 			$phpType = $this->resolvePhpType($property);
@@ -600,19 +621,21 @@
 			$propertyName = $property['name'];
 			$methodName = 'set' . ucfirst($propertyName);
 			
-			// Relationship setters with bidirectional sync
+			// Relationship setters need bidirectional sync logic
 			if (isset($property['relationshipType'])) {
 				$type = $property['type'];
 				$nullable = $property['nullable'] ?? false;
 				$nullableIndicator = $nullable ? '?' : '';
 				
-				// Identity check prevents infinite loops in bidirectional relationships
+				// Identity check short-circuits the setter when the value hasn't actually changed,
+				// which prevents infinite loops in bidirectional sync chains
 				$setterBody = "            // Prevent redundant updates\n";
 				$setterBody .= "            if (\$this->{$propertyName} === \${$propertyName}) {\n";
 				$setterBody .= "                return \$this;\n";
 				$setterBody .= "            }\n";
 				
-				// Clean up old ManyToOne relationship before reassigning
+				// Before reassigning, remove this entity from the previous parent's collection
+				// so the old parent's inverse side stays consistent
 				if ($property['relationshipType'] === 'ManyToOne' && !empty($property['inversedBy'])) {
 					$singularName = StringInflector::singularize($property['inversedBy']);
 					$removerMethod = 'remove' . ucfirst($singularName);
@@ -626,7 +649,7 @@
 				$setterBody .= "            // Set new property\n";
 				$setterBody .= "            \$this->{$propertyName} = \${$propertyName};\n";
 				
-				// Sync bidirectional ManyToOne relationship
+				// Add this entity to the new parent's collection to keep the inverse side in sync
 				if ($property['relationshipType'] === 'ManyToOne' && !empty($property['inversedBy'])) {
 					$singularName = StringInflector::singularize($property['inversedBy']);
 					$adderMethod = 'add' . ucfirst($singularName);
@@ -657,7 +680,7 @@
 				);
 			}
 			
-			// Regular property setters
+			// Plain column setter — no sync logic needed
 			$nullable = $property['nullable'] ?? false;
 			$nullableIndicator = $nullable ? '?' : '';
 			$phpType = $this->resolvePhpType($property);
@@ -691,6 +714,8 @@
 			
 			$inverseSetter = '';
 			
+			// If mappedBy is set this is the inverse side — sync the owning side's reference
+			// so both ends of the relationship stay consistent after the add
 			if (!empty($property['mappedBy'])) {
 				$setterMethod = 'set' . ucfirst($property['mappedBy']);
 				$inverseSetter = "\n                // Sync bidirectional relationship\n";
@@ -724,6 +749,8 @@
 			
 			$inverseRemover = '';
 			
+			// Only null out the inverse side when it still points at this entity —
+			// avoids clobbering a reference that was already reassigned elsewhere
 			if (!empty($property['mappedBy'])) {
 				$mappedByField = $property['mappedBy'];
 				$getterMethod = 'get' . ucfirst($mappedByField);
@@ -792,25 +819,43 @@
 		 * @return string Updated content with modified constructor
 		 */
 		protected function updateExistingConstructor(string $content, array $oneToManyProperties): string {
+			// Find the start of the constructor
 			$constructorStart = $this->getConstructorStartPos($content);
+			
+			// getConstructorStartPos() returns null when no constructor exists — should not happen
+			// here since updateExistingConstructor() is only called after constructorExists() returns
+			// true, but the guard satisfies PHPStan's type narrowing
+			if ($constructorStart === null) {
+				return $content;
+			}
+			
+			// Find the opening brace of the constructor body
 			$openBracePos = strpos($content, '{', $constructorStart);
 			
+			// strpos can in theory return null, but in practice will never do that because
+			// every constructor has an opening brace. Still the test is present for PHPStan.
 			if ($openBracePos === false) {
 				return $content;
 			}
 			
+			// Walk forward from the opening brace to find the matching closing brace
 			$constructorEnd = $this->findClosingBrace($content, $openBracePos);
 			
+			// Every constructor has a closing brace, but findClosingBrace can in theory
+			// return null, so this test is here. For PHPStan.
 			if ($constructorEnd === null) {
 				return $content;
 			}
 			
+			// Build initialization statements for any collections not already initialized
 			$initCode = $this->generateCollectionInitializations($content, $oneToManyProperties);
 			
+			// Insert the new statements immediately before the closing brace
 			if (!empty($initCode)) {
 				return substr($content, 0, $constructorEnd) . $initCode . "\n\t" . substr($content, $constructorEnd);
 			}
 			
+			// Return content
 			return $content;
 		}
 		
@@ -827,10 +872,12 @@
 			
 			while ($offset < $length) {
 				if ($content[$offset] === '{') {
+					// Nested block opens — go one level deeper
 					$braceLevel++;
 				} elseif ($content[$offset] === '}') {
 					$braceLevel--;
 					
+					// Back to zero means we found the brace that matches $openBracePos
 					if ($braceLevel === 0) {
 						return $offset;
 					}
@@ -839,6 +886,7 @@
 				$offset++;
 			}
 			
+			// Reached end of string without finding a match — malformed source
 			return null;
 		}
 		
@@ -854,7 +902,7 @@
 			foreach ($oneToManyProperties as $property) {
 				$propertyName = $property['name'];
 				
-				// Skip if already initialized
+				// Skip properties already assigned a Collection instance — avoids duplicating the line
 				if (!preg_match('/\$this->' . preg_quote($propertyName, '/') . '\s*=\s*new\s+Collection\(\)/', $content)) {
 					$initCode .= "\n\t\t\$this->{$propertyName} = new Collection();";
 				}
@@ -879,6 +927,7 @@
 			
 			$constructorCode .= "\n\t}\n";
 			
+			// Find the best insertion point — after the last property, or after the class opening brace
 			$insertPosition = $this->findConstructorInsertPosition($content);
 			
 			if ($insertPosition !== null) {
@@ -898,22 +947,33 @@
 				return null;
 			}
 			
+			// Locate the opening brace of the class body
 			$classOpenBracePos = strpos($content, '{', $classMatch[0][1]);
 			
 			if ($classOpenBracePos === false) {
 				return null;
 			}
 			
-			// Find all property declarations
+			// Find all property declarations (with or without access modifier)
 			preg_match_all('/(?:(protected|private|public)\s+|^\s*)\$[^;]+;/im', $content, $propertyMatches, PREG_OFFSET_CAPTURE);
 			
 			if (!empty($propertyMatches[0])) {
-				// Insert after last property
-				$lastPropertyPos = $propertyMatches[0][count($propertyMatches[0]) - 1][1];
-				return strpos($content, ';', $lastPropertyPos) + 1;
+				// Take the offset of the last matched property declaration
+				$lastPropertyPos = (int) $propertyMatches[0][count($propertyMatches[0]) - 1][1];
+				
+				// Find the semicolon that terminates that property declaration
+				$semicolonPos = strpos($content, ';', $lastPropertyPos);
+				
+				// Malformed source: property matched but no closing semicolon found
+				if ($semicolonPos === false) {
+					return null;
+				}
+				
+				// Insert after the semicolon
+				return $semicolonPos + 1;
 			}
 			
-			// No properties found, insert after class opening brace
+			// No properties found — insert immediately after the class opening brace
 			return $classOpenBracePos + 1;
 		}
 	}
