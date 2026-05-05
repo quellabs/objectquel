@@ -19,6 +19,7 @@
 	 * Supports standard data types (string, integer, decimal, etc.) and ORM relationships
 	 * (OneToOne, OneToMany, ManyToOne) with automatic foreign key generation.
 	 *
+	 * @phpstan-import-type PhinxColumnType from SculptTypes
 	 * @phpstan-import-type BaseProperty from SculptTypes
 	 * @phpstan-import-type EnumProperty from SculptTypes
 	 * @phpstan-import-type RelationProperty from SculptTypes
@@ -198,7 +199,7 @@
 						$entityName
 					));
 				} else {
-					/** @var 'tinyinteger'|'smallinteger'|'integer'|'biginteger'|'string'|'char'|'text'|'float'|'decimal'|'boolean'|'date'|'datetime'|'time'|'timestamp'|'enum' $propertyType */
+					/** @var PhinxColumnType|'enum' $propertyType */
 					$properties[] = $this->collectStandardProperty($propertyName, $propertyType);
 				}
 			}
@@ -249,7 +250,7 @@
 		 * FK columns are always readonly because they are managed by the ORM through
 		 * the relationship property, not set directly by application code.
 		 * @param string $columnName Column name (e.g. "orderId")
-		 * @param 'tinyinteger'|'smallinteger'|'integer'|'biginteger'|'string'|'char'|'text'|'float'|'decimal'|'boolean'|'date'|'datetime'|'time'|'timestamp' $type Column type matching the referenced PK (e.g. "integer", "biginteger")
+		 * @param PhinxColumnType $type Column type matching the referenced PK (e.g. "integer", "biginteger")
 		 * @param bool $unsigned Whether the column is unsigned (should match the referenced PK)
 		 * @param bool $nullable Whether the column allows null
 		 * @return BaseProperty
@@ -569,7 +570,7 @@
 		/**
 		 * Collect configuration for a standard (non-relationship) property.
 		 * @param string $propertyName Name of the property
-		 * @param 'tinyinteger'|'smallinteger'|'integer'|'biginteger'|'string'|'char'|'text'|'float'|'decimal'|'boolean'|'date'|'datetime'|'time'|'timestamp'|'enum' $propertyType Type of the property
+		 * @param PhinxColumnType|'enum' $propertyType Type of the property
 		 * @return BaseProperty|EnumProperty
 		 */
 		private function collectStandardProperty(string $propertyName, string $propertyType): array {
@@ -736,11 +737,11 @@
 		 * Determine the column type and unsigned flag for a foreign key based on the referenced column.
 		 * @param string $targetEntity Name of the target entity
 		 * @param string $referencedField Name of the referenced field in the target entity
-		 * @return array{type: 'tinyinteger'|'smallinteger'|'integer'|'biginteger'|'string'|'char'|'text'|'float'|'decimal'|'boolean'|'date'|'datetime'|'time'|'timestamp', unsigned: bool}
+		 * @return array{type: PhinxColumnType, unsigned: bool}
 		 */
 		private function determineForeignKeyType(string $targetEntity, string $referencedField): array {
 			// Default to unsigned integer, which covers the most common auto-increment PK case
-			/** @var array{type: 'tinyinteger'|'smallinteger'|'integer'|'biginteger'|'string'|'char'|'text'|'float'|'decimal'|'boolean'|'date'|'datetime'|'time'|'timestamp', unsigned: bool} $result */
+			/** @var array{type: PhinxColumnType, unsigned: bool} $result */
 			$result = ['type' => 'integer', 'unsigned' => true];
 			
 			try {
@@ -757,7 +758,7 @@
 				$referencedDbColumn = $columnMap[$referencedField] ?? null;
 				
 				if ($referencedDbColumn && isset($columnDefinitions[$referencedDbColumn])) {
-					/** @var 'tinyinteger'|'smallinteger'|'integer'|'biginteger'|'string'|'char'|'text'|'float'|'decimal'|'boolean'|'date'|'datetime'|'time'|'timestamp' $colType */
+					/** @var PhinxColumnType $colType */
 					$colType = $columnDefinitions[$referencedDbColumn]['type'];
 					$result['type'] = $colType;
 					$result['unsigned'] = $columnDefinitions[$referencedDbColumn]['unsigned'] ?? true;

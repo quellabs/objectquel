@@ -12,9 +12,14 @@
 	 * Entity property types (used by MakeEntityCommand and EntityModifier)
 	 * -------------------------------------------------------------------------
 	 *
+	 * The standard Phinx column types available for entity properties.
+	 * Excludes 'enum' (handled as EnumProperty) and 'relationship' (handled as RelationProperty),
+	 * both of which require additional metadata and map to distinct property shapes.
+	 * @phpstan-type PhinxColumnType 'tinyinteger'|'smallinteger'|'integer'|'biginteger'|'string'|'char'|'text'|'float'|'decimal'|'boolean'|'date'|'datetime'|'time'|'timestamp'
+	 *
 	 * @phpstan-type BaseProperty array{
 	 *     name: string,
-	 *     type: 'tinyinteger'|'smallinteger'|'integer'|'biginteger'|'string'|'char'|'text'|'float'|'decimal'|'boolean'|'date'|'datetime'|'time'|'timestamp',
+	 *     type: PhinxColumnType,
 	 *     nullable?: bool,
 	 *     readonly?: bool,
 	 *     unsigned?: bool,
