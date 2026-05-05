@@ -2,7 +2,10 @@
 	
 	namespace Quellabs\ObjectQuel\Execution\Executors;
 	
+	use Quellabs\ObjectQuel\Capabilities\PlatformCapabilities;
+	use Quellabs\ObjectQuel\EntityManager;
 	use Quellabs\ObjectQuel\Planner\ExecutionStageInterface;
+	use Quellabs\ObjectQuel\Planner\QueryOptimizer;
 	
 	/**
 	 * A dry-run executor that captures generated SQL without executing it.
@@ -16,6 +19,19 @@
 		 * @var list<string>
 		 */
 		private array $capturedSql = [];
+		
+		/** @var QueryOptimizer Optimizing code */
+		private QueryOptimizer $queryOptimizer;
+		
+		/**
+		 * DryRunDatabaseQueryExecutor
+		 * @param EntityManager $entityManager
+		 * @param PlatformCapabilities $capabilities
+		 */
+		public function __construct(EntityManager $entityManager, PlatformCapabilities $capabilities) {
+			parent::__construct($entityManager, $capabilities);
+			$this->queryOptimizer = new QueryOptimizer($this->entityManager, $this->capabilities);
+		}
 		
 		/**
 		 * Optimizes and transforms the query, captures the generated SQL,

@@ -19,7 +19,7 @@
 		protected EntityManager $entityManager;
 		protected DatabaseAdapter $connection;
 		protected QueryTransformer $queryTransformer;
-		protected PlatformCapabilities $platform;
+		protected PlatformCapabilities $capabilities;
 		
 		/** @var list<string> */
 		protected array $lastExecutedSql = [];
@@ -28,11 +28,11 @@
 		 * Constructor
 		 * @param EntityManager $entityManager
 		 */
-		public function __construct(EntityManager $entityManager) {
+		public function __construct(EntityManager $entityManager, PlatformCapabilities $capabilities) {
 			$this->entityManager = $entityManager;
 			$this->connection = $entityManager->getConnection();
-			$this->platform = new PlatformCapabilities($this->connection);
-			$this->queryTransformer = new QueryTransformer($this->entityManager, $this->platform);
+			$this->capabilities = $capabilities;
+			$this->queryTransformer = new QueryTransformer($this->entityManager, $this->capabilities);
 		}
 		
 		/**
@@ -92,7 +92,7 @@
 		 * @return string The generated SQL query
 		 */
 		protected function convertToSQL(AstRetrieve $retrieve, array &$parameters): string {
-			$quelToSQL = new QuelToSQL($this->entityManager->getEntityStore(), $parameters, $this->platform);
+			$quelToSQL = new QuelToSQL($this->entityManager->getEntityStore(), $parameters, $this->capabilities);
 			return $quelToSQL->convertToSQL($retrieve);
 		}
 	}

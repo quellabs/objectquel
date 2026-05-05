@@ -48,7 +48,7 @@
 			// Create specialized executors
 			$conditionEvaluator = new ConditionEvaluator();
 			$this->planExecutor = new PlanExecutor($this, $conditionEvaluator);
-			$this->databaseExecutor = $databaseExecutor ?? new DatabaseQueryExecutor($entityManager);
+			$this->databaseExecutor = $databaseExecutor ?? new DatabaseQueryExecutor($entityManager, $this->capabilities);
 			$this->jsonExecutor = new JsonQueryExecutor($conditionEvaluator);
 		}
 		
