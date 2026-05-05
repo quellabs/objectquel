@@ -104,6 +104,7 @@
 		 *
 		 * @param AstRetrieve $ast Root query AST.
 		 * @return void
+		 * @throws QuelException
 		 */
 		public function optimize(AstRetrieve $ast): void {
 			// Find all ANY nodes throughout the entire query tree
