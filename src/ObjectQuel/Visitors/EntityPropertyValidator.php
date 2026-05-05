@@ -4,11 +4,11 @@
 	namespace Quellabs\ObjectQuel\ObjectQuel\Visitors;
 	
 	use Quellabs\ObjectQuel\EntityStore;
+	use Quellabs\ObjectQuel\Exception\EntityResolutionException;
+	use Quellabs\ObjectQuel\Exception\SemanticException;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstIdentifier;
-	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRangeDatabase;
 	use Quellabs\ObjectQuel\ObjectQuel\AstInterface;
 	use Quellabs\ObjectQuel\ObjectQuel\AstVisitorInterface;
-	use Quellabs\ObjectQuel\Exception\QuelException;
 	
 	/**
 	 * Class EntityPropertyValidator
@@ -32,7 +32,7 @@
 		 * determines what kind of validation is performed.
 		 * @param AstInterface $node The node to visit.
 		 * @return void
-		 * @throws QuelException Thrown when validation fails.
+		 * @throws SemanticException Thrown when validation fails.
 		 */
 		public function visitNode(AstInterface $node): void {
 			// Validate the property if the node is of type AstIdentifier.
@@ -49,16 +49,26 @@
 			if (!$node->getParent()->isFromEntity()) {
 				return;
 			}
-
+			
 			// Get the column map for this entity.
 			$entityName = $node->getParent()->getEntityName();
 			$propertyName = $node->getName();
-			$columnMap = $this->entityStore->getColumnMap($entityName);
-			$relations = $this->entityStore->getOneToManyDependencies($entityName);
 			
-			// Check if the property exists in the entity.
-			if (!isset($columnMap[$propertyName]) && !isset($relations[$propertyName])) {
-				throw new QuelException("The property {$propertyName} does not exist in entity {$entityName}. Please check for typos or verify that the correct entity is being referenced in the query.");
+			try {
+				// Fetch column map and relations
+				$columnMap = $this->entityStore->getColumnMap($entityName);
+				$relations = $this->entityStore->getOneToManyDependencies($entityName);
+				
+				// Check if the property exists in the entity.
+				if (!isset($columnMap[$propertyName]) && !isset($relations[$propertyName])) {
+					throw new SemanticException("The property {$propertyName} does not exist in entity {$entityName}. Please check for typos or verify that the correct entity is being referenced in the query.");
+				}
+			} catch (EntityResolutionException $e) {
+				throw new SemanticException(
+					"The entity or range {$entityName} referenced in the query does not exist.",
+					0,
+					$e
+				);
 			}
 		}
 	}

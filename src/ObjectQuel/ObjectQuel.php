@@ -4,6 +4,8 @@
 	
 	use Quellabs\ObjectQuel\EntityManager;
 	use Quellabs\ObjectQuel\EntityStore;
+	use Quellabs\ObjectQuel\Exception\QuelException;
+	use Quellabs\ObjectQuel\Exception\SemanticException;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstAlias;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRetrieve;
 	use Quellabs\ObjectQuel\ObjectQuel\Visitors\AliasPlugAliasPattern;
@@ -48,7 +50,7 @@
 				// The AST is now fully validated
 				return $ast;
 				
-			} catch (ParserException $e) {
+			} catch (ParserException|SemanticException $e) {
 				// Handle parsing failures by wrapping in domain-specific exception
 				// This provides consistent error handling while preserving original error context
 				// ParserException indicates issues in the parsing phase specifically

@@ -3,6 +3,7 @@
 	
 	namespace Quellabs\ObjectQuel\ObjectQuel\Visitors;
 	
+	use Quellabs\ObjectQuel\Exception\SemanticException;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstExpression;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstFactor;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstIdentifier;
@@ -10,7 +11,6 @@
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstTerm;
 	use Quellabs\ObjectQuel\ObjectQuel\AstInterface;
 	use Quellabs\ObjectQuel\ObjectQuel\AstVisitorInterface;
-	use Quellabs\ObjectQuel\Exception\QuelException;
 	
 	/**
 	 * Class NoExpressionsAllowedOnEntitiesValidator
@@ -32,15 +32,15 @@
 		}
 		
 		/**
-		 * Bezoekt een node in de AST.
-		 * @param AstInterface $node De node om te bezoeken.
+		 * Visits a node in the Ast.
+		 * @param AstInterface $node
 		 * @return void
-		 * @throws QuelException
+		 * @throws SemanticException
 		 */
 		public function visitNode(AstInterface $node): void {
 			if ($node instanceof AstTerm || $node instanceof AstFactor || $node instanceof AstExpression) {
 				if ($this->identifierIsEntity($node->getLeft()) || $this->identifierIsEntity($node->getRight())) {
-					throw new QuelException("Unsupported operation on entire entities. You cannot perform arithmetic operations directly on entities. Please specify the specific fields or properties of the entities you wish to use in the calculation.");
+					throw new SemanticException("Unsupported operation on entire entities. You cannot perform arithmetic operations directly on entities. Please specify the specific fields or properties of the entities you wish to use in the calculation.");
 				}
 			}
 		}

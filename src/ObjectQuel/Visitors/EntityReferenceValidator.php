@@ -3,6 +3,8 @@
 	namespace Quellabs\ObjectQuel\ObjectQuel\Visitors;
 	
 	use Quellabs\ObjectQuel\EntityStore;
+	use Quellabs\ObjectQuel\Exception\EntityResolutionException;
+	use Quellabs\ObjectQuel\Exception\SemanticException;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstIdentifier;
 	use Quellabs\ObjectQuel\ObjectQuel\AstInterface;
 	use Quellabs\ObjectQuel\ObjectQuel\AstVisitorInterface;
@@ -37,13 +39,14 @@
 			$this->entityStore = $entityStore;
 			$this->visitedNodes = [];
 		}
-
+		
 		/**
 		 * Visits a node in the AST to validate entity existence.
 		 * This method specifically handles AstIdentifier nodes,
 		 * extracting entity names and validating them against the EntityStore.
 		 * @param AstInterface $node The node to visit and validate
 		 * @throws QuelException When an entity reference doesn't exist in the store
+		 * @throws SemanticException
 		 */
 		public function visitNode(AstInterface $node): void {
 			// Only handle AstIdentifier nodes
@@ -77,8 +80,18 @@
 			
 			// Validate entity existence in the entity store
 			// Throw an exception with detailed error message if entity doesn't exist
-			if (!$this->entityStore->exists($entityName)) {
-				throw new QuelException("The entity or range {$entityName} referenced in the query does not exist. Please check the query for incorrect references and ensure all specified entities or ranges are correctly defined.");
+			try {
+				if (!$this->entityStore->exists($entityName)) {
+					throw new SemanticException(
+						"The entity or range {$entityName} referenced in the query does not exist"
+					);
+				}
+			} catch (EntityResolutionException $e) {
+				throw new SemanticException(
+					"The entity or range {$entityName} referenced in the query does not exist.",
+					0,
+					$e
+				);
 			}
 		}
 	}
