@@ -158,6 +158,7 @@
 		 * @param mixed $class The object or the name of the class to get the property from.
 		 * @param string $propertyName The name of the property to reflect.
 		 * @return \ReflectionProperty A ReflectionProperty instance.
+		 * @throws \ReflectionException
 		 */
 		private function getReflectionProperty(mixed $class, string $propertyName): \ReflectionProperty {
 			// Determine the class name from the object or directly use the provided class name
@@ -168,9 +169,19 @@
 			
 			// Check if the ReflectionProperty already exists in cache
 			if (!array_key_exists($key, $this->reflection_properties)) {
-				// Create a new ReflectionProperty and make it accessible
-				$this->reflection_properties[$key] = $this->getCorrectPropertyClass($className, $propertyName);
-				$this->reflection_properties[$key]->setAccessible(true);
+				// Fetch the reflection class for the property
+				$property = $this->getCorrectPropertyClass($className, $propertyName);
+				
+				// If that failed, throw
+				if ($property === null) {
+					throw new \ReflectionException("Property {$propertyName} not found in {$className} hierarchy");
+				}
+				
+				// Make the property accessible to be able to write private members
+				$property->setAccessible(true);
+				
+				// Add the property to the known list
+				$this->reflection_properties[$key] = $property;
 			}
 			
 			// Return the cached or newly created ReflectionProperty

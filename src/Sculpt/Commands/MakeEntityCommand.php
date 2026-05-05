@@ -657,7 +657,7 @@
 			while (true) {
 				$enumType = $this->input->ask("Enter fully qualified enum class name (e.g. App\Enum\OrderStatus)");
 				
-				if (enum_exists($enumType)) {
+				if ($enumType !== null && enum_exists($enumType)) {
 					return $enumType;
 				}
 				
