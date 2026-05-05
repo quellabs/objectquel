@@ -18,6 +18,7 @@
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstSubquery;
 	use Quellabs\ObjectQuel\ObjectQuel\AstInterface;
 	use Quellabs\ObjectQuel\Exception\QuelException;
+	use Quellabs\ObjectQuel\Planner\Helpers\AnchorResolver;
 	
 	/**
 	 * ──────────────────────────────────────────────────────────────────────────────
@@ -215,7 +216,7 @@
 			// Step 8: Configure anchor
 			// Ensure exactly one range has joinProperty == null (the subquery root)
 			// This is required for valid SQL subquery structure
-			$keptRanges = AnchorOptimizer::configureRangeAnchors($keptRanges, $finalWhere, $analysis);
+			$keptRanges = AnchorResolver::configureRangeAnchors($keptRanges, $finalWhere, $analysis);
 			
 			// Return the optimized subquery components
 			return [$keptRanges, $finalWhere];
