@@ -14,7 +14,7 @@
 	 * Processes EXISTS operators by removing them from conditions and converting
 	 * them to required ranges (INNER JOINs) for better performance.
 	 */
-	class ExistsOptimizer {		
+	class ExistsOptimizer {
 		
 		/**
 		 * Main entry point for optimization. Extracts EXISTS operators from the query
@@ -104,14 +104,8 @@
 		 * @param AstInterface|null $parent The parent node (null for root)
 		 * @param AstInterface $item Current node being processed
 		 * @param array<int, AstExists> $list Reference to list collecting EXISTS operators
-		 * @param bool $parentLeft Whether current item is left child of parent
 		 */
-		private function extractExistsFromBinaryOperator(
-			?AstInterface $parent,
-			AstInterface $item,
-			array &$list,
-			bool $parentLeft = false
-		): void {
+		private function extractExistsFromBinaryOperator(?AstInterface $parent, AstInterface $item, array &$list): void {
 			// Only process binary operation nodes
 			if (!BinaryOperationHelper::isBinaryOperationNode($item)) {
 				return;
@@ -122,12 +116,12 @@
 			
 			// Recursively process left branch if it's a binary operator
 			if ($left instanceof AstBinaryOperator) {
-				$this->extractExistsFromBinaryOperator($item, $left, $list, true);
+				$this->extractExistsFromBinaryOperator($item, $left, $list);
 			}
 			
 			// Recursively process right branch if it's a binary operator
 			if ($right instanceof AstBinaryOperator) {
-				$this->extractExistsFromBinaryOperator($item, $right, $list, false);
+				$this->extractExistsFromBinaryOperator($item, $right, $list);
 			}
 			
 			// Refresh left/right references after potential modifications from recursion
@@ -146,40 +140,42 @@
 			// Handle EXISTS in left operand: extract it and replace with right operand
 			if ($left instanceof AstExists) {
 				$list[] = $left;
-				$this->setChildInParent($parent, $right, $parentLeft);
+				$this->setChildInParent($parent, $left, $right);
 			}
 			
 			// Handle EXISTS in right operand: extract it and replace with left operand
 			if ($right instanceof AstExists) {
 				$list[] = $right;
-				$this->setChildInParent($parent, $left, $parentLeft);
+				$this->setChildInParent($parent, $right, $left);
 			}
 		}
 		
 		/**
-		 * Sets the appropriate child relationship between parent and item nodes.
-		 * This method handles the tree restructuring after removing EXISTS operators.
-		 * @param AstInterface|null $parent The parent node (null or AstRetrieve for root)
-		 * @param AstInterface $item The node to set as child
-		 * @param bool $parentLeft Whether to set as left child (true) or right child (false)
+		 * Replaces an EXISTS operator in the parent node with its sibling node.
+		 * Determines the correct slot (left/right) by comparing the EXISTS node
+		 * identity against the parent's current children.
+		 * @param AstInterface|null $parent The parent node, or null if there is no parent
+		 * @param AstExists $exists The EXISTS operator being removed
+		 * @param AstInterface $replacement The sibling node that will take the EXISTS operator's place
 		 */
-		private function setChildInParent(?AstInterface $parent, AstInterface $item, bool $parentLeft): void {
-			// If parent is the root AstRetrieve, set as main condition
+		private function setChildInParent(?AstInterface $parent, AstExists $exists, AstInterface $replacement): void {
+			// If parent is the root AstRetrieve, replace the entire condition with the sibling
 			if ($parent instanceof AstRetrieve) {
-				$parent->setConditions($item);
+				$parent->setConditions($replacement);
 				return;
 			}
 			
-			// Only set child relationships for binary operation nodes
-			if (!BinaryOperationHelper::isBinaryOperationNode($parent)) {
+			// Null parent or non-binary nodes cannot have children set
+			if ($parent === null || !BinaryOperationHelper::isBinaryOperationNode($parent)) {
 				return;
 			}
 			
-			// Set as left or right child based on the parentLeft flag
-			if ($parentLeft) {
-				BinaryOperationHelper::setBinaryLeft($parent, $item);
+			// Determine which slot the EXISTS occupied by identity comparison,
+			// then put the sibling in its place
+			if (BinaryOperationHelper::getBinaryLeft($parent) === $exists) {
+				BinaryOperationHelper::setBinaryLeft($parent, $replacement);
 			} else {
-				BinaryOperationHelper::setBinaryRight($parent, $item);
+				BinaryOperationHelper::setBinaryRight($parent, $replacement);
 			}
 		}
 	}
