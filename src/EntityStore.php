@@ -188,14 +188,11 @@
 		 * Checks if the entity or its parent exists in the entity registry.
 		 * @param string|object $entity The entity to check, either as an object or as a string class name
 		 * @return bool True if the entity or its parent class exists in the registry, false otherwise
+		 * @throws EntityResolutionException
 		 */
 		public function exists(string|object $entity): bool {
 			// Determine the class name of the entity
-			if (is_object($entity)) {
-				$normalizedClass = $this->resolveProxyClass($entity);
-			} else {
-				$normalizedClass = $this->resolveProxyClass($entity);
-			}
+			$normalizedClass = $this->resolveProxyClass($entity);
 			
 			// Check that the class exists
 			if (!class_exists($normalizedClass)) {
@@ -293,6 +290,7 @@
 		 *
 		 * @param string|object $entity The entity for which you want to find dependent entities
 		 * @return array<int, class-string> A list of entity class names that depend on the specified entity
+		 * @throws EntityResolutionException
 		 */
 		public function getDependentEntities(string|object $entity): array {
 			// Resolve proxy classes to their parent entity class
@@ -642,6 +640,7 @@
 		/**
 		 * Build dependency graph for all entities.
 		 * @return array<class-string, array<int, class-string>> Entity class name => array of dependent entity class names
+		 * @throws EntityResolutionException
 		 */
 		private function getAllEntityDependencies(): array {
 			// Build the dependency graph only once, then cache it
