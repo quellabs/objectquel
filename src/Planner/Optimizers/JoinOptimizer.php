@@ -160,14 +160,23 @@
 		 * @return ContainsNonNullableFieldForRange|ContainsNonNullableFieldForRangeTemporary
 		 */
 		private function buildNullabilityVisitor(AstRange $range): ContainsNonNullableFieldForRange|ContainsNonNullableFieldForRangeTemporary {
-			if ($range instanceof AstRangeDatabase && $range->containsQuery()) {
-				return new ContainsNonNullableFieldForRangeTemporary(
-					$range->getName(),
-					$range->getQuery(),
-					$this->entityStore
-				);
+			// Database ranges can contain either a direct entity reference or a subquery
+			if ($range instanceof AstRangeDatabase) {
+				// Fetch the query
+				$query = $range->getQuery();
+				
+				// Subqueries produce a derived table, so nullability is determined
+				// from the subquery's output columns rather than entity metadata
+				if ($query !== null) {
+					return new ContainsNonNullableFieldForRangeTemporary(
+						$range->getName(),
+						$query,
+						$this->entityStore
+					);
+				}
 			}
 			
+			// Direct entity reference: nullability comes from entity metadata
 			return new ContainsNonNullableFieldForRange($range->getName(), $this->entityStore);
 		}
 	}
