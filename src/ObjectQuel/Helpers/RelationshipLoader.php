@@ -9,6 +9,7 @@
 	use Quellabs\ObjectQuel\Collections\EntityCollection;
 	use Quellabs\ObjectQuel\EntityStore;
 	use Quellabs\ObjectQuel\EntityManager;
+	use Quellabs\ObjectQuel\Exception\EntityResolutionException;
 	use Quellabs\ObjectQuel\Exception\QuelException;
 	use Quellabs\ObjectQuel\UnitOfWork;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstIdentifier;
@@ -40,6 +41,26 @@
 		}
 		
 		/**
+		 * Loads all relationships for a set of entities
+		 * @param array<int, object> $entities The entities to load relationships for
+		 * @throws QuelException
+		 */
+		public function loadRelationships(array $entities): void {
+			try {
+				// Set direct entity-to-entity relationships
+				$this->setDirectRelations($entities);
+				
+				// Set up proxies for empty relationships
+				$this->setupProxyRelations($entities);
+				
+				// Set up collections for empty OneToMany relations
+				$this->setupOneToManyCollections($entities);
+			} catch (EntityResolutionException $e) {
+				throw new QuelException($e->getMessage(), 'relationship_error', $e->getCode(), $e);
+			}
+		}
+		
+		/**
 		 * Determines the correct property name on the proxy based on the dependency.
 		 * @param ManyToOne|OneToOne $dependency The OneToOne dependency.
 		 * @return string The name of the property.
@@ -62,6 +83,7 @@
 		 * @param object $entity The entity whose dependency is being processed.
 		 * @param string $property The property of the entity that needs to be updated.
 		 * @param ManyToOne|OneToOne $dependency The dependency used to find the related entity.
+		 * @throws EntityResolutionException
 		 */
 		private function processEntityDependency(object $entity, string $property, ManyToOne|OneToOne $dependency): void {
 			// Get the current value of the property.
@@ -113,6 +135,7 @@
 		 * from the target entity back to the source entity.
 		 * @param ManyToOne|OneToOne $dependency The relationship dependency (OneToOne or ManyToOne).
 		 * @return string The name of the inverse relationship property.
+		 * @throws EntityResolutionException
 		 */
 		private function getInversedPropertyName(ManyToOne|OneToOne $dependency): string {
 			if ($dependency instanceof OneToOne) {
@@ -149,6 +172,7 @@
 		 * @param object $entity The entity on which to set the proxy
 		 * @param string $property The name of the property where the proxy will be set
 		 * @param ManyToOne|OneToOne $dependency
+		 * @throws EntityResolutionException
 		 */
 		private function createAndSetProxy(object $entity, string $property, ManyToOne|OneToOne $dependency): void {
 			// Determine the relation column (the column containing the foreign key)
@@ -302,6 +326,7 @@
 		 * Sets both OneToOne and ManyToOne relationships for each entity in the given row.
 		 * @param array<int, object> $filteredEntities An array of filtered entities.
 		 * @return void
+		 * @throws EntityResolutionException
 		 */
 		private function setDirectRelations(array $filteredEntities): void {
 			foreach ($filteredEntities as $entity) {
@@ -339,6 +364,7 @@
 		 * those relationships when they are accessed.
 		 * @param array<int, object> $filteredRows The entities that need to be processed
 		 * @return void
+		 * @throws EntityResolutionException
 		 */
 		private function setupProxyRelations(array $filteredRows): void {
 			// Loop through all filtered entities
@@ -366,6 +392,7 @@
 		 * @param array<int, object> $filteredRows The rows that need to be processed
 		 * @return void
 		 * @throws QuelException
+		 * @throws EntityResolutionException
 		 */
 		private function setupOneToManyCollections(array $filteredRows): void {
 			// Loop through all filtered rows
@@ -389,10 +416,16 @@
 						// Fetch the relation column. If absent use the primary key
 						$relationColumn = $dependency->getRelationColumn() ?? $this->entityStore->getPrimaryKey($entity);
 						
+						if ($relationColumn === null) {
+							throw new QuelException(
+								"Cannot determine relation column for OneToMany on {$objectClass}::{$property}"
+							);
+						}
+						
 						// Check if OneToMany has mappedBy. If not error out
 						$mappedBy = $dependency->getMappedBy();
-
-						if (empty($mappedBy)) {
+						
+						if ($mappedBy === null || $mappedBy === '') {
 							throw new QuelException(
 								"OneToMany on {$objectClass}::{$property} requires mappedBy"
 							);
@@ -408,7 +441,7 @@
 						$primaryKeyValue = $this->propertyHandler->get($entity, $relationColumn);
 						
 						$proxy = new EntityCollection(
-							$this->entityManager, $targetEntity, $dependency->getMappedBy(),
+							$this->entityManager, $targetEntity, $mappedBy,
 							$primaryKeyValue, $dependency->getOrderBy()
 						);
 						
@@ -416,21 +449,5 @@
 					}
 				}
 			}
-		}
-		
-		/**
-		 * Loads all relationships for a set of entities
-		 * @param array<int, object> $entities The entities to load relationships for
-		 * @throws QuelException
-		 */
-		public function loadRelationships(array $entities): void {
-			// Set direct entity-to-entity relationships
-			$this->setDirectRelations($entities);
-			
-			// Set up proxies for empty relationships
-			$this->setupProxyRelations($entities);
-			
-			// Set up collections for empty OneToMany relations
-			$this->setupOneToManyCollections($entities);
 		}
 	}
