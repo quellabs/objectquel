@@ -4,15 +4,15 @@
 	
 	use Quellabs\ObjectQuel\Capabilities\PlatformCapabilitiesInterface;
 	use Quellabs\ObjectQuel\Capabilities\NullPlatformCapabilities;
-	use Quellabs\ObjectQuel\Execution\Support\AggregateConstants;
-	use Quellabs\ObjectQuel\Execution\Support\AggregateRewriter;
-	use Quellabs\ObjectQuel\Execution\Support\AstUtilities;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstAggregate;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstAlias;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRetrieve;
-	use Quellabs\ObjectQuel\Execution\Support\ExistsRewriter;
-	use Quellabs\ObjectQuel\Execution\Support\RangeRemover;
-	use Quellabs\ObjectQuel\Execution\Support\RangeUtilities;
+	use Quellabs\ObjectQuel\Planner\Helpers\AggregateConstants;
+	use Quellabs\ObjectQuel\Planner\Helpers\AggregateRewriter;
+	use Quellabs\ObjectQuel\Planner\Helpers\AstUtilities;
+	use Quellabs\ObjectQuel\Planner\Helpers\ExistsRewriter;
+	use Quellabs\ObjectQuel\Planner\Helpers\RangeRemover;
+	use Quellabs\ObjectQuel\Planner\Helpers\RangeUtilities;
 	
 	/**
 	 * Class AggregateOptimizer
@@ -95,6 +95,8 @@
 				
 				// Compute the map only when it will actually be used.
 				$aggregateRangeMap = $this->buildAggregateRangeMap($root);
+				
+				// Rewrite
 				ExistsRewriter::rewriteFilterOnlyJoinsAsExists($root, $aggregateRangeMap);
 			}
 			

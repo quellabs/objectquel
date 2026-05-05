@@ -2,9 +2,6 @@
 	
 	namespace Quellabs\ObjectQuel\Planner\Helpers;
 	
-	use Quellabs\ObjectQuel\Execution\Support\AnchorCandidate;
-	use Quellabs\ObjectQuel\Execution\Support\AstFactory;
-	use Quellabs\ObjectQuel\Execution\Support\QueryAnalysisResult;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRange;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRangeDatabase;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRetrieve;

@@ -1,6 +1,6 @@
 <?php
 	
-	namespace Quellabs\ObjectQuel\Execution\Support;
+	namespace Quellabs\ObjectQuel\Planner\Helpers;
 	
 	/**
 	 * Contains pre-analyzed information about how tables are used in the query.

@@ -4,14 +4,14 @@
 	
 	use Quellabs\ObjectQuel\EntityManager;
 	use Quellabs\ObjectQuel\EntityStore;
-	use Quellabs\ObjectQuel\Execution\Support\AstExpressionFactory;
-	use Quellabs\ObjectQuel\Execution\Support\AstFactory;
-	use Quellabs\ObjectQuel\Execution\Support\AstNodeReplacer;
-	use Quellabs\ObjectQuel\Execution\Support\AstUtilities;
-	use Quellabs\ObjectQuel\Execution\Support\JoinPredicateProcessor;
-	use Quellabs\ObjectQuel\Execution\Support\QueryAnalysisResult;
-	use Quellabs\ObjectQuel\Execution\Support\RangePartitioner;
-	use Quellabs\ObjectQuel\Execution\Support\RangeUsageAnalyzer;
+	use Quellabs\ObjectQuel\Planner\Helpers\AstExpressionFactory;
+	use Quellabs\ObjectQuel\Planner\Helpers\AstFactory;
+	use Quellabs\ObjectQuel\Planner\Helpers\AstNodeReplacer;
+	use Quellabs\ObjectQuel\Planner\Helpers\AstUtilities;
+	use Quellabs\ObjectQuel\Planner\Helpers\JoinPredicateProcessor;
+	use Quellabs\ObjectQuel\Planner\Helpers\QueryAnalysisResult;
+	use Quellabs\ObjectQuel\Planner\Helpers\RangePartitioner;
+	use Quellabs\ObjectQuel\Planner\Helpers\RangeUsageAnalyzer;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstAny;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRange;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRetrieve;

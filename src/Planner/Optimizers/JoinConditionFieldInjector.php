@@ -2,11 +2,11 @@
 	
 	namespace Quellabs\ObjectQuel\Planner\Optimizers;
 	
-	use Quellabs\ObjectQuel\Execution\Support\AstUtilities;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstAlias;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstMin;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRetrieve;
 	use Quellabs\ObjectQuel\ObjectQuel\Visitors\CollectJoinConditionIdentifiers;
+	use Quellabs\ObjectQuel\Planner\Helpers\AstUtilities;
 	
 	/**
 	 * Ensures JOIN operations have access to required identifier fields.
