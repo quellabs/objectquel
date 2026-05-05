@@ -198,7 +198,7 @@
 		public function hasReferenceToRange(AstInterface $condition, AstRange $range): bool {
 			// For property access, check if the base entity matches our range
 			if ($condition instanceof AstIdentifier) {
-				return $condition->getRange()->getName() === $range->getName();
+				return $condition->getRange()?->getName() === $range->getName();
 			}
 			
 			// For aliases and AstUnaryOperations, check the matching identifier
