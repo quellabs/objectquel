@@ -575,10 +575,15 @@
 		 */
 		public function removePHPComments(string $code): string {
 			// Remove /** */ and /* */ block comments
-			$code = preg_replace('!/\*.*?\*/!s', '', $code);
+			$result = preg_replace('!/\*.*?\*/!s', '', $code);
+			
+			// If that failed, return original body
+			if ($result === null) {
+				return $code;
+			}
 			
 			// Remove // line comments
-			return preg_replace('!//.*?$!m', '', $code);
+			return preg_replace('!//.*?$!m', '', $result) ?? $result;
 		}
 		
 		/**
