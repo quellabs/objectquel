@@ -4,6 +4,7 @@
 	
 	use Quellabs\Sculpt\Contracts\CommandBase;
 	use Quellabs\Sculpt\ConfigurationManager;
+	use Quellabs\Sculpt\ServiceProvider;
 	use Quellabs\Support\ComposerUtils;
 	
 	/**
@@ -26,15 +27,24 @@
 		 */
 		public function execute(ConfigurationManager $config): int {
 			try {
+				// Fetch service provider
+				$serviceProvider = $this->getProvider();
+				
+				// Validate existence of service provider
+				if ($serviceProvider === null) {
+					$this->output->error("Phinx configuration provider not specified");
+					return 1;
+				}
+				
 				// Check if we can generate the phinx config
 				// This line exists to make PhpStan happy
-				if (!method_exists($this->getProvider(), 'createPhinxConfig')) {
+				if (!$serviceProvider instanceof \Quellabs\ObjectQuel\Sculpt\ServiceProvider) {
 					$this->output->error("Unable to fetch phinx configuration");
 					return 1;
 				}
 				
 				// Fetch the Phinx configuration array
-				$phinxConfig = $this->getProvider()->createPhinxConfig();
+				$phinxConfig = $serviceProvider->createPhinxConfig();
 				
 				// Determine the target directory - project root is preferable
 				$filePath = ComposerUtils::getProjectRoot() . '/phinx.php';
