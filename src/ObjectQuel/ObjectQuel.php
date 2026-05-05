@@ -34,10 +34,10 @@
 		/**
 		 * Parses a Quel query and returns its validated AST representation.
 		 * @param string $query The Quel query string to parse
-		 * @return AstRetrieve|null The validated AST or null if parsing fails
+		 * @return AstRetrieve The validated AST or null if parsing fails
 		 * @throws QuelException If parsing, validation, or processing fails
 		 */
-		public function parse(string $query): ?AstRetrieve {
+		public function parse(string $query): AstRetrieve {
 			try {
 				// Convert the raw query string into an Abstract Syntax Tree
 				// Create a lexer to break the query string into tokens (keywords, identifiers, operators, etc.)

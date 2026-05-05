@@ -37,7 +37,7 @@
 		 * @param DatabaseQueryExecutor|null $databaseExecutor
 		 */
 		public function __construct(
-			EntityManager $entityManager,
+			EntityManager          $entityManager,
 			?DatabaseQueryExecutor $databaseExecutor = null
 		) {
 			$this->entityManager = $entityManager;
@@ -58,14 +58,6 @@
 		 */
 		public function getEntityManager(): EntityManager {
 			return $this->entityManager;
-		}
-		
-		/**
-		 * Returns the ObjectQuel parser
-		 * @return ObjectQuel
-		 */
-		public function getObjectQuel(): ObjectQuel {
-			return $this->objectQuel;
 		}
 		
 		/**
@@ -104,7 +96,7 @@
 			$this->databaseExecutor->resetLastExecutedSql();
 			
 			// Parse the input query string into an Abstract Syntax Tree (AST)
-			$ast = $this->getObjectQuel()->parse(trim($query));
+			$ast = $this->objectQuel->parse(trim($query));
 			
 			// Decompose the query
 			$planner = new ExecutionPlanBuilder($this->entityManager, $this->capabilities);
