@@ -168,7 +168,7 @@
 				// resolveProxyClass strips namespace aliases and other decoration so
 				// we can do a reliable string comparison against $entityType.
 				// If this relation points somewhere else entirely, it is irrelevant here.
-				if ($this->entityStore->resolveProxyClass($relation->getTargetEntity()) !== $entityType) {
+				if ($this->entityStore->qualifyClassName($relation->getTargetEntity()) !== $entityType) {
 					continue;
 				}
 				

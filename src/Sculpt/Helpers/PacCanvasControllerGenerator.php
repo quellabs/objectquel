@@ -21,6 +21,7 @@
 			$resourceType = strtolower($baseName);
 			$routePath = StringInflector::pluralize(strtolower($baseName));
 			$currentDateTime = date('Y-m-d H:i:s');
+			$qualifiedClassName = $this->entityStore->qualifyClassName($this->entityName);
 			
 			return sprintf('<?php
 
@@ -94,10 +95,10 @@
         }
     }
 ',
-				"\\" . $this->entityStore->resolveProxyClass($this->entityName),
+				"\\" . $qualifiedClassName,
 				$currentDateTime,
 				$controllerName,
-				"\\" . $this->entityStore->resolveProxyClass($this->entityName),
+				"\\" . $qualifiedClassName,
 				$resourceType,
 				$baseName,
 				$routePath,
