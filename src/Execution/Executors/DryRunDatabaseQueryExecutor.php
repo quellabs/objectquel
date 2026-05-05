@@ -2,7 +2,7 @@
 	
 	namespace Quellabs\ObjectQuel\Execution\Executors;
 	
-	use Quellabs\ObjectQuel\Execution\ExecutionStageInterface;
+	use Quellabs\ObjectQuel\Planner\ExecutionStageInterface;
 	
 	/**
 	 * A dry-run executor that captures generated SQL without executing it.

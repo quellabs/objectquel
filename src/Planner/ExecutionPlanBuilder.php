@@ -107,6 +107,7 @@
 		 * @param AstRangeDatabase[] $tempRanges Already dependency-sorted temp ranges
 		 * @param array<string, mixed> $staticParams
 		 * @return string[] Map of rangeName → TempTableStage name
+		 * @throws QuelException
 		 */
 		private function buildTempTableStages(ExecutionPlan $plan, array $tempRanges, array $staticParams): array {
 			// rangeName → TempTableStage name, built up as stages are added so inter-stage
@@ -120,7 +121,9 @@
 				}
 				
 				$tempStageName = uniqid('tmp_stage_');
-				$plan->addStage(new TempTableStage($tempStageName, $tempRange, $staticParams));
+				$innerPlan = $this->build($tempRange->getQuery(), $staticParams);
+				
+				$plan->addStage(new TempTableStage($tempStageName, $tempRange, $innerPlan, $staticParams));
 				$tempTableStageNames[$tempRange->getName()] = $tempStageName;
 				
 				// If this TempTableStage itself depends on another TempTableStage

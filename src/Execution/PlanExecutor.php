@@ -13,6 +13,8 @@
 	use Quellabs\ObjectQuel\Execution\Executors\TempTableExecutor;
 	use Quellabs\ObjectQuel\Planner\ExecutionPlan;
 	use Quellabs\ObjectQuel\Planner\ExecutionPlanBuilder;
+	use Quellabs\ObjectQuel\Planner\ExecutionStage;
+	use Quellabs\ObjectQuel\Planner\ExecutionStageInterface;
 	use Quellabs\ObjectQuel\Planner\TempTableStage;
 	
 	/**
@@ -113,12 +115,14 @@
 						// TempTableStages contribute no rows to intermediate results.
 						$this->getTempTableExecutor()->execute(
 							$stage,
-							$this->buildInnerQueryRunner(),
-							$stage->getStaticParams()
+							fn(ExecutionPlan $innerPlan) => $this->execute($innerPlan)
 						);
 					} else {
 						try {
-							$intermediateResults[$stage->getName()] = $this->executeStage($stage);
+							$intermediateResults[$stage->getName()] = $this->queryExecutor->executeStage(
+								$stage,
+								$stage->getStaticParams()
+							);
 						} catch (QuelException $e) {
 							// Wrap any execution errors with stage context information
 							throw new QuelException("Stage '{$stage->getName()}' failed: {$e->getMessage()}", 'stage_error', 0, $e);
@@ -139,31 +143,6 @@
 					$this->getTempTableExecutor()->cleanup();
 				}
 			}
-		}
-		
-		/**
-		 * Builds the callable that TempTableExecutor uses to run an inner query.
-		 *
-		 * The callable receives an AstRetrieve and a params array, re-decomposes the
-		 * inner query into its own ExecutionPlan, and executes it through a fresh
-		 * PlanExecutor. Using a fresh PlanExecutor ensures that inner temp tables
-		 * get their own independent cleanup scope and do not interfere with the outer
-		 * execution's finally block.
-		 *
-		 * @return callable(AstRetrieve, array<string|int, mixed>): list<array<string, mixed>>
-		 */
-		private function buildInnerQueryRunner(): callable {
-			return function (AstRetrieve $innerQuery, array $params): array {
-				// Decompose and execute the inner query as a self-contained plan.
-				// This reuses the full pipeline: ExecutionPlanBuilder  → ExecutionPlan →
-				// PlanExecutor → DatabaseQueryExecutor / JsonQueryExecutor.
-				$planner = new ExecutionPlanBuilder();
-				$innerPlan = $planner->build($innerQuery, $params);
-				
-				// Fresh PlanExecutor so inner temp tables have their own cleanup scope
-				$innerPlanExecutor = new self($this->queryExecutor, $this->conditionEvaluator);
-				return $innerPlanExecutor->execute($innerPlan);
-			};
 		}
 		
 		/**
@@ -204,29 +183,6 @@
 			
 			$this->joinStrategyCache[$joinType] = $strategy;
 			return $strategy;
-		}
-		
-		/**
-		 * Process an individual stage with dependencies
-		 * @param ExecutionStageInterface $stage The stage to execute
-		 * @return list<array<string, mixed>> The result of this stage's execution
-		 * @throws QuelException When dependencies cannot be satisfied or execution fails
-		 */
-		private function executeStage(ExecutionStageInterface $stage): array {
-			// Execute the query with static parameters defined in the stage
-			$result = $this->queryExecutor->executeStage($stage, $stage->getStaticParams());
-			
-			// Apply post-processing if the stage has a result processor defined
-			// This allows for custom transformations or filtering after query execution
-			if ($result && $stage->hasResultProcessor()) {
-				// Fetch the results processor to modify the result
-				$processor = $stage->getResultProcessor();
-				
-				// Execute the processor function, passing the result by reference for modification
-				$processor($result);
-			}
-			
-			return $result;
 		}
 		
 		/**

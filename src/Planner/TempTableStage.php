@@ -42,6 +42,9 @@
 		 */
 		private AstRangeDatabase $range;
 		
+		/** @var ExecutionPlan Inner execution plan */
+		private ExecutionPlan $innerPlan;
+		
 		/**
 		 * Static parameters forwarded to the inner query execution
 		 * @var array<string, mixed>
@@ -51,11 +54,18 @@
 		/**
 		 * @param string $name Unique stage name
 		 * @param AstRangeDatabase $range The range whose inner query must be materialised
+		 * @param ExecutionPlan $innerPlan
 		 * @param array<string, mixed> $staticParams Parameters passed through to inner query execution
 		 */
-		public function __construct(string $name, AstRangeDatabase $range, array $staticParams = []) {
+		public function __construct(
+			string $name,
+			AstRangeDatabase $range,
+			ExecutionPlan $innerPlan,
+			array $staticParams = []
+		) {
 			$this->name = $name;
 			$this->range = $range;
+			$this->innerPlan = $innerPlan;
 			$this->staticParams = $staticParams;
 		}
 		
@@ -86,6 +96,14 @@
 		 */
 		public function getQuery(): AstRetrieve {
 			return $this->getInnerQuery();
+		}
+		
+		/**
+		 * Returns the inner plan
+		 * @return ExecutionPlan
+		 */
+		public function getInnerPlan(): ExecutionPlan {
+			return $this->innerPlan;
 		}
 		
 		/**

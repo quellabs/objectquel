@@ -40,13 +40,6 @@
 		private array $staticParams;
 		
 		/**
-		 * Post-processing function to apply to results before passing to next stages
-		 * Allows for transformation or filtering of results before they're used by dependent stages
-		 * @var callable|null
-		 */
-		private $resultProcessor = null;
-		
-		/**
 		 * The conditions for a join operation with other stages
 		 * @var AstInterface|null
 		 */
@@ -82,22 +75,6 @@
 		 */
 		public function getQuery(): AstRetrieve {
 			return $this->query;
-		}
-		
-		/**
-		 * Checks if this stage has a result processor configured
-		 * @return bool True if a result processor has been configured, false otherwise
-		 */
-		public function hasResultProcessor(): bool {
-			return $this->resultProcessor !== null;
-		}
-		
-		/**
-		 * Returns the result processor function if one is configured
-		 * @return callable|null The processor function or null if none is set
-		 */
-		public function getResultProcessor(): ?callable {
-			return $this->resultProcessor;
 		}
 		
 		/**
