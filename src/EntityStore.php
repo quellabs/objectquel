@@ -71,7 +71,7 @@
 		private array $metadataCache = [];
 		
 		// Dependency graph (calculated once on demand)
-		/** @var array<string, array<int, string>>|null */
+		/** @var array<string, array<int, class-string>>|null */
 		private ?array $dependencyGraph = null;
 		
 		/**
@@ -271,7 +271,7 @@
 		 * Useful for determining cascade deletion order and relationship integrity.
 		 *
 		 * @param mixed $entity The entity for which you want to find dependent entities
-		 * @return array<int, string> A list of entity class names that depend on the specified entity
+		 * @return array<int, class-string> A list of entity class names that depend on the specified entity
 		 */
 		public function getDependentEntities(mixed $entity): array {
 			// Determine the class name of the entity
@@ -287,6 +287,10 @@
 			foreach ($dependencies as $entityClass => $entityDependencies) {
 				// If the specified class exists in the dependencies list, add it to the result
 				if (in_array($normalizedClass, $entityDependencies, true)) {
+					if (!class_exists($entityClass)) {
+						continue;
+					}
+					
 					$result[] = $entityClass;
 				}
 			}
@@ -627,7 +631,7 @@
 		
 		/**
 		 * Build dependency graph for all entities.
-		 * @return array<string, array<int, string>> Entity class name => array of dependent entity class names
+		 * @return array<string, array<int, class-string>> Entity class name => array of dependent entity class names
 		 */
 		private function getAllEntityDependencies(): array {
 			// Build the dependency graph only once, then cache it
@@ -643,7 +647,7 @@
 					// Add ManyToOne dependencies
 					// These represent foreign key relationships where this entity depends on another
 					foreach ($metadata->manyToOneRelations as $relation) {
-						$dependencies[] = $this->normalizeEntityName($relation->getTargetEntity());
+						$dependencies[] = $this->resolveEntityClass($relation->getTargetEntity());
 					}
 					
 					// Add OneToOne dependencies (owning side only)
@@ -651,7 +655,7 @@
 					// (indicated by the inversedBy property being set)
 					foreach ($metadata->oneToOneRelations as $relation) {
 						if (!empty($relation->getInversedBy())) {
-							$dependencies[] = $this->normalizeEntityName($relation->getTargetEntity());
+							$dependencies[] = $this->resolveEntityClass($relation->getTargetEntity());
 						}
 					}
 					

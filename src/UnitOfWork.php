@@ -899,7 +899,7 @@
 		 * Process a specific dependent entity class for cascading deletion.
 		 * This method examines relationships from the dependent entity to the parent,
 		 * checks for cascade configurations, and marks appropriate instances for deletion.
-		 * @param string $dependentEntityClass The fully qualified class name of the dependent entity type
+		 * @param class-string $dependentEntityClass The fully qualified class name of the dependent entity type
 		 * @param string $normalizedClass The normalized class name of the parent entity being deleted
 		 * @param object $entity The parent entity object instance being deleted
 		 * @return void
