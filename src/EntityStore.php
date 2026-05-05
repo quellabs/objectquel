@@ -59,7 +59,7 @@
 		private string $entityNamespace;
 		
 		// Simple registry of normalized class name => table name
-		/** @var array<string, string> */
+		/** @var array<class-string, string> */
 		private array $entityRegistry = [];
 		
 		// Cache for normalized entity names
@@ -71,7 +71,7 @@
 		private array $metadataCache = [];
 		
 		// Dependency graph (calculated once on demand)
-		/** @var array<string, array<int, class-string>>|null */
+		/** @var array<class-string, array<int, class-string>>|null */
 		private ?array $dependencyGraph = null;
 		
 		/**
@@ -249,17 +249,15 @@
 		}
 		
 		/**
-		 * Resolve an entity class
+		 * Resolve an entity class.
+		 * Classes are trusted after entering the registry via initializeEntities.
+		 * Proxy classes are the only ones validated at runtime (in normalizeEntityName).
 		 * @param mixed $entity
 		 * @return class-string<object>
 		 */
 		public function resolveEntityClass(mixed $entity): string {
+			/** @var class-string<object> $className */
 			$className = $this->normalizeEntityName($entity);
-			
-			if (!class_exists($className)) {
-				throw new \RuntimeException("Invalid entity class: {$className}");
-			}
-			
 			return $className;
 		}
 		
@@ -274,29 +272,15 @@
 		 * @return array<int, class-string> A list of entity class names that depend on the specified entity
 		 */
 		public function getDependentEntities(mixed $entity): array {
-			// Determine the class name of the entity
-			// If the class name is a proxy, get the parent class
+			// Resolve proxy classes to their parent entity class
 			$normalizedClass = $this->normalizeEntityName($entity);
 			
-			// Get all known entity dependencies
-			$dependencies = $this->getAllEntityDependencies();
-			
-			// Loop through each entity and its dependencies to check for the specified class
-			$result = [];
-			
-			foreach ($dependencies as $entityClass => $entityDependencies) {
-				// If the specified class exists in the dependencies list, add it to the result
-				if (in_array($normalizedClass, $entityDependencies, true)) {
-					if (!class_exists($entityClass)) {
-						continue;
-					}
-					
-					$result[] = $entityClass;
-				}
-			}
-			
-			// Return the list of dependent entities
-			return $result;
+			// Filter the dependency graph to entities that list $normalizedClass as a dependency,
+			// then return their class names. array_keys on array<class-string, ...> yields array<int, class-string>.
+			return array_keys(array_filter(
+				$this->getAllEntityDependencies(),
+				fn(array $entityDependencies) => in_array($normalizedClass, $entityDependencies, true)
+			));
 		}
 		
 		/**
@@ -624,14 +608,17 @@
 					continue;
 				}
 				
-				// Store in register
+				/**
+				 * Store in register
+				 * @var class-string $entityName
+				 */
 				$this->entityRegistry[$entityName] = $table->getName();
 			}
 		}
 		
 		/**
 		 * Build dependency graph for all entities.
-		 * @return array<string, array<int, class-string>> Entity class name => array of dependent entity class names
+		 * @return array<class-string, array<int, class-string>> Entity class name => array of dependent entity class names
 		 */
 		private function getAllEntityDependencies(): array {
 			// Build the dependency graph only once, then cache it
