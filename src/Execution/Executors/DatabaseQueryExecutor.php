@@ -6,7 +6,6 @@
 	use Quellabs\ObjectQuel\EntityManager;
 	use Quellabs\ObjectQuel\DatabaseAdapter\DatabaseAdapter;
 	use Quellabs\ObjectQuel\Planner\ExecutionStageInterface;
-	use Quellabs\ObjectQuel\Execution\QueryOptimizer;
 	use Quellabs\ObjectQuel\Capabilities\PlatformCapabilities;
 	use Quellabs\ObjectQuel\Execution\QueryTransformer;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRetrieve;
@@ -20,7 +19,6 @@
 		protected EntityManager $entityManager;
 		protected DatabaseAdapter $connection;
 		protected QueryTransformer $queryTransformer;
-		protected QueryOptimizer $queryOptimizer;
 		protected PlatformCapabilities $platform;
 		
 		/** @var list<string> */
@@ -35,7 +33,6 @@
 			$this->connection = $entityManager->getConnection();
 			$this->platform = new PlatformCapabilities($this->connection);
 			$this->queryTransformer = new QueryTransformer($this->entityManager, $this->platform);
-			$this->queryOptimizer = new QueryOptimizer($this->entityManager, $this->platform);
 		}
 		
 		/**
@@ -46,8 +43,7 @@
 		 * @throws QuelException
 		 */
 		public function execute(ExecutionStageInterface $stage, array $initialParams = []): array {
-			// Transform and optimize the query
-			$this->queryOptimizer->optimize($stage->getQuery());
+			// Transform the query
 			$this->queryTransformer->transform($stage->getQuery(), $initialParams);
 			
 			// Convert the query to SQL

@@ -2,6 +2,7 @@
 	
 	namespace Quellabs\ObjectQuel\Execution;
 	
+	use Quellabs\ObjectQuel\Capabilities\PlatformCapabilities;
 	use Quellabs\ObjectQuel\EntityManager;
 	use Quellabs\ObjectQuel\DatabaseAdapter\DatabaseAdapter;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRangeJsonSource;
@@ -10,7 +11,6 @@
 	use Quellabs\ObjectQuel\ObjectQuel\QuelResult;
 	use Quellabs\ObjectQuel\Execution\Executors\DatabaseQueryExecutor;
 	use Quellabs\ObjectQuel\Execution\Executors\JsonQueryExecutor;
-	use Quellabs\ObjectQuel\Planner\ExecutionPlan;
 	use Quellabs\ObjectQuel\Planner\ExecutionPlanBuilder;
 	use Quellabs\ObjectQuel\Planner\ExecutionStageInterface;
 	
@@ -24,6 +24,7 @@
 	class QueryExecutor {
 		
 		private EntityManager $entityManager;
+		private PlatformCapabilities $capabilities;
 		private DatabaseAdapter $connection;
 		private PlanExecutor $planExecutor;
 		private ObjectQuel $objectQuel;
@@ -35,9 +36,13 @@
 		 * @param EntityManager $entityManager
 		 * @param DatabaseQueryExecutor|null $databaseExecutor
 		 */
-		public function __construct(EntityManager $entityManager, ?DatabaseQueryExecutor $databaseExecutor = null) {
+		public function __construct(
+			EntityManager $entityManager,
+			?DatabaseQueryExecutor $databaseExecutor = null
+		) {
 			$this->entityManager = $entityManager;
 			$this->connection = $entityManager->getConnection();
+			$this->capabilities = new PlatformCapabilities($this->connection);
 			$this->objectQuel = new ObjectQuel($entityManager);
 			
 			// Create specialized executors
@@ -88,21 +93,6 @@
 		}
 		
 		/**
-		 * Execute an already-built execution plan and return raw result rows.
-		 *
-		 * This lower-level entry point is used by PlanExecutor's inner query runner
-		 * when materializing a TempTableStage. It accepts a pre-built ExecutionPlan so
-		 * that the inner AstRetrieve is not re-parsed from a string.
-		 *
-		 * @param ExecutionPlan $plan The plan to execute
-		 * @return list<array<string, mixed>>
-		 * @throws QuelException
-		 */
-		public function executePlan(ExecutionPlan $plan): array {
-			return $this->planExecutor->execute($plan);
-		}
-		
-		/**
 		 * Execute a decomposed query plan
 		 * @param string $query The query to execute
 		 * @param array<int|string, mixed> $parameters
@@ -117,7 +107,7 @@
 			$ast = $this->getObjectQuel()->parse(trim($query));
 			
 			// Decompose the query
-			$planner = new ExecutionPlanBuilder();
+			$planner = new ExecutionPlanBuilder($this->entityManager, $this->capabilities);
 			$executionPlan = $planner->build($ast, $this->normalizeParams($parameters));
 			
 			// Execute the returned execution plan and return the QuelResult

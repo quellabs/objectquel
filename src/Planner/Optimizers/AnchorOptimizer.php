@@ -1,6 +1,6 @@
 <?php
 	
-	namespace Quellabs\ObjectQuel\Execution\Optimizers;
+	namespace Quellabs\ObjectQuel\Planner\Optimizers;
 	
 	use Quellabs\ObjectQuel\Execution\Support\AnchorCandidate;
 	use Quellabs\ObjectQuel\Execution\Support\AstFactory;

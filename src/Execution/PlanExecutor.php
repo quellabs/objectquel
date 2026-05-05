@@ -3,7 +3,6 @@
 	namespace Quellabs\ObjectQuel\Execution;
 	
 	use Quellabs\ObjectQuel\EntityStore;
-	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRetrieve;
 	use Quellabs\ObjectQuel\ObjectQuel\AstInterface;
 	use Quellabs\ObjectQuel\Exception\QuelException;
 	use Quellabs\ObjectQuel\Execution\Joins\JoinStrategyInterface;
@@ -12,7 +11,6 @@
 	use Quellabs\ObjectQuel\Execution\Joins\InnerJoinStrategy;
 	use Quellabs\ObjectQuel\Execution\Executors\TempTableExecutor;
 	use Quellabs\ObjectQuel\Planner\ExecutionPlan;
-	use Quellabs\ObjectQuel\Planner\ExecutionPlanBuilder;
 	use Quellabs\ObjectQuel\Planner\ExecutionStage;
 	use Quellabs\ObjectQuel\Planner\ExecutionStageInterface;
 	use Quellabs\ObjectQuel\Planner\TempTableStage;

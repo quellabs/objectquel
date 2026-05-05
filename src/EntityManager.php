@@ -21,6 +21,7 @@
 	namespace Quellabs\ObjectQuel;
 	
 	use Cake\Database\Connection;
+	use Quellabs\ObjectQuel\Capabilities\PlatformCapabilities;
 	use Quellabs\ObjectQuel\DatabaseAdapter\DatabaseAdapter;
 	use Quellabs\ObjectQuel\Execution\ResultProcessor;
 	use Quellabs\ObjectQuel\Exception\QuelException;

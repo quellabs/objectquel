@@ -1,9 +1,9 @@
 <?php
 	
-	namespace Quellabs\ObjectQuel\Execution;
+	namespace Quellabs\ObjectQuel\Planner;
 	
-	use Quellabs\ObjectQuel\Capabilities\PlatformCapabilitiesInterface;
 	use Quellabs\ObjectQuel\Capabilities\NullPlatformCapabilities;
+	use Quellabs\ObjectQuel\Capabilities\PlatformCapabilitiesInterface;
 	use Quellabs\ObjectQuel\EntityManager;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRangeDatabase;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRetrieve;
@@ -46,10 +46,6 @@
 		 * @param AstRetrieve $ast The query AST to optimize in-place
 		 */
 		public function optimize(AstRetrieve $ast): void {
-			// First, recursively optimize all nested queries in temporary ranges
-			// This ensures inner queries are optimized before outer query optimization
-			$this->optimizeNestedQueries($ast);
-			
 			// Phase 1: Basic range and relationship optimizations
 			// Apply filtering early to reduce dataset size for subsequent operations
 			$this->rangeOptimizer->optimize($ast);
@@ -73,31 +69,5 @@
 			$this->joinOptimizer->optimize($ast);
 			$this->rangeOptimizer->removeUnusedLeftJoinRanges($ast, false);
 			$this->JoinConditionFieldInjector->optimize($ast);
-		}
-		
-		/**
-		 * Recursively optimize all nested queries in temporary range definitions.
-		 * Ensures that inner queries are fully optimized before the outer query is optimized.
-		 * This is critical because:
-		 * - Inner query performance directly impacts outer query performance
-		 * - Optimizations may affect result set sizes and join strategies
-		 * - Temporary tables benefit from optimized source queries
-		 *
-		 * @param AstRetrieve $ast The query AST containing potential nested queries
-		 */
-		private function optimizeNestedQueries(AstRetrieve $ast): void {
-			foreach ($ast->getRanges() as $range) {
-				// Only optimize temporary ranges that contain nested queries
-				if (!$range instanceof AstRangeDatabase) {
-					continue;
-				}
-				
-				if ($range->getQuery() === null) {
-					continue;
-				}
-				
-				// Recursively optimize the inner query with full optimization pipeline
-				$this->optimize($range->getQuery());
-			}
 		}
 	}

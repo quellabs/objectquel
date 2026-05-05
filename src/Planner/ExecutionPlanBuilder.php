@@ -2,6 +2,8 @@
 	
 	namespace Quellabs\ObjectQuel\Planner;
 	
+	use Quellabs\ObjectQuel\Capabilities\PlatformCapabilities;
+	use Quellabs\ObjectQuel\EntityManager;
 	use Quellabs\ObjectQuel\Planner\Helpers\ConditionAnalyzer;
 	use Quellabs\ObjectQuel\Planner\Helpers\ConditionFilter;
 	use Quellabs\ObjectQuel\Planner\Helpers\StageFactory;
@@ -26,22 +28,24 @@
 	 */
 	class ExecutionPlanBuilder  {
 		
-		/**
-		 * @var ConditionAnalyzer
-		 */
+		/** @var ConditionAnalyzer */
 		private ConditionAnalyzer $analyzer;
 		
-		/**
-		 * @var StageFactory
-		 */
+		/** @var StageFactory */
 		private StageFactory $stageFactory;
+		
+		/** @var QueryOptimizer */
+		private QueryOptimizer $optimizer;
 		
 		/**
 		 * Constructor
+		 * @param EntityManager $entityManager
+		 * @param PlatformCapabilities $capabilities
 		 */
-		public function __construct() {
+		public function __construct(EntityManager $entityManager, PlatformCapabilities $capabilities) {
 			$this->analyzer = new ConditionAnalyzer();
 			$this->stageFactory = new StageFactory($this->analyzer, new ConditionFilter($this->analyzer));
+			$this->optimizer = new QueryOptimizer($entityManager, $capabilities);
 		}
 		
 		/**
@@ -65,9 +69,14 @@
 		 */
 		public function build(AstRetrieve $query, array $staticParams = []): ExecutionPlan {
 			$this->analyzer->clearCache();
+			
+			// Optimize the plan
+			$this->optimizer->optimize($query);
+			
+			// Create a new plan to populate
 			$plan = new ExecutionPlan();
 			
-			// Detect which temporary ranges need materialisation as real temp tables.
+			// Detect which temporary ranges need materialization as real temp tables.
 			// We must process these BEFORE creating the main database stage so that
 			// dependency edges can be registered correctly.
 			$tempRanges = $this->stageFactory->extractTemporaryRanges($query);
@@ -89,6 +98,7 @@
 				$plan->addStage($this->stageFactory->createRangeExecutionStage($query, $otherRange, $staticParams));
 			}
 			
+			// Return the plan
 			return $plan;
 		}
 		
