@@ -205,10 +205,10 @@
 			
 			// Step 6: Build final WHERE clause
 			// Combine the original ANY conditions with any predicates promoted from JOINs
-			$finalWhere = AstUtilities::combinePredicatesWithAnd([
+			$finalWhere = AstUtilities::combinePredicatesWithAnd(array_values(array_filter([
 				$node->getConditions(),
 				AstUtilities::combinePredicatesWithAnd($promotedPredicates)
-			]);
+			])));
 			
 			// Step 7: Keep only live ranges
 			// Remove correlation-only ranges since their conditions are now in WHERE
@@ -305,18 +305,28 @@
 		 * @return void
 		 */
 		private function replaceAnyWithInlinedValue(AstRetrieve $ast, AstAny $node): void {
-			// Replace ANY(...) with literal 1
-			AstNodeReplacer::replaceChild(
-				$node->getParent(),
-				$node,
-				AstFactory::createNumber(1)
-			);
+			// getParent() returns ?AstInterface; a null parent means this node is the
+			// tree root, which cannot happen for ANY (it always appears inside SELECT
+			// or WHERE). Guard here so replaceChild never receives null.
+			$parent = $node->getParent();
 			
-			// Add LIMIT 1 if no window is already set
-			// This ensures we only return one row, which is correct for ANY semantics
+			if ($parent === null) {
+				throw new \LogicException('Cannot replace ANY node: node has no parent (is it the tree root?)');
+			}
+			
+			// Swap the ANY(...) node for the literal integer 1.
+			// The outer query already guarantees at least one row exists (this path is
+			// only reached when ANY references only the anchor with no conditions),
+			// so 1 is always the correct result value.
+			AstNodeReplacer::replaceChild($parent, $node, AstFactory::createNumber(1));
+			
+			// Without a LIMIT the outer query would return every row from the anchor
+			// table. ANY semantics require "at least one", so cap the result to one row.
+			// Skip this when a window is already set to avoid overriding an explicit
+			// LIMIT/OFFSET that the caller established.
 			if ($ast->getWindow() === null) {
-				$ast->setWindow(0);         // Start at window 0
-				$ast->setWindowSize(1);  // Return only 1 row
+				$ast->setWindow(0);      // Offset: start from the first row
+				$ast->setWindowSize(1);  // Fetch at most one row
 			}
 		}
 		
@@ -340,23 +350,44 @@
 		 * @return void
 		 */
 		private function replaceAnyWithSubquery(string $subQueryType, array $correlatedRanges, ?AstInterface $conditions, AstAny $node): void {
-			// Replace with literal true/1 since anchor existence is guaranteed
+			// Fast path: ANY references only the anchor range and has no WHERE conditions.
+			// The anchor's existence is already guaranteed by the outer query, so the
+			// result is always 1. Skip subquery generation and inline the literal directly.
 			if ($this->isAnyOnAnchorWithNoConditions($correlatedRanges, $conditions, $node)) {
 				$subQuery = AstFactory::createNumber(1);
-				AstNodeReplacer::replaceChild($node->getParent(), $node, $subQuery);
+				$parent = $node->getParent();
+				
+				// ANY can never be the tree root, so a null parent indicates a broken AST.
+				if ($parent === null) {
+					throw new \LogicException('Cannot replace ANY node: node has no parent (is it the tree root?)');
+				}
+				
+				// Replace the child
+				AstNodeReplacer::replaceChild($parent, $node, $subQuery);
 				return;
 			}
 			
-			// For SELECT context: CASE WHEN EXISTS(...) THEN 1 ELSE 0 END
+			// Resolve the parent once for the remaining branches. Both the CASE WHEN and
+			// EXISTS paths replace the same node, so one null-check covers both.
+			$parent = $node->getParent();
+			
+			if ($parent === null) {
+				throw new \LogicException('Cannot replace ANY node: node has no parent (is it the tree root?)');
+			}
+			
+			// SELECT context: wrap in CASE WHEN EXISTS(...) THEN 1 ELSE 0 END so that
+			// the subquery yields a scalar integer rather than a boolean predicate.
 			if ($subQueryType === AstSubquery::TYPE_CASE_WHEN) {
 				$subQuery = AstExpressionFactory::createCaseWhen($correlatedRanges, $conditions, "ANY");
-				AstNodeReplacer::replaceChild($node->getParent(), $node, $subQuery);
+				AstNodeReplacer::replaceChild($parent, $node, $subQuery);
 				return;
 			}
 			
-			// For WHERE context: EXISTS(SELECT 1 FROM ... WHERE ...)
+			// WHERE context: emit EXISTS(SELECT 1 FROM ... WHERE ...).
+			// Using SELECT 1 rather than SELECT * avoids unnecessary column projection
+			// since only row existence matters here.
 			$subQuery = AstExpressionFactory::createExists(AstFactory::createNumber(1), $correlatedRanges, $conditions, "ANY");
-			AstNodeReplacer::replaceChild($node->getParent(), $node, $subQuery);
+			AstNodeReplacer::replaceChild($parent, $node, $subQuery);
 		}
 		
 		/**
