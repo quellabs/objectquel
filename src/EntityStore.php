@@ -168,7 +168,7 @@
 			if (is_object($entity)) {
 				$className = $this->resolveProxyClass($entity);
 			} else {
-				$className = $this->qualifyClassName($entity);
+				$className = $this->resolveProxyClass($entity);
 			}
 			
 			// Return cached metadata if available
@@ -196,7 +196,7 @@
 			if (is_object($entity)) {
 				$normalizedClass = $this->resolveProxyClass($entity);
 			} else {
-				$normalizedClass = $this->qualifyClassName($entity);
+				$normalizedClass = $this->resolveProxyClass($entity);
 			}
 			
 			// Check that the class exists
@@ -225,27 +225,64 @@
 		public function getOwningTable(string|object $entity): ?string {
 			return $this->getMetadata($entity)->tableName;
 		}
-
-		/**
-		 * Normalizes the entity name by resolving proxies and namespaces.
-		 * @param object $entity Fully qualified class name, short name, object, or ReflectionClass
-		 * @return string Normalized, fully qualified class name
-		 */
-		public function resolveProxyClass(object $entity): string {
-			return $this->internalResolveProxyClass($entity);
-		}
 		
 		/**
-		 * Resolve an entity class.
-		 * Classes are trusted after entering the registry via initializeEntities.
-		 * Proxy classes are the only ones validated at runtime (in resolveProxyClass).
-		 * @param string $entityName
-		 * @return class-string<object>
+		 * Normalizes the entity name by resolving proxies and namespaces.
+		 * @param string|object $entity Fully qualified class name, short name, object, or ReflectionClass
+		 * @return class-string Normalized, fully qualified class name
 		 */
-		public function qualifyClassName(string $entityName): string {
-			/** @var class-string<object> $className */
-			$className = $this->internalResolveProxyClass($entityName);
-			return $className;
+		public function resolveProxyClass(string|object $entity): string {
+			// Determine the class name of the entity
+			$className = $this->extractClassName($entity);
+			
+			// Return cached entity name if present
+			if (isset($this->normalizedNameCache[$className])) {
+				/** @var class-string $cached */
+				$cached = $this->normalizedNameCache[$className];
+				return $cached;
+			}
+			
+			// Proxy class → resolve to parent
+			// If the class name is a proxy, get the parent class name
+			if (str_contains($className, $this->proxyNamespace)) {
+				if (!class_exists($className)) {
+					throw new \RuntimeException("Invalid entity class: {$className}");
+				}
+				
+				$parent = $this->reflectionHandler->getParent($className);
+				
+				if ($parent === null || !class_exists($parent)) {
+					throw new \RuntimeException("Cannot resolve parent of proxy class: {$className}");
+				}
+				
+				return $this->normalizedNameCache[$className] = $parent;
+			}
+			
+			// Already fully qualified
+			if (str_contains($className, "\\")) {
+				if (!class_exists($className)) {
+					throw new \RuntimeException("Invalid entity class: {$className}");
+				}
+				
+				return $this->normalizedNameCache[$className] = $className;
+			}
+			
+			// Try resolving short class name
+			$resolved = NamespaceResolver::resolveClassName($className);
+			
+			if ($resolved === $className) {
+				$fullyQualifiedClassName = "{$this->entityNamespace}\\{$className}";
+			} else {
+				$fullyQualifiedClassName = $resolved;
+			}
+			
+			// Assert existence
+			if (!class_exists($fullyQualifiedClassName)) {
+				throw new \RuntimeException("Invalid entity class: {$fullyQualifiedClassName}");
+			}
+			
+			// Add $fullyQualifiedClassName to list
+			return $this->normalizedNameCache[$className] = $fullyQualifiedClassName;
 		}
 		
 		/**
@@ -263,7 +300,7 @@
 			if (is_object($entity)) {
 				$normalizedClass = $this->resolveProxyClass($entity);
 			} else {
-				$normalizedClass = $this->qualifyClassName($entity);
+				$normalizedClass = $this->resolveProxyClass($entity);
 			}
 			
 			// Filter the dependency graph to entities that list $normalizedClass as a dependency,
@@ -625,7 +662,7 @@
 					// Add ManyToOne dependencies
 					// These represent foreign key relationships where this entity depends on another
 					foreach ($metadata->manyToOneRelations as $relation) {
-						$dependencies[] = $this->qualifyClassName ($relation->getTargetEntity());
+						$dependencies[] = $this->resolveProxyClass ($relation->getTargetEntity());
 					}
 					
 					// Add OneToOne dependencies (owning side only)
@@ -633,7 +670,7 @@
 					// (indicated by the inversedBy property being set)
 					foreach ($metadata->oneToOneRelations as $relation) {
 						if (!empty($relation->getInversedBy())) {
-							$dependencies[] = $this->qualifyClassName ($relation->getTargetEntity());
+							$dependencies[] = $this->resolveProxyClass ($relation->getTargetEntity());
 						}
 					}
 					
@@ -645,44 +682,4 @@
 			return $this->dependencyGraph;
 		}
 		
-		/**
-		 * Normalizes the entity name by resolving proxies and namespaces.
-		 * @param string|object $entity Fully qualified class name, short name, object, or ReflectionClass
-		 * @return string Normalized, fully qualified class name
-		 */
-		private function internalResolveProxyClass(string|object $entity): string {
-			// Determine the class name of the entity
-			$className = $this->extractClassName($entity);
-			
-			// Return cached entity name if present
-			if (isset($this->normalizedNameCache[$className])) {
-				return $this->normalizedNameCache[$className];
-			}
-			
-			// Proxy class → resolve to parent
-			// If the class name is a proxy, get the parent class name
-			if (str_contains($className, $this->proxyNamespace)) {
-				if (!class_exists($className)) {
-					throw new \RuntimeException("Invalid entity class: {$className}");
-				}
-				
-				return $this->normalizedNameCache[$className] = $this->reflectionHandler->getParent($className);
-			}
-			
-			// Already fully qualified
-			if (str_contains($className, "\\")) {
-				return $this->normalizedNameCache[$className] = $className;
-			}
-			
-			// Try resolving short class name
-			$resolved = NamespaceResolver::resolveClassName($className);
-			
-			if ($resolved === $className) {
-				$fullyQualifiedClassName = "{$this->entityNamespace}\\{$className}";
-			} else {
-				$fullyQualifiedClassName = $resolved;
-			}
-			
-			return $this->normalizedNameCache[$className] = $fullyQualifiedClassName;
-		}
 	}

@@ -169,7 +169,7 @@
 		 */
 		public function findEntity(string $entityType, array $primaryKeys): ?object {
 			// Normalize the entity name for dealing with proxies
-			$normalizedEntityName = $this->getEntityStore()->qualifyClassName($entityType);
+			$normalizedEntityName = $this->getEntityStore()->resolveProxyClass($entityType);
 			
 			// Check if the class exists in the entity store and return null if it doesn't
 			if (empty($this->entitiesByClass[$normalizedEntityName])) {
@@ -920,7 +920,7 @@
 			foreach (array_merge($manyToOneDependencies, $oneToOneDependencies) as $property => $annotation) {
 				// Skip if this relationship doesn't point to our parent entity class
 				// This ensures we only process relationships relevant to the deleted entity
-				if ($this->entityStore->qualifyClassName($annotation->getTargetEntity()) !== $normalizedClass) {
+				if ($this->entityStore->resolveProxyClass($annotation->getTargetEntity()) !== $normalizedClass) {
 					continue;
 				}
 				

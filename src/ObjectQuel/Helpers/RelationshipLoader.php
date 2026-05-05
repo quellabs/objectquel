@@ -87,7 +87,7 @@
 			$inversedPropertyName = $this->getInversedPropertyName($dependency);
 			
 			// Add the namespace to the target entity name and find the related entity.
-			$targetEntity = $this->entityStore->qualifyClassName($targetEntityName);
+			$targetEntity = $this->entityStore->resolveProxyClass($targetEntityName);
 			
 			// Check the UnitOfWork if it has the entity
 			$relationEntity = $this->unitOfWork->findEntity($targetEntity, [$inversedPropertyName => $relationColumnValue]);
@@ -384,7 +384,7 @@
 					// Create and set a collection of entities for each valid dependency
 					foreach ($validDependencies as $dependency) {
 						// Complete short entity names to their full namespace form
-						$targetEntity = $this->entityStore->qualifyClassName($dependency->getTargetEntity());
+						$targetEntity = $this->entityStore->resolveProxyClass($dependency->getTargetEntity());
 						
 						// Fetch the relation column. If absent use the primary key
 						$relationColumn = $dependency->getRelationColumn() ?? $this->entityStore->getPrimaryKey($entity);

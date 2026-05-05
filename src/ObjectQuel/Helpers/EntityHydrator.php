@@ -111,7 +111,7 @@
 				throw new QuelException("expression should be of type AstIdentifier");
 			}
 			
-			$entity = $this->entityStore->qualifyClassName($expression->getEntityName()); // The entity class name
+			$entity = $this->entityStore->resolveProxyClass($expression->getEntityName()); // The entity class name
 			$rangeName = $expression->getRange()->getName(); // The alias/range name in the query
 			
 			// Remove the range prefix from column names in the row data
