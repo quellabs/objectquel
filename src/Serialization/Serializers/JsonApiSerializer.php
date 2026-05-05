@@ -62,7 +62,7 @@
 			$removedNamespace = $this->class_basename($entityName);
 			
 			// Remove "Entity" suffix if present (common naming convention)
-			$withoutEntitySuffix = preg_replace('/Entity$/', '', $removedNamespace);
+			$withoutEntitySuffix = preg_replace('/Entity$/', '', $removedNamespace) ?? $removedNamespace;
 			
 			// Convert to camelCase (first letter lowercase)
 			return lcfirst($withoutEntitySuffix);
