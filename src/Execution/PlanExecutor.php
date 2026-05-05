@@ -118,7 +118,7 @@
 							$intermediateResults[$stage->getName()] = $this->executeStage($stage);
 						} catch (QuelException $e) {
 							// Wrap any execution errors with stage context information
-							throw new QuelException("Stage '{$stage->getName()}' failed: {$e->getMessage()}", 0, $e);
+							throw new QuelException("Stage '{$stage->getName()}' failed: {$e->getMessage()}", 'stage_error', 0, $e);
 						}
 					}
 				}
@@ -303,7 +303,7 @@
 				return $strategy->join($leftResult, $rightResult, $joinConditions);
 			} catch (QuelException $e) {
 				// Wrap any join errors with additional context
-				throw new QuelException("Join failed ({$joinType}): {$e->getMessage()}", 0, $e);
+				throw new QuelException("Join failed ({$joinType}): {$e->getMessage()}", 'join_error', 0, $e);
 			}
 		}
 		

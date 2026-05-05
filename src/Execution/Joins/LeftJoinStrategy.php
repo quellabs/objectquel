@@ -93,6 +93,7 @@
 					} catch (\Exception $e) {
 						throw new QuelException(
 							"Failed to evaluate join condition: " . $e->getMessage(),
+							'condition_evaluation_error',
 							0,
 							$e
 						);

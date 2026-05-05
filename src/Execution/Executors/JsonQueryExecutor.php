@@ -82,7 +82,7 @@
 				try {
 					$decoded = (new \Flow\JSONPath\JSONPath($decoded))->find($source->getExpression())->getData();
 				} catch (JSONPathException $e) {
-					throw new QuelException($e->getMessage(), $e->getCode(), $e);
+					throw new QuelException($e->getMessage(), 'jsonpath_error', $e->getCode(), $e);
 				}
 			}
 			

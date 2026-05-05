@@ -93,7 +93,7 @@
 			} catch (QuelException $e) {
 				// Log the exception or handle it appropriately
 				// Re-throw with more context to aid debugging
-				throw new QuelException("Failed to initialize entity collection: " . $e->getMessage(), 0, $e);
+				throw new QuelException("Failed to initialize entity collection: " . $e->getMessage(), 'initialization_error', 0, $e);
 			}
 		}
 		

@@ -13,7 +13,7 @@
 	 * between the left and right result sets. No rows are returned if no matches exist.
 	 */
 	class InnerJoinStrategy implements JoinStrategyInterface {
-
+		
 		/**
 		 * Condition evaluator used to evaluate join conditions
 		 */
@@ -85,6 +85,7 @@
 					} catch (\Exception $e) {
 						throw new QuelException(
 							"Failed to evaluate join condition: " . $e->getMessage(),
+							'condition_evaluation_error',
 							0,
 							$e
 						);

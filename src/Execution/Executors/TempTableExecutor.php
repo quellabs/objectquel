@@ -208,6 +208,7 @@
 			} catch (\Throwable $e) {
 				throw new QuelException(
 					"Failed to create temporary table '{$tableName}': {$e->getMessage()}",
+					'table_creation_error',
 					0,
 					$e
 				);
@@ -245,6 +246,7 @@
 				} catch (\Throwable $e) {
 					throw new QuelException(
 						"Failed to insert rows into temporary table '{$tableName}': {$e->getMessage()}",
+						'table_population_error',
 						0,
 						$e
 					);
