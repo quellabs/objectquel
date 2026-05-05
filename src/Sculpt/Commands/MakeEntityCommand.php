@@ -42,9 +42,9 @@
 		 * Constructor
 		 * @param ConsoleInput $input Console input handler
 		 * @param ConsoleOutput $output Console output handler
-		 * @param ServiceProvider|null $provider Service provider containing configuration
+		 * @param ServiceProvider $provider Service provider containing configuration
 		 */
-		public function __construct(ConsoleInput $input, ConsoleOutput $output, ?ServiceProvider $provider = null) {
+		public function __construct(ConsoleInput $input, ConsoleOutput $output, ServiceProvider $provider) {
 			parent::__construct($input, $output, $provider);
 			$this->configuration = $provider->getConfiguration();
 		}

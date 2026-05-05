@@ -30,12 +30,6 @@
 				// Fetch service provider
 				$serviceProvider = $this->getProvider();
 				
-				// Validate existence of service provider
-				if ($serviceProvider === null) {
-					$this->output->error("Phinx configuration provider not specified");
-					return 1;
-				}
-				
 				// Check if we can generate the phinx config
 				// This line exists to make PhpStan happy
 				if (!$serviceProvider instanceof \Quellabs\ObjectQuel\Sculpt\ServiceProvider) {

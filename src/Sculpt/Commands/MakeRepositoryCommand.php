@@ -38,15 +38,10 @@
 		 * Initialize the command with required dependencies.
 		 * @param ConsoleInput $input Console input handler
 		 * @param ConsoleOutput $output Console output handler
-		 * @param ServiceProvider|null $provider Service provider for configuration
+		 * @param ServiceProvider $provider Service provider for configuration
 		 */
-		public function __construct(ConsoleInput $input, ConsoleOutput $output, ?ServiceProvider $provider = null) {
+		public function __construct(ConsoleInput $input, ConsoleOutput $output, ServiceProvider $provider) {
 			parent::__construct($input, $output, $provider);
-			
-			if ($provider === null) {
-				throw new RuntimeException('ServiceProvider is required for MakeRepositoryCommand');
-			}
-			
 			$this->configuration = $provider->getConfiguration();
 		}
 		
@@ -126,7 +121,7 @@ HELP;
 				
 				// Check if we should proceed with creation (handles existing files and force flag)
 				if (!$this->shouldCreateRepository($repositoryPath, $config->hasFlag('force'))) {
-					return 0; // Exit gracefully if creation was skipped
+					return 0;
 				}
 				
 				// Generate and write the repository file to disk
