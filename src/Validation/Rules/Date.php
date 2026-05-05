@@ -50,11 +50,32 @@
 		 * @param string $date
 		 * @return string|bool
 		 */
-		protected function dateExtractFormat(string $date) {
-			// check Day -> (0[1-9]|[1-2][0-9]|3[0-1])
-			// check Month -> (0[1-9]|1[0-2])
-			// check Year -> [0-9]{4} or \d{4}
-			$patterns = [
+		protected function dateExtractFormat(string $date): bool|string {
+			// Apply each pattern to the original input independently so that
+			// earlier replacements cannot corrupt the string before later
+			// patterns run against it.
+			foreach ($this->patterns() as $pattern => $format) {
+				$result = preg_replace($pattern, $format, $date);
+				
+				// preg_replace returns null on a PREG error
+				if ($result === null) {
+					continue;
+				}
+				
+				// If the string changed, this pattern matched
+				if ($result !== $date) {
+					return $format;
+				}
+			}
+			
+			return false;
+		}
+		
+		/**
+		 * @return array<string, string>
+		 */
+		protected function patterns(): array {
+			return [
 				'/\b\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}.\d{3,8}Z\b/'     => 'Y-m-d\TH:i:s.u\Z', // format DATE ISO 8601
 				'/\b\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[1-2]\d|3[0-1])\b/' => 'Y-m-d',
 				'/\b\d{4}-(0[1-9]|[1-2]\d|3[0-1])-(0[1-9]|1[0-2])\b/' => 'Y-d-m',
@@ -84,8 +105,5 @@
 				
 				'/\.\d{3}\b/' => '.v'
 			];
-			
-			$result = preg_replace(array_keys($patterns), array_values($patterns), $date);
-			return ($result != $date) ? $result : false;
 		}
 	}
