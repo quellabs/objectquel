@@ -152,10 +152,10 @@
 		private function buildInnerQueryRunner(): callable {
 			return function (AstRetrieve $innerQuery, array $params): array {
 				// Decompose and execute the inner query as a self-contained plan.
-				// This reuses the full pipeline: QueryDecomposer → ExecutionPlan →
+				// This reuses the full pipeline: ExecutionPlanBuilder  → ExecutionPlan →
 				// PlanExecutor → DatabaseQueryExecutor / JsonQueryExecutor.
-				$decomposer = new QueryDecomposer();
-				$innerPlan = $decomposer->buildExecutionPlan($innerQuery, $params);
+				$planner = new ExecutionPlanBuilder();
+				$innerPlan = $planner->build($innerQuery, $params);
 				
 				// Fresh PlanExecutor so inner temp tables have their own cleanup scope
 				$innerPlanExecutor = new self($this->queryExecutor, $this->conditionEvaluator);

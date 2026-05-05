@@ -32,7 +32,7 @@
 	 *
 	 * This class is a dependency of ConditionFilter and StageFactory. It carries
 	 * the cache so that a single cache lifetime spans an entire plan-build pass —
-	 * clearCache() should be called at the start of each buildExecutionPlan() call.
+	 * clearCache() should be called at the start of each build() call.
 	 *
 	 * Recursion safety:
 	 *   The recursive methods (rangeNamesFromAst, containsAnyRangeReference, etc.)
@@ -45,7 +45,7 @@
 		 * Cache of results for expensive does-condition-involve-range checks.
 		 * Keyed by spl_object_hash pairs to avoid redundant AST traversals.
 		 * Lifetime is strictly per plan-build pass: clearCache() is called at the
-		 * start of every buildExecutionPlan() call, so destroyed-and-reused objects
+		 * start of every build() call, so destroyed-and-reused objects
 		 * cannot produce stale cache hits.
 		 * @var array<string, bool>
 		 */
@@ -53,7 +53,7 @@
 		
 		/**
 		 * Clears the internal cache.
-		 * Should be called at the start of each buildExecutionPlan() call to
+		 * Should be called at the start of each build() call to
 		 * prevent stale results and memory leaks across decomposition passes.
 		 */
 		public function clearCache(): void {
@@ -66,7 +66,7 @@
 		
 		/**
 		 * Finds temp range names referenced in WHERE conditions and retrieve expressions.
-		 * Used by QueryDecomposer to build the inter-temp-range dependency graph.
+		 * Used by ExecutionPlanBuilder to build the inter-temp-range dependency graph.
 		 * @param AstRetrieve $query
 		 * @param string[] $tempRangeNames List of temp range names to check for
 		 * @return string[] Temp range names this query depends on

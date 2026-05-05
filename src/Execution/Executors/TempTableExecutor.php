@@ -128,7 +128,7 @@
 			// no further wiring is needed — the change is visible to QuelToSQL immediately.
 			//
 			// FROM vs JOIN determination: QuelToSQL::getFrom() picks the FROM by finding
-			// the first AstRangeDatabase with joinProperty === null. QueryDecomposer::
+			// the first AstRangeDatabase with joinProperty === null. ExecutionPlanBuilder::
 			// promoteTempTableRanges() promotes temp-table ranges to JOINs by extracting
 			// a join condition from the WHERE clause, so that a real database table can
 			// take the FROM position when one exists. If no real database table is present,

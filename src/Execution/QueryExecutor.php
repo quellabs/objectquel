@@ -114,8 +114,8 @@
 			$ast = $this->getObjectQuel()->parse(trim($query));
 			
 			// Decompose the query
-			$decomposer = new QueryDecomposer();
-			$executionPlan = $decomposer->buildExecutionPlan($ast, $this->normalizeParams($parameters));
+			$planner = new ExecutionPlanBuilder();
+			$executionPlan = $planner->build($ast, $this->normalizeParams($parameters));
 			
 			// Execute the returned execution plan and return the QuelResult
 			$result = $this->planExecutor->execute($executionPlan);

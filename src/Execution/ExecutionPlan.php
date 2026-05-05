@@ -23,7 +23,7 @@
 	 *   Kahn's algorithm processes nodes in FIFO order within each wave, which preserves
 	 *   insertion order for stages at the same dependency depth. TempTableStages added
 	 *   before their dependent ExecutionStages will always appear before them in the
-	 *   sorted output, as long as addDependency() is called correctly by QueryDecomposer.
+	 *   sorted output, as long as addDependency() is called correctly by ExecutionPlanBuilder.
 	 */
 	class ExecutionPlan {
 		

@@ -11,7 +11,7 @@
 	 * table before the outer database stage runs.
 	 *
 	 * Lifecycle:
-	 *   1. QueryDecomposer creates a TempTableStage for each AstRangeDatabase whose
+	 *   1. ExecutionPlanBuilder creates a TempTableStage for each AstRangeDatabase whose
 	 *      embedded query contains external (non-SQL) source ranges.
 	 *   2. TempTableExecutor executes the inner AstRetrieve through the full plan
 	 *      pipeline (including JSON stages), then creates a temporary table and inserts
@@ -80,7 +80,7 @@
 		/**
 		 * Returns the inner AstRetrieve query that must be executed to produce
 		 * rows for insertion into the temporary table.
-		 * Guaranteed non-null: QueryDecomposer only creates a TempTableStage when
+		 * Guaranteed non-null: ExecutionPlanBuilder only creates a TempTableStage when
 		 * rangeQueryContainsExternalSource() returned true, which requires getQuery() !== null.
 		 * @return AstRetrieve
 		 */

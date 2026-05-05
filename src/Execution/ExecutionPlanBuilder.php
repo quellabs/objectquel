@@ -18,13 +18,13 @@
 	 *   - ConditionFilter:   extracts and filters condition subtrees from the WHERE clause
 	 *   - StageFactory:      builds ExecutionStage objects from query ASTs
 	 *
-	 * QueryDecomposer itself is responsible for:
+	 * ExecutionPlanBuilder itself is responsible for:
 	 *   - Detecting which subquery ranges require temp-table materialisation
 	 *   - Topologically sorting those ranges by their inter-dependencies
 	 *   - Wiring TempTableStages and their dependency edges into the ExecutionPlan
 	 *   - Adding JSON/non-database range stages
 	 */
-	class QueryDecomposer {
+	class ExecutionPlanBuilder  {
 		
 		/**
 		 * @var ConditionAnalyzer
@@ -63,7 +63,7 @@
 		 * @return ExecutionPlan The execution plan containing all stages
 		 * @throws QuelException If the query cannot be properly decomposed
 		 */
-		public function buildExecutionPlan(AstRetrieve $query, array $staticParams = []): ExecutionPlan {
+		public function build(AstRetrieve $query, array $staticParams = []): ExecutionPlan {
 			$this->analyzer->clearCache();
 			$plan = new ExecutionPlan();
 			
