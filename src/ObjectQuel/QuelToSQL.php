@@ -3,6 +3,8 @@
 	namespace Quellabs\ObjectQuel\ObjectQuel;
 	
 	use Quellabs\ObjectQuel\EntityStore;
+	use Quellabs\ObjectQuel\Exception\EntityResolutionException;
+	use Quellabs\ObjectQuel\Exception\QuelException;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstIdentifier;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRangeDatabase;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRetrieve;
@@ -126,18 +128,37 @@
 		/**
 		 * Resolve the physical table name for a database range.
 		 *
-		 * Both getFrom() and getJoins() need the same logic: if the range has an
-		 * explicit table name (e.g. a derived/subquery range), use it directly;
-		 * otherwise look it up from the entity store. Centralising this prevents
-		 * the two call sites from drifting out of sync and eliminates the null-table
-		 * bug that existed in getJoins() when getQuery() was non-null but
-		 * getTableName() returned null.
+		 * Prefers an explicit table name on the AST node; falls back to looking up
+		 * the owning table via the entity store when only an entity name is present.
 		 *
 		 * @param AstRangeDatabase $range
 		 * @return string
+		 * @throws QuelException When entity resolution fails.
+		 * @throws \RuntimeException When neither a table name nor an entity name is set.
 		 */
 		protected function resolveOwningTable(AstRangeDatabase $range): string {
-			return $range->getTableName() ?? $this->entityStore->getOwningTable($range->getEntityName());
+			try {
+				// Direct table reference takes precedence — no store lookup needed.
+				$tableName = $range->getTableName();
+				
+				if ($tableName) {
+					return $tableName;
+				}
+				
+				// Entity name requires a store lookup to map it to its owning table.
+				$entityName = $range->getEntityName();
+
+				if ($entityName) {
+					return $this->entityStore->getOwningTable($entityName);
+				}
+				
+				// Neither was set; the AST node is malformed or incompletely populated.
+				throw new \RuntimeException("Table could not be resolved from AstRangeDatabase");
+			} catch (EntityResolutionException $e) {
+				// Wrap store-level resolution failures in the query language's own
+				// exception type so callers don't need to know about store internals.
+				throw new QuelException($e->getMessage());
+			}
 		}
 		
 		/**
