@@ -149,7 +149,7 @@
 		 * @param AstVisitorInterface $visitor The visitor to run
 		 */
 		private function runVisitor(AstRetrieve $ast, AstVisitorInterface $visitor): void {
-			$ast->getConditions()->accept($visitor);
+			$ast->getConditions()?->accept($visitor);
 		}
 		
 		/**
