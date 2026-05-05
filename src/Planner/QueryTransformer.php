@@ -5,14 +5,13 @@
 	use Quellabs\ObjectQuel\Capabilities\NullPlatformCapabilities;
 	use Quellabs\ObjectQuel\Capabilities\PlatformCapabilitiesInterface;
 	use Quellabs\ObjectQuel\EntityManager;
-	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRangeDatabase;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRetrieve;
 	
 	/**
 	 * Main orchestrator that coordinates all query optimization strategies.
 	 * Acts as a facade that delegates to specialized optimizers.
 	 */
-	class QueryOptimizer {
+	class QueryTransformer {
 		
 		// Core optimization strategies - each handles a specific type of optimization
 		private Optimizers\AnyOptimizer $anyOptimizer;                       // Optimize ANY statements
@@ -45,7 +44,7 @@
 		 * then optimizes the outer query.
 		 * @param AstRetrieve $ast The query AST to optimize in-place
 		 */
-		public function optimize(AstRetrieve $ast): void {
+		public function transform(AstRetrieve $ast): void {
 			// Phase 1: Basic range and relationship optimizations
 			// Apply filtering early to reduce dataset size for subsequent operations
 			$this->rangeOptimizer->optimize($ast);

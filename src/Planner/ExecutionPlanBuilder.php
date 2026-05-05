@@ -34,8 +34,8 @@
 		/** @var StageFactory */
 		private StageFactory $stageFactory;
 		
-		/** @var QueryOptimizer */
-		private QueryOptimizer $optimizer;
+		/** @var QueryTransformer */
+		private QueryTransformer $transformer;
 		
 		/**
 		 * Constructor
@@ -45,7 +45,7 @@
 		public function __construct(EntityManager $entityManager, PlatformCapabilities $capabilities) {
 			$this->analyzer = new ConditionAnalyzer();
 			$this->stageFactory = new StageFactory($this->analyzer, new ConditionFilter($this->analyzer));
-			$this->optimizer = new QueryOptimizer($entityManager, $capabilities);
+			$this->transformer = new QueryTransformer($entityManager, $capabilities);
 		}
 		
 		/**
@@ -71,7 +71,7 @@
 			$this->analyzer->clearCache();
 			
 			// Optimize the plan
-			$this->optimizer->optimize($query);
+			$this->transformer->transform($query);
 			
 			// Create a new plan to populate
 			$plan = new ExecutionPlan();
@@ -108,11 +108,8 @@
 		
 		/**
 		 * Creates TempTableStages for all external-source temporary ranges and registers
-		 * their inter-dependencies in the plan.
-		 *
-		 * Returns a map of rangeName → TempTableStage name so the database stage can
-		 * declare its own dependencies on them.
-		 *
+		 * their interdependencies in the plan. Returns a map of rangeName → TempTableStage
+		 * name so the database stage can declare its own dependencies on them.
 		 * @param ExecutionPlan $plan
 		 * @param AstRangeDatabase[] $tempRanges Already dependency-sorted temp ranges
 		 * @param array<string, mixed> $staticParams
@@ -175,8 +172,8 @@
 			$plan->addStage($databaseStage);
 			
 			// The main database stage depends on every TempTableStage, because
-			// those must be fully materialised before the outer SQL can execute.
-			foreach ($tempTableStageNames as $rangeName => $tempStageName) {
+			// those must be fully materialized before the outer SQL can execute.
+			foreach ($tempTableStageNames as $tempStageName) {
 				$plan->addDependency($databaseStage->getName(), $tempStageName);
 			}
 		}
