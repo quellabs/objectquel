@@ -26,10 +26,11 @@
 	 * @phpstan-import-type IndexDefinition from DatabaseAdapter
 	 */
 	class MakeEntityFromTableCommand extends CommandBase {
+		
 		private Configuration $configuration;
 		
-		/** @var ServiceProvider|null */
-		protected ?ProviderInterface $provider;
+		/** @var ServiceProvider */
+		protected ProviderInterface $provider;
 		
 		/**
 		 * MakeEntityFromTableCommand constructor

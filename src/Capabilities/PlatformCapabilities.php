@@ -42,7 +42,7 @@
 				return false;
 			}
 			
-			return version_compare($this->adapter->getMysqlVersion(), '8.0.0', '>=');
+			return version_compare($this->adapter->getServerVersion(), '8.0.0', '>=');
 		}
 		
 		/**
@@ -69,5 +69,35 @@
 			
 			$stmt->closeCursor();
 			return $cache = true;
+		}
+		
+		/**
+		 * @inheritDoc
+		 *
+		 * Invisible index support was introduced in:
+		 * - MySQL    8.0.0   (https://dev.mysql.com/doc/refman/8.0/en/invisible-indexes.html)
+		 * - MariaDB  10.6.0  (https://mariadb.com/kb/en/invisible-indexes/)
+		 *
+		 * Other engines (PostgreSQL, SQLite, SQL Server) do not support this feature.
+		 */
+		public function supportsIndexHiding(): bool {
+			// Engines that support invisible indexes, mapped to the minimum required version.
+			// Any engine absent from this map does not support the feature at all.
+			$minimumVersions = [
+				'mysql'   => '8.0.0',
+				'mariadb' => '10.6.0',
+			];
+			
+			$dbType = $this->adapter->getDatabaseType();
+			
+			// Bail out early for unsupported engines (PostgreSQL, SQLite, SQL Server, etc.)
+			if (!array_key_exists($dbType, $minimumVersions)) {
+				return false;
+			}
+			
+			// getServerVersion() returns a normalized version string — MariaDB's MySQL
+			// compatibility prefix ("5.5.5-") is already stripped, so version_compare()
+			// is safe to use directly for both engines.
+			return version_compare($this->adapter->getServerVersion(), $minimumVersions[$dbType], '>=');
 		}
 	}

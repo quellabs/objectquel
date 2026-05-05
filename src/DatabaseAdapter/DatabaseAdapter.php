@@ -108,11 +108,30 @@
 		}
 		
 		/**
-		 * Returns the database version number
-		 * @return string
+		 * Returns the normalized server version string.
+		 *
+		 * MariaDB advertises itself to MySQL clients with a compatibility prefix to
+		 * maintain protocol compatibility with older MySQL clients:
+		 *   "5.5.5-10.6.1-MariaDB"
+		 *
+		 * CakePHP's Driver::version() returns this raw string verbatim. This method
+		 * strips the compatibility prefix so callers always receive the real version
+		 * number regardless of engine, making version_compare() calls safe for both
+		 * MySQL and MariaDB.
+		 *
+		 * @return string Normalized version string (e.g. "8.0.32", "10.6.1-MariaDB")
 		 */
-		public function getMysqlVersion(): string {
-			return $this->connection->getDriver()->version();
+		public function getServerVersion(): string {
+			// Fetch version number
+			$version = $this->connection->getDriver()->version();
+			
+			// MariaDB prefixes its version string with "5.5.5-" for MySQL client
+			// compatibility. Strip it to expose the real version number.
+			if (preg_match('/^\d+\.\d+\.\d+-(\d+\.\d+\.\d+-MariaDB.*)$/', $version, $matches)) {
+				return $matches[1];
+			} else {
+				return $version;
+			}
 		}
 		
 		/**

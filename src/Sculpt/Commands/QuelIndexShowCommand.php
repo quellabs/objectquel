@@ -3,8 +3,10 @@
 	namespace Quellabs\ObjectQuel\Sculpt\Commands;
 	
 	use Quellabs\Contracts\Discovery\ProviderInterface;
+	use Quellabs\ObjectQuel\Capabilities\PlatformCapabilities;
 	use Quellabs\ObjectQuel\Configuration;
 	use Quellabs\ObjectQuel\EntityStore;
+	use Quellabs\ObjectQuel\Exception\EntityResolutionException;
 	use Quellabs\ObjectQuel\Sculpt\ServiceProvider;
 	use Quellabs\Sculpt\Contracts\CommandBase;
 	use Quellabs\Sculpt\ConfigurationManager;
@@ -28,16 +30,16 @@
 		/** @var Configuration ORM configuration passed in via the service provider */
 		private Configuration $configuration;
 		
-		/** @var ServiceProvider|null */
-		protected ?ProviderInterface $provider;
+		/** @var ServiceProvider */
+		protected ProviderInterface $provider;
 		
 		/**
 		 * Constructor
-		 * @param ConsoleInput         $input    Console input handler
-		 * @param ConsoleOutput        $output   Console output handler
-		 * @param ServiceProvider|null $provider Service provider exposing configuration and the DB adapter
+		 * @param ConsoleInput $input Console input handler
+		 * @param ConsoleOutput $output Console output handler
+		 * @param ServiceProvider $provider Service provider exposing configuration and the DB adapter
 		 */
-		public function __construct(ConsoleInput $input, ConsoleOutput $output, ?ServiceProvider $provider = null) {
+		public function __construct(ConsoleInput $input, ConsoleOutput $output, ServiceProvider $provider) {
 			parent::__construct($input, $output, $provider);
 			
 			// Pull configuration out of the provider so execute() can instantiate EntityStore
@@ -60,7 +62,7 @@
 		public function execute(ConfigurationManager $config): int {
 			// Prefer positional CLI arguments; fall back to interactive prompts
 			$entityName = $config->getPositional(0);
-			$indexName  = $config->getPositional(1);
+			$indexName = $config->getPositional(1);
 			
 			if (empty($entityName)) {
 				$entityName = $this->input->ask("Entity name");
@@ -77,32 +79,22 @@
 			
 			// Ensure the entity is registered in the ORM metadata store
 			$entityStore = $this->getEntityStore();
-			
-			if (!$entityStore->exists($entityName)) {
+
+			try {
+				$tableName = $entityStore->getOwningTable($entityName);
+			} catch (EntityResolutionException $e) {
 				$this->output->error("Entity '{$entityName}' does not exist.");
 				return 1;
 			}
 			
 			// Translate the entity class name to its underlying database table
-			$tableName = $entityStore->getOwningTable($entityName);
-			
 			$databaseAdapter = $this->provider->getDatabaseAdapter();
-			$dbType          = $databaseAdapter->getDatabaseType();
+			$capabilities = new PlatformCapabilities($databaseAdapter);
 			
 			// Invisible indexes are a MySQL/MariaDB-only feature
-			if (!in_array($dbType, ['mysql', 'mariadb'])) {
-				$this->output->error("Invisible indexes are not supported by {$dbType}.");
+			if (!$capabilities->supportsIndexHiding()) {
+				$this->output->error("Invisible indexes are not supported.");
 				return 1;
-			}
-			
-			// MySQL added invisible index support in 8.0; reject older versions early
-			if ($dbType === 'mysql') {
-				$version = $databaseAdapter->getMysqlVersion();
-				
-				if (version_compare($version, '8.0.0', '<')) {
-					$this->output->error("Invisible indexes require MySQL 8.0.0 or higher (connected: {$version}).");
-					return 1;
-				}
 			}
 			
 			// Guard against typos: confirm the index actually exists before issuing DDL
@@ -116,7 +108,7 @@
 			// Each dialect uses different syntax to restore an index to optimizer visibility:
 			//   MySQL   → VISIBLE      (standard SQL extension)
 			//   MariaDB → NOT IGNORED  (MariaDB-specific terminology)
-			if ($dbType === 'mysql') {
+			if ($databaseAdapter->getDatabaseType() === 'mysql') {
 				$sql = "ALTER TABLE `{$tableName}` ALTER INDEX `{$indexName}` VISIBLE";
 			} else {
 				$sql = "ALTER TABLE `{$tableName}` ALTER INDEX `{$indexName}` NOT IGNORED";
@@ -124,11 +116,13 @@
 			
 			$result = $databaseAdapter->execute($sql);
 			
+			// If the call failed, output an error
 			if ($result === false) {
 				$this->output->error("Failed to make index visible: " . $databaseAdapter->getLastErrorMessage());
 				return 1;
 			}
 			
+			// Success
 			$this->output->success("Index '{$indexName}' on table '{$tableName}' is now visible to the optimizer.");
 			return 0;
 		}

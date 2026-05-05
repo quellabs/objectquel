@@ -25,4 +25,11 @@
 		public function supportsWindowFunctions(): bool {
 			return false;
 		}
+		
+		/**
+		 * @inheritDoc
+		 */
+		public function supportsIndexHiding(): bool {
+			return false;
+		}
 	}

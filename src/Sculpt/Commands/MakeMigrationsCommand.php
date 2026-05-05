@@ -2,12 +2,9 @@
 	
 	namespace Quellabs\ObjectQuel\Sculpt\Commands;
 	
-	use Quellabs\AnnotationReader\AnnotationReader;
 	use Quellabs\Contracts\Discovery\ProviderInterface;
 	use Quellabs\ObjectQuel\Configuration;
-	use Quellabs\ObjectQuel\DatabaseAdapter\DatabaseAdapter;
 	use Quellabs\ObjectQuel\EntityStore;
-	use Quellabs\ObjectQuel\OrmException;
 	use Quellabs\ObjectQuel\Sculpt\Helpers\EntitySchemaAnalyzer;
 	use Quellabs\ObjectQuel\Sculpt\SculptTypes;
 	use Quellabs\ObjectQuel\Sculpt\Helpers\PhinxMigrationBuilder;
@@ -29,20 +26,21 @@
 	 * @phpstan-import-type EntityChangeSet from SculptTypes
 	 */
 	class MakeMigrationsCommand extends CommandBase {
+		
 		private ?EntityStore $entityStore = null;
 		private string $migrationsPath;
 		private Configuration $configuration;
 		
-		/** @var ServiceProvider|null */
-		protected ?ProviderInterface $provider;
+		/** @var ServiceProvider */
+		protected ProviderInterface $provider;
 		
 		/**
 		 * MakeEntityCommand constructor
 		 * @param ConsoleInput $input
 		 * @param ConsoleOutput $output
-		 * @param ServiceProvider|null $provider
+		 * @param ServiceProvider $provider
 		 */
-		public function __construct(ConsoleInput $input, ConsoleOutput $output, ?ServiceProvider $provider = null) {
+		public function __construct(ConsoleInput $input, ConsoleOutput $output, ServiceProvider $provider) {
 			parent::__construct($input, $output, $provider);
 			$this->configuration = $provider->getConfiguration();
 			$this->migrationsPath = $this->configuration->getMigrationsPath();

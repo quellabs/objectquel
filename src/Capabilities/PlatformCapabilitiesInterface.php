@@ -49,4 +49,19 @@
 		 * @return bool
 		 */
 		public function supportsWindowFunctions(): bool;
+		
+		/**
+		 * Returns true if the database engine supports invisible (hidden) indexes.
+		 *
+		 * When true, ObjectQuel's schema manager may mark indexes as invisible
+		 * rather than dropping them outright, allowing them to be re-enabled
+		 * without a full index rebuild if needed.
+		 * When false, the schema manager falls back to dropping and recreating indexes.
+		 *
+		 * MySQL:   supported from 8.0.0 onward.
+		 * MariaDB: supported from 10.6.0 onward.
+		 *
+		 * @return bool
+		 */
+		public function supportsIndexHiding(): bool;
 	}

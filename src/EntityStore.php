@@ -215,10 +215,10 @@
 		/**
 		 * Returns the table name attached to the entity.
 		 * @param string|object $entity The entity object, class name, or ReflectionClass
-		 * @return string|null The database table name, or null if entity is not registered
+		 * @return string The database table name, or null if entity is not registered
 		 * @throws EntityResolutionException
 		 */
-		public function getOwningTable(string|object $entity): ?string {
+		public function getOwningTable(string|object $entity): string {
 			return $this->getMetadata($entity)->tableName;
 		}
 		
