@@ -49,8 +49,11 @@
 		protected UpdatePersister $updatePersister;
 		protected DeletePersister $deletePersister;
 		
-		/** @var array<string, array<string, object|array<string, string>>> */
-		protected array $identityMap;
+		/** @var array<string, array<string, object>> */
+		protected array $entitiesByClass = [];
+		
+		/** @var array<string, array<string, string>> */
+		protected array $indexByClass = [];
 		
 		/** @var \WeakMap<object, array<string, mixed>> */
 		protected \WeakMap $originalEntityData;
@@ -78,7 +81,6 @@
 			$this->serializer = new SQLSerializer($entityManager->getEntityStore());
 			$this->originalEntityData = new \WeakMap();
 			$this->entityRemovalList = new \WeakMap();
-			$this->identityMap = [];
 			
 			// Register the signals
 			$this->signalPrePersist = new Signal('orm.prePersist');
@@ -169,17 +171,17 @@
 			// Normalize the entity name for dealing with proxies
 			$normalizedEntityName = $this->getEntityStore()->normalizeEntityName($entityType);
 			
-			// Check if the class exists in the identity map and return null if it doesn't
-			if (empty($this->identityMap[$normalizedEntityName])) {
+			// Check if the class exists in the entity store and return null if it doesn't
+			if (empty($this->entitiesByClass[$normalizedEntityName])) {
 				return null;
 			}
 			
 			// Convert the primary keys to a string
 			$primaryKeyString = $this->convertPrimaryKeysToString($primaryKeys);
 			
-			// Check if the entity exists in the identity map
-			$hash = $this->identityMap[$normalizedEntityName]['index'][$primaryKeyString] ?? null;
-			return $hash !== null ? $this->identityMap[$normalizedEntityName][$hash] : null;
+			// Look up the object hash via the index, then return the entity
+			$hash = $this->indexByClass[$normalizedEntityName][$primaryKeyString] ?? null;
+			return $hash !== null ? ($this->entitiesByClass[$normalizedEntityName][$hash] ?? null) : null;
 		}
 
 		/**
@@ -215,12 +217,6 @@
 			// Normalization ensures consistent formatting regardless of namespace notation
 			$class = $this->getEntityStore()->normalizeEntityName(get_class($entity));
 			
-			// Initialize the index structure for this entity class if it doesn't exist yet
-			// The index allows for quick entity lookups by primary key without iterating through all entities
-			if (!isset($this->identityMap[$class]['index'])) {
-				$this->identityMap[$class]['index'] = [];
-			}
-			
 			// Generate a unique object identifier using PHP's built-in function
 			// This hash serves as a consistent reference to this specific object instance
 			$hash = spl_object_hash($entity);
@@ -235,11 +231,11 @@
 			
 			// Store the hash in the index for quick lookup by primary key
 			// This mapping enables finding entities by their database identifiers
-			$this->identityMap[$class]['index'][$primaryKeysString] = $hash;
+			$this->indexByClass[$class][$primaryKeysString] = $hash;
 			
 			// Add the actual entity object to the identity map
 			// This creates a two-way reference system: hash→entity and primaryKey→hash
-			$this->identityMap[$class][$hash] = $entity;
+			$this->entitiesByClass[$class][$hash] = $entity;
 			
 			// Create a snapshot of the entity's current state by serializing it
 			// This baseline is used later to detect changes when flush() is called
@@ -287,16 +283,13 @@
 			
 			// Add the entity object to the identity map using its hash as the key
 			// This registers the entity for tracking in the current unit of work
-			$this->identityMap[$class][$hash] = $entity;
+			$this->entitiesByClass[$class][$hash] = $entity;
 			
 			// Only index by primary key if the entity already has primary key values
 			// This handles both cases: entities with manually set IDs and those awaiting generated IDs
 			if (!empty($primaryKeysString)) {
-				// Initialize the index array if it doesn't exist yet (using null coalescing operator)
-				$this->identityMap[$class]['index'] ??= [];
-				
 				// Store a reference to the entity by its primary key for quick lookups
-				$this->identityMap[$class]['index'][$primaryKeysString] = $hash;
+				$this->indexByClass[$class][$primaryKeysString] = $hash;
 			}
 			
 			// Return true to indicate successful registration of the new entity
@@ -411,7 +404,8 @@
 		 * @return void
 		 */
 		public function clear(): void {
-			$this->identityMap = [];
+			$this->entitiesByClass = [];
+			$this->indexByClass = [];
 			$this->originalEntityData = new \WeakMap();
 			$this->entityRemovalList = new \WeakMap();
 			
@@ -435,18 +429,18 @@
 			// This handles potential differences in namespace notation
 			$class = $this->getEntityStore()->normalizeEntityName(get_class($entity));
 			
-			// Remove the entity from the main identity map using its hash
+			// Remove the entity from the entity store using its hash
 			// This stops the entity from being included in any future persistence operations
-			unset($this->identityMap[$class][$hash]);
+			unset($this->entitiesByClass[$class][$hash]);
 			
 			// Search for this entity's hash in the primary key index
 			// The index maps primary key strings to object hashes for quick lookups
-			$index = array_search($hash, $this->identityMap[$class]['index']);
+			$index = array_search($hash, $this->indexByClass[$class] ?? [], true);
 			
 			// If found in the index, remove it to prevent the detached entity from being
 			// retrieved via its primary key in future operations
 			if ($index !== false) {
-				unset($this->identityMap[$class]['index'][$index]);
+				unset($this->indexByClass[$class][$index]);
 			}
 			
 			// Remove the entity's original data snapshot used for change detection
@@ -601,28 +595,19 @@
 			// The result will be a flat map of hash => entity pairs
 			$result = [];
 			
-			// Loop through each entity class in the identity map
-			// The identityMap is structured as [entityClass => [objectId => entity, ...], ...]
-			foreach ($this->identityMap as $subArray) {
-				// For each class, loop through all the stored entities and meta-entries
-				foreach ($subArray as $key => $value) {
-					// Skip the special 'index' entry which contains lookup maps for primary keys
-					// This is not an actual entity but rather metadata used for efficient lookups
-					if ($key === 'index') {
-						continue;
-					}
-					
+			// Loop through each entity class and all stored entities
+			foreach ($this->entitiesByClass as $entities) {
+				foreach ($entities as $hash => $entity) {
 					// Skip proxy objects that haven't been initialized yet
 					// Uninitialized proxies are placeholders without complete entity data
 					// Including them could lead to unexpected lazy-loading during operations
-					if (($value instanceof ProxyInterface) && !$value->isInitialized()) {
+					if (($entity instanceof ProxyInterface) && !$entity->isInitialized()) {
 						continue;
 					}
 					
 					// Add the entity to our result using its object ID as the key
 					// This preserves the unique mapping while flattening the structure
-					// The key is the object's unique hash, and the value is the entity object itself
-					$result[$key] = $value;
+					$result[$hash] = $entity;
 				}
 			}
 			
@@ -754,13 +739,8 @@
 			// Get the normalized class name of the entity.
 			$normalizedEntityName = $this->getEntityStore()->normalizeEntityName(get_class($entity));
 			
-			// Check if the class name does not exist in the identity map.
-			if (!isset($this->identityMap[$normalizedEntityName])) {
-				return false;
-			}
-			
-			// Check if the object itself exists in the identity map using its unique ID.
-			return isset($this->identityMap[$normalizedEntityName][spl_object_hash($entity)]);
+			// Check if the object exists in the entity store using its unique hash.
+			return isset($this->entitiesByClass[$normalizedEntityName][spl_object_hash($entity)]);
 		}
 		
 		/**
@@ -780,7 +760,7 @@
 				// Add primary key to index cache for easy lookup
 				$primaryKeys = $this->getIdentifiers($entity);
 				$primaryKeysString = $this->convertPrimaryKeysToString($primaryKeys);
-				$this->identityMap[$class]['index'][$primaryKeysString] = $hash;
+				$this->indexByClass[$class][$primaryKeysString] = $hash;
 				
 				// Store the original data of the entity for later comparison
 				// This helps track changes in the entity over time
@@ -909,11 +889,8 @@
 			$dependentEntityClasses = $this->entityStore->getDependentEntities($entity);
 			
 			// Process each dependent entity class to find and mark instances for deletion
-			// This handles OneToMany and OneToOne relationships where the parent is being deleted
 			foreach ($dependentEntityClasses as $dependentEntityClass) {
-				// For each dependent class, process all instances that reference this entity
-				// This delegates the actual work to a specialized method that handles
-				// the complexities of identifying and marking dependent entities
+				/** @var class-string $dependentEntityClass */
 				$this->processDependentEntityClass($dependentEntityClass, $normalizedClass, $entity);
 			}
 		}
@@ -979,9 +956,9 @@
 		 * Get cascade configuration for a property
 		 * @param string $entityClass Entity class name
 		 * @param string $property Property name
-		 * @return object|null The cascade annotation if found, null otherwise
+		 * @return Cascade|null The cascade annotation if found, null otherwise
 		 */
-		private function getCascadeInfo(string $entityClass, string $property): ?object {
+		private function getCascadeInfo(string $entityClass, string $property): ?Cascade {
 			// Retrieve all annotations for the specified entity class from the entity store
 			$entityAnnotations = $this->entityStore->getAnnotations($entityClass);
 			
@@ -1009,10 +986,10 @@
 		
 		/**
 		 * Determines if cascading removal should be performed
-		 * @param object $cascadeAnnotation The cascade annotation object
+		 * @param Cascade $cascadeAnnotation The cascade annotation object
 		 * @return bool True if cascading removal should be performed
 		 */
-		private function shouldCascadeRemove(object $cascadeAnnotation): bool {
+		private function shouldCascadeRemove(Cascade $cascadeAnnotation): bool {
 			// Skip if 'remove' operation not present in the cascade operations list
 			if (!in_array('remove', $cascadeAnnotation->getOperations())) {
 				return false;
@@ -1024,10 +1001,10 @@
 		
 		/**
 		 * Determines if cascading persist should be performed
-		 * @param object $cascadeAnnotation The cascade annotation object
+		 * @param Cascade $cascadeAnnotation The cascade annotation object
 		 * @return bool True if cascading removal should be performed
 		 */
-		private function shouldCascadePersist(object $cascadeAnnotation): bool {
+		private function shouldCascadePersist(Cascade $cascadeAnnotation): bool {
 			return in_array('persist', $cascadeAnnotation->getOperations());
 		}
 		
