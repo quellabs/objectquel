@@ -38,15 +38,24 @@
 		 * @return int Exit code (0 for success)
 		 */
 		public function execute(ConfigurationManager $config): int {
+			// Fetch service provider
+			$serviceProvider = $this->getProvider();
+
+			// Validate existence of service provider
+			if ($serviceProvider === null) {
+				$this->output->error("Phinx configuration provider not specified");
+				return 1;
+			}
+			
 			// Check if we can generate the phinx config
 			// This line exists to make PhpStan happy
-			if (!method_exists($this->getProvider(), 'createPhinxConfig')) {
+			if (!$serviceProvider instanceof \Quellabs\ObjectQuel\Sculpt\ServiceProvider) {
 				$this->output->error("Unable to fetch phinx configuration");
 				return 1;
 			}
 			
 			// Create a Phinx configuration
-			$phinxConfig = new Config($this->getProvider()->createPhinxConfig());
+			$phinxConfig = new Config($serviceProvider->createPhinxConfig());
 
 			// Create the manager with buffered output to capture all output
 			// Always use the 'development' environment since that's all our config supports
