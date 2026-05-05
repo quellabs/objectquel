@@ -50,12 +50,12 @@
 		 * 2. For basic types (int, float), it performs simple type casting
 		 * 3. For other types, it returns the value unchanged
 		 *
-		 * @param object $annotation The annotation object containing column metadata and type information
+		 * @param Column $annotation The annotation object containing column metadata and type information
 		 * @param mixed $value The raw value to be normalized
 		 * @return mixed The normalized value appropriate for the column type
 		 * @throws \RuntimeException If a normalizer class cannot be instantiated
 		 */
-		public function normalizeValue(object $annotation, mixed $value): mixed {
+		public function normalizeValue(Column $annotation, mixed $value): mixed {
 			// Extract the column type from the annotation object
 			$columnType = $annotation->getType();
 			
@@ -88,12 +88,12 @@
 		 * 2. For special types registered in $normalizers, it uses dedicated normalizer classes
 		 * 3. For other types, it returns the value unchanged
 		 *
-		 * @param object $annotation The annotation object containing column metadata and type information
+		 * @param Column $annotation The annotation object containing column metadata and type information
 		 * @param mixed $value The database value to be denormalized
 		 * @return mixed The denormalized value appropriate for application use
 		 * @throws \RuntimeException If a normalizer class cannot be instantiated
 		 */
-		public function denormalizeValue(object $annotation, mixed $value): mixed {
+		public function denormalizeValue(Column $annotation, mixed $value): mixed {
 			// Extract the column type from the annotation object
 			$columnType = $annotation->getType();
 			
@@ -104,7 +104,7 @@
 			}
 			
 			// Check if this column type has a dedicated normalizer class
-			if (in_array(strtolower($columnType), $this->normalizers)) {
+			if (in_array(strtolower($columnType), $this->normalizers, true)) {
 				// Build the full normalizer class name based on the column type
 				$normalizerClass = "\\Quellabs\ObjectQuel\\Serialization\\Normalizer\\" . ucfirst($columnType) . "Normalizer";
 				
@@ -261,8 +261,16 @@
 					continue;
 				}
 				
+				// Find position of string 'Normalizer'
+				$pos = strpos($fileName, "Normalizer");
+				
+				// Continue if that failed
+				if ($pos === false) {
+					continue;
+				}
+				
 				// Construct the entity name based on the file name.
-				$this->normalizers[] = strtolower(substr($fileName, 0, strpos($fileName, "Normalizer")));
+				$this->normalizers[] = strtolower(substr($fileName, 0, $pos));
 			}
 		}
 		
@@ -279,7 +287,7 @@
 		/**
 		 * Convert a string to camelcase
 		 * @param string $input
-		 * @param string $separator
+		 * @param non-empty-string $separator
 		 * @return string
 		 */
 		protected function camelCase(string $input, string $separator = '_'): string {
