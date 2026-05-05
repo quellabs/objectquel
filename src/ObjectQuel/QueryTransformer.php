@@ -3,6 +3,7 @@
 	namespace Quellabs\ObjectQuel\ObjectQuel;
 	
 	use Quellabs\ObjectQuel\EntityStore;
+	use Quellabs\ObjectQuel\Exception\TransformationException;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRangeDatabase;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRetrieve;
 	use Quellabs\ObjectQuel\ObjectQuel\Visitors\EntityNameNormalizer;
@@ -41,6 +42,7 @@
 		 * Transform an ObjectQuel AST into SQL-ready format through multi-stage processing.
 		 * @param AstRetrieve $ast The parsed ObjectQuel query AST to transform
 		 * @return void Modifies the AST in-place
+		 * @throws TransformationException
 		 */
 		public function transform(AstRetrieve $ast): void {
 			// First, recursively transform all nested queries in temporary ranges
@@ -86,6 +88,7 @@
 		 * Ensures that inner queries are fully resolved before the outer query is processed.
 		 * @param AstRetrieve $ast The query AST containing potential nested queries
 		 * @return void Modifies nested queries in-place
+		 * @throws TransformationException
 		 */
 		private function transformNestedQueries(AstRetrieve $ast): void {
 			foreach ($ast->getRanges() as $range) {
@@ -123,6 +126,7 @@
 		 * Injects discriminator conditions into the WHERE clause for STI subclass ranges.
 		 * @param AstRetrieve $ast
 		 * @return void
+		 * @throws TransformationException
 		 */
 		private function injectDiscriminatorConditions(AstRetrieve $ast): void {
 			$injector = new DiscriminatorConditionInjector($this->entityStore);
@@ -135,11 +139,12 @@
 				$injector->process($range, $ast);
 			}
 		}
-
+		
 		/**
 		 * Transforms complex 'via' relations into simple property lookups for SQL generation.
 		 * @param AstRetrieve $ast The query AST containing ranges with potential 'via' relations
 		 * @return void Modifies ranges in-place to replace 'via' relations with direct lookups
+		 * @throws TransformationException
 		 */
 		private function transformViaRelations(AstRetrieve $ast): void {
 			// Process each table/range in the query to handle 'via' relationship definitions

@@ -2,9 +2,11 @@
 	
 	namespace Quellabs\ObjectQuel\ObjectQuel\Visitors;
 	
+	use Quellabs\AnnotationReader\Exception\AnnotationReaderException;
 	use Quellabs\ObjectQuel\Annotations\Orm\DiscriminatorColumn;
 	use Quellabs\ObjectQuel\Annotations\Orm\DiscriminatorValue;
 	use Quellabs\ObjectQuel\EntityStore;
+	use Quellabs\ObjectQuel\Exception\TransformationException;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstBinaryOperator;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstExpression;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstIdentifier;
@@ -44,6 +46,7 @@
 		 * @param AstRangeDatabase $range The range to inspect
 		 * @param AstRetrieve $retrieve The query whose conditions will be updated
 		 * @return void
+		 * @throws TransformationException
 		 */
 		public function process(AstRangeDatabase $range, AstRetrieve $retrieve): void {
 			// Ranges backed by subqueries have no entity name — nothing to check
@@ -100,6 +103,7 @@
 		 *
 		 * @param string $entityName Fully qualified entity class name
 		 * @return array{column: string, value: string}|null
+		 * @throws TransformationException
 		 */
 		private function getDiscriminatorInfo(string $entityName): ?array {
 			/**
@@ -107,29 +111,33 @@
 			 * inheritance chain, so @DiscriminatorColumn on the parent class and
 			 * @DiscriminatorValue on the subclass are both available here
 			 */
-			$classAnnotations = $this->entityStore->getAnnotationReader()->getClassAnnotations($entityName);
-			$discriminatorValue = $classAnnotations->getFirst(DiscriminatorValue::class);
-			$discriminatorColumn = $classAnnotations->getFirst(DiscriminatorColumn::class);
-			
-			// If either annotation is absent the entity is not an STI subclass —
-			// @DiscriminatorColumn alone means this is the base class (no filter needed),
-			// @DiscriminatorValue alone would be a misconfigured entity
-			if (
-				!$discriminatorValue instanceof DiscriminatorValue ||
-				!$discriminatorColumn instanceof DiscriminatorColumn
-			) {
-				return null;
+			try {
+				$classAnnotations = $this->entityStore->getAnnotationReader()->getClassAnnotations($entityName);
+				$discriminatorValue = $classAnnotations->getFirst(DiscriminatorValue::class);
+				$discriminatorColumn = $classAnnotations->getFirst(DiscriminatorColumn::class);
+				
+				// If either annotation is absent the entity is not an STI subclass —
+				// @DiscriminatorColumn alone means this is the base class (no filter needed),
+				// @DiscriminatorValue alone would be a misconfigured entity
+				if (
+					!$discriminatorValue instanceof DiscriminatorValue ||
+					!$discriminatorColumn instanceof DiscriminatorColumn
+				) {
+					return null;
+				}
+				
+				// Guard against incomplete annotation declarations
+				$value = $discriminatorValue->getValue();
+				$columnName = $discriminatorColumn->getName();
+				
+				if ($value === '' || $columnName === '') {
+					return null;
+				}
+				
+				return ['column' => $columnName, 'value' => $value];
+			} catch (AnnotationReaderException $e) {
+				throw new TransformationException($e->getMessage(), $e->getCode(), $e);
 			}
-			
-			// Guard against incomplete annotation declarations
-			$value = $discriminatorValue->getValue();
-			$columnName = $discriminatorColumn->getName();
-			
-			if ($value === '' || $columnName === '') {
-				return null;
-			}
-			
-			return ['column' => $columnName, 'value' => $value];
 		}
 		
 		/**

@@ -110,22 +110,18 @@
 			// Clear SQL list
 			$this->databaseExecutor->resetLastExecutedSql();
 			
-			try {
-				// Parse the input query string into an Abstract Syntax Tree (AST)
-				$ast = $this->getObjectQuel()->parse(trim($query));
-				
-				// Decompose the query
-				$decomposer = new QueryDecomposer();
-				$executionPlan = $decomposer->buildExecutionPlan($ast, $this->normalizeParams($parameters));
-				
-				// Execute the returned execution plan and return the QuelResult
-				$result = $this->planExecutor->execute($executionPlan);
-				
-				// QuelResult gebruikt de AST om de ontvangen data te transformeren naar entities
-				return new QuelResult($this->entityManager, $ast, $result);
-			} catch (\Throwable $e) {
-				throw new QuelException($e->getMessage(), previous: $e);
-			}
+			// Parse the input query string into an Abstract Syntax Tree (AST)
+			$ast = $this->getObjectQuel()->parse(trim($query));
+			
+			// Decompose the query
+			$decomposer = new QueryDecomposer();
+			$executionPlan = $decomposer->buildExecutionPlan($ast, $this->normalizeParams($parameters));
+			
+			// Execute the returned execution plan and return the QuelResult
+			$result = $this->planExecutor->execute($executionPlan);
+			
+			// QuelResult gebruikt de AST om de ontvangen data te transformeren naar entities
+			return new QuelResult($this->entityManager, $ast, $result);
 		}
 		
 		/**

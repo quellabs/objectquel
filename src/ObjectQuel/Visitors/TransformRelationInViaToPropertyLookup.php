@@ -6,6 +6,8 @@
 	use Quellabs\ObjectQuel\Annotations\Orm\ManyToOne;
 	use Quellabs\ObjectQuel\Annotations\Orm\OneToMany;
 	use Quellabs\ObjectQuel\EntityStore;
+	use Quellabs\ObjectQuel\Exception\EntityResolutionException;
+	use Quellabs\ObjectQuel\Exception\TransformationException;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstBinaryOperator;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstExpression;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstIdentifier;
@@ -39,16 +41,21 @@
 		 * @param AstIdentifier $node
 		 * @param string|null $entityName Fully qualified entity name; falls back to node's own entity name
 		 * @return bool
+		 * @throws TransformationException
 		 */
 		public function isRelationProperty(AstIdentifier $node, string $entityName = null): bool {
 			$entityName = $entityName ?? $node->getEntityName();
 			$propertyName = $node->getName();
 			
-			return array_key_exists($propertyName, array_merge(
-				$this->entityStore->getOneToOneDependencies($entityName),
-				$this->entityStore->getManyToOneDependencies($entityName),
-				$this->entityStore->getOneToManyDependencies($entityName)
-			));
+			try {
+				return array_key_exists($propertyName, array_merge(
+					$this->entityStore->getOneToOneDependencies($entityName),
+					$this->entityStore->getManyToOneDependencies($entityName),
+					$this->entityStore->getOneToManyDependencies($entityName)
+				));
+			} catch (EntityResolutionException $e) {
+				throw new TransformationException($e->getMessage(), $e->getCode(), $e);
+			}
 		}
 		
 		/**
@@ -77,42 +84,47 @@
 		 * @param AstIdentifier $joinProperty The property node (e.g. 'addresses') whose parent is the range identifier
 		 * @param mixed $relation The relation annotation
 		 * @return AstInterface
+		 * @throws TransformationException
 		 */
 		public function createPropertyLookupAstUsingRelation(AstIdentifier $joinProperty, mixed $relation): AstInterface {
 			// The parent of the property node is the range identifier (e.g. 'c')
 			$entity = $joinProperty->getParent();
 			
 			if (!$entity instanceof AstIdentifier) {
-				throw new \InvalidArgumentException('Expected parent to be an AstIdentifier');
+				throw new TransformationException('Expected parent to be an AstIdentifier');
 			}
 			
-			// Get the range object and resolve the relation column
-			$range = $entity->getRange();
-			$relationColumn = $relation->getRelationColumn();
-			
-			// Fall back to the first primary key of the parent entity using the fully qualified name
-			if ($relationColumn === null) {
-				$identifierKeys = $this->entityStore->getIdentifierKeys($entity->getEntityName());
-				$relationColumn = $identifierKeys[0];
-			}
-			
-			// ManyToOne: FK is on $this->range, PK is on the parent range
-			if ($relation instanceof ManyToOne) {
-				return $this->createPropertyLookupAst($relationColumn, $range, $relation->getInversedBy());
-			}
-			
-			// OneToMany: FK is on $this->range (the child), PK is on the parent range
-			if ($relation instanceof OneToMany) {
+			try {
+				// Get the range object and resolve the relation column
+				$range = $entity->getRange();
+				$relationColumn = $relation->getRelationColumn();
+				
+				// Fall back to the first primary key of the parent entity using the fully qualified name
+				if ($relationColumn === null) {
+					$identifierKeys = $this->entityStore->getIdentifierKeys($entity->getEntityName());
+					$relationColumn = $identifierKeys[0];
+				}
+				
+				// ManyToOne: FK is on $this->range, PK is on the parent range
+				if ($relation instanceof ManyToOne) {
+					return $this->createPropertyLookupAst($relationColumn, $range, $relation->getInversedBy());
+				}
+				
+				// OneToMany: FK is on $this->range (the child), PK is on the parent range
+				if ($relation instanceof OneToMany) {
+					return $this->createPropertyLookupAst($relation->getMappedBy(), $range, $relationColumn);
+				}
+				
+				// OneToOne with inversedBy
+				if (!empty($relation->getInversedBy())) {
+					return $this->createPropertyLookupAst($relationColumn, $range, $relation->getInversedBy());
+				}
+				
+				// OneToOne with mappedBy
 				return $this->createPropertyLookupAst($relation->getMappedBy(), $range, $relationColumn);
+			} catch (EntityResolutionException $e) {
+				throw new TransformationException($e->getMessage(), $e->getCode(), $e);
 			}
-			
-			// OneToOne with inversedBy
-			if (!empty($relation->getInversedBy())) {
-				return $this->createPropertyLookupAst($relationColumn, $range, $relation->getInversedBy());
-			}
-			
-			// OneToOne with mappedBy
-			return $this->createPropertyLookupAst($relation->getMappedBy(), $range, $relationColumn);
 		}
 		
 		/**
@@ -120,6 +132,7 @@
 		 * property lookups. Expects a root identifier with a next node (e.g. c.addresses).
 		 * @param AstInterface $side
 		 * @return AstInterface
+		 * @throws TransformationException
 		 */
 		public function processNodeSide(AstInterface $side): AstInterface {
 			// Only process identifier chains with at least two segments (e.g. 'c.addresses')
@@ -128,35 +141,39 @@
 				return $side;
 			}
 			
-			// The relation property is on the next node (e.g. 'addresses'), not the root ('c')
-			// The root node is the range alias; the next node is the property being accessed
-			$propertyNode = $side->getNext();
-			$entityName = $side->getEntityName();
-			
-			// Check if the property refers to a relation (OneToOne, ManyToOne, OneToMany)
-			// rather than a regular column — only relations need to be transformed
-			if (!$this->isRelationProperty($propertyNode, $entityName)) {
-				return $side;
+			try {
+				// The relation property is on the next node (e.g. 'addresses'), not the root ('c')
+				// The root node is the range alias; the next node is the property being accessed
+				$propertyNode = $side->getNext();
+				$entityName = $side->getEntityName();
+				
+				// Check if the property refers to a relation (OneToOne, ManyToOne, OneToMany)
+				// rather than a regular column — only relations need to be transformed
+				if (!$this->isRelationProperty($propertyNode, $entityName)) {
+					return $side;
+				}
+				
+				$propertyName = $propertyNode->getName();
+				
+				// Collect all relation types for this entity into a single flat map
+				// keyed by property name so we can look up the annotation directly
+				$relations = array_merge(
+					$this->entityStore->getOneToOneDependencies($entityName),
+					$this->entityStore->getManyToOneDependencies($entityName),
+					$this->entityStore->getOneToManyDependencies($entityName)
+				);
+				
+				// Safeguard: isRelationProperty confirmed it exists, but verify before using
+				if (!isset($relations[$propertyName])) {
+					return $side;
+				}
+				
+				// Replace the relation reference with a direct FK/PK property lookup
+				// that SQL can understand as a JOIN condition
+				return $this->createPropertyLookupAstUsingRelation($propertyNode, $relations[$propertyName]);
+			} catch (EntityResolutionException $e) {
+				throw new TransformationException($e->getMessage(), $e->getCode(), $e);
 			}
-			
-			$propertyName = $propertyNode->getName();
-			
-			// Collect all relation types for this entity into a single flat map
-			// keyed by property name so we can look up the annotation directly
-			$relations = array_merge(
-				$this->entityStore->getOneToOneDependencies($entityName),
-				$this->entityStore->getManyToOneDependencies($entityName),
-				$this->entityStore->getOneToManyDependencies($entityName)
-			);
-			
-			// Safeguard: isRelationProperty confirmed it exists, but verify before using
-			if (!isset($relations[$propertyName])) {
-				return $side;
-			}
-			
-			// Replace the relation reference with a direct FK/PK property lookup
-			// that SQL can understand as a JOIN condition
-			return $this->createPropertyLookupAstUsingRelation($propertyNode, $relations[$propertyName]);
 		}
 		
 		/**
@@ -164,6 +181,7 @@
 		 * either side into direct property lookups.
 		 * @param AstInterface $node
 		 * @return void
+		 * @throws TransformationException
 		 */
 		public function visitNode(AstInterface $node): void {
 			if (!$node instanceof AstBinaryOperator) {

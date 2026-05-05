@@ -3,12 +3,13 @@
 	namespace Quellabs\ObjectQuel\ObjectQuel\Visitors;
 	
 	use Quellabs\ObjectQuel\EntityStore;
+	use Quellabs\ObjectQuel\Exception\EntityResolutionException;
+	use Quellabs\ObjectQuel\Exception\TransformationException;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstIdentifier;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRange;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRangeDatabase;
 	use Quellabs\ObjectQuel\ObjectQuel\AstInterface;
 	use Quellabs\ObjectQuel\ObjectQuel\AstVisitorInterface;
-	use Quellabs\ObjectQuel\Exception\QuelException;
 	
 	/**
 	 * Resolves unqualified property names to their fully-qualified range-prefixed form.
@@ -60,7 +61,7 @@
 		 * Visit a node. Only bare base identifiers (no range attached, no next chain)
 		 * are candidates for rewriting; everything else is left untouched.
 		 * @param AstInterface $node
-		 * @throws QuelException
+		 * @throws TransformationException
 		 */
 		public function visitNode(AstInterface $node): void {
 			// Only AstIdentifier nodes are relevant
@@ -106,56 +107,60 @@
 		 * Returns the single matching range, or throws if zero or more than one match.
 		 * @param string $propertyName The bare property name to look up
 		 * @return AstRangeDatabase   The unique range that owns this property
-		 * @throws QuelException      On ambiguity or when no range owns the property
+		 * @throws TransformationException On ambiguity or when no range owns the property
 		 */
 		private function findUniqueRangeForProperty(string $propertyName): AstRangeDatabase {
 			$matches = [];
 			
-			foreach ($this->ranges as $range) {
-				// Only concrete entity ranges have EntityStore metadata
-				if (!$range instanceof AstRangeDatabase) {
-					continue;
+			try {
+				foreach ($this->ranges as $range) {
+					// Only concrete entity ranges have EntityStore metadata
+					if (!$range instanceof AstRangeDatabase) {
+						continue;
+					}
+					
+					// Subquery ranges (temporary tables) have no entity name
+					$entityName = $range->getEntityName();
+					
+					if ($entityName === null) {
+						continue;
+					}
+					
+					// Check scalar columns
+					$columnMap = $this->entityStore->getColumnMap($entityName);
+					
+					if (isset($columnMap[$propertyName])) {
+						$matches[] = $range;
+						continue;
+					}
+					
+					// Also check one-to-many relations so that relation properties work too
+					$relations = $this->entityStore->getOneToManyDependencies($entityName);
+					
+					if (isset($relations[$propertyName])) {
+						$matches[] = $range;
+					}
 				}
 				
-				// Subquery ranges (temporary tables) have no entity name
-				$entityName = $range->getEntityName();
-				
-				if ($entityName === null) {
-					continue;
+				if (count($matches) === 0) {
+					throw new TransformationException(
+						"Unknown property '{$propertyName}': it does not exist in any of the ranges defined in this query."
+					);
 				}
 				
-				// Check scalar columns
-				$columnMap = $this->entityStore->getColumnMap($entityName);
-				
-				if (isset($columnMap[$propertyName])) {
-					$matches[] = $range;
-					continue;
+				if (count($matches) > 1) {
+					$rangeNames = implode(', ', array_map(fn($r) => $r->getName(), $matches));
+					
+					throw new TransformationException(
+						"Unqualified property '{$propertyName}' is ambiguous: " .
+						"it exists in multiple ranges ({$rangeNames}). " .
+						"Use a range prefix to disambiguate."
+					);
 				}
 				
-				// Also check one-to-many relations so that relation properties work too
-				$relations = $this->entityStore->getOneToManyDependencies($entityName);
-				
-				if (isset($relations[$propertyName])) {
-					$matches[] = $range;
-				}
+				return $matches[0];
+			} catch (EntityResolutionException $e) {
+				throw new TransformationException($e->getMessage(), $e->getCode(), $e);
 			}
-			
-			if (count($matches) === 0) {
-				throw new QuelException(
-					"Unknown property '{$propertyName}': it does not exist in any of the ranges defined in this query."
-				);
-			}
-			
-			if (count($matches) > 1) {
-				$rangeNames = implode(', ', array_map(fn($r) => $r->getName(), $matches));
-				
-				throw new QuelException(
-					"Unqualified property '{$propertyName}' is ambiguous: " .
-					"it exists in multiple ranges ({$rangeNames}). " .
-					"Use a range prefix to disambiguate."
-				);
-			}
-			
-			return $matches[0];
 		}
 	}

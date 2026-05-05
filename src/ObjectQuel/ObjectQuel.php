@@ -6,6 +6,7 @@
 	use Quellabs\ObjectQuel\EntityStore;
 	use Quellabs\ObjectQuel\Exception\QuelException;
 	use Quellabs\ObjectQuel\Exception\SemanticException;
+	use Quellabs\ObjectQuel\Exception\TransformationException;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstAlias;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRetrieve;
 	use Quellabs\ObjectQuel\ObjectQuel\Visitors\AliasPlugAliasPattern;
@@ -39,35 +40,6 @@
 		public function parse(string $query): ?AstRetrieve {
 			try {
 				// Convert the raw query string into an Abstract Syntax Tree
-				$ast = $this->parseQueryToAst($query);
-				
-				// Processing phase - Transform and enhance the AST
-				$this->queryTransformer->transform($ast);
-				
-				// Validation phase - Ensure AST integrity and correctness
-				$this->queryValidator->validate($ast);
-				
-				// The AST is now fully validated
-				return $ast;
-				
-			} catch (ParserException|SemanticException $e) {
-				// Handle parsing failures by wrapping in domain-specific exception
-				// This provides consistent error handling while preserving original error context
-				// ParserException indicates issues in the parsing phase specifically
-				throw new QuelException("Query parsing failed: " . $e->getMessage(), 0, $e);
-			}
-		}
-		
-		// ========== PARSING METHODS ==========
-		
-		/**
-		 * Parses the query string into an AST using lexer and parser.
-		 * @param string $query The query string to parse
-		 * @return AstRetrieve The parsed AST
-		 * @throws QuelException If the AST is not a retrieve operation
-		 */
-		private function parseQueryToAst(string $query): AstRetrieve {
-			try {
 				// Create a lexer to break the query string into tokens (keywords, identifiers, operators, etc.)
 				$lexer = new Lexer($query);
 				
@@ -84,14 +56,23 @@
 					throw new QuelException("Invalid query type: expected retrieve operation");
 				}
 				
-				// Return the validated AST ready for further processing
-				return $ast;
+				// Processing phase - Transform and enhance the AST
+				$this->queryTransformer->transform($ast);
 				
-			} catch (LexerException | ParserException $e) {
-				// Catch parsing errors and wrap them in a domain-specific exception
-				// This provides a consistent error interface while preserving the original error details
-				// The original exception is chained for debugging purposes
-				throw new QuelException("Query parsing failed: " . $e->getMessage(), 0, $e);
+				// Validation phase - Ensure AST integrity and correctness
+				$this->queryValidator->validate($ast);
+				
+				// The AST is now fully validated
+				return $ast;
+
+			} catch (ParserException|LexerException $e) {
+				throw new QuelException("Syntax error: " . $e->getMessage(), 'syntax_error', 0, $e);
+			} catch (SemanticException $e) {
+				throw new QuelException($e->getMessage(), 'semantic_error', 0, $e);
+			} catch (TransformationException $e) {
+				throw new QuelException($e->getMessage(), 'transformation_error', 0, $e);
+			} catch (\Throwable $e) {
+				throw new QuelException("Query execution failed.", 'internal_error', 0, $e);
 			}
 		}
 	}
