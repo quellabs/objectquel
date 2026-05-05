@@ -40,7 +40,15 @@
 			}
 			
 			// Convert string datetime to \DateTime object using the format "Y-m-d H:i:s"
-			return \DateTime::createFromFormat("Y-m-d H:i:s", $value);
+			$date = \DateTime::createFromFormat("Y-m-d H:i:s", $value);
+			
+			// Return null if that failed
+			if ($date === false) {
+				return null;
+			}
+			
+			// Return the date
+			return $date;
 		}
 		
 		/**

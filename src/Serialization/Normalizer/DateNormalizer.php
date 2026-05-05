@@ -45,7 +45,15 @@
 			}
 			
 			// Convert string date to \DateTime object using the format "Y-m-d"
-			return \DateTime::createFromFormat("Y-m-d", $value);
+			$date = \DateTime::createFromFormat("Y-m-d", $value);
+			
+			// Return null if that failed
+			if ($date === false) {
+				return null;
+			}
+			
+			// Return the date
+			return $date;
 		}
 		
 		/**
