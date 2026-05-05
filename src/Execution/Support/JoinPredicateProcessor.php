@@ -39,7 +39,6 @@
 		/**
 		 * @param AstRange[] $allRanges
 		 * @return AstRange[]
-		 * @throws \Exception
 		 */
 		public function buildUpdatedRanges(array $allRanges): array {
 			$liveRangeNames = array_keys($this->liveRanges);
