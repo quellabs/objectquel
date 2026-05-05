@@ -8,7 +8,7 @@
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstBinaryOperator;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstExists;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRetrieve;
-	use Quellabs\ObjectQuel\Execution\Support\BinaryOperationHelper;
+	use Quellabs\ObjectQuel\Planner\Helpers\BinaryOperationHelper;
 	
 	/**
 	 * Processes EXISTS operators by removing them from conditions and converting
