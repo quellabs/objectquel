@@ -187,20 +187,20 @@
 		/**
 		 * Gets the original data of an entity. The original data is the data that was
 		 * present at the time the entity was reconstituted from the database.
-		 * @param mixed $entity
+		 * @param object $entity
 		 * @return array<string, mixed>|null
 		 */
-		public function getOriginalEntityData(mixed $entity): ?array {
+		public function getOriginalEntityData(object $entity): ?array {
 			return $this->originalEntityData[$entity] ?? null;
 		}
 		
 		/**
 		 * Adds an existing entity to the entity manager's identity map for tracking and change detection.
 		 * This method is used for entities that already exist in the database but need to be managed.
-		 * @param mixed $entity The entity object to persist and track.
+		 * @param object $entity The entity object to persist and track.
 		 * @return void
 		 */
-		public function persistExisting(mixed $entity): void {
+		public function persistExisting(object $entity): void {
 			// Check if the entity class is registered in the entity store
 			// If not, it's not a valid entity and should be ignored
 			if (!$this->getEntityStore()->exists($entity)) {
@@ -472,10 +472,10 @@
 
 		/**
 		 * Determines the state of an entity (e.g., new, modified, not managed, etc.).
-		 * @param mixed $entity The entity whose state needs to be determined.
+		 * @param object $entity The entity whose state needs to be determined.
 		 * @return int The state of the entity, represented as a constant from DirtyState.
 		 */
-		private function getEntityState(mixed $entity): int {
+		private function getEntityState(object $entity): int {
 			// Checks if the entity is not being managed.
 			if (!$this->isInIdentityMap($entity)) {
 				return DirtyState::NotManaged;
@@ -566,11 +566,11 @@
 		
 		/**
 		 * Retrieves a property value from an entity object using getter method or property handler.
-		 * @param mixed $entity The object to extract the value from
+		 * @param object $entity The object to extract the value from
 		 * @param string $property The property name to retrieve
 		 * @return mixed           The value of the requested property
 		 */
-		private function getValueFromEntity(mixed $entity, string $property): mixed {
+		private function getValueFromEntity(object $entity, string $property): mixed {
 			// Generate the getter method name by capitalizing the first letter of the property
 			$getterMethod = 'get' . ucfirst($property);
 			
@@ -732,10 +732,10 @@
 		
 		/**
 		 * Checks if a given entity is present in the identity map.
-		 * @param mixed $entity The entity to check.
+		 * @param object $entity The entity to check.
 		 * @return bool Returns true if the entity is in the identity map, otherwise false.
 		 */
-		private function isInIdentityMap(mixed $entity): bool {
+		private function isInIdentityMap(object $entity): bool {
 			// Get the normalized class name of the entity.
 			$normalizedEntityName = $this->getEntityStore()->normalizeEntityName(get_class($entity));
 			
@@ -778,10 +778,10 @@
 		/**
 		 * This function retrieves the parent entity and the corresponding ManyToOne annotation
 		 * for the given entity. If the parent entity doesn't exist, null is returned.
-		 * @param mixed $entity The entity for which to retrieve the parent entity and annotation.
+		 * @param object $entity The entity for which to retrieve the parent entity and annotation.
 		 * @return array<int, array{entity: object, property: string, value: mixed}> An associative array with 'entity' and 'annotation' as keys, or null if not found.
 		 */
-		private function fetchParentEntitiesPrimaryKeyData(mixed $entity): array {
+		private function fetchParentEntitiesPrimaryKeyData(object $entity): array {
 			// Initialize an empty array to store the results.
 			// This will hold all parent entities and their relationship data
 			$result = [];
@@ -846,11 +846,11 @@
 		
 		/**
 		 * Retrieves the identifiers (primary keys) of the given entity.
-		 * @param mixed $entity The entity from which to retrieve the primary keys.
+		 * @param object $entity The entity from which to retrieve the primary keys.
 		 * @return array<string, mixed> An associative array where the keys are the primary key names and
 		 *               the values are their corresponding values from the entity.
 		 */
-		private function getIdentifiers(mixed $entity): array {
+		private function getIdentifiers(object $entity): array {
 			// Fetch the primary key names from the entity store
 			$primaryKeys = $this->getEntityStore()->getIdentifierKeys($entity);
 			
