@@ -4,6 +4,7 @@
 	
 	use Quellabs\AnnotationReader\Configuration;
 	use Quellabs\AnnotationReader\AnnotationReader;
+	use Quellabs\ObjectQuel\Annotations\Validation\PropertyValidationInterface;
 	use Quellabs\ObjectQuel\Validation\Rules\Date;
 	use Quellabs\ObjectQuel\Validation\Rules\Email;
 	use Quellabs\ObjectQuel\Validation\Rules\Length;
@@ -63,7 +64,10 @@
 					$annotationClass = get_class($annotation);
 					
 					// Check if there is a corresponding validation rule for this annotation
-					if (isset($annotationMap[$annotationClass])) {
+					if (
+						isset($annotationMap[$annotationClass]) &&
+						$annotation instanceof PropertyValidationInterface
+					) {
 						// Add a new instance of the validation rule to the result
 						$result[$property][] = new $annotationMap[$annotationClass]($annotation->getParameters());
 					}
