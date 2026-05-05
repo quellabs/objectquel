@@ -165,11 +165,21 @@
 		 */
 		public function getMetadata(string|object $entity): EntityMetadataRecord {
 			// Resolve entity name to a
-			$className = $this->resolveEntityClass($entity);
+			if (is_object($entity)) {
+				$className = $this->normalizeEntityName($entity);
+			} else {
+				$className = $this->qualifyClassName($entity);
+			}
 			
 			// Return cached metadata if available
 			// Otherwise build and cache the metadata
 			if (!isset($this->metadataCache[$className])) {
+				// Check that the given class actually exists
+				if (!class_exists($className)) {
+					throw new \RuntimeException("Invalid entity class: {$className}");
+				}
+				
+				// Add metadata to cache
 				$this->metadataCache[$className] = $this->metadataBuilder->build($className);
 			}
 			
@@ -183,7 +193,16 @@
 		 */
 		public function exists(string|object $entity): bool {
 			// Determine the class name of the entity
-			$normalizedClass = $this->resolveEntityClass($entity);
+			if (is_object($entity)) {
+				$normalizedClass = $this->normalizeEntityName($entity);
+			} else {
+				$normalizedClass = $this->qualifyClassName($entity);
+			}
+			
+			// Check that the class exists
+			if (!class_exists($normalizedClass)) {
+				return false;
+			}
 			
 			// Check if the entity class exists in the entity registry
 			if (isset($this->entityRegistry[$normalizedClass])) {
@@ -252,12 +271,12 @@
 		 * Resolve an entity class.
 		 * Classes are trusted after entering the registry via initializeEntities.
 		 * Proxy classes are the only ones validated at runtime (in normalizeEntityName).
-		 * @param string|object $entity
+		 * @param string $entityName
 		 * @return class-string<object>
 		 */
-		public function resolveEntityClass(string|object $entity): string {
+		public function qualifyClassName(string $entityName): string {
 			/** @var class-string<object> $className */
-			$className = $this->normalizeEntityName($entity);
+			$className = $this->normalizeEntityName($entityName);
 			return $className;
 		}
 		
@@ -634,7 +653,7 @@
 					// Add ManyToOne dependencies
 					// These represent foreign key relationships where this entity depends on another
 					foreach ($metadata->manyToOneRelations as $relation) {
-						$dependencies[] = $this->resolveEntityClass($relation->getTargetEntity());
+						$dependencies[] = $this->qualifyClassName ($relation->getTargetEntity());
 					}
 					
 					// Add OneToOne dependencies (owning side only)
@@ -642,7 +661,7 @@
 					// (indicated by the inversedBy property being set)
 					foreach ($metadata->oneToOneRelations as $relation) {
 						if (!empty($relation->getInversedBy())) {
-							$dependencies[] = $this->resolveEntityClass($relation->getTargetEntity());
+							$dependencies[] = $this->qualifyClassName ($relation->getTargetEntity());
 						}
 					}
 					

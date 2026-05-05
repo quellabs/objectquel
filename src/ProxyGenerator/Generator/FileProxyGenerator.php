@@ -116,7 +116,7 @@
 					$entityName = $this->constructEntityName($entityFilePath);
 					
 					// resolveEntityClass throws an exception when the entity does not lead to an actual object
-					$entityName = $this->entityStore->resolveEntityClass($entityName);
+					$entityName = $this->entityStore->qualifyClassName($entityName);
 					
 					// Only generate proxies for classes the entity store actually knows about.
 					// Plain PHP files in the entity directory that aren't mapped entities are skipped.

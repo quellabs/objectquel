@@ -87,7 +87,9 @@
 			$inversedPropertyName = $this->getInversedPropertyName($dependency);
 			
 			// Add the namespace to the target entity name and find the related entity.
-			$targetEntity = $this->entityStore->resolveEntityClass($targetEntityName);
+			$targetEntity = $this->entityStore->qualifyClassName($targetEntityName);
+			
+			// Check the UnitOfWork if it has the entity
 			$relationEntity = $this->unitOfWork->findEntity($targetEntity, [$inversedPropertyName => $relationColumnValue]);
 			
 			// If a related entity is found, update the property of the current entity.
@@ -304,7 +306,7 @@
 		private function setDirectRelations(array $filteredEntities): void {
 			foreach ($filteredEntities as $entity) {
 				// Normalize the entity class name
-				$entityClass = $this->entityStore->resolveEntityClass(get_class($entity));
+				$entityClass = $this->entityStore->normalizeEntityName($entity);
 				
 				// Dependencies
 				$entityDependencies = $this->entityStore->getAllDependencies($entityClass);
@@ -342,7 +344,7 @@
 			// Loop through all filtered entities
 			foreach ($filteredRows as $value) {
 				// Get the normalized name of the entity class
-				$objectClass = $this->entityStore->resolveEntityClass(get_class($value));
+				$objectClass = $this->entityStore->normalizeEntityName($value);
 				
 				// Get all dependencies of the entity class
 				$entityDependencies = $this->entityStore->getAllDependencies($objectClass);
@@ -369,7 +371,7 @@
 			// Loop through all filtered rows
 			foreach ($filteredRows as $entity) {
 				// Get the normalized name of the entity class
-				$objectClass = $this->entityStore->resolveEntityClass(get_class($entity));
+				$objectClass = $this->entityStore->normalizeEntityName($entity);
 				
 				// Get all dependencies of the entity class
 				$entityDependencies = $this->entityStore->getAllDependencies($objectClass);
@@ -382,7 +384,7 @@
 					// Create and set a collection of entities for each valid dependency
 					foreach ($validDependencies as $dependency) {
 						// Complete short entity names to their full namespace form
-						$targetEntity = $this->entityStore->resolveEntityClass($dependency->getTargetEntity());
+						$targetEntity = $this->entityStore->qualifyClassName($dependency->getTargetEntity());
 						
 						// Fetch the relation column. If absent use the primary key
 						$relationColumn = $dependency->getRelationColumn() ?? $this->entityStore->getPrimaryKey($entity);
