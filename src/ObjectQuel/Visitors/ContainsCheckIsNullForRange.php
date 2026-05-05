@@ -60,7 +60,7 @@
 			}
 			
 			// Record if the identifier belongs to our target range
-			if ($node->getExpression()->getRange()->getName() === $this->rangeName) {
+			if ($node->getExpression()->getRange()?->getName() === $this->rangeName) {
 				$this->found = true;
 			}
 		}
