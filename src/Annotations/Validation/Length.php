@@ -2,8 +2,6 @@
 	
 	namespace Quellabs\ObjectQuel\Annotations\Validation;
 	
-	use Quellabs\AnnotationReader\AnnotationInterface;
-	
 	class Length implements PropertyValidationInterface {
 		
 		/**
