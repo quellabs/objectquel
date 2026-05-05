@@ -129,6 +129,13 @@
 				// Extract the join condition components
 				// JOIN conditions are typically: main_table.foreign_key = joined_table.primary_key
 				$joinProperty = $range->getJoinProperty();
+
+				// shouldSetRangeRequired() guarantees $joinProperty is a non-null AstExpression,
+				// but PHPStan cannot track that invariant across method boundaries.
+				if ($joinProperty === null) {
+					continue;
+				}
+
 				$left = BinaryOperationHelper::getBinaryLeft($joinProperty);
 				$right = BinaryOperationHelper::getBinaryRight($joinProperty);
 				
@@ -350,8 +357,10 @@
 			$relatedEntityName = $isMainRange ? $left->getEntityName() : $right->getEntityName();
 			
 			// Handle temporary ranges (subqueries) with nullability analysis
-			// Temporary tables have no entity metadata or annotations
-			if (empty($ownEntityName)) {
+			// Temporary tables have no entity metadata or annotations.
+			// Also bail out if $relatedEntityName is null, since isMatchingRequiredRelation()
+			// requires a non-null string and getEntityName() can return null.
+			if (empty($ownEntityName) || $relatedEntityName === null) {
 				$this->checkTemporaryRangeRequired($range, $isMainRange, $left, $right);
 				return;
 			}
@@ -419,10 +428,19 @@
 				return;
 			}
 			
+			// getQuery() returns AstRetrieve|null; containsQuery() above guarantees it is set,
+			// but PHPStan cannot infer that coupling. Guard explicitly.
+			$subquery = $joinedRange->getQuery();
+
+			// If there is no subquery, bail
+			if ($subquery === null) {
+				return;
+			}
+
 			// Use visitor to check field nullability
 			$visitor = new ContainsNonNullableFieldForRangeTemporary(
 				$joinedRange->getName(),
-				$joinedRange->getQuery(),
+				$subquery,
 				$this->entityStore
 			);
 			
