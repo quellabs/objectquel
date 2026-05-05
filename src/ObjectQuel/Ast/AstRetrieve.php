@@ -542,9 +542,7 @@
 				$macro->setParent($clone);
 			}
 			
-			if ($clonedConditions) {
-				$clonedConditions->setParent($clone);
-			}
+			$clonedConditions?->setParent($clone);
 			
 			foreach ($clonedSort as $sortItem) {
 				$sortItem['ast']->setParent($clone);

@@ -305,14 +305,8 @@
 		 * @return void
 		 */
 		private function replaceAnyWithInlinedValue(AstRetrieve $ast, AstAny $node): void {
-			// getParent() returns ?AstInterface; a null parent means this node is the
-			// tree root, which cannot happen for ANY (it always appears inside SELECT
-			// or WHERE). Guard here so replaceChild never receives null.
+			// AstAny implements NonRootAstInterface, so getParent() is guaranteed non-null.
 			$parent = $node->getParent();
-			
-			if ($parent === null) {
-				throw new \LogicException('Cannot replace ANY node: node has no parent (is it the tree root?)');
-			}
 			
 			// Swap the ANY(...) node for the literal integer 1.
 			// The outer query already guarantees at least one row exists (this path is
@@ -355,25 +349,13 @@
 			// result is always 1. Skip subquery generation and inline the literal directly.
 			if ($this->isAnyOnAnchorWithNoConditions($correlatedRanges, $conditions, $node)) {
 				$subQuery = AstFactory::createNumber(1);
-				$parent = $node->getParent();
-				
-				// ANY can never be the tree root, so a null parent indicates a broken AST.
-				if ($parent === null) {
-					throw new \LogicException('Cannot replace ANY node: node has no parent (is it the tree root?)');
-				}
-				
-				// Replace the child
-				AstNodeReplacer::replaceChild($parent, $node, $subQuery);
+				AstNodeReplacer::replaceChild($node->getParent(), $node, $subQuery);
 				return;
 			}
 			
-			// Resolve the parent once for the remaining branches. Both the CASE WHEN and
-			// EXISTS paths replace the same node, so one null-check covers both.
+			// AstAny implements NonRootAstInterface, so getParent() is guaranteed non-null.
+			// Resolve once here; both remaining branches replace the same node.
 			$parent = $node->getParent();
-			
-			if ($parent === null) {
-				throw new \LogicException('Cannot replace ANY node: node has no parent (is it the tree root?)');
-			}
 			
 			// SELECT context: wrap in CASE WHEN EXISTS(...) THEN 1 ELSE 0 END so that
 			// the subquery yields a scalar integer rather than a boolean predicate.

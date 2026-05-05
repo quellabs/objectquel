@@ -41,7 +41,7 @@
 		 * @return bool
 		 */
 		public function hasParent(): bool {
-			return true;
+			return $this->parent !== null;
 		}
 		
 		/**
