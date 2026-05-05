@@ -4,13 +4,13 @@
 	
 	use Quellabs\ObjectQuel\DatabaseAdapter\DatabaseAdapter;
 	use Quellabs\ObjectQuel\DatabaseAdapter\TypeMapper;
-	use Quellabs\Support\Tools;
+	use Quellabs\ObjectQuel\Sculpt\SculptTypes;
 	
 	/**
 	 * Class SchemaComparator
 	 * Compares entity schema (object properties) with database schema (table columns)
 	 * to identify changes such as added, modified, or deleted columns.
-	 * @phpstan-import-type ColumnDefinition from EntitySchemaAnalyzer
+	 * @phpstan-import-type ColumnDefinition from SculptTypes
 	 */
 	class SchemaComparator {
 		

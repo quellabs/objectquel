@@ -9,6 +9,7 @@
 	use Quellabs\ObjectQuel\EntityStore;
 	use Quellabs\ObjectQuel\OrmException;
 	use Quellabs\ObjectQuel\Sculpt\Helpers\EntitySchemaAnalyzer;
+	use Quellabs\ObjectQuel\Sculpt\SculptTypes;
 	use Quellabs\ObjectQuel\Sculpt\Helpers\PhinxMigrationBuilder;
 	use Quellabs\ObjectQuel\Sculpt\ServiceProvider;
 	use Quellabs\Sculpt\Contracts\CommandBase;
@@ -23,7 +24,8 @@
 	 * and the database schema, then uses PhinxMigrationBuilder to create migration files that
 	 * synchronize the database with entity changes.
 	 *
-	 * @phpstan-import-type ColumnDefinition from EntitySchemaAnalyzer
+	 * @phpstan-import-type ColumnDefinition from SculptTypes
+	 * @phpstan-import-type EntityChangeSet from SculptTypes
 	 */
 	class MakeMigrationsCommand extends CommandBase {
 		private ?EntityStore $entityStore = null;

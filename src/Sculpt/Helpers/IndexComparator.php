@@ -3,26 +3,14 @@
 	namespace Quellabs\ObjectQuel\Sculpt\Helpers;
 	
 	use Quellabs\ObjectQuel\Annotations\Orm\FullTextIndex;
-	use Quellabs\ObjectQuel\Annotations\Orm\Index;
 	use Quellabs\ObjectQuel\Annotations\Orm\UniqueIndex;
 	use Quellabs\ObjectQuel\DatabaseAdapter\DatabaseAdapter;
 	use Quellabs\ObjectQuel\EntityStore;
+	use Quellabs\ObjectQuel\Sculpt\SculptTypes;
 	
 	/**
-	 * @phpstan-type IndexDefinition array{
-	 *     columns: array<int, string>,
-	 *     type: string,
-	 *     unique: bool
-	 * }
-	 *
-	 * @phpstan-type IndexChangeSet array{
-	 *     added: array<string, IndexDefinition>,
-	 *     modified: array<string, array{
-	 *         database: IndexDefinition,
-	 *         entity: IndexDefinition
-	 *     }>,
-	 *     deleted: array<string, IndexDefinition>
-	 * }
+	 * @phpstan-import-type IndexDefinition from SculptTypes
+	 * @phpstan-import-type IndexChangeSet from SculptTypes
 	 */
 	class IndexComparator {
 		

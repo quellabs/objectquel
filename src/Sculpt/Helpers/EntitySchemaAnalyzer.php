@@ -4,6 +4,7 @@
 	
 	use Quellabs\ObjectQuel\DatabaseAdapter\DatabaseAdapter;
 	use Quellabs\ObjectQuel\EntityStore;
+	use Quellabs\ObjectQuel\Sculpt\SculptTypes;
 	use RuntimeException;
 	use InvalidArgumentException;
 	
@@ -12,21 +13,10 @@
 	 * This class compares entity class definitions (properties, indexes) against the actual
 	 * database schema to detect structural differences that need migration.
 	 *
-	 * @phpstan-type ColumnDefinition array{
-	 *     type: string,
-	 *     limit?: int|string|array<int, int>,
-	 *     nullable?: bool,
-	 *     default?: mixed,
-	 *     precision?: int,
-	 *     scale?: int,
-	 *     unsigned?: bool,
-	 *     identity?: bool,
-	 *     primary_key?: bool,
-	 *     values?: array<int, string>
-	 * }
-	 *
-	 * @phpstan-import-type IndexDefinition from IndexComparator
-	 * @phpstan-import-type IndexChangeSet from IndexComparator
+	 * @phpstan-import-type ColumnDefinition from SculptTypes
+	 * @phpstan-import-type IndexDefinition from SculptTypes
+	 * @phpstan-import-type IndexChangeSet from SculptTypes
+	 * @phpstan-import-type EntityChangeSet from SculptTypes
 	 *
 	 * @phpstan-type SchemaChangeSet array{
 	 *      added: array<string, ColumnDefinition>,
@@ -36,18 +26,6 @@
 	 *          changes: array<string, array{from: mixed, to: mixed}>
 	 *      }>,
 	 *      deleted: array<string, ColumnDefinition>
-	 *  }
-	 *
-	 * @phpstan-type EntityChangeSet array{
-	 *      table_not_exists?: bool,
-	 *      added: array<string, ColumnDefinition>,
-	 *      modified: array<string, array{
-	 *          from: ColumnDefinition,
-	 *          to: ColumnDefinition,
-	 *          changes: array<string, array{from: mixed, to: mixed}>
-	 *      }>,
-	 *      deleted: array<string, ColumnDefinition>,
-	 *      indexes: IndexChangeSet
 	 *  }
 	 */
 	class EntitySchemaAnalyzer {

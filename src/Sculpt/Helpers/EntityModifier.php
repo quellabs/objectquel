@@ -3,6 +3,7 @@
 	namespace Quellabs\ObjectQuel\Sculpt\Helpers;
 	
 	use Quellabs\ObjectQuel\Configuration;
+	use Quellabs\ObjectQuel\Sculpt\SculptTypes;
 	use Quellabs\ObjectQuel\DatabaseAdapter\TypeMapper;
 	use Quellabs\ObjectQuel\Sculpt\Commands\MakeEntityCommand;
 	use Quellabs\Support\StringInflector;
@@ -10,11 +11,10 @@
 	/**
 	 * Handles creating new entity classes with properties, relationships, and accessors,
 	 * as well as updating existing entities with new properties while preserving existing code.
-	 *
-	 * @phpstan-import-type BaseProperty from MakeEntityCommand
-	 * @phpstan-import-type EnumProperty from MakeEntityCommand
-	 * @phpstan-import-type RelationProperty from MakeEntityCommand
-	 * @phpstan-import-type PropertyDefinition from MakeEntityCommand
+	 * @phpstan-import-type BaseProperty from SculptTypes
+	 * @phpstan-import-type EnumProperty from SculptTypes
+	 * @phpstan-import-type RelationProperty from SculptTypes
+	 * @phpstan-import-type PropertyDefinition from SculptTypes
 	 *
 	 * @phpstan-type IndexDefinition array{
 	 *     type?: 'INDEX'|'UNIQUE'|'FULLTEXT',

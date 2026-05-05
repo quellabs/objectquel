@@ -4,6 +4,7 @@
 	
 	use Quellabs\ObjectQuel\DatabaseAdapter\DatabaseAdapter;
 	use Quellabs\ObjectQuel\DatabaseAdapter\TypeMapper;
+	use Quellabs\ObjectQuel\Sculpt\SculptTypes;
 	
 	/**
 	 * Generates Phinx migration files from schema change descriptors.
@@ -27,19 +28,12 @@
 	 * An indexConfig is an associative array with keys:
 	 *   columns (string[]), type ('INDEX'|'UNIQUE'|'FULLTEXT'), unique (bool, optional)
 	 *
-	 * @phpstan-import-type ColumnDefinition from EntitySchemaAnalyzer
+	 * @phpstan-import-type ColumnDefinition from SculptTypes
+	 * @phpstan-import-type IndexDefinition from SculptTypes
+	 * @phpstan-import-type IndexChangeSet from SculptTypes
 	 *
-	 * @phpstan-type IndexConfig array{
-	 *     columns: array<int, string>,
-	 *     type: string,
-	 *     unique: bool
-	 * }
-	 *
-	 * @phpstan-type IndexChanges array{
-	 *     added: array<string, IndexConfig>,
-	 *     modified: array<string, array{entity: IndexConfig, database: IndexConfig}>,
-	 *     deleted: array<string, IndexConfig>
-	 * }
+	 * @phpstan-type IndexConfig IndexDefinition
+	 * @phpstan-type IndexChanges IndexChangeSet
 	 *
 	 * @phpstan-type TableChanges array{
 	 *     table_not_exists?: bool,

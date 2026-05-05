@@ -5,6 +5,7 @@
 	use Quellabs\ObjectQuel\Configuration;
 	use Quellabs\ObjectQuel\EntityStore;
 	use Quellabs\ObjectQuel\Sculpt\Helpers\EntityModifier;
+	use Quellabs\ObjectQuel\Sculpt\SculptTypes;
 	use Quellabs\ObjectQuel\Sculpt\ServiceProvider;
 	use Quellabs\Sculpt\Contracts\CommandBase;
 	use Quellabs\Sculpt\ConfigurationManager;
@@ -18,39 +19,10 @@
 	 * Supports standard data types (string, integer, decimal, etc.) and ORM relationships
 	 * (OneToOne, OneToMany, ManyToOne) with automatic foreign key generation.
 	 *
-	 * @phpstan-type BaseProperty array{
-	 *     name: string,
-	 *     type: 'tinyinteger'|'smallinteger'|'integer'|'biginteger'|'string'|'char'|'text'|'float'|'decimal'|'boolean'|'date'|'datetime'|'time'|'timestamp',
-	 *     nullable?: bool,
-	 *     readonly?: bool,
-	 *     unsigned?: bool,
-	 *     limit?: int|string,
-	 *     precision?: int,
-	 *     scale?: int
-	 * }
-	 *
-	 * @phpstan-type EnumProperty array{
-	 *     name: string,
-	 *     type: 'enum',
-	 *     nullable?: bool,
-	 *     readonly?: bool,
-	 *     enumType: string
-	 * }
-	 *
-	 * @phpstan-type RelationProperty array{
-	 *     name: string,
-	 *     type: string,
-	 *     nullable?: bool,
-	 *     readonly?: bool,
-	 *     relationshipType: 'OneToOne'|'OneToMany'|'ManyToOne',
-	 *     targetEntity: string,
-	 *     mappedBy?: string|null,
-	 *     inversedBy?: string|null,
-	 *     relationColumn?: string|null,
-	 *     foreignColumn?: string
-	 * }
-	 *
-	 * @phpstan-type PropertyDefinition BaseProperty|EnumProperty|RelationProperty
+	 * @phpstan-import-type BaseProperty from SculptTypes
+	 * @phpstan-import-type EnumProperty from SculptTypes
+	 * @phpstan-import-type RelationProperty from SculptTypes
+	 * @phpstan-import-type PropertyDefinition from SculptTypes
 	 */
 	class MakeEntityCommand extends CommandBase {
 		
