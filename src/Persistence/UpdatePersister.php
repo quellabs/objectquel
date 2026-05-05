@@ -34,7 +34,7 @@
 		 * Database connection adapter used for executing SQL queries
 		 * Abstracts the underlying database system and provides a unified interface
 		 */
-		private ?DatabaseAdapter $connection;
+		private DatabaseAdapter $connection;
 		
 		/**
 		 * Handles values with @Orm\Version annotations
