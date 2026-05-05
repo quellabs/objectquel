@@ -9,7 +9,6 @@
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRangeDatabase;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRetrieve;
 	use Quellabs\ObjectQuel\ObjectQuel\AstInterface;
-	use Quellabs\ObjectQuel\Exception\QuelException;
 	
 	/**
 	 * AnchorManager optimizes SQL queries by selecting the best "anchor" table.
@@ -46,7 +45,6 @@
 		 * @param AstInterface|null &$whereClause WHERE clause (modified to include moved JOIN conditions)
 		 * @param QueryAnalysisResult $analysis Pre-computed analysis of table usage patterns
 		 * @return AstRange[] Optimized ranges with exactly one anchor
-		 * @throws QuelException When no valid anchor can be determined
 		 */
 		public static function configureRangeAnchors(
 			array               $ranges,
@@ -63,7 +61,7 @@
 			
 			// Critical error: no viable anchor means malformed query
 			if ($anchorCandidate === null) {
-				throw new QuelException("No valid anchor range found for query optimization");
+				throw new \LogicException("No valid anchor range found for query optimization");
 			}
 			
 			// Apply the selected optimization strategy
