@@ -347,7 +347,7 @@ PHP;
 		 *
 		 * @param string $tableName Table to modify
 		 * @param array<string, ColumnModification> $modifiedColumns
-		 * @param string $direction 'to' for up(), 'from' for down()
+		 * @param 'from'|'to' $direction 'to' for up(), 'from' for down()
 		 */
 		private function buildChangeColumnsCode(string $tableName, array $modifiedColumns, string $direction): string {
 			$builder = new MigrationCodeBuilder($tableName);

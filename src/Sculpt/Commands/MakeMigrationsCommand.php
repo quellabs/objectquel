@@ -163,8 +163,8 @@
 			$to = $diff['to'];
 			$parts = [];
 			
-			if (($from['type'] ?? null) !== ($to['type'] ?? null)) {
-				$parts[] = "type changed to " . ($to['type'] ?? 'unknown');
+			if ($from['type'] !== $to['type']) {
+				$parts[] = "type changed to " . $to['type'];
 			}
 			
 			if (($from['limit'] ?? null) !== ($to['limit'] ?? null)) {
