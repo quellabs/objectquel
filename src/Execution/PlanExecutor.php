@@ -11,6 +11,9 @@
 	use Quellabs\ObjectQuel\Execution\Joins\LeftJoinStrategy;
 	use Quellabs\ObjectQuel\Execution\Joins\InnerJoinStrategy;
 	use Quellabs\ObjectQuel\Execution\Executors\TempTableExecutor;
+	use Quellabs\ObjectQuel\Planner\ExecutionPlan;
+	use Quellabs\ObjectQuel\Planner\ExecutionPlanBuilder;
+	use Quellabs\ObjectQuel\Planner\TempTableStage;
 	
 	/**
 	 * The PlanExecutor handles the actual execution of ExecutionStages within an ExecutionPlan,

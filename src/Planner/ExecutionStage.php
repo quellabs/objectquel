@@ -1,10 +1,8 @@
 <?php
 	
-	namespace Quellabs\ObjectQuel\Execution;
+	namespace Quellabs\ObjectQuel\Planner;
 	
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRange;
-	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRangeDatabase;
-	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRangeJsonSource;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRetrieve;
 	use Quellabs\ObjectQuel\ObjectQuel\AstInterface;
 	
@@ -39,7 +37,7 @@
 		 * These are fixed values that don't depend on the execution of other stages
 		 * @var array<string, mixed>
 		 */
-		private array $staticParams = [];
+		private array $staticParams;
 		
 		/**
 		 * Post-processing function to apply to results before passing to next stages
@@ -100,16 +98,6 @@
 		 */
 		public function getResultProcessor(): ?callable {
 			return $this->resultProcessor;
-		}
-		
-		/**
-		 * Set a processor function to transform results before passing to dependent stages
-		 * @param callable|null $processor Function that takes results array and returns processed array
-		 * @return ExecutionStage This stage instance for method chaining
-		 */
-		public function setResultProcessor(?callable $processor): self {
-			$this->resultProcessor = $processor;
-			return $this;
 		}
 		
 		/**

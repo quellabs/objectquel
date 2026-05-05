@@ -1,10 +1,10 @@
 <?php
 	
-	namespace Quellabs\ObjectQuel\Execution;
+	namespace Quellabs\ObjectQuel\Planner;
 	
-	use Quellabs\ObjectQuel\Execution\Decomposer\ConditionAnalyzer;
-	use Quellabs\ObjectQuel\Execution\Decomposer\ConditionFilter;
-	use Quellabs\ObjectQuel\Execution\Decomposer\StageFactory;
+	use Quellabs\ObjectQuel\Planner\Helpers\ConditionAnalyzer;
+	use Quellabs\ObjectQuel\Planner\Helpers\ConditionFilter;
+	use Quellabs\ObjectQuel\Planner\Helpers\StageFactory;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRangeDatabase;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRangeJsonSource;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRetrieve;
@@ -72,7 +72,7 @@
 			// dependency edges can be registered correctly.
 			$tempRanges = $this->stageFactory->extractTemporaryRanges($query);
 			
-			// Sort temp ranges by their inter-dependencies (a temp range's inner query
+			// Sort temp ranges by their interdependencies (a temp range's inner query
 			// might reference another temp range; it must come after its dependency).
 			if (!empty($tempRanges)) {
 				$tempRanges = $this->sortByDependency($tempRanges);

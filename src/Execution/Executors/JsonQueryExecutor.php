@@ -2,12 +2,12 @@
 	
 	namespace Quellabs\ObjectQuel\Execution\Executors;
 	
+	use Flow\JSONPath\JSONPath;
 	use Flow\JSONPath\JSONPathException;
 	use Quellabs\ObjectQuel\Execution\ConditionEvaluator;
-	use Quellabs\ObjectQuel\Execution\ExecutionStage;
-	use Quellabs\ObjectQuel\Execution\ExecutionStageInterface;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRangeJsonSource;
 	use Quellabs\ObjectQuel\Exception\QuelException;
+	use Quellabs\ObjectQuel\Planner\ExecutionStageInterface;
 	
 	/**
 	 * Handles JSON file query execution
@@ -80,7 +80,7 @@
 			// If a JSONPath was given, use it to filter the output
 			if (!empty($source->getExpression())) {
 				try {
-					$decoded = (new \Flow\JSONPath\JSONPath($decoded))->find($source->getExpression())->getData();
+					$decoded = (new JSONPath($decoded))->find($source->getExpression())->getData();
 				} catch (JSONPathException $e) {
 					throw new QuelException($e->getMessage(), 'jsonpath_error', $e->getCode(), $e);
 				}

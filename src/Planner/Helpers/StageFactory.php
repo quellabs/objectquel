@@ -1,8 +1,8 @@
 <?php
 	
-	namespace Quellabs\ObjectQuel\Execution\Decomposer;
+	namespace Quellabs\ObjectQuel\Planner\Helpers;
 	
-	use Quellabs\ObjectQuel\Execution\ExecutionStage;
+	use Quellabs\ObjectQuel\Planner\ExecutionStage;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstAlias;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRange;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRangeDatabase;

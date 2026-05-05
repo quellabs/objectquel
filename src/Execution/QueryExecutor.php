@@ -10,6 +10,9 @@
 	use Quellabs\ObjectQuel\ObjectQuel\QuelResult;
 	use Quellabs\ObjectQuel\Execution\Executors\DatabaseQueryExecutor;
 	use Quellabs\ObjectQuel\Execution\Executors\JsonQueryExecutor;
+	use Quellabs\ObjectQuel\Planner\ExecutionPlan;
+	use Quellabs\ObjectQuel\Planner\ExecutionPlanBuilder;
+	use Quellabs\ObjectQuel\Planner\ExecutionStageInterface;
 	
 	/**
 	 * Orchestrates query execution by delegating to specialized executors.
@@ -88,7 +91,7 @@
 		 * Execute an already-built execution plan and return raw result rows.
 		 *
 		 * This lower-level entry point is used by PlanExecutor's inner query runner
-		 * when materialising a TempTableStage. It accepts a pre-built ExecutionPlan so
+		 * when materializing a TempTableStage. It accepts a pre-built ExecutionPlan so
 		 * that the inner AstRetrieve is not re-parsed from a string.
 		 *
 		 * @param ExecutionPlan $plan The plan to execute
