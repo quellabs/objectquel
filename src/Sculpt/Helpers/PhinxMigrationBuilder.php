@@ -29,6 +29,7 @@
 	 *   columns (string[]), type ('INDEX'|'UNIQUE'|'FULLTEXT'), unique (bool, optional)
 	 *
 	 * @phpstan-import-type ColumnDefinition from SculptTypes
+	 * @phpstan-import-type ColumnModification from SculptTypes
 	 * @phpstan-import-type IndexDefinition from SculptTypes
 	 * @phpstan-import-type IndexChangeSet from SculptTypes
 	 *
@@ -38,7 +39,7 @@
 	 * @phpstan-type TableChanges array{
 	 *     table_not_exists?: bool,
 	 *     added?: array<string, ColumnDefinition>,
-	 *     modified?: array<string, array{from: ColumnDefinition, to: ColumnDefinition, changes?: array<string, array{from: mixed, to: mixed}>}>,
+	 *     modified?: array<string, ColumnModification>,
 	 *     deleted?: array<string, ColumnDefinition>,
 	 *     indexes?: IndexChanges
 	 * }
@@ -198,7 +199,7 @@ PHP;
 		 * @param TableChanges $changes Raw change descriptor, possibly missing optional keys
 		 * @return array{
 		 *     added: array<string, ColumnDefinition>,
-		 *     modified: array<string, array{from: ColumnDefinition, to: ColumnDefinition}>,
+		 *     modified: array<string, ColumnModification>,
 		 *     deleted: array<string, ColumnDefinition>,
 		 *     indexes: IndexChanges,
 		 *     table_not_exists: bool
@@ -345,7 +346,7 @@ PHP;
 		 * selects which side of each change to apply ('to' = forward, 'from' = rollback).
 		 *
 		 * @param string $tableName Table to modify
-		 * @param array<string, array{from: ColumnDefinition, to: ColumnDefinition}> $modifiedColumns
+		 * @param array<string, ColumnModification> $modifiedColumns
 		 * @param string $direction 'to' for up(), 'from' for down()
 		 */
 		private function buildChangeColumnsCode(string $tableName, array $modifiedColumns, string $direction): string {

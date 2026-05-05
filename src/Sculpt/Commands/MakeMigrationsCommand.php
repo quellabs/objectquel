@@ -25,6 +25,7 @@
 	 * synchronize the database with entity changes.
 	 *
 	 * @phpstan-import-type ColumnDefinition from SculptTypes
+	 * @phpstan-import-type ColumnModification from SculptTypes
 	 * @phpstan-import-type EntityChangeSet from SculptTypes
 	 */
 	class MakeMigrationsCommand extends CommandBase {
@@ -154,18 +155,12 @@
 		
 		/**
 		 * Produce a human-readable summary of what changed in a modified column
-		 *
-		 * @param array{
-		 *     from?: ColumnDefinition,
-		 *     to?: ColumnDefinition,
-		 *     changes?: array<string, array{from: mixed, to: mixed}>
-		 * } $diff
-		 *
+		 * @param ColumnModification $diff
 		 * @return string Parenthesised description, or empty string if no description can be inferred
 		 */
 		private function describeColumnChange(array $diff): string {
-			$from = $diff['from'] ?? [];
-			$to = $diff['to'] ?? [];
+			$from = $diff['from'];
+			$to = $diff['to'];
 			$parts = [];
 			
 			if (($from['type'] ?? null) !== ($to['type'] ?? null)) {

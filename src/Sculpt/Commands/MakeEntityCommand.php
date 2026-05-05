@@ -23,6 +23,8 @@
 	 * @phpstan-import-type BaseProperty from SculptTypes
 	 * @phpstan-import-type EnumProperty from SculptTypes
 	 * @phpstan-import-type RelationProperty from SculptTypes
+	 * @phpstan-import-type OrmRelationshipType from SculptTypes
+	 * @phpstan-import-type RelationshipMappingConfig from SculptTypes
 	 * @phpstan-import-type PropertyDefinition from SculptTypes
 	 */
 	class MakeEntityCommand extends CommandBase {
@@ -211,7 +213,7 @@
 		 * Build a relationship property definition.
 		 * @param string $propertyName Property name on the entity
 		 * @param string $phpType PHP type for the property (e.g. "OrderEntity" or "CollectionInterface")
-		 * @param 'OneToOne'|'OneToMany'|'ManyToOne' $relationshipType ORM relationship type
+		 * @param OrmRelationshipType $relationshipType ORM relationship type
 		 * @param string $targetEntity Name of the related entity (without "Entity" suffix)
 		 * @param string|null $mappedBy Property name on the owning side (inverse side only)
 		 * @param string|null $inversedBy Property name on the inverse side (owning side only)
@@ -278,7 +280,7 @@
 		 * @return array<int, PropertyDefinition> Array of property definitions for the relationship
 		 */
 		private function collectRelationshipProperties(string $propertyName, array $availableEntities, string $entityName): array {
-			/** @var 'OneToOne'|'OneToMany'|'ManyToOne' $relationshipType */
+			/** @var OrmRelationshipType $relationshipType */
 			$relationshipType = $this->input->choice("\nRelationship type", ['OneToOne', 'OneToMany', 'ManyToOne']);
 			
 			$targetInfo = $this->getTargetEntityInfo($availableEntities);
@@ -344,7 +346,7 @@
 		 * @param string $relationshipType Type of relationship (OneToOne, OneToMany, ManyToOne)
 		 * @param string $entityName Name of the current entity
 		 * @param string $targetEntity Name of the target entity
-		 * @return array{mappedBy: string|null, inversedBy: string|null}|array{mappedBy: string|null, inversedBy: string|null, createInTarget: true, targetPropertyName: string, targetRelationType: 'OneToOne'|'OneToMany'|'ManyToOne', targetInversedBy: string|null}
+		 * @return RelationshipMappingConfig
 		 */
 		private function collectRelationshipMapping(string $relationshipType, string $entityName, string $targetEntity): array {
 			// OneToMany: always inverse side
@@ -365,8 +367,8 @@
 		 * Handle mapping for the inverse side of a relationship.
 		 * @param string $targetEntity Name of the target entity (contains the owning side)
 		 * @param string $currentEntity Name of the current entity (inverse side)
-		 * @param 'OneToOne'|'OneToMany'|'ManyToOne' $targetRelationType Relationship type on the target side (ManyToOne or OneToOne)
-		 * @return array{mappedBy: string|null, inversedBy: string|null}|array{mappedBy: string|null, inversedBy: string|null, createInTarget: true, targetPropertyName: string, targetRelationType: 'OneToOne'|'OneToMany'|'ManyToOne', targetInversedBy: string|null}
+		 * @param OrmRelationshipType $targetRelationType Relationship type on the target side (ManyToOne or OneToOne)
+		 * @return RelationshipMappingConfig
 		 */
 		private function handleInverseSideMapping(string $targetEntity, string $currentEntity, string $targetRelationType): array {
 			// Try to find existing owning side property
@@ -416,7 +418,7 @@
 		 * @param string $relationshipType Type of relationship (ManyToOne or OneToOne)
 		 * @param string $entityName Name of the current entity (owning side)
 		 * @param string $targetEntity Name of the target entity
-		 * @return array{mappedBy: string|null, inversedBy: string|null}|array{mappedBy: string|null, inversedBy: string|null, createInTarget: true, targetPropertyName: string, targetRelationType: 'OneToOne'|'OneToMany'|'ManyToOne', targetInversedBy: string|null}
+		 * @return RelationshipMappingConfig
 		 */
 		private function handleOwningSideMapping(string $relationshipType, string $entityName, string $targetEntity): array {
 			$bidirectional = $this->input->confirm("\nIs this a bidirectional relationship?", false);
@@ -461,7 +463,7 @@
 		 * @param string $targetEntity Name of the target entity
 		 * @param string $currentEntity Name of the current entity
 		 * @param string $propertyName Name of the property to create
-		 * @param 'OneToOne'|'OneToMany'|'ManyToOne' $relationshipType Type of relationship
+		 * @param OrmRelationshipType $relationshipType Type of relationship
 		 * @param string|null $inversedBy Property name for the inverse side (if bidirectional)
 		 * @param string $foreignColumn Database column name being referenced
 		 */

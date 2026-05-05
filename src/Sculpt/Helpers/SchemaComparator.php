@@ -11,6 +11,7 @@
 	 * Compares entity schema (object properties) with database schema (table columns)
 	 * to identify changes such as added, modified, or deleted columns.
 	 * @phpstan-import-type ColumnDefinition from SculptTypes
+	 * @phpstan-import-type ColumnModification from SculptTypes
 	 */
 	class SchemaComparator {
 		
@@ -33,7 +34,7 @@
 		 * Identifies added, modified, and deleted columns
 		 * @param array<string, ColumnDefinition> $entityColumns Map of property names to definitions from entity model
 		 * @param array<string, ColumnDefinition> $tableColumns Map of column names to definitions from database
-		 * @return array{added: array<string, ColumnDefinition>, modified: array<string, array{from: ColumnDefinition, to: ColumnDefinition, changes: array<string, array{from: mixed, to: mixed}>}>, deleted: array<string, ColumnDefinition>}
+		 * @return array{added: array<string, ColumnDefinition>, modified: array<string, ColumnModification>, deleted: array<string, ColumnDefinition>}
 		 * @throws \InvalidArgumentException If input arrays are malformed
 		 */
 		public function analyzeSchemaChanges(array $entityColumns, array $tableColumns): array {
@@ -71,7 +72,7 @@
 		 * Get columns that exist in both but have differences
 		 * @param array<string, ColumnDefinition> $entityColumns Definition of properties from the entity model
 		 * @param array<string, ColumnDefinition> $tableColumns Definition of columns from the database table
-		 * @return array<string, array{from: ColumnDefinition, to: ColumnDefinition, changes: array<string, array{from: mixed, to: mixed}>}> Columns that need to be modified in the table
+		 * @return array<string, ColumnModification> Columns that need to be modified in the table
 		 */
 		private function getModifiedColumns(array $entityColumns, array $tableColumns): array {
 			$result = [];
