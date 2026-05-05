@@ -9,7 +9,7 @@
 	use Quellabs\ObjectQuel\DatabaseAdapter\DatabaseAdapter;
 	use Quellabs\ObjectQuel\EntityManager;
 	use Quellabs\ObjectQuel\EntityStore;
-	use Quellabs\ObjectQuel\ObjectQuel\QuelException;
+	use Quellabs\ObjectQuel\Exception\QuelException;
 	use Quellabs\ObjectQuel\OrmException;
 	use Quellabs\ObjectQuel\PrimaryKeys\PrimaryKeyFactory;
 	use Quellabs\ObjectQuel\ReflectionManagement\PropertyHandler;

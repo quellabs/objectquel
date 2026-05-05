@@ -6,7 +6,7 @@
 	use Quellabs\ObjectQuel\DatabaseAdapter\DatabaseAdapter;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRangeJsonSource;
 	use Quellabs\ObjectQuel\ObjectQuel\ObjectQuel;
-	use Quellabs\ObjectQuel\ObjectQuel\QuelException;
+	use Quellabs\ObjectQuel\Exception\QuelException;
 	use Quellabs\ObjectQuel\ObjectQuel\QuelResult;
 	use Quellabs\ObjectQuel\Execution\Executors\DatabaseQueryExecutor;
 	use Quellabs\ObjectQuel\Execution\Executors\JsonQueryExecutor;
@@ -110,18 +110,22 @@
 			// Clear SQL list
 			$this->databaseExecutor->resetLastExecutedSql();
 			
-			// Parse the input query string into an Abstract Syntax Tree (AST)
-			$ast = $this->getObjectQuel()->parse(trim($query));
-			
-			// Decompose the query
-			$decomposer = new QueryDecomposer();
-			$executionPlan = $decomposer->buildExecutionPlan($ast, $this->normalizeParams($parameters));
-			
-			// Execute the returned execution plan and return the QuelResult
-			$result = $this->planExecutor->execute($executionPlan);
-			
-			// QuelResult gebruikt de AST om de ontvangen data te transformeren naar entities
-			return new QuelResult($this->entityManager, $ast, $result);
+			try {
+				// Parse the input query string into an Abstract Syntax Tree (AST)
+				$ast = $this->getObjectQuel()->parse(trim($query));
+				
+				// Decompose the query
+				$decomposer = new QueryDecomposer();
+				$executionPlan = $decomposer->buildExecutionPlan($ast, $this->normalizeParams($parameters));
+				
+				// Execute the returned execution plan and return the QuelResult
+				$result = $this->planExecutor->execute($executionPlan);
+				
+				// QuelResult gebruikt de AST om de ontvangen data te transformeren naar entities
+				return new QuelResult($this->entityManager, $ast, $result);
+			} catch (\Throwable $e) {
+				throw new QuelException($e->getMessage(), previous: $e);
+			}
 		}
 		
 		/**

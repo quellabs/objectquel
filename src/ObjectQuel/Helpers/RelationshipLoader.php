@@ -9,7 +9,7 @@
 	use Quellabs\ObjectQuel\Collections\EntityCollection;
 	use Quellabs\ObjectQuel\EntityStore;
 	use Quellabs\ObjectQuel\EntityManager;
-	use Quellabs\ObjectQuel\ObjectQuel\QuelException;
+	use Quellabs\ObjectQuel\Exception\QuelException;
 	use Quellabs\ObjectQuel\UnitOfWork;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstIdentifier;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRangeDatabase;

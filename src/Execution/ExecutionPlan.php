@@ -2,7 +2,7 @@
 	
 	namespace Quellabs\ObjectQuel\Execution;
 	
-	use Quellabs\ObjectQuel\ObjectQuel\QuelException;
+	use Quellabs\ObjectQuel\Exception\QuelException;
 	
 	/**
 	 * ExecutionPlan class manages the execution of query stages within the EntityManager system.

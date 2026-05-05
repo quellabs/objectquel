@@ -31,6 +31,7 @@
 	use Quellabs\ObjectQuel\Annotations\Orm\OneToOne;
 	use Quellabs\ObjectQuel\Annotations\Orm\Table;
 	use Quellabs\ObjectQuel\Annotations\Orm\Version;
+	use Quellabs\ObjectQuel\Exception\EntityResolutionException;
 	use Quellabs\ObjectQuel\Metadata\EntityMetadataRecord;
 	use Quellabs\ObjectQuel\Metadata\EntityMetadataBuilder;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRetrieve;
@@ -162,21 +163,18 @@
 		 * This is the main access point - all other methods delegate to this.
 		 * @param string|object $entity Entity object, class name, or ReflectionClass
 		 * @return EntityMetadataRecord Immutable metadata object containing all entity information
+		 * @throws EntityResolutionException
 		 */
 		public function getMetadata(string|object $entity): EntityMetadataRecord {
 			// Resolve entity name to a
-			if (is_object($entity)) {
-				$className = $this->resolveProxyClass($entity);
-			} else {
-				$className = $this->resolveProxyClass($entity);
-			}
+			$className = $this->resolveProxyClass($entity);
 			
 			// Return cached metadata if available
 			// Otherwise build and cache the metadata
 			if (!isset($this->metadataCache[$className])) {
 				// Check that the given class actually exists
 				if (!class_exists($className)) {
-					throw new \RuntimeException("Invalid entity class: {$className}");
+					throw new EntityResolutionException("Invalid entity class: {$className}");
 				}
 				
 				// Add metadata to cache
@@ -230,6 +228,7 @@
 		 * Normalizes the entity name by resolving proxies and namespaces.
 		 * @param string|object $entity Fully qualified class name, short name, object, or ReflectionClass
 		 * @return class-string Normalized, fully qualified class name
+		 * @throws EntityResolutionException
 		 */
 		public function resolveProxyClass(string|object $entity): string {
 			// Determine the class name of the entity
@@ -252,7 +251,7 @@
 				$parent = $this->reflectionHandler->getParent($className);
 				
 				if ($parent === null || !class_exists($parent)) {
-					throw new \RuntimeException("Cannot resolve parent of proxy class: {$className}");
+					throw new EntityResolutionException("Cannot resolve parent of proxy class: {$className}");
 				}
 				
 				return $this->normalizedNameCache[$className] = $parent;
@@ -261,7 +260,7 @@
 			// Already fully qualified
 			if (str_contains($className, "\\")) {
 				if (!class_exists($className)) {
-					throw new \RuntimeException("Invalid entity class: {$className}");
+					throw new EntityResolutionException("Invalid entity class: {$className}");
 				}
 				
 				return $this->normalizedNameCache[$className] = $className;
@@ -278,7 +277,7 @@
 			
 			// Assert existence
 			if (!class_exists($fullyQualifiedClassName)) {
-				throw new \RuntimeException("Invalid entity class: {$fullyQualifiedClassName}");
+				throw new EntityResolutionException("Invalid entity class: {$fullyQualifiedClassName}");
 			}
 			
 			// Add $fullyQualifiedClassName to list
@@ -297,11 +296,7 @@
 		 */
 		public function getDependentEntities(string|object $entity): array {
 			// Resolve proxy classes to their parent entity class
-			if (is_object($entity)) {
-				$normalizedClass = $this->resolveProxyClass($entity);
-			} else {
-				$normalizedClass = $this->resolveProxyClass($entity);
-			}
+			$normalizedClass = $this->resolveProxyClass($entity);
 			
 			// Filter the dependency graph to entities that list $normalizedClass as a dependency,
 			// then return their class names. array_keys on array<class-string, ...> yields array<int, class-string>.

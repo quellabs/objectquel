@@ -3,7 +3,7 @@
 	namespace Quellabs\ObjectQuel\Serialization\Serializers;
 	
 	use Quellabs\ObjectQuel\EntityManager;
-	use Quellabs\ObjectQuel\ObjectQuel\QuelException;
+	use Quellabs\ObjectQuel\Exception\QuelException;
 	use Quellabs\ObjectQuel\Serialization\UrlBuilders\UrlBuilderInterface;
 	
 	/**

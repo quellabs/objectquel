@@ -5,7 +5,7 @@
 	use Quellabs\ObjectQuel\EntityStore;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRetrieve;
 	use Quellabs\ObjectQuel\ObjectQuel\AstInterface;
-	use Quellabs\ObjectQuel\ObjectQuel\QuelException;
+	use Quellabs\ObjectQuel\Exception\QuelException;
 	use Quellabs\ObjectQuel\Execution\Joins\JoinStrategyInterface;
 	use Quellabs\ObjectQuel\Execution\Joins\CrossJoinStrategy;
 	use Quellabs\ObjectQuel\Execution\Joins\LeftJoinStrategy;

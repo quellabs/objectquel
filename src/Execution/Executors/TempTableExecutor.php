@@ -6,7 +6,7 @@
 	use Quellabs\ObjectQuel\Execution\TempTableStage;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstAlias;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRetrieve;
-	use Quellabs\ObjectQuel\ObjectQuel\QuelException;
+	use Quellabs\ObjectQuel\Exception\QuelException;
 	
 	/**
 	 * Executes a TempTableStage by:

@@ -20,7 +20,7 @@
 	
 	namespace Quellabs\ObjectQuel;
 	
-	use Quellabs\ObjectQuel\ObjectQuel\QuelException;
+	use Quellabs\ObjectQuel\Exception\QuelException;
 	
 	/**
 	 * Base repository class that users can extend for better IDE type support

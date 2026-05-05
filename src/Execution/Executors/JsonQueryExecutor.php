@@ -7,7 +7,7 @@
 	use Quellabs\ObjectQuel\Execution\ExecutionStage;
 	use Quellabs\ObjectQuel\Execution\ExecutionStageInterface;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRangeJsonSource;
-	use Quellabs\ObjectQuel\ObjectQuel\QuelException;
+	use Quellabs\ObjectQuel\Exception\QuelException;
 	
 	/**
 	 * Handles JSON file query execution

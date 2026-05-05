@@ -3,7 +3,7 @@
 	namespace Quellabs\ObjectQuel\Execution\Joins;
 	
 	use Quellabs\ObjectQuel\ObjectQuel\AstInterface;
-	use Quellabs\ObjectQuel\ObjectQuel\QuelException;
+	use Quellabs\ObjectQuel\Exception\QuelException;
 	
 	/**
 	 * Defines the contract that all join strategies must implement to be
