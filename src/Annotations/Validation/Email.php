@@ -2,22 +2,20 @@
 	
 	namespace Quellabs\ObjectQuel\Annotations\Validation;
 	
+	/**
+	 * @phpstan-type EmailParams array{
+	 *     property?: string,
+	 *     message?: string|null
+	 * }
+	 */
 	class Email implements PropertyValidationInterface {
 		
-		/**
-		 * @var array{
-		 *     property?: string,
-		 *     message?: string|null
-		 * }
-		 */
+		/** @var EmailParams */
 		protected array $parameters;
 		
 		/**
 		 * Email constructor.
-		 * @param array{
-		 *     property?: string,
-		 *     message?: string|null
-		 * } $parameters
+		 * @param EmailParams $parameters
 		 */
 		public function __construct(array $parameters) {
 			$this->parameters = $parameters;
@@ -25,10 +23,7 @@
 		
 		/**
 		 * Returns all parameters
-		 * @return array{
-		 *     property?: string,
-		 *     message?: string|null
-		 * }
+		 * @return EmailParams
 		 */
 		public function getParameters(): array {
 			return $this->parameters;

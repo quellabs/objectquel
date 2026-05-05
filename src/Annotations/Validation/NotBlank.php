@@ -2,22 +2,20 @@
 	
 	namespace Quellabs\ObjectQuel\Annotations\Validation;
 	
+	/**
+	 * @phpstan-type NotBlankParams array{
+	 *     property?: string,
+	 *     message?: string|null
+	 * }
+	 */
 	class NotBlank implements PropertyValidationInterface {
 		
-		/**
-		 * @var array{
-		 *     property?: string,
-		 *     message?: string|null
-		 * }
-		 */
+		/** @var NotBlankParams */
 		protected array $parameters;
 		
 		/**
 		 * NotBlank constructor.
-		 * @param array{
-		 *      property?: string,
-		 *      message?: string|null
-		 *  } $parameters
+		 * @param NotBlankParams $parameters
 		 */
 		public function __construct(array $parameters) {
 			$this->parameters = $parameters;
@@ -25,10 +23,7 @@
 		
 		/**
 		 * Returns all parameters
-		 * @return array{
-		 *     property?: string,
-		 *     message?: string|null
-		 * }
+		 * @return NotBlankParams
 		 */
 		public function getParameters(): array {
 			return $this->parameters;

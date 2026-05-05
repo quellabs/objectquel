@@ -2,24 +2,21 @@
 	
 	namespace Quellabs\ObjectQuel\Annotations\Validation;
 	
+	/**
+	 * @phpstan-type TypeParams array{
+	 *     property?: string,
+	 *     type?: string|null,
+	 *     message?: string|null
+	 * }
+	 */
 	class Type implements PropertyValidationInterface {
 		
-		/**
-		 * @var array{
-		 *     property?: string,
-		 *     type?: string|null,
-		 *     message?: string|null
-		 * }
-		 */
+		/** @var TypeParams */
 		protected array $parameters;
 		
 		/**
 		 * Type constructor.
-		 * @param array{
-		 *      property?: string,
-		 *      type?: string|null,
-		 *      message?: string|null
-		 *  } $parameters
+		 * @param TypeParams $parameters
 		 */
 		public function __construct(array $parameters) {
 			$this->parameters = $parameters;
@@ -27,11 +24,7 @@
 		
 		/**
 		 * Returns all parameters
-		 * @return array{
-		 *     property?: string,
-		 *     type?: string|null,
-		 *     message?: string|null
-		 * }
+		 * @return TypeParams
 		 */
 		public function getParameters(): array {
 			return $this->parameters;

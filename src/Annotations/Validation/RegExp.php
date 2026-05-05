@@ -2,24 +2,21 @@
 	
 	namespace Quellabs\ObjectQuel\Annotations\Validation;
 	
+	/**
+	 * @phpstan-type RegExpParams array{
+	 *     property?: string,
+	 *     regexp?: string|null,
+	 *     message?: string|null
+	 * }
+	 */
 	class RegExp implements PropertyValidationInterface {
 		
-		/**
-		 * @var array{
-		 *     property?: string,
-		 *     regexp?: string|null,
-		 *     message?: string|null
-		 * }
-		 */
+		/** @var RegExpParams */
 		protected array $parameters;
 		
 		/**
 		 * RegExp constructor.
-		 * @param array{
-		 *      property?: string,
-		 *      regexp?: string|null,
-		 *      message?: string|null
-		 *  } $parameters
+		 * @param RegExpParams $parameters
 		 */
 		public function __construct(array $parameters) {
 			$this->parameters = $parameters;
@@ -27,11 +24,7 @@
 		
 		/**
 		 * Returns all parameters
-		 * @return array{
-		 *     property?: string,
-		 *     regexp?: string|null,
-		 *     message?: string|null
-		 * }
+		 * @return RegExpParams
 		 */
 		public function getParameters(): array {
 			return $this->parameters;

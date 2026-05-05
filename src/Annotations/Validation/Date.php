@@ -2,22 +2,20 @@
 	
 	namespace Quellabs\ObjectQuel\Annotations\Validation;
 	
+	/**
+	 * @phpstan-type DateParams array{
+	 *     property?: string,
+	 *     message?: string|null
+	 * }
+	 */
 	class Date implements PropertyValidationInterface {
 		
-		/**
-		 * @var array{
-		 *     property?: string,
-		 *     message?: string|null
-		 * }
-		 */
+		/** @var DateParams */
 		protected array $parameters;
 		
 		/**
 		 * Date constructor.
-		 * @param array{
-		 *      property?: string,
-		 *      message?: string|null
-		 *  } $parameters
+		 * @param DateParams $parameters
 		 */
 		public function __construct(array $parameters) {
 			$this->parameters = $parameters;
@@ -25,10 +23,7 @@
 		
 		/**
 		 * Returns all parameters
-		 * @return array{
-		 *     property?: string,
-		 *     message?: string|null
-		 * }
+		 * @return DateParams
 		 */
 		public function getParameters(): array {
 			return $this->parameters;

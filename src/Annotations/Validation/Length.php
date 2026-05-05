@@ -2,26 +2,22 @@
 	
 	namespace Quellabs\ObjectQuel\Annotations\Validation;
 	
+	/**
+	 * @phpstan-type LengthParams array{
+	 *     property?: string,
+	 *     min?: int,
+	 *     max?: int,
+	 *     message?: string|null
+	 * }
+	 */
 	class Length implements PropertyValidationInterface {
 		
-		/**
-		 * @var array{
-		 *     property?: string,
-		 *     message?: string,
-		 *     min?: int,
-		 *     max?: int
-		 * }
-		 */
+		/** @var LengthParams */
 		protected array $parameters;
 		
 		/**
 		 * Length constructor.
-		 * @param array{
-		 *     property?: string,
-		 *     message?: string,
-		 *     min?: int,
-		 *     max?: int
-		 * } $parameters
+		 * @param LengthParams $parameters
 		 */
 		public function __construct(array $parameters) {
 			$this->parameters = $parameters;
@@ -29,12 +25,7 @@
 		
 		/**
 		 * Returns all parameters
-		 * @return array{
-		 *     property?: string,
-		 *     message?: string,
-		 *     min?: int,
-		 *     max?: int
-		 * }
+		 * @return LengthParams
 		 */
 		public function getParameters(): array {
 			return $this->parameters;
