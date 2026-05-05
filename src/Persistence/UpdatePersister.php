@@ -211,6 +211,7 @@
 			// Add the regular changed fields to the SET clause
 			// Each field gets a prefixed parameter name to avoid collisions
 			$setClauseParts = [];
+			
 			foreach ($changedFields as $columnName => $value) {
 				$paramName = "field_{$columnName}";
 				$setClauseParts[] = $this->valueHandler->escapeIdentifier($columnName) . "=:{$paramName}";
