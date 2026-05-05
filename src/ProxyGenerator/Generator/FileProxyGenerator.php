@@ -59,7 +59,7 @@
 		 * @return string Absolute path to the proxy file
 		 */
 		public function getProxyFilePath(string $targetEntity): string {
-			$normalizedEntity = $this->entityStore->normalizeEntityName($targetEntity);
+			$normalizedEntity = $this->entityStore->resolveProxyClass($targetEntity);
 			$shortClassName = $this->codeGenerator->getClassNameWithoutNamespace($normalizedEntity);
 			return $this->proxyPath . DIRECTORY_SEPARATOR . $shortClassName . '.php';
 		}

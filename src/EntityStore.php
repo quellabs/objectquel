@@ -166,7 +166,7 @@
 		public function getMetadata(string|object $entity): EntityMetadataRecord {
 			// Resolve entity name to a
 			if (is_object($entity)) {
-				$className = $this->normalizeEntityName($entity);
+				$className = $this->resolveProxyClass($entity);
 			} else {
 				$className = $this->qualifyClassName($entity);
 			}
@@ -194,7 +194,7 @@
 		public function exists(string|object $entity): bool {
 			// Determine the class name of the entity
 			if (is_object($entity)) {
-				$normalizedClass = $this->normalizeEntityName($entity);
+				$normalizedClass = $this->resolveProxyClass($entity);
 			} else {
 				$normalizedClass = $this->qualifyClassName($entity);
 			}
@@ -231,7 +231,7 @@
 		 * @param string|object $entity Fully qualified class name, short name, object, or ReflectionClass
 		 * @return string Normalized, fully qualified class name
 		 */
-		public function normalizeEntityName(string|object $entity): string {
+		public function resolveProxyClass(string|object $entity): string {
 			// Determine the class name of the entity
 			$className = $this->extractClassName($entity);
 			
@@ -270,13 +270,13 @@
 		/**
 		 * Resolve an entity class.
 		 * Classes are trusted after entering the registry via initializeEntities.
-		 * Proxy classes are the only ones validated at runtime (in normalizeEntityName).
+		 * Proxy classes are the only ones validated at runtime (in resolveProxyClass).
 		 * @param string $entityName
 		 * @return class-string<object>
 		 */
 		public function qualifyClassName(string $entityName): string {
 			/** @var class-string<object> $className */
-			$className = $this->normalizeEntityName($entityName);
+			$className = $this->resolveProxyClass($entityName);
 			return $className;
 		}
 		
@@ -292,7 +292,7 @@
 		 */
 		public function getDependentEntities(string|object $entity): array {
 			// Resolve proxy classes to their parent entity class
-			$normalizedClass = $this->normalizeEntityName($entity);
+			$normalizedClass = $this->resolveProxyClass($entity);
 			
 			// Filter the dependency graph to entities that list $normalizedClass as a dependency,
 			// then return their class names. array_keys on array<class-string, ...> yields array<int, class-string>.

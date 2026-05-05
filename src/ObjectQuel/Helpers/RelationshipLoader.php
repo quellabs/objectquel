@@ -306,7 +306,7 @@
 		private function setDirectRelations(array $filteredEntities): void {
 			foreach ($filteredEntities as $entity) {
 				// Normalize the entity class name
-				$entityClass = $this->entityStore->normalizeEntityName($entity);
+				$entityClass = $this->entityStore->resolveProxyClass($entity);
 				
 				// Dependencies
 				$entityDependencies = $this->entityStore->getAllDependencies($entityClass);
@@ -344,7 +344,7 @@
 			// Loop through all filtered entities
 			foreach ($filteredRows as $value) {
 				// Get the normalized name of the entity class
-				$objectClass = $this->entityStore->normalizeEntityName($value);
+				$objectClass = $this->entityStore->resolveProxyClass($value);
 				
 				// Get all dependencies of the entity class
 				$entityDependencies = $this->entityStore->getAllDependencies($objectClass);
@@ -371,7 +371,7 @@
 			// Loop through all filtered rows
 			foreach ($filteredRows as $entity) {
 				// Get the normalized name of the entity class
-				$objectClass = $this->entityStore->normalizeEntityName($entity);
+				$objectClass = $this->entityStore->resolveProxyClass($entity);
 				
 				// Get all dependencies of the entity class
 				$entityDependencies = $this->entityStore->getAllDependencies($objectClass);

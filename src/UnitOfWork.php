@@ -169,7 +169,7 @@
 		 */
 		public function findEntity(string $entityType, array $primaryKeys): ?object {
 			// Normalize the entity name for dealing with proxies
-			$normalizedEntityName = $this->getEntityStore()->normalizeEntityName($entityType);
+			$normalizedEntityName = $this->getEntityStore()->resolveProxyClass($entityType);
 			
 			// Check if the class exists in the entity store and return null if it doesn't
 			if (empty($this->entitiesByClass[$normalizedEntityName])) {
@@ -215,7 +215,7 @@
 			
 			// Get the normalized class name of the entity to use as a key in the identity map
 			// Normalization ensures consistent formatting regardless of namespace notation
-			$class = $this->getEntityStore()->normalizeEntityName(get_class($entity));
+			$class = $this->getEntityStore()->resolveProxyClass(get_class($entity));
 			
 			// Generate a unique object identifier using PHP's built-in function
 			// This hash serves as a consistent reference to this specific object instance
@@ -267,7 +267,7 @@
 			
 			// Get the normalized class name to use as an index in the identity map
 			// Normalization ensures consistent formatting regardless of how the class was referenced
-			$class = $this->getEntityStore()->normalizeEntityName(get_class($entity));
+			$class = $this->getEntityStore()->resolveProxyClass(get_class($entity));
 			
 			// Generate a unique object identifier for this entity instance
 			// This provides a consistent way to reference this specific object in memory
@@ -427,7 +427,7 @@
 			
 			// Get the normalized class name of the entity for consistent identity map access
 			// This handles potential differences in namespace notation
-			$class = $this->getEntityStore()->normalizeEntityName(get_class($entity));
+			$class = $this->getEntityStore()->resolveProxyClass(get_class($entity));
 			
 			// Remove the entity from the entity store using its hash
 			// This stops the entity from being included in any future persistence operations
@@ -737,7 +737,7 @@
 		 */
 		private function isInIdentityMap(object $entity): bool {
 			// Get the normalized class name of the entity.
-			$normalizedEntityName = $this->getEntityStore()->normalizeEntityName(get_class($entity));
+			$normalizedEntityName = $this->getEntityStore()->resolveProxyClass(get_class($entity));
 			
 			// Check if the object exists in the entity store using its unique hash.
 			return isset($this->entitiesByClass[$normalizedEntityName][spl_object_hash($entity)]);
@@ -755,7 +755,7 @@
 				$hash = spl_object_hash($entity);
 				
 				// Get the normalized class name of the entity
-				$class = $this->getEntityStore()->normalizeEntityName(get_class($entity));
+				$class = $this->getEntityStore()->resolveProxyClass(get_class($entity));
 				
 				// Add primary key to index cache for easy lookup
 				$primaryKeys = $this->getIdentifiers($entity);
@@ -881,7 +881,7 @@
 			
 			// Normalize the entity class name to ensure consistent format
 			// Normalization handles variations in namespace notation
-			$normalizedClass = $this->entityStore->normalizeEntityName($entityClass);
+			$normalizedClass = $this->entityStore->resolveProxyClass($entityClass);
 			
 			// Retrieve all entity classes that depend on this entity
 			// These are entities that have relationships annotated with cascade="remove"
@@ -924,7 +924,7 @@
 			foreach (array_merge($manyToOneDependencies, $oneToOneDependencies) as $property => $annotation) {
 				// Skip if this relationship doesn't point to our parent entity class
 				// This ensures we only process relationships relevant to the deleted entity
-				if ($this->entityStore->normalizeEntityName($annotation->getTargetEntity()) !== $normalizedClass) {
+				if ($this->entityStore->resolveProxyClass($annotation->getTargetEntity()) !== $normalizedClass) {
 					continue;
 				}
 				

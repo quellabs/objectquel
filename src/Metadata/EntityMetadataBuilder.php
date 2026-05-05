@@ -120,11 +120,11 @@
 		
 		/**
 		 * Normalizes the entity name by resolving proxies and namespaces.
-		 * Exposed publicly so EntityStore can delegate its own normalizeEntityName() here.
+		 * Exposed publicly so EntityStore can delegate its own resolveProxyClass() here.
 		 * @param mixed $entity Fully qualified class name, short name, object, or ReflectionClass
 		 * @return string Normalized, fully qualified class name
 		 */
-		public function normalizeEntityName(mixed $entity): string {
+		public function resolveProxyClass(mixed $entity): string {
 			$className = $this->extractClassName($entity);
 			
 			// Return early if we've resolved this name before
@@ -277,7 +277,7 @@
 						 * expanding to the full namespace before they can be used elsewhere.
 						 */
 						$annotation->setTargetEntity(
-							$this->normalizeEntityName($annotation->getTargetEntity()) // @phpstan-ignore-line argument.type
+							$this->resolveProxyClass($annotation->getTargetEntity()) // @phpstan-ignore-line argument.type
 						);
 						
 						// One relation annotation per property — the first match wins

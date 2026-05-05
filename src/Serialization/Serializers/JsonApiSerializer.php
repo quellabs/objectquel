@@ -57,7 +57,7 @@
 		 * @param string $entityName Fully qualified entity class name
 		 * @return string Normalized resource type name in camelCase
 		 */
-		protected function normalizeEntityName(string $entityName): string {
+		protected function resolveProxyClass(string $entityName): string {
 			// Remove namespace from class name
 			$removedNamespace = $this->class_basename($entityName);
 			
@@ -109,7 +109,7 @@
 			);
 			
 			$result = [];
-			$entityName = $this->normalizeEntityName(get_class($entity));
+			$entityName = $this->resolveProxyClass(get_class($entity));
 			
 			// Create composite ID string for URL generation
 			$entityId = implode("_", $this->getIdentifierValues($entity));
@@ -120,7 +120,7 @@
 				$targetEntity = $relationship->getTargetEntity();
 				
 				// Get the target entity's resource type name
-				$relationshipEntityName = $this->normalizeEntityName($targetEntity);
+				$relationshipEntityName = $this->resolveProxyClass($targetEntity);
 				
 				// Query for all related entities using the mapped relationship
 				// Uses the inverse side property (mappedBy) to find related records
@@ -183,7 +183,7 @@
 		 * @throws \InvalidArgumentException If entity has no identifier keys
 		 */
 		public function serialize(object $entity): array {
-			$entityName = $this->normalizeEntityName(get_class($entity));
+			$entityName = $this->resolveProxyClass(get_class($entity));
 			$identifierKeys = $this->entityStore->getIdentifierKeys($entity);
 			
 			// Validate that entity has proper identification

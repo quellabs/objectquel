@@ -94,10 +94,10 @@
         }
     }
 ',
-				"\\" . $this->entityStore->normalizeEntityName($this->entityName),
+				"\\" . $this->entityStore->resolveProxyClass($this->entityName),
 				$currentDateTime,
 				$controllerName,
-				"\\" . $this->entityStore->normalizeEntityName($this->entityName),
+				"\\" . $this->entityStore->resolveProxyClass($this->entityName),
 				$resourceType,
 				$baseName,
 				$routePath,
