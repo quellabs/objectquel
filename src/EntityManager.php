@@ -22,7 +22,6 @@
 	
 	use Cake\Database\Connection;
 	use Quellabs\AnnotationReader\Exception\AnnotationReaderException;
-	use Quellabs\ObjectQuel\Capabilities\PlatformCapabilities;
 	use Quellabs\ObjectQuel\DatabaseAdapter\DatabaseAdapter;
 	use Quellabs\ObjectQuel\Exception\EntityResolutionException;
 	use Quellabs\ObjectQuel\Execution\ResultProcessor;
