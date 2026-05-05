@@ -537,8 +537,7 @@
 			
 			// Regular properties map database type to PHP type
 			$phpType = $this->resolvePhpType($property);
-			
-			return "protected {$nullableIndicator}{$phpType} \${$property['name']}";
+			return "protected {$nullableIndicator}{$phpType} \${$property['name']};";
 		}
 		
 		/**
