@@ -21,8 +21,10 @@
 	namespace Quellabs\ObjectQuel;
 	
 	use Cake\Database\Connection;
+	use Quellabs\AnnotationReader\Exception\AnnotationReaderException;
 	use Quellabs\ObjectQuel\Capabilities\PlatformCapabilities;
 	use Quellabs\ObjectQuel\DatabaseAdapter\DatabaseAdapter;
+	use Quellabs\ObjectQuel\Exception\EntityResolutionException;
 	use Quellabs\ObjectQuel\Execution\ResultProcessor;
 	use Quellabs\ObjectQuel\Exception\QuelException;
 	use Quellabs\ObjectQuel\ObjectQuel\QuelResult;
@@ -62,6 +64,7 @@
 		 * EntityManager constructor
 		 * @param Configuration|null $configuration
 		 * @param Connection $connection CakePHP database connection
+		 * @throws AnnotationReaderException
 		 */
 		public function __construct(?Configuration $configuration, Connection $connection) {
 			$this->configuration = $configuration;
@@ -258,25 +261,24 @@
 		 * @throws QuelException
 		 */
 		public function findBy(string $entityType, mixed $primaryKey): array {
-			// Check if the desired entity type is actually an entity
-			if (!$this->entityStore->exists($entityType)) {
-				throw new QuelException("The entity or range {$entityType} referenced in the query does not exist.");
+			try {
+				// Normalize the primary key
+				$primaryKeys = $this->entityStore->formatPrimaryKeyAsArray($primaryKey, $entityType);
+				
+				// Prepare a query in case the entity is not found
+				$query = $this->queryBuilder->prepareQuery($entityType, $primaryKeys);
+				
+				// Execute query and retrieve result
+				$result = $this->getAll($query, $primaryKeys);
+				
+				// Extract the main column from the result
+				$filteredResult = array_column($result, "main");
+				
+				// Return deduplicated results
+				return ResultProcessor::deDuplicateObjects($filteredResult);
+			} catch (EntityResolutionException $e) {
+				throw new QuelException($e->getMessage());
 			}
-			
-			// Normalize the primary key
-			$primaryKeys = $this->entityStore->formatPrimaryKeyAsArray($primaryKey, $entityType);
-			
-			// Prepare a query in case the entity is not found
-			$query = $this->queryBuilder->prepareQuery($entityType, $primaryKeys);
-			
-			// Execute query and retrieve result
-			$result = $this->getAll($query, $primaryKeys);
-			
-			// Extract the main column from the result
-			$filteredResult = array_column($result, "main");
-			
-			// Return deduplicated results
-			return ResultProcessor::deDuplicateObjects($filteredResult);
 		}
 		
 		/**
@@ -289,40 +291,39 @@
 		 * @psalm-return T|null
 		 */
 		public function find(string $entityType, mixed $primaryKey): ?object {
-			// Check if the desired entity type is actually an entity
-			if (!$this->entityStore->exists($entityType)) {
-				throw new QuelException("The entity or range {$entityType} referenced in the query does not exist.");
+			try {
+				// Normalize the primary key
+				$primaryKeys = $this->entityStore->formatPrimaryKeyAsArray($primaryKey, $entityType);
+				
+				// Return early if the entity is already tracked and fully initialized
+				$existingEntity = $this->unitOfWork->findEntity($entityType, $primaryKeys);
+				
+				// If the entity exists and is initialized, return it
+				if (
+					$existingEntity !== null &&
+					!($existingEntity instanceof ProxyInterface && !$existingEntity->isInitialized())
+				) {
+					/** @var T $existingEntity */
+					return $existingEntity;
+				}
+				
+				// Fall back to a database query
+				$result = $this->findBy($entityType, $primaryKey);
+				
+				// If the query returns no results, return null
+				if (empty($result)) {
+					return null;
+				}
+				
+				/**
+				 * Get the results from the query and return the main entity
+				 * @var T $entity
+				 */
+				$entity = $result[0];
+				return $entity;
+			} catch (EntityResolutionException $e) {
+				throw new QuelException($e->getMessage());
 			}
-			
-			// Normalize the primary key
-			$primaryKeys = $this->entityStore->formatPrimaryKeyAsArray($primaryKey, $entityType);
-			
-			// Return early if the entity is already tracked and fully initialized
-			$existingEntity = $this->unitOfWork->findEntity($entityType, $primaryKeys);
-			
-			// If the entity exists and is initialized, return it
-			if (
-				$existingEntity !== null &&
-				!($existingEntity instanceof ProxyInterface && !$existingEntity->isInitialized())
-			) {
-				/** @var T $existingEntity */
-				return $existingEntity;
-			}
-			
-			// Fall back to a database query
-			$result = $this->findBy($entityType, $primaryKey);
-			
-			// If the query returns no results, return null
-			if (empty($result)) {
-				return null;
-			}
-			
-			/**
-			 * Get the results from the query and return the main entity
-			 * @var T $entity
-			 */
-			$entity = $result[0];
-			return $entity;
 		}
 		
 		/**
@@ -342,13 +343,5 @@
 		public function getValidationRules(object $entity): array {
 			$validate = new EntityToValidation();
 			return $validate->convert($entity);
-		}
-		
-		/**
-		 * Returns the default window size (for pagination)
-		 * @return int|null
-		 */
-		public function getDefaultWindowSize(): ?int {
-			return $this->configuration->getDefaultWindowSize();
 		}
 	}

@@ -188,28 +188,31 @@
 		 * Checks if the entity or its parent exists in the entity registry.
 		 * @param string|object $entity The entity to check, either as an object or as a string class name
 		 * @return bool True if the entity or its parent class exists in the registry, false otherwise
-		 * @throws EntityResolutionException
 		 */
 		public function exists(string|object $entity): bool {
-			// Determine the class name of the entity
-			$normalizedClass = $this->resolveProxyClass($entity);
-			
-			// Check that the class exists
-			if (!class_exists($normalizedClass)) {
+			try {
+				// Determine the class name of the entity
+				$normalizedClass = $this->resolveProxyClass($entity);
+				
+				// Check that the class exists
+				if (!class_exists($normalizedClass)) {
+					return false;
+				}
+				
+				// Check if the entity class exists in the entity registry
+				if (isset($this->entityRegistry[$normalizedClass])) {
+					return true;
+				}
+				
+				// Get the parent class name using the ReflectionHandler
+				$parentClass = $this->reflectionHandler->getParent($normalizedClass);
+				
+				// Check if the parent class exists in the entity registry
+				// Return false if neither the entity nor its parent class exists
+				return $parentClass !== null && isset($this->entityRegistry[$parentClass]);
+			} catch (EntityResolutionException $e) {
 				return false;
 			}
-			
-			// Check if the entity class exists in the entity registry
-			if (isset($this->entityRegistry[$normalizedClass])) {
-				return true;
-			}
-			
-			// Get the parent class name using the ReflectionHandler
-			$parentClass = $this->reflectionHandler->getParent($normalizedClass);
-			
-			// Check if the parent class exists in the entity registry
-			// Return false if neither the entity nor its parent class exists
-			return $parentClass !== null && isset($this->entityRegistry[$parentClass]);
 		}
 		
 		/**
