@@ -9,6 +9,7 @@
 	use Quellabs\ObjectQuel\EntityStore;
 	use Quellabs\ObjectQuel\ReflectionManagement\PropertyHandler;
 	use Quellabs\ObjectQuel\ReflectionManagement\ReflectionHandler;
+	use Quellabs\ObjectQuel\Serialization\Normalizer\NormalizerInterface;
 	
 	class Serializer {
 		
@@ -60,15 +61,8 @@
 			$columnType = $annotation->getType();
 			
 			// Check if this column type has a dedicated normalizer class
-			if (in_array(strtolower($columnType), $this->normalizers)) {
-				// Build the full normalizer class name based on the column type
-				$normalizerClass = "\\Quellabs\ObjectQuel\\Serialization\\Normalizer\\" . ucfirst($columnType) . "Normalizer";
-				
-				// Instantiate normalizer
-				$normalizer = new $normalizerClass($annotation->getParameters());
-				
-				// Configure the normalizer with the current value and process it
-				return $normalizer->normalize($value);
+			if (in_array(strtolower($columnType), $this->normalizers, true)) {
+				return $this->createNormalizer($annotation)->normalize($value);
 			}
 			
 			// Perform casting if needed
@@ -105,15 +99,7 @@
 			
 			// Check if this column type has a dedicated normalizer class
 			if (in_array(strtolower($columnType), $this->normalizers, true)) {
-				// Build the full normalizer class name based on the column type
-				$normalizerClass = "\\Quellabs\ObjectQuel\\Serialization\\Normalizer\\" . ucfirst($columnType) . "Normalizer";
-				
-				// Use cached normalizer instance if available, otherwise create a new one
-				// This improves performance by reusing normalizer objects
-				$normalizer = new $normalizerClass($annotation->getParameters());
-				
-				// Configure the normalizer with the current value and process it for denormalization
-				return $normalizer->denormalize($value);
+				return $this->createNormalizer($annotation)->denormalize($value);
 			}
 			
 			// For all other column types, return the value unchanged
@@ -272,6 +258,38 @@
 				// Construct the entity name based on the file name.
 				$this->normalizers[] = strtolower(substr($fileName, 0, $pos));
 			}
+		}
+		
+		/**
+		 * Instantiates and returns a normalizer for the given column annotation.
+		 * @param Column $annotation
+		 * @return NormalizerInterface
+		 * @throws \RuntimeException If the class does not exist or does not implement NormalizerInterface
+		 */
+		private function createNormalizer(Column $annotation): NormalizerInterface {
+			// Derive the fully-qualified class name from the column type.
+			// e.g. type "date" → ...Normalizer\DateNormalizer
+			$class = "\\Quellabs\\ObjectQuel\\Serialization\\Normalizer\\"
+				. ucfirst($annotation->getType())
+				. "Normalizer";
+			
+			// Guard against missing normalizer files; this catches typos in type names
+			// and normalizers that were registered in $normalizers but never created on disk.
+			if (!class_exists($class)) {
+				throw new \RuntimeException("Normalizer class not found: {$class}");
+			}
+			
+			// Instantiate with the full annotation parameters so the normalizer
+			// has access to any column-level metadata it may need (e.g. format, locale).
+			$instance = new $class($annotation->getParameters());
+			
+			// Enforce the contract. A class_exists check alone is not sufficient —
+			// a file could define the class without implementing the interface.
+			if (!$instance instanceof NormalizerInterface) {
+				throw new \RuntimeException("{$class} does not implement NormalizerInterface");
+			}
+			
+			return $instance;
 		}
 		
 		/**
