@@ -79,8 +79,6 @@
 		
 		/**
 		 * Returns the AstRangeDatabase node to be materialized.
-		 * Used by TempTableExecutor to access getInnerQuery() and to mutate the range
-		 * after the temporary table has been created.
 		 * @return AstRangeDatabaseTempTable
 		 */
 		public function getRange(): AstRangeDatabaseTempTable {
@@ -93,7 +91,7 @@
 		 * @return AstRetrieve
 		 */
 		public function getQuery(): AstRetrieve {
-			return $this->getInnerQuery();
+			return $this->range->getQuery();
 		}
 		
 		/**
@@ -102,30 +100,6 @@
 		 */
 		public function getInnerPlan(): ExecutionPlan {
 			return $this->innerPlan;
-		}
-		
-		/**
-		 * Returns the inner AstRetrieve query (alias kept for backwards compatibility).
-		 * @return AstRetrieve
-		 */
-		public function getInnerQuery(): AstRetrieve {
-			return $this->range->getQuery();
-		}
-		
-		/**
-		 * TempTableStage has no result processor — it produces no result rows itself.
-		 * @return bool Always false
-		 */
-		public function hasResultProcessor(): bool {
-			return false;
-		}
-		
-		/**
-		 * TempTableStage has no result processor.
-		 * @return callable|null Always null
-		 */
-		public function getResultProcessor(): ?callable {
-			return null;
 		}
 		
 		/**

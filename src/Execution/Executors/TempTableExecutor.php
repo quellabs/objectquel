@@ -85,7 +85,7 @@
 		public function execute(TempTableStage $stage, callable $runner): void {
 			$range = $stage->getRange();
 			$tableName = $range->getTableName();
-			$innerQuery = $stage->getInnerQuery();
+			$innerQuery = $stage->getQuery();
 			
 			// Execute the inner query through the full pipeline.
 			// This handles JSON stages, sub-decomposition, etc. transparently.
