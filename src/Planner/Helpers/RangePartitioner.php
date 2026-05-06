@@ -39,7 +39,13 @@
 				
 				// Identify which ranges are referenced by this join predicate.
 				foreach (AstUtilities::collectIdentifiersFromAst($join) as $id) {
-					$rName = $id->getRange()->getName();
+					$range = $id->getRange();
+					
+					if ($range === null) {
+						continue;
+					}
+					
+					$rName = $range->getName();
 					
 					// Self-reference is not correlation; it stays "inner".
 					if ($rName === $kName) {
@@ -200,7 +206,13 @@
 			$identifiers = AstUtilities::collectIdentifiersFromAst($node->getIdentifier());
 			
 			foreach ($identifiers as $identifier) {
-				$rangeName = $identifier->getRange()->getName();
+				$range = $identifier->getRange();
+				
+				if ($range === null) {
+					continue;
+				}
+				
+				$rangeName = $range->getName();
 				
 				if (isset($rangesByName[$rangeName])) {
 					$liveRanges[$rangeName] = $rangesByName[$rangeName];
