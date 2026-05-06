@@ -61,11 +61,11 @@
 		
 		/**
 		 * EntityManager constructor
-		 * @param Configuration|null $configuration
+		 * @param Configuration $configuration
 		 * @param Connection $connection CakePHP database connection
 		 * @throws AnnotationReaderException
 		 */
-		public function __construct(?Configuration $configuration, Connection $connection) {
+		public function __construct(Configuration $configuration, Connection $connection) {
 			$this->configuration = $configuration;
 			$this->signalHub = SignalHubLocator::getInstance();
 			$this->connection = new DatabaseAdapter($connection);
@@ -88,7 +88,9 @@
 		 * Remove signal from hub
 		 */
 		public function __destruct() {
-			$this->signalHub->unregisterSignal($this->debugQuerySignal);
+			if ($this->debugQuerySignal !== null) {
+				$this->signalHub->unregisterSignal($this->debugQuerySignal);
+			}
 		}
 		
 		/**
@@ -175,7 +177,7 @@
 			
 			// Emit debug signal with comprehensive query execution information
 			// Time is converted to milliseconds for easier readability
-			$this->debugQuerySignal->emit([
+			$this->debugQuerySignal?->emit([
 				'driver'            => 'objectquel',
 				'query'             => $query,
 				'sql'               => $this->queryExecutor->getLastExecutedSql(),
@@ -202,7 +204,7 @@
 			$rs = $this->executeQuery($query, $parameters);
 			
 			// Check if the query returned any results
-			if ($rs->recordCount() == 0) {
+			if ($rs === null || $rs->recordCount() == 0) {
 				return [];
 			}
 			
@@ -229,7 +231,7 @@
 			$rs = $this->executeQuery($query, $parameters);
 			
 			// Return an empty array if the query returned no results
-			if ($rs->recordCount() == 0) {
+			if ($rs === null || $rs->recordCount() == 0) {
 				return [];
 			}
 			
