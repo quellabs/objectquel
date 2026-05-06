@@ -135,11 +135,21 @@
 			// Proxy classes are anonymous subclasses generated at runtime.
 			// Their real identity is the parent class, so unwrap one level.
 			if (str_contains($className, $this->proxyNamespace)) {
+				// Fail if the proxy does not exist
 				if (!class_exists($className)) {
 					throw new \RuntimeException("Invalid entity class: {$className}");
 				}
 				
-				return $this->normalizedNameCache[$className] = $this->reflectionHandler->getParent($className);
+				// Get the proxy's parent. This is the actual class.
+				$parent = $this->reflectionHandler->getParent($className);
+				
+				// If no parent exists, the proxy is badly configured.
+				if ($parent === null) {
+					throw new \RuntimeException("Proxy class {$className} has no parent class.");
+				}
+				
+				// Add the actual class to the cache
+				return $this->normalizedNameCache[$className] = $parent;
 			}
 			
 			// A backslash means the caller already passed a fully qualified name
