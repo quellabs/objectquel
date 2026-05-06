@@ -3,6 +3,7 @@
 	namespace Quellabs\ObjectQuel\ObjectQuel\Ast;
 	
 	use Quellabs\ObjectQuel\ObjectQuel\AstInterface;
+	use Quellabs\ObjectQuel\ObjectQuel\AstVisitorInterface;
 	
 	/**
 	 * Class AstRangeDatabase
@@ -49,7 +50,17 @@
 		}
 		
 		/**
-		 * Create a deep copy of this range including all child nodes.
+		 * Accept a visitor to process the AST.
+		 * Ensures the visitor traverses all child nodes including joinProperty and query.
+		 * @param AstVisitorInterface $visitor Visitor object for AST manipulation
+		 */
+		public function accept(AstVisitorInterface $visitor): void {
+			parent::accept($visitor);
+			$this->getJoinProperty()?->accept($visitor);
+		}
+		
+		/**
+		 * Create a deep copy of this range including all child nodes
 		 * @return static A new instance with cloned child nodes
 		 */
 		public function deepClone(): static {

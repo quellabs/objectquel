@@ -60,7 +60,7 @@
 			$clone = new static($this->identifier);
 			
 			// Set the range
-			$clone->range = $this->range;
+			$clone->range = $this->range?->deepClone();
 			
 			// Clone the next identifier in the chain if it exists
 			if ($this->next !== null) {

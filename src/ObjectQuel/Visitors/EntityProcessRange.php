@@ -44,7 +44,7 @@
 			}
 
 			// Only handle base identifiers
-			if (!$node->isBaseIdentifier()) {
+			if ($node->getParent() instanceof AstIdentifier) {
 				return;
 			}
 			
