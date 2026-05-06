@@ -5,7 +5,7 @@
 	use Quellabs\ObjectQuel\EntityManager;
 	use Quellabs\ObjectQuel\EntityStore;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRange;
-	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRangeDatabase;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRangeDatabaseSubquery;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRetrieve;
 	use Quellabs\ObjectQuel\ObjectQuel\Visitors\ContainsCheckIsNullForRange;
 	use Quellabs\ObjectQuel\ObjectQuel\Visitors\ContainsNonNullableFieldForRange;
@@ -50,28 +50,20 @@
 			
 			// Analyze each table/range reference for JOIN optimization opportunities
 			foreach ($ast->getRanges() as $range) {
-				$this->analyzeRangeForJoinOptimization($ast, $range);
-			}
-		}
-		
-		/**
-		 * Analyzes a specific range to determine the optimal JOIN type.
-		 *
-		 * Decision logic:
-		 * 1. NULL Check Priority: If range has NULL checks → force LEFT JOIN
-		 * 2. Non-nullable Reference Promotion: LEFT JOIN → INNER JOIN when WHERE
-		 *    references a non-nullable field (NULL rows are already filtered out)
-		 *
-		 * @param AstRetrieve $ast The complete query AST
-		 * @param AstRange $range The specific table range to analyze
-		 */
-		private function analyzeRangeForJoinOptimization(AstRetrieve $ast, AstRange $range): void {
-			$analysis = $this->analyzeConditions($ast, $range);
-			
-			if ($this->shouldConvertToLeftJoin($range, $analysis)) {
-				$range->setRequired(false);
-			} elseif ($this->shouldConvertToInnerJoin($range, $analysis)) {
-				$range->setRequired(true);
+				// Analyzes a specific range to determine the optimal JOIN type.
+				$analysis = $this->analyzeConditions($ast, $range);
+				
+				// NULL Check Priority: If range has NULL checks → force LEFT JOIN
+				if ($analysis->hasNullChecks) {
+					$range->setRequired(false);
+					continue;
+				}
+				
+				// Non-nullable Reference Promotion: LEFT JOIN → INNER JOIN when WHERE
+				// references a non-nullable field (NULL rows are already filtered out)
+				if ($analysis->hasFieldReferences && $analysis->eliminatesNulls) {
+					$range->setRequired(true);
+				}
 			}
 		}
 		
@@ -114,34 +106,6 @@
 		}
 		
 		/**
-		 * Determines whether an INNER JOIN should be converted to a LEFT JOIN.
-		 * This is needed when the WHERE clause explicitly tests for NULL values
-		 * from the joined table — a pattern used in NOT EXISTS / optional-join queries.
-		 * @param AstRange $range The range being evaluated
-		 * @param RangeConditionAnalysis $analysis Collected condition signals
-		 * @return bool True if the range should be converted to LEFT JOIN
-		 */
-		private function shouldConvertToLeftJoin(AstRange $range, RangeConditionAnalysis $analysis): bool {
-			return $range->isRequired() && $analysis->hasNullChecks;
-		}
-		
-		/**
-		 * Determines whether a LEFT JOIN can be safely promoted to an INNER JOIN.
-		 * Safe when the WHERE clause references a non-nullable field from the joined
-		 * table: any row where the join produces NULL will already be filtered out,
-		 * so the LEFT/INNER distinction has no observable effect on the result set.
-		 * @param AstRange $range The range being evaluated
-		 * @param RangeConditionAnalysis $analysis Collected condition signals
-		 * @return bool True if the range can be safely converted to INNER JOIN
-		 */
-		private function shouldConvertToInnerJoin(AstRange $range, RangeConditionAnalysis $analysis): bool {
-			return !$range->isRequired()
-				&& $analysis->hasFieldReferences
-				&& !$analysis->hasNullChecks
-				&& $analysis->eliminatesNulls;
-		}
-		
-		/**
 		 * Runs a visitor over the WHERE conditions of the given AST.
 		 * Centralizes the $ast->getConditions()->accept() call pattern.
 		 * Safe to call here because optimize() guards against null conditions.
@@ -161,22 +125,20 @@
 		 */
 		private function buildNullabilityVisitor(AstRange $range): ContainsNonNullableFieldForRange|ContainsNonNullableFieldForRangeTemporary {
 			// Database ranges can contain either a direct entity reference or a subquery
-			if ($range instanceof AstRangeDatabase) {
-				// Fetch the query
-				$query = $range->getQuery();
-				
-				// Subqueries produce a derived table, so nullability is determined
-				// from the subquery's output columns rather than entity metadata
-				if ($query !== null) {
-					return new ContainsNonNullableFieldForRangeTemporary(
-						$range->getName(),
-						$query,
-						$this->entityStore
-					);
-				}
+			if (!$range instanceof AstRangeDatabaseSubquery) {
+				// Direct entity reference: nullability comes from entity metadata
+				return new ContainsNonNullableFieldForRange($range->getName(), $this->entityStore);
 			}
 			
-			// Direct entity reference: nullability comes from entity metadata
-			return new ContainsNonNullableFieldForRange($range->getName(), $this->entityStore);
+			// Fetch the query
+			$query = $range->getQuery();
+			
+			// Subqueries produce a derived table, so nullability is determined
+			// from the subquery's output columns rather than entity metadata
+			return new ContainsNonNullableFieldForRangeTemporary(
+				$range->getName(),
+				$query,
+				$this->entityStore
+			);
 		}
 	}
