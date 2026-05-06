@@ -44,19 +44,18 @@
 			$this->correlatedRanges = $correlatedRanges;
 			$this->origin = $origin;
 			
-			if ($aggregation !== null) {
-				$this->aggregation->setParent($this);
-			}
+			$this->aggregation?->setParent($this);
 		}
 		
 		public function accept(AstVisitorInterface $visitor): void {
 			parent::accept($visitor);
-			
-			if ($this->aggregation !== null) {
-				$this->aggregation->accept($visitor);
-			}
+			$this->aggregation?->accept($visitor);
 		}
 		
+		/**
+		 * Returns the AST type
+		 * @return string
+		 */
 		public function getType(): string {
 			return $this->type;
 		}
@@ -117,9 +116,12 @@
 		 */
 		public function deepClone(): static {
 			// Clone the identifier
-			$clonedAggregation = $this->aggregation->deepClone();
-			$clonedConditions = $this->conditions->deepClone();
+			$clonedAggregation = $this->aggregation?->deepClone();
 			
+			// Clone the conditions
+			$clonedConditions = $this->conditions?->deepClone();
+			
+			// Clone the ranges
 			$clonedCorrelatedRanges = [];
 			foreach ($this->correlatedRanges as $range) {
 				$clonedCorrelatedRanges[] = $range->deepClone();
