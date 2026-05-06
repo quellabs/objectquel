@@ -56,7 +56,7 @@
 			$rs = $this->connection->execute($sql, $initialParams);
 			
 			// If the query is incorrect, throw an exception
-			if (!$rs) {
+			if ($rs === null) {
 				throw new QuelException($this->connection->getLastErrorMessage());
 			}
 			

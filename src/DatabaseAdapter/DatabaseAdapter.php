@@ -313,7 +313,7 @@
 				$constraintData = $schema->getConstraint($constraint);
 				
 				// Check if this constraint is a primary key constraint
-				if ($constraintData['type'] === 'primary') {
+				if (isset($constraintData['type']) && $constraintData['type'] === 'primary') {
 					// Return the column names that make up the primary key
 					// This supports both single and composite primary keys
 					return $constraintData['columns'];
@@ -364,15 +364,11 @@
 		
 		/**
 		 * Rewrites duplicate named parameters so PDO can bind them.
-		 * @param string|null $sql The SQL query, modified in place
+		 * @param string $sql The SQL query, modified in place
 		 * @param array<int|string, mixed> $parameters The parameter bindings, expanded in place
 		 * @return void
 		 */
-		protected function deduplicateParameters(?string &$sql, array &$parameters): void {
-			if ($sql === null) {
-				return;
-			}
-			
+		protected function deduplicateParameters(string &$sql, array &$parameters): void {
 			// Track how many times each named parameter has been seen so far
 			$seen = [];
 			
@@ -404,23 +400,23 @@
 					return ':' . $newName;
 				},
 				$sql
-			);
-		}
+			) ?? $sql;
+		 }
 		
 		/**
 		 * Executes a SQL query with optional parameter binding
 		 * @param string $query SQL query to execute
 		 * @param array<int|string, mixed> $parameters Parameter values for prepared statement placeholders
-		 * @return StatementInterface|false Statement object on success, false on failure
+		 * @return StatementInterface|null Statement object on success, false on failure
 		 */
-		public function execute(string $query, array $parameters = []): StatementInterface|false {
+		public function execute(string $query, array $parameters = []): ?StatementInterface {
 			try {
 				$this->deduplicateParameters($query, $parameters);
 				return $this->connection->execute($query, $parameters);
 			} catch (\Exception $exception) {
 				$this->last_error = $exception->getCode();
 				$this->last_error_message = $exception->getMessage();
-				return false;
+				return null;
 			}
 		}
 		

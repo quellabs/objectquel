@@ -63,7 +63,7 @@
 			$probeSql = 'SELECT COUNT(1) OVER () AS __wf FROM (SELECT 1) t';
 			$stmt = $this->adapter->execute($probeSql);
 			
-			if ($stmt === false) {
+			if ($stmt === null) {
 				return $cache = false;
 			}
 			
