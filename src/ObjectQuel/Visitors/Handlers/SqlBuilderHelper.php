@@ -388,9 +388,13 @@
 		 */
 		private function extractPropertyNames(array $identifiers): array {
 			return array_map(function (AstIdentifier $identifier) {
-				return $identifier->hasNext()
-					? $identifier->getNext()->getName()
-					: $identifier->getName();
+				$next = $identifier->getNext();
+				
+				if ($next !== null) {
+					return $next->getName();
+				} else {
+					return $identifier->getName();
+				}
 			}, $identifiers);
 		}
 		
@@ -412,7 +416,13 @@
 			
 			$rangeName = $range->getName();
 			$entityName = $ast->getEntityName();
-			$propertyName = $ast->getNext()->getName();
+			$nextNode = $ast->getNext();
+
+			if ($nextNode === null) {
+				return $ast->getName();
+			}
+
+			$propertyName = $nextNode->getName();
 			
 			// Handle temporary tables - no metadata available
 			if (empty($entityName)) {
