@@ -263,9 +263,15 @@
 					return false;
 				}
 				
-				// Get base identifiers and their ranges
+				// Get base identifiers
 				$leftBase = $leftOperand->getBaseIdentifier();
 				$rightBase = $rightOperand->getBaseIdentifier();
+				
+				// Both base identifiers must be non-null before calling getRange()
+				if ($leftBase === null || $rightBase === null) {
+					return false;
+				}
+				
 				$leftRange = $leftBase->getRange();
 				$rightRange = $rightBase->getRange();
 				
@@ -320,8 +326,15 @@
 		 */
 		public static function isSameEntityAndProperty(AstIdentifier $outer, AstIdentifier $inner): bool {
 			// Verify both identifiers have valid ranges
-			$outerRange = $outer->getBaseIdentifier()->getRange();
-			$innerRange = $inner->getBaseIdentifier()->getRange();
+			$outerBase = $outer->getBaseIdentifier();
+			$innerBase = $inner->getBaseIdentifier();
+			
+			if ($outerBase === null || $innerBase === null) {
+				return false;
+			}
+			
+			$outerRange = $outerBase->getRange();
+			$innerRange = $innerBase->getRange();
 			
 			if ($outerRange === null || $innerRange === null) {
 				return false;
