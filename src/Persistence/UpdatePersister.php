@@ -71,6 +71,15 @@
 			
 			// Get the entity's original data (snapshot) from when it was loaded or last persisted
 			$originalData = $this->unitOfWork->getOriginalEntityData($entity);
+
+			// If there's no original data, this entity was never loaded from the database.
+			// Updating an untracked entity is a programming error.
+			if ($originalData === null) {
+				throw new OrmException(
+					"Cannot update entity of type '" . get_class($entity) . "': no original data found. " .
+					"The entity must be loaded from the database before it can be updated."
+				);
+			}
 			
 			// Get the column names that make up the primary key
 			$primaryKeyColumnNames = $this->entityStore->getIdentifierColumnNames($entity);

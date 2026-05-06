@@ -4,6 +4,7 @@
 	
 	use Quellabs\ObjectQuel\Capabilities\PlatformCapabilities;
 	use Quellabs\ObjectQuel\EntityManager;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRangeDatabaseSubquery;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRangeDatabaseTempTable;
 	use Quellabs\ObjectQuel\Planner\Helpers\ConditionAnalyzer;
 	use Quellabs\ObjectQuel\Planner\Helpers\ConditionFilter;
@@ -112,7 +113,7 @@
 		 * their interdependencies in the plan. Returns a map of rangeName → TempTableStage
 		 * name so the database stage can declare its own dependencies on them.
 		 * @param ExecutionPlan $plan
-		 * @param AstRangeDatabase[] $tempRanges Already dependency-sorted temp ranges
+		 * @param AstRangeDatabaseSubquery[] $tempRanges Already dependency-sorted temp ranges
 		 * @param array<string, mixed> $staticParams
 		 * @return string[] Map of rangeName → TempTableStage name
 		 * @throws QuelException
@@ -168,7 +169,7 @@
 		 * @param string[] $tempTableStageNames Map of rangeName → TempTableStage name
 		 */
 		private function buildDatabaseStage(ExecutionPlan $plan, AstRetrieve $query, array $staticParams, array $tempTableStageNames): void {
-			$databaseStage = $this->stageFactory->createDatabaseExecutionStage($query, $staticParams, array_keys($tempTableStageNames));
+			$databaseStage = $this->stageFactory->createDatabaseExecutionStage($query, $staticParams);
 			
 			if ($databaseStage === null) {
 				return;
@@ -227,8 +228,8 @@
 		 *     them), output order follows insertion order of the input array. This is
 		 *     deterministic but arbitrary — any valid topological order is correct here.
 		 *
-		 * @param AstRangeDatabase[] $temporaryRanges
-		 * @return AstRangeDatabase[] Sorted array where dependencies come before ranges that use them
+		 * @param AstRangeDatabaseSubquery[] $temporaryRanges
+		 * @return AstRangeDatabaseSubquery[] Sorted array where dependencies come before ranges that use them
 		 * @throws QuelException If a circular dependency is detected
 		 */
 		protected function sortByDependency(array $temporaryRanges): array {
