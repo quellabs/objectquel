@@ -5,6 +5,7 @@
 	// Import necessary AST classes and exceptions
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRange;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRangeDatabase;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRangeDatabaseSubquery;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRangeJsonSource;
 	use Quellabs\ObjectQuel\ObjectQuel\Lexer;
 	use Quellabs\ObjectQuel\ObjectQuel\LexerException;
@@ -77,11 +78,11 @@
 		/**
 		 * Parses a database query expression wrapped in parentheses.
 		 * @param string $alias The alias to assign to the resulting range
-		 * @return AstRangeDatabase The parsed database range with query attached
+		 * @return AstRangeDatabaseSubquery The parsed database range with query attached
 		 * @throws LexerException If lexer encounters invalid tokens
 		 * @throws ParserException If syntax structure is invalid
 		 */
-		private function parseQuery(string $alias): AstRangeDatabase {
+		private function parseQuery(string $alias): AstRangeDatabaseSubquery{
 			// Match opening parenthesis - start of query expression
 			$this->lexer->match(Token::ParenthesesOpen);
 			
@@ -96,10 +97,7 @@
 			$this->lexer->match(Token::ParenthesesClose);
 			
 			// Create the database range with a temporary name
-			$range = new AstRangeDatabase($alias);
-			$range->setQuery($retrieve);
-			$range->setTableName(uniqid($alias));
-			return $range;
+			return new AstRangeDatabaseSubquery($alias, $retrieve, uniqid($alias));
 		}
 		
 		/**
