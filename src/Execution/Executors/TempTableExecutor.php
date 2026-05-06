@@ -103,8 +103,7 @@
 				// derived from the inner query's projection list, since there are no result
 				// rows to infer the schema from.
 				$columns = $this->extractColumnNamesFromQuery($innerQuery);
-				$tempName = 'tmp_' . $range->getName() . '_' . uniqid();
-				$this->createTable($tempName, $columns);
+				$this->createTable($range->getTableName(), $columns);
 			} else {
 				// Infer column schema from the keys of the first result row
 				$columns = array_map(
@@ -112,27 +111,12 @@
 					array_keys($rows[0])
 				);
 				
-				$tempName = 'tmp_' . $range->getName() . '_' . uniqid();
-				
-				$this->createTable($tempName, $columns);
-				$this->insertRows($tempName, $columns, $rows);
+				$this->createTable($range->getTableName(), $columns);
+				$this->insertRows($range->getTableName(), $columns, $rows);
 			}
 			
 			// Register the table name so cleanup() can DROP it later
-			$this->createdTables[] = $tempName;
-			
-			// Mutate the range so QuelToSQL emits a plain table reference.
-			// Because this is the same object instance held by the outer ExecutionStage,
-			// no further wiring is needed — the change is visible to QuelToSQL immediately.
-			//
-			// FROM vs JOIN determination: QuelToSQL::getFrom() picks the FROM by finding
-			// the first AstRangeDatabase with joinProperty === null. ExecutionPlanBuilder::
-			// promoteTempTableRanges() promotes temp-table ranges to JOINs by extracting
-			// a join condition from the WHERE clause, so that a real database table can
-			// take the FROM position when one exists. If no real database table is present,
-			// the temp table legitimately becomes the FROM and is left untouched.
-			$range->setQuery(null);
-			$range->setTableName($tempName);
+			$this->createdTables[] = $range->getTableName();
 		}
 		
 		/**
