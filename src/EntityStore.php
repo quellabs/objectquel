@@ -34,6 +34,7 @@
 	use Quellabs\ObjectQuel\Exception\EntityResolutionException;
 	use Quellabs\ObjectQuel\Metadata\EntityMetadataRecord;
 	use Quellabs\ObjectQuel\Metadata\EntityMetadataBuilder;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRangeDatabase;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRetrieve;
 	use Quellabs\ObjectQuel\ProxyGenerator\ProxyGenerator;
 	use Quellabs\ObjectQuel\ReflectionManagement\EntityLocator;
@@ -315,17 +316,28 @@
 		 *      range: mixed,
 		 *      entityName: string,
 		 *      primaryKey: string|null
-		 *  }|null An array with information about the range and primary key, or null if no suitable range is found
-		 * @throws EntityResolutionException
+		 *  } An array with information about the range and primary key
+		 * @throws EntityResolutionException|\LogicException
 		 */
-		public function fetchPrimaryKeyOfMainRange(AstRetrieve $astRetrieve): ?array {
+		public function fetchPrimaryKeyOfMainRange(AstRetrieve $astRetrieve): array {
 			foreach ($astRetrieve->getRanges() as $range) {
+				// Only accept database ranges
+				if (!$range instanceof AstRangeDatabase) {
+					continue;
+				}
+				
 				// Continue if the range contains a join property
 				if ($range->getJoinProperty() !== null) {
 					continue;
 				}
 				
-				// Get the entity name and its associated primary key if the range doesn't have a join property
+				// Continue if the range has no entity name
+				// Should never happen. This test is there for PHPStan's static testing.
+				if ($range->getEntityName() === null) {
+					continue;
+				}
+				
+				// Get the associated primary key if the range doesn't have a join property
 				$entityName = $range->getEntityName();
 				$metadata = $this->getMetadata($entityName);
 				
@@ -339,7 +351,7 @@
 			
 			// Return null if no range without a join property is found
 			// This should never happen in practice, as such a query cannot be created
-			return null;
+			throw new \LogicException("Malformed query: no primary range found in query");
 		}
 		
 		// ==================== Legacy Compatibility Methods ====================

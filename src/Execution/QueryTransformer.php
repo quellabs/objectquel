@@ -6,6 +6,8 @@
 	use Quellabs\ObjectQuel\DatabaseAdapter\DatabaseAdapter;
 	use Quellabs\ObjectQuel\EntityManager;
 	use Quellabs\ObjectQuel\EntityStore;
+	use Quellabs\ObjectQuel\Exception\EntityResolutionException;
+	use Quellabs\ObjectQuel\Exception\QuelException;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstAlias;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstBinaryOperator;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstIdentifier;
@@ -26,6 +28,7 @@
 		/**
 		 * QueryBuilder constructor
 		 * @param EntityManager $entityManager
+		 * @param PlatformCapabilitiesInterface $platform
 		 */
 		public function __construct(EntityManager $entityManager, PlatformCapabilitiesInterface $platform) {
 			$this->entityStore = $entityManager->getEntityStore();
@@ -67,35 +70,34 @@
 		 * @param AstRetrieve $ast
 		 * @param array<int|string, mixed> $parameters
 		 * @return void
+		 * @throws QuelException
 		 */
 		private function processPagination(AstRetrieve $ast, array $parameters): void {
-			// Get primary key information for the main table/range being queried
-			// This is essential for pagination as we need to identify unique records
-			$primaryKeyInfo = $this->entityStore->fetchPrimaryKeyOfMainRange($ast);
-			
-			// If we can't determine the primary key, we can't safely paginate
-			// This might happen with complex queries, views, or entities without proper key definitions
-			if ($primaryKeyInfo === null) {
-				return;
-			}
-			
-			// Check for query directives that might affect pagination behavior
-			$directives = $ast->getDirectives();
-			
-			// Look for the 'InValuesAreFinal' directive which indicates that any IN conditions
-			// in the query are already finalized and don't need additional validation/processing
-			// This is an optimization flag that can skip the validation phase of pagination
-			$skipValidation = isset($directives['InValuesAreFinal']) && $directives['InValuesAreFinal'] === true;
-			
-			// Choose the appropriate pagination strategy based on the directive
-			if ($skipValidation) {
-				// Fast path: Skip the validation step and process pagination directly
-				// Used when we know the IN conditions are already properly constructed
-				$this->processPaginationSkippingValidation($ast, $parameters, $primaryKeyInfo);
-			} else {
-				// Standard path: Use the full validation approach which fetches all primary keys first
-				// This is the safer, more comprehensive method for most queries
-				$this->processPaginationWithValidation($ast, $parameters, $primaryKeyInfo);
+			try {
+				// Get primary key information for the main table/range being queried
+				// This is essential for pagination as we need to identify unique records
+				$primaryKeyInfo = $this->entityStore->fetchPrimaryKeyOfMainRange($ast);
+				
+				// Check for query directives that might affect pagination behavior
+				$directives = $ast->getDirectives();
+				
+				// Look for the 'InValuesAreFinal' directive which indicates that any IN conditions
+				// in the query are already finalized and don't need additional validation/processing
+				// This is an optimization flag that can skip the validation phase of pagination
+				$skipValidation = isset($directives['InValuesAreFinal']) && $directives['InValuesAreFinal'] === true;
+				
+				// Choose the appropriate pagination strategy based on the directive
+				if ($skipValidation) {
+					// Fast path: Skip the validation step and process pagination directly
+					// Used when we know the IN conditions are already properly constructed
+					$this->processPaginationSkippingValidation($ast, $parameters, $primaryKeyInfo);
+				} else {
+					// Standard path: Use the full validation approach which fetches all primary keys first
+					// This is the safer, more comprehensive method for most queries
+					$this->processPaginationWithValidation($ast, $parameters, $primaryKeyInfo);
+				}
+			} catch (EntityResolutionException $e) {
+				throw new QuelException($e->getMessage());
 			}
 		}
 		

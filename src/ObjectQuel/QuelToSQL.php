@@ -245,43 +245,44 @@
 		 * Directly manipulate the values in IN() without extra queries
 		 * @param AstRetrieve $retrieve
 		 * @return string
+		 * @throws QuelException
 		 */
 		private function getSortUsingIn(AstRetrieve $retrieve): string {
-			// Check and retrieve the primary key information
-			$primaryKeyInfo = $this->entityStore->fetchPrimaryKeyOfMainRange($retrieve);
-			
-			if (!is_array($primaryKeyInfo)) {
-				return $this->getSortDefault($retrieve);
-			}
-			
-			// Create an AstIdentifier for searching for an IN() in the query
-			$astIdentifier = new AstIdentifier($primaryKeyInfo['entityName']);
-			
 			try {
-				$visitor = new GetMainEntityInAst($astIdentifier);
-				$retrieve->getConditions()->accept($visitor);
-				return $this->getSortDefault($retrieve);
-			} catch (GetMainEntityInAstException $exception) {
-				$astObject = $exception->getAstObject();
+				// Check and retrieve the primary key information
+				$primaryKeyInfo = $this->entityStore->fetchPrimaryKeyOfMainRange($retrieve);
 				
-				// Convert Quel conditions to a SQL string
-				$retrieveEntitiesVisitor = new QuelToSQLConvertToString($this->entityStore, $this->parameters, "SORT", $this->platform);
-				$astObject->getIdentifier()->accept($retrieveEntitiesVisitor);
+				// Create an AstIdentifier for searching for an IN() in the query
+				$astIdentifier = new AstIdentifier($primaryKeyInfo['entityName']);
 				
-				// Process the results into an SQL ORDER BY clause
-				$mappedParameters = array_map(function ($e) {
-					if (method_exists($e, "getValue")) {
-						return $e->getValue();
-					} else {
-						return "";
-					}
-				}, $astObject->getParameters());
-				
-				// Remove empty values, make unique and implode
-				$parametersSql = implode(",", array_unique(array_filter($mappedParameters)));
-				
-				// Return results
-				return "ORDER BY FIELD(" . $retrieveEntitiesVisitor->getResult() . ", " . $parametersSql . ")";
+				try {
+					$visitor = new GetMainEntityInAst($astIdentifier);
+					$retrieve->getConditions()->accept($visitor);
+					return $this->getSortDefault($retrieve);
+				} catch (GetMainEntityInAstException $exception) {
+					$astObject = $exception->getAstObject();
+					
+					// Convert Quel conditions to a SQL string
+					$retrieveEntitiesVisitor = new QuelToSQLConvertToString($this->entityStore, $this->parameters, "SORT", $this->platform);
+					$astObject->getIdentifier()->accept($retrieveEntitiesVisitor);
+					
+					// Process the results into an SQL ORDER BY clause
+					$mappedParameters = array_map(function ($e) {
+						if (method_exists($e, "getValue")) {
+							return $e->getValue();
+						} else {
+							return "";
+						}
+					}, $astObject->getParameters());
+					
+					// Remove empty values, make unique and implode
+					$parametersSql = implode(",", array_unique(array_filter($mappedParameters)));
+					
+					// Return results
+					return "ORDER BY FIELD(" . $retrieveEntitiesVisitor->getResult() . ", " . $parametersSql . ")";
+				}
+			} catch (EntityResolutionException $e) {
+				throw new QuelException($e->getMessage());
 			}
 		}
 		
