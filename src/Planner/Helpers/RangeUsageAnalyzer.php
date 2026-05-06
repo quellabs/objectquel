@@ -123,13 +123,24 @@
 			
 			// Mark ranges seen in the expression (projection).
 			foreach ($exprIds as $id) {
-				$rangeName = $id->getRange()->getName();
-				$usedInExpr[$rangeName] = true;
+				$range = $id->getRange();
+				
+				if ($range === null) {
+					throw new \LogicException('Encountered an AstIdentifier without an associated range in the ANY expression. This indicates a malformed AST.');
+				}
+			
+				$usedInExpr[$range->getName()] = true;
 			}
 			
 			// Mark ranges seen in the condition and track non-nullable usage for fields.
 			foreach ($condIds as $id) {
-				$rangeName = $id->getRange()->getName();
+				$range = $id->getRange();
+
+				if ($range === null) {
+					throw new \LogicException('Encountered an AstIdentifier without an associated range in the ANY condition. This indicates a malformed AST.');
+				}
+
+				$rangeName = $range->getName();
 				$usedInCond[$rangeName] = true;
 				
 				// If the identifier denotes an entity.field and that field is non-nullable
@@ -219,13 +230,26 @@
 			// Resolve the entity name (left side of "entity.field").
 			$entityName = $id->getEntityName();
 			
+			// If the entity name is unknown, the AST is malformed — an identifier in a
+			// condition must always belong to a known entity at this stage.
+			if ($entityName === null) {
+				throw new \LogicException('Encountered an AstIdentifier without an entity name during non-nullable field analysis. This indicates a malformed AST.');
+			}
+			
 			// Pull the column definition map from metadata, e.g.:
 			//   ['id' => ['nullable' => false, ...], 'name' => ['nullable' => true, ...], ...]
 			$columnMap = $this->entityStore->extractEntityColumnDefinitions($entityName);
 			
 			// Retrieve the immediate member name following the identifier (the "field").
 			// This assumes the AST organizes chained identifiers as a linked structure.
-			$field = $id->getNext()->getName();
+			$next = $id->getNext();
+			
+			// If there is no next node, this is a bare range reference without a field — treat as nullable.
+			if ($next === null) {
+				return false;
+			}
+			
+			$field = $next->getName();
 			
 			// If the field is unknown, assume nullable (return false for "non-nullable").
 			if (!isset($columnMap[$field])) {
@@ -253,8 +277,13 @@
 				$ids = $this->collectIdentifiers($node->getExpression());
 				
 				foreach ($ids as $id) {
-					$rangeName = $id->getRange()->getName();
-					$hasIsNullInCond[$rangeName] = true;
+					$range = $id->getRange();
+			
+					if ($range === null) {
+						throw new \LogicException('Encountered an AstIdentifier without an associated range inside an IS NULL check. This indicates a malformed AST.');
+					}
+			
+					$hasIsNullInCond[$range->getName()] = true;
 				}
 			}
 			
