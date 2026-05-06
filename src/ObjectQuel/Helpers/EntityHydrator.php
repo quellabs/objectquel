@@ -116,7 +116,6 @@
 			
 			// The AstIdentifier has to have an entity
 			$entityName = $expression->getEntityName();
-			
 			if ($entityName === null) {
 				throw new HydrationException("Missing entity name in the AstIdentifier");
 			}
@@ -125,7 +124,10 @@
 			$entity = $this->entityStore->resolveProxyClass($entityName);
 			
 			// Fetch the range
-			$rangeName = $expression->getRange()->getName();
+			$rangeName = $expression->getRange()?->getName();
+			if ($rangeName === null) {
+				throw new HydrationException("Missing range in the AstIdentifier");
+			}
 			
 			// Remove the range prefix from column names in the row data
 			// This converts prefixed column names like "range.user_id" to just "user_id"
@@ -199,7 +201,7 @@
 			
 			// Case 2: Process a property value (AstIdentifier with next node)
 			if ($node instanceof AstIdentifier && $node->hasNext()) {
-				return $this->processPropertyValue($value, $row, $node);
+				return $this->processPropertyValue($row[$value->getName()] ?? null, $node);
 			}
 			
 			// Case 3: Process a simple value (direct lookup from row)
@@ -237,17 +239,13 @@
 		
 		/**
 		 * Processes a property value from the query result.
-		 * @param AstAlias $value The value representing the property.
-		 * @param array<string, mixed> $row The current database row.
+		 * @param mixed $rawValue
 		 * @param AstIdentifier $node The AST node with property information.
 		 * @return mixed The processed property value.
+		 * @throws HydrationException|EntityResolutionException
 		 */
-		private function processPropertyValue(AstAlias $value, array $row, AstIdentifier $node): mixed {
-			// Extract the raw value from the database row using the alias name as key
-			// Return null if the key doesn't exist in the row
-			$rawValue = $row[$value->getName()] ?? null;
-			
-			// Early return if no value was found
+		private function processPropertyValue(mixed $rawValue, AstIdentifier $node): mixed {
+			// Early return if value is NULL
 			if ($rawValue === null) {
 				return null;
 			}
@@ -255,41 +253,36 @@
 			// Get the entity name from the node
 			$entityName = $node->getEntityName();
 			
-			// Early return if no entity was found
+			// Error when node has no attached entity
 			if ($entityName === null) {
-				return null;
+				throw new HydrationException("Missing entity name in the AstIdentifier");
 			}
 			
 			// Get the property name from the next node in the chain
-			$propertyName = $node->getNext()->getName();
+			$propertyName = $node->getNext()?->getName();
 			
-			try {
-				// Retrieve annotations for the entity from the entity store
-				$annotations = $this->entityStore->getAnnotations($entityName);
-				
-				// If no annotations exist for this property, return the raw value unchanged
-				if (!isset($annotations[$propertyName])) {
-					return $rawValue;
-				}
-				
-				// Iterate through all annotations for this property
-				foreach ($annotations[$propertyName] as $annotation) {
-					// Check if the annotation is a Column type
-					if ($annotation instanceof Column) {
-						// If it's a Column, use the serializer from the unit of work
-						// to convert the raw database value to its proper PHP type
-						return $this->unitOfWork->getSerializer()->normalizeValue($annotation, $rawValue);
-					}
-				}
-				
-				// If we didn't find a Column annotation, return the raw value unchanged
-				return $rawValue;
-			} catch (\Exception $e) {
-				// Silently handle any exceptions that occur during annotation processing
-				// This could be improved by adding proper logging here
-				// Consider logging the exception
-				return $rawValue;
+			// Error when property has no name (e.g. just the entity name was passed)
+			if ($propertyName === null) {
+				throw new HydrationException("Missing property name in the AstIdentifier");
 			}
+			
+			// Retrieve annotations for the entity from the entity store
+			$annotations = $this->entityStore->getAnnotations($entityName);
+			
+			// Iterate through all annotations for this property
+			foreach ($annotations[$propertyName] ?? [] as $annotation) {
+				// Check if the annotation is a Column type
+				if (!$annotation instanceof Column) {
+					continue;
+				}
+				
+				// If it's a Column, use the serializer from the unit of work
+				// to convert the raw database value to its proper PHP type
+				return $this->unitOfWork->getSerializer()->normalizeValue($annotation, $rawValue);
+			}
+			
+			// If we didn't find a Column annotation, throw as we cannot hydrate
+			throw new HydrationException("No @Column annotation found for property '{$propertyName}' on '{$entityName}'");
 		}
 		
 		/**
@@ -358,48 +351,50 @@
 		}
 		
 		/**
-		 * Initialiseer de relation cache op basis van de eerste rij en het AST.
+		 * Build the relation cache from the first row and the AST.
 		 * @param array<int, AstAlias> $ast
 		 * @param array<string, mixed> $row
 		 * @return RelationCache
+		 * @throws EntityResolutionException
 		 */
 		private function buildRelationCache(array $ast, array $row): array {
 			$relationCache = [];
 			
 			foreach ($ast as $value) {
+				// Only process top-level identifier expressions (no parent = no nested path)
 				$expression = $value->getExpression();
 				
-				if (!$expression instanceof AstIdentifier) {
+				if (!$expression instanceof AstIdentifier || $expression->hasParentIdentifier()) {
 					continue;
 				}
 				
-				if ($expression->hasParentIdentifier()) {
-					continue;
-				}
-				
-				// Check if entity is already cached
-				$rangeName = $expression->getRange()->getName();
-				$rangeNameLength = strlen($rangeName) + 1;
+				// Skip unresolved ranges, unresolved entity classes, and already-cached ranges
+				$range = $expression->getRange();
 				$class = $expression->getEntityName();
 				
-				if (($class !== null) && !isset($relationCache[$rangeName])) {
-					$keys = [];
-					$identifierKeys = $this->entityStore->getIdentifierKeys($class);
-					
-					// Collect matching keys
-					foreach ($row as $rowKey => $rowValue) {
-						if (strncmp($rowKey, "{$rangeName}.", $rangeNameLength) === 0) {
-							$keys[] = $rowKey;
-						}
-					}
-					
-					$relationCache[$rangeName] = [
-						'identifiers'         => $identifierKeys,
-						'identifiers_flipped' => array_flip($identifierKeys),
-						'keys'                => $keys,
-						'keys_flipped'        => array_flip($keys)
-					];
+				if ($range === null || $class === null || isset($relationCache[$range->getName()])) {
+					continue;
 				}
+				
+				// Collect all row keys belonging to this range (e.g. "alias.field")
+				$rangeName = $range->getName();
+				$prefix = "{$rangeName}.";
+				
+				$keys = array_keys(array_filter(
+					$row,
+					static fn($_, string $rowKey) => str_starts_with($rowKey, $prefix),
+					ARRAY_FILTER_USE_BOTH
+				));
+				
+				// Store flipped variants for O(1) reverse lookup by callers
+				$identifierKeys = $this->entityStore->getIdentifierKeys($class);
+				
+				$relationCache[$rangeName] = [
+					'identifiers'         => $identifierKeys,
+					'identifiers_flipped' => array_flip($identifierKeys),
+					'keys'                => $keys,
+					'keys_flipped'        => array_flip($keys),
+				];
 			}
 			
 			return $relationCache;
