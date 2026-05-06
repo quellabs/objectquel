@@ -42,7 +42,7 @@
 		protected EntityManager $entityManager;
 		protected EntityStore $entityStore;
 		protected PropertyHandler $propertyHandler;
-		protected ?SQLSerializer $serializer;
+		protected SQLSerializer $serializer;
 		protected DatabaseAdapter $connection;
 		protected EntityLifecycleManager $lifecycleManager;
 		protected InsertPersister $insertPersister;
@@ -502,7 +502,7 @@
 			$originalData = $this->getOriginalEntityData($entity);
 			$serializedEntity = $this->getSerializer()->serialize($entity);
 			
-			if ($this->isEntityDirty($serializedEntity, $originalData)) {
+			if ($originalData === null || $this->isEntityDirty($serializedEntity, $originalData)) {
 				return DirtyState::Dirty;
 			}
 			
