@@ -117,6 +117,18 @@
 		public function getEntityName(): ?string {
 			return $this->entityName;
 		}
+
+		/**
+		 * Retrieve the entity name, assuming it's fully transformed
+		 * @return string
+		 */
+		public function getResolvedEntityName(): string {
+			if ($this->entityName === null) {
+				throw new \LogicException("Entity name has not been resolved");
+			}
+			
+			return $this->entityName;
+		}
 		
 		/**
 		 * Set the entity name for this range
@@ -132,6 +144,18 @@
 		 * @return string|null The table name
 		 */
 		public function getTableName(): ?string {
+			return $this->tableName;
+		}
+		
+		/**
+		 * Retrieve the table, assuming it's fully transformed
+		 * @return string
+		 */
+		public function getResolvedTableName(): string {
+			if ($this->tableName === null) {
+				throw new \LogicException("Table name has not been resolved");
+			}
+			
 			return $this->tableName;
 		}
 		

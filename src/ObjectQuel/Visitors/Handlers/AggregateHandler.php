@@ -3,6 +3,7 @@
 	namespace Quellabs\ObjectQuel\ObjectQuel\Visitors\Handlers;
 	
 	use Quellabs\ObjectQuel\EntityStore;
+	use Quellabs\ObjectQuel\Exception\EntityResolutionException;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstAggregate;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstAny;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstAvg;
@@ -147,12 +148,14 @@
 		 * @return string Complete SQL scalar subquery wrapped in parentheses
 		 */
 		private function buildScalarSubquery(AstSubquery $subquery): string {
-			// Prevent double-processing of the aggregate function by marking it as already handled
-			// This avoids duplicate SQL generation in the parent query context
-			$this->markExpressionAsHandled($subquery->getAggregation());
-			
 			// Fetch the aggregation node
 			$aggNode = $subquery->getAggregation();
+			
+			// Prevent double-processing of the aggregate function by marking it as already handled
+			// This avoids duplicate SQL generation in the parent query context
+			if ($aggNode !== null) {
+				$this->markExpressionAsHandled($aggNode);
+			}
 			
 			// Early validation: ensure we have a valid aggregate node before proceeding
 			// Return empty string if invalid rather than throwing exception to allow graceful degradation
@@ -386,11 +389,13 @@
 		 * SUM is wrapped in COALESCE(..., 0) to keep your current NULL behavior.
 		 */
 		private function buildWindowAggregate(AstSubquery $subquery): string {
-			// Mark the aggregation expression as processed to avoid duplicate handling
-			$this->markExpressionAsHandled($subquery->getAggregation());
-			
 			// Fetch aggregation from the subquery
 			$aggNode = $subquery->getAggregation();
+			
+			// Mark the aggregation expression as processed to avoid duplicate handling
+			if ($aggNode !== null) {
+				$this->markExpressionAsHandled($aggNode);
+			}
 			
 			// Validate that we have a proper aggregate node before proceeding
 			if (!$aggNode instanceof AstAggregate) {
@@ -603,7 +608,7 @@
 		 *
 		 * @param AstRange[] $ranges Array of AstRange objects containing entity and join information
 		 * @return string Complete FROM clause content (without the "FROM" keyword)
-		 * @throws \InvalidArgumentException When no main range is found
+		 * @throws \InvalidArgumentException|EntityResolutionException When no main range is found
 		 */
 		private function buildFromClauseForRanges(array $ranges): string {
 			$mainRange = null;
@@ -611,6 +616,10 @@
 			
 			// Separate main range (no join property) from ranges that need joins
 			foreach ($ranges as $range) {
+				if (!$range instanceof AstRangeDatabase) {
+					continue;
+				}
+				
 				if ($range->getJoinProperty() === null) {
 					$mainRange = $range;
 				} else {
@@ -623,18 +632,35 @@
 			}
 			
 			// Start with the main table and its alias
-			$tableName = $this->entityStore->getOwningTable($mainRange->getEntityName());
+			$entityName = $mainRange->getResolvedEntityName();
+			$tableName = $this->entityStore->getOwningTable($entityName);
+			
+			// Convert to SQL
 			$sql = "`{$tableName}` {$mainRange->getName()}";
 			
 			// Add JOIN clauses for each related range
 			foreach ($joinRanges as $range) {
-				$joinTableName = $this->entityStore->getOwningTable($range->getEntityName());
-				$joinType = $range->isRequired() ? "INNER" : "LEFT";
+				// Fetch entity name
+				$joinEntityName = $range->getResolvedEntityName();
+				
+				// Fetch owning table of entity
+				$joinTableName = $this->entityStore->getOwningTable($joinEntityName);
 				
 				// Convert join property to SQL condition
 				$joinProperty = $range->getJoinProperty();
+				
+				// If no join property present, throw
+				if ($joinProperty === null) {
+					throw new \InvalidArgumentException("Join range '{$range->getName()}' unexpectedly has no join property");
+				}
+				
+				// Convert the expression to SQL
 				$joinCondition = $this->convertExpressionToSql($joinProperty);
 				
+				// Determine INNER/LEFT join
+				$joinType = $range->isRequired() ? "INNER" : "LEFT";
+				
+				// Add it to the query
 				$sql .= " {$joinType} JOIN `{$joinTableName}` {$range->getName()} ON {$joinCondition}";
 			}
 			
