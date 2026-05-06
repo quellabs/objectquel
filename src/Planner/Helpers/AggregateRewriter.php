@@ -20,7 +20,8 @@
 			$windowFn = AstExpressionFactory::createWindowFunction($cleanAgg, $aggregate->getType());
 			
 			// Replace the aggregate with the new version
-			AstNodeReplacer::replaceChild($aggregate->getParent(), $aggregate, $windowFn);
+			$parent = $aggregate->getParent() ?? throw new \LogicException('Cannot rewrite aggregate: node has no parent');
+			AstNodeReplacer::replaceChild($parent, $aggregate, $windowFn);
 		}
 		
 		/**
@@ -66,6 +67,7 @@
 			
 			// Replace the original aggregate node with the new subquery in the AST
 			// This maintains the query structure while changing the execution strategy
-			AstNodeReplacer::replaceChild($aggregate->getParent(), $aggregate, $subquery);
+			$parent = $aggregate->getParent() ?? throw new \LogicException('Cannot rewrite aggregate: node has no parent');
+			AstNodeReplacer::replaceChild($parent, $aggregate, $subquery);
 		}
 	}
