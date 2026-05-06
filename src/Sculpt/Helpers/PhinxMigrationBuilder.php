@@ -28,7 +28,7 @@
 	 * An indexConfig is an associative array with keys:
 	 *   columns (string[]), type ('INDEX'|'UNIQUE'|'FULLTEXT'), unique (bool, optional)
 	 *
-	 * @phpstan-import-type ColumnDefinition from SculptTypes
+	 * @phpstan-import-type ColumnDefinition from DatabaseAdapter
 	 * @phpstan-import-type ColumnModification from SculptTypes
 	 * @phpstan-import-type IndexDefinition from SculptTypes
 	 * @phpstan-import-type IndexChangeSet from SculptTypes

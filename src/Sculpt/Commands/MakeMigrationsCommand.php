@@ -4,6 +4,7 @@
 	
 	use Quellabs\Contracts\Discovery\ProviderInterface;
 	use Quellabs\ObjectQuel\Configuration;
+	use Quellabs\ObjectQuel\DatabaseAdapter\DatabaseAdapter;
 	use Quellabs\ObjectQuel\EntityStore;
 	use Quellabs\ObjectQuel\Sculpt\Helpers\EntitySchemaAnalyzer;
 	use Quellabs\ObjectQuel\Sculpt\SculptTypes;
@@ -21,7 +22,7 @@
 	 * and the database schema, then uses PhinxMigrationBuilder to create migration files that
 	 * synchronize the database with entity changes.
 	 *
-	 * @phpstan-import-type ColumnDefinition from SculptTypes
+	 * @phpstan-import-type ColumnDefinition from DatabaseAdapter
 	 * @phpstan-import-type ColumnModification from SculptTypes
 	 * @phpstan-import-type EntityChangeSet from SculptTypes
 	 */

@@ -13,7 +13,7 @@
 	 * This class compares entity class definitions (properties, indexes) against the actual
 	 * database schema to detect structural differences that need migration.
 	 *
-	 * @phpstan-import-type ColumnDefinition from SculptTypes
+	 * @phpstan-import-type ColumnDefinition from DatabaseAdapter
 	 * @phpstan-import-type IndexDefinition from SculptTypes
 	 * @phpstan-import-type IndexChangeSet from SculptTypes
 	 * @phpstan-import-type EntityChangeSet from SculptTypes

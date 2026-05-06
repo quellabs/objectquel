@@ -2,6 +2,8 @@
 	
 	namespace Quellabs\ObjectQuel\Sculpt;
 	
+	use Quellabs\ObjectQuel\DatabaseAdapter\DatabaseAdapter;
+	
 	/**
 	 * Shared PHPStan type aliases for the Sculpt subsystem.
 	 *
@@ -95,6 +97,8 @@
 	 *
 	 * A single entry from the 'modified' map: the before/after column definitions
 	 * and a per-field breakdown of what changed.
+	 *
+	 * @phpstan-import-type ColumnDefinition from DatabaseAdapter
 	 *
 	 * @phpstan-type ColumnModification array{
 	 *     from: ColumnDefinition,

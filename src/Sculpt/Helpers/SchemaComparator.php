@@ -10,7 +10,7 @@
 	 * Class SchemaComparator
 	 * Compares entity schema (object properties) with database schema (table columns)
 	 * to identify changes such as added, modified, or deleted columns.
-	 * @phpstan-import-type ColumnDefinition from SculptTypes
+	 * @phpstan-import-type ColumnDefinition from DatabaseAdapter
 	 * @phpstan-import-type ColumnModification from SculptTypes
 	 */
 	class SchemaComparator {
