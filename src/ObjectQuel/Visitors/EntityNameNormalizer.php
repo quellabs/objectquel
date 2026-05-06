@@ -8,6 +8,7 @@
 	use Quellabs\ObjectQuel\Exception\TransformationException;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstIdentifier;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRange;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRangeDatabase;
 	use Quellabs\ObjectQuel\ObjectQuel\AstInterface;
 	use Quellabs\ObjectQuel\ObjectQuel\AstVisitorInterface;
 	
@@ -89,7 +90,7 @@
 			}
 			
 			// Check if the range is attached to an entity. If not, abort.
-			if (!$node->isFromEntity()) {
+			if ($node->getSourceRange() instanceof AstRangeDatabase) {
 				return;
 			}
 			

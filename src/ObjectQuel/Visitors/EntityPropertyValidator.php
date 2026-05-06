@@ -7,6 +7,7 @@
 	use Quellabs\ObjectQuel\Exception\EntityResolutionException;
 	use Quellabs\ObjectQuel\Exception\SemanticException;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstIdentifier;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRangeDatabase;
 	use Quellabs\ObjectQuel\ObjectQuel\AstInterface;
 	use Quellabs\ObjectQuel\ObjectQuel\AstVisitorInterface;
 	
@@ -49,7 +50,7 @@
 			}
 			
 			// Skip validation if this identifier references a temporary table (subquery range)
-			if (!$parentNode->isFromEntity()) {
+			if (!$parentNode->getSourceRange() instanceof AstRangeDatabase) {
 				return;
 			}
 			

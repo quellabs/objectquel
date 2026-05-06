@@ -2,7 +2,7 @@
 	
 	namespace Quellabs\ObjectQuel\Planner;
 	
-	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRangeDatabase;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRangeDatabaseSubquery;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRetrieve;
 	
 	/**
@@ -35,12 +35,12 @@
 		private string $name;
 		
 		/**
-		 * The AstRangeDatabase node whose embedded query must be materialised.
+		 * The AstRangeDatabase node whose embedded query must be materialized.
 		 * This is the SAME object reference held by the outer ExecutionStage's query
 		 * range list, so mutations made by TempTableExecutor are visible to QuelToSQL.
-		 * @var AstRangeDatabase
+		 * @var AstRangeDatabaseSubquery
 		 */
-		private AstRangeDatabase $range;
+		private AstRangeDatabaseSubquery $range;
 		
 		/** @var ExecutionPlan Inner execution plan */
 		private ExecutionPlan $innerPlan;
@@ -53,13 +53,13 @@
 		
 		/**
 		 * @param string $name Unique stage name
-		 * @param AstRangeDatabase $range The range whose inner query must be materialised
+		 * @param AstRangeDatabaseSubquery $range The range whose inner query must be materialised
 		 * @param ExecutionPlan $innerPlan
 		 * @param array<string, mixed> $staticParams Parameters passed through to inner query execution
 		 */
 		public function __construct(
 			string $name,
-			AstRangeDatabase $range,
+			AstRangeDatabaseSubquery $range,
 			ExecutionPlan $innerPlan,
 			array $staticParams = []
 		) {
@@ -78,12 +78,12 @@
 		}
 		
 		/**
-		 * Returns the AstRangeDatabase node to be materialised.
+		 * Returns the AstRangeDatabase node to be materialized.
 		 * Used by TempTableExecutor to access getInnerQuery() and to mutate the range
 		 * after the temporary table has been created.
-		 * @return AstRangeDatabase
+		 * @return AstRangeDatabaseSubquery
 		 */
-		public function getRange(): AstRangeDatabase {
+		public function getRange(): AstRangeDatabaseSubquery {
 			return $this->range;
 		}
 		
@@ -111,9 +111,7 @@
 		 * @return AstRetrieve
 		 */
 		public function getInnerQuery(): AstRetrieve {
-			/** @var AstRetrieve $query */
-			$query = $this->range->getQuery();
-			return $query;
+			return $this->range->getQuery();
 		}
 		
 		/**

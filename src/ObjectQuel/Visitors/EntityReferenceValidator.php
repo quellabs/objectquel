@@ -6,6 +6,7 @@
 	use Quellabs\ObjectQuel\Exception\EntityResolutionException;
 	use Quellabs\ObjectQuel\Exception\SemanticException;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstIdentifier;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRangeDatabase;
 	use Quellabs\ObjectQuel\ObjectQuel\AstInterface;
 	use Quellabs\ObjectQuel\ObjectQuel\AstVisitorInterface;
 	use Quellabs\ObjectQuel\Exception\QuelException;
@@ -66,7 +67,7 @@
 			$this->visitedNodes[$objectHash] = true;
 			
 			// Check if the node is attached to an entity
-			if (!$node->isFromEntity()) {
+			if (!$node->getSourceRange() instanceof AstRangeDatabase) {
 				return;
 			}
 			

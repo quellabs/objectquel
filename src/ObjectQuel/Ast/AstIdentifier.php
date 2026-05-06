@@ -19,9 +19,9 @@
 		protected string $identifier;
 		
 		/**
-		 * @var AstRange|AstRangeDatabase|null The attached range (data source).
+		 * @var AstRange|null The attached range (data source).
 		 */
-		protected AstRange|AstRangeDatabase|null $range;
+		protected AstRange|null $range;
 		
 		/**
 		 * @var ?AstIdentifier Next identifier in chain for property access (e.g., "user.id").
@@ -263,51 +263,7 @@
 		public function getSourceRangeName(): ?string {
 			return $this->getSourceRange()?->getName();
 		}
-		
-		// =========================================================================
-		// RANGE TYPE DETECTION
-		// =========================================================================
-		
-		/**
-		 * Returns true if this identifier belongs to a temporary table range (subquery).
-		 * @return bool
-		 */
-		public function isFromTemporaryTable(): bool {
-			$range = $this->getSourceRange();
-			
-			if (!$range instanceof AstRangeDatabase) {
-				return false;
-			}
-			
-			return $range->containsQuery();
-		}
-		
-		/**
-		 * Returns true if this identifier belongs to an entity range (database table).
-		 * @return bool
-		 */
-		public function isFromEntity(): bool {
-			$range = $this->getSourceRange();
-			
-			if (!$range instanceof AstRangeDatabase) {
-				return false;
-			}
-			
-			if ($range->containsQuery()) {
-				return false;
-			}
-			
-			return $range->getEntityName() !== null;
-		}
-		
-		/**
-		 * Returns true if this identifier belongs to a JSON source range.
-		 * @return bool
-		 */
-		public function isFromJsonSource(): bool {
-			return $this->getSourceRange() instanceof AstRangeJsonSource;
-		}
-		
+
 		// =========================================================================
 		// RANGE DATA ACCESS
 		// =========================================================================
@@ -318,16 +274,10 @@
 		 * @return string|null The entity name or null.
 		 */
 		public function getEntityName(): ?string {
-			// Early return if this identifier doesn't originate from an entity
-			if (!$this->isFromEntity()) {
-				return null;
-			}
-			
-			// Get the source range that this identifier references
+			// Find the source range
 			$range = $this->getSourceRange();
 			
-			// Verify the range is a database range (entities are stored in the database)
-			// Other range types (temporary, subquery, etc.) don't have entity names
+			// Early return if this identifier doesn't originate from an entity
 			if (!$range instanceof AstRangeDatabase) {
 				return null;
 			}
