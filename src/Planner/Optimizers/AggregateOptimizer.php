@@ -133,6 +133,7 @@
 						if (!$isAggregateOnly) {
 							$root->setGroupBy($nonAggItems);
 						}
+						
 						break;
 					
 					case self::STRATEGY_SUBQUERY:

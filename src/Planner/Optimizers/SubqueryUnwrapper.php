@@ -32,6 +32,7 @@
 			$subqueryRanges = array_filter($ranges, fn($r) => $r instanceof AstRangeDatabaseSubquery);
 			$databaseRanges = array_filter($ranges, fn($r) => $r instanceof AstRangeDatabase);
 			
+			// Conditions not met. Do nothing.
 			if (count($subqueryRanges) !== 1 || count($databaseRanges) > 0) {
 				return;
 			}
