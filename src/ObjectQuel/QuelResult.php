@@ -3,6 +3,9 @@
 	namespace Quellabs\ObjectQuel\ObjectQuel;
 	
 	use Quellabs\ObjectQuel\EntityManager;
+	use Quellabs\ObjectQuel\Exception\EntityResolutionException;
+	use Quellabs\ObjectQuel\Exception\HydrationException;
+	use Quellabs\ObjectQuel\Exception\QuelException;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRetrieve;
 	use Quellabs\ObjectQuel\ObjectQuel\Helpers\EntityHydrator;
 	use Quellabs\ObjectQuel\ObjectQuel\Helpers\RelationshipLoader;
@@ -53,6 +56,9 @@
 		 * @param entityManager $entityManager Entity manager for data handling
 		 * @param AstRetrieve $retrieve AST object containing query information
 		 * @param array<int, array<string, mixed>> $data Raw data from the database query
+		 * @throws EntityResolutionException
+		 * @throws QuelException
+		 * @throws HydrationException
 		 */
 		public function __construct(EntityManager $entityManager, AstRetrieve $retrieve, array $data) {
 			// Initialize helper objects

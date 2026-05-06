@@ -5,6 +5,8 @@
 	use Quellabs\ObjectQuel\Annotations\Orm\Column;
 	use Quellabs\ObjectQuel\EntityManager;
 	use Quellabs\ObjectQuel\EntityStore;
+	use Quellabs\ObjectQuel\Exception\EntityResolutionException;
+	use Quellabs\ObjectQuel\Exception\HydrationException;
 	use Quellabs\ObjectQuel\Exception\QuelException;
 	use Quellabs\ObjectQuel\UnitOfWork;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstAlias;
@@ -95,6 +97,7 @@
 		 * @param RelationCacheEntry $relationCache Cache containing relationship information
 		 * @return object|null The processed entity object or null if no data
 		 * @throws QuelException
+		 * @throws HydrationException|EntityResolutionException
 		 */
 		private function processEntity(AstAlias $value, array $filteredRow, array $relationCache): ?object {
 			// Check if the array contains any meaningful data
@@ -108,11 +111,21 @@
 			
 			// The expression has to be an AstIdentifier
 			if (!$expression instanceof AstIdentifier) {
-				throw new QuelException("expression should be of type AstIdentifier");
+				throw new HydrationException("Expression should be of type AstIdentifier");
 			}
 			
-			$entity = $this->entityStore->resolveProxyClass($expression->getEntityName()); // The entity class name
-			$rangeName = $expression->getRange()->getName(); // The alias/range name in the query
+			// The AstIdentifier has to have an entity
+			$entityName = $expression->getEntityName();
+			
+			if ($entityName === null) {
+				throw new HydrationException("Missing entity name in the AstIdentifier");
+			}
+			
+			// Resolve the entity
+			$entity = $this->entityStore->resolveProxyClass($entityName);
+			
+			// Fetch the range
+			$rangeName = $expression->getRange()->getName();
 			
 			// Remove the range prefix from column names in the row data
 			// This converts prefixed column names like "range.user_id" to just "user_id"
@@ -168,6 +181,9 @@
 		 * @param array<string, mixed> $row The current database row.
 		 * @param RelationCacheEntry|null $relationCache Cache containing relationship information.
 		 * @return mixed The processed value (entity object, primitive value, or null).
+		 * @throws EntityResolutionException
+		 * @throws HydrationException
+		 * @throws QuelException
 		 */
 		private function processValue(AstAlias $value, array $row, ?array $relationCache): mixed {
 			$node = $value->getExpression();
@@ -196,6 +212,9 @@
 		 * @param array<string, mixed> $row The current database row.
 		 * @param RelationCacheEntry|null $relationCache Cache containing relationship information.
 		 * @return object|null The processed entity object or null if no data.
+		 * @throws EntityResolutionException
+		 * @throws HydrationException
+		 * @throws QuelException
 		 */
 		private function processEntityValue(AstAlias $value, array $row, ?array $relationCache): ?object {
 			// Early return if no relation cache is provided
@@ -279,8 +298,10 @@
 		 * @param array<string, mixed> $row Raw database row from the query result.
 		 * @param RelationCache $relationCache Cache of relationship information for entity mapping.
 		 * @param array<string, object> $entities Reference to collection of unique entity objects for tracking.
-		 * @param-out array<string, object> $entities
 		 * @return array<string, mixed> Processed row with values mapped according to the AST.
+		 * @throws EntityResolutionException
+		 * @throws HydrationException
+		 * @throws QuelException
 		 */
 		private function processRow(array $ast, array $row, array $relationCache, array &$entities): array {
 			// Initialize the result row as an empty array
@@ -304,7 +325,7 @@
 					!$value->getExpression()->hasNext();
 				
 				// If it's an entity, get the range name (typically the table/entity name in the query)
-				$rangeName = $isEntity ? $value->getExpression()->getRange()->getName() : null;
+				$rangeName = $isEntity ? $value->getExpression()->getRange()?->getName() : null;
 				
 				// Process the current value based on its type:
 				// - For entities: pass the relation cache specific to this entity
@@ -392,6 +413,9 @@
 		 *     result: array<int, array<string, mixed>>,
 		 *     entities: array<string, object>
 		 * } An associative array containing processed result rows and unique entity objects.
+		 * @throws EntityResolutionException
+		 * @throws HydrationException
+		 * @throws QuelException
 		 */
 		public function hydrateEntities(array $ast, array $data): array {
 			// Flag to identify the first row (used for initializing relation cache)

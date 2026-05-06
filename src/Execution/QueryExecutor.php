@@ -5,6 +5,8 @@
 	use Quellabs\ObjectQuel\Capabilities\PlatformCapabilities;
 	use Quellabs\ObjectQuel\EntityManager;
 	use Quellabs\ObjectQuel\DatabaseAdapter\DatabaseAdapter;
+	use Quellabs\ObjectQuel\Exception\EntityResolutionException;
+	use Quellabs\ObjectQuel\Exception\HydrationException;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRangeJsonSource;
 	use Quellabs\ObjectQuel\ObjectQuel\ObjectQuel;
 	use Quellabs\ObjectQuel\Exception\QuelException;
@@ -105,8 +107,14 @@
 			// Execute the returned execution plan and return the QuelResult
 			$result = $this->planExecutor->execute($executionPlan);
 			
-			// QuelResult gebruikt de AST om de ontvangen data te transformeren naar entities
-			return new QuelResult($this->entityManager, $ast, $result);
+			// Hydrate and return the query result.
+			try {
+				return new QuelResult($this->entityManager, $ast, $result);
+			} catch (HydrationException $e) {
+				throw new QuelException($e->getMessage(), 'hydration_error', 0, $e);
+			} catch (EntityResolutionException $e) {
+				throw new QuelException($e->getMessage(), 'resolution_error', 0, $e);
+			}
 		}
 		
 		/**
