@@ -60,19 +60,21 @@
 		
 		/**
 		 * Returns only the temporary (subquery) ranges
-		 * @return array<AstRangeDatabaseTempTable|AstRangeDatabaseMaterialized>
+		 * @return array<int, AstRangeDatabaseTempTable|AstRangeDatabaseMaterialized>
 		 */
 		public function extractTemporaryRanges(AstRetrieve $query): array {
-			return array_filter($query->getRanges(), function ($range) {
+			$result = [];
+			
+			foreach ($query->getRanges() as $range) {
 				if (
-					!$range instanceof AstRangeDatabaseTempTable &&
-					!$range instanceof AstRangeDatabaseMaterialized
+					$range instanceof AstRangeDatabaseTempTable ||
+					$range instanceof AstRangeDatabaseMaterialized
 				) {
-					return false;
+					$result[] = $range;
 				}
-
-				return $range->getQuery() !== null;
-			});
+			}
+			
+			return $result;
 		}
 		
 		/**
@@ -109,7 +111,7 @@
 			
 			return $result;
 		}
-
+		
 		/**
 		 * This method creates a version of the original query that only includes
 		 * operations that can be handled directly by the database engine,
