@@ -138,9 +138,11 @@
 		 * @throws EntityResolutionException
 		 */
 		protected function resolveOwningTable(AstRangeDatabase $range): string {
-			// Direct table reference takes precedence — no store lookup needed.
+			// Direct table reference takes precedence
+			// This is a temporary table node
 			$tableName = $range->getTableName();
 			
+			// If set it's a temporary table. Return it as-is.
 			if ($tableName) {
 				return $tableName;
 			}
@@ -366,6 +368,8 @@
 		 * to SQL JOIN instructions.
 		 * @param AstRetrieve $retrieve The retrieve object from which entities and their join properties are extracted.
 		 * @return string The JOIN part of the SQL query, formatted as a string.
+		 * @throws EntityResolutionException
+		 * @throws QuelException
 		 */
 		protected function getJoins(AstRetrieve $retrieve): string {
 			$result = [];
@@ -393,13 +397,14 @@
 				// Get the name and join property of the entity.
 				$rangeName = $range->getName();
 				$joinProperty = $range->getJoinProperty();
-				$joinType = $range->isRequired() ? "INNER" : "LEFT";
 				
 				// Convert the join condition to a SQL string.
-				// This involves translating the join condition to a format that SQL understands.
 				$visitor = new QuelToSQLConvertToString($this->entityStore, $this->parameters, "CONDITION", $this->platform);
 				$joinProperty->accept($visitor);
 				$joinColumn = $visitor->getResult();
+				
+				// Determine join type
+				$joinType = $range->isRequired() ? "INNER" : "LEFT";
 				
 				// Subquery ranges are emitted as derived tables inline in the JOIN clause.
 				// Regular ranges reference a physical table looked up from the entity store.
