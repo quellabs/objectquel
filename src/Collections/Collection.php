@@ -190,7 +190,7 @@
 		 */
 		protected function getSortedKeys(): array {
 			$this->calculateSortedKeys();
-			return $this->sortedKeys;
+			return $this->sortedKeys ?? [];
 		}
 		
 		/**
@@ -240,7 +240,7 @@
 		 * Returns the current element in the collection based on the current position.
 		 * @return T|null
 		 */
-		public function current() {
+		public function current(): ?object {
 			if ($this->position === null) {
 				return null;
 			}
@@ -258,7 +258,7 @@
 		 * Returns the first element in the collection.
 		 * @return T|null The first element in the collection, or null if the collection is empty.
 		 */
-		public function first() {
+		public function first(): ?object {
 			$keys = $this->getSortedKeys();
 			
 			if (!empty($keys)) {
@@ -292,7 +292,7 @@
 		 * @param string|int $offset The key that identifies the element in the collection.
 		 * @return T|null The element that corresponds to the given key, or null if the key doesn't exist.
 		 */
-		public function offsetGet($offset) {
+		public function offsetGet($offset): ?object {
 			return $this->collection[$offset] ?? null;
 		}
 		
