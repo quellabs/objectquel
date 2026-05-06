@@ -2,6 +2,8 @@
 	
 	namespace Quellabs\ObjectQuel\Planner\Helpers;
 	
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRangeDatabaseMaterialized;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRangeDatabaseTempTable;
 	use Quellabs\ObjectQuel\Planner\ExecutionStage;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstAlias;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRange;
@@ -15,7 +17,7 @@
 	 * Responsible for:
 	 *   - Classifying ranges by type (database, temporary, JSON)
 	 *   - Extracting compatible projections for each range type
-	 *   - Promoting temp-table ranges from FROM to JOIN where appropriate
+	 *   - Promoting temp-table ranges from `FROM` to `JOIN` where appropriate
 	 *   - Constructing the final ExecutionStage for each data source
 	 *
 	 * StageFactory operates on cloned query objects — it never modifies the
@@ -49,19 +51,27 @@
 		 */
 		public function findDatabaseSourceRanges(AstRetrieve $query): array {
 			return array_filter($query->getRanges(), function ($range) {
-				return $range instanceof AstRangeDatabase;
+				return
+					$range instanceof AstRangeDatabase ||
+					$range instanceof AstRangeDatabaseMaterialized ||
+					$range instanceof AstRangeDatabaseTempTable;
 			});
 		}
 		
 		/**
 		 * Returns only the temporary (subquery) ranges
-		 * @return array<AstRangeDatabase>
+		 * @return array<AstRangeDatabaseTempTable|AstRangeDatabaseMaterialized>
 		 */
 		public function extractTemporaryRanges(AstRetrieve $query): array {
 			return array_filter($query->getRanges(), function ($range) {
-				return
-					$range instanceof AstRangeDatabase &&
-					$range->getQuery() !== null;
+				if (
+					!$range instanceof AstRangeDatabaseTempTable &&
+					!$range instanceof AstRangeDatabaseMaterialized
+				) {
+					return false;
+				}
+
+				return $range->getQuery() !== null;
 			});
 		}
 		
@@ -99,123 +109,16 @@
 			
 			return $result;
 		}
-		
-		/**
-		 * Ensures that no temp-table range incorrectly ends up as the FROM table.
-		 *
-		 * QuelToSQL::getFrom() picks the FROM by finding the first AstRangeDatabase
-		 * with no joinProperty. If a temp-table range also lacks a joinProperty, it
-		 * would become the FROM instead of the real database table, which is wrong.
-		 *
-		 * This method promotes any such range to a JOIN by extracting a join condition
-		 * from the WHERE clause. If no join condition exists in the WHERE (the ranges
-		 * are genuinely disconnected), no promotion is possible and the ordering is
-		 * left as-is — a cross join is the only semantically valid option in that case,
-		 * and which table is FROM makes no difference. If no real database table is
-		 * present at all, the temp table legitimately becomes the FROM and is left
-		 * untouched.
-		 *
-		 * This operates on the cloned query inside createDatabaseExecutionStage,
-		 * never on the original AST.
-		 *
-		 * @param AstRetrieve $dbQuery The cloned database query to modify in place
-		 * @param string[] $tempRangeNames Names of ranges that will become temp tables
-		 */
-		public function promoteTempTableRanges(AstRetrieve $dbQuery, array $tempRangeNames): void {
-			if (empty($tempRangeNames)) {
-				return;
-			}
-			
-			foreach ($dbQuery->getRanges() as $range) {
-				if (!($range instanceof AstRangeDatabase)) {
-					continue;
-				}
-				
-				// Only act on temp-table ranges that currently have no joinProperty.
-				// Ranges that already have a joinProperty are already JOINs — correct.
-				if (!in_array($range->getName(), $tempRangeNames, true)) {
-					continue;
-				}
-				
-				if ($range->getJoinProperty() !== null) {
-					continue;
-				}
-				
-				// Try to extract a join condition from the WHERE clause that connects
-				// this range to another range. If found, promote the range to a JOIN.
-				$joinCondition = $this->filter->isolateJoinConditionsForRange($range, $dbQuery->getConditions());
-				
-				if ($joinCondition !== null) {
-					$range->setJoinProperty($joinCondition);
-					continue;
-				}
-				
-				// No join condition was found. For a cross join, FROM order is irrelevant
-				// so we can leave things as-is. For a LEFT JOIN, however, putting the
-				// temp-table range first would make it the driving table and invert the
-				// join direction, producing wrong results. In that case we reorder the
-				// range list so that a real database table (one without a joinProperty
-				// and not itself a temp-table range) comes first.
-				if ($range->isRequired()) {
-					// INNER JOIN / cross join — FROM order does not affect correctness
-					continue;
-				}
-				
-				// Find the first non-temp database range that also lacks a joinProperty
-				// (i.e. another candidate for the FROM position).
-				$ranges = $dbQuery->getRanges();
-				$swapIndex = null;
-				
-				foreach ($ranges as $index => $candidate) {
-					if (!($candidate instanceof AstRangeDatabase)) {
-						continue;
-					}
-					
-					if (in_array($candidate->getName(), $tempRangeNames, true)) {
-						continue;
-					}
-					
-					if ($candidate->getJoinProperty() !== null) {
-						continue;
-					}
-					
-					$swapIndex = $index;
-					break;
-				}
-				
-				if ($swapIndex === null) {
-					// No real database table without a joinProperty exists — the temp table
-					// legitimately becomes the FROM, nothing to reorder.
-					continue;
-				}
-				
-				// Move the real database table to the front of the range list so that
-				// QuelToSQL::getFrom() picks it as the FROM. The temp-table range stays
-				// in the list without a joinProperty, which QuelToSQL will emit as a
-				// comma-separated FROM entry (implicit cross join) — semantically correct
-				// since there is no join condition connecting them anyway.
-				$realTable = $ranges[$swapIndex];
-				unset($ranges[$swapIndex]);
-				array_unshift($ranges, $realTable);
-				$dbQuery->setRanges(array_values($ranges));
-			}
-		}
-		
+
 		/**
 		 * This method creates a version of the original query that only includes
 		 * operations that can be handled directly by the database engine,
 		 * removing any parts that would require in-memory processing.
-		 *
-		 * When temp-table ranges are present, promoteTempTableRanges() is called on
-		 * the cloned query to ensure that no temp-table range incorrectly ends up as
-		 * the FROM table. See promoteTempTableRanges() for full details.
-		 *
 		 * @param AstRetrieve $query The original query to be analyzed
 		 * @param array<string, mixed> $staticParams
-		 * @param string[] $tempRangeNames Names of ranges that will become temp tables
 		 * @return ExecutionStage|null The execution stage, or null if there is none
 		 */
-		public function createDatabaseExecutionStage(AstRetrieve $query, array $staticParams = [], array $tempRangeNames = []): ?ExecutionStage {
+		public function createDatabaseExecutionStage(AstRetrieve $query, array $staticParams = []): ?ExecutionStage {
 			// Clone the query to avoid modifying the original
 			// This ensures we preserve the complete query for potential in-memory operations later
 			$dbQuery = clone $query;
@@ -232,10 +135,6 @@
 			// Remove any non-database ranges (e.g., in-memory collections, JSON data)
 			// The resulting query will only reference actual database tables/views
 			$dbQuery->setRanges($dbRanges);
-			
-			// Ensure temp-table ranges that lack a joinProperty are promoted to JOINs,
-			// so that a real database table becomes the FROM instead.
-			$this->promoteTempTableRanges($dbQuery, $tempRangeNames);
 			
 			// Get the database-compatible projections (columns/expressions to select)
 			$dbProjections = $this->extractDatabaseCompatibleProjections($query);

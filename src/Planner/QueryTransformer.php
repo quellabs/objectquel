@@ -14,6 +14,8 @@
 	class QueryTransformer {
 		
 		// Core optimization strategies - each handles a specific type of optimization
+		private Optimizers\SubqueryUnwrapper $subqueryUnwrapper;             // Unwrap subquery to Retrieve when there's only one
+		private Optimizers\DatabaseRangePromotor $rangePromotor;             // Subquery to temp/materialized nodes
 		private Optimizers\AnyOptimizer $anyOptimizer;                       // Optimize ANY statements
 		private Optimizers\RangeOptimizer $rangeOptimizer;                   // Optimizes range queries and filtering
 		private Optimizers\JoinOptimizer $joinOptimizer;                     // Handles JOIN operations and elimination
@@ -28,6 +30,8 @@
 		 */
 		public function __construct(EntityManager $entityManager, PlatformCapabilitiesInterface $platform = new NullPlatformCapabilities()) {
 			// Initialize optimizers that need entity metadata
+			$this->subqueryUnwrapper = new Optimizers\SubqueryUnwrapper();
+			$this->rangePromotor = new Optimizers\DatabaseRangePromotor();
 			$this->anyOptimizer = new Optimizers\AnyOptimizer($entityManager);
 			$this->rangeOptimizer = new Optimizers\RangeOptimizer($entityManager);
 			$this->joinOptimizer = new Optimizers\JoinOptimizer($entityManager);
@@ -47,6 +51,8 @@
 		public function transform(AstRetrieve $ast): void {
 			// Phase 1: Basic range and relationship optimizations
 			// Apply filtering early to reduce dataset size for subsequent operations
+			$this->subqueryUnwrapper->optimize($ast);
+			$this->rangePromotor->optimize($ast);
 			$this->rangeOptimizer->optimize($ast);
 			
 			// Phase 2: Remove left joins that are not referenced in the query

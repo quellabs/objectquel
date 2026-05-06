@@ -2,7 +2,7 @@
 	
 	namespace Quellabs\ObjectQuel\Planner;
 	
-	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRangeDatabaseSubquery;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRangeDatabaseTempTable;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRetrieve;
 	
 	/**
@@ -38,9 +38,9 @@
 		 * The AstRangeDatabase node whose embedded query must be materialized.
 		 * This is the SAME object reference held by the outer ExecutionStage's query
 		 * range list, so mutations made by TempTableExecutor are visible to QuelToSQL.
-		 * @var AstRangeDatabaseSubquery
+		 * @var AstRangeDatabaseTempTable
 		 */
-		private AstRangeDatabaseSubquery $range;
+		private AstRangeDatabaseTempTable $range;
 		
 		/** @var ExecutionPlan Inner execution plan */
 		private ExecutionPlan $innerPlan;
@@ -53,13 +53,13 @@
 		
 		/**
 		 * @param string $name Unique stage name
-		 * @param AstRangeDatabaseSubquery $range The range whose inner query must be materialised
+		 * @param AstRangeDatabaseTempTable $range The range whose inner query must be materialised
 		 * @param ExecutionPlan $innerPlan
 		 * @param array<string, mixed> $staticParams Parameters passed through to inner query execution
 		 */
 		public function __construct(
 			string $name,
-			AstRangeDatabaseSubquery $range,
+			AstRangeDatabaseTempTable $range,
 			ExecutionPlan $innerPlan,
 			array $staticParams = []
 		) {
@@ -81,17 +81,15 @@
 		 * Returns the AstRangeDatabase node to be materialized.
 		 * Used by TempTableExecutor to access getInnerQuery() and to mutate the range
 		 * after the temporary table has been created.
-		 * @return AstRangeDatabaseSubquery
+		 * @return AstRangeDatabaseTempTable
 		 */
-		public function getRange(): AstRangeDatabaseSubquery {
+		public function getRange(): AstRangeDatabaseTempTable {
 			return $this->range;
 		}
 		
 		/**
 		 * Returns the inner AstRetrieve query that must be executed to produce
 		 * rows for insertion into the temporary table.
-		 * Guaranteed non-null: ExecutionPlanBuilder only creates a TempTableStage when
-		 * rangeQueryContainsExternalSource() returned true, which requires getQuery() !== null.
 		 * @return AstRetrieve
 		 */
 		public function getQuery(): AstRetrieve {
