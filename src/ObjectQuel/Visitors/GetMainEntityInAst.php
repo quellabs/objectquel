@@ -50,10 +50,10 @@
 			if (!$identifier instanceof AstIdentifier) {
 				return;
 			}
-			
+
 			// Check if the range name of the node's identifier matches our primary key's range name
 			// If not, this is not the node we're looking for
-			if ($identifier->getRange()->getName() !== $this->primaryKey->getRange()->getName()) {
+			if ($identifier->getRange()?->getName() !== $this->primaryKey->getRange()?->getName()) {
 				return;
 			}
 			
