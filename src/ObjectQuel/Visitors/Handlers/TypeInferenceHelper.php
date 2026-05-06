@@ -5,6 +5,7 @@
 	use Quellabs\ObjectQuel\Annotations\Orm\Column;
 	use Quellabs\ObjectQuel\DatabaseAdapter\TypeMapper;
 	use Quellabs\ObjectQuel\EntityStore;
+	use Quellabs\ObjectQuel\Exception\EntityResolutionException;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstFactor;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstIdentifier;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstTerm;
@@ -81,10 +82,19 @@
 		 *
 		 * @param AstIdentifier $identifier The identifier node to analyze
 		 * @return string|null The PHP type mapped from the database column type, or null if not found
+		 * @throws EntityResolutionException
 		 */
 		public function inferReturnTypeOfIdentifier(AstIdentifier $identifier): ?string {
+			// Fetch the entity name
+			$entityName = $identifier->getEntityName();
+			
+			// If none found, bail
+			if ($entityName === null) {
+				return null;
+			}
+			
 			// Get all annotations for the entity that this identifier belongs to
-			$annotationList = $this->entityStore->getAnnotations($identifier->getEntityName());
+			$annotationList = $this->entityStore->getAnnotations($entityName);
 			
 			// Check if this specific identifier has any annotations
 			if (!isset($annotationList[$identifier->getName()])) {
