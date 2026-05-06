@@ -64,18 +64,26 @@
 			}
 			
 			// Check the range name
-			if ($node->getRange()->getName() !== $this->rangeName) {
+			$range = $node->getRange();
+			$next = $node->getNext();
+			
+			if (
+				$range === null ||
+				$next === null ||
+				$range->getName() !== $this->rangeName
+			) {
 				return;
 			}
 			
 			// Extract the field name being referenced (e.g., "id" from "temp.id")
-			$fieldName = $node->getNext()->getName();
+			$fieldName = $next->getName();
 			
 			// Find this field in the subquery's retrieve list
 			$expression = $this->findExpressionByAlias($fieldName);
 			
+			// Field not found in retrieve list
 			if ($expression === null) {
-				return; // Field not found in retrieve list
+				return;
 			}
 			
 			// Record if the retrieved expression is non-nullable
@@ -116,16 +124,23 @@
 		 * @return bool True if the expression is a non-nullable field reference
 		 */
 		private function isExpressionNonNullable(AstInterface $expression): bool {
-			// Only check direct field references (e.g., x.id)
-			// For computed expressions, functions, or subquery references, assume nullable (safe default)
+			// Must be identifier node
 			if (!$expression instanceof AstIdentifier) {
 				return false;
 			}
 			
+			// Validate existence of essential ast nodes
+			if (
+				$expression->getRange() === null ||
+				$expression->getNext() === null
+			) {
+				return false;
+			}
+
+			// Find the source range in the subquery
 			$rangeName = $expression->getRange()->getName();
 			$fieldName = $expression->getNext()->getName();
-			
-			// Find the source range in the subquery
+
 			$sourceRange = null;
 			foreach ($this->subquery->getRanges() as $range) {
 				if ($range->getName() === $rangeName) {
@@ -134,8 +149,9 @@
 				}
 			}
 			
+			// Can't determine, assume nullable
 			if ($sourceRange === null) {
-				return false; // Can't determine, assume nullable
+				return false;
 			}
 			
 			// Only analyze entity ranges, not nested subqueries
