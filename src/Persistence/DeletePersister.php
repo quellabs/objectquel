@@ -75,45 +75,42 @@
 		 * constructs a DELETE SQL query to remove the specific entity
 		 * @param object $entity The entity to be removed from the database
 		 * @throws OrmException If the DELETE operation fails, an exception is thrown
+		 * @throws EntityResolutionException
 		 */
 		public function persist(object $entity): void {
-			try {
-				// Get the name of the table where the entity is stored
-				$tableName = $this->entityStore->getOwningTable($entity);
-				$tableNameEscaped = $this->escapeIdentifier($tableName);
-				
-				// Obtain the primary keys and corresponding column names of the entity
-				$primaryKeys = $this->entityStore->getIdentifierKeys($entity);
-				$primaryKeyColumns = $this->entityStore->getIdentifierColumnNames($entity);
-				
-				// Create a mapping of primary key column names to their values for this specific entity
-				$primaryKeyValues = $this->extractPrimaryKeyValueMap($entity, $primaryKeys, $primaryKeyColumns);
-				
-				// Construct the SQL query for deleting the entity, using each primary key value
-				// in the WHERE clause to target this specific entity.
-				// Parameters are prefixed with "pk_" to ensure valid PDO parameter names
-				// regardless of the underlying column name (consistent with UpdatePersister).
-				$params = [];
-				$whereParts = [];
-				
-				foreach ($primaryKeyValues as $columnName => $value) {
-					$paramName = "pk_{$columnName}";
-					$whereParts[] = $this->escapeIdentifier($columnName) . "=:{$paramName}";
-					$params[$paramName] = $value;
-				}
-				
-				// Put all WHERE parts in a string to use in the query
-				$sql = implode(" AND ", $whereParts);
-				
-				// Execute the DELETE query with the constructed conditions
-				// Use the primary key values as parameters for the prepared statement to prevent SQL injection
-				if (!$this->connection->execute("DELETE FROM {$tableNameEscaped} WHERE {$sql}", $params)) {
-					// If execution fails, throw an exception with the last error message and error code
-					// from the database connection to help identify and resolve the issue
-					throw new OrmException("Error deleting entity: " . $this->connection->getLastErrorMessage(), $this->connection->getLastError());
-				}
-			} catch (EntityResolutionException $e) {
-				throw new OrmException($e->getMessage(), 0, $e);
+			// Get the name of the table where the entity is stored
+			$tableName = $this->entityStore->getOwningTable($entity);
+			$tableNameEscaped = $this->escapeIdentifier($tableName);
+			
+			// Obtain the primary keys and corresponding column names of the entity
+			$primaryKeys = $this->entityStore->getIdentifierKeys($entity);
+			$primaryKeyColumns = $this->entityStore->getIdentifierColumnNames($entity);
+			
+			// Create a mapping of primary key column names to their values for this specific entity
+			$primaryKeyValues = $this->extractPrimaryKeyValueMap($entity, $primaryKeys, $primaryKeyColumns);
+			
+			// Construct the SQL query for deleting the entity, using each primary key value
+			// in the WHERE clause to target this specific entity.
+			// Parameters are prefixed with "pk_" to ensure valid PDO parameter names
+			// regardless of the underlying column name (consistent with UpdatePersister).
+			$params = [];
+			$whereParts = [];
+			
+			foreach ($primaryKeyValues as $columnName => $value) {
+				$paramName = "pk_{$columnName}";
+				$whereParts[] = $this->escapeIdentifier($columnName) . "=:{$paramName}";
+				$params[$paramName] = $value;
+			}
+			
+			// Put all WHERE parts in a string to use in the query
+			$sql = implode(" AND ", $whereParts);
+			
+			// Execute the DELETE query with the constructed conditions
+			// Use the primary key values as parameters for the prepared statement to prevent SQL injection
+			if (!$this->connection->execute("DELETE FROM {$tableNameEscaped} WHERE {$sql}", $params)) {
+				// If execution fails, throw an exception with the last error message and error code
+				// from the database connection to help identify and resolve the issue
+				throw new OrmException("Error deleting entity: " . $this->connection->getLastErrorMessage(), $this->connection->getLastError());
 			}
 		}
 		

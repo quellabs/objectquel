@@ -135,30 +135,26 @@
 		 * @return string
 		 * @throws QuelException When entity resolution fails.
 		 * @throws \RuntimeException When neither a table name nor an entity name is set.
+		 * @throws EntityResolutionException
 		 */
 		protected function resolveOwningTable(AstRangeDatabase $range): string {
-			try {
-				// Direct table reference takes precedence — no store lookup needed.
-				$tableName = $range->getTableName();
-				
-				if ($tableName) {
-					return $tableName;
-				}
-				
-				// Entity name requires a store lookup to map it to its owning table.
-				$entityName = $range->getEntityName();
-
-				if ($entityName) {
-					return $this->entityStore->getOwningTable($entityName);
-				}
-				
-				// Neither was set; the AST node is malformed or incompletely populated.
-				throw new \RuntimeException("Table could not be resolved from AstRangeDatabase");
-			} catch (EntityResolutionException $e) {
-				// Wrap store-level resolution failures in the query language's own
-				// exception type so callers don't need to know about store internals.
-				throw new QuelException($e->getMessage());
+			// Direct table reference takes precedence — no store lookup needed.
+			$tableName = $range->getTableName();
+			
+			if ($tableName) {
+				return $tableName;
 			}
+			
+			// Entity name requires a store lookup to map it to its owning table.
+			$entityName = $range->getEntityName();
+			
+			// Neither was set; the AST node is malformed or incompletely populated.
+			if ($entityName === null) {
+				throw new \RuntimeException("Table could not be resolved from AstRangeDatabase");
+			}
+
+			// Return the owning table
+			return $this->entityStore->getOwningTable($entityName);
 		}
 		
 		/**
@@ -246,43 +242,40 @@
 		 * @param AstRetrieve $retrieve
 		 * @return string
 		 * @throws QuelException
+		 * @throws EntityResolutionException
 		 */
 		private function getSortUsingIn(AstRetrieve $retrieve): string {
+			// Check and retrieve the primary key information
+			$primaryKeyInfo = $this->entityStore->fetchPrimaryKeyOfMainRange($retrieve);
+			
+			// Create an AstIdentifier for searching for an IN() in the query
+			$astIdentifier = new AstIdentifier($primaryKeyInfo->entityName);
+			
 			try {
-				// Check and retrieve the primary key information
-				$primaryKeyInfo = $this->entityStore->fetchPrimaryKeyOfMainRange($retrieve);
+				$visitor = new GetMainEntityInAst($astIdentifier);
+				$retrieve->getConditions()->accept($visitor);
+				return $this->getSortDefault($retrieve);
+			} catch (GetMainEntityInAstException $exception) {
+				$astObject = $exception->getAstObject();
 				
-				// Create an AstIdentifier for searching for an IN() in the query
-				$astIdentifier = new AstIdentifier($primaryKeyInfo['entityName']);
+				// Convert Quel conditions to a SQL string
+				$retrieveEntitiesVisitor = new QuelToSQLConvertToString($this->entityStore, $this->parameters, "SORT", $this->platform);
+				$astObject->getIdentifier()->accept($retrieveEntitiesVisitor);
 				
-				try {
-					$visitor = new GetMainEntityInAst($astIdentifier);
-					$retrieve->getConditions()->accept($visitor);
-					return $this->getSortDefault($retrieve);
-				} catch (GetMainEntityInAstException $exception) {
-					$astObject = $exception->getAstObject();
-					
-					// Convert Quel conditions to a SQL string
-					$retrieveEntitiesVisitor = new QuelToSQLConvertToString($this->entityStore, $this->parameters, "SORT", $this->platform);
-					$astObject->getIdentifier()->accept($retrieveEntitiesVisitor);
-					
-					// Process the results into an SQL ORDER BY clause
-					$mappedParameters = array_map(function ($e) {
-						if (method_exists($e, "getValue")) {
-							return $e->getValue();
-						} else {
-							return "";
-						}
-					}, $astObject->getParameters());
-					
-					// Remove empty values, make unique and implode
-					$parametersSql = implode(",", array_unique(array_filter($mappedParameters)));
-					
-					// Return results
-					return "ORDER BY FIELD(" . $retrieveEntitiesVisitor->getResult() . ", " . $parametersSql . ")";
-				}
-			} catch (EntityResolutionException $e) {
-				throw new QuelException($e->getMessage());
+				// Process the results into an SQL ORDER BY clause
+				$mappedParameters = array_map(function ($e) {
+					if (method_exists($e, "getValue")) {
+						return $e->getValue();
+					} else {
+						return "";
+					}
+				}, $astObject->getParameters());
+				
+				// Remove empty values, make unique and implode
+				$parametersSql = implode(",", array_unique(array_filter($mappedParameters)));
+				
+				// Return results
+				return "ORDER BY FIELD(" . $retrieveEntitiesVisitor->getResult() . ", " . $parametersSql . ")";
 			}
 		}
 		

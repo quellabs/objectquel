@@ -44,20 +44,17 @@
 		 * Loads all relationships for a set of entities
 		 * @param array<int, object> $entities The entities to load relationships for
 		 * @throws QuelException
+		 * @throws EntityResolutionException
 		 */
 		public function loadRelationships(array $entities): void {
-			try {
-				// Set direct entity-to-entity relationships
-				$this->setDirectRelations($entities);
-				
-				// Set up proxies for empty relationships
-				$this->setupProxyRelations($entities);
-				
-				// Set up collections for empty OneToMany relations
-				$this->setupOneToManyCollections($entities);
-			} catch (EntityResolutionException $e) {
-				throw new QuelException($e->getMessage(), 'relationship_error', $e->getCode(), $e);
-			}
+			// Set direct entity-to-entity relationships
+			$this->setDirectRelations($entities);
+			
+			// Set up proxies for empty relationships
+			$this->setupProxyRelations($entities);
+			
+			// Set up collections for empty OneToMany relations
+			$this->setupOneToManyCollections($entities);
 		}
 		
 		/**

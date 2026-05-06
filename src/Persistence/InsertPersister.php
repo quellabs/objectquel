@@ -90,153 +90,151 @@
 		 * @param object $entity The entity to be inserted into the database
 		 * @throws OrmException If the database query fails
 		 * @throws QuelException
+		 * @throws EntityResolutionException
+		 * @throws \Exception
 		 */
 		public function persist(object $entity): void {
-			try {
-				// Gather the necessary information for the insert operation
-				// Get the table name where the entity should be stored
-				$tableName = $this->entityStore->getOwningTable($entity);
-				$tableNameEscaped = $this->valueHandler->escapeIdentifier($tableName);
+			// Gather the necessary information for the insert operation
+			// Get the table name where the entity should be stored
+			$tableName = $this->entityStore->getOwningTable($entity);
+			$tableNameEscaped = $this->valueHandler->escapeIdentifier($tableName);
+			
+			// Fetch the column map
+			$columnMap = array_flip($this->entityStore->getColumnMap($entity));
+			
+			// Get the primary key property names and their corresponding column names
+			$primaryKeys = $this->entityStore->getIdentifierKeys($entity);
+			
+			// Get the column names that make up the primary key
+			$primaryKeyColumnNames = $this->entityStore->getIdentifierColumnNames($entity);
+			
+			// Iterate through each identified primary key for the entity
+			foreach ($primaryKeys as $primaryKey) {
+				// First check if the primary key already has a value
+				// This prevents overwriting manually set primary keys
+				$currentValue = $this->propertyHandler->get($entity, $primaryKey);
 				
-				// Fetch the column map
-				$columnMap = array_flip($this->entityStore->getColumnMap($entity));
-				
-				// Get the primary key property names and their corresponding column names
-				$primaryKeys = $this->entityStore->getIdentifierKeys($entity);
-				
-				// Get the column names that make up the primary key
-				$primaryKeyColumnNames = $this->entityStore->getIdentifierColumnNames($entity);
-				
-				// Iterate through each identified primary key for the entity
-				foreach ($primaryKeys as $primaryKey) {
-					// First check if the primary key already has a value
-					// This prevents overwriting manually set primary keys
-					$currentValue = $this->propertyHandler->get($entity, $primaryKey);
+				// Only generate a new primary key if the current value is null or an empty string
+				// This respects existing values while ensuring all primary keys have values
+				if ($currentValue === null || $currentValue === '') {
+					// Determine the primary key generation strategy for this specific primary key field
+					// (e.g., 'uuid', 'identity', 'sequence') - only done when needed
+					$strategy = $this->getPrimaryKeyStrategy($entity, $primaryKey);
 					
-					// Only generate a new primary key if the current value is null or an empty string
-					// This respects existing values while ensuring all primary keys have values
-					if ($currentValue === null || $currentValue === '') {
-						// Determine the primary key generation strategy for this specific primary key field
-						// (e.g., 'uuid', 'identity', 'sequence') - only done when needed
-						$strategy = $this->getPrimaryKeyStrategy($entity, $primaryKey);
-						
-						// Skip identity strategy - database handles these
-						if ($strategy === 'identity') {
-							continue;
-						}
-						
-						// Generate a new primary key value using the appropriate generator
-						// Passes context (entity manager and entity) for generators that need it
-						$value = $this->primaryKeyFactory->generate($this->entityManager, $entity, $strategy);
-						
-						// Make sure the generator returned a valid value
-						if ($value === null) {
-							throw new OrmException("Primary key generator for strategy '{$strategy}' returned null for primary key '{$primaryKey}'");
-						}
-						
-						// Update the entity with the newly generated primary key value
-						// Uses the property handler to respect access rules for private/protected properties
-						$this->propertyHandler->set($entity, $primaryKey, $value);
-					}
-				}
-				
-				// Get the primary key property names and their corresponding column names
-				$versionColumns = $this->entityStore->getVersionColumns($entity);
-				$versionColumnNames = array_flip(array_column($versionColumns, 'name'));
-				
-				// Serialize the entity into an array of column name => value pairs
-				$serializedEntity = $this->unitOfWork->getSerializer()->serialize($entity);
-				
-				// If this entity is a Single-Table Inheritance subclass, inject the discriminator
-				// column value so the INSERT always writes the correct type marker without the
-				// entity needing to declare the column as a mapped property.
-				$discriminatorInfo = $this->getDiscriminatorInfo($entity);
-				
-				if ($discriminatorInfo !== null) {
-					$columnName = $discriminatorInfo['column'];
-					$discriminatorValue = $discriminatorInfo['value'];
-					$serializedEntity[$columnName] = $discriminatorValue;
-				}
-				
-				// Create the SQL query for insertion
-				$sqlParts = [];
-				
-				foreach ($serializedEntity as $key => $value) {
-					// Escape the identifier (add backticks)
-					$escapedKey = $this->valueHandler->escapeIdentifier($key);
-					
-					// Check if the column name exists
-					if (isset($versionColumnNames[$key])) {
-						// Fetch the column name from the map
-						$columnName = $columnMap[$key];
-						
-						// Fetch the value
-						$initialVersion = $this->getInitialVersionValue($versionColumns[$columnName]["column"]->getType());
-						
-						// Remove version property from bound parameters list
-						unset($serializedEntity[$key]);
-						
-						// Add initial value to SQL
-						$sqlParts[] = $escapedKey . "=" . $initialVersion;
-					} else {
-						// normal bound parameter
-						$sqlParts[] = $escapedKey . "=:" . $key;
-					}
-				}
-				
-				// Implode the parts
-				$sql = implode(",", $sqlParts);
-				
-				// Execute the insert query with the serialized entity data as parameters
-				$rs = $this->connection->Execute("INSERT INTO {$tableNameEscaped} SET {$sql}", $serializedEntity);
-				
-				// If the query fails, throw an exception with the error details
-				if (!$rs) {
-					throw new OrmException($this->connection->getLastErrorMessage(), $this->connection->getLastError());
-				}
-				
-				// After successful query execution, check if the entity has a primary key with identity/auto-increment strategy
-				// This identifies columns marked either with @PrimaryKeyStrategy(strategy="identity") or primary keys with no strategy
-				$autoincrementColumn = $this->entityStore->findAutoIncrementPrimaryKey($entity);
-				
-				if ($autoincrementColumn !== null) {
-					// Entity has an identity primary key column that should receive the auto-generated ID from the database
-					// Get the last inserted ID value from the database connection
-					$autoIncrementId = $this->connection->getInsertId();
-					
-					// Check if the result is valid
-					if ($autoIncrementId !== false && $autoIncrementId > 0) {
-						// Non-zero ID was returned, indicating the database successfully generated a new primary key value
-						// Update the entity's property with the database-generated ID
-						// This ensures the entity's state is synchronized with its database representation
-						$this->propertyHandler->set($entity, $autoincrementColumn, (int)$autoIncrementId);
-						
-						// Also set it in $serializedEntity
-						$serializedEntity[$autoincrementColumn] = (int)$autoIncrementId;
+					// Skip identity strategy - database handles these
+					if ($strategy === 'identity') {
+						continue;
 					}
 					
-					// If the auto-increment ID is 0, it may indicate no new ID was generated
-					// (possibly due to a transaction rollback or other database condition)
+					// Generate a new primary key value using the appropriate generator
+					// Passes context (entity manager and entity) for generators that need it
+					$value = $this->primaryKeyFactory->generate($this->entityManager, $entity, $strategy);
+					
+					// Make sure the generator returned a valid value
+					if ($value === null) {
+						throw new OrmException("Primary key generator for strategy '{$strategy}' returned null for primary key '{$primaryKey}'");
+					}
+					
+					// Update the entity with the newly generated primary key value
+					// Uses the property handler to respect access rules for private/protected properties
+					$this->propertyHandler->set($entity, $primaryKey, $value);
 				}
-				
-				// Extract the primary key values from the original data
-				// These will be used in the WHERE clause to identify the record to update
-				$primaryKeyValues = array_intersect_key($serializedEntity, array_flip($primaryKeyColumnNames));
-				
-				// Fetch version values from the database (if any)
-				$fetchedDatetimeValues = $this->valueHandler->fetchUpdatedVersionValues(
-					$tableName,
-					$versionColumns,
-					$primaryKeyColumnNames,
-					$primaryKeyValues,
-				);
-				
-				// Update the entity with the new version values so the in-memory object
-				// matches the database state and can be used for subsequent operations
-				$this->valueHandler->updateEntityVersionValues($entity, $fetchedDatetimeValues);
-			} catch (EntityResolutionException|AnnotationReaderException $e) {
-				throw new OrmException($e->getMessage(), 0, $e);
 			}
+			
+			// Get the primary key property names and their corresponding column names
+			$versionColumns = $this->entityStore->getVersionColumns($entity);
+			$versionColumnNames = array_flip(array_column($versionColumns, 'name'));
+			
+			// Serialize the entity into an array of column name => value pairs
+			$serializedEntity = $this->unitOfWork->getSerializer()->serialize($entity);
+			
+			// If this entity is a Single-Table Inheritance subclass, inject the discriminator
+			// column value so the INSERT always writes the correct type marker without the
+			// entity needing to declare the column as a mapped property.
+			$discriminatorInfo = $this->getDiscriminatorInfo($entity);
+			
+			if ($discriminatorInfo !== null) {
+				$columnName = $discriminatorInfo['column'];
+				$discriminatorValue = $discriminatorInfo['value'];
+				$serializedEntity[$columnName] = $discriminatorValue;
+			}
+			
+			// Create the SQL query for insertion
+			$sqlParts = [];
+			
+			foreach ($serializedEntity as $key => $value) {
+				// Escape the identifier (add backticks)
+				$escapedKey = $this->valueHandler->escapeIdentifier($key);
+				
+				// Check if the column name exists
+				if (isset($versionColumnNames[$key])) {
+					// Fetch the column name from the map
+					$columnName = $columnMap[$key];
+					
+					// Fetch the value
+					$initialVersion = $this->getInitialVersionValue($versionColumns[$columnName]["column"]->getType());
+					
+					// Remove version property from bound parameters list
+					unset($serializedEntity[$key]);
+					
+					// Add initial value to SQL
+					$sqlParts[] = $escapedKey . "=" . $initialVersion;
+				} else {
+					// normal bound parameter
+					$sqlParts[] = $escapedKey . "=:" . $key;
+				}
+			}
+			
+			// Implode the parts
+			$sql = implode(",", $sqlParts);
+			
+			// Execute the insert query with the serialized entity data as parameters
+			$rs = $this->connection->Execute("INSERT INTO {$tableNameEscaped} SET {$sql}", $serializedEntity);
+			
+			// If the query fails, throw an exception with the error details
+			if (!$rs) {
+				throw new OrmException($this->connection->getLastErrorMessage(), $this->connection->getLastError());
+			}
+			
+			// After successful query execution, check if the entity has a primary key with identity/auto-increment strategy
+			// This identifies columns marked either with @PrimaryKeyStrategy(strategy="identity") or primary keys with no strategy
+			$autoincrementColumn = $this->entityStore->findAutoIncrementPrimaryKey($entity);
+			
+			if ($autoincrementColumn !== null) {
+				// Entity has an identity primary key column that should receive the auto-generated ID from the database
+				// Get the last inserted ID value from the database connection
+				$autoIncrementId = $this->connection->getInsertId();
+				
+				// Check if the result is valid
+				if ($autoIncrementId !== false && $autoIncrementId > 0) {
+					// Non-zero ID was returned, indicating the database successfully generated a new primary key value
+					// Update the entity's property with the database-generated ID
+					// This ensures the entity's state is synchronized with its database representation
+					$this->propertyHandler->set($entity, $autoincrementColumn, (int)$autoIncrementId);
+					
+					// Also set it in $serializedEntity
+					$serializedEntity[$autoincrementColumn] = (int)$autoIncrementId;
+				}
+				
+				// If the auto-increment ID is 0, it may indicate no new ID was generated
+				// (possibly due to a transaction rollback or other database condition)
+			}
+			
+			// Extract the primary key values from the original data
+			// These will be used in the WHERE clause to identify the record to update
+			$primaryKeyValues = array_intersect_key($serializedEntity, array_flip($primaryKeyColumnNames));
+			
+			// Fetch version values from the database (if any)
+			$fetchedDatetimeValues = $this->valueHandler->fetchUpdatedVersionValues(
+				$tableName,
+				$versionColumns,
+				$primaryKeyColumnNames,
+				$primaryKeyValues,
+			);
+			
+			// Update the entity with the new version values so the in-memory object
+			// matches the database state and can be used for subsequent operations
+			$this->valueHandler->updateEntityVersionValues($entity, $fetchedDatetimeValues);
 		}
 		
 		/**

@@ -54,21 +54,13 @@
 			$entityName = $node->getParent()->getEntityName();
 			$propertyName = $node->getName();
 			
-			try {
-				// Fetch column map and relations
-				$columnMap = $this->entityStore->getColumnMap($entityName);
-				$relations = $this->entityStore->getOneToManyDependencies($entityName);
-				
-				// Check if the property exists in the entity.
-				if (!isset($columnMap[$propertyName]) && !isset($relations[$propertyName])) {
-					throw new SemanticException("The property {$propertyName} does not exist in entity {$entityName}. Please check for typos or verify that the correct entity is being referenced in the query.");
-				}
-			} catch (EntityResolutionException $e) {
-				throw new SemanticException(
-					"The entity or range {$entityName} referenced in the query does not exist.",
-					0,
-					$e
-				);
+			// Fetch column map and relations
+			$columnMap = $this->entityStore->getColumnMap($entityName);
+			$relations = $this->entityStore->getOneToManyDependencies($entityName);
+			
+			// Check if the property exists in the entity.
+			if (!isset($columnMap[$propertyName]) && !isset($relations[$propertyName])) {
+				throw new SemanticException("The property {$propertyName} does not exist in entity {$entityName}. Please check for typos or verify that the correct entity is being referenced in the query.");
 			}
 		}
 	}

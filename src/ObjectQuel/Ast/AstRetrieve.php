@@ -330,18 +330,18 @@
 		
 		/**
 		 * Returns the pagination window.
-		 * @return int
+		 * @return int|null
 		 */
-		public function getWindow(): int {
-			return $this->window ?? 0;
+		public function getWindow(): ?int {
+			return $this->window;
 		}
 		
 		/**
 		 * Sets the maximum number of results to return.
-		 * @param int $windowSize
+		 * @param int|null $windowSize
 		 * @return void
 		 */
-		public function setWindowSize(int $windowSize): void {
+		public function setWindowSize(?int $windowSize): void {
 			$this->window_size = $windowSize;
 		}
 		

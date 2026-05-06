@@ -38,6 +38,7 @@
 		 * @param AstInterface $node The node to visit.
 		 * @return void
 		 * @throws SemanticException
+		 * @throws EntityResolutionException
 		 */
 		public function visitNode(AstInterface $node): void {
 			// First we check if the node is of type AstIdentifier.
@@ -65,30 +66,22 @@
 			$rangeName = $node->getRange()->getName();
 			$propertyName = $node->getNext()->getName();
 			
-			try {
-				$dependencies = [
-					'oneToOne'  => $this->entityStore->getOneToOneDependencies($entityName),
-					'manyToOne' => $this->entityStore->getManyToOneDependencies($entityName),
-					'oneToMany' => $this->entityStore->getOneToManyDependencies($entityName),
-				];
-				
-				// Loop through all dependency types.
-				foreach ($dependencies as $dependency) {
-					if (isset($dependency[$propertyName])) {
-						$relation = $dependency[$propertyName];
-						$targetEntity = $relation->getTargetEntity();
-						
-						if ($targetEntity !== $this->entityName) {
-							throw new SemanticException("Failed to join {$targetEntity} via {$rangeName}.{$propertyName} from {$this->entityName}. This is not a valid relationship path.");
-						}
+			$dependencies = [
+				'oneToOne'  => $this->entityStore->getOneToOneDependencies($entityName),
+				'manyToOne' => $this->entityStore->getManyToOneDependencies($entityName),
+				'oneToMany' => $this->entityStore->getOneToManyDependencies($entityName),
+			];
+			
+			// Loop through all dependency types.
+			foreach ($dependencies as $dependency) {
+				if (isset($dependency[$propertyName])) {
+					$relation = $dependency[$propertyName];
+					$targetEntity = $relation->getTargetEntity();
+					
+					if ($targetEntity !== $this->entityName) {
+						throw new SemanticException("Failed to join {$targetEntity} via {$rangeName}.{$propertyName} from {$this->entityName}. This is not a valid relationship path.");
 					}
 				}
-			} catch (EntityResolutionException $e) {
-				throw new SemanticException(
-					"The entity or range {$entityName} referenced in the query does not exist.",
-					0,
-					$e
-				);
 			}
 		}
 	}

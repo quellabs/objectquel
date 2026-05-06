@@ -260,26 +260,23 @@
 		 * @param mixed $primaryKey The primary key of the entity
 		 * @return T[] The found entities
 		 * @throws QuelException
+		 * @throws EntityResolutionException
 		 */
 		public function findBy(string $entityType, mixed $primaryKey): array {
-			try {
-				// Normalize the primary key
-				$primaryKeys = $this->entityStore->formatPrimaryKeyAsArray($primaryKey, $entityType);
-				
-				// Prepare a query in case the entity is not found
-				$query = $this->queryBuilder->prepareQuery($entityType, $primaryKeys);
-				
-				// Execute query and retrieve result
-				$result = $this->getAll($query, $primaryKeys);
-				
-				// Extract the main column from the result
-				$filteredResult = array_column($result, "main");
-				
-				// Return deduplicated results
-				return ResultProcessor::deDuplicateObjects($filteredResult);
-			} catch (EntityResolutionException $e) {
-				throw new QuelException($e->getMessage());
-			}
+			// Normalize the primary key
+			$primaryKeys = $this->entityStore->formatPrimaryKeyAsArray($primaryKey, $entityType);
+			
+			// Prepare a query in case the entity is not found
+			$query = $this->queryBuilder->prepareQuery($entityType, $primaryKeys);
+			
+			// Execute query and retrieve result
+			$result = $this->getAll($query, $primaryKeys);
+			
+			// Extract the main column from the result
+			$filteredResult = array_column($result, "main");
+			
+			// Return deduplicated results
+			return ResultProcessor::deDuplicateObjects($filteredResult);
 		}
 		
 		/**
@@ -289,42 +286,39 @@
 		 * @param mixed $primaryKey The primary key of the entity
 		 * @return T|null The found entity or null if not found
 		 * @throws QuelException
+		 * @throws EntityResolutionException
 		 * @psalm-return T|null
 		 */
 		public function find(string $entityType, mixed $primaryKey): ?object {
-			try {
-				// Normalize the primary key
-				$primaryKeys = $this->entityStore->formatPrimaryKeyAsArray($primaryKey, $entityType);
-				
-				// Return early if the entity is already tracked and fully initialized
-				$existingEntity = $this->unitOfWork->findEntity($entityType, $primaryKeys);
-				
-				// If the entity exists and is initialized, return it
-				if (
-					$existingEntity !== null &&
-					!($existingEntity instanceof ProxyInterface && !$existingEntity->isInitialized())
-				) {
-					/** @var T $existingEntity */
-					return $existingEntity;
-				}
-				
-				// Fall back to a database query
-				$result = $this->findBy($entityType, $primaryKey);
-				
-				// If the query returns no results, return null
-				if (empty($result)) {
-					return null;
-				}
-				
-				/**
-				 * Get the results from the query and return the main entity
-				 * @var T $entity
-				 */
-				$entity = $result[0];
-				return $entity;
-			} catch (EntityResolutionException $e) {
-				throw new QuelException($e->getMessage());
+			// Normalize the primary key
+			$primaryKeys = $this->entityStore->formatPrimaryKeyAsArray($primaryKey, $entityType);
+			
+			// Return early if the entity is already tracked and fully initialized
+			$existingEntity = $this->unitOfWork->findEntity($entityType, $primaryKeys);
+			
+			// If the entity exists and is initialized, return it
+			if (
+				$existingEntity !== null &&
+				!($existingEntity instanceof ProxyInterface && !$existingEntity->isInitialized())
+			) {
+				/** @var T $existingEntity */
+				return $existingEntity;
 			}
+			
+			// Fall back to a database query
+			$result = $this->findBy($entityType, $primaryKey);
+			
+			// If the query returns no results, return null
+			if (empty($result)) {
+				return null;
+			}
+			
+			/**
+			 * Get the results from the query and return the main entity
+			 * @var T $entity
+			 */
+			$entity = $result[0];
+			return $entity;
 		}
 		
 		/**

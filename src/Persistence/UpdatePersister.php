@@ -58,82 +58,79 @@
 		 * @param object $entity The entity to be updated in the database
 		 * @return void
 		 * @throws OrmException If the database query fails or version mismatch is detected
+		 * @throws EntityResolutionException
 		 */
 		public function persist(object $entity): void {
-			try {
-				// Retrieve basic information needed for the update
-				// Get the table name where the entity is stored
-				$tableName = $this->entityStore->getOwningTable($entity);
-				$tableNameEscaped = $this->valueHandler->escapeIdentifier($tableName);
-				
-				// Serialize the entity's current state into an array of column name => value pairs
-				$serializedEntity = $this->unitOfWork->getSerializer()->serialize($entity);
-				
-				// Get the entity's original data (snapshot) from when it was loaded or last persisted
-				$originalData = $this->unitOfWork->getOriginalEntityData($entity);
-				
-				// Get the column names that make up the primary key
-				$primaryKeyColumnNames = $this->entityStore->getIdentifierColumnNames($entity);
-				
-				// Get the version column names. These will auto update
-				$versionColumns = $this->entityStore->getVersionColumns($entity);
-				$versionColumnNames = array_column($versionColumns, 'name');
-				
-				// Extract the primary key values from the original data
-				// These will be used in the WHERE clause to identify the record to update
-				$primaryKeyValues = array_intersect_key($originalData, array_flip($primaryKeyColumnNames));
-				
-				// Extract only fields that have actually changed (excluding version columns)
-				$changedFields = $this->extractChangedFields($serializedEntity, $originalData, $primaryKeyColumnNames, $versionColumnNames);
-				
-				// Build the complete UPDATE statement components
-				$params = [];
-				
-				// Build SET clause for version columns and regular changed fields
-				$setClauseParts = array_merge(
-					$this->buildVersionSetClause($versionColumns, $params),
-					$this->buildFieldsSetClause($changedFields, $params)
-				);
-				
-				// Build WHERE clause with primary keys and version checks for optimistic locking
-				$whereClause = $this->buildWhereClause($primaryKeyColumnNames, $primaryKeyValues, $versionColumns, $originalData, $params);
-				
-				// Build query
-				$query = "UPDATE {$tableNameEscaped} SET " . implode(", ", $setClauseParts) . " WHERE {$whereClause}";
-				
-				// Execute the UPDATE query with the merged parameters
-				$rs = $this->connection->Execute($query, $params);
-				
-				// If the query fails, throw an exception with error details
-				if (!$rs) {
-					throw new OrmException($this->connection->getLastErrorMessage(), $this->connection->getLastError());
-				}
-				
-				// Check if the update actually affected a row
-				// If 0 rows were affected, it means either:
-				// 1. The record was deleted by another process, or
-				// 2. The version number changed (concurrent modification - race condition)
-				if ($rs->rowCount() === 0) {
-					throw new OrmException(
-						"Version mismatch detected: The entity was modified by another process. " .
-						"Expected version: " . json_encode(array_intersect_key($originalData, array_flip($versionColumnNames)))
-					);
-				}
-				
-				// Fetch version values from the database (if any)
-				$fetchedDatetimeValues = $this->valueHandler->fetchUpdatedVersionValues(
-					$tableName,
-					$versionColumns,
-					$primaryKeyColumnNames,
-					$primaryKeyValues,
-				);
-				
-				// Update the entity with the new version values so the in-memory object
-				// matches the database state and can be used for subsequent operations
-				$this->valueHandler->updateEntityVersionValues($entity, $fetchedDatetimeValues);
-			} catch (EntityResolutionException $e) {
-				throw new OrmException($e->getMessage(), 0, $e);
+			// Retrieve basic information needed for the update
+			// Get the table name where the entity is stored
+			$tableName = $this->entityStore->getOwningTable($entity);
+			$tableNameEscaped = $this->valueHandler->escapeIdentifier($tableName);
+			
+			// Serialize the entity's current state into an array of column name => value pairs
+			$serializedEntity = $this->unitOfWork->getSerializer()->serialize($entity);
+			
+			// Get the entity's original data (snapshot) from when it was loaded or last persisted
+			$originalData = $this->unitOfWork->getOriginalEntityData($entity);
+			
+			// Get the column names that make up the primary key
+			$primaryKeyColumnNames = $this->entityStore->getIdentifierColumnNames($entity);
+			
+			// Get the version column names. These will auto update
+			$versionColumns = $this->entityStore->getVersionColumns($entity);
+			$versionColumnNames = array_column($versionColumns, 'name');
+			
+			// Extract the primary key values from the original data
+			// These will be used in the WHERE clause to identify the record to update
+			$primaryKeyValues = array_intersect_key($originalData, array_flip($primaryKeyColumnNames));
+			
+			// Extract only fields that have actually changed (excluding version columns)
+			$changedFields = $this->extractChangedFields($serializedEntity, $originalData, $primaryKeyColumnNames, $versionColumnNames);
+			
+			// Build the complete UPDATE statement components
+			$params = [];
+			
+			// Build SET clause for version columns and regular changed fields
+			$setClauseParts = array_merge(
+				$this->buildVersionSetClause($versionColumns, $params),
+				$this->buildFieldsSetClause($changedFields, $params)
+			);
+			
+			// Build WHERE clause with primary keys and version checks for optimistic locking
+			$whereClause = $this->buildWhereClause($primaryKeyColumnNames, $primaryKeyValues, $versionColumns, $originalData, $params);
+			
+			// Build query
+			$query = "UPDATE {$tableNameEscaped} SET " . implode(", ", $setClauseParts) . " WHERE {$whereClause}";
+			
+			// Execute the UPDATE query with the merged parameters
+			$rs = $this->connection->Execute($query, $params);
+			
+			// If the query fails, throw an exception with error details
+			if (!$rs) {
+				throw new OrmException($this->connection->getLastErrorMessage(), $this->connection->getLastError());
 			}
+			
+			// Check if the update actually affected a row
+			// If 0 rows were affected, it means either:
+			// 1. The record was deleted by another process, or
+			// 2. The version number changed (concurrent modification - race condition)
+			if ($rs->rowCount() === 0) {
+				throw new OrmException(
+					"Version mismatch detected: The entity was modified by another process. " .
+					"Expected version: " . json_encode(array_intersect_key($originalData, array_flip($versionColumnNames)))
+				);
+			}
+			
+			// Fetch version values from the database (if any)
+			$fetchedDatetimeValues = $this->valueHandler->fetchUpdatedVersionValues(
+				$tableName,
+				$versionColumns,
+				$primaryKeyColumnNames,
+				$primaryKeyValues,
+			);
+			
+			// Update the entity with the new version values so the in-memory object
+			// matches the database state and can be used for subsequent operations
+			$this->valueHandler->updateEntityVersionValues($entity, $fetchedDatetimeValues);
 		}
 		
 		/**

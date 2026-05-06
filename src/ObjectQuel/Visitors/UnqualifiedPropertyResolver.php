@@ -112,55 +112,51 @@
 		private function findUniqueRangeForProperty(string $propertyName): AstRangeDatabase {
 			$matches = [];
 			
-			try {
-				foreach ($this->ranges as $range) {
-					// Only concrete entity ranges have EntityStore metadata
-					if (!$range instanceof AstRangeDatabase) {
-						continue;
-					}
-					
-					// Subquery ranges (temporary tables) have no entity name
-					$entityName = $range->getEntityName();
-					
-					if ($entityName === null) {
-						continue;
-					}
-					
-					// Check scalar columns
-					$columnMap = $this->entityStore->getColumnMap($entityName);
-					
-					if (isset($columnMap[$propertyName])) {
-						$matches[] = $range;
-						continue;
-					}
-					
-					// Also check one-to-many relations so that relation properties work too
-					$relations = $this->entityStore->getOneToManyDependencies($entityName);
-					
-					if (isset($relations[$propertyName])) {
-						$matches[] = $range;
-					}
+			foreach ($this->ranges as $range) {
+				// Only concrete entity ranges have EntityStore metadata
+				if (!$range instanceof AstRangeDatabase) {
+					continue;
 				}
 				
-				if (count($matches) === 0) {
-					throw new TransformationException(
-						"Unknown property '{$propertyName}': it does not exist in any of the ranges defined in this query."
-					);
+				// Subquery ranges (temporary tables) have no entity name
+				$entityName = $range->getEntityName();
+				
+				if ($entityName === null) {
+					continue;
 				}
 				
-				if (count($matches) > 1) {
-					$rangeNames = implode(', ', array_map(fn($r) => $r->getName(), $matches));
-					
-					throw new TransformationException(
-						"Unqualified property '{$propertyName}' is ambiguous: " .
-						"it exists in multiple ranges ({$rangeNames}). " .
-						"Use a range prefix to disambiguate."
-					);
+				// Check scalar columns
+				$columnMap = $this->entityStore->getColumnMap($entityName);
+				
+				if (isset($columnMap[$propertyName])) {
+					$matches[] = $range;
+					continue;
 				}
 				
-				return $matches[0];
-			} catch (EntityResolutionException $e) {
-				throw new TransformationException($e->getMessage(), $e->getCode(), $e);
+				// Also check one-to-many relations so that relation properties work too
+				$relations = $this->entityStore->getOneToManyDependencies($entityName);
+				
+				if (isset($relations[$propertyName])) {
+					$matches[] = $range;
+				}
 			}
+			
+			if (count($matches) === 0) {
+				throw new TransformationException(
+					"Unknown property '{$propertyName}': it does not exist in any of the ranges defined in this query."
+				);
+			}
+			
+			if (count($matches) > 1) {
+				$rangeNames = implode(', ', array_map(fn($r) => $r->getName(), $matches));
+				
+				throw new TransformationException(
+					"Unqualified property '{$propertyName}' is ambiguous: " .
+					"it exists in multiple ranges ({$rangeNames}). " .
+					"Use a range prefix to disambiguate."
+				);
+			}
+			
+			return $matches[0];
 		}
 	}

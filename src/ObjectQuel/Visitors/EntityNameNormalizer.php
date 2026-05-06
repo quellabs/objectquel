@@ -75,6 +75,7 @@
 		 * @param AstInterface $node
 		 * @return void
 		 * @throws TransformationException
+		 * @throws EntityResolutionException
 		 */
 		public function visitNode(AstInterface $node): void {
 			// Checks if the node is an instance of AstIdentifier. If not, the function stops.
@@ -106,10 +107,6 @@
 			
 			// If none of the above checks are true, the function adds a namespace
 			// to the name of the node. This is done by a method of the entityStore object.
-			try {
-				$node->setName($this->entityStore->resolveProxyClass($node->getName()));
-			} catch (EntityResolutionException $e) {
-				throw new TransformationException($e->getMessage(), $e->getCode(), $e);
-			}
+			$node->setName($this->entityStore->resolveProxyClass($node->getName()));
 		}
 	}

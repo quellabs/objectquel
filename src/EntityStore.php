@@ -40,6 +40,7 @@
 	use Quellabs\ObjectQuel\ReflectionManagement\EntityLocator;
 	use Quellabs\ObjectQuel\ReflectionManagement\ReflectionHandler;
 	use Quellabs\Support\NamespaceResolver;
+	use Quellabs\ObjectQuel\ObjectQuel\PrimaryKeyInfo;
 	
 	/**
 	 * Entity metadata registry and access point.
@@ -312,14 +313,10 @@
 		/**
 		 * Retrieves the primary key of the main range from an AstRetrieve object.
 		 * @param AstRetrieve $astRetrieve A reference to the AstRetrieve object representing the query
-		 * @return array{
-		 *      range: mixed,
-		 *      entityName: string,
-		 *      primaryKey: string|null
-		 *  } An array with information about the range and primary key
+		 * @return PrimaryKeyInfo
 		 * @throws EntityResolutionException|\LogicException
 		 */
-		public function fetchPrimaryKeyOfMainRange(AstRetrieve $astRetrieve): array {
+		public function fetchPrimaryKeyOfMainRange(AstRetrieve $astRetrieve): PrimaryKeyInfo {
 			foreach ($astRetrieve->getRanges() as $range) {
 				// Only accept database ranges
 				if (!$range instanceof AstRangeDatabase) {
@@ -340,13 +337,15 @@
 				// Get the associated primary key if the range doesn't have a join property
 				$entityName = $range->getEntityName();
 				$metadata = $this->getMetadata($entityName);
+				$primaryKey = $metadata->getPrimaryKey();
+				
+				// Continue if there is no primary key
+				if ($primaryKey === null) {
+					continue;
+				}
 				
 				// Return the range name, entity name, and the primary key of the entity
-				return [
-					'range'      => $range,
-					'entityName' => $entityName,
-					'primaryKey' => $metadata->getPrimaryKey(),
-				];
+				return new PrimaryKeyInfo($range, $entityName, $primaryKey);
 			}
 			
 			// Return null if no range without a join property is found

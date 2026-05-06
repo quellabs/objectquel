@@ -341,6 +341,7 @@
 		 * @param AstIdentifier $left Left side of the join condition
 		 * @param AstIdentifier $right Right side of the join condition
 		 * @throws TransformationException
+		 * @throws EntityResolutionException
 		 */
 		private function checkAndSetRangeRequired(
 			AstRangeDatabase $mainRange,
@@ -348,61 +349,57 @@
 			AstIdentifier    $left,
 			AstIdentifier    $right
 		): void {
-			try {
-				// Determine relationship direction by checking which side references the main range
-				// This tells us which entity "owns" the relationship (has the foreign key)
-				$isMainRange = $right->getRange() === $mainRange;
-				
-				// Extract property and entity names based on join direction
-				// These will be used to match against annotation metadata
-				$ownEntityName = $isMainRange ? $right->getEntityName() : $left->getEntityName();
-				$ownPropertyName = $isMainRange ? $right->getName() : $left->getName();
-				$relatedPropertyName = $isMainRange ? $left->getName() : $right->getName();
-				$relatedEntityName = $isMainRange ? $left->getEntityName() : $right->getEntityName();
-				
-				// Handle temporary ranges (subqueries) with nullability analysis
-				// Temporary tables have no entity metadata or annotations.
-				// Also bail out if $relatedEntityName is null, since isMatchingRequiredRelation()
-				// requires a non-null string and getEntityName() can return null.
-				if (empty($ownEntityName) || $relatedEntityName === null) {
-					$this->checkTemporaryRangeRequired($range, $isMainRange, $left, $right);
-					return;
-				}
-				
-				/**
-				 * Get all annotations for the entity that owns the relationship
-				 * Annotations are grouped by property/method they're applied to
-				 * @var array<string, array<int, AnnotationInterface>> $entityAnnotations
-				 */
-				$entityAnnotations = $this->entityStore->getAnnotations($ownEntityName);
-				
-				// Search through all annotation groups for this entity
-				foreach ($entityAnnotations as $annotations) {
-					// Performance optimization: quick check for RequiredRelation annotations
-					// Avoids detailed processing if no relevant annotations exist
-					if (!$this->containsRequiredRelationAnnotation($annotations)) {
-						continue;
-					}
-					
-					// Check each annotation in the current group
-					foreach ($annotations as $annotation) {
-						// Test if this annotation requires the current relationship
-						if ($this->isMatchingRequiredRelation($annotation, $relatedEntityName, $ownPropertyName, $relatedPropertyName)) {
-							// Found a matching required relation - optimize the query
-							$range->setRequired();
-							
-							// Early exit: one matching annotation is sufficient
-							// Multiple annotations for the same relationship would be redundant
-							return;
-						}
-					}
-				}
-				
-				// No matching RequiredRelation annotation found - leave as LEFT JOIN
-				// This preserves the original query semantics
-			} catch (EntityResolutionException $exception) {
-				throw new TransformationException($exception->getMessage(), $exception->getCode(), $exception);
+			// Determine relationship direction by checking which side references the main range
+			// This tells us which entity "owns" the relationship (has the foreign key)
+			$isMainRange = $right->getRange() === $mainRange;
+			
+			// Extract property and entity names based on join direction
+			// These will be used to match against annotation metadata
+			$ownEntityName = $isMainRange ? $right->getEntityName() : $left->getEntityName();
+			$ownPropertyName = $isMainRange ? $right->getName() : $left->getName();
+			$relatedPropertyName = $isMainRange ? $left->getName() : $right->getName();
+			$relatedEntityName = $isMainRange ? $left->getEntityName() : $right->getEntityName();
+			
+			// Handle temporary ranges (subqueries) with nullability analysis
+			// Temporary tables have no entity metadata or annotations.
+			// Also bail out if $relatedEntityName is null, since isMatchingRequiredRelation()
+			// requires a non-null string and getEntityName() can return null.
+			if (empty($ownEntityName) || $relatedEntityName === null) {
+				$this->checkTemporaryRangeRequired($range, $isMainRange, $left, $right);
+				return;
 			}
+			
+			/**
+			 * Get all annotations for the entity that owns the relationship
+			 * Annotations are grouped by property/method they're applied to
+			 * @var array<string, array<int, AnnotationInterface>> $entityAnnotations
+			 */
+			$entityAnnotations = $this->entityStore->getAnnotations($ownEntityName);
+			
+			// Search through all annotation groups for this entity
+			foreach ($entityAnnotations as $annotations) {
+				// Performance optimization: quick check for RequiredRelation annotations
+				// Avoids detailed processing if no relevant annotations exist
+				if (!$this->containsRequiredRelationAnnotation($annotations)) {
+					continue;
+				}
+				
+				// Check each annotation in the current group
+				foreach ($annotations as $annotation) {
+					// Test if this annotation requires the current relationship
+					if ($this->isMatchingRequiredRelation($annotation, $relatedEntityName, $ownPropertyName, $relatedPropertyName)) {
+						// Found a matching required relation - optimize the query
+						$range->setRequired();
+						
+						// Early exit: one matching annotation is sufficient
+						// Multiple annotations for the same relationship would be redundant
+						return;
+					}
+				}
+			}
+			
+			// No matching RequiredRelation annotation found - leave as LEFT JOIN
+			// This preserves the original query semantics
 		}
 		
 		/**
