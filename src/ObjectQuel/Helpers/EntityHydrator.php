@@ -173,7 +173,7 @@
 			$node = $value->getExpression();
 			
 			// Case 1: Process an entity (AstIdentifier with no next/parent nodes)
-			if ($node instanceof AstIdentifier && !$node->hasNext() && !$node->hasParent()) {
+			if ($node instanceof AstIdentifier && !$node->hasNext() && !$node->hasParentIdentifier()) {
 				if ($node->getRange() instanceof AstRangeJsonSource) {
 					return $this->processJsonAllValue($value, $row);
 				} else {
@@ -300,7 +300,7 @@
 				// This distinguishes between entity objects and scalar property values
 				$isEntity = $value->getExpression() instanceof AstIdentifier &&
 					!$value->getExpression()->getRange() instanceof AstRangeJsonSource &&
-					!$value->getExpression()->hasParent() &&
+					!$value->getExpression()->hasParentIdentifier() &&
 					!$value->getExpression()->hasNext();
 				
 				// If it's an entity, get the range name (typically the table/entity name in the query)
@@ -352,7 +352,7 @@
 					continue;
 				}
 				
-				if ($expression->hasParent()) {
+				if ($expression->hasParentIdentifier()) {
 					continue;
 				}
 				

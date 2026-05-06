@@ -15,18 +15,18 @@
 		 * @param string $message
 		 * @param int $code
 		 * @param \Throwable|null $previous
-		 * @param AstInterface|null $data
+		 * @param AstInterface $data
 		 */
-		public function __construct(string $message, int $code = 0, \Throwable $previous = null, ?AstInterface $data=null) {
+		public function __construct(string $message, int $code, ?\Throwable $previous, AstInterface $data) {
 			$this->data = $data;
 			parent::__construct($message, $code, $previous);
 		}
 		
 		/**
 		 * Get the data associated with the exception
-		 * @return AstInterface|null
+		 * @return AstInterface
 		 */
-		public function getData(): ?AstInterface {
+		public function getData(): AstInterface {
 			return $this->data;
 		}
 	}

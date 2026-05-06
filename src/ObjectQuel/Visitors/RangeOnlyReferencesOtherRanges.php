@@ -24,7 +24,7 @@
 				return;
 			}
 			
-			if ($node->hasParent()) {
+			if ($node->hasParentIdentifier()) {
 				return;
 			}
 			

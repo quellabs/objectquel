@@ -46,10 +46,7 @@
 			$this->name = $name;
 			$this->required = $required;
 			$this->joinProperty = $joinProperty;
-			
-			if ($joinProperty) {
-				$this->joinProperty->setParent($this);
-			}
+			$this->joinProperty?->setParent($this);
 		}
 		
 		/**

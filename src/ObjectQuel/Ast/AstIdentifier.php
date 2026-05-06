@@ -47,10 +47,7 @@
 		 */
 		public function accept(AstVisitorInterface $visitor): void {
 			parent::accept($visitor);
-			
-			if ($this->hasNext()) {
-				$this->getNext()->accept($visitor);
-			}
+			$this->getNext()?->accept($visitor);
 		}
 		
 		/**
@@ -169,15 +166,19 @@
 		 * @return bool
 		 */
 		public function isRoot(): bool {
-			return !$this->hasParent();
+			return !$this->hasParentIdentifier();
 		}
 		
 		/**
 		 * Returns true if the node has an identifier as parent.
 		 * @return bool
 		 */
-		public function hasParent(): bool {
-			return is_a($this->getParent(), AstIdentifier::class);
+		public function hasParentIdentifier(): bool {
+			$parent = $this->getParent();
+			
+			return
+				$parent !== null &&
+				is_a($parent, AstIdentifier::class);
 		}
 		
 		/**
