@@ -401,7 +401,7 @@
 				},
 				$sql
 			) ?? $sql;
-		 }
+		}
 		
 		/**
 		 * Executes a SQL query with optional parameter binding

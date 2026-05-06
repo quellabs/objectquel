@@ -71,23 +71,6 @@
 	 * @phpstan-type PropertyDefinition BaseProperty|EnumProperty|RelationProperty
 	 *
 	 * -------------------------------------------------------------------------
-	 * Column / schema types
-	 * -------------------------------------------------------------------------
-	 *
-	 * @phpstan-type ColumnDefinition array{
-	 *     type: string,
-	 *     limit?: int|string|array<int, int>,
-	 *     nullable?: bool,
-	 *     default?: mixed,
-	 *     precision?: int,
-	 *     scale?: int,
-	 *     unsigned?: bool,
-	 *     identity?: bool,
-	 *     primary_key?: bool,
-	 *     values?: array<int, string>
-	 * }
-	 *
-	 * -------------------------------------------------------------------------
 	 * Index types
 	 * -------------------------------------------------------------------------
 	 *

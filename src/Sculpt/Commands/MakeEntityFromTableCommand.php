@@ -2,10 +2,6 @@
 	
 	namespace Quellabs\ObjectQuel\Sculpt\Commands;
 	
-	/**
-	 * Import required classes for entity management and console interaction
-	 */
-	
 	use Quellabs\Contracts\Discovery\ProviderInterface;
 	use Quellabs\ObjectQuel\Configuration;
 	use Quellabs\ObjectQuel\DatabaseAdapter\DatabaseAdapter;
