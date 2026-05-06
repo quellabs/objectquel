@@ -24,6 +24,16 @@
 		 */
 		public function __construct(array $parameters) {
 			$this->parameters = $parameters;
+			
+			// Column name parameter is mandatory
+			if (!isset($this->parameters["name"])) {
+				throw new \InvalidArgumentException('Column annotation requires a "name" parameter');
+			}
+
+			// Column type parameter is mandatory
+			if (!isset($this->parameters["type"])) {
+				throw new \InvalidArgumentException('Column annotation requires a "type" parameter');
+			}
 		}
 		
 		/**
@@ -39,7 +49,7 @@
 		 * @return string The name of the database column
 		 */
 		public function getName(): string {
-			return $this->parameters["name"] ?? '';
+			return $this->parameters["name"];
 		}
 		
 		/**
@@ -48,24 +58,6 @@
 		 */
 		public function getType(): string {
 			return $this->parameters["type"];
-		}
-		
-		/**
-		 * Gets the corresponding PHP type for this column's database type
-		 * @return string The PHP type that corresponds to this column's database type
-		 * @see TypeMapper::phinxTypeToPhpType() For the actual type conversion logic
-		 */
-		public function getPhpType(): string {
-			return TypeMapper::phinxTypeToPhpType($this->getType());
-		}
-		
-		/**
-		 * Gets the corresponding JS type for this column's database type
-		 * @return string The JS type that corresponds to this column's database type
-		 * @see TypeMapper::phinxTypeToJsType() For the actual type conversion logic
-		 */
-		public function getJsType(): string {
-			return TypeMapper::phinxTypeToJsType($this->getType());
 		}
 		
 		/**
@@ -85,7 +77,8 @@
 		public function getLimit(): ?int {
 			// Calculate the length if the type is 'enum'
 			if ($this->getType() === 'enum') {
-				return max(Tools::getMaxEnumValueLength($this->getEnumType()), 32);
+				$enumType = $this->getEnumType() ?? throw new \LogicException('Enum column must specify enumType');
+				return max(Tools::getMaxEnumValueLength($enumType), 32);
 			}
 			
 			// Check if the limit parameter exists or is empty
