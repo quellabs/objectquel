@@ -90,11 +90,8 @@
 		 */
 		private function validateNestedQueries(AstRetrieve $ast): void {
 			foreach ($ast->getRanges() as $range) {
+				// Only handle AstRangeDatabaseSubquery
 				if (!$range instanceof AstRangeDatabaseSubquery) {
-					continue;
-				}
-				
-				if ($range->getQuery() === null) {
 					continue;
 				}
 				

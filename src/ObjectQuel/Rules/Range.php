@@ -97,7 +97,7 @@
 			$this->lexer->match(Token::ParenthesesClose);
 			
 			// Create the database range with a temporary name
-			return new AstRangeDatabaseSubquery($alias, $retrieve, uniqid($alias));
+			return new AstRangeDatabaseSubquery($alias, $retrieve);
 		}
 		
 		/**

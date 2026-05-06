@@ -98,10 +98,6 @@
 					continue;
 				}
 				
-				if ($range->getQuery() === null) {
-					continue;
-				}
-				
 				// Recursively transform the inner query with full transformation pipeline
 				$this->transform($range->getQuery());
 			}

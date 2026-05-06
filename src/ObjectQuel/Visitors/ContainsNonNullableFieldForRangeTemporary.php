@@ -4,9 +4,12 @@
 	
 	use Quellabs\ObjectQuel\Annotations\Orm\Column;
 	use Quellabs\ObjectQuel\EntityStore;
+	use Quellabs\ObjectQuel\Exception\EntityResolutionException;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstIdentifier;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRangeDatabase;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRangeDatabaseSubquery;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRetrieve;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstSubquery;
 	use Quellabs\ObjectQuel\ObjectQuel\AstInterface;
 	use Quellabs\ObjectQuel\ObjectQuel\AstVisitorInterface;
 	
@@ -122,6 +125,7 @@
 		 *
 		 * @param AstInterface $expression The expression to check
 		 * @return bool True if the expression is a non-nullable field reference
+		 * @throws EntityResolutionException
 		 */
 		private function isExpressionNonNullable(AstInterface $expression): bool {
 			// Must be identifier node
@@ -155,12 +159,14 @@
 			}
 			
 			// Only analyze entity ranges, not nested subqueries
-			if (!($sourceRange instanceof AstRangeDatabase) || $sourceRange->containsQuery()) {
+			if ($sourceRange instanceof AstRangeDatabaseSubquery) {
 				return false;
 			}
 			
+			// Extract the entity name
 			$entityName = $sourceRange->getEntityName();
 			
+			// Abort if there's no entity
 			if ($entityName === null || !$this->entityStore->exists($entityName)) {
 				return false; // No entity metadata available
 			}
@@ -168,6 +174,7 @@
 			// Get annotations for this property
 			$annotations = $this->entityStore->getAnnotations($entityName);
 			
+			// Abort if the field has no annotations
 			if (!isset($annotations[$fieldName])) {
 				return false; // Property not found
 			}
