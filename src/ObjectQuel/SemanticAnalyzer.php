@@ -13,6 +13,7 @@
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstMax;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstMin;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRangeDatabase;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRangeDatabaseSubquery;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRegExp;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRetrieve;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstSum;
@@ -89,7 +90,7 @@
 		 */
 		private function validateNestedQueries(AstRetrieve $ast): void {
 			foreach ($ast->getRanges() as $range) {
-				if (!$range instanceof AstRangeDatabase) {
+				if (!$range instanceof AstRangeDatabaseSubquery) {
 					continue;
 				}
 				

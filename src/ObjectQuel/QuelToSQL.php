@@ -7,7 +7,9 @@
 	use Quellabs\ObjectQuel\Exception\QuelException;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstIdentifier;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRangeDatabase;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRangeDatabaseMaterialized;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRangeDatabaseSubquery;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRangeDatabaseTempTable;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRetrieve;
 	use Quellabs\ObjectQuel\ObjectQuel\Visitors\GetMainEntityInAst;
 	use Quellabs\ObjectQuel\ObjectQuel\Visitors\GetMainEntityInAstException;
@@ -359,7 +361,8 @@
 				// Only use database ranges
 				if (
 					!$range instanceof AstRangeDatabase &&
-					!$range instanceof AstRangeDatabaseSubquery
+					!$range instanceof AstRangeDatabaseTempTable &&
+					!$range instanceof AstRangeDatabaseMaterialized
 				) {
 					continue;
 				}
@@ -388,13 +391,19 @@
 				
 				// Subquery ranges are emitted as derived tables inline in the JOIN clause.
 				// Regular ranges reference a physical table looked up from the entity store.
-				if ($range instanceof AstRangeDatabaseSubquery) {
+				if ($range instanceof AstRangeDatabaseMaterialized) {
 					$subSQL = $this->convertToSQL($range->getQuery());
 					$result[] = "{$joinType} JOIN ({$subSQL}) as `{$rangeName}` ON {$joinColumn}";
-				} else {
+				} elseif ($range instanceof AstRangeDatabaseTempTable) {
+					$result[] = "{$joinType} JOIN `{$range->getTableName()}` as `{$rangeName}` ON {$joinColumn}";
+				} elseif ($range instanceof AstRangeDatabase) {
 					$entityName = $range->getResolvedEntityName();
 					$owningTable = $this->entityStore->getOwningTable($entityName);
 					$result[] = "{$joinType} JOIN `{$owningTable}` as `{$rangeName}` ON {$joinColumn}";
+				} else {
+					throw new \LogicException(
+						"Unresolved AstRangeDatabaseSubquery '{$rangeName}' reached QuelToSQL — planner did not complete substitution"
+					);
 				}
 			}
 			
