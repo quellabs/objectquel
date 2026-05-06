@@ -44,17 +44,17 @@
 		
 		/**
 		 * Gets the conditions node (WHEN clauses)
-		 * @return AstInterface|null The conditions AST node
+		 * @return AstInterface The conditions AST node
 		 */
-		public function getConditions(): ?AstInterface {
+		public function getConditions(): AstInterface {
 			return $this->conditions;
 		}
 		
 		/**
 		 * Gets the expression node (result value)
-		 * @return AstInterface|null The expression AST node
+		 * @return AstInterface The expression AST node
 		 */
-		public function getExpression(): ?AstInterface {
+		public function getExpression(): AstInterface {
 			return $this->expression;
 		}
 		
