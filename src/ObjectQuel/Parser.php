@@ -34,10 +34,10 @@
 			    return true;
 		    } elseif ($this->lexer->optionalMatch(Token::False)) {
 			    return false;
-		    } elseif ($this->lexer->optionalMatch(Token::Number, $result)) {
-			    return $result->getValue();
-		    } elseif ($this->lexer->optionalMatch(Token::Identifier, $result)) {
-			    return $result->getValue();
+		    } elseif (($token = $this->lexer->optionalMatch(Token::Number)) !== null) {
+			    return $token->getValue();
+		    } elseif (($token = $this->lexer->optionalMatch(Token::Identifier)) !== null) {
+			    return $token->getValue();
 		    } else {
 			    throw new ParserException("Invalid compiler directive value for @{$directiveName}");
 		    }

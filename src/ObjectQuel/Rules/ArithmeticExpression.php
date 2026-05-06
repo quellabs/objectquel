@@ -259,7 +259,7 @@
 					$this->lexer->match($tokenType);
 					
 					// Handle +/- followed by a number as a literal with sign
-					if ($this->lexer->optionalMatch(Token::Number, $resultToken)) {
+					if (($resultToken = $this->lexer->optionalMatch(Token::Number)) !== null) {
 						$number = ($tokenValue == "-") ? 0 - $resultToken->getValue() : $resultToken->getValue();
 						return new AstNumber($number);
 					}

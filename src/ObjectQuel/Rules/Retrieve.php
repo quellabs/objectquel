@@ -58,7 +58,7 @@
 			$retrieve = new AstRetrieve(
 				$directives,
 				$ranges,
-				$this->lexer->optionalMatch(Token::Unique)
+				$this->lexer->optionalMatch(Token::Unique) !== null
 			);
 			
 			$this->parseFieldList($retrieve);

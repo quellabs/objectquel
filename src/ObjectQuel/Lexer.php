@@ -225,7 +225,7 @@
 					// Behandel escape characters
 					if ($this->string[$this->pos] === "\\") {
 						// Er moet wel een volgend karakter zijn
-						if ($this->string[$this->pos + 1] == $this->length) {
+						if ($this->pos + 1 >= $this->length) {
 							throw new LexerException("Unexpected end of data");
 						}
 						
@@ -341,22 +341,20 @@
             
             throw new LexerException("Unexpected token");
         }
-        
-        /**
-         * Match the next token
-         * @param int $token
-         * @param Token|null $result
-         * @return bool
-         * @throws LexerException
-         */
-        public function optionalMatch(int $token, Token &$result = null): bool {
-	        if ($this->next_token->getType() === $token) {
-				$result = $this->match($token);
-                return true;
-            }
-            
-            return false;
-        }
+	    
+	    /**
+	     * Match the next token
+	     * @param int $token
+	     * @return Token|null
+	     * @throws LexerException
+	     */
+	    public function optionalMatch(int $token): ?Token {
+		    if ($this->next_token->getType() === $token) {
+			    return $this->match($token);
+		    }
+		    
+		    return null;
+	    }
 		
 		/**
 		 * Returns the position of the next token in the source text
