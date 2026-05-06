@@ -596,7 +596,7 @@
 			
 			// String length limit
 			if ($propertyType === 'string') {
-				$property['limit'] = $this->input->ask("\nCharacter limit for this string field", "255");
+				$property['limit'] = (int)($this->input->ask("\nCharacter limit for this string field", "255") ?? "255");
 			}
 			
 			// Integer unsigned flag
@@ -707,14 +707,22 @@
 		 */
 		private function selectTargetEntity(array $availableEntities): string {
 			if (empty($availableEntities)) {
-				return $this->input->ask("\nTarget entity name (without 'Entity' suffix)");
+				do {
+					$answer = $this->input->ask("\nTarget entity name (without 'Entity' suffix)");
+				} while ($answer === null || $answer === '');
+				
+				return $answer;
 			}
 			
 			$options = array_merge($availableEntities, ['[Enter manually]']);
 			$choice = $this->input->choice("\nSelect target entity", $options);
 			
 			if ($choice === '[Enter manually]') {
-				return $this->input->ask("\nTarget entity name (without 'Entity' suffix)");
+				do {
+					$answer = $this->input->ask("\nTarget entity name (without 'Entity' suffix)");
+				} while ($answer === null || $answer === '');
+				
+				return $answer;
 			} else {
 				return $choice;
 			}
