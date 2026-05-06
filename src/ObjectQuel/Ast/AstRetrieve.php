@@ -330,10 +330,10 @@
 		
 		/**
 		 * Returns the pagination window.
-		 * @return int|null
+		 * @return int
 		 */
-		public function getWindow(): ?int {
-			return $this->window;
+		public function getWindow(): int {
+			return $this->window ?? 0;
 		}
 		
 		/**

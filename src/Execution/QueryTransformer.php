@@ -41,6 +41,7 @@
 		 * @param AstRetrieve $ast
 		 * @param array<int|string, mixed> $parameters
 		 * @return void
+		 * @throws QuelException
 		 */
 		public function transform(AstRetrieve $ast, array $parameters): void {
 			// Check if the query requires pagination (has window clauses)
@@ -117,7 +118,7 @@
 				// Fetch IN() statement
 				$astIdentifier = $this->createPrimaryKeyIdentifier($primaryKeyInfo);
 				$visitor = new GetMainEntityInAst($astIdentifier);
-				$ast->getConditions()->accept($visitor);
+				$ast->getConditions()?->accept($visitor);
 				
 				// If no exception, fall back to validation method
 				$this->processPaginationWithValidation($ast, $parameters, $primaryKeyInfo);

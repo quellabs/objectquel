@@ -3,6 +3,8 @@
 	namespace Quellabs\ObjectQuel\PrimaryKeys\Generators;
 	
 	use Quellabs\ObjectQuel\EntityManager;
+	use Quellabs\ObjectQuel\Exception\EntityResolutionException;
+	use Quellabs\ObjectQuel\Exception\QuelException;
 	use Quellabs\ObjectQuel\PrimaryKeys\PrimaryKeyGeneratorInterface;
 	
 	/**
@@ -15,37 +17,42 @@
 		 * @param EntityManager $em The EntityManager instance
 		 * @param object $entity The entity object for which to generate a primary key
 		 * @return mixed The generated primary key value
+		 * @throws QuelException
 		 */
 		public function generate(EntityManager $em, object $entity): mixed {
-			// Get the database connection from the EntityManager
-			$connection = $em->getConnection();
-			
-			// Get the table name associated with the entity
-			$tableName = $em->getEntityStore()->getOwningTable($entity);
-			
-			// Get the identifier keys (primary key fields) of the entity
-			$identifierKeys = $em->getEntityStore()->getIdentifierKeys($entity);
-			
-			// Get the column mapping for the entity
-			$columnMap = $em->getEntityStore()->getColumnMap($entity);
-			
-			// Get the actual database column name for the primary key
-			$primaryKey = $columnMap[$identifierKeys[0]];
-			
-			// Execute a SQL query to get the next sequence value
-			// This query finds the maximum current value and adds 1
-			$rs = $connection->execute("
-				 SELECT
-					COALESCE(MAX(`{$primaryKey}`), 0) + 1
-				 FROM `{$tableName}`
-			  ");
-			
-			// execute() returns StatementInterface|false
-			if ($rs === false) {
-				return null;
+			try {
+				// Get the database connection from the EntityManager
+				$connection = $em->getConnection();
+				
+				// Get the table name associated with the entity
+				$tableName = $em->getEntityStore()->getOwningTable($entity);
+				
+				// Get the identifier keys (primary key fields) of the entity
+				$identifierKeys = $em->getEntityStore()->getIdentifierKeys($entity);
+				
+				// Get the column mapping for the entity
+				$columnMap = $em->getEntityStore()->getColumnMap($entity);
+				
+				// Get the actual database column name for the primary key
+				$primaryKey = $columnMap[$identifierKeys[0]];
+				
+				// Execute a SQL query to get the next sequence value
+				// This query finds the maximum current value and adds 1
+				$rs = $connection->execute("
+					 SELECT
+						COALESCE(MAX(`{$primaryKey}`), 0) + 1
+					 FROM `{$tableName}`
+				  ");
+				
+				// execute() returns StatementInterface|false
+				if ($rs === null) {
+					throw new QuelException("SequenceGenerator could not generate a sequence for table `{$tableName}`.");
+				}
+				
+				// Fetch the single scalar result and return it
+				return $rs->fetchColumn(0);
+			} catch (EntityResolutionException $e) {
+				throw new QuelException($e->getMessage(), 'sequence_generator_error', $e->getCode(), $e);
 			}
-			
-			// Fetch the single scalar result and return it
-			return $rs->fetchColumn(0);
 		}
 	}
