@@ -84,39 +84,36 @@
 		 */
 		public function execute(TempTableStage $stage, callable $runner): void {
 			$range = $stage->getRange();
+			$tableName = $range->getTableName();
 			$innerQuery = $stage->getInnerQuery();
 			
 			// Execute the inner query through the full pipeline.
 			// This handles JSON stages, sub-decomposition, etc. transparently.
 			$rows = $runner($stage->getInnerPlan());
 			
+			// INNER JOIN: an empty source means the outer query can produce no rows.
+			// Skip table creation entirely — PlanExecutor will produce an empty result set.
+			if (empty($rows) && $range->isRequired()) {
+				return;
+			}
+			
+			// Infer column schema from result rows when available, or fall back to the
+			// projection list for LEFT JOINs where the inner query returned no rows.
 			if (empty($rows)) {
-				if ($range->isRequired()) {
-					// INNER JOIN: an empty source means the outer query can produce no rows.
-					// Skip table creation entirely and return early — PlanExecutor will
-					// produce an empty result set, which is correct.
-					return;
-				}
-				
-				// LEFT JOIN: the outer query must still run and return its rows with NULLs
-				// for this range's columns. Create an empty temp table using column names
-				// derived from the inner query's projection list, since there are no result
-				// rows to infer the schema from.
 				$columns = $this->extractColumnNamesFromQuery($innerQuery);
-				$this->createTable($range->getTableName(), $columns);
 			} else {
-				// Infer column schema from the keys of the first result row
-				$columns = array_map(
-					fn($key) => (string)$key,
-					array_keys($rows[0])
-				);
-				
-				$this->createTable($range->getTableName(), $columns);
-				$this->insertRows($range->getTableName(), $columns, $rows);
+				$columns = array_map(fn($key) => (string)$key, array_keys($rows[0]));
+			}
+			
+			// Create the temporary table and populate it
+			$this->createTable($tableName, $columns);
+			
+			if (!empty($rows)) {
+				$this->insertRows($tableName, $columns, $rows);
 			}
 			
 			// Register the table name so cleanup() can DROP it later
-			$this->createdTables[] = $range->getTableName();
+			$this->createdTables[] = $tableName;
 		}
 		
 		/**
@@ -138,16 +135,7 @@
 			
 			$this->createdTables = [];
 		}
-		
-		/**
-		 * Returns the list of temporary table names created so far.
-		 * Useful for debugging and testing.
-		 * @return string[]
-		 */
-		public function getCreatedTables(): array {
-			return $this->createdTables;
-		}
-		
+
 		/**
 		 * Extracts column names from the inner query's projection list.
 		 * Used when the inner query returns no rows and the schema cannot be inferred

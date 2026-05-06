@@ -92,13 +92,6 @@
 				}
 			}
 			
-			// Optimization: If there's only one stage and no temp tables, perform a
-			// simple query execution. This avoids unnecessary overhead of the multi-stage
-			// execution process.
-			if (!$hasTempTableStages && count($stagesInOrder) === 1) {
-				return $this->queryExecutor->executeStage($stagesInOrder[0], $stagesInOrder[0]->getStaticParams());
-			}
-			
 			// Multi-stage execution: execute each stage in the correct order and combine the results
 			/** @var array<string, list<array<string, mixed>>> $intermediateResults */
 			$intermediateResults = [];
