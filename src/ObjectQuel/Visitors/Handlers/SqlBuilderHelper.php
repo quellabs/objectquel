@@ -7,6 +7,7 @@
 	use Quellabs\ObjectQuel\Capabilities\PlatformCapabilitiesInterface;
 	use Quellabs\ObjectQuel\Capabilities\NullPlatformCapabilities;
 	use Quellabs\ObjectQuel\EntityStore;
+	use Quellabs\ObjectQuel\Exception\EntityResolutionException;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstIdentifier;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstParameter;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRangeDatabase;
@@ -399,64 +400,86 @@
 		}
 		
 		/**
-		 * Builds identifier column with COALESCE for sorting
-		 * Creates sortable column expressions that handle NULL values appropriately.
-		 * Uses COALESCE to provide default values for nullable columns during sorting.
-		 * @param AstIdentifier $ast The identifier to create sortable column for
-		 * @return string SQL column expression with appropriate NULL handling
+		 * Builds a SQL column expression for the given identifier.
+		 *
+		 * In SORT context, wraps nullable columns in COALESCE() to push NULLs to a
+		 * predictable position (0 for integers, '' for everything else). In all other
+		 * contexts, returns a plain table.column reference.
+		 *
+		 * @param AstIdentifier $ast The identifier to resolve to a SQL expression.
+		 * @return string SQL column expression, optionally wrapped in COALESCE().
+		 * @throws EntityResolutionException
 		 */
 		public function buildSortableColumn(AstIdentifier $ast): string {
+			// Fetch the range
 			$range = $ast->getRange();
 			
-			// Alias identifier (e.g. `score` from `score=search_score(...)`) —
-			// no range, no next node. Return the bare name so ORDER BY score works.
-			if ($range === null || !$ast->hasNext()) {
+			// Alias identifiers (e.g. `score` from `score=search_score(...)`) have no
+			// range and no property chain. Return the bare name so ORDER BY score works.
+			if ($range === null) {
 				return $ast->getName();
 			}
 			
-			$rangeName = $range->getName();
-			$entityName = $ast->getEntityName();
+			// Resolve the next node now so static analysis can track its nullability
+			// in one place, avoiding a redundant hasNext() + getNext() double-check.
 			$nextNode = $ast->getNext();
-
+			
+			// Range is set but there's no property — treat as alias-style reference.
 			if ($nextNode === null) {
 				return $ast->getName();
 			}
-
-			$propertyName = $nextNode->getName();
 			
-			// Handle temporary tables - no metadata available
+			// Temporary table ranges carry no entity metadata; the property name from
+			// the subquery's SELECT is already a valid column name, so use it directly.
+			$rangeName    = $range->getName();
+			$propertyName = $nextNode->getName();
+			$entityName   = $ast->getEntityName();
+			
 			if (empty($entityName)) {
-				// For temporary tables, use column name directly without COALESCE
 				return "{$rangeName}.{$propertyName}";
 			}
 			
+			// Map the ORM property name to its physical database column name.
 			$columnMap = $this->entityStore->getColumnMap($entityName);
 			
-			// For non-sorting contexts, return simple column reference
-			if ($this->partOfQuery !== "SORT") {
-				return $rangeName . "." . $columnMap[$propertyName];
+			// Property has no column mapping — return empty to signal a bad reference.
+			if (!isset($columnMap[$propertyName])) {
+				return '';
 			}
 			
-			// Get column annotations to check nullability and type
-			$annotations = $this->entityStore->getAnnotations($entityName);
+			// Create the column
+			$columnRef = "{$rangeName}.{$columnMap[$propertyName]}";
 			
-			$annotationsOfProperty = array_values(array_filter(
-				$annotations[$propertyName],
-				function ($e) {
-					return $e instanceof Column;
-				}
+			// Outside a SORT clause there is no need for NULL handling; return as-is.
+			if ($this->partOfQuery !== "SORT") {
+				return $columnRef;
+			}
+			
+			// In SORT context, find the Column annotation for this property so we can
+			// inspect nullability and type. Filter to Column instances only since a
+			// property may carry multiple annotation types (e.g. Index, Relation).
+			$columnAnnotations = array_values(array_filter(
+				$annotations[$propertyName] ?? [],
+				fn($annotation) => $annotation instanceof Column
 			));
 			
-			// If column is not nullable, no COALESCE needed
-			// For nullable integer columns, use 0 as default
-			// For other nullable columns, use empty string as default
-			if (!$annotationsOfProperty[0]->isNullable()) {
-				return $rangeName . "." . $columnMap[$propertyName];
-			} elseif ($annotationsOfProperty[0]->getType() === "integer") {
-				return "COALESCE({$rangeName}.{$columnMap[$propertyName]}, 0)";
-			} else {
-				return "COALESCE({$rangeName}.{$columnMap[$propertyName]}, '')";
+			// No Column annotation found — can't determine nullability, return as-is.
+			if (empty($columnAnnotations)) {
+				return $columnRef;
 			}
+			
+			// Non-nullable columns sort correctly without COALESCE.
+			$columnAnnotation = $columnAnnotations[0];
+			
+			if (!$columnAnnotation->isNullable()) {
+				return $columnRef;
+			}
+			
+			// Nullable columns need a COALESCE default so NULLs sort consistently.
+			// Integers default to 0 (sorts before positive values);
+			// everything else defaults to '' (sorts before any non-empty string).
+			$default = $columnAnnotation->getType() === "integer" ? "0" : "''";
+			return "COALESCE({$columnRef}, {$default})";
 		}
 		
 		/**
