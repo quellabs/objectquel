@@ -231,13 +231,16 @@
 				// Get the join property that defines how this range connects to other tables
 				$joinProperty = $range->getJoinProperty();
 				
+				// Get the entity name
+				$entityName = $range->getEntityName();
+				
 				// Only validate ranges that actually have join properties
 				// Main tables or ranges without joins don't need 'via' validation
-				if ($joinProperty !== null) {
+				if ($joinProperty !== null && $entityName !== null) {
 					try {
 						// Create a validator to check that all 'via' relations in the join property are valid
 						// This verifies that intermediate entities and properties exist in the entity store
-						$validator = new ViaClauseValidator($this->entityStore, $range->getEntityName());
+						$validator = new ViaClauseValidator($this->entityStore, $entityName);
 						
 						// Apply the validator to the join property tree
 						// This traverses all parts of the join definition looking for invalid 'via' references

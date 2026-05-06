@@ -253,7 +253,7 @@
 			
 			try {
 				$visitor = new GetMainEntityInAst($astIdentifier);
-				$retrieve->getConditions()->accept($visitor);
+				$retrieve->getConditions()?->accept($visitor);
 				return $this->getSortDefault($retrieve);
 			} catch (GetMainEntityInAstException $exception) {
 				$astObject = $exception->getAstObject();
