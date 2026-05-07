@@ -3,6 +3,7 @@
 	namespace Quellabs\ObjectQuel\Planner\Helpers;
 	
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRangeDatabaseMaterialized;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRangeDatabaseSubquery;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRangeDatabaseTempTable;
 	use Quellabs\ObjectQuel\Planner\ExecutionStage;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstAlias;
@@ -188,7 +189,11 @@
 			$joinConditions = $this->filter->isolateJoinConditionsForRange($range, $query->getConditions());
 			
 			// Assert that range of the correct type
-			assert($range instanceof AstRangeDatabase || $range instanceof AstRangeJsonSource);
+			assert(
+				$range instanceof AstRangeDatabase ||
+				$range instanceof AstRangeDatabaseSubquery ||
+				$range instanceof AstRangeJsonSource
+			);
 			
 			// Return the optimized query that can be fully executed by the database
 			return new ExecutionStage(uniqid(), $dbQuery, $range, $staticParams, $joinConditions);
