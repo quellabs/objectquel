@@ -117,7 +117,7 @@
 						}
 						
 						// Add the alias to the SQL result
-						$sqlResult .= " as `{$value->getName()}`";
+						$sqlResult .= " as `{$aliasName}`";
 					}
 					
 					// Add the SQL result to the result array
@@ -171,7 +171,7 @@
 				
 				// Subquery ranges are emitted as derived tables inline in the FROM clause.
 				// Regular ranges reference a physical table looked up from the entity store.
-				if ($range instanceof AstRangeDatabaseMaterialized) {
+				if ($range instanceof AstRangeDatabaseSubquery) {
 					$subSQL = $this->convertToSQL($range->getQuery(), $rangeName);
 					$tableNames[] = "({$subSQL}) as `{$rangeName}`";
 				} else {
