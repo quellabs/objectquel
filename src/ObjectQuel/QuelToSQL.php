@@ -44,18 +44,19 @@
 		/**
 		 * Convert a retrieve statement to SQL
 		 * @param AstRetrieve $retrieve
+		 * @param string|null $outerRangeName
 		 * @return string
 		 * @throws EntityResolutionException
 		 * @throws QuelException
 		 */
-		public function convertToSQL(AstRetrieve $retrieve): string {
+		public function convertToSQL(AstRetrieve $retrieve, ?string $outerRangeName = null): string {
 			// Build each clause independently, then join non-empty parts with a single
 			// space so the output never contains runs of whitespace when optional clauses
 			// are absent. Clause order follows the SQL standard:
 			//   SELECT … FROM … JOIN … WHERE … GROUP BY … ORDER BY …
 			$parts = array_filter([
 				"SELECT",
-				$this->getUnique($retrieve) . $this->getFieldNames($retrieve),
+				$this->getUnique($retrieve) . $this->getFieldNames($retrieve, $outerRangeName),
 				$this->getFrom($retrieve),
 				$this->getJoins($retrieve),
 				$this->getWhere($retrieve),
@@ -93,7 +94,7 @@
 		 * @param AstRetrieve $retrieve The AstRetrieve object to process.
 		 * @return string The formatted field names as a single string.
 		 */
-		protected function getFieldNames(AstRetrieve $retrieve): string {
+		protected function getFieldNames(AstRetrieve $retrieve, ?string $outerRangeName = null): string {
 			// Initialize an empty array to store the result
 			$result = [];
 			
@@ -101,16 +102,20 @@
 			foreach ($retrieve->getValues() as $value) {
 				// Create a new QuelToSQLConvertToString converter
 				$quelToSQLConvertToString = new QuelToSQLConvertToString($this->entityStore, $this->parameters, "VALUES", $this->platform);
-				
-				// Accept the value for conversion
 				$value->accept($quelToSQLConvertToString);
-				
-				// Get the converted SQL result
 				$sqlResult = $quelToSQLConvertToString->getResult();
 				
 				// Check if the alias is not a complete entity
 				if (!empty($sqlResult)) {
 					if (!$this->identifierIsEntity($value->getExpression())) {
+						// Fetch the alias name
+						$aliasName = $value->getName();
+						
+						// When emitting as a subquery, rewrite "y.id" → "x.id"
+						if ($outerRangeName !== null && str_contains($aliasName, '.')) {
+							$aliasName = $outerRangeName . '.' . substr($aliasName, strpos($aliasName, '.') + 1);
+						}
+						
 						// Add the alias to the SQL result
 						$sqlResult .= " as `{$value->getName()}`";
 					}
@@ -166,8 +171,8 @@
 				
 				// Subquery ranges are emitted as derived tables inline in the FROM clause.
 				// Regular ranges reference a physical table looked up from the entity store.
-				if ($range instanceof AstRangeDatabaseSubquery) {
-					$subSQL = $this->convertToSQL($range->getQuery());
+				if ($range instanceof AstRangeDatabaseMaterialized) {
+					$subSQL = $this->convertToSQL($range->getQuery(), $rangeName);
 					$tableNames[] = "({$subSQL}) as `{$rangeName}`";
 				} else {
 					// Get the corresponding table name for the entity.
@@ -392,7 +397,7 @@
 				// Subquery ranges are emitted as derived tables inline in the JOIN clause.
 				// Regular ranges reference a physical table looked up from the entity store.
 				if ($range instanceof AstRangeDatabaseMaterialized) {
-					$subSQL = $this->convertToSQL($range->getQuery());
+					$subSQL = $this->convertToSQL($range->getQuery(), $rangeName);
 					$result[] = "{$joinType} JOIN ({$subSQL}) as `{$rangeName}` ON {$joinColumn}";
 				} elseif ($range instanceof AstRangeDatabaseTempTable) {
 					$result[] = "{$joinType} JOIN `{$range->getTableName()}` as `{$rangeName}` ON {$joinColumn}";
