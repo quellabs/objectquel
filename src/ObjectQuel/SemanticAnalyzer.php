@@ -205,7 +205,7 @@
 		private function validateRangesOnlyReferenceOtherRanges(AstRetrieve $ast): void {
 			// Create a validator that ensures join properties only reference other defined ranges
 			// This prevents situations where a join tries to reference an entity that isn't included in the query
-			$validator = new RangeOnlyReferencesOtherRanges();
+			$validator = new RangeOnlyReferencesOtherRanges($ast);
 			
 			// Examine each range to validate its join property references
 			foreach ($ast->getRanges() as $range) {

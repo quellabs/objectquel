@@ -5,14 +5,27 @@
 	
 	use Quellabs\ObjectQuel\Exception\SemanticException;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstIdentifier;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRetrieve;
 	use Quellabs\ObjectQuel\ObjectQuel\AstInterface;
 	use Quellabs\ObjectQuel\ObjectQuel\AstVisitorInterface;
-	use Quellabs\ObjectQuel\Exception\QuelException;
 	
 	/**
 	 * Class RangeOnlyReferencesOtherRanges
 	 */
 	class RangeOnlyReferencesOtherRanges implements AstVisitorInterface {
+		
+		/** @var list<string> */
+		private array $rangeNames;
+		
+		/**
+		 * Constructor
+		 * @param AstRetrieve $ast
+		 */
+		public function __construct(AstRetrieve $ast) {
+			foreach ($ast->getRanges() as $range) {
+				$this->rangeNames[] = $range->getName();
+			}
+		}
 		
 		/**
 		 * Visit a node in the AST.
@@ -24,18 +37,24 @@
 				return;
 			}
 			
+			// Only check base identifiers
 			if ($node->hasParentIdentifier()) {
 				return;
 			}
 			
-			/** @var AstIdentifier $baseIdentifier */
-			$baseIdentifier = $node->getBaseIdentifier();
+			// Fetch the range name
+			$range = $node->getRange();
 			
-			// Accept if the identifier has a range attached OR if its name matches a
-			// known range — the range object may not be attached yet at validation time
-			// when the join property is built from a deep clone.
-			if (empty($baseIdentifier->getRange()) && empty($baseIdentifier->getName())) {
-				throw new SemanticException("The 'via' clause in the range '%s' directly refers to an entity. The 'via' clause must reference another range. Please review the query and ensure that the 'via' clause correctly represents the relationship between ranges.");
+			// Check if the range name is in the known ranges list
+			// If not, it references something in the retrieve() list
+			if ($range === null || !in_array($range->getName(), $this->rangeNames)) {
+				throw new SemanticException(
+					sprintf(
+						"'%s' in the 'via' clause of range '%%s' does not reference a declared range. Valid ranges are: %s.",
+						$node->getCompleteName(),
+						implode(', ', $this->rangeNames)
+					)
+				);
 			}
 		}
 	}
