@@ -4,8 +4,8 @@
 	
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstIdentifier;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRange;
-	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstSearch;
-	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstSearchScore;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\NodeBinary;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\NodeSearch;
 	use Quellabs\ObjectQuel\ObjectQuel\AstInterface;
 	
 	/**
@@ -38,10 +38,10 @@
 		/**
 		 * Short-circuits: walks the right child only if the left child returned false.
 		 * This avoids unnecessary traversal once a match has already been found.
-		 * @param AstInterface $node A binary node exposing getLeft() and getRight()
+		 * @param NodeBinary $node A node exposing getLeft() and getRight()
 		 * @return bool True if either child subtree references the target range
 		 */
-		protected function visitBinary(AstInterface $node): bool {
+		protected function visitBinary(NodeBinary $node): bool {
 			return $this->walk($node->getLeft()) || $this->walk($node->getRight());
 		}
 		
@@ -49,10 +49,10 @@
 		 * Short-circuits: stops iterating as soon as any identifier matches.
 		 * Overrides the base fold to avoid visiting identifiers that cannot affect
 		 * the result once a match has been found.
-		 * @param AstSearch|AstSearchScore $node The full-text search node being visited
+		 * @param NodeSearch $node A node exposing getIdentifiers()
 		 * @return bool True if any of the search node's identifiers belong to the target range
 		 */
-		protected function visitSearch(AstSearch|AstSearchScore $node): bool {
+		protected function visitSearch(NodeSearch $node): bool {
 			foreach ($node->getIdentifiers() as $identifier) {
 				if ($this->walk($identifier)) {
 					return true;
@@ -75,7 +75,8 @@
 		/**
 		 * Combines two boolean results with OR. Not called directly by visitBinary()
 		 * or visitSearch() in this class (both short-circuit instead), but required
-		 * by the abstract base and may be used by visitUnary() via the inherited default.
+		 * by the abstract base and may be used by visitSingleExpression() via the
+		 * inherited default.
 		 * @param mixed $left bool result from the left child
 		 * @param mixed $right bool result from the right child
 		 * @return bool True if either side found a reference to the target range

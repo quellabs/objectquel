@@ -10,7 +10,7 @@
 	 *
 	 * Represents a general expression node in the AST (Abstract Syntax Tree).
 	 */
-	class AstExpression extends Ast {
+	class AstExpression extends Ast implements NodeBinary {
 		
 		/**
 		 * @var AstInterface The left-hand operand of the expression.

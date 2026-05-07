@@ -8,7 +8,7 @@
 	/**
 	 * Class AstIsNumeric
 	 */
-	class AstIsNumeric extends Ast {
+	class AstIsNumeric extends Ast implements NodeFunction {
 		
 		/**
 		 * The value or string to check

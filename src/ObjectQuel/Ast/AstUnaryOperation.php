@@ -5,7 +5,7 @@
 	use Quellabs\ObjectQuel\ObjectQuel\AstInterface;
 	use Quellabs\ObjectQuel\ObjectQuel\AstVisitorInterface;
 	
-	class AstUnaryOperation extends Ast {
+	class AstUnaryOperation extends Ast implements NodeSingleExpression {
 		private AstInterface $expression;
 		private string $operator;
 		

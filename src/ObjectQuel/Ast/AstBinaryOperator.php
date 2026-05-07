@@ -10,7 +10,7 @@
 	 *
 	 * Represents AND/OR logical expression in the AST (Abstract Syntax Tree).
 	 */
-	class AstBinaryOperator extends Ast {
+	class AstBinaryOperator extends Ast implements NodeBinary {
 		
 		/**
 		 * @var AstInterface The left-hand operand of the AND expression.

@@ -8,7 +8,7 @@
 	/**
 	 * Base class for aggregation
 	 */
-	abstract class AstAggregate extends Ast {
+	abstract class AstAggregate extends Ast implements NodeAggregate {
 		
 		/**
 		 * @var AstInterface The right-hand operand of the AND expression.

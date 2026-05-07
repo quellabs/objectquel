@@ -5,7 +5,7 @@
 	use Quellabs\ObjectQuel\ObjectQuel\AstInterface;
 	use Quellabs\ObjectQuel\ObjectQuel\AstVisitorInterface;
 	
-	class AstFactor extends Ast {
+	class AstFactor extends Ast implements NodeBinary {
 		
 		protected AstInterface $left;
 		protected AstInterface $right;

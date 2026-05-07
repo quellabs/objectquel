@@ -8,7 +8,7 @@
 	/**
 	 * Class AstIsEmpty
 	 */
-	class AstIsEmpty extends Ast {
+	class AstIsEmpty extends Ast implements NodeFunction {
 		
 		/**
 		 * The value or string to check

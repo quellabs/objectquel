@@ -22,7 +22,7 @@
 	 *
 	 * Emits: MATCH(`range`.`col1`, `range`.`col2`) AGAINST(:term IN BOOLEAN MODE)
 	 */
-	class AstSearchScore extends Ast {
+	class AstSearchScore extends Ast implements NodeSearch {
 		
 		/**
 		 * @var AstIdentifier[] The fields to include in the MATCH() expression

@@ -8,7 +8,7 @@
 	/**
 	 * Class AstSearch
 	 */
-	class AstSearch extends Ast {
+	class AstSearch extends Ast implements NodeSearch {
 		
 		/**
 		 * @var AstIdentifier[]

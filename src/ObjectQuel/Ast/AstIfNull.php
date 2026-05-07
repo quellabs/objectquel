@@ -8,7 +8,7 @@
 	/**
 	 * Class AstIfNull
 	 */
-	class AstIfNull extends Ast {
+	class AstIfNull extends Ast implements NodeSingleExpression {
 		
 		/**
 		 * @var AstInterface The expression

@@ -9,7 +9,7 @@
 	 * Class AstAlias
 	 * Represents an alias node in the Abstract Syntax Tree (AST).
 	 */
-	class AstAlias extends Ast {
+	class AstAlias extends Ast implements NodeSingleExpression {
 		
 		protected string $name;
 		protected AstInterface $expression;

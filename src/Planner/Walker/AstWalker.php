@@ -2,29 +2,12 @@
 	
 	namespace Quellabs\ObjectQuel\Planner\Walker;
 	
-	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstAlias;
-	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstAny;
-	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstAvg;
-	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstAvgU;
-	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstBinaryOperator;
-	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstCount;
-	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstCountU;
-	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstExpression;
-	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstFactor;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\NodeAggregate;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstIdentifier;
-	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstIfNull;
-	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstIsEmpty;
-	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstIsFloat;
-	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstIsInteger;
-	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstIsNumeric;
-	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstMax;
-	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstMin;
-	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstSearch;
-	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstSearchScore;
-	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstSum;
-	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstSumU;
-	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstTerm;
-	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstUnaryOperation;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\NodeBinary;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\NodeFunction;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\NodeSearch;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\NodeSingleExpression;
 	use Quellabs\ObjectQuel\ObjectQuel\AstInterface;
 	
 	/**
@@ -33,6 +16,18 @@
 	 *
 	 * Structural traversal lives here once. Concrete walkers override only the
 	 * visit methods they care about and provide a merge strategy for binary nodes.
+	 *
+	 * Node types are recognised via structural interfaces rather than concrete class
+	 * names, so new AST node types automatically participate in traversal as long as
+	 * they implement the appropriate interface — no changes to this class are needed.
+	 *
+	 * The structural interfaces and the node types that implement them are:
+	 *   - NodeBinary           — AstExpression, AstBinaryOperator, AstTerm, AstFactor
+	 *   - NodeSingleExpression — AstUnaryOperation, AstNot, AstCheckNull, AstCheckNotNull,
+	 *                            AstAlias, AstIfNull
+	 *   - NodeAggregate        — AstAggregate (base for COUNT, AVG, MAX, MIN, SUM, ANY, ...)
+	 *   - NodeFunction         — AstIsNumeric, AstIsFloat, AstIsInteger, AstIsEmpty
+	 *   - NodeSearch           — AstSearch, AstSearchScore
 	 *
 	 * Recursion safety:
 	 *   Assumes the AST is acyclic, which is guaranteed by the parser.
@@ -46,62 +41,38 @@
 		 * Dispatches a node to the appropriate visit method and returns the walker's
 		 * result of type T. This is the single entry point for all traversal — both
 		 * external callers and recursive calls within visit methods use this.
-		 *
-		 * Dispatch order matters: more specific types are checked before more general
-		 * ones to ensure the correct visit method is called for every node type.
 		 * @param AstInterface $node The AST node to dispatch
 		 * @return mixed Result of type T
 		 */
 		public function walk(AstInterface $node): mixed {
-			// Leaf: identifier (column reference, e.g. x.id)
+			// Leaf: identifier (column reference, e.g. x.id). Checked first because
+			// AstIdentifier does not implement any structural interface.
 			if ($node instanceof AstIdentifier) {
 				return $this->visitIdentifier($node);
 			}
 			
-			// Binary structural nodes: comparisons, logical operators, arithmetic.
-			// All expose getLeft() / getRight().
-			if ($node instanceof AstExpression ||
-				$node instanceof AstBinaryOperator ||
-				$node instanceof AstTerm ||
-				$node instanceof AstFactor) {
+			// Binary nodes expose getLeft() and getRight().
+			if ($node instanceof NodeBinary) {
 				return $this->visitBinary($node);
 			}
 			
-			// Unary wrapper: NOT, IS NULL, etc. Exposes getExpression().
-			if ($node instanceof AstUnaryOperation) {
-				return $this->visitUnary($node->getExpression());
+			// Single-expression wrappers expose getExpression().
+			if ($node instanceof NodeSingleExpression) {
+				return $this->visitSingleExpression($node);
 			}
 			
-			// Single-expression wrappers: alias and IFNULL both expose getExpression().
-			if ($node instanceof AstAlias || $node instanceof AstIfNull) {
-				return $this->walk($node->getExpression());
-			}
-			
-			// Aggregate functions: COUNT, COUNT UNIQUE, AVG, AVG UNIQUE, MAX, MIN,
-			// SUM, SUM UNIQUE, ANY — all expose getIdentifier().
-			if ($node instanceof AstCount ||
-				$node instanceof AstCountU ||
-				$node instanceof AstAvg ||
-				$node instanceof AstAvgU ||
-				$node instanceof AstMax ||
-				$node instanceof AstMin ||
-				$node instanceof AstSum ||
-				$node instanceof AstSumU ||
-				$node instanceof AstAny) {
+			// Aggregate functions expose getIdentifier().
+			if ($node instanceof NodeAggregate) {
 				return $this->walk($node->getIdentifier());
 			}
 			
-			// Type-check functions: IS NUMERIC, IS FLOAT, IS INTEGER, IS EMPTY —
-			// all expose getValue().
-			if ($node instanceof AstIsNumeric ||
-				$node instanceof AstIsFloat ||
-				$node instanceof AstIsInteger ||
-				$node instanceof AstIsEmpty) {
+			// Type-check functions expose getValue().
+			if ($node instanceof NodeFunction) {
 				return $this->walk($node->getValue());
 			}
 			
-			// Full-text search nodes expose getIdentifiers() — a list of AstIdentifier nodes.
-			if ($node instanceof AstSearch || $node instanceof AstSearchScore) {
+			// Full-text search nodes expose getIdentifiers().
+			if ($node instanceof NodeSearch) {
 				return $this->visitSearch($node);
 			}
 			
@@ -125,17 +96,17 @@
 		}
 		
 		/**
-		 * Called for binary nodes: AstExpression, AstBinaryOperator, AstTerm, AstFactor.
-		 * All of these expose getLeft() and getRight().
+		 * Called for NodeBinary implementations (AstExpression, AstBinaryOperator,
+		 * AstTerm, AstFactor). All expose getLeft() and getRight().
 		 *
 		 * The default implementation recurses into both children unconditionally and
 		 * combines the results via mergeBinary(). Override to implement short-circuit
 		 * behaviour — for example, a boolean OR walk can skip the right child as soon
 		 * as the left child returns true.
-		 * @param AstInterface $node A binary node exposing getLeft() and getRight()
+		 * @param NodeBinary $node A node exposing getLeft() and getRight()
 		 * @return mixed Result of type T
 		 */
-		protected function visitBinary(AstInterface $node): mixed {
+		protected function visitBinary(NodeBinary $node): mixed {
 			return $this->mergeBinary(
 				$this->walk($node->getLeft()),
 				$this->walk($node->getRight())
@@ -143,23 +114,22 @@
 		}
 		
 		/**
-		 * Called for AstUnaryOperation nodes. The inner expression is already unwrapped
-		 * by walk() before this method is invoked, so implementations receive the child
-		 * node directly rather than the unary wrapper.
+		 * Called for NodeSingleExpression implementations (AstUnaryOperation, AstNot,
+		 * AstCheckNull, AstCheckNotNull, AstAlias, AstIfNull). All expose getExpression().
 		 *
 		 * The default implementation walks the inner expression and returns its result.
-		 * Override when the unary operator itself is significant to the walk (e.g. NOT
-		 * negation in a boolean context).
-		 * @param AstInterface $inner The expression wrapped by the unary operator
+		 * Override when the wrapper node itself is significant to the walk (e.g. logical
+		 * NOT inversion in a boolean context).
+		 * @param NodeSingleExpression $node A node exposing getExpression()
 		 * @return mixed Result of type T
 		 */
-		protected function visitUnary(AstInterface $inner): mixed {
-			return $this->walk($inner);
+		protected function visitSingleExpression(NodeSingleExpression $node): mixed {
+			return $this->walk($node->getExpression());
 		}
 		
 		/**
-		 * Called for AstSearch and AstSearchScore nodes. Both expose getIdentifiers(),
-		 * which returns a list of AstIdentifier nodes representing the searched columns.
+		 * Called for NodeSearch implementations (AstSearch, AstSearchScore). Both
+		 * expose getIdentifiers(), which returns a list of column identifier nodes.
 		 *
 		 * The default implementation walks each identifier in order, folding results
 		 * pairwise through mergeBinary(). The initial accumulator is visitDefault($node),
@@ -168,10 +138,10 @@
 		 * Override when you need early-exit behaviour — for example, a boolean checker
 		 * can return true as soon as the first matching identifier is found rather than
 		 * visiting the full list.
-		 * @param AstSearch|AstSearchScore $node The full-text search node being visited
+		 * @param NodeSearch $node A node exposing getIdentifiers()
 		 * @return mixed Result of type T
 		 */
-		protected function visitSearch(AstSearch|AstSearchScore $node): mixed {
+		protected function visitSearch(NodeSearch $node): mixed {
 			$result = $this->visitDefault($node);
 			
 			foreach ($node->getIdentifiers() as $identifier) {
@@ -182,9 +152,9 @@
 		}
 		
 		/**
-		 * Fallback handler for any node type not explicitly dispatched by walk().
+		 * Fallback handler for any node type not matched by the structural interfaces.
 		 * This covers literals (integers, strings, booleans), bind parameters, and
-		 * any future node types not yet added to the dispatch table.
+		 * any future node types that have not yet been assigned a structural interface.
 		 *
 		 * The default implementation returns null, which serves as the zero/identity
 		 * value for most walker result types. Concrete walkers should override this

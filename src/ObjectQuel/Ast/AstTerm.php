@@ -5,7 +5,7 @@
 	use Quellabs\ObjectQuel\ObjectQuel\AstInterface;
 	use Quellabs\ObjectQuel\ObjectQuel\AstVisitorInterface;
 	
-	class AstTerm extends Ast {
+	class AstTerm extends Ast implements NodeBinary {
 		
 		protected AstInterface $left;
 		protected AstInterface $right;
