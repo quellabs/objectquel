@@ -45,6 +45,7 @@
 		 * @param AstRetrieve $ast The parsed ObjectQuel query AST to transform
 		 * @return void Modifies the AST in-place
 		 * @throws TransformationException
+		 * @throws EntityResolutionException
 		 */
 		public function transform(AstRetrieve $ast): void {
 			// First, recursively transform all nested queries in temporary ranges

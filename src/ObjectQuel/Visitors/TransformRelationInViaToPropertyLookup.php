@@ -44,7 +44,7 @@
 		 * @throws TransformationException
 		 * @throws EntityResolutionException
 		 */
-		public function isRelationProperty(AstIdentifier $node, string $entityName = null): bool {
+		public function isRelationProperty(AstIdentifier $node, ?string $entityName = null): bool {
 			// Fetch the entity name
 			$entityName = $entityName ?? $node->getEntityName();
 			
@@ -71,26 +71,13 @@
 		 * @param AstRange|AstRangeDatabase|AstRangeJsonSource $rangeB The other range
 		 * @param string $propertyB Property name on $rangeB
 		 * @return AstInterface
-		 * @throws TransformationException
 		 */
 		public function createPropertyLookupAst(string $propertyA, AstRange|AstRangeDatabase|AstRangeJsonSource $rangeB, string $propertyB): AstInterface {
-			$entityNameA = $this->range->getEntityName();
-			
-			if ($entityNameA === null) {
-				throw new TransformationException('Range A has no entity name');
-			}
-			
-			$entityNameB = $rangeB->getEntityName();
-			
-			if ($entityNameB === null) {
-				throw new TransformationException('Range B has no entity name');
-			}
-			
-			$identifierA = new AstIdentifier($entityNameA);
+			$identifierA = new AstIdentifier($this->range->getName());  // "u"
 			$identifierA->setRange($this->range);
 			$identifierA->setNext(new AstIdentifier($propertyA));
 			
-			$identifierB = new AstIdentifier($entityNameB);
+			$identifierB = new AstIdentifier($rangeB->getName());  // "p"
 			$identifierB->setRange($rangeB);
 			$identifierB->setNext(new AstIdentifier($propertyB));
 			
