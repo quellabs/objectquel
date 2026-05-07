@@ -248,15 +248,29 @@
 			
 			// Case 1: Process an entity (AstIdentifier with no next/parent nodes)
 			if ($node instanceof AstIdentifier && !$node->hasNext() && !$node->hasParentIdentifier()) {
+				// Process JSON
 				if ($node->getRange() instanceof AstRangeJsonSource) {
 					return $this->processJsonAllValue($value, $row);
-				} else {
-					return $this->processEntityValue($value, $row, $relationCache);
 				}
+				
+				// Subquery ranges have no entity name — they are derived tables, not mapped
+				// entities. Return the raw scalar value directly from the row instead of
+				// attempting entity hydration, which would fail with no relation cache entry.
+				if ($node->getRange()?->getEntityName() === null) {
+					return $row[$value->getName()] ?? null;
+				}
+				
+				return $this->processEntityValue($value, $row, $relationCache);
 			}
 			
 			// Case 2: Process a property value (AstIdentifier with next node)
 			if ($node instanceof AstIdentifier && $node->hasNext()) {
+				// Subquery range property (e.g. x.id where x is a derived table) —
+				// no entity metadata exists, so return the raw value directly.
+				if ($node->getRange()?->getEntityName() === null) {
+				return $row[$value->getName()] ?? null;
+			}
+			
 				return $this->processPropertyValue($row[$value->getName()] ?? null, $node);
 			}
 			

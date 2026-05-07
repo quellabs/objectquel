@@ -5,6 +5,7 @@
 	use Quellabs\ObjectQuel\EntityStore;
 	use Quellabs\ObjectQuel\Exception\SemanticException;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstAggregate;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstIdentifier;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRangeDatabase;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRangeDatabaseSubquery;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRegExp;
@@ -49,6 +50,7 @@
 			// Step 1: Validate basic structural integrity
 			$this->validateNoRegExpInValueList($ast);
 			$this->validateNoDuplicateRanges($ast);
+			$this->validateNoEntireSubqueryRangesInValueList($ast);
 			$this->validateAtLeastOneRangeWithoutVia($ast);
 			$this->validateRangesOnlyReferenceOtherRanges($ast);
 			
@@ -126,6 +128,41 @@
 					"Duplicate range name(s) detected: " . implode(', ', $duplicateNames) .
 					". Each range name must be unique within a query."
 				);
+			}
+		}
+		
+		/**
+		 * Validates that no entire subquery ranges appear in the value list.
+		 *
+		 * Subquery ranges are derived tables with no entity mapping behind them.
+		 * Retrieving one as a whole (e.g. "retrieve(x)" where x is a subquery range)
+		 * is meaningless — the derived table produces multiple named columns like
+		 * "x.id", "x.title" etc., none of which map to a single row key "x".
+		 * The result would always be null. Users must specify individual properties
+		 * (e.g. "retrieve(x.id)") so the hydrator can look up the correct column.
+		 *
+		 * This is the outer-query counterpart to validateNoEntireEntitiesInValueList(),
+		 * which guards the inner query side.
+		 *
+		 * @param AstRetrieve $ast The AST to validate
+		 * @throws SemanticException If a bare subquery range identifier is found in the value list
+		 */
+		private function validateNoEntireSubqueryRangesInValueList(AstRetrieve $ast): void {
+			foreach ($ast->getValues() as $value) {
+				$expression = $value->getExpression();
+				
+				// Only interested in identifiers that refer directly to a subquery range
+				// without any property access chained on (i.e. "x" not "x.id")
+				if (
+					$expression instanceof AstIdentifier &&
+					$expression->getRange() instanceof AstRangeDatabaseSubquery &&
+					!$expression->hasNext()
+				) {
+					throw new SemanticException(
+						"Retrieving an entire subquery range is not allowed. " .
+						"Please specify individual properties (e.g. x.id instead of x)."
+					);
+				}
 			}
 		}
 		
