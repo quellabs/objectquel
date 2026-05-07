@@ -36,18 +36,12 @@
 		/** @var StageFactory */
 		private StageFactory $stageFactory;
 		
-		/** @var QueryTransformer */
-		private QueryTransformer $transformer;
-		
 		/**
 		 * Constructor
-		 * @param EntityManager $entityManager
-		 * @param PlatformCapabilities $capabilities
 		 */
-		public function __construct(EntityManager $entityManager, PlatformCapabilities $capabilities) {
+		public function __construct() {
 			$this->analyzer = new ConditionAnalyzer();
 			$this->stageFactory = new StageFactory($this->analyzer, new ConditionFilter($this->analyzer));
-			$this->transformer = new QueryTransformer($entityManager, $capabilities);
 		}
 		
 		/**
@@ -71,9 +65,6 @@
 		 */
 		public function build(AstRetrieve $query, array $staticParams = []): ExecutionPlan {
 			$this->analyzer->clearCache();
-			
-			// Optimize the plan
-			$this->transformer->transform($query);
 			
 			// Create a new plan to populate
 			$plan = new ExecutionPlan();

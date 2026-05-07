@@ -3,6 +3,7 @@
 	namespace Quellabs\ObjectQuel\Execution;
 	
 	use Quellabs\ObjectQuel\EntityStore;
+	use Quellabs\ObjectQuel\Exception\EntityResolutionException;
 	use Quellabs\ObjectQuel\ObjectQuel\AstInterface;
 	use Quellabs\ObjectQuel\Exception\QuelException;
 	use Quellabs\ObjectQuel\Execution\Joins\JoinStrategyInterface;
@@ -75,7 +76,7 @@
 		 * Execute a complete execution plan
 		 * @param ExecutionPlan $plan The plan containing stages to execute
 		 * @return list<array<string, mixed>> Results from executing the plan
-		 * @throws QuelException When any stage execution fails
+		 * @throws QuelException|EntityResolutionException When any stage execution fails
 		 */
 		public function execute(ExecutionPlan $plan): array {
 			// Get stages in execution order (respecting dependencies)

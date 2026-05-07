@@ -3,6 +3,8 @@
 	namespace Quellabs\ObjectQuel\ProxyGenerator\Generator;
 	
 	use Quellabs\ObjectQuel\EntityStore;
+	use Quellabs\ObjectQuel\Exception\EntityResolutionException;
+	use Random\RandomException;
 	
 	/**
 	 * Generates proxy classes at runtime via eval() for environments where
@@ -55,6 +57,8 @@
 		 * and registers it so subsequent calls return the same class name.
 		 * @param string $entityClass Fully-qualified entity class name
 		 * @return string Fully-qualified runtime proxy class name
+		 * @throws RandomException
+		 * @throws EntityResolutionException
 		 */
 		private function generateRuntimeProxy(string $entityClass): string {
 			// Build the proxy source directly, using the target namespace and unique name.
@@ -65,7 +69,7 @@
 			$entityName = $this->entityStore->resolveProxyClass($entityClass);
 			
 			// Build the proxy
-			$uniqueId = uniqid('', true);
+			$uniqueId = bin2hex(random_bytes(8));
 			$proxyShortName = $className . '_' . $uniqueId;
 			$proxyFqcn = $this->proxyNamespace . '\\' . $proxyShortName;
 			$proxySource = $this->codeGenerator->makeProxy($entityName, $this->proxyNamespace, $proxyShortName);
