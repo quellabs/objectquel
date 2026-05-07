@@ -17,6 +17,7 @@
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRangeDatabaseMaterialized;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRangeDatabaseTempTable;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRetrieve;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\NodeBinary;
 	use Quellabs\ObjectQuel\ObjectQuel\Visitors\CollectRanges;
 	use Quellabs\ObjectQuel\ObjectQuel\Visitors\ContainsNonNullableFieldForRangeTemporary;
 	use Quellabs\ObjectQuel\Planner\Helpers\BinaryOperationHelper;
@@ -136,7 +137,7 @@
 				
 				// shouldSetRangeRequired() guarantees $joinProperty is a non-null AstExpression,
 				// but PHPStan cannot track that invariant across method boundaries.
-				if ($joinProperty === null) {
+				if (!$joinProperty instanceof NodeBinary) {
 					continue;
 				}
 				

@@ -4,6 +4,7 @@
 	
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstIdentifier;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRangeDatabase;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\NodeBinary;
 	use Quellabs\ObjectQuel\ObjectQuel\AstInterface;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstBinaryOperator;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstExists;
@@ -107,9 +108,11 @@
 		 */
 		private function extractExistsFromBinaryOperator(?AstInterface $parent, AstInterface $item, array &$list): void {
 			// Only process binary operation nodes
-			if (!BinaryOperationHelper::isBinaryOperationNode($item)) {
+			if (!$item instanceof NodeBinary) {
 				return;
 			}
+			
+			/** @var NodeBinary $item */
 			
 			$left = BinaryOperationHelper::getBinaryLeft($item);
 			$right = BinaryOperationHelper::getBinaryRight($item);
@@ -166,7 +169,7 @@
 			}
 			
 			// Null parent or non-binary nodes cannot have children set
-			if ($parent === null || !BinaryOperationHelper::isBinaryOperationNode($parent)) {
+			if (!$parent instanceof NodeBinary) {
 				return;
 			}
 			

@@ -6,6 +6,7 @@
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstExpression;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstFactor;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstTerm;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\NodeBinary;
 	use Quellabs\ObjectQuel\ObjectQuel\AstInterface;
 	
 	/**
@@ -37,48 +38,42 @@
 			
 			// Check against known binary operation node types
 			// These types are expected to have getLeft/getRight/setLeft/setRight methods
-			return
-				$item instanceof AstTerm ||
-				$item instanceof AstBinaryOperator ||
-				$item instanceof AstExpression ||
-				$item instanceof AstFactor;
+			return $item instanceof NodeBinary;
 		}
 		
 		/**
 		 * Retrieves the left operand from a binary operation node.
-		 * @param AstInterface $item The binary operation node
+		 * @param NodeBinary $item The binary operation node
 		 * @return AstInterface The left operand
 		 * @throws \InvalidArgumentException If the item doesn't support binary operations
 		 * @throws \BadMethodCallException If the node doesn't actually implement getLeft()
 		 */
 		public static function getBinaryLeft(AstInterface $item): AstInterface {
 			// Validate that this is a supported binary operation node type
-			if (!self::isBinaryOperationNode($item)) {
+			if (!$item instanceof NodeBinary) {
 				throw new \InvalidArgumentException('Item does not support binary operations');
 			}
 			
 			// Call getLeft() - this may fail at runtime if the concrete class
 			// doesn't implement this method, despite passing the type check above
-			// @phpstan-ignore-next-line method.notFound
 			return $item->getLeft();
 		}
 		
 		/**
 		 * Retrieves the right operand from a binary operation node.
-		 * @param AstInterface $item The binary operation node
+		 * @param NodeBinary $item The binary operation node
 		 * @return AstInterface The right operand
 		 * @throws \InvalidArgumentException If the item doesn't support binary operations
 		 * @throws \BadMethodCallException If the node doesn't actually implement getRight()
 		 */
 		public static function getBinaryRight(AstInterface $item): AstInterface {
 			// Validate that this is a supported binary operation node type
-			if (!self::isBinaryOperationNode($item)) {
+			if (!$item instanceof NodeBinary) {
 				throw new \InvalidArgumentException('Item does not support binary operations');
 			}
 			
 			// Call getRight() - this may fail at runtime if the concrete class
 			// doesn't implement this method, despite passing the type check above
-			// @phpstan-ignore-next-line method.notFound
 			return $item->getRight();
 		}
 		
@@ -92,13 +87,12 @@
 		 */
 		public static function setBinaryLeft(AstInterface $item, AstInterface $left): void {
 			// Validate that this is a supported binary operation node type
-			if (!self::isBinaryOperationNode($item)) {
+			if (!$item instanceof NodeBinary) {
 				throw new \InvalidArgumentException('Item does not support binary operations');
 			}
 			
 			// Call setLeft() - this may fail at runtime if the concrete class
 			// doesn't implement this method, despite passing the type check above
-			// @phpstan-ignore-next-line method.notFound
 			$item->setLeft($left);
 		}
 		
@@ -112,13 +106,12 @@
 		 */
 		public static function setBinaryRight(AstInterface $item, AstInterface $right): void {
 			// Validate that this is a supported binary operation node type
-			if (!self::isBinaryOperationNode($item)) {
+			if (!$item instanceof NodeBinary) {
 				throw new \InvalidArgumentException('Item does not support binary operations');
 			}
 			
 			// Call setRight() - this may fail at runtime if the concrete class
 			// doesn't implement this method, despite passing the type check above
-			// @phpstan-ignore-next-line method.notFound
 			$item->setRight($right);
 		}
 	}

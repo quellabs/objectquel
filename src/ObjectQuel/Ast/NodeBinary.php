@@ -26,4 +26,18 @@
 		 * @return AstInterface
 		 */
 		public function getRight(): AstInterface;
+		
+		/**
+		 * Updates the left side with a new AST
+		 * @param AstInterface $ast
+		 * @return void
+		 */
+		public function setLeft(AstInterface $ast): void;
+		
+		/**
+		 * Updates the right side with a new AST
+		 * @param AstInterface $ast
+		 * @return void
+		 */
+		public function setRight(AstInterface $ast): void;
 	}
