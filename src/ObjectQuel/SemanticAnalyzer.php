@@ -149,6 +149,7 @@
 		 */
 		private function validateNoEntireSubqueryRangesInValueList(AstRetrieve $ast): void {
 			foreach ($ast->getValues() as $value) {
+				// Fetch the expression
 				$expression = $value->getExpression();
 				
 				// Only interested in identifiers that refer directly to a subquery range
