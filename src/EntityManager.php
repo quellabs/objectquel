@@ -36,6 +36,7 @@
 	use Quellabs\SignalHub\Signal;
 	use Quellabs\SignalHub\SignalHub;
 	use Quellabs\SignalHub\SignalHubLocator;
+	use Quellabs\Support\Tools;
 	
 	/**
 	 * Represents an Entity Manager.
@@ -179,7 +180,7 @@
 			// Time is converted to milliseconds for easier readability
 			$this->debugQuerySignal?->emit([
 				'driver'            => 'objectquel',
-				'query'             => $query,
+				'query'             => Tools::dedent($query),
 				'sql'               => $this->queryExecutor->getLastExecutedSql(),
 				'bound_parameters'  => $parameters,
 				'execution_time_ms' => round(($end - $start) * 1000, 0, PHP_ROUND_HALF_UP),

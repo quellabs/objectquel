@@ -5,6 +5,7 @@
 	use Cake\Database\StatementInterface;
 	use Quellabs\ObjectQuel\EntityManager;
 	use Quellabs\ObjectQuel\DatabaseAdapter\DatabaseAdapter;
+	use Quellabs\ObjectQuel\Exception\EntityResolutionException;
 	use Quellabs\ObjectQuel\Planner\ExecutionStageInterface;
 	use Quellabs\ObjectQuel\Capabilities\PlatformCapabilities;
 	use Quellabs\ObjectQuel\Execution\QueryTransformer;
@@ -40,7 +41,7 @@
 		 * @param ExecutionStageInterface $stage
 		 * @param array<string, mixed> $initialParams
 		 * @return list<array<string, mixed>>
-		 * @throws QuelException
+		 * @throws QuelException|EntityResolutionException
 		 */
 		public function execute(ExecutionStageInterface $stage, array $initialParams = []): array {
 			// Transform the query
