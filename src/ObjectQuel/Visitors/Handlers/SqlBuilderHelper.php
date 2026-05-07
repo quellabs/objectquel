@@ -7,6 +7,7 @@
 	use Quellabs\ObjectQuel\Capabilities\PlatformCapabilitiesInterface;
 	use Quellabs\ObjectQuel\Capabilities\NullPlatformCapabilities;
 	use Quellabs\ObjectQuel\EntityStore;
+	use Quellabs\ObjectQuel\Exception\EntityResolutionException;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstIdentifier;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstParameter;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRangeDatabase;
@@ -75,6 +76,7 @@
 		 * @param AstIdentifier $identifier The AST identifier to convert
 		 * @return string Fully qualified SQL column name or empty string if no range
 		 * @throws \LogicException
+		 * @throws EntityResolutionException
 		 */
 		public function buildColumnName(AstIdentifier $identifier): string {
 			// Get the range (table alias) from the identifier
@@ -110,21 +112,15 @@
 		 * @param string $rangeName The table alias
 		 * @param string $entityName The entity class name
 		 * @return string Fully qualified SQL column name
-		 * @throws \LogicException
+		 * @throws \LogicException|EntityResolutionException
 		 */
 		private function buildColumnNameForEntity(AstIdentifier $identifier, string $rangeName, string $entityName): string {
 			// Handle case where identifier refers to the entity itself (primary key)
 			if ($this->identifierIsEntity($identifier)) {
-				$identifierColumns = $this->entityStore->getIdentifierColumnNames($entityName);
-				
-				if (empty($identifierColumns)) {
-					throw new \LogicException(
-						"Entity '{$entityName}' has no identifier columns defined"
-					);
-				}
-				
-				// Return first identifier column (usually primary key)
-				return "{$rangeName}.{$identifierColumns[0]}";
+				throw new \LogicException(
+					"Identifier '{$rangeName}' refers to entity '{$entityName}' as a whole — a specific property is required here. " .
+					"This should have been caught by the semantic validator. Check that entity-level identifiers are rejected in scalar function arguments and expressions."
+				);
 			}
 			
 			// Get the property name from the next node in the identifier chain
@@ -137,8 +133,10 @@
 				);
 			}
 			
+			// Fetch the next property
 			$property = $next->getName();
 			
+			// If none is there, the AST is broken
 			if (empty($property)) {
 				// A valid AST node must return a non-empty name
 				throw new \LogicException(
@@ -149,8 +147,9 @@
 			// Look up the database column name for this property
 			$columnMap = $this->entityStore->getColumnMap($entityName);
 			
+			// Throw when the property is not present. This should already
+			// have been checked in the semantic analyzer.
 			if (!isset($columnMap[$property])) {
-				// If semantic validation ran correctly this should never happen
 				throw new \LogicException(
 					"Property '{$property}' has no column mapping in entity '{$entityName}'"
 				);

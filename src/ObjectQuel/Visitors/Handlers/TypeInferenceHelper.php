@@ -42,6 +42,7 @@
 		 *
 		 * @param AstInterface $ast The AST node to analyze
 		 * @return string|null The inferred PHP type (e.g., 'float', 'string', 'int') or null if undetermined
+		 * @throws EntityResolutionException
 		 */
 		public function inferReturnType(AstInterface $ast): ?string {
 			// Process identifiers - lookup their type from entity annotations
@@ -73,7 +74,7 @@
 		}
 		
 		/**
-		 * Determines the return type of an identifier by checking its ORM annotations
+		 * Determines the return type of the identifier by checking its ORM annotations
 		 *
 		 * This method looks up the entity's column annotations to determine the PHP type
 		 * that corresponds to the database column type. It searches through all annotations
