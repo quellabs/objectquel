@@ -192,10 +192,6 @@
 			return $result;
 		}
 		
-		function getLastExecutedSql(): array {
-			return $this->queryExecutor->getLastExecutedSql();
-		}
-		
 		/**
 		 * Retrieves all results from an executed ObjectQuel query.
 		 * @param string $query The ObjectQuel query string to execute
