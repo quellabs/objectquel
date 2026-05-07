@@ -128,12 +128,14 @@
 				throw new TransformationException('Expected parent identifier to belong to an entity range');
 			}
 			
+			// Fall back to the first primary key of the parent entity
 			$relationColumn = $relation->getRelationColumn();
 			
-			// Fall back to the first primary key of the parent entity
 			if ($relationColumn === null) {
-				$identifierKeys = $this->entityStore->getIdentifierKeys($entityName);
-				$relationColumn = $identifierKeys[0];
+				// Infer FK property name from the relation property name
+				// e.g. property "user" → FK property "userId"
+				$propertyName = $joinProperty->getName();  // "user"
+				$relationColumn = $propertyName . 'Id';    // "userId"
 			}
 			
 			// ManyToOne: FK is on $this->range, PK is on the parent range
@@ -144,7 +146,7 @@
 					throw new TransformationException('ManyToOne relation is missing inversedBy');
 				}
 				
-				return $this->createPropertyLookupAst($relationColumn, $range, $inversedBy);
+				return $this->createPropertyLookupAst($inversedBy, $range, $relationColumn);
 			}
 			
 			// OneToMany: FK is on $this->range (the child), PK is on the parent range
