@@ -3,6 +3,7 @@
 	namespace Quellabs\ObjectQuel\ObjectQuel;
 	
 	use Quellabs\ObjectQuel\EntityStore;
+	use Quellabs\ObjectQuel\Exception\EntityResolutionException;
 	use Quellabs\ObjectQuel\Exception\TransformationException;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRangeDatabase;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRangeDatabaseSubquery;
@@ -65,7 +66,14 @@
 
 			// Step 3: Process range definitions (table joins, aliases, and FROM clauses)
 			// Converts range specifications into proper join conditions and table references
-			$this->processWithVisitor($ast, EntityResolveRange::class, $ast->getRanges());
+			$entityResolveRange = new EntityResolveRange($ast->getRanges());
+			$ast->accept($entityResolveRange);
+			
+			// Explicitly traverse join properties — AstRangeDatabase::accept() no longer
+			// does this to avoid circular references via identifier→range back-references.
+			foreach ($ast->getRanges() as $range) {
+				$range->getJoinProperty()?->accept($entityResolveRange);
+			}
 			
 			// Step 3.5: Resolve unqualified property names to range-prefixed identifiers
 			// Allows bare names like 'name' to be written instead of 'p.name' when unambiguous
@@ -141,7 +149,7 @@
 		 * Transforms complex 'via' relations into simple property lookups for SQL generation.
 		 * @param AstRetrieve $ast The query AST containing ranges with potential 'via' relations
 		 * @return void Modifies ranges in-place to replace 'via' relations with direct lookups
-		 * @throws TransformationException
+		 * @throws TransformationException|EntityResolutionException
 		 */
 		private function transformViaRelations(AstRetrieve $ast): void {
 			// Process each table/range in the query to handle 'via' relationship definitions
@@ -176,6 +184,11 @@
 				// This ensures all parts of the range definition (filters, conditions, etc.)
 				// are properly transformed and don't contain unresolved 'via' relationships
 				$range->accept($converter);
+				
+				// Explicitly traverse the new join property rather than using range->accept(),
+				// which would cause infinite recursion since identifiers hold back-references
+				// to their range and AstRangeDatabase::accept() previously traversed joinProperty.
+				$range->getJoinProperty()?->accept($converter);
 			}
 		}
 	}

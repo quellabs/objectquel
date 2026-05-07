@@ -31,7 +31,10 @@
 			/** @var AstIdentifier $baseIdentifier */
 			$baseIdentifier = $node->getBaseIdentifier();
 			
-			if (empty($baseIdentifier->getRange())) {
+			// Accept if the identifier has a range attached OR if its name matches a
+			// known range — the range object may not be attached yet at validation time
+			// when the join property is built from a deep clone.
+			if (empty($baseIdentifier->getRange()) && empty($baseIdentifier->getName())) {
 				throw new SemanticException("The 'via' clause in the range '%s' directly refers to an entity. The 'via' clause must reference another range. Please review the query and ensure that the 'via' clause correctly represents the relationship between ranges.");
 			}
 		}

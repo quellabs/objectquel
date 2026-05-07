@@ -48,19 +48,17 @@
 			$this->entityName = $entityName;
 			$this->includeAsJoin = $includeAsJoin;
 		}
-		
+
 		/**
 		 * Create a deep copy of this range including all child nodes
 		 * @return static A new instance with cloned child nodes
 		 */
 		public function deepClone(): static {
-			$joinProperty = $this->getJoinProperty()?->deepClone();
-			
 			// @phpstan-ignore-next-line new.static
 			$clone = new static(
 				$this->getName(),
 				$this->entityName,
-				$joinProperty,
+				$this->getJoinProperty(),
 				$this->isRequired(),
 				$this->includeAsJoin
 			);
