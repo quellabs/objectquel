@@ -175,11 +175,19 @@
 		}
 		
 		/**
-		 * Get the complete generated SQL query
+		 * Get the generated SQL query
 		 * @return string The final SQL query as a concatenated string
 		 */
 		public function getResult(): string {
 			return implode("", $this->result);
+		}
+		
+		/**
+		 * Returns the SqlBuilderHelper instance so callers can configure it before
+		 * accepting nodes (e.g. setSubqueryAliasRangeName for derived-table contexts).
+		 */
+		public function getSqlBuilder(): SqlBuilderHelper {
+			return $this->sqlBuilder;
 		}
 		
 		// =========================

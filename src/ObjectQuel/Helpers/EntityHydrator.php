@@ -170,6 +170,8 @@
 			
 			// The AstIdentifier has to have an entity
 			$entityName = $expression->getEntityName();
+			
+			// Validate the existence of a entity
 			if ($entityName === null) {
 				throw new HydrationException("Missing entity name in the AstIdentifier");
 			}

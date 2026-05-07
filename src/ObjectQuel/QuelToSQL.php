@@ -102,6 +102,14 @@
 			foreach ($retrieve->getValues() as $value) {
 				// Create a new QuelToSQLConvertToString converter
 				$quelToSQLConvertToString = new QuelToSQLConvertToString($this->entityStore, $this->parameters, "VALUES", $this->platform);
+				
+				// When generating columns for a subquery's SELECT list, tell the SQL builder
+				// to alias columns using the outer range name (e.g. "x.id" instead of "y.id")
+				// so the derived table's columns match what the outer query expects.
+				if ($outerRangeName !== null) {
+					$quelToSQLConvertToString->getSqlBuilder()->setSubqueryAliasRangeName($outerRangeName);
+				}
+				
 				$value->accept($quelToSQLConvertToString);
 				$sqlResult = $quelToSQLConvertToString->getResult();
 				

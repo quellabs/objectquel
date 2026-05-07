@@ -37,7 +37,10 @@
 		private string $partOfQuery;
 		
 		/** @var mixed Reference to the main visitor instance for delegating node processing */
-		private mixed $mainVisitor; // Reference to main visitor
+		private mixed $mainVisitor;
+		
+		/** @var string|null When set, column aliases in buildEntityColumns use this name instead of the inner range name */
+		private ?string $subqueryAliasRangeName = null;
 		
 		/**
 		 * Constructor - initializes the SQL builder helper with required dependencies
@@ -66,6 +69,17 @@
 		 */
 		public function getEntityStore(): EntityStore {
 			return $this->entityStore;
+		}
+		
+		/**
+		 * Sets the outer range name to use as the alias prefix when this helper is
+		 * generating columns for a subquery's SELECT list. When set, buildEntityColumns()
+		 * will alias columns as `outerRange.property` instead of `innerRange.property`,
+		 * so the derived table's columns match what the outer query expects.
+		 * @param string|null $name The outer range name, or null to clear
+		 */
+		public function setSubqueryAliasRangeName(?string $name): void {
+			$this->subqueryAliasRangeName = $name;
 		}
 		
 		/**
@@ -196,9 +210,9 @@
 				);
 			}
 			
-			// Return fully qualified column name using the identifier's name directly
-			// No mapping needed since temporary table columns are already in SQL format
-			return "{$rangeName}.`{$columnName}`";
+			// Column aliases in derived tables are stored as "rangeName.property" (e.g. "x.id"),
+			// so reference them with the range prefix to match the subquery's SELECT aliases.
+			return "{$rangeName}.`{$rangeName}.{$columnName}`";
 		}
 		
 		/**
@@ -247,8 +261,12 @@
 					"buildEntityColumns called with an identifier that has no range"
 				);
 			}
-			
+
+			// Fetch the range name
 			$rangeName = $range->getName();
+			
+			// Alias name for subqueries
+			$aliasRangeName = $this->subqueryAliasRangeName ?? $rangeName;
 			
 			// Get all column mappings for this entity
 			$entityName = $ast->getEntityName();
@@ -264,7 +282,7 @@
 			// Build aliased column selections for each property
 			foreach ($columnMap as $item => $value) {
 				// Format: table.column as `alias.property`
-				$result[] = "{$rangeName}.{$value} as `{$rangeName}.{$item}`";
+				$result[] = "{$rangeName}.{$value} as `{$aliasRangeName}.{$item}`";
 			}
 			
 			return implode(",", $result);
