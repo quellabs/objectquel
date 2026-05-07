@@ -91,8 +91,12 @@
 		 * @param EntityStore $store Entity storage containing schema and metadata
 		 * @param array<string, mixed> $parameters Reference to parameters array for parameterized queries
 		 * @param string $partOfQuery Current query part being processed (default: "VALUES")
+		 * @param PlatformCapabilitiesInterface $platform Database engine capability descriptor
+		 * @param string|null $subqueryAliasRangeName When non-null, column aliases in entity
+		 *        expansion use this name instead of the inner range name, so derived table
+		 *        columns match what the outer query expects (e.g. "x.id" instead of "y.id")
 		 */
-		public function __construct(EntityStore $store, array &$parameters, string $partOfQuery = "VALUES", PlatformCapabilitiesInterface $platform = new NullPlatformCapabilities()) {
+		public function __construct(EntityStore $store, array &$parameters, string $partOfQuery = "VALUES", PlatformCapabilitiesInterface $platform = new NullPlatformCapabilities(), ?string $subqueryAliasRangeName = null) {
 			// Initialize core properties
 			$this->result = [];
 			$this->visitedNodes = [];
@@ -102,7 +106,7 @@
 			$this->platform = $platform;
 			
 			// Initialize helper classes with proper dependencies and references
-			$this->sqlBuilder = new SqlBuilderHelper($this->entityStore, $this->parameters, $this->partOfQuery, $this, $this->platform);
+			$this->sqlBuilder = new SqlBuilderHelper($this->entityStore, $this->parameters, $this->partOfQuery, $this, $this->platform, $subqueryAliasRangeName);
 			$this->typeInference = new TypeInferenceHelper($this->entityStore);
 			$this->aggregateHandler = new AggregateHandler($this->entityStore, $this->partOfQuery, $this->sqlBuilder, $this);
 			$this->expressionHandler = new ExpressionHandler($this->sqlBuilder, $this->typeInference, $this->parameters, $this, $this->platform);
@@ -180,14 +184,6 @@
 		 */
 		public function getResult(): string {
 			return implode("", $this->result);
-		}
-		
-		/**
-		 * Returns the SqlBuilderHelper instance so callers can configure it before
-		 * accepting nodes (e.g. setSubqueryAliasRangeName for derived-table contexts).
-		 */
-		public function getSqlBuilder(): SqlBuilderHelper {
-			return $this->sqlBuilder;
 		}
 		
 		// =========================

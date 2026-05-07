@@ -48,19 +48,25 @@
 		 * @param array<string, mixed> $parameters Reference to parameters array for prepared statements
 		 * @param string $partOfQuery Current query part being processed
 		 * @param mixed|null $mainVisitor Optional reference to main visitor instance
+		 * @param PlatformCapabilitiesInterface $platform Database engine capability descriptor
+		 * @param string|null $subqueryAliasRangeName When set, buildEntityColumns() aliases columns
+		 *        using this name instead of the inner range name, so derived table columns match
+		 *        what the outer query expects (e.g. "x.id" instead of "y.id")
 		 */
 		public function __construct(
 			EntityStore                   $entityStore,
 			array                         &$parameters,
 			string                        $partOfQuery,
 			mixed                         $mainVisitor = null,
-			PlatformCapabilitiesInterface $platform = new NullPlatformCapabilities()
+			PlatformCapabilitiesInterface $platform = new NullPlatformCapabilities(),
+			?string                       $subqueryAliasRangeName = null
 		) {
 			$this->entityStore = $entityStore;
 			$this->parameters = &$parameters; // Store reference to allow parameter modification
 			$this->partOfQuery = $partOfQuery;
 			$this->mainVisitor = $mainVisitor;
 			$this->platform = $platform;
+			$this->subqueryAliasRangeName = $subqueryAliasRangeName;
 		}
 		
 		/**
@@ -69,17 +75,6 @@
 		 */
 		public function getEntityStore(): EntityStore {
 			return $this->entityStore;
-		}
-		
-		/**
-		 * Sets the outer range name to use as the alias prefix when this helper is
-		 * generating columns for a subquery's SELECT list. When set, buildEntityColumns()
-		 * will alias columns as `outerRange.property` instead of `innerRange.property`,
-		 * so the derived table's columns match what the outer query expects.
-		 * @param string|null $name The outer range name, or null to clear
-		 */
-		public function setSubqueryAliasRangeName(?string $name): void {
-			$this->subqueryAliasRangeName = $name;
 		}
 		
 		/**
