@@ -5,6 +5,7 @@
 	use Quellabs\ObjectQuel\Capabilities\NullPlatformCapabilities;
 	use Quellabs\ObjectQuel\Capabilities\PlatformCapabilitiesInterface;
 	use Quellabs\ObjectQuel\EntityManager;
+	use Quellabs\ObjectQuel\Exception\QuelException;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRetrieve;
 	
 	/**
@@ -45,6 +46,7 @@
 		 * Applies optimizations recursively to nested queries first (depth-first),
 		 * then optimizes the outer query.
 		 * @param AstRetrieve $ast The query AST to optimize in-place
+		 * @throws QuelException
 		 */
 		public function transform(AstRetrieve $ast): void {
 			// Phase 1: Basic range and relationship optimizations

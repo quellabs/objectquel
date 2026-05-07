@@ -169,12 +169,15 @@
 		 * @param string[] $tempTableStageNames Map of rangeName → TempTableStage name
 		 */
 		private function buildDatabaseStage(ExecutionPlan $plan, AstRetrieve $query, array $staticParams, array $tempTableStageNames): void {
+			// Create the stage
 			$databaseStage = $this->stageFactory->createDatabaseExecutionStage($query, $staticParams);
 			
+			// If that failed, return
 			if ($databaseStage === null) {
 				return;
 			}
 			
+			// Add the stage to the plan
 			$plan->addStage($databaseStage);
 			
 			// The main database stage depends on every TempTableStage, because
@@ -187,8 +190,6 @@
 		// =========================================================================
 		// External-source detection
 		// =========================================================================
-		
-
 		
 		/**
 		 * Checks whether an inner query's ranges include a reference to a specific

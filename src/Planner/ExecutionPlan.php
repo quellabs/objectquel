@@ -51,7 +51,7 @@
 		public function getMainStageName(): string {
 			foreach ($this->stages as $stage) {
 				// Skip everything that's not an ExecutionStage.
-				// TempTableStages are pre-execution side-effects, not result producers.
+				// TempTableStages are pre-execution side effects, not result producers.
 				if (!($stage instanceof ExecutionStage)) {
 					continue;
 				}
@@ -88,7 +88,7 @@
 		public function addStage(ExecutionStageInterface $stage): void {
 			$this->stages[$stage->getName()] = $stage;
 			
-			// Initialise dependency list only if not already set (addDependency may
+			// Initialize dependency list only if not already set (addDependency may
 			// have been called before addStage in some construction orders)
 			if (!isset($this->dependencies[$stage->getName()])) {
 				$this->dependencies[$stage->getName()] = [];
@@ -160,7 +160,7 @@
 				
 				// For every stage that lists $current as a dependency, decrement its
 				// in-degree. When a stage's in-degree reaches 0, all its dependencies
-				// have been scheduled and it is ready to run.
+				// have been scheduled, and it is ready to run.
 				foreach ($this->dependencies as $stageName => $deps) {
 					if (in_array($current, $deps, true)) {
 						$inDegree[$stageName]--;
