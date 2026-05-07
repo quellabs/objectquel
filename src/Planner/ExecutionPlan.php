@@ -86,6 +86,7 @@
 		 * @return void
 		 */
 		public function addStage(ExecutionStageInterface $stage): void {
+			// Add the stage to the list
 			$this->stages[$stage->getName()] = $stage;
 			
 			// Initialize dependency list only if not already set (addDependency may

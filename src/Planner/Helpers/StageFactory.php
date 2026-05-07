@@ -51,6 +51,8 @@
 		 * @return AstRange[]
 		 */
 		public function findDatabaseSourceRanges(AstRetrieve $query): array {
+			// AstRangeDatabaseMaterialized is intentionally excluded —
+			// it is inlined as a derived table by QuelToSQL and needs no separate stage.
 			return array_filter($query->getRanges(), function ($range) {
 				return
 					$range instanceof AstRangeDatabase ||
@@ -67,10 +69,7 @@
 			$result = [];
 			
 			foreach ($query->getRanges() as $range) {
-				if (
-					$range instanceof AstRangeDatabaseTempTable ||
-					$range instanceof AstRangeDatabaseMaterialized
-				) {
+				if ($range instanceof AstRangeDatabaseTempTable) {
 					$result[] = $range;
 				}
 			}

@@ -178,12 +178,14 @@
 		}
 		
 		/**
-		 * Returns all non-database ranges (e.g., subqueries, temporary tables).
+		 * Returns all non-database ranges
 		 * @return AstRange[] Array of ranges that are not database tables
 		 */
 		public function getOtherRanges(): array {
 			return array_filter($this->ranges, function($range) {
-				return !$range instanceof AstRangeDatabase;
+				return
+					!$range instanceof AstRangeDatabase &&
+					!$range instanceof AstRangeDatabaseSubquery;
 			});
 		}
 		
