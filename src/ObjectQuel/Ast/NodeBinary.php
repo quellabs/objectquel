@@ -13,7 +13,7 @@
 	 * recurse into both sides of an operation use this interface rather than
 	 * enumerating concrete types.
 	 */
-	interface NodeBinary {
+	interface NodeBinary extends AstInterface {
 		
 		/**
 		 * Returns the left-hand child expression.

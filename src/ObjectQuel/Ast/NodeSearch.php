@@ -11,7 +11,7 @@
 	 * Implemented by AstSearch and AstSearchScore. Walkers use this interface to
 	 * iterate over the searched columns without enumerating both concrete types.
 	 */
-	interface NodeSearch {
+	interface NodeSearch extends AstInterface {
 		
 		/**
 		 * Returns the list of column identifiers this search operates over.

@@ -11,7 +11,7 @@
 	 * use this interface to recurse into the function's argument without enumerating
 	 * every concrete function type.
 	 */
-	interface NodeFunction {
+	interface NodeFunction extends AstInterface {
 		
 		/**
 		 * Returns the value expression this function operates on.

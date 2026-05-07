@@ -12,7 +12,7 @@
 	 * recurse into the aggregate's target identifier without enumerating every
 	 * concrete aggregate type.
 	 */
-	interface NodeAggregate {
+	interface NodeAggregate extends AstInterface {
 		
 		/**
 		 * Returns the identifier (column reference) this aggregate operates over.

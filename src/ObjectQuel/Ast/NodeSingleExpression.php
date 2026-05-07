@@ -12,7 +12,7 @@
 	 * Walkers use this interface to recurse into the wrapped expression without
 	 * enumerating every concrete wrapper type.
 	 */
-	interface NodeSingleExpression {
+	interface NodeSingleExpression extends AstInterface {
 		
 		/**
 		 * Returns the single inner expression wrapped by this node.
