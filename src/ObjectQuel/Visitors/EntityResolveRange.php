@@ -13,7 +13,7 @@
 	 * When an identifier in the AST matches a defined range name, this visitor attaches
 	 * the corresponding range object to that identifier node.
 	 */
-	class EntityProcessRange implements AstVisitorInterface {
+	class EntityResolveRange implements AstVisitorInterface {
 		
 		/**
 		 * Array of available ranges (aliases) that can be matched against identifiers

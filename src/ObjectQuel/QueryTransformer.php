@@ -11,7 +11,7 @@
 	use Quellabs\ObjectQuel\ObjectQuel\Visitors\RangeDatabaseEntityNormalizer;
 	use Quellabs\ObjectQuel\ObjectQuel\Visitors\MacroSubstitutor;
 	use Quellabs\ObjectQuel\ObjectQuel\Visitors\MacroExpander;
-	use Quellabs\ObjectQuel\ObjectQuel\Visitors\EntityProcessRange;
+	use Quellabs\ObjectQuel\ObjectQuel\Visitors\EntityResolveRange;
 	use Quellabs\ObjectQuel\ObjectQuel\Visitors\TransformRelationInViaToPropertyLookup;
 	use Quellabs\ObjectQuel\ObjectQuel\Visitors\UnqualifiedPropertyResolver;
 	use Quellabs\ObjectQuel\ObjectQuel\Visitors\DiscriminatorConditionInjector;
@@ -65,7 +65,7 @@
 
 			// Step 3: Process range definitions (table joins, aliases, and FROM clauses)
 			// Converts range specifications into proper join conditions and table references
-			$this->processWithVisitor($ast, EntityProcessRange::class, $ast->getRanges());
+			$this->processWithVisitor($ast, EntityResolveRange::class, $ast->getRanges());
 			
 			// Step 3.5: Resolve unqualified property names to range-prefixed identifiers
 			// Allows bare names like 'name' to be written instead of 'p.name' when unambiguous
