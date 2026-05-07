@@ -290,10 +290,10 @@
 				$s['ast']->accept($retrieveEntitiesVisitor);
 				
 				// Save the query result
-				$direction = $s['direction'] ?? '';
+				$order = $s['order'] ?? '';
 				
-				if ($direction !== '') {
-					$sqlSort[] = $retrieveEntitiesVisitor->getResult() . " " . $direction;
+				if ($order !== '') {
+					$sqlSort[] = $retrieveEntitiesVisitor->getResult() . " " . $order;
 				} else {
 					$sqlSort[] = $retrieveEntitiesVisitor->getResult();
 				}

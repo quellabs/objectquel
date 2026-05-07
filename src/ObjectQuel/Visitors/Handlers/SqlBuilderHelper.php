@@ -452,7 +452,7 @@
 		 *
 		 * @param AstIdentifier $ast The identifier to resolve to a SQL expression.
 		 * @return string SQL column expression, optionally wrapped in COALESCE().
-		 * @throws \LogicException
+		 * @throws \LogicException|EntityResolutionException
 		 */
 		public function buildSortableColumn(AstIdentifier $ast): string {
 			// Fetch the range
@@ -480,7 +480,7 @@
 			$entityName = $ast->getEntityName();
 			
 			if (empty($entityName)) {
-				return "{$rangeName}.{$propertyName}";
+				return "{$rangeName}.`{$rangeName}.{$propertyName}`";
 			}
 			
 			// Map the ORM property name to its physical database column name.

@@ -141,8 +141,6 @@
 				throw new QuelException($e->getMessage(), 'hydration_error', 0, $e);
 			} catch (EntityResolutionException $e) {
 				throw new QuelException($e->getMessage(), 'resolution_error', 0, $e);
-			} catch (\Throwable $e) {
-				throw new QuelException("Query execution failed.", 'internal_error', 0, $e);
 			}
 		}
 		
