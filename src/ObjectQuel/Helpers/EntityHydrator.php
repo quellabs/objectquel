@@ -41,6 +41,60 @@
 			$this->serializer = new Serializer($this->entityStore);
 		}
 		
+		
+		/**
+		 * Converts raw database query results into hydrated entity objects.
+		 * @param array<int, AstAlias> $ast Abstract Syntax Tree representing the query structure.
+		 * @param array<int, array<string, mixed>> $data Raw database rows from the query result.
+		 * @return array{
+		 *     result: array<int, array<string, mixed>>,
+		 *     entities: array<string, object>
+		 * } An associative array containing processed result rows and unique entity objects.
+		 * @throws EntityResolutionException
+		 * @throws HydrationException
+		 * @throws QuelException
+		 */
+		public function hydrateEntities(array $ast, array $data): array {
+			// Flag to identify the first row (used for initializing relation cache)
+			$first = true;
+			
+			/**
+			 * Collection to track unique entity objects across all rows
+			 * @var array<string, object> $entities
+			 */
+			$entities = [];
+			
+			// Storage for processed result rows
+			$resultRows = [];
+			
+			// Cache for relationship information to optimize entity mapping
+			// This is built once from the first row and reused for subsequent rows
+			$relationCache = [];
+			
+			// Process each row from the database result
+			foreach ($data as $row) {
+				// For the first row only, build a relation cache that maps
+				// AST nodes to their corresponding database columns
+				if ($first) {
+					$relationCache = $this->buildRelationCache($ast, $row);
+					$first = false;
+				}
+				
+				// Process the current row using the AST and relation cache
+				// Also pass the entities collection by reference to track unique entities
+				$resultRows[] = $this->processRow($ast, $row, $relationCache, $entities);
+			}
+			
+			// Return both the processed result rows and the collection of unique entities
+			// - 'result' contains the transformed data as requested in the query
+			// - 'entities' contains all unique entity objects that were hydrated,
+			//   which may be used for relationship loading or change tracking
+			return [
+				'result'   => $resultRows,
+				'entities' => $entities
+			];
+		}
+
 		/**
 		 * Quickly checks if the array contains any non-null values
 		 * @param array<string|int, mixed> $array The array to check
@@ -398,58 +452,5 @@
 			}
 			
 			return $relationCache;
-		}
-		
-		/**
-		 * Converts raw database query results into hydrated entity objects.
-		 * @param array<int, AstAlias> $ast Abstract Syntax Tree representing the query structure.
-		 * @param array<int, array<string, mixed>> $data Raw database rows from the query result.
-		 * @return array{
-		 *     result: array<int, array<string, mixed>>,
-		 *     entities: array<string, object>
-		 * } An associative array containing processed result rows and unique entity objects.
-		 * @throws EntityResolutionException
-		 * @throws HydrationException
-		 * @throws QuelException
-		 */
-		public function hydrateEntities(array $ast, array $data): array {
-			// Flag to identify the first row (used for initializing relation cache)
-			$first = true;
-			
-			/**
-			 * Collection to track unique entity objects across all rows
-			 * @var array<string, object> $entities
-			 */
-			$entities = [];
-			
-			// Storage for processed result rows
-			$resultRows = [];
-			
-			// Cache for relationship information to optimize entity mapping
-			// This is built once from the first row and reused for subsequent rows
-			$relationCache = [];
-			
-			// Process each row from the database result
-			foreach ($data as $row) {
-				// For the first row only, build a relation cache that maps
-				// AST nodes to their corresponding database columns
-				if ($first) {
-					$relationCache = $this->buildRelationCache($ast, $row);
-					$first = false;
-				}
-				
-				// Process the current row using the AST and relation cache
-				// Also pass the entities collection by reference to track unique entities
-				$resultRows[] = $this->processRow($ast, $row, $relationCache, $entities);
-			}
-			
-			// Return both the processed result rows and the collection of unique entities
-			// - 'result' contains the transformed data as requested in the query
-			// - 'entities' contains all unique entity objects that were hydrated,
-			//   which may be used for relationship loading or change tracking
-			return [
-				'result'   => $resultRows,
-				'entities' => $entities
-			];
 		}
 	}

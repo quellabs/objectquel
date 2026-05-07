@@ -98,7 +98,7 @@
 			
 			// Check for explicit alias syntax: "alias = expression"
 			// If found, capture the alias identifier token, otherwise set to null
-			$aliasToken = $this->isExplicitAlias() ? $this->lexer->match(Token::Identifier) : null;
+			$aliasToken = $this->lexer->peekNext() === Token::Equals ? $this->lexer->match(Token::Identifier) : null;
 			
 			// If we found an explicit alias, consume the required equals sign
 			if ($aliasToken) {
@@ -118,15 +118,7 @@
 			// Trim whitespace from alias name to ensure clean identifiers
 			return new AstAlias(trim($aliasName), $expression);
 		}
-		
-		/**
-		 * Check if the current parsing position indicates an explicit alias definition.
-		 * @return bool True if next token is equals sign, indicating explicit alias
-		 */
-		private function isExplicitAlias(): bool {
-			return $this->lexer->peekNext() === Token::Equals;
-		}
-		
+
 		/**
 		 * Determine the appropriate alias name for a field expression.
 		 *

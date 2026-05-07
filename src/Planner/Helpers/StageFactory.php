@@ -123,7 +123,7 @@
 		public function createDatabaseExecutionStage(AstRetrieve $query, array $staticParams = []): ?ExecutionStage {
 			// Clone the query to avoid modifying the original
 			// This ensures we preserve the complete query for potential in-memory operations later
-			$dbQuery = clone $query;
+			$dbQuery = $query->deepClone();
 			
 			// Get all database ranges (tables/views that exist in the database)
 			// These are data sources that SQL can directly access

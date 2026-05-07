@@ -13,6 +13,10 @@
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstFactor;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstIdentifier;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstIfNull;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstIsEmpty;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstIsFloat;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstIsInteger;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstIsNumeric;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstMax;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstMin;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRange;
@@ -223,6 +227,16 @@
 				$condition instanceof AstAny
 			) {
 				return $this->hasReferenceToRange($condition->getIdentifier(), $range);
+			}
+			
+			// For functions, check the value
+			if (
+				$condition instanceof AstIsNumeric ||
+				$condition instanceof AstIsFloat ||
+				$condition instanceof AstIsInteger ||
+				$condition instanceof AstIsEmpty
+			) {
+				return $this->hasReferenceToRange($condition->getValue(), $range);
 			}
 			
 			// Full-text search nodes — check if any identifier belongs to this range
