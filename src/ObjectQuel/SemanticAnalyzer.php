@@ -19,8 +19,8 @@
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstSum;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstSumU;
 	use Quellabs\ObjectQuel\ObjectQuel\Visitors\NodeTypeValidator;
-	use Quellabs\ObjectQuel\ObjectQuel\Visitors\EntityReferenceValidator;
-	use Quellabs\ObjectQuel\ObjectQuel\Visitors\EntityPropertyValidator;
+	use Quellabs\ObjectQuel\ObjectQuel\Visitors\EntityExistenceValidator;
+	use Quellabs\ObjectQuel\ObjectQuel\Visitors\EntityPropertyExistenceValidator;
 	use Quellabs\ObjectQuel\ObjectQuel\Visitors\NoExpressionsAllowedOnEntitiesValidator;
 	use Quellabs\ObjectQuel\ObjectQuel\Visitors\RangeOnlyReferencesOtherRanges;
 	use Quellabs\ObjectQuel\ObjectQuel\Visitors\ViaClauseValidator;
@@ -62,13 +62,13 @@
 			$this->validateRangesOnlyReferenceOtherRanges($ast);
 			
 			// Step 2: Validate against schema - ensure entities exist
-			$this->processWithVisitor($ast, EntityReferenceValidator::class, $this->entityStore);
+			$this->processWithVisitor($ast, EntityExistenceValidator::class, $this->entityStore);
 			
 			// Step 3: Validate relationship definitions in 'via' clauses
 			$this->validateRangeViaRelations($ast);
 			
 			// Step 4: Validate property references against schema
-			$this->processWithVisitor($ast, EntityPropertyValidator::class, $this->entityStore);
+			$this->processWithVisitor($ast, EntityPropertyExistenceValidator::class, $this->entityStore);
 			
 			// Step 5: Ensure expressions are not used inappropriately on entities
 			$this->processWithVisitor($ast, NoExpressionsAllowedOnEntitiesValidator::class);

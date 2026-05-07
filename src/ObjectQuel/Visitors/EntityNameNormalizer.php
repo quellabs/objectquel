@@ -14,7 +14,7 @@
 	
 	/**
 	 * Class AddNamespacesToEntities
-	 * Validates the existence of entities within an AST.
+	 * Expands entity names to their fully namespaced form
 	 */
 	class EntityNameNormalizer implements AstVisitorInterface {
 		
@@ -75,7 +75,6 @@
 		 * Function to visit a node in the AST (Abstract Syntax Tree).
 		 * @param AstInterface $node
 		 * @return void
-		 * @throws TransformationException
 		 * @throws EntityResolutionException
 		 */
 		public function visitNode(AstInterface $node): void {

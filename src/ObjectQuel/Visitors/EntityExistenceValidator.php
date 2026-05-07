@@ -17,7 +17,7 @@
 	 * This visitor traverses the AST and verifies that all entity references
 	 * actually exist in the EntityStore.
 	 */
-	class EntityReferenceValidator implements AstVisitorInterface {
+	class EntityExistenceValidator implements AstVisitorInterface {
 		
 		/**
 		 * The EntityStore for storing and fetching entity metadata.
