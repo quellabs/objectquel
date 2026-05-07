@@ -6,9 +6,8 @@
 	use Quellabs\ObjectQuel\DatabaseAdapter\TypeMapper;
 	use Quellabs\ObjectQuel\EntityStore;
 	use Quellabs\ObjectQuel\Exception\EntityResolutionException;
-	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstFactor;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstIdentifier;
-	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstTerm;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\NodeBinary;
 	use Quellabs\ObjectQuel\ObjectQuel\AstInterface;
 	
 	/**
@@ -51,7 +50,7 @@
 			}
 			
 			// Traverse down the parse tree for binary operations (terms/factors)
-			if ($ast instanceof AstTerm || $ast instanceof AstFactor) {
+			if ($ast instanceof NodeBinary) {
 				// Recursively get types of left and right operands
 				$left = $this->inferReturnType($ast->getLeft());
 				$right = $this->inferReturnType($ast->getRight());

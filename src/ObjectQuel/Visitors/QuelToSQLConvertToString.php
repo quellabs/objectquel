@@ -38,6 +38,7 @@
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstSum;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstSumU;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstTerm;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\NodeBinary;
 	use Quellabs\ObjectQuel\ObjectQuel\AstInterface;
 	use Quellabs\ObjectQuel\Capabilities\PlatformCapabilitiesInterface;
 	use Quellabs\ObjectQuel\Capabilities\NullPlatformCapabilities;
@@ -553,12 +554,7 @@
 			}
 			
 			// Binary-ish expression nodes share a left/right structure
-			if (
-				$ast instanceof AstTerm ||
-				$ast instanceof AstFactor ||
-				$ast instanceof AstExpression ||
-				$ast instanceof AstBinaryOperator
-			) {
+			if ($ast instanceof NodeBinary) {
 				return [$ast->getLeft(), $ast->getRight()];
 			}
 			

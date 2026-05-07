@@ -2,12 +2,9 @@
 	
 	namespace Quellabs\ObjectQuel\ObjectQuel\Visitors;
 	
-	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstBinaryOperator;
-	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstExpression;
-	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstFactor;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstIdentifier;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRangeDatabase;
-	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstTerm;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\NodeBinary;
 	use Quellabs\ObjectQuel\ObjectQuel\AstInterface;
 	use Quellabs\ObjectQuel\ObjectQuel\AstVisitorInterface;
 	
@@ -53,12 +50,7 @@
 		 */
 		public function visitNode(AstInterface $node): void {
 			// We can only call getLeft/getRight on these nodes
-			if (
-				!$node instanceof AstTerm &&
-				!$node instanceof AstBinaryOperator &&
-				!$node instanceof AstExpression &&
-				!$node instanceof AstFactor
-			) {
+			if (!$node instanceof NodeBinary) {
 				return;
 			}
 			
