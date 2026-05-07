@@ -39,8 +39,12 @@
 			return str_contains($this->number, ".") ? "float" : "integer";
 		}
 		
+		/**
+		 * Return a clone number
+		 * @return static
+		 */
 		public function deepClone(): static {
-			// @phpstan-ignore-next-line new.static
+			/** @phpstan-ignore new.static */
 			return new static($this->number);
 		}
 	}
