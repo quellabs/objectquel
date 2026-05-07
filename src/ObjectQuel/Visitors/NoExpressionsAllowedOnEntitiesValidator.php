@@ -4,11 +4,10 @@
 	namespace Quellabs\ObjectQuel\ObjectQuel\Visitors;
 	
 	use Quellabs\ObjectQuel\Exception\SemanticException;
-	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstExpression;
-	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstFactor;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstIdentifier;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRangeDatabase;
-	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstTerm;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\NodeBinary;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\NodeFunction;
 	use Quellabs\ObjectQuel\ObjectQuel\AstInterface;
 	use Quellabs\ObjectQuel\ObjectQuel\AstVisitorInterface;
 	
@@ -38,9 +37,17 @@
 		 * @throws SemanticException
 		 */
 		public function visitNode(AstInterface $node): void {
-			if ($node instanceof AstTerm || $node instanceof AstFactor || $node instanceof AstExpression) {
+			// Entire entities in expressions are not allowed.
+			if ($node instanceof NodeBinary) {
 				if ($this->identifierIsEntity($node->getLeft()) || $this->identifierIsEntity($node->getRight())) {
 					throw new SemanticException("Unsupported operation on entire entities. You cannot perform arithmetic operations directly on entities. Please specify the specific fields or properties of the entities you wish to use in the calculation.");
+				}
+			}
+			
+			// Entire entities in QUEL functions (is_numeric, is_float, etc) are not allowed
+			if ($node instanceof NodeFunction) {
+				if ($this->identifierIsEntity($node->getValue())) {
+					throw new SemanticException("Unsupported operation on entire entities. You cannot pass an entire entity as a function argument. Please specify the specific field or property you wish to use (e.g. e.id or e.name instead of e).");
 				}
 			}
 		}

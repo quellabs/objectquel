@@ -32,7 +32,6 @@
 		 * Function to visit a node in the AST (Abstract Syntax Tree).
 		 * @param AstInterface $node
 		 * @return void
-		 * @throws TransformationException
 		 * @throws EntityResolutionException
 		 */
 		public function visitNode(AstInterface $node): void {
