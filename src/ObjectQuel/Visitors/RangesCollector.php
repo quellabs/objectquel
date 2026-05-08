@@ -13,7 +13,7 @@
 		/** @var AstRange[] All nodes */
 		private array $collectedNodes;
 		
-		/** @var string[] All nodes */
+		/** @var array<bool|string> All nodes */
 		private array $handledRanges;
 		
 		/**

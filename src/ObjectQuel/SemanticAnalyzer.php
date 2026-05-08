@@ -14,6 +14,7 @@
 	use Quellabs\ObjectQuel\ObjectQuel\Visitors\EntityPropertyExistenceValidator;
 	use Quellabs\ObjectQuel\ObjectQuel\Visitors\NoExpressionsAllowedOnEntitiesValidator;
 	use Quellabs\ObjectQuel\ObjectQuel\Visitors\RangeReferenceCollector;
+	use Quellabs\ObjectQuel\ObjectQuel\Visitors\AmbiguousPropertyValidator;
 	use Quellabs\ObjectQuel\ObjectQuel\Visitors\ValidateRangeReferencesExist;
 	use Quellabs\ObjectQuel\ObjectQuel\Visitors\RelationshipPathValidator;
 	
@@ -81,23 +82,43 @@
 			// Property validation
 			// ==============================================================================
 			
-			// Step 1: Validate property references against schema
+			// Step 1: Check for ambiguous properties that the prefilter could not resolve
+			$this->validateUnambiguousProperties($ast);
+			
+			// Step 2: Validate property references against schema
 			$this->processWithVisitor($ast, EntityPropertyExistenceValidator::class, $this->entityStore);
 			
-			// Step 2: Validate that referenced relationships lead back to the entity
+			// Step 3: Validate that referenced relationships lead back to the entity
 			$this->validateRelationshipPaths($ast);
 			
-			// Step 3: Validates that the value list does not directly select entire subquery ranges.
+			// Step 4: Validates that the value list does not directly select entire subquery ranges.
 			$this->validateNoBareSubqueryRangesInValueList($ast);
 			
-			// Step 4: Validates that REGEXP is not used in the VALUES portion of the query
+			// Step 5: Validates that REGEXP is not used in the VALUES portion of the query
 			$this->validateNoRegExpInValueList($ast);
 			
-			// Step 5: Ensure expressions are not used inappropriately on entities
+			// Step 6: Ensure expressions are not used inappropriately on entities
 			$this->processWithVisitor($ast, NoExpressionsAllowedOnEntitiesValidator::class);
 			
-			// Step 6: Validate SQL compliance rules (aggregates cannot be put in WHERE)
+			// Step 7: Validate SQL compliance rules (aggregates cannot be put in WHERE)
 			$this->validateNoAggregatesInWhereClause($ast);
+		}
+		
+		/**
+		 * Validates that all unqualified property references in the query are unambiguous.
+		 *
+		 * An unqualified property is ambiguous when more than one range in the query
+		 * exposes a property with the same name. In that case the engine cannot
+		 * determine which range the user intended and a SemanticException is thrown.
+		 *
+		 * Unknown properties are intentionally not validated here — other validators
+		 * such as EntityPropertyExistenceValidator handle that case.
+		 *
+		 * @param AstRetrieve $ast The AST to validate
+		 */
+		private function validateUnambiguousProperties(AstRetrieve $ast): void {
+			$validator = new AmbiguousPropertyValidator($this->entityStore, $ast->getRanges());
+			$ast->accept($validator);
 		}
 		
 		/**
