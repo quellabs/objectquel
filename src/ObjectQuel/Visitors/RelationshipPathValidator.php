@@ -13,16 +13,19 @@
 	use Quellabs\ObjectQuel\Exception\QuelException;
 	
 	/**
-	 * Class ViaClauseValidator
+	 * Class RelationshipPathValidator
 	 * Validates the existence of entities within an AST.
 	 */
-	class ViaClauseValidator implements AstVisitorInterface {
+	class RelationshipPathValidator implements AstVisitorInterface {
 		
+		/** @var EntityStore EntityStore keeps the entity metadata */
 		private EntityStore $entityStore;
+		
+		/** @var string Entity name to use */
 		private string $entityName;
 		
 		/**
-		 * ViaClauseValidator constructor.
+		 * RelationshipPathValidator constructor.
 		 * @param EntityStore $entityStore
 		 * @param string $entityName
 		 */
@@ -72,7 +75,20 @@
 			$rangeName    = $sourceRange->getName();               // e.g. "o" (the range alias)
 			$propertyName = $next->getName();                      // e.g. "customer" (the accessed property)
 			
-			// Collect all relationship types that could legitimately reference another entity
+			// Validate the relationship path and throw if it leads to the wrong entity
+			$this->validateRelationshipPath($entityName, $rangeName, $propertyName);
+		}
+		
+		/**
+		 * Collects all relationship types that could legitimately reference another entity
+		 * and checks whether the accessed property is declared and leads to the expected entity.
+		 * @param string $entityName The fully-qualified entity class name to check relations on
+		 * @param string $rangeName The range alias used in the query (for error reporting)
+		 * @param string $propertyName The property name accessed via the range
+		 * @return void
+		 * @throws SemanticException|EntityResolutionException When the relationship path does not lead to the expected entity
+		 */
+		private function validateRelationshipPath(string $entityName, string $rangeName, string $propertyName): void {
 			$dependencies = [
 				'oneToOne'  => $this->entityStore->getOneToOneDependencies($entityName),
 				'manyToOne' => $this->entityStore->getManyToOneDependencies($entityName),
@@ -86,10 +102,10 @@
 					continue;
 				}
 				
+				// The property exists as a relationship but points to the wrong entity
 				$relation     = $dependency[$propertyName];
 				$targetEntity = $relation->getTargetEntity();
 				
-				// The property exists as a relationship but points to the wrong entity
 				if ($targetEntity !== $this->entityName) {
 					throw new SemanticException("Failed to join {$targetEntity} via {$rangeName}.{$propertyName} from {$this->entityName}. This is not a valid relationship path.");
 				}

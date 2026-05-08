@@ -15,7 +15,7 @@
 	use Quellabs\ObjectQuel\ObjectQuel\Visitors\NoExpressionsAllowedOnEntitiesValidator;
 	use Quellabs\ObjectQuel\ObjectQuel\Visitors\RangeOnlyReferencesOtherRanges;
 	use Quellabs\ObjectQuel\ObjectQuel\Visitors\ValidateRangeReferencesExist;
-	use Quellabs\ObjectQuel\ObjectQuel\Visitors\ViaClauseValidator;
+	use Quellabs\ObjectQuel\ObjectQuel\Visitors\RelationshipPathValidator;
 	
 	/**
 	 * SemanticAnalyzer class responsible for validating ObjectQuel query ASTs
@@ -56,11 +56,11 @@
 			// Step 2: Validate that each root identifier links to a range that exists
 			$this->processWithVisitor($ast, ValidateRangeReferencesExist::class, $this->entityStore);
 			
-			// Step 2.5: Validate that every entity a database range links exists in the entitystore
+			// Step 2.5: Validate that every database range exists in the entitystore
 			$this->validateEntityInRangeExists($ast);
 			
 			// Step 3: Validate relationship definitions in 'via' clauses
-			//$this->validateRangeViaRelations($ast);
+			$this->validateRelationshipPaths($ast);
 			
 			// Step 4: Validate property references against schema
 			$this->processWithVisitor($ast, EntityPropertyExistenceValidator::class, $this->entityStore);
@@ -114,7 +114,7 @@
 				}
 				
 				// Recursively validate the inner query with full validation pipeline
-				$this->validate($range->getQuery(), true);
+				$this->validate($range->getQuery());
 			}
 		}
 		
@@ -279,7 +279,7 @@
 		 * @param AstRetrieve $ast The AST to validate
 		 * @throws SemanticException If invalid relations are found
 		 */
-		private function validateRangeViaRelations(AstRetrieve $ast): void {
+		private function validateRelationshipPaths(AstRetrieve $ast): void {
 			// Examine each table/range in the query to validate their 'via' relationships
 			foreach ($ast->getRanges() as $range) {
 				// Get the join property that defines how this range connects to other tables
@@ -294,7 +294,7 @@
 					try {
 						// Create a validator to check that all 'via' relations in the join property are valid
 						// This verifies that intermediate entities and properties exist in the entity store
-						$validator = new ViaClauseValidator($this->entityStore, $entityName);
+						$validator = new RelationshipPathValidator($this->entityStore, $entityName);
 						
 						// Apply the validator to the join property tree
 						// This traverses all parts of the join definition looking for invalid 'via' references
