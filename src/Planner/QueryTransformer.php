@@ -7,6 +7,7 @@
 	use Quellabs\ObjectQuel\EntityManager;
 	use Quellabs\ObjectQuel\Exception\QuelException;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRetrieve;
+	use Quellabs\ObjectQuel\ObjectQuel\Visitors\EntityNameNormalizer;
 	
 	/**
 	 * Main orchestrator that coordinates all query optimization strategies.

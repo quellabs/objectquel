@@ -72,13 +72,12 @@
 			// Replaces macro placeholder nodes with the full macro body/logic
 			$this->processWithVisitor($ast, MacroExpander::class, $ast->getMacros());
 			
+			// Step 6: Converts indirect relationships through intermediate entities into direct joins
+			$this->transformViaRelations($ast);
+			
 			// Step 5: Add proper namespaces to all entity references
 			// Resolves entity names to their fully qualified forms using the entity store
 			$this->processWithVisitor($ast, EntityNameNormalizer::class, $this->entityStore, $ast->getRanges(), $ast->getMacros());
-			
-			// Step 6: Transform complex 'via' relationships into direct property lookups
-			// Converts indirect relationships through intermediate entities into direct SQL joins
-			$this->transformViaRelations($ast);
 		}
 		
 		/**
