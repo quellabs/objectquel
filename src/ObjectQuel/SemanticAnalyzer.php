@@ -48,7 +48,13 @@
 					$this->validate($range->getQuery());
 				}
 			}
-
+			
+			// ==============================================================================
+			// Query validation
+			// ==============================================================================
+			
+			$this->validatePopulatedProjections();
+			
 			// ==============================================================================
 			// Range validation
 			// ==============================================================================
@@ -124,6 +130,22 @@
 		private function processWithVisitor(AstRetrieve $ast, string $visitorClass, ...$args): void {
 			$visitor = new $visitorClass(...$args);
 			$ast->accept($visitor);
+		}
+		
+		/**
+		 * Validates that the query contains at least one value in the projection list.
+		 * An empty retrieve() clause has no defined meaning and cannot be translated
+		 * to valid SQL — every query must select at least one property or expression.
+		 * @param AstRetrieve $ast The AST to validate
+		 * @throws SemanticException If the projection list is empty
+		 */
+		private function validatePopulatedProjections(AstRetrieve $ast): void {
+			if (empty($ast->getValues())) {
+				throw new SemanticException(
+					"The retrieve() clause cannot be empty. " .
+					"Specify at least one property or expression to retrieve."
+				);
+			}
 		}
 		
 		/**
