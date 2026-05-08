@@ -4,6 +4,7 @@
 	
 	use Quellabs\ObjectQuel\ObjectQuel\AstInterface;
 	use Quellabs\ObjectQuel\ObjectQuel\AstVisitorInterface;
+	use Quellabs\ObjectQuel\ObjectQuel\IdentifierType;
 	
 	/**
 	 * Represents an identifier node in the AST.
@@ -24,6 +25,11 @@
 		protected AstRange|null $range;
 		
 		/**
+		 * @var IdentifierType The identifier type
+		 */
+		protected IdentifierType $type;
+		
+		/**
 		 * @var ?AstIdentifier Next identifier in chain for property access (e.g., "user.id").
 		 */
 		protected ?AstIdentifier $next = null;
@@ -36,8 +42,9 @@
 		 * Constructor.
 		 * @param string $identifier The identifier value
 		 */
-		public function __construct(string $identifier) {
+		public function __construct(string $identifier, IdentifierType $type = IdentifierType::Unresolved) {
 			$this->identifier = $identifier;
+			$this->type = $type;
 			$this->range = null;
 		}
 		
@@ -68,6 +75,28 @@
 			}
 			
 			return $clone;
+		}
+		
+		// =========================================================================
+		// Type of the identifier
+		// =========================================================================
+		
+		/**
+		 * Returns the identifier's type
+		 * @return IdentifierType
+		 */
+		public function getType(): IdentifierType {
+			return $this->type;
+		}
+		
+		/**
+		 * Sets the identifier's type
+		 * @param IdentifierType $type
+		 * @return $this
+		 */
+		public function setType(IdentifierType $type): AstIdentifier {
+			$this->type = $type;
+			return $this;
 		}
 		
 		// =========================================================================
