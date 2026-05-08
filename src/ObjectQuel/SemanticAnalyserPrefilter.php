@@ -8,7 +8,6 @@
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRangeDatabase;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRangeDatabaseSubquery;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRetrieve;
-	use Quellabs\ObjectQuel\ObjectQuel\Visitors\EntityNameNormalizer;
 	use Quellabs\ObjectQuel\ObjectQuel\Visitors\RangeDatabaseProxyResolver;
 	use Quellabs\ObjectQuel\ObjectQuel\Visitors\MacroSubstitutor;
 	use Quellabs\ObjectQuel\ObjectQuel\Visitors\MacroExpander;
@@ -22,7 +21,7 @@
 	 * handles macro expansion, range processing, namespace resolution, and relationship
 	 * mapping through a series of visitor pattern implementations.
 	 */
-	class QueryTransformer {
+	class SemanticAnalyserPrefilter {
 		
 		/**
 		 * Entity store containing metadata about all available entities and their relationships.
@@ -74,10 +73,6 @@
 			
 			// Step 6: Converts indirect relationships through intermediate entities into direct joins
 			$this->transformViaRelations($ast);
-			
-			// Step 5: Add proper namespaces to all entity references
-			// Resolves entity names to their fully qualified forms using the entity store
-			$this->processWithVisitor($ast, EntityNameNormalizer::class, $this->entityStore, $ast->getRanges(), $ast->getMacros());
 		}
 		
 		/**

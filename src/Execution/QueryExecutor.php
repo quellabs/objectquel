@@ -39,7 +39,7 @@
 		private DatabaseAdapter $connection;
 		private PlanExecutor $planExecutor;
 		private QueryTransformer $transformer;
-		private \Quellabs\ObjectQuel\ObjectQuel\QueryTransformer $queryTransformer;
+		private \Quellabs\ObjectQuel\ObjectQuel\SemanticAnalyserPrefilter $queryTransformer;
 		private SemanticAnalyzer $semanticAnalyser;
 		private DatabaseQueryExecutor $databaseExecutor;
 		private JsonQueryExecutor $jsonExecutor;
@@ -57,7 +57,7 @@
 			$this->connection = $entityManager->getConnection();
 			$this->capabilities = new PlatformCapabilities($this->connection);
 			$this->transformer = new QueryTransformer($entityManager, $this->capabilities);
-			$this->queryTransformer = new \Quellabs\ObjectQuel\ObjectQuel\QueryTransformer($entityManager->getEntityStore());
+			$this->queryTransformer = new \Quellabs\ObjectQuel\ObjectQuel\SemanticAnalyserPrefilter($entityManager->getEntityStore());
 			$this->semanticAnalyser = new SemanticAnalyzer($entityManager->getEntityStore());
 			
 			// Create specialized executors

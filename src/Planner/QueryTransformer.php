@@ -5,15 +5,20 @@
 	use Quellabs\ObjectQuel\Capabilities\NullPlatformCapabilities;
 	use Quellabs\ObjectQuel\Capabilities\PlatformCapabilitiesInterface;
 	use Quellabs\ObjectQuel\EntityManager;
+	use Quellabs\ObjectQuel\EntityStore;
+	use Quellabs\ObjectQuel\Exception\EntityResolutionException;
 	use Quellabs\ObjectQuel\Exception\QuelException;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRangeDatabase;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRetrieve;
-	use Quellabs\ObjectQuel\ObjectQuel\Visitors\EntityNameNormalizer;
 	
 	/**
 	 * Main orchestrator that coordinates all query optimization strategies.
 	 * Acts as a facade that delegates to specialized optimizers.
 	 */
 	class QueryTransformer {
+		
+		// EntityStore for metadata
+		private EntityStore $entityStore;
 		
 		// Core optimization strategies - each handles a specific type of optimization
 		private Optimizers\DatabaseRangePromotor $rangePromotor;             // Subquery to temp/materialized nodes
@@ -30,6 +35,8 @@
 		 * @param PlatformCapabilitiesInterface $platform Database engine capability descriptor
 		 */
 		public function __construct(EntityManager $entityManager, PlatformCapabilitiesInterface $platform = new NullPlatformCapabilities()) {
+			$this->entityStore = $entityManager->getEntityStore();
+			
 			// Initialize optimizers that need entity metadata
 			$this->rangePromotor = new Optimizers\DatabaseRangePromotor();
 			$this->anyOptimizer = new Optimizers\AnyOptimizer($entityManager);
@@ -47,9 +54,12 @@
 		 * Applies optimizations recursively to nested queries first (depth-first),
 		 * then optimizes the outer query.
 		 * @param AstRetrieve $ast The query AST to optimize in-place
-		 * @throws QuelException
+		 * @throws QuelException|EntityResolutionException
 		 */
 		public function transform(AstRetrieve $ast): void {
+			// Complete all database range entity namespaces
+			$this->resolveEntityNamespaces($ast);
+			
 			// Phase 1: Basic range and relationship optimizations
 			// Apply filtering early to reduce dataset size for subsequent operations
 			$this->rangePromotor->optimize($ast);
@@ -74,5 +84,23 @@
 			$this->joinOptimizer->optimize($ast);
 			$this->rangeOptimizer->removeUnusedLeftJoinRanges($ast, false);
 			$this->JoinConditionFieldInjector->optimize($ast);
+		}
+		
+		/**
+		 * Resolve all entity names
+		 * @param AstRetrieve $ast
+		 * @return void
+		 * @throws EntityResolutionException
+		 */
+		private function resolveEntityNamespaces(AstRetrieve $ast): void {
+			foreach($ast->getRanges() as $range) {
+				if (!$range instanceof AstRangeDatabase) {
+					continue;
+				}
+
+				$entityName = $range->getEntityName();
+				$resolvedEntityName = $this->entityStore->resolveProxyClass($entityName);
+				$range->setEntityName($resolvedEntityName);
+			}
 		}
 	}
