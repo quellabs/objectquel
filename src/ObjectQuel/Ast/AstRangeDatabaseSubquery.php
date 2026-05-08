@@ -52,16 +52,7 @@
 			$this->query = $query;
 			$this->includeAsJoin = $includeAsJoin;
 		}
-		
-		/**
-		 * Accept a visitor, ensuring it traverses the join property and the subquery.
-		 * @param AstVisitorInterface $visitor
-		 */
-		public function accept(AstVisitorInterface $visitor): void {
-			parent::accept($visitor);
-			$this->query->accept($visitor);
-		}
-		
+
 		/**
 		 * Create a deep copy of this range including all child nodes.
 		 * @return static A new instance with cloned child nodes

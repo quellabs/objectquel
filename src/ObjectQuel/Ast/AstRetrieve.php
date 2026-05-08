@@ -114,9 +114,7 @@
 			}
 			
 			// Process conditions if they exist (WHERE clause)
-			if ($this->conditions !== null) {
-				$this->conditions->accept($visitor);
-			}
+			$this->conditions?->accept($visitor);
 			
 			// Process sorting specifications (ORDER BY clause)
 			foreach($this->sort as $s) {
