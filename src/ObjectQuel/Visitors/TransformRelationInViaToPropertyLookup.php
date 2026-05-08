@@ -17,6 +17,7 @@
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRangeJsonSource;
 	use Quellabs\ObjectQuel\ObjectQuel\AstInterface;
 	use Quellabs\ObjectQuel\ObjectQuel\AstVisitorInterface;
+	use Quellabs\ObjectQuel\ObjectQuel\IdentifierType;
 	
 	/**
 	 * Transforms 'via' relationship references in the AST into direct property lookups
@@ -74,14 +75,22 @@
 		 * @return AstInterface
 		 */
 		public function createPropertyLookupAst(string $propertyA, AstRange|AstRangeDatabase|AstRangeJsonSource $rangeB, string $propertyB): AstInterface {
-			$identifierA = new AstIdentifier($this->range->getName());  // "u"
+			
+			// Build identifier chain for the left side: <rangeA>.<propertyA>
+			// Associate the root identifier with its source range
+			// Append the property lookup to the identifier chain
+			$identifierA = new AstIdentifier($this->range->getName(), IdentifierType::EntityRoot);
 			$identifierA->setRange($this->range);
-			$identifierA->setNext(new AstIdentifier($propertyA));
+			$identifierA->setNext(new AstIdentifier($propertyA, IdentifierType::EntityProperty));
 			
-			$identifierB = new AstIdentifier($rangeB->getName());  // "p"
+			// Build identifier chain for the right side: <rangeB>.<propertyB>
+			// Associate the root identifier with its source range
+			// Append the property lookup to the identifier chain
+			$identifierB = new AstIdentifier($rangeB->getName(), IdentifierType::EntityRoot);
 			$identifierB->setRange($rangeB);
-			$identifierB->setNext(new AstIdentifier($propertyB));
+			$identifierB->setNext(new AstIdentifier($propertyB, IdentifierType::EntityProperty));
 			
+			// Create equality expression
 			return new AstExpression($identifierA, $identifierB, '=');
 		}
 		
@@ -97,18 +106,24 @@
 		public function createPropertyLookupAstUsingRelation(AstIdentifier $joinProperty, ManyToOne|OneToMany|OneToOne $relation): AstInterface {
 			// The parent of the property node is the range identifier (e.g. 'c')
 			$entity = $joinProperty->getParent();
+			
+			// Error when this is the root identifier
 			if (!$entity instanceof AstIdentifier) {
 				throw new TransformationException('Expected parent to be an AstIdentifier');
 			}
 			
 			// Get the range object and verify it is non-null
 			$range = $entity->getRange();
+			
+			// Error when there is no range attached
 			if ($range === null) {
 				throw new TransformationException('Expected parent identifier to have an attached range');
 			}
 			
 			// Resolve the entity name for primary key fallback
 			$entityName = $entity->getEntityName();
+			
+			// Error when the parent has no entity attached
 			if ($entityName === null) {
 				throw new TransformationException('Expected parent identifier to belong to an entity range');
 			}
@@ -209,6 +224,7 @@
 				return $side;
 			}
 			
+			// Fetch property name
 			$propertyName = $propertyNode->getName();
 			
 			// Collect all relation types for this entity into a single flat map

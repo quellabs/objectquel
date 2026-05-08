@@ -11,10 +11,10 @@
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRegExp;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRetrieve;
 	use Quellabs\ObjectQuel\ObjectQuel\Visitors\NodeTypeValidator;
-	use Quellabs\ObjectQuel\ObjectQuel\Visitors\EntityExistenceValidator;
 	use Quellabs\ObjectQuel\ObjectQuel\Visitors\EntityPropertyExistenceValidator;
 	use Quellabs\ObjectQuel\ObjectQuel\Visitors\NoExpressionsAllowedOnEntitiesValidator;
 	use Quellabs\ObjectQuel\ObjectQuel\Visitors\RangeOnlyReferencesOtherRanges;
+	use Quellabs\ObjectQuel\ObjectQuel\Visitors\ValidateRangeReferencesExist;
 	use Quellabs\ObjectQuel\ObjectQuel\Visitors\ViaClauseValidator;
 	
 	/**
@@ -39,10 +39,9 @@
 		/**
 		 * Main validation entry point - performs comprehensive query validation
 		 * @param AstRetrieve $ast The parsed query AST to validate
-		 * @param bool $isSubquery True if we are validating a nested query
 		 * @throws SemanticException If any validation fails
 		 */
-		public function validate(AstRetrieve $ast, bool $isSubquery = false): void {
+		public function validate(AstRetrieve $ast): void {
 			// First, recursively validate all nested queries in temporary ranges
 			// This ensures inner queries are valid before validating the outer query
 			$this->validateNestedQueries($ast);
@@ -54,11 +53,14 @@
 			$this->validateAtLeastOneRangeWithoutVia($ast);
 			$this->validateRangesOnlyReferenceOtherRanges($ast);
 			
-			// Step 2: Validate against schema - ensure entities exist
-			$this->processWithVisitor($ast, EntityExistenceValidator::class, $this->entityStore);
+			// Step 2: Validate that each root identifier links to a range that exists
+			$this->processWithVisitor($ast, ValidateRangeReferencesExist::class, $this->entityStore);
+			
+			// Step 2.5: Validate that every entity a database range links exists in the entitystore
+			$this->validateEntityInRangeExists($ast);
 			
 			// Step 3: Validate relationship definitions in 'via' clauses
-			$this->validateRangeViaRelations($ast);
+			//$this->validateRangeViaRelations($ast);
 			
 			// Step 4: Validate property references against schema
 			$this->processWithVisitor($ast, EntityPropertyExistenceValidator::class, $this->entityStore);
@@ -68,6 +70,34 @@
 			
 			// Step 6: Validate SQL compliance rules (aggregate placement)
 			$this->validateNoAggregatesInWhereClause($ast);
+		}
+		
+		/**
+		 * Validates that all database-backed ranges reference existing entities.
+		 * @param AstRetrieve $ast The retrieve AST containing the ranges to validate.
+		 * @return void
+		 * @throws SemanticException Thrown when a referenced entity does not exist.
+		 */
+		private function validateEntityInRangeExists(AstRetrieve $ast): void {
+			foreach ($ast->getRanges() as $range) {
+				// Only database ranges can reference entities.
+				if (!$range instanceof AstRangeDatabase) {
+					continue;
+				}
+				
+				// Skip ranges that do not reference an entity.
+				$entityName = $range->getEntityName();
+				if ($entityName === null) {
+					continue;
+				}
+				
+				// Ensure the referenced entity exists in the entity store.
+				if (!$this->entityStore->exists($entityName)) {
+					throw new SemanticException(
+						"The range {$range->getName()} references entity '{$entityName}', but that entity does not exist."
+					);
+				}
+			}
 		}
 		
 		/**

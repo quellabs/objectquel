@@ -1,19 +1,21 @@
 <?php
 	
 	
-	namespace Quellabs\ObjectQuel\ObjectQuel\Visitors;
+	namespace Quellabs\ObjectQuel\ObjectQuel\Resolvers;
 	
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstIdentifier;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRange;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRetrieve;
 	use Quellabs\ObjectQuel\ObjectQuel\AstInterface;
 	use Quellabs\ObjectQuel\ObjectQuel\AstVisitorInterface;
+	use Quellabs\ObjectQuel\ObjectQuel\IdentifierType;
 	
 	/**
 	 * Implements the Visitor pattern to process AST nodes and identify ranges (aliases).
 	 * When an identifier in the AST matches a defined range name, this visitor attaches
 	 * the corresponding range object to that identifier node.
 	 */
-	class EntityResolveRange implements AstVisitorInterface {
+	class ResolveIdentifierRange implements AstVisitorInterface {
 		
 		/**
 		 * Array of available ranges (aliases) that can be matched against identifiers
@@ -23,10 +25,10 @@
 		
 		/**
 		 * EntityProcessRange constructor.
-		 * @param AstRange[] $ranges Table of ranges (should contain AstRangeDatabase objects)
+		 * @param AstRetrieve $retrieve Root query
 		 */
-		public function __construct(array $ranges) {
-			$this->ranges = $ranges;
+		public function __construct(AstRetrieve $retrieve) {
+			$this->ranges = $retrieve->getRanges();
 		}
 		
 		/**
@@ -44,7 +46,12 @@
 			}
 
 			// Only handle base identifiers
-			if ($node->getParent() instanceof AstIdentifier) {
+			if (
+				$node->getType() !== IdentifierType::EntityRoot &&
+				$node->getType() !== IdentifierType::EntityReference &&
+				$node->getType() !== IdentifierType::JsonRoot &&
+				$node->getType() !== IdentifierType::SubqueryRoot
+			) {
 				return;
 			}
 			
@@ -54,10 +61,8 @@
 			// Search for a matching range by name
 			$range = $this->getRange($name);
 			
-			// If a matching range is found, attach it to the identifier node
-			if ($range !== null) {
-				$node->setRange($range);
-			}
+			// Attach it to the identifier node
+			$node->setRange($range);
 		}
 
 		/**

@@ -12,7 +12,6 @@
 	use Quellabs\ObjectQuel\ObjectQuel\Visitors\RangeDatabaseProxyResolver;
 	use Quellabs\ObjectQuel\ObjectQuel\Visitors\MacroSubstitutor;
 	use Quellabs\ObjectQuel\ObjectQuel\Visitors\MacroExpander;
-	use Quellabs\ObjectQuel\ObjectQuel\Visitors\EntityResolveRange;
 	use Quellabs\ObjectQuel\ObjectQuel\Visitors\TransformRelationInViaToPropertyLookup;
 	use Quellabs\ObjectQuel\ObjectQuel\Visitors\UnqualifiedDatabasePropertyResolver;
 	use Quellabs\ObjectQuel\ObjectQuel\Visitors\DiscriminatorConditionInjector;
@@ -65,12 +64,7 @@
 			// ranges only ever appear in AstRetrieve::$ranges.
 			$this->injectDiscriminatorConditions($ast);
 
-			// Step 3: Process range definitions (table joins, aliases, and FROM clauses)
-			// Converts range specifications into proper join conditions and table references
-			$entityResolveRange = new EntityResolveRange($ast->getRanges());
-			$ast->accept($entityResolveRange);
-			
-			// Step 3.5: Resolve unqualified property names to range-prefixed identifiers
+			// Step 3: Resolve unqualified property names to range-prefixed identifiers
 			// Allows bare names like 'name' to be written instead of 'p.name' when unambiguous
 			$this->processWithVisitor($ast, UnqualifiedDatabasePropertyResolver::class, $this->entityStore, $ast->getRanges());
 			

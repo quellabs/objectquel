@@ -55,6 +55,8 @@
 					$node->setType(IdentifierType::SubqueryRoot);
 				} elseif ($range instanceof AstRangeJsonSource) {
 					$node->setType(IdentifierType::JsonRoot);
+				} else {
+					$a = 0;
 				}
 			}
 		}
