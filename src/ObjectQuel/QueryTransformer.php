@@ -14,7 +14,7 @@
 	use Quellabs\ObjectQuel\ObjectQuel\Visitors\MacroExpander;
 	use Quellabs\ObjectQuel\ObjectQuel\Visitors\EntityResolveRange;
 	use Quellabs\ObjectQuel\ObjectQuel\Visitors\TransformRelationInViaToPropertyLookup;
-	use Quellabs\ObjectQuel\ObjectQuel\Visitors\UnqualifiedPropertyResolver;
+	use Quellabs\ObjectQuel\ObjectQuel\Visitors\UnqualifiedDatabasePropertyResolver;
 	use Quellabs\ObjectQuel\ObjectQuel\Visitors\DiscriminatorConditionInjector;
 	
 	/**
@@ -72,7 +72,7 @@
 			
 			// Step 3.5: Resolve unqualified property names to range-prefixed identifiers
 			// Allows bare names like 'name' to be written instead of 'p.name' when unambiguous
-			$this->processWithVisitor($ast, UnqualifiedPropertyResolver::class, $this->entityStore, $ast->getRanges());
+			$this->processWithVisitor($ast, UnqualifiedDatabasePropertyResolver::class, $this->entityStore, $ast->getRanges());
 			
 			// Step 4: Expand macro definitions with their actual implementations
 			// Replaces macro placeholder nodes with the full macro body/logic

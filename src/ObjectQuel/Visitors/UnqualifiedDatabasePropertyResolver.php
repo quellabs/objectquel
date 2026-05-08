@@ -31,7 +31,7 @@
 	 * qualified identifiers) and BEFORE EntityNameNormalizer (so the rewritten nodes
 	 * are normalised together with the rest of the AST).
 	 */
-	class UnqualifiedPropertyResolver implements AstVisitorInterface {
+	class UnqualifiedDatabasePropertyResolver implements AstVisitorInterface {
 		
 		/**
 		 * Entity store used to look up which properties belong to which entity.
@@ -98,15 +98,16 @@
 			
 			// Resolve whether the property is a scalar column or a relation so that
 			// downstream phases (semantic checking, post-semantic rewrite) don't need
-			// to re-query the entitystore for information we already have here.
+			// to re-query the entity store for information we already have here.
 			$propertyType = $this->resolvePropertyType($matchingRange, $propertyName);
+
+			// Create the property node
+			$propertyNode = new AstIdentifier($propertyName, $propertyType);
 			
-			// Mutate the existing node rather than replacing it so that any parent
-			// pointers already established in the AST remain valid.
+			// Mutate the existing node. It's now an entity root
 			$node->setName($matchingRange->getName());
 			$node->setRange($matchingRange);
 			$node->setType(IdentifierType::EntityRoot);
-			$propertyNode = new AstIdentifier($propertyName, $propertyType);
 			$node->setNext($propertyNode);
 		}
 		
