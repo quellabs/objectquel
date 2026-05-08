@@ -11,6 +11,7 @@
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRangeDatabase;
 	use Quellabs\ObjectQuel\ObjectQuel\AstInterface;
 	use Quellabs\ObjectQuel\ObjectQuel\AstVisitorInterface;
+	use Quellabs\ObjectQuel\ObjectQuel\IdentifierType;
 	
 	/**
 	 * Class AddNamespacesToEntities
@@ -83,8 +84,11 @@
 				return;
 			}
 			
-			// Checks that the node is not part of a chain
-			if ($node->getParent() instanceof AstIdentifier) {
+			// Checks the node type
+			if (
+				$node->getType() !== IdentifierType::EntityRoot &&
+				$node->getType() !== IdentifierType::EntityReference
+			) {
 				return;
 			}
 			

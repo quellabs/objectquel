@@ -8,6 +8,7 @@
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRetrieve;
 	use Quellabs\ObjectQuel\ObjectQuel\AstInterface;
 	use Quellabs\ObjectQuel\ObjectQuel\AstVisitorInterface;
+	use Quellabs\ObjectQuel\ObjectQuel\IdentifierType;
 	
 	/**
 	 * Class RangeOnlyReferencesOtherRanges
@@ -33,12 +34,16 @@
 		 * @throws SemanticException
 		 */
 		public function visitNode(AstInterface $node): void {
+			// Only handle AstIdentifier
 			if (!$node instanceof AstIdentifier) {
 				return;
 			}
 			
-			// Only check base identifiers
-			if ($node->hasParentIdentifier()) {
+			// Only check entity
+			if (
+				$node->getType() !== IdentifierType::EntityRoot &&
+				$node->getType() !== IdentifierType::EntityReference
+			) {
 				return;
 			}
 			

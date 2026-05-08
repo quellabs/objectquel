@@ -7,7 +7,6 @@
 		case EntityReference;
 		case EntityRoot;
 		case EntityProperty;
-		case EntityRelation;
 		
 		// Subqueries
 		case SubqueryRoot;

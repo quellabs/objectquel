@@ -96,13 +96,8 @@
 			// Fetch the unique range for this property
 			$matchingRange = $this->findUniqueRangeForProperty($propertyName);
 			
-			// Resolve whether the property is a scalar column or a relation so that
-			// downstream phases (semantic checking, post-semantic rewrite) don't need
-			// to re-query the entity store for information we already have here.
-			$propertyType = $this->resolvePropertyType($matchingRange, $propertyName);
-
 			// Create the property node
-			$propertyNode = new AstIdentifier($propertyName, $propertyType);
+			$propertyNode = new AstIdentifier($propertyName, IdentifierType::EntityProperty);
 			
 			// Mutate the existing node. It's now an entity root
 			$node->setName($matchingRange->getName());
@@ -175,51 +170,5 @@
 			
 			// Return the match
 			return $matches[0];
-		}
-		
-		/**
-		 * Determines the IdentifierType of a property on a concrete entity range.
-		 *
-		 * Checks scalar columns first (@Column-mapped properties), then relations
-		 * (@OneToOne, @ManyToOne, @OneToMany). The caller guarantees that the property
-		 * exists on the range — this method is only called after findUniqueRangeForProperty
-		 * has already confirmed ownership, so the fallback to Unresolved should never
-		 * be reached in practice.
-		 *
-		 * @param AstRangeDatabase $range The range whose entity metadata to inspect
-		 * @param string $propertyName The property name to classify
-		 * @return IdentifierType EntityProperty for scalar columns, EntityRelation for relations, Unresolved as fallback
-		 * @throws EntityResolutionException
-		 */
-		private function resolvePropertyType(AstRangeDatabase $range, string $propertyName): IdentifierType {
-			// Retrieve the entity name from the range — guaranteed non-null here because
-			// findUniqueRangeForProperty already filtered out ranges without entity names.
-			$entityName = $range->getEntityName();
-			
-			// Check scalar columns first — @Column-annotated properties map directly
-			// to database columns and are the most common case.
-			$columnMap = $this->entityStore->getColumnMap($entityName);
-
-			if (isset($columnMap[$propertyName])) {
-				return IdentifierType::EntityProperty;
-			}
-
-			// Check all relation types — @OneToOne, @ManyToOne, @OneToMany.
-			// Relations are navigation properties that reference other entities rather
-			// than mapping to a scalar database column.
-			$relations = array_merge(
-				$this->entityStore->getOneToOneDependencies($entityName),
-				$this->entityStore->getManyToOneDependencies($entityName),
-				$this->entityStore->getOneToManyDependencies($entityName)
-			);
-
-			if (isset($relations[$propertyName])) {
-				return IdentifierType::EntityRelation;
-			}
-
-			// Should never be reached: findUniqueRangeForProperty confirmed this property
-			// exists on this range before resolvePropertyType was called. If we land here,
-			// it indicates a bug in the lookup logic above.
-			return IdentifierType::Unresolved;
 		}
 	}
