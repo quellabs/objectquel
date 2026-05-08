@@ -9,7 +9,7 @@
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRangeDatabaseSubquery;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRetrieve;
 	use Quellabs\ObjectQuel\ObjectQuel\Visitors\EntityNameNormalizer;
-	use Quellabs\ObjectQuel\ObjectQuel\Visitors\RangeDatabaseEntityNormalizer;
+	use Quellabs\ObjectQuel\ObjectQuel\Visitors\RangeDatabaseProxyResolver;
 	use Quellabs\ObjectQuel\ObjectQuel\Visitors\MacroSubstitutor;
 	use Quellabs\ObjectQuel\ObjectQuel\Visitors\MacroExpander;
 	use Quellabs\ObjectQuel\ObjectQuel\Visitors\EntityResolveRange;
@@ -58,7 +58,7 @@
 			
 			// Step 2: Add proper namespaces to all ranges
 			// Resolves entity names to their fully qualified forms using the entity store
-			$this->processWithVisitor($ast, RangeDatabaseEntityNormalizer::class, $this->entityStore);
+			$this->processWithVisitor($ast, RangeDatabaseProxyResolver::class, $this->entityStore);
 			
 			// Step 2.5: Inject discriminator conditions for single-table inheritance
 			// Iterates ranges directly — no need for a full AST traversal since

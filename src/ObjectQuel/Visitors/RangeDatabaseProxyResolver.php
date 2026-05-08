@@ -13,7 +13,7 @@
 	/**
 	 * Class AddNamespacesToRanges
 	 */
-	class RangeDatabaseEntityNormalizer implements AstVisitorInterface {
+	class RangeDatabaseProxyResolver implements AstVisitorInterface {
 		
 		/**
 		 * The EntityStore for storing and fetching entity metadata.
@@ -35,7 +35,7 @@
 		 * @throws EntityResolutionException
 		 */
 		public function visitNode(AstInterface $node): void {
-			// Checks if the node is an instance of AstIdentifier. If not, the function stops.
+			// Checks if the node is an instance of AstRangeDatabase. If not, the function stops.
 			if (!$node instanceof AstRangeDatabase) {
 				return;
 			}
