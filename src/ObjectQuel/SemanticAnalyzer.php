@@ -13,6 +13,7 @@
 	use Quellabs\ObjectQuel\ObjectQuel\Visitors\NodeTypeValidator;
 	use Quellabs\ObjectQuel\ObjectQuel\Visitors\EntityPropertyExistenceValidator;
 	use Quellabs\ObjectQuel\ObjectQuel\Visitors\NoExpressionsAllowedOnEntitiesValidator;
+	use Quellabs\ObjectQuel\ObjectQuel\Visitors\RangeReferenceCollector;
 	use Quellabs\ObjectQuel\ObjectQuel\Visitors\ValidateRangeReferencesExist;
 	use Quellabs\ObjectQuel\ObjectQuel\Visitors\RelationshipPathValidator;
 	
@@ -53,12 +54,13 @@
 			// Query validation
 			// ==============================================================================
 			
-			$this->validatePopulatedProjections();
-			
+			// Step 1: Validate that the projection list is not empty
+			$this->validatePopulatedProjections($ast);
+
 			// ==============================================================================
 			// Range validation
 			// ==============================================================================
-
+			
 			// Step 1: Validate that all ranges have a unique name
 			$this->validateNoDuplicateRanges($ast);
 			
@@ -71,6 +73,9 @@
 			
 			// Step 3: Validate that each root identifier links to a range that exists
 			$this->processWithVisitor($ast, ValidateRangeReferencesExist::class, $this->entityStore);
+			
+			// Step 4: Validate that via clauses do not form circular dependencies
+			$this->validateNoCircularViaDependencies($ast);
 			
 			// ==============================================================================
 			// Property validation
@@ -130,22 +135,6 @@
 		private function processWithVisitor(AstRetrieve $ast, string $visitorClass, ...$args): void {
 			$visitor = new $visitorClass(...$args);
 			$ast->accept($visitor);
-		}
-		
-		/**
-		 * Validates that the query contains at least one value in the projection list.
-		 * An empty retrieve() clause has no defined meaning and cannot be translated
-		 * to valid SQL — every query must select at least one property or expression.
-		 * @param AstRetrieve $ast The AST to validate
-		 * @throws SemanticException If the projection list is empty
-		 */
-		private function validatePopulatedProjections(AstRetrieve $ast): void {
-			if (empty($ast->getValues())) {
-				throw new SemanticException(
-					"The retrieve() clause cannot be empty. " .
-					"Specify at least one property or expression to retrieve."
-				);
-			}
 		}
 		
 		/**
@@ -318,5 +307,148 @@
 				// Throw a user-friendly error explaining the SQL rule violation
 				throw new SemanticException("Aggregate function {$nodeType} is not allowed in WHERE clause");
 			}
+		}
+		
+		/**
+		 * Validates that the query contains at least one value in the projection list.
+		 * An empty retrieve() clause has no defined meaning and cannot be translated
+		 * to valid SQL — every query must select at least one property or expression.
+		 * @param AstRetrieve $ast The AST to validate
+		 * @throws SemanticException If the projection list is empty
+		 */
+		
+		/**
+		 * Validates that the query contains at least one value in the projection list.
+		 * An empty retrieve() clause has no defined meaning and cannot be translated
+		 * to valid SQL — every query must select at least one property or expression.
+		 * @param AstRetrieve $ast The AST to validate
+		 * @throws SemanticException If the projection list is empty
+		 */
+		private function validatePopulatedProjections(AstRetrieve $ast): void {
+			if (empty($ast->getValues())) {
+				throw new SemanticException(
+					"The retrieve() clause cannot be empty. " .
+					"Specify at least one property or expression to retrieve."
+				);
+			}
+		}
+		
+		/**
+		 * Validates that 'via' clause dependencies between ranges do not form a cycle.
+		 *
+		 * A cycle occurs when range A depends on range B via its join property, and range B
+		 * directly or transitively depends on range A. Such cycles cannot be resolved into
+		 * a valid SQL join order and indicate a query construction error.
+		 *
+		 * Algorithm: Kahn's BFS topological sort over the range dependency graph.
+		 *   1. Build a dependency map: for each range, collect all ranges referenced in its
+		 *      join property expression (by finding EntityRoot/EntityReference identifiers).
+		 *   2. Compute in-degrees and seed a queue with ranges that have no dependencies.
+		 *   3. Process the queue; if not all ranges are scheduled, a cycle exists.
+		 *
+		 * @param AstRetrieve $ast The AST to validate
+		 * @throws SemanticException If a circular via dependency is detected
+		 */
+		private function validateNoCircularViaDependencies(AstRetrieve $ast): void {
+			// Collect all range names for reference during dependency extraction
+			$allRangeNames = [];
+			
+			foreach ($ast->getRanges() as $range) {
+				$allRangeNames[$range->getName()] = true;
+			}
+			
+			// Build dependency map: rangeName → list of range names it depends on via its join property
+			$dependencies = [];
+			
+			foreach ($ast->getRanges() as $range) {
+				$rangeName = $range->getName();
+				$dependencies[$rangeName] = [];
+				
+				$joinProperty = $range->getJoinProperty();
+				
+				if ($joinProperty === null) {
+					// No join property means no via clause — this range has no dependencies
+					continue;
+				}
+				
+				// Walk the join expression and collect all EntityRoot/EntityReference identifiers
+				// that reference other declared ranges. These are the ranges this one depends on.
+				$referencedRanges = $this->extractRangeReferences($joinProperty, $allRangeNames);
+				
+				foreach ($referencedRanges as $referencedRange) {
+					// A range cannot depend on itself
+					if ($referencedRange !== $rangeName) {
+						$dependencies[$rangeName][] = $referencedRange;
+					}
+				}
+			}
+			
+			// Precompute reverse adjacency: dependents[$dep] = ranges that depend on $dep
+			$dependents = [];
+			
+			foreach ($dependencies as $rangeName => $deps) {
+				foreach ($deps as $dep) {
+					$dependents[$dep][] = $rangeName;
+				}
+			}
+			
+			// Kahn's algorithm: compute in-degree for each range
+			$inDegree = [];
+			
+			foreach ($dependencies as $rangeName => $deps) {
+				$inDegree[$rangeName] = count($deps);
+			}
+			
+			// Seed queue with all ranges that have no dependencies (in-degree 0)
+			$queue = [];
+			
+			foreach ($inDegree as $rangeName => $degree) {
+				if ($degree === 0) {
+					$queue[] = $rangeName;
+				}
+			}
+			
+			$scheduled = 0;
+			
+			while (!empty($queue)) {
+				$current = array_shift($queue);
+				$scheduled++;
+				
+				// Decrement in-degree for all ranges that depend on $current
+				foreach ($dependents[$current] ?? [] as $dependent) {
+					$inDegree[$dependent]--;
+					
+					if ($inDegree[$dependent] === 0) {
+						$queue[] = $dependent;
+					}
+				}
+			}
+			
+			// If not all ranges were scheduled, a cycle exists in the via dependency graph
+			if ($scheduled !== count($dependencies)) {
+				throw new SemanticException(
+					"Circular 'via' dependency detected between ranges. " .
+					"Range definitions must not form a cycle — each range must be reachable " .
+					"from a base range that has no 'via' clause."
+				);
+			}
+		}
+		
+		/**
+		 * Walks an expression tree and collects the names of all declared ranges
+		 * referenced by EntityRoot or EntityReference identifier nodes.
+		 *
+		 * Used by validateNoCircularViaDependencies() to extract which ranges a
+		 * join expression depends on, without assuming the expression is a simple
+		 * identifier chain — it may contain function calls, binary operators, etc.
+		 *
+		 * @param AstInterface $expression The join property expression to inspect
+		 * @param array<string, bool> $knownRangeNames Map of declared range names for fast lookup
+		 * @return string[] List of referenced range names found in the expression
+		 */
+		private function extractRangeReferences(AstInterface $expression, array $knownRangeNames): array {
+			$collector = new RangeReferenceCollector($knownRangeNames);
+			$expression->accept($collector);
+			return $collector->getReferencedRanges();
 		}
 	}
