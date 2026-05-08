@@ -11,6 +11,7 @@
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\NodeFunction;
 	use Quellabs\ObjectQuel\ObjectQuel\AstInterface;
 	use Quellabs\ObjectQuel\ObjectQuel\AstVisitorInterface;
+	use Quellabs\ObjectQuel\ObjectQuel\IdentifierType;
 	
 	/**
 	 * Class NoExpressionsAllowedOnEntitiesValidator
@@ -53,10 +54,10 @@
 		 * @return bool
 		 */
 		protected function identifierIsEntity(AstInterface $ast): bool {
-			return (
-				$ast instanceof AstIdentifier &&
-				$ast->getRange() instanceof AstRangeDatabase &&
-				!$ast->hasNext()
-			);
+			if (!$ast instanceof AstIdentifier) {
+				return false;
+			}
+			
+			return $ast->getType() === IdentifierType::EntityReference;
 		}
 	}
