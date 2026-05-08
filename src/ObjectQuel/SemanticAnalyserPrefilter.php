@@ -9,8 +9,7 @@
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRangeDatabaseSubquery;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRetrieve;
 	use Quellabs\ObjectQuel\ObjectQuel\Visitors\RangeDatabaseProxyResolver;
-	use Quellabs\ObjectQuel\ObjectQuel\Visitors\MacroSubstitutor;
-	use Quellabs\ObjectQuel\ObjectQuel\Visitors\MacroExpander;
+	use Quellabs\ObjectQuel\ObjectQuel\Visitors\MacroPlaceholderSetter;
 	use Quellabs\ObjectQuel\ObjectQuel\Visitors\TransformRelationInViaToPropertyLookup;
 	use Quellabs\ObjectQuel\ObjectQuel\Visitors\UnqualifiedDatabasePropertyResolver;
 	use Quellabs\ObjectQuel\ObjectQuel\Visitors\DiscriminatorConditionInjector;
@@ -52,7 +51,7 @@
 			
 			// Step 1: Plug macro placeholders into the AST structure
 			// This visitor finds macro references and creates placeholder nodes for later expansion
-			$this->processWithVisitor($ast, MacroSubstitutor::class, $ast->getMacros());
+			$this->processWithVisitor($ast, MacroPlaceholderSetter::class, $ast->getMacros());
 			
 			// Step 2: Add proper namespaces to all ranges
 			// Resolves entity names to their fully qualified forms using the entity store
@@ -65,11 +64,11 @@
 
 			// Step 3: Resolve unqualified property names to range-prefixed identifiers
 			// Allows bare names like 'name' to be written instead of 'p.name' when unambiguous
-			$this->processWithVisitor($ast, UnqualifiedDatabasePropertyResolver::class, $this->entityStore, $ast->getRanges());
+			//$this->processWithVisitor($ast, UnqualifiedDatabasePropertyResolver::class, $this->entityStore, $ast->getRanges());
 			
 			// Step 4: Expand macro definitions with their actual implementations
 			// Replaces macro placeholder nodes with the full macro body/logic
-			$this->processWithVisitor($ast, MacroExpander::class, $ast->getMacros());
+			$this->processWithVisitor($ast, MacroPlaceholderSetter::class, $ast->getMacros());
 			
 			// Step 6: Converts indirect relationships through intermediate entities into direct joins
 			$this->transformViaRelations($ast);

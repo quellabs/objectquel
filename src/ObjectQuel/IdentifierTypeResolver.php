@@ -2,6 +2,7 @@
 	
 	namespace Quellabs\ObjectQuel\ObjectQuel;
 	
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRangeDatabaseSubquery;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRetrieve;
 	use Quellabs\ObjectQuel\ObjectQuel\Resolvers\ResolveIdentifierRange;
 	use Quellabs\ObjectQuel\ObjectQuel\Resolvers\ResolvePropertyType;
@@ -29,6 +30,16 @@
 		 * @return void
 		 */
 		public function resolve(): void {
+			// First, recursively set types all nested queries in temporary ranges
+			// This ensures inner queries are fully resolved before outer query processing
+			foreach ($this->retrieve->getRanges() as $range) {
+				if ($range instanceof AstRangeDatabaseSubquery) {
+					$tmp = new IdentifierTypeResolver($range->getQuery());
+					$tmp->resolve();
+				}
+			}
+			
+			// Then set types on current query
 			$this->retrieve->accept($this->entityRootTypeResolver);
 			$this->retrieve->accept($this->propertyTypeResolver);
 			$this->retrieve->accept($this->identifierRangeResolver);

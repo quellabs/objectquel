@@ -13,7 +13,7 @@
 	 * If a given entity is a range, fetch the attached entity and
 	 * store it in the AstEntity node.
 	 */
-	class MacroExpander implements AstVisitorInterface {
+	class MacroPlaceholderSetter implements AstVisitorInterface {
 		
 		/**
 		 * Array of macros
