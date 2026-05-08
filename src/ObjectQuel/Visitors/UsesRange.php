@@ -29,18 +29,22 @@
 		 * @param AstInterface $node The current node being visited
 		 */
 		public function visitNode(AstInterface $node): void {
+			// Already found. Escape the recursion
 			if ($this->found) {
 				return;
 			}
 			
+			// Only handle identifier nodes
 			if (!$node instanceof AstIdentifier) {
 				return;
 			}
 			
+			// Skip identifiers without a range
 			if ($node->getRange() === null) {
 				return;
 			}
 			
+			// If the range is the given range name, we found it
 			if ($node->getRange()->getName() === $this->rangeName) {
 				$this->found = true;
 			}

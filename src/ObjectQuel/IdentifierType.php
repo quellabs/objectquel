@@ -4,8 +4,10 @@
 	
 	enum IdentifierType {
 		case RangeRoot;
+		case RangeProperty;
 		case EntityRoot;
-		case Property;
+		case EntityProperty;
+		case EntityRelation;
 		case Relation;
 		case JsonField;
 		case Unresolved;
