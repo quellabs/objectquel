@@ -18,7 +18,7 @@
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRangeDatabaseTempTable;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRetrieve;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\NodeBinary;
-	use Quellabs\ObjectQuel\ObjectQuel\Visitors\CollectRanges;
+	use Quellabs\ObjectQuel\ObjectQuel\Visitors\RangesCollector;
 	use Quellabs\ObjectQuel\ObjectQuel\Visitors\ContainsNonNullableFieldForRangeTemporary;
 	use Quellabs\ObjectQuel\Planner\Helpers\BinaryOperationHelper;
 	
@@ -174,7 +174,7 @@
 		 */
 		private function getUsedRanges(AstRetrieve $ast, bool $traverseSubqueries = true): array {
 			// Initialize visitor pattern to collect range references
-			$visitor = new CollectRanges($traverseSubqueries);
+			$visitor = new RangesCollector($traverseSubqueries);
 			
 			// Traverse all SELECT clause values to find referenced ranges
 			foreach ($ast->getValues() as $value) {
@@ -275,7 +275,7 @@
 		 * @return array<int, AstRange>
 		 */
 		private function getRangesUsedInJoinConditions(AstRetrieve $ast): array {
-			$visitor = new CollectRanges(false);
+			$visitor = new RangesCollector(false);
 			
 			foreach ($ast->getRanges() as $range) {
 				$range->getJoinProperty()?->accept($visitor);

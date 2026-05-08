@@ -13,6 +13,7 @@
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRangeDatabase;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRetrieve;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstString;
+	use Quellabs\ObjectQuel\ObjectQuel\IdentifierType;
 	
 	/**
 	 * Injects discriminator conditions into the WHERE clause for single-table inheritance.
@@ -151,8 +152,8 @@
 			// Build the left-hand side as a chained identifier: rangeAlias.columnName
 			// AstIdentifier chains represent dotted property access the same way
 			// user-written expressions like `t.type` are represented in the AST
-			$rangeIdentifier = new AstIdentifier($rangeAlias);
-			$columnIdentifier = new AstIdentifier($columnName);
+			$rangeIdentifier = new AstIdentifier($rangeAlias, IdentifierType::EntityRoot);
+			$columnIdentifier = new AstIdentifier($columnName, IdentifierType::EntityProperty);
 			$rangeIdentifier->setNext($columnIdentifier);
 			
 			// The right-hand side is a plain string literal for the discriminator value

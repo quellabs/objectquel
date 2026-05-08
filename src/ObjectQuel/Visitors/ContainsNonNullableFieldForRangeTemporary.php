@@ -49,6 +49,7 @@
 		 * Visits an AST node and records whether it references a non-nullable field
 		 * from the target temporary range.
 		 * @param mixed $node The AST node to visit
+		 * @throws EntityResolutionException
 		 */
 		public function visitNode($node): void {
 			// Short-circuit once a match is already recorded

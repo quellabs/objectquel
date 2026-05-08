@@ -55,12 +55,14 @@
 			
 			// Early return if the null check expression isn't an identifier
 			// (could be a complex expression, function call, etc.)
-			if (!$node->getExpression() instanceof AstIdentifier) {
+			$expression = $node->getExpression();
+			
+			if (!$expression instanceof AstIdentifier) {
 				return;
 			}
 			
 			// Record if the identifier belongs to our target range
-			if ($node->getExpression()->getRange()?->getName() === $this->rangeName) {
+			if ($expression->getRange()?->getName() === $this->rangeName) {
 				$this->found = true;
 			}
 		}

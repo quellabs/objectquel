@@ -32,7 +32,6 @@
 		}
 		
 		/**
-		 * Loop door de AST en gooit een exception zodra de AstIn node voor de primary key is gevonden
 		 * Traverse through the AST and throw an exception as soon as the AstIn node for the primary key is found.
 		 * @param AstInterface $node The current node being visited in the AST
 		 * @return void
@@ -44,9 +43,9 @@
 				return;
 			}
 			
+			// Verify that the identifier is actually an AstIdentifier instance
 			$identifier = $node->getIdentifier();
 			
-			// Verify that the identifier is actually an AstIdentifier instance
 			if (!$identifier instanceof AstIdentifier) {
 				return;
 			}

@@ -8,7 +8,7 @@
 	use Quellabs\ObjectQuel\ObjectQuel\AstInterface;
 	use Quellabs\ObjectQuel\ObjectQuel\AstVisitorInterface;
 	
-	class CollectRanges implements AstVisitorInterface {
+	class RangesCollector implements AstVisitorInterface {
 		
 		/** @var AstRange[] All nodes */
 		private array $collectedNodes;
@@ -35,28 +35,36 @@
 		 * @param AstInterface $node The current node being visited
 		 */
 		public function visitNode(AstInterface $node): void {
+			// Only handle AstIdentifier nodes
 			if (!$node instanceof AstIdentifier) {
 				return;
 			}
-			
+
+			// If any of the parents is AstSubquery, ignore
 			if (!$this->traverseSubqueries && $node->parentIsOneOf([AstSubquery::class])) {
 				return;
 			}
 			
-			if (!$node->isBaseIdentifier()) {
+			// Only handle root nodes
+			if ($node->getParent() instanceof AstIdentifier) {
 				return;
 			}
 			
+			// Skip nodes without ranges
 			if ($node->getRange() === null) {
 				return;
 			}
 			
-			if (in_array($node->getRange()->getName(), $this->handledRanges)) {
+			// Skip ranges we already collected
+			if (isset($this->handledRanges[$node->getRange()->getName()])) {
 				return;
 			}
 			
+			// Add range to the collectedNodes list
 			$this->collectedNodes[] = $node->getRange();
-			$this->handledRanges[] = $node->getRange()->getName();
+			
+			// Add range name to the handledRanges list to skip duplicates
+			$this->handledRanges[$node->getRange()->getName()] = true;
 		}
 		
 		/**
