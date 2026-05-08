@@ -5,6 +5,7 @@
 	
 	use Quellabs\ObjectQuel\Annotations\Orm\ManyToOne;
 	use Quellabs\ObjectQuel\Annotations\Orm\OneToMany;
+	use Quellabs\ObjectQuel\Annotations\Orm\OneToOne;
 	use Quellabs\ObjectQuel\EntityStore;
 	use Quellabs\ObjectQuel\Exception\EntityResolutionException;
 	use Quellabs\ObjectQuel\Exception\TransformationException;
@@ -88,80 +89,86 @@
 		 * Creates a JOIN condition AST from a relation annotation.
 		 * Resolves the correct FK/PK columns based on the relation type.
 		 * @param AstIdentifier $joinProperty The property node (e.g. 'addresses') whose parent is the range identifier
-		 * @param mixed $relation The relation annotation
+		 * @param ManyToOne|OneToMany|OneToOne $relation The relation annotation
 		 * @return AstInterface
 		 * @throws TransformationException
 		 * @throws EntityResolutionException
 		 */
-		public function createPropertyLookupAstUsingRelation(AstIdentifier $joinProperty, mixed $relation): AstInterface {
+		public function createPropertyLookupAstUsingRelation(AstIdentifier $joinProperty, ManyToOne|OneToMany|OneToOne $relation): AstInterface {
 			// The parent of the property node is the range identifier (e.g. 'c')
 			$entity = $joinProperty->getParent();
-			
 			if (!$entity instanceof AstIdentifier) {
 				throw new TransformationException('Expected parent to be an AstIdentifier');
 			}
 			
 			// Get the range object and verify it is non-null
 			$range = $entity->getRange();
-			
 			if ($range === null) {
 				throw new TransformationException('Expected parent identifier to have an attached range');
 			}
 			
 			// Resolve the entity name for primary key fallback
 			$entityName = $entity->getEntityName();
-			
 			if ($entityName === null) {
 				throw new TransformationException('Expected parent identifier to belong to an entity range');
 			}
 			
-			// Fall back to the first primary key of the parent entity
-			$relationColumn = $relation->getRelationColumn();
-			
-			if ($relationColumn === null) {
-				// Infer FK property name from the relation property name
-				// e.g. property "user" → FK property "userId"
-				$propertyName = $joinProperty->getName();  // "user"
-				$relationColumn = $propertyName . 'Id';    // "userId"
-			}
-			
 			// ManyToOne: FK is on $this->range, PK is on the parent range
 			if ($relation instanceof ManyToOne) {
+				// Fetch inversedBy
 				$inversedBy = $relation->getInversedBy();
 				
+				// InversedBy is mandatory
 				if ($inversedBy === null) {
 					throw new TransformationException('ManyToOne relation is missing inversedBy');
 				}
 				
+				// Determine the relation column
+				$relationColumn = $relation->getRelationColumn() ?? $joinProperty->getName() . 'Id';
+				
+				// Return new property lookup
 				return $this->createPropertyLookupAst($inversedBy, $range, $relationColumn);
 			}
 			
 			// OneToMany: FK is on $this->range (the child), PK is on the parent range
 			if ($relation instanceof OneToMany) {
+				// Fetch mappedBy
 				$mappedBy = $relation->getMappedBy();
 				
+				// MappedBy is mandatory
 				if ($mappedBy === null) {
 					throw new TransformationException('OneToMany relation is missing mappedBy');
 				}
 				
+				// For OneToMany, relationColumn is the PK on the parent side
+				// Default to the entity's primary key
+				$relationColumn = $relation->getRelationColumn() ?? $this->entityStore->getPrimaryKey($entityName) ?? throw new TransformationException('OneToMany relation is missing relationColumn and PK');
+				
+				// Return the new property lookup
 				return $this->createPropertyLookupAst($mappedBy, $range, $relationColumn);
 			}
 			
-			// OneToOne with inversedBy
-			$inversedBy = $relation->getInversedBy();
-			
-			if (!empty($inversedBy)) {
-				return $this->createPropertyLookupAst($relationColumn, $range, $inversedBy);
-			}
-			
-			// OneToOne with mappedBy
-			$mappedBy = $relation->getMappedBy();
-			
-			if ($mappedBy === null) {
+			// OneToOne: FK can both ways
+			if ($relation instanceof OneToOne) {
+				// OneToOne with inversedBy
+				$inversedBy = $relation->getInversedBy();
+				$mappedBy = $relation->getMappedBy();
+				
+				if (!empty($inversedBy)) {
+					$relationColumn = $relation->getRelationColumn() ?? $joinProperty->getName() . 'Id';
+					return $this->createPropertyLookupAst($relationColumn, $range, $inversedBy);
+				}
+				
+				if (!empty($mappedBy)) {
+					$relationColumn = $relation->getRelationColumn() ?? $this->entityStore->getPrimaryKey($entityName) ?? throw new TransformationException('OneToOne relation is missing relationColumn and PK');
+					return $this->createPropertyLookupAst($relationColumn, $range, $mappedBy);
+				}
+				
 				throw new TransformationException('OneToOne relation has neither inversedBy nor mappedBy');
 			}
 			
-			return $this->createPropertyLookupAst($mappedBy, $range, $relationColumn);
+			/** @phpstan-ignore deadCode.unreachable */
+			throw new TransformationException('Unknown relation. Should never happen');
 		}
 		
 		/**
