@@ -65,9 +65,8 @@
 			// Create new instance with the same identifier
 			// @phpstan-ignore-next-line new.static
 			$clone = new static($this->identifier);
-			
-			// Set the range
-			$clone->range = $this->range;
+			$clone->setType($this->getType());
+			$clone->setRange($this->getRange());
 			
 			// Clone the next identifier in the chain if it exists
 			if ($this->next !== null) {

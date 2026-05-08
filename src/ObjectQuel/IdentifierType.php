@@ -3,15 +3,20 @@
 	namespace Quellabs\ObjectQuel\ObjectQuel;
 	
 	enum IdentifierType {
-		case RangeRoot;
-		case RangeProperty;
+		// Entities
 		case EntityReference;
 		case EntityRoot;
-		case SubqueryRoot;
-		case JsonRoot;
 		case EntityProperty;
 		case EntityRelation;
-		case Relation;
-		case JsonField;
+		
+		// Subqueries
+		case SubqueryRoot;
+		case SubqueryProperty;
+		
+		// Json
+		case JsonRoot;
+		case JsonProperty;
+
+		// Unknown
 		case Unresolved;
 	}
