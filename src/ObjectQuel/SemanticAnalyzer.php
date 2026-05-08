@@ -73,21 +73,19 @@
 			// Step 1: Validate property references against schema
 			$this->processWithVisitor($ast, EntityPropertyExistenceValidator::class, $this->entityStore);
 			
-
+			// Step 2: Validate that referenced relationships lead back to the entity
+			$this->validateRelationshipPaths($ast);
 			
-			
-			// Step 4: Validates that the value list does not directly select entire subquery ranges.
+			// Step 3: Validates that the value list does not directly select entire subquery ranges.
 			$this->validateNoBareSubqueryRangesInValueList($ast);
 			
+			// Step 4: Validates that REGEXP is not used in the VALUES portion of the query
 			$this->validateNoRegExpInValueList($ast);
-			
-			// Step 3: Validate that referenced relationships lead back to the entity
-			$this->validateRelationshipPaths($ast);
 			
 			// Step 5: Ensure expressions are not used inappropriately on entities
 			$this->processWithVisitor($ast, NoExpressionsAllowedOnEntitiesValidator::class);
 			
-			// Step 6: Validate SQL compliance rules (aggregate placement)
+			// Step 6: Validate SQL compliance rules (aggregates cannot be put in WHERE)
 			$this->validateNoAggregatesInWhereClause($ast);
 		}
 		
@@ -296,7 +294,7 @@
 				$nodeType = strtoupper(substr($e->getMessage(), 3));
 				
 				// Throw a user-friendly error explaining the SQL rule violation
-				throw new SemanticException("Aggregate function '{$nodeType}' is not allowed in WHERE clause");
+				throw new SemanticException("Aggregate function {$nodeType} is not allowed in WHERE clause");
 			}
 		}
 	}
