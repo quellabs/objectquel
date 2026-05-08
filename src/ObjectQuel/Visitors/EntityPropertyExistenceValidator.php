@@ -7,9 +7,9 @@
 	use Quellabs\ObjectQuel\Exception\EntityResolutionException;
 	use Quellabs\ObjectQuel\Exception\SemanticException;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstIdentifier;
-	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRangeDatabase;
 	use Quellabs\ObjectQuel\ObjectQuel\AstInterface;
 	use Quellabs\ObjectQuel\ObjectQuel\AstVisitorInterface;
+	use Quellabs\ObjectQuel\ObjectQuel\IdentifierType;
 	
 	/**
 	 * Class EntityPropertyValidator
@@ -17,6 +17,7 @@
 	 */
 	class EntityPropertyExistenceValidator implements AstVisitorInterface {
 		
+		/** @var EntityStore EntityStore holds entity metadata */
 		private EntityStore $entityStore;
 		
 		/**
@@ -43,32 +44,37 @@
 			}
 			
 			// If this is not a property, do nothing
-			$parentNode = $node->getParent();
-			
-			if (!$parentNode instanceof AstIdentifier) {
+			if ($node->getType() !== IdentifierType::EntityProperty) {
 				return;
 			}
 			
-			// Skip validation if this identifier references a temporary table (subquery range)
-			if (!$parentNode->getSourceRange() instanceof AstRangeDatabase) {
-				return;
+			// Fetch the parent. This will always be an entity right now
+			// We still have to check for AstIdentifier to please phpstan
+			$parentNode = $node->getParent();
+			
+			if (!$parentNode instanceof AstIdentifier) {
+				throw new SemanticException("Parent should be AstIdentifier but isn't");
+			}
+			
+			// Check if the parent is the EntityRoot. Should always be the case.
+			if ($parentNode->getType() !== IdentifierType::EntityRoot) {
+				throw new SemanticException("Parent should be EntityRoot but isn't");
 			}
 			
 			// Fetch the entity name
 			$entityName = $parentNode->getEntityName();
 			
-			// Throw if none was attached
+			// Throw if none was attached. Never happens, but again, to please phpstan
 			if ($entityName === null) {
 				throw new SemanticException("Missing entity name in AstIdentifier property");
 			}
 			
 			// Fetch column map and relations
+			$propertyName = $node->getName();
 			$columnMap = $this->entityStore->getColumnMap($entityName);
 			$relations = $this->entityStore->getOneToManyDependencies($entityName);
 			
 			// Check if the property exists in the entity.
-			$propertyName = $node->getName();
-
 			if (!isset($columnMap[$propertyName]) && !isset($relations[$propertyName])) {
 				throw new SemanticException("The property {$propertyName} does not exist in entity {$entityName}. Please check for typos or verify that the correct entity is being referenced in the query.");
 			}

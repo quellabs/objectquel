@@ -71,8 +71,8 @@
 			}
 			
 			// Extract the three name components needed for validation and error reporting
-			$entityName   = $sourceRange->getEntityName();    // e.g. "App\Entity\Order"
-			$rangeName    = $sourceRange->getName();          // e.g. "o" (the range alias)
+			$entityName = $sourceRange->getEntityName();    // e.g. "App\Entity\Order"
+			$rangeName = $sourceRange->getName();          // e.g. "o" (the range alias)
 			$propertyName = $next->getName();                 // e.g. "customer" (the accessed property)
 			
 			// Validate the relationship path and throw if it leads to the wrong entity
@@ -103,7 +103,7 @@
 				}
 				
 				// The property exists as a relationship but points to the wrong entity
-				$relation     = $dependency[$propertyName];
+				$relation = $dependency[$propertyName];
 				$targetEntity = $relation->getTargetEntity();
 				
 				if ($targetEntity !== $this->entityName) {

@@ -13,7 +13,6 @@
 	use Quellabs\ObjectQuel\ObjectQuel\Visitors\NodeTypeValidator;
 	use Quellabs\ObjectQuel\ObjectQuel\Visitors\EntityPropertyExistenceValidator;
 	use Quellabs\ObjectQuel\ObjectQuel\Visitors\NoExpressionsAllowedOnEntitiesValidator;
-	use Quellabs\ObjectQuel\ObjectQuel\Visitors\RangeOnlyReferencesOtherRanges;
 	use Quellabs\ObjectQuel\ObjectQuel\Visitors\ValidateRangeReferencesExist;
 	use Quellabs\ObjectQuel\ObjectQuel\Visitors\RelationshipPathValidator;
 	
@@ -50,31 +49,40 @@
 				}
 			}
 
+			// ==============================================================================
+			// Range validation
+			// ==============================================================================
+
 			// Step 1: Validate that all ranges have a unique name
 			$this->validateNoDuplicateRanges($ast);
 			
-			// Step 2: Validate that there is at least one range without a VIA clause.
+			// Step 2: Validate that every database range exists in the entity store
+			$this->validateEntityInRangeExists($ast);
+			
+			// Step 3: Validate that there is at least one range without a VIA clause.
 			//         This range will act as the FROM clause of the SELECT query.
 			$this->validateAtLeastOneRangeWithoutVia($ast);
 			
 			// Step 3: Validate that each root identifier links to a range that exists
 			$this->processWithVisitor($ast, ValidateRangeReferencesExist::class, $this->entityStore);
 			
+			// ==============================================================================
+			// Property validation
+			// ==============================================================================
+			
+			// Step 1: Validate property references against schema
+			$this->processWithVisitor($ast, EntityPropertyExistenceValidator::class, $this->entityStore);
+			
+
+			
+			
 			// Step 4: Validates that the value list does not directly select entire subquery ranges.
 			$this->validateNoBareSubqueryRangesInValueList($ast);
 			
-			// Step 2: Validate basic structural integrity
-			$this->validateRangesOnlyReferenceOtherRanges($ast);
-			
-			// Step 2.5: Validate that every database range exists in the entitystore
-			$this->validateEntityInRangeExists($ast);
 			$this->validateNoRegExpInValueList($ast);
 			
 			// Step 3: Validate that referenced relationships lead back to the entity
 			$this->validateRelationshipPaths($ast);
-			
-			// Step 4: Validate property references against schema
-			$this->processWithVisitor($ast, EntityPropertyExistenceValidator::class, $this->entityStore);
 			
 			// Step 5: Ensure expressions are not used inappropriately on entities
 			$this->processWithVisitor($ast, NoExpressionsAllowedOnEntitiesValidator::class);
@@ -203,37 +211,6 @@
 				"The query must include at least one range definition without a 'via' clause. " .
 				"This serves as the 'FROM' clause in SQL and is essential for defining the data source."
 			);
-		}
-		
-		/**
-		 * Validates that ranges only reference other ranges in their join properties.
-		 * When a range uses a join property to connect to other tables, all entity references
-		 * in that join must correspond to other ranges defined in the same query.
-		 * @param AstRetrieve $ast The AST to validate
-		 * @throws SemanticException If ranges reference invalid entities
-		 */
-		private function validateRangesOnlyReferenceOtherRanges(AstRetrieve $ast): void {
-			// Create a validator that ensures join properties only reference other defined ranges
-			// This prevents situations where a join tries to reference an entity that isn't included in the query
-			$validator = new RangeOnlyReferencesOtherRanges($ast);
-			
-			// Examine each range to validate its join property references
-			foreach ($ast->getRanges() as $range) {
-				// Get the join property that defines how this range connects to other tables
-				$joinProperty = $range->getJoinProperty();
-				
-				// Only validate ranges that actually have join properties
-				// Main ranges without joins don't need this validation
-				if ($joinProperty !== null) {
-					try {
-						$joinProperty->accept($validator);
-					} catch (SemanticException $e) {
-						// Re-throw with the specific range name for better debugging context
-						// This helps identify which range has the invalid reference
-						throw new SemanticException(sprintf($e->getMessage(), $range->getName()));
-					}
-				}
-			}
 		}
 		
 		/**
