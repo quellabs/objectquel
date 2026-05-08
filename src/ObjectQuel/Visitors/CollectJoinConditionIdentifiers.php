@@ -49,21 +49,23 @@
 			/**
 			 * Only use database ranges
 			 */
-			if (!$node->getRange() instanceof AstRangeDatabase) {
+			$range = $node->getRange();
+			
+			if (!$range instanceof AstRangeDatabase) {
 				return;
 			}
 			
 			/*
 			 * Range is present in query
 			 */
-			if (!$this->retrieve->hasRange($node->getRange())) {
+			if (!$this->retrieve->hasRange($range)) {
 				return;
 			}
 			
 			/**
 			 * Do not use if we optimized the range away using a subquery
 			 */
-			if (!$node->getRange()->includeAsJoin()) {
+			if (!$range->includeAsJoin()) {
 				return;
 			}
 			
