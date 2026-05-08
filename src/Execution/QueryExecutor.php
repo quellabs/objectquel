@@ -20,9 +20,9 @@
 	use Quellabs\ObjectQuel\ObjectQuel\QuelResult;
 	use Quellabs\ObjectQuel\Execution\Executors\DatabaseQueryExecutor;
 	use Quellabs\ObjectQuel\Execution\Executors\JsonQueryExecutor;
+	use Quellabs\ObjectQuel\ObjectQuel\SemanticAnalyserPrefilter;
 	use Quellabs\ObjectQuel\ObjectQuel\SemanticAnalyzer;
 	use Quellabs\ObjectQuel\Planner\ExecutionPlanBuilder;
-	use Quellabs\ObjectQuel\Planner\ExecutionStageInterface;
 	use Quellabs\ObjectQuel\Planner\QueryTransformer;
 	
 	/**
@@ -39,7 +39,7 @@
 		private DatabaseAdapter $connection;
 		private PlanExecutor $planExecutor;
 		private QueryTransformer $transformer;
-		private \Quellabs\ObjectQuel\ObjectQuel\SemanticAnalyserPrefilter $queryTransformer;
+		private SemanticAnalyserPrefilter $semanticAnalyserPrefilter;
 		private SemanticAnalyzer $semanticAnalyser;
 		private DatabaseQueryExecutor $databaseExecutor;
 		private JsonQueryExecutor $jsonExecutor;
@@ -53,18 +53,22 @@
 			EntityManager          $entityManager,
 			?DatabaseQueryExecutor $databaseExecutor = null
 		) {
+			// Init the capabilities class for engine specific optimizations
 			$this->entityManager = $entityManager;
 			$this->connection = $entityManager->getConnection();
 			$this->capabilities = new PlatformCapabilities($this->connection);
-			$this->transformer = new QueryTransformer($entityManager, $this->capabilities);
-			$this->queryTransformer = new \Quellabs\ObjectQuel\ObjectQuel\SemanticAnalyserPrefilter($entityManager->getEntityStore());
-			$this->semanticAnalyser = new SemanticAnalyzer($entityManager->getEntityStore());
-			
+
 			// Create specialized executors
-			$conditionEvaluator = new ConditionEvaluator();
-			$this->planExecutor = new PlanExecutor($this, $conditionEvaluator);
 			$this->databaseExecutor = $databaseExecutor ?? new DatabaseQueryExecutor($entityManager, $this->capabilities);
-			$this->jsonExecutor = new JsonQueryExecutor($conditionEvaluator);
+			$this->jsonExecutor = new JsonQueryExecutor();
+			
+			// Init the plan executor
+			$this->planExecutor = new PlanExecutor($this);
+			
+			// Init the transformers
+			$this->transformer = new QueryTransformer($entityManager, $this->capabilities);
+			$this->semanticAnalyserPrefilter = new SemanticAnalyserPrefilter($entityManager->getEntityStore());
+			$this->semanticAnalyser = new SemanticAnalyzer($entityManager->getEntityStore());
 		}
 		
 		/**
@@ -84,19 +88,19 @@
 		}
 		
 		/**
-		 * Execute a database query and return the results
-		 * @param ExecutionStageInterface $stage
-		 * @param array<int|string, mixed> $initialParams (Optional) An array of parameters to bind to the query
-		 * @return list<array<string, mixed>>
-		 * @throws QuelException|EntityResolutionException
+		 * Returns the database executor
+		 * @return DatabaseQueryExecutor
 		 */
-		public function executeStage(ExecutionStageInterface $stage, array $initialParams = []): array {
-			$queryType = $stage->getRange() instanceof AstRangeJsonSource ? 'json' : 'database';
-			
-			return match ($queryType) {
-				'json' => $this->jsonExecutor->execute($stage, $this->normalizeParams($initialParams)),
-				'database' => $this->databaseExecutor->execute($stage, $this->normalizeParams($initialParams)),
-			};
+		public function getDatabaseExecutor(): DatabaseQueryExecutor {
+			return $this->databaseExecutor;
+		}
+		
+		/**
+		 * Return the JSON executor
+		 * @return JsonQueryExecutor
+		 */
+		public function getJsonExecutor(): JsonQueryExecutor {
+			return $this->jsonExecutor;
 		}
 		
 		/**
@@ -120,7 +124,7 @@
 				$identifierTypeResolver->resolve();
 				
 				// Processing phase #1 - Transform and enhance the AST
-				$this->queryTransformer->transform($ast);
+				$this->semanticAnalyserPrefilter->transform($ast);
 				
 				// Validation phase - Ensure AST integrity and correctness
 				$this->semanticAnalyser->validate($ast);
@@ -151,12 +155,28 @@
 		}
 		
 		/**
+		 * Normalizes an array of parameters by casting all keys to strings.
+		 * @param array<int|string, mixed> $params The parameters to normalize.
+		 * @return array<string, mixed> The normalized parameters with string keys.
+		 */
+		public function normalizeParams(array $params): array {
+			$normalized = [];
+			
+			foreach ($params as $key => $value) {
+				$normalized[(string)$key] = $value;
+			}
+			
+			return $normalized;
+		}
+
+		/**
 		 * Return the executed SQL
 		 * @return list<string>
 		 */
 		public function getLastExecutedSql(): array {
 			return $this->databaseExecutor->getLastExecutedSql();
 		}
+
 		
 		/**
 		 * Parses a Quel query and returns its validated AST representation.
@@ -186,20 +206,5 @@
 			
 			// The AST is now fully validated
 			return $ast;
-		}
-		
-		/**
-		 * Normalizes an array of parameters by casting all keys to strings.
-		 * @param array<int|string, mixed> $params The parameters to normalize.
-		 * @return array<string, mixed> The normalized parameters with string keys.
-		 */
-		private function normalizeParams(array $params): array {
-			$normalized = [];
-			
-			foreach ($params as $key => $value) {
-				$normalized[(string)$key] = $value;
-			}
-			
-			return $normalized;
 		}
 	}

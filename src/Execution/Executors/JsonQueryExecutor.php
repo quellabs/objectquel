@@ -14,17 +14,6 @@
 	 */
 	class JsonQueryExecutor {
 		
-		/** @var ConditionEvaluator */
-		private ConditionEvaluator $conditionEvaluator;
-		
-		/**
-		 * Constructor
-		 * @param ConditionEvaluator $conditionEvaluator
-		 */
-		public function __construct(ConditionEvaluator $conditionEvaluator) {
-			$this->conditionEvaluator = $conditionEvaluator;
-		}
-		
 		/**
 		 * Execute a JSON query and returns the result
 		 * @param ExecutionStageInterface $stage
@@ -48,7 +37,7 @@
 			
 			foreach ($contents as $row) {
 				if ($stage->getQuery()->getConditions() === null ||
-					$this->conditionEvaluator->evaluate($stage->getQuery()->getConditions(), $row, $initialParams)) {
+					ConditionEvaluator::evaluate($stage->getQuery()->getConditions(), $row, $initialParams)) {
 					$result[] = $row;
 				}
 			}

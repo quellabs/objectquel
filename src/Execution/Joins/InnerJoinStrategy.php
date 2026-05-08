@@ -15,18 +15,6 @@
 	class InnerJoinStrategy implements JoinStrategyInterface {
 		
 		/**
-		 * Condition evaluator used to evaluate join conditions
-		 */
-		private ConditionEvaluator $conditionEvaluator;
-		
-		/**
-		 * @param ConditionEvaluator $conditionEvaluator Evaluator for join conditions
-		 */
-		public function __construct(ConditionEvaluator $conditionEvaluator) {
-			$this->conditionEvaluator = $conditionEvaluator;
-		}
-		
-		/**
 		 * Performs an inner join between two result sets based on join conditions
 		 * @param list<array<string, mixed>> $leftResult The left result set (array of associative arrays)
 		 * @param list<array<string, mixed>> $rightResult The right result set (array of associative arrays)
@@ -79,7 +67,7 @@
 					$candidateRow = array_merge($leftRow, $rightRow);
 					
 					try {
-						if ($this->conditionEvaluator->evaluate($conditions, $candidateRow)) {
+						if (ConditionEvaluator::evaluate($conditions, $candidateRow)) {
 							$combined[] = $candidateRow;
 						}
 					} catch (\Exception $e) {

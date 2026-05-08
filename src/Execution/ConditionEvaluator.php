@@ -34,7 +34,7 @@
 		 * @return mixed The result of the evaluation (could be boolean, string, number, etc.)
 		 * @throws QuelException When an unknown AST node or operator is encountered
 		 */
-		public function evaluate(AstInterface $ast, array $row, array $initialParams=[]): mixed {
+		public static function evaluate(AstInterface $ast, array $row, array $initialParams=[]): mixed {
 			// Determine the type of AST node and process accordingly
 			switch(get_class($ast)) {
 				// Handle literal value nodes - simply return their stored value
@@ -56,8 +56,8 @@
 				// Handle comparison expressions (e.g., a = b, x > y)
 				case AstExpression::class:
 					// Recursively evaluate both sides of the expression
-					$left = $this->evaluate($ast->getLeft(), $row, $initialParams);
-					$right = $this->evaluate($ast->getRight(), $row, $initialParams);
+					$left = self::evaluate($ast->getLeft(), $row, $initialParams);
+					$right = self::evaluate($ast->getRight(), $row, $initialParams);
 					
 					// Apply the appropriate comparison operator
 					return match ($ast->getOperator()) {
@@ -73,8 +73,8 @@
 				// Handle logical operators (AND, OR) for boolean conditions
 				case AstBinaryOperator::class:
 					// Recursively evaluate both sides of the binary operation
-					$left = $this->evaluate($ast->getLeft(), $row, $initialParams);
-					$right = $this->evaluate($ast->getRight(), $row, $initialParams);
+					$left = self::evaluate($ast->getLeft(), $row, $initialParams);
+					$right = self::evaluate($ast->getRight(), $row, $initialParams);
 					
 					// Apply the appropriate logical operator
 					return match ($ast->getOperator()) {

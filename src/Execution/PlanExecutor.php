@@ -4,6 +4,9 @@
 	
 	use Quellabs\ObjectQuel\EntityStore;
 	use Quellabs\ObjectQuel\Exception\EntityResolutionException;
+	use Quellabs\ObjectQuel\Execution\Executors\DatabaseQueryExecutor;
+	use Quellabs\ObjectQuel\Execution\Executors\JsonQueryExecutor;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRangeJsonSource;
 	use Quellabs\ObjectQuel\ObjectQuel\AstInterface;
 	use Quellabs\ObjectQuel\Exception\QuelException;
 	use Quellabs\ObjectQuel\Execution\Joins\JoinStrategyInterface;
@@ -36,32 +39,38 @@
 		private QueryExecutor $queryExecutor;
 		
 		/**
-		 * Condition evaluator for join strategies that need to evaluate join conditions
-		 * @var ConditionEvaluator
-		 */
-		private ConditionEvaluator $conditionEvaluator;
-		
-		/**
 		 * Cache for join strategy instances to prevent duplicate creation
 		 * @var array<string, JoinStrategyInterface>
 		 */
 		private array $joinStrategyCache = [];
 		
 		/**
-		 * Executor responsible for materialising external-source subqueries as temp tables.
+		 * Executor responsible for regular database queries
+		 * @var DatabaseQueryExecutor
+		 */
+		private DatabaseQueryExecutor $databaseExecutor;
+		
+		/**
+		 * Executor responsible for materializing external-source subqueries as temp tables.
 		 * Created lazily on first use and reused for the lifetime of this PlanExecutor.
 		 * @var TempTableExecutor|null
 		 */
 		private ?TempTableExecutor $tempTableExecutor = null;
 		
 		/**
+		 * Executor responsible for executing and materializing JSON data
+		 * @var JsonQueryExecutor
+		 */
+		private JsonQueryExecutor $jsonExecutor;
+		
+		/**
 		 * Create a new plan executor
 		 * @param QueryExecutor $queryExecutor The entity manager to use for execution
-		 * @param ConditionEvaluator $conditionEvaluator The evaluator for conditions
 		 */
-		public function __construct(QueryExecutor $queryExecutor, ConditionEvaluator $conditionEvaluator) {
+		public function __construct(QueryExecutor $queryExecutor) {
 			$this->queryExecutor = $queryExecutor;
-			$this->conditionEvaluator = $conditionEvaluator;
+			$this->databaseExecutor = $queryExecutor->getDatabaseExecutor();
+			$this->jsonExecutor = $queryExecutor->getJsonExecutor();
 		}
 		
 		/**
@@ -111,7 +120,7 @@
 						);
 					} else {
 						try {
-							$intermediateResults[$stage->getName()] = $this->queryExecutor->executeStage(
+							$intermediateResults[$stage->getName()] = $this->executeStage(
 								$stage,
 								$stage->getStaticParams()
 							);
@@ -135,6 +144,22 @@
 					$this->getTempTableExecutor()->cleanup();
 				}
 			}
+		}
+		
+		/**
+		 * Execute a database query and return the results
+		 * @param ExecutionStageInterface $stage
+		 * @param array<int|string, mixed> $initialParams (Optional) An array of parameters to bind to the query
+		 * @return list<array<string, mixed>>
+		 * @throws QuelException|EntityResolutionException
+		 */
+		public function executeStage(ExecutionStageInterface $stage, array $initialParams = []): array {
+			$queryType = $stage->getRange() instanceof AstRangeJsonSource ? 'json' : 'database';
+			
+			return match ($queryType) {
+				'json' => $this->jsonExecutor->execute($stage, $this->queryExecutor->normalizeParams($initialParams)),
+				'database' => $this->databaseExecutor->execute($stage, $this->queryExecutor->normalizeParams($initialParams)),
+			};
 		}
 		
 		/**
@@ -168,8 +193,8 @@
 			// Create and cache the strategy
 			$strategy = match ($joinType) {
 				'cross' => new CrossJoinStrategy(),                          // Cartesian product join
-				'left' => new LeftJoinStrategy($this->conditionEvaluator),   // Left outer join
-				'inner' => new InnerJoinStrategy($this->conditionEvaluator), // Inner join
+				'left' => new LeftJoinStrategy(),   // Left outer join
+				'inner' => new InnerJoinStrategy(), // Inner join
 				default => throw new QuelException("Unsupported join type: {$joinType}")
 			};
 			
