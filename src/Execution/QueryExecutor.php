@@ -2,6 +2,7 @@
 	
 	namespace Quellabs\ObjectQuel\Execution;
 	
+	use Quellabs\ObjectQuel\ObjectQuel\IdentifierTypeResolver;
 	use Quellabs\ObjectQuel\Capabilities\PlatformCapabilities;
 	use Quellabs\ObjectQuel\EntityManager;
 	use Quellabs\ObjectQuel\DatabaseAdapter\DatabaseAdapter;
@@ -112,6 +113,11 @@
 				
 				// Parse the input query string into an Abstract Syntax Tree (AST)
 				$ast = $this->parse($query);
+				
+				// Resolve all identifier types. Note: this does no semantic checking.
+				// It just flags the type based on AST hierarchy
+				$identifierTypeResolver = new IdentifierTypeResolver($ast);
+				$identifierTypeResolver->resolve();
 				
 				// Processing phase #1 - Transform and enhance the AST
 				$this->queryTransformer->transform($ast);

@@ -19,19 +19,6 @@
 	class NoExpressionsAllowedOnEntitiesValidator implements AstVisitorInterface {
 		
 		/**
-		 * Returns true if the identifier is an entity, false if not
-		 * @param AstInterface $ast
-		 * @return bool
-		 */
-		protected function identifierIsEntity(AstInterface $ast): bool {
-			return (
-				$ast instanceof AstIdentifier &&
-				$ast->getRange() instanceof AstRangeDatabase &&
-				!$ast->hasNext()
-			);
-		}
-		
-		/**
 		 * Visits a node in the Ast.
 		 * @param AstInterface $node
 		 * @return void
@@ -58,5 +45,18 @@
 					throw new SemanticException("Unsupported operation on entire entities. You cannot pass an entire entity to an aggregate function. Please specify the specific field or property you wish to aggregate (e.g. e.price or e.quantity instead of e).");
 				}
 			}
+		}
+		
+		/**
+		 * Returns true if the identifier is an entity, false if not
+		 * @param AstInterface $ast
+		 * @return bool
+		 */
+		protected function identifierIsEntity(AstInterface $ast): bool {
+			return (
+				$ast instanceof AstIdentifier &&
+				$ast->getRange() instanceof AstRangeDatabase &&
+				!$ast->hasNext()
+			);
 		}
 	}

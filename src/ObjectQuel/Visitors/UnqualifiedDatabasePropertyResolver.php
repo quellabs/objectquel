@@ -72,7 +72,7 @@
 			}
 			
 			// Only act on base identifiers (not property segments inside a chain)
-			if (!$node->isBaseIdentifier()) {
+			if ($node->getParent() instanceof AstIdentifier) {
 				return;
 			}
 			
@@ -195,7 +195,7 @@
 			// Retrieve the entity name from the range — guaranteed non-null here because
 			// findUniqueRangeForProperty already filtered out ranges without entity names.
 			$entityName = $range->getEntityName();
-
+			
 			// Check scalar columns first — @Column-annotated properties map directly
 			// to database columns and are the most common case.
 			$columnMap = $this->entityStore->getColumnMap($entityName);

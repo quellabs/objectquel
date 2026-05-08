@@ -2,7 +2,6 @@
 	
 	namespace Quellabs\ObjectQuel\ObjectQuel\Rules;
 	
-	// Import necessary AST classes and exceptions
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRange;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRangeDatabase;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRangeDatabaseSubquery;
