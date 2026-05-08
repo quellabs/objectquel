@@ -76,22 +76,23 @@
 				return;
 			}
 			
-			// Already has a range attached → it was written as "p.name" and resolved
-			// by EntityProcessRange; nothing to do
-			if ($node->hasRange()) {
-				return;
-			}
-			
 			// Already has a child → it's at least a two-segment chain like "a.b".
 			// EntityProcessRange will have attached a range to the base if "a" is a
 			// known alias, so this case is handled. If it wasn't resolved, the
 			// existing validators will catch it.
-			if ($node->hasNext()) {
+			if ($node->getNext() !== null) {
 				return;
 			}
 			
 			// We have a bare, single-segment identifier: candidate for auto-resolution.
 			$propertyName = $node->getName();
+			
+			// If the property has the name of a range, do not attempt to wrap
+			foreach($this->ranges as $range) {
+				if ($range->getName() === $propertyName) {
+					return;
+				}
+			}
 			
 			// Fetch the unique range for this property
 			$matchingRange = $this->findUniqueRangeForProperty($propertyName);
