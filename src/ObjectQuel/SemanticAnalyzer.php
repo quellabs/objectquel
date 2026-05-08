@@ -44,7 +44,11 @@
 		public function validate(AstRetrieve $ast): void {
 			// First, recursively validate all nested queries in temporary ranges
 			// This ensures inner queries are valid before validating the outer query
-			$this->validateNestedQueries($ast);
+			foreach ($ast->getRanges() as $range) {
+				if ($range instanceof AstRangeDatabaseSubquery) {
+					$this->validate($range->getQuery());
+				}
+			}
 			
 			// Step 1: Validate basic structural integrity
 			$this->validateNoRegExpInValueList($ast);
@@ -99,25 +103,7 @@
 				}
 			}
 		}
-		
-		/**
-		 * Recursively validate all nested queries in temporary range definitions.
-		 * Ensures that inner queries are valid before the outer query is validated.
-		 * @param AstRetrieve $ast The query AST containing potential nested queries
-		 * @throws SemanticException If any nested query validation fails
-		 */
-		private function validateNestedQueries(AstRetrieve $ast): void {
-			foreach ($ast->getRanges() as $range) {
-				// Only handle AstRangeDatabaseSubquery
-				if (!$range instanceof AstRangeDatabaseSubquery) {
-					continue;
-				}
-				
-				// Recursively validate the inner query with full validation pipeline
-				$this->validate($range->getQuery());
-			}
-		}
-		
+			
 		/**
 		 * Generic method to process AST with a visitor pattern.
 		 * @param AstRetrieve $ast The AST to process
