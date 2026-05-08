@@ -49,21 +49,28 @@
 					$this->validate($range->getQuery());
 				}
 			}
-			
-			// Step 1: Validate basic structural integrity
-			$this->validateNoRegExpInValueList($ast);
+
+			// Step 1: Validate that all ranges have a unique name
 			$this->validateNoDuplicateRanges($ast);
-			$this->validateNoEntireSubqueryRangesInValueList($ast);
-			$this->validateAtLeastOneRangeWithoutVia($ast);
-			$this->validateRangesOnlyReferenceOtherRanges($ast);
 			
-			// Step 2: Validate that each root identifier links to a range that exists
+			// Step 2: Validate that there is at least one range without a VIA clause.
+			//         This range will act as the FROM clause of the SELECT query.
+			$this->validateAtLeastOneRangeWithoutVia($ast);
+			
+			// Step 3: Validate that each root identifier links to a range that exists
 			$this->processWithVisitor($ast, ValidateRangeReferencesExist::class, $this->entityStore);
+			
+			// Step 4: Validates that the value list does not directly select entire subquery ranges.
+			$this->validateNoBareSubqueryRangesInValueList($ast);
+			
+			// Step 2: Validate basic structural integrity
+			$this->validateRangesOnlyReferenceOtherRanges($ast);
 			
 			// Step 2.5: Validate that every database range exists in the entitystore
 			$this->validateEntityInRangeExists($ast);
+			$this->validateNoRegExpInValueList($ast);
 			
-			// Step 3: Validate relationship definitions in 'via' clauses
+			// Step 3: Validate that referenced relationships lead back to the entity
 			$this->validateRelationshipPaths($ast);
 			
 			// Step 4: Validate property references against schema
@@ -91,9 +98,6 @@
 				
 				// Skip ranges that do not reference an entity.
 				$entityName = $range->getEntityName();
-				if ($entityName === null) {
-					continue;
-				}
 				
 				// Ensure the referenced entity exists in the entity store.
 				if (!$this->entityStore->exists($entityName)) {
@@ -103,7 +107,7 @@
 				}
 			}
 		}
-			
+		
 		/**
 		 * Generic method to process AST with a visitor pattern.
 		 * @param AstRetrieve $ast The AST to process
@@ -148,28 +152,18 @@
 		}
 		
 		/**
-		 * Validates that no entire subquery ranges appear in the value list.
+		 * Ensures the value list does not contain bare subquery ranges.
 		 *
-		 * Subquery ranges are derived tables with no entity mapping behind them.
-		 * Retrieving one as a whole (e.g. "retrieve(x)" where x is a subquery range)
-		 * is meaningless — the derived table produces multiple named columns like
-		 * "x.id", "x.title" etc., none of which map to a single row key "x".
-		 * The result would always be null. Users must specify individual properties
-		 * (e.g. "retrieve(x.id)") so the hydrator can look up the correct column.
+		 * Subquery ranges represent derived tables and cannot be hydrated as a single value.
+		 * Expressions like `x` are invalid when `x` is a subquery range; users must select
+		 * concrete properties such as `x.id`.
 		 *
-		 * This is the outer-query counterpart to validateNoEntireEntitiesInValueList(),
-		 * which guards the inner query side.
-		 *
-		 * @param AstRetrieve $ast The AST to validate
-		 * @throws SemanticException If a bare subquery range identifier is found in the value list
+		 * @throws SemanticException If a bare subquery range identifier is selected
 		 */
-		private function validateNoEntireSubqueryRangesInValueList(AstRetrieve $ast): void {
+		private function validateNoBareSubqueryRangesInValueList(AstRetrieve $ast): void {
 			foreach ($ast->getValues() as $value) {
-				// Fetch the expression
 				$expression = $value->getExpression();
 				
-				// Only interested in identifiers that refer directly to a subquery range
-				// without any property access chained on (i.e. "x" not "x.id")
 				if (
 					$expression instanceof AstIdentifier &&
 					$expression->getRange() instanceof AstRangeDatabaseSubquery &&

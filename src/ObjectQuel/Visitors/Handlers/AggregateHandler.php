@@ -632,7 +632,7 @@
 			}
 			
 			// Start with the main table and its alias
-			$entityName = $mainRange->getResolvedEntityName();
+			$entityName = $mainRange->getEntityName();
 			$tableName = $this->entityStore->getOwningTable($entityName);
 			
 			// Convert to SQL
@@ -641,7 +641,7 @@
 			// Add JOIN clauses for each related range
 			foreach ($joinRanges as $range) {
 				// Fetch entity name
-				$joinEntityName = $range->getResolvedEntityName();
+				$joinEntityName = $range->getEntityName();
 				
 				// Fetch owning table of entity
 				$joinTableName = $this->entityStore->getOwningTable($joinEntityName);

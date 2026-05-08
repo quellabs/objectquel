@@ -177,7 +177,7 @@
 					$tableNames[] = "({$subSQL}) as `{$rangeName}`";
 				} else {
 					// Get the corresponding table name for the entity.
-					$entityName = $range->getResolvedEntityName();
+					$entityName = $range->getEntityName();
 					$owningTable = $this->entityStore->getOwningTable($entityName);
 					
 					// Add the table name and alias to the list for the FROM clause.
@@ -403,7 +403,7 @@
 				} elseif ($range instanceof AstRangeDatabaseTempTable) {
 					$result[] = "{$joinType} JOIN `{$range->getTableName()}` as `{$rangeName}` ON {$joinColumn}";
 				} elseif ($range instanceof AstRangeDatabase) {
-					$entityName = $range->getResolvedEntityName();
+					$entityName = $range->getEntityName();
 					$owningTable = $this->entityStore->getOwningTable($entityName);
 					$result[] = "{$joinType} JOIN `{$owningTable}` as `{$rangeName}` ON {$joinColumn}";
 				} else {

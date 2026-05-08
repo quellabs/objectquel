@@ -18,9 +18,9 @@
 		
 		/**
 		 * Entity associated with the range
-		 * @var string|null
+		 * @var string
 		 */
-		private ?string $entityName;
+		private string $entityName;
 		
 		/**
 		 * Whether this range should be included as a JOIN in the query.
@@ -32,14 +32,14 @@
 		/**
 		 * AstRangeDatabase constructor.
 		 * @param string $name The alias for this range in the query
-		 * @param string|null $entityName Name of the entity associated with this range
+		 * @param string $entityName Name of the entity associated with this range
 		 * @param AstInterface|null $joinProperty Expression defining the join condition
 		 * @param bool $required True for INNER JOIN, false for LEFT JOIN
 		 * @param bool $includeAsJoin Whether to include this range as a JOIN clause
 		 */
 		public function __construct(
 			string        $name,
-			?string       $entityName = null,
+			string        $entityName,
 			?AstInterface $joinProperty = null,
 			bool          $required = false,
 			bool          $includeAsJoin = true
@@ -79,22 +79,9 @@
 		
 		/**
 		 * Get the entity name associated with this range.
-		 * @return string|null The entity name
+		 * @return string The entity name
 		 */
-		public function getEntityName(): ?string {
-			return $this->entityName;
-		}
-		
-		/**
-		 * Retrieve the entity name, assuming it has been fully resolved.
-		 * @return string
-		 * @throws \LogicException When the entity name has not been set
-		 */
-		public function getResolvedEntityName(): string {
-			if ($this->entityName === null) {
-				throw new \LogicException("Entity name has not been resolved");
-			}
-			
+		public function getEntityName(): string {
 			return $this->entityName;
 		}
 		

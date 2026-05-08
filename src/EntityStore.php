@@ -328,12 +328,6 @@
 					continue;
 				}
 				
-				// Continue if the range has no entity name
-				// Should never happen. This test is there for PHPStan's static testing.
-				if ($range->getEntityName() === null) {
-					continue;
-				}
-				
 				// Get the associated primary key if the range doesn't have a join property
 				$entityName = $range->getEntityName();
 				$metadata = $this->getMetadata($entityName);

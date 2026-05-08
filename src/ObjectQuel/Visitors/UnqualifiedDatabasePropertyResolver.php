@@ -125,10 +125,6 @@
 				// Subquery ranges (temporary tables) have no entity name
 				$entityName = $range->getEntityName();
 				
-				if ($entityName === null) {
-					continue;
-				}
-				
 				// Check scalar columns
 				$columnMap = $this->entityStore->getColumnMap($entityName);
 				

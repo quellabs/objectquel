@@ -71,9 +71,9 @@
 			}
 			
 			// Extract the three name components needed for validation and error reporting
-			$entityName   = $sourceRange->getResolvedEntityName(); // e.g. "App\Entity\Order"
-			$rangeName    = $sourceRange->getName();               // e.g. "o" (the range alias)
-			$propertyName = $next->getName();                      // e.g. "customer" (the accessed property)
+			$entityName   = $sourceRange->getEntityName();    // e.g. "App\Entity\Order"
+			$rangeName    = $sourceRange->getName();          // e.g. "o" (the range alias)
+			$propertyName = $next->getName();                 // e.g. "customer" (the accessed property)
 			
 			// Validate the relationship path and throw if it leads to the wrong entity
 			$this->validateRelationshipPath($entityName, $rangeName, $propertyName);
