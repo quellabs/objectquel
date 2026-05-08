@@ -3,6 +3,7 @@
 	namespace Quellabs\ObjectQuel\ObjectQuel\Ast;
 	
 	use Quellabs\ObjectQuel\ObjectQuel\AstInterface;
+	use Quellabs\ObjectQuel\ObjectQuel\AstVisitorInterface;
 	use Quellabs\ObjectQuel\ObjectQuel\Visitors\IdentifierLocator;
 	
 	/**
@@ -49,6 +50,16 @@
 		}
 		
 		/**
+		 * Accept a visitor to process the AST.
+		 * Ensures the visitor traverses all child nodes including joinProperty and query.
+		 * @param AstVisitorInterface $visitor Visitor object for AST manipulation
+		 */
+		public function accept(AstVisitorInterface $visitor): void {
+			parent::accept($visitor);
+			$this->getJoinProperty()?->accept($visitor);
+		}
+		
+		/**
 		 * Get the alias for this range.
 		 * @return string The alias of this range
 		 */
@@ -63,7 +74,6 @@
 		public function getEntityName(): ?string {
 			return null;
 		}
-		
 		
 		// ========================================
 		// Join Property Accessors

@@ -59,8 +59,6 @@
 		 */
 		public function accept(AstVisitorInterface $visitor): void {
 			parent::accept($visitor);
-			
-			$this->getJoinProperty()?->accept($visitor);
 			$this->query->accept($visitor);
 		}
 		
@@ -69,7 +67,10 @@
 		 * @return static A new instance with cloned child nodes
 		 */
 		public function deepClone(): static {
+			// Clone the join property
 			$joinProperty = $this->getJoinProperty()?->deepClone();
+			
+			// Clone the query
 			$query = $this->query->deepClone();
 			
 			// @phpstan-ignore-next-line new.static
@@ -81,8 +82,10 @@
 				$this->includeAsJoin
 			);
 			
+			// Set clone parent
 			$clone->setParent($this->getParent());
 			
+			// Return clone
 			return $clone;
 		}
 		
