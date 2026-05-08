@@ -70,12 +70,6 @@
 			$entityResolveRange = new EntityResolveRange($ast->getRanges());
 			$ast->accept($entityResolveRange);
 			
-			// Explicitly traverse join properties — AstRangeDatabase::accept() no longer
-			// does this to avoid circular references via identifier→range back-references.
-			foreach ($ast->getRanges() as $range) {
-				$range->getJoinProperty()?->accept($entityResolveRange);
-			}
-			
 			// Step 3.5: Resolve unqualified property names to range-prefixed identifiers
 			// Allows bare names like 'name' to be written instead of 'p.name' when unambiguous
 			$this->processWithVisitor($ast, UnqualifiedPropertyResolver::class, $this->entityStore, $ast->getRanges());
@@ -99,6 +93,7 @@
 		 * @param AstRetrieve $ast The query AST containing potential nested queries
 		 * @return void Modifies nested queries in-place
 		 * @throws TransformationException
+		 * @throws EntityResolutionException
 		 */
 		private function transformNestedQueries(AstRetrieve $ast): void {
 			foreach ($ast->getRanges() as $range) {
@@ -180,11 +175,6 @@
 				// This converts complex relationship definitions into simple field-to-field mappings
 				// The result is a join condition that SQL can understand and execute efficiently
 				$range->setJoinProperty($converter->processNodeSide($joinProperty));
-				
-				// Apply the converter to the entire range to handle any other 'via' references
-				// This ensures all parts of the range definition (filters, conditions, etc.)
-				// are properly transformed and don't contain unresolved 'via' relationships
-				$range->accept($converter);
 				
 				// Explicitly traverse the new join property rather than using range->accept(),
 				// which would cause infinite recursion since identifiers hold back-references

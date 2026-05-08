@@ -50,21 +50,36 @@
 		}
 
 		/**
+		 * Accept a visitor to process the AST.
+		 * Ensures the visitor traverses all child nodes including joinProperty and query.
+		 * @param AstVisitorInterface $visitor Visitor object for AST manipulation
+		 */
+		public function accept(AstVisitorInterface $visitor): void {
+			parent::accept($visitor);
+			$this->getJoinProperty()?->accept($visitor);
+		}
+		
+		/**
 		 * Create a deep copy of this range including all child nodes
 		 * @return static A new instance with cloned child nodes
 		 */
 		public function deepClone(): static {
+			// Clone the join property. AstRange will give it a new parent in its constructor
+			$joinProperty = $this->getJoinProperty()?->deepClone();
+			
 			// @phpstan-ignore-next-line new.static
 			$clone = new static(
 				$this->getName(),
 				$this->entityName,
-				$this->getJoinProperty(),
+				$joinProperty,
 				$this->isRequired(),
 				$this->includeAsJoin
 			);
 			
+			// Clone gets new parent
 			$clone->setParent($this->getParent());
 			
+			// Return clone
 			return $clone;
 		}
 		
