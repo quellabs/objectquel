@@ -5,9 +5,9 @@
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRange;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRetrieve;
 	use Quellabs\ObjectQuel\ObjectQuel\AstInterface;
-	use Quellabs\ObjectQuel\Planner\Walker\AnyRangeReferenceChecker;
-	use Quellabs\ObjectQuel\Planner\Walker\RangeNameCollector;
-	use Quellabs\ObjectQuel\Planner\Walker\RangeReferenceChecker;
+	use Quellabs\ObjectQuel\Planner\Visitors\CheckAnyRangeReference;
+	use Quellabs\ObjectQuel\Planner\Visitors\CollectTempRangeNames;
+	use Quellabs\ObjectQuel\Planner\Visitors\CheckRangeReference;
 	
 	/**
 	 * Provides pure AST interrogation methods that answer questions about which
@@ -64,23 +64,15 @@
 		 * @return string[] Deduplicated list of temp range names this query depends on
 		 */
 		public function findTempRangeDependencies(AstRetrieve $query, array $tempRangeNames): array {
-			$collector = new RangeNameCollector($tempRangeNames);
-			$dependencies = [];
+			$collector = new CollectTempRangeNames($tempRangeNames);
 			
-			// Check WHERE conditions
-			if ($query->getConditions() !== null) {
-				$dependencies = array_merge(
-					$dependencies,
-					$collector->walk($query->getConditions())
-				);
-			}
+			$query->getConditions()?->accept($collector);
 			
-			// Check retrieve expressions
 			foreach ($query->getValues() as $value) {
-				$dependencies = array_merge($dependencies, $collector->walk($value));
+				$value->accept($collector);
 			}
 			
-			return array_unique($dependencies);
+			return $collector->getCollected();
 		}
 		
 		// =========================================================================
@@ -96,7 +88,9 @@
 		 * @return bool True if the subtree contains at least one range reference
 		 */
 		public function containsAnyRangeReference(AstInterface $condition): bool {
-			return (new AnyRangeReferenceChecker())->walk($condition);
+			$visitor = new CheckAnyRangeReference();
+			$condition->accept($visitor);
+			return $visitor->isFound();
 		}
 		
 		/**
@@ -111,7 +105,9 @@
 		 * @return bool True if the subtree contains at least one reference to $range
 		 */
 		public function hasReferenceToRange(AstInterface $condition, AstRange $range): bool {
-			return (new RangeReferenceChecker($range))->walk($condition);
+			$visitor = new CheckRangeReference($range);
+			$condition->accept($visitor);
+			return $visitor->isFound();
 		}
 		
 		/**

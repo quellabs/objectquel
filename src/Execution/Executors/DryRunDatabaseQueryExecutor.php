@@ -20,7 +20,7 @@
 		 */
 		private array $capturedSql = [];
 		
-		/** @var QueryTransformer Optimizing code */
+		/** @var QueryOptimizer Optimizing code */
 		private QueryOptimizer $queryOptimizer;
 		
 		/**
