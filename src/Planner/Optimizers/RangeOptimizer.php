@@ -19,7 +19,7 @@
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRetrieve;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\NodeBinary;
 	use Quellabs\ObjectQuel\Planner\Visitors\CollectRanges;
-	use Quellabs\ObjectQuel\Planner\Visitors\DetectNonNullableFieldInSubquery;
+	use Quellabs\ObjectQuel\Planner\Visitors\DetectNonNullableField;
 	use Quellabs\ObjectQuel\Planner\Helpers\BinaryOperationHelper;
 	
 	/**
@@ -60,6 +60,8 @@
 		 * become required through other optimization passes.
 		 *
 		 * @param AstRetrieve $ast The AST to optimize
+		 * @throws EntityResolutionException
+		 * @throws TransformationException
 		 */
 		public function optimize(AstRetrieve $ast): void {
 			// First, mark single ranges as required (trivial case)
@@ -107,6 +109,8 @@
 		 * - THEN convert it to INNER JOIN (mark range as required)
 		 *
 		 * @param AstRetrieve $ast The AST to analyze
+		 * @throws EntityResolutionException
+		 * @throws TransformationException
 		 */
 		private function setRangesRequiredThroughAnnotations(AstRetrieve $ast): void {
 			// Get the main table (the one without a JOIN condition)
@@ -439,10 +443,10 @@
 			}
 			
 			// Use visitor to check field nullability
-			$visitor = new DetectNonNullableFieldInSubquery(
+			$visitor = new DetectNonNullableField(
 				$joinedRange->getName(),
+				$this->entityStore,
 				$joinedRange->getQuery(),
-				$this->entityStore
 			);
 			
 			// The visitor will analyze if this field reference is non-nullable

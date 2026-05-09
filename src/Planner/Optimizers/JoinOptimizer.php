@@ -10,7 +10,6 @@
 	use Quellabs\ObjectQuel\ObjectQuel\AstVisitorInterface;
 	use Quellabs\ObjectQuel\Planner\Visitors\DetectNullCheckOnRange;
 	use Quellabs\ObjectQuel\Planner\Visitors\DetectNonNullableField;
-	use Quellabs\ObjectQuel\Planner\Visitors\DetectNonNullableFieldInSubquery;
 	use Quellabs\ObjectQuel\Planner\Visitors\DetectRangeReference;
 	
 	/**
@@ -121,24 +120,17 @@
 		 * Temporary ranges (subqueries) use a specialized visitor that inspects
 		 * the subquery's own output columns rather than entity metadata.
 		 * @param AstRange $range The range to build a visitor for
-		 * @return DetectNonNullableField|DetectNonNullableFieldInSubquery
+		 * @return DetectNonNullableField
 		 */
-		private function buildNullabilityVisitor(AstRange $range): DetectNonNullableField|DetectNonNullableFieldInSubquery {
+		private function buildNullabilityVisitor(AstRange $range): DetectNonNullableField {
 			// Database ranges can contain either a direct entity reference or a subquery
 			if (!$range instanceof AstRangeDatabaseSubquery) {
 				// Direct entity reference: nullability comes from entity metadata
 				return new DetectNonNullableField($range->getName(), $this->entityStore);
 			}
 			
-			// Fetch the query
-			$query = $range->getQuery();
-			
 			// Subqueries produce a derived table, so nullability is determined
 			// from the subquery's output columns rather than entity metadata
-			return new DetectNonNullableFieldInSubquery(
-				$range->getName(),
-				$query,
-				$this->entityStore
-			);
+			return new DetectNonNullableField($range->getName(), $this->entityStore, $range->getQuery());
 		}
 	}
