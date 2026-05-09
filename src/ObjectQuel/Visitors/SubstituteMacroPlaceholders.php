@@ -4,9 +4,9 @@
 	namespace Quellabs\ObjectQuel\ObjectQuel\Visitors;
 	
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstIdentifier;
-	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRangeDatabase;
 	use Quellabs\ObjectQuel\ObjectQuel\AstInterface;
 	use Quellabs\ObjectQuel\ObjectQuel\AstVisitorInterface;
+	use Quellabs\ObjectQuel\ObjectQuel\IdentifierType;
 	
 	/**
 	 * Class EntityProcessRange
@@ -30,22 +30,9 @@
 		}
 		
 		/**
-		 * Returns true if the identifier is an entity, false if not
-		 * @param AstInterface $ast
-		 * @return bool
-		 */
-		protected function identifierIsEntity(AstInterface $ast): bool {
-			return (
-				$ast instanceof AstIdentifier &&
-				$ast->getRange() instanceof AstRangeDatabase &&
-				!$ast->hasNext()
-			);
-		}
-		
-		/**
 		 * Visit a node in the AST.
 		 * @param AstInterface $node The node to visit.
-		 * @eeturn void
+		 * @return void
 		 */
 		public function visitNode(AstInterface $node): void {
 			// Only handle identifiers
@@ -64,17 +51,17 @@
 			if (!array_key_exists($entityName, $this->macros)) {
 				return;
 			}
-
+			
 			// Check if the macro is an identifier of the correct type
 			$macro = $this->macros[$entityName];
-				
+			
 			if (
 				!$macro instanceof AstIdentifier ||
-				!$this->identifierIsEntity($macro)
+				$macro->getType() !== IdentifierType::EntityReference
 			) {
 				return;
 			}
-
+			
 			// Update the node with the macro contents
 			$node->setName($macro->getName());
 			$node->setRange($macro->getRange());
