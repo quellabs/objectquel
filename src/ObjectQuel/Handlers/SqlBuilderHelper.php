@@ -8,6 +8,7 @@
 	use Quellabs\ObjectQuel\Capabilities\NullPlatformCapabilities;
 	use Quellabs\ObjectQuel\EntityStore;
 	use Quellabs\ObjectQuel\Exception\EntityResolutionException;
+	use Quellabs\ObjectQuel\Exception\QuelException;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstIdentifier;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstParameter;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRangeDatabase;
@@ -15,6 +16,7 @@
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstSearchScore;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstString;
 	use Quellabs\ObjectQuel\ObjectQuel\AstInterface;
+	use Quellabs\ObjectQuel\ObjectQuel\IdentifierType;
 	use Quellabs\ObjectQuel\ObjectQuel\Visitors\BuildSqlFromAst;
 	
 	/**
@@ -86,26 +88,24 @@
 		 * @return string Fully qualified SQL column name or empty string if no range
 		 * @throws \LogicException
 		 * @throws EntityResolutionException
+		 * @throws QuelException
 		 */
 		public function buildColumnName(AstIdentifier $identifier): string {
 			// Get the range (table alias) from the identifier
 			$range = $identifier->getRange();
-			if (!$range) {
-				return '';
+			
+			// Do not continue if the range is empty
+			if ($range === null) {
+				throw new QuelException("Range is not defined");
 			}
 			
 			// Extract the range name (table alias)
-			$rangeName = $range->getName();
-			
-			if (empty($rangeName)) {
-				return '';
-			}
-			
 			// Get the entity name to determine range type
-			$entityName = $identifier->getEntityName();
+			$rangeName = $range->getName();
+			$entityName = $identifier->getEntityName() ?? '';
 			
 			// Check if this is a temporary table (no entity name)
-			if (empty($entityName)) {
+			if ($identifier->getType() === IdentifierType::SubqueryRoot) {
 				return $this->buildColumnNameForTemporaryTable($identifier, $rangeName);
 			} else {
 				return $this->buildColumnNameForEntity($identifier, $rangeName, $entityName);
@@ -246,6 +246,7 @@
 		 * @param AstIdentifier $ast The entity identifier
 		 * @return string Comma-separated list of aliased columns
 		 * @throws \LogicException
+		 * @throws EntityResolutionException
 		 */
 		public function buildEntityColumns(AstIdentifier $ast): string {
 			$result = [];
