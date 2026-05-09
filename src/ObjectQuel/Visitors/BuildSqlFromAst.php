@@ -49,7 +49,7 @@
 	use Quellabs\ObjectQuel\ObjectQuel\Helpers\SqlBuilderHelper;
 	
 	/**
-	 * QuelToSQLConvertToString - AST to SQL Converter
+	 * BuildSqlFromAst - AST to SQL Converter
 	 * @package Quellabs\ObjectQuel\ObjectQuel\Visitors
 	 * @author Quellabs
 	 */
@@ -96,7 +96,13 @@
 		 *        expansion use this name instead of the inner range name, so derived table
 		 *        columns match what the outer query expects (e.g. "x.id" instead of "y.id")
 		 */
-		public function __construct(EntityStore $store, array &$parameters, string $partOfQuery = "VALUES", PlatformCapabilitiesInterface $platform = new NullPlatformCapabilities(), ?string $subqueryAliasRangeName = null) {
+		public function __construct(
+			EntityStore $store,
+			array &$parameters,
+			string $partOfQuery = "VALUES",
+			PlatformCapabilitiesInterface $platform = new NullPlatformCapabilities(),
+			?string $subqueryAliasRangeName = null
+		) {
 			// Initialize core properties
 			$this->result = [];
 			$this->visitedNodes = [];
