@@ -14,7 +14,7 @@
 	use Quellabs\ObjectQuel\ObjectQuel\Visitors\ValidateEntityPropertyExists;
 	use Quellabs\ObjectQuel\ObjectQuel\Visitors\ValidateNoEntityExpressions;
 	use Quellabs\ObjectQuel\ObjectQuel\Visitors\CollectRangeReferences;
-	use Quellabs\ObjectQuel\ObjectQuel\Visitors\ValidateUnambiguousProperty;
+	use Quellabs\ObjectQuel\ObjectQuel\Visitors\ValidateUnambiguousFindProperty;
 	use Quellabs\ObjectQuel\ObjectQuel\Visitors\ValidateRangesDeclared;
 	use Quellabs\ObjectQuel\ObjectQuel\Visitors\ValidateRelationshipPath;
 	
@@ -117,7 +117,7 @@
 		 * @param AstRetrieve $ast The AST to validate
 		 */
 		private function validateUnambiguousProperties(AstRetrieve $ast): void {
-			$validator = new ValidateUnambiguousProperty($this->entityStore, $ast->getRanges());
+			$validator = new ValidateUnambiguousFindProperty($this->entityStore, $ast->getRanges());
 			$ast->accept($validator);
 		}
 		

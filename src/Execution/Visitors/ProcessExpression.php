@@ -43,7 +43,7 @@
 	 * - Process string concatenation, null checks, and parameter binding
 	 * - Support regular expression matching in SQL
 	 */
-	class ExpressionHandler {
+	class ProcessExpression {
 		
 		/**
 		 * Wildcard character mappings for converting user-friendly patterns to SQL LIKE syntax
@@ -74,11 +74,11 @@
 			'FLOAT'   => '^-?[0-9]+\\.[0-9]+$'       // Requires decimal point with digits on both sides
 		];
 		
-		/** @var SqlBuilderHelper Helper for constructing SQL query components */
-		private SqlBuilderHelper $sqlBuilder;
+		/** @var BuildSqlFragments Helper for constructing SQL query components */
+		private BuildSqlFragments $sqlBuilder;
 		
-		/** @var TypeInferenceHelper Helper for determining data types from AST nodes */
-		private TypeInferenceHelper $typeInference;
+		/** @var ResolveType Helper for determining data types from AST nodes */
+		private ResolveType $typeInference;
 		
 		/** @var array<string, mixed> Reference to the parameter array for prepared statements */
 		private array $parameters;
@@ -91,17 +91,17 @@
 		
 		/**
 		 * Constructor - Initialize the expression handler with required dependencies
-		 * @param SqlBuilderHelper $sqlBuilder Helper for SQL construction operations
-		 * @param TypeInferenceHelper $typeInference Helper for type analysis
+		 * @param BuildSqlFragments $sqlBuilder Helper for SQL construction operations
+		 * @param ResolveType $typeInference Helper for type analysis
 		 * @param array<string, mixed> $parameters Reference to parameters array for prepared statements
 		 * @param mixed $mainVisitor Reference to the main AST visitor (avoids circular dependency)
 		 * @param PlatformCapabilitiesInterface $platform Database engine capability descriptor
 		 */
 		public function __construct(
-			SqlBuilderHelper       $sqlBuilder,
-			TypeInferenceHelper    $typeInference,
-			array                  &$parameters,
-			mixed                  $mainVisitor,
+			BuildSqlFragments             $sqlBuilder,
+			ResolveType                   $typeInference,
+			array                         &$parameters,
+			mixed                         $mainVisitor,
 			PlatformCapabilitiesInterface $platform = new NullPlatformCapabilities()
 		) {
 			$this->sqlBuilder = $sqlBuilder;

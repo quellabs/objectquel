@@ -20,7 +20,7 @@
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstSum;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstSumU;
 	use Quellabs\ObjectQuel\ObjectQuel\AstInterface;
-	use Quellabs\ObjectQuel\ObjectQuel\Visitors\NodeCollector;
+	use Quellabs\ObjectQuel\ObjectQuel\Visitors\CollectNodes;
 	
 	/**
 	 * Converts ObjectQuel aggregate AST nodes to SQL aggregate functions and existence checks.
@@ -38,7 +38,7 @@
 	 *
 	 * @package Quellabs\ObjectQuel\ObjectQuel\Handlers
 	 */
-	class AggregateHandler {
+	class ProcessAggregate {
 		
 		/** @var EntityStore Maps entity names to database table names and provides metadata */
 		private EntityStore $entityStore;
@@ -46,8 +46,8 @@
 		/** @var string Current SQL clause being constructed (SELECT, WHERE, HAVING, etc.) */
 		private string $partOfQuery;
 		
-		/** @var SqlBuilderHelper Utility for constructing SQL fragments and join conditions */
-		private SqlBuilderHelper $sqlBuilder;
+		/** @var BuildSqlFragments Utility for constructing SQL fragments and join conditions */
+		private BuildSqlFragments $sqlBuilder;
 		
 		/** @var BuildSqlFromAst Converts AST nodes to their SQL string representations */
 		private BuildSqlFromAst $convertToString;
@@ -56,14 +56,14 @@
 		 * Initializes the aggregate handler with required dependencies.
 		 * @param EntityStore $entityStore Maps entity names to table names and provides schema metadata
 		 * @param string $partOfQuery Current SQL clause context (SELECT, WHERE, etc.) for output formatting
-		 * @param SqlBuilderHelper $sqlBuilder Helper for building SQL components like joins and conditions
+		 * @param BuildSqlFragments $sqlBuilder Helper for building SQL components like joins and conditions
 		 * @param BuildSqlFromAst $convertToString Converts AST expressions to SQL strings
 		 */
 		public function __construct(
-			EntityStore      $entityStore,
-			string           $partOfQuery,
-			SqlBuilderHelper $sqlBuilder,
-			BuildSqlFromAst  $convertToString,
+			EntityStore       $entityStore,
+			string            $partOfQuery,
+			BuildSqlFragments $sqlBuilder,
+			BuildSqlFromAst   $convertToString,
 		) {
 			$this->entityStore = $entityStore;
 			$this->partOfQuery = $partOfQuery;
@@ -763,7 +763,7 @@
 		 * @return AstIdentifier[] Array of all identifier nodes found in the tree
 		 */
 		private function collectIdentifierNodes(AstInterface $ast): array {
-			$visitor = new NodeCollector(AstIdentifier::class);
+			$visitor = new CollectNodes(AstIdentifier::class);
 			$ast->accept($visitor);
 			return $visitor->getCollectedNodes();
 		}

@@ -10,7 +10,7 @@
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRangeDatabase;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRetrieve;
 	use Quellabs\ObjectQuel\ObjectQuel\AstInterface;
-	use Quellabs\ObjectQuel\ObjectQuel\Visitors\NodeCollector;
+	use Quellabs\ObjectQuel\ObjectQuel\Visitors\CollectNodes;
 	use Quellabs\ObjectQuel\Planner\Visitors\CollectAggregates;
 	use Quellabs\ObjectQuel\Planner\Visitors\CollectIdentifiers;
 	
@@ -108,8 +108,8 @@
 		 * @return AstAny[] Array of ANY nodes found
 		 */
 		public static function findAllAnyNodes(AstRetrieve $ast): array {
-			/** @var NodeCollector<AstAny> $visitor */
-			$visitor = new NodeCollector([AstAny::class]);
+			/** @var CollectNodes<AstAny> $visitor */
+			$visitor = new CollectNodes([AstAny::class]);
 			$ast->accept($visitor);
 			return $visitor->getCollectedNodes();
 		}

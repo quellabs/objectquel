@@ -14,7 +14,7 @@
 	 * within an Abstract Syntax Tree (AST). It traverses the AST looking for an AstIdentifier
 	 * node that matches both the provided entity name and property.
 	 */
-	class LocateIdentifier implements AstVisitorInterface {
+	class FindIdentifier implements AstVisitorInterface {
 		
 		/** @var string The entity name to search for */
 		private string $entityName;

@@ -24,7 +24,7 @@
 	 * It handles column name resolution, join conditions, search conditions, and entity
 	 * property mapping to database columns.
 	 */
-	class SqlBuilderHelper {
+	class BuildSqlFragments {
 		
 		/** @var EntityStore Stores entity metadata and column mappings */
 		private EntityStore $entityStore;

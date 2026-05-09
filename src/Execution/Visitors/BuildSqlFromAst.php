@@ -67,17 +67,17 @@
 		private string $partOfQuery;
 		
 		// Helper classes for specialized functionality
-		/** @var SqlBuilderHelper Handles SQL construction and column name generation */
-		private SqlBuilderHelper $sqlBuilder;
+		/** @var BuildSqlFragments Handles SQL construction and column name generation */
+		private BuildSqlFragments $sqlBuilder;
 		
-		/** @var TypeInferenceHelper Handles type inference and validation */
-		private TypeInferenceHelper $typeInference;
+		/** @var ResolveType Handles type inference and validation */
+		private ResolveType $typeInference;
 		
-		/** @var AggregateHandler Handles aggregate functions like COUNT, SUM, AVG, etc. */
-		private AggregateHandler $aggregateHandler;
+		/** @var ProcessAggregate Handles aggregate functions like COUNT, SUM, AVG, etc. */
+		private ProcessAggregate $aggregateHandler;
 		
-		/** @var ExpressionHandler Handles expressions, operators, and data types */
-		private ExpressionHandler $expressionHandler;
+		/** @var ProcessExpression Handles expressions, operators, and data types */
+		private ProcessExpression $expressionHandler;
 
 		/** @var PlatformCapabilitiesInterface Database engine capability descriptor */
 		private PlatformCapabilitiesInterface $platform;
@@ -108,10 +108,10 @@
 			$this->platform = $platform;
 			
 			// Initialize helper classes with proper dependencies and references
-			$this->sqlBuilder = new SqlBuilderHelper($this->entityStore, $this->parameters, $this->partOfQuery, $this, $this->platform, $subqueryAliasRangeName);
-			$this->typeInference = new TypeInferenceHelper($this->entityStore);
-			$this->aggregateHandler = new AggregateHandler($this->entityStore, $this->partOfQuery, $this->sqlBuilder, $this);
-			$this->expressionHandler = new ExpressionHandler($this->sqlBuilder, $this->typeInference, $this->parameters, $this, $this->platform);
+			$this->sqlBuilder = new BuildSqlFragments($this->entityStore, $this->parameters, $this->partOfQuery, $this, $this->platform, $subqueryAliasRangeName);
+			$this->typeInference = new ResolveType($this->entityStore);
+			$this->aggregateHandler = new ProcessAggregate($this->entityStore, $this->partOfQuery, $this->sqlBuilder, $this);
+			$this->expressionHandler = new ProcessExpression($this->sqlBuilder, $this->typeInference, $this->parameters, $this, $this->platform);
 		}
 		
 		/**

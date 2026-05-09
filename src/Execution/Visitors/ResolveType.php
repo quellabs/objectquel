@@ -15,7 +15,7 @@
 	 * and determine their data types based on entity annotations and type precedence rules.
 	 * It's primarily used in query processing to ensure type safety and proper casting.
 	 */
-	class TypeInferenceHelper {
+	class ResolveType {
 
 		/**
 		 * Entity store containing metadata and annotations for all entities

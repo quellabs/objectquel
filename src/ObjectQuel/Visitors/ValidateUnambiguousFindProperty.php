@@ -21,7 +21,7 @@
 	 * ambiguous (multiple ranges own it). This validator detects both cases and
 	 * throws a SemanticException with a precise error message.
 	 */
-	class ValidateUnambiguousProperty extends PropertyRangeFinder implements AstVisitorInterface {
+	class ValidateUnambiguousFindProperty extends FindPropertyRange implements AstVisitorInterface {
 		
 		/** @var AstRange[] */
 		private array $ranges;

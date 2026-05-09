@@ -9,7 +9,7 @@
 	 * Collects AST nodes matching specified types during tree traversal
 	 * @template T of AstInterface
 	 */
-	class NodeCollector implements AstVisitorInterface {
+	class CollectNodes implements AstVisitorInterface {
 		
 		/** @var class-string<T>[] */
 		private array $targetTypes;

@@ -15,7 +15,7 @@
 	 * logic lives in one place and each consumer can decide what to do
 	 * with zero, one, or multiple matches.
 	 */
-	class PropertyRangeFinder {
+	class FindPropertyRange {
 		
 		/** @var EntityStore */
 		private EntityStore $entityStore;
