@@ -1,6 +1,6 @@
 <?php
 	
-	namespace Quellabs\ObjectQuel\ObjectQuel\Visitors;
+	namespace Quellabs\ObjectQuel\Execution\Visitors;
 	
 	use Quellabs\ObjectQuel\EntityStore;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstAlias;
@@ -43,8 +43,6 @@
 	use Quellabs\ObjectQuel\Capabilities\PlatformCapabilitiesInterface;
 	use Quellabs\ObjectQuel\Capabilities\NullPlatformCapabilities;
 	use Quellabs\ObjectQuel\ObjectQuel\AstVisitorInterface;
-	use Quellabs\ObjectQuel\ObjectQuel\Handlers\AggregateHandler;
-	use Quellabs\ObjectQuel\ObjectQuel\Handlers\ExpressionHandler;
 	use Quellabs\ObjectQuel\ObjectQuel\Helpers\TypeInferenceHelper;
 	use Quellabs\ObjectQuel\ObjectQuel\Helpers\SqlBuilderHelper;
 	

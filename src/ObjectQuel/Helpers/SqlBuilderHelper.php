@@ -17,7 +17,7 @@
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstString;
 	use Quellabs\ObjectQuel\ObjectQuel\AstInterface;
 	use Quellabs\ObjectQuel\ObjectQuel\IdentifierType;
-	use Quellabs\ObjectQuel\ObjectQuel\Visitors\BuildSqlFromAst;
+	use Quellabs\ObjectQuel\Execution\Visitors\BuildSqlFromAst;
 	
 	/**
 	 * This class serves as a utility for converting ObjectQuel AST nodes into SQL fragments.

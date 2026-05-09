@@ -1,6 +1,6 @@
 <?php
 	
-	namespace Quellabs\ObjectQuel\ObjectQuel\Handlers;
+	namespace Quellabs\ObjectQuel\Execution\Visitors;
 	
 	use Quellabs\ObjectQuel\EntityStore;
 	use Quellabs\ObjectQuel\Exception\EntityResolutionException;
@@ -16,14 +16,12 @@
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstMin;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRange;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRangeDatabase;
-	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRetrieve;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstSubquery;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstSum;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstSumU;
 	use Quellabs\ObjectQuel\ObjectQuel\AstInterface;
 	use Quellabs\ObjectQuel\ObjectQuel\Helpers\SqlBuilderHelper;
 	use Quellabs\ObjectQuel\ObjectQuel\Visitors\NodeCollector;
-	use Quellabs\ObjectQuel\ObjectQuel\Visitors\BuildSqlFromAst;
 	
 	/**
 	 * Converts ObjectQuel aggregate AST nodes to SQL aggregate functions and existence checks.
@@ -89,6 +87,7 @@
 		 * @param AstSubquery $subquery The subquery AST node to process
 		 * @return string Complete SQL subquery expression
 		 * @throws \InvalidArgumentException When subquery type is not recognized
+		 * @throws EntityResolutionException
 		 */
 		public function handleSubquery(AstSubquery $subquery): string {
 			/** @noinspection PhpSwitchCanBeReplacedWithMatchExpressionInspection */
