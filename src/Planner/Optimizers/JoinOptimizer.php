@@ -7,11 +7,11 @@
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRange;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRangeDatabaseSubquery;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRetrieve;
-	use Quellabs\ObjectQuel\ObjectQuel\Visitors\ContainsCheckIsNullForRange;
-	use Quellabs\ObjectQuel\ObjectQuel\Visitors\ContainsNonNullableFieldForRange;
-	use Quellabs\ObjectQuel\ObjectQuel\Visitors\ContainsNonNullableFieldForRangeTemporary;
+	use Quellabs\ObjectQuel\ObjectQuel\Visitors\DetectNullCheckOnRange;
+	use Quellabs\ObjectQuel\ObjectQuel\Visitors\DetectNonNullableField;
+	use Quellabs\ObjectQuel\ObjectQuel\Visitors\DetectNonNullableFieldInSubquery;
 	use Quellabs\ObjectQuel\ObjectQuel\AstVisitorInterface;
-	use Quellabs\ObjectQuel\ObjectQuel\Visitors\UsesRange;
+	use Quellabs\ObjectQuel\ObjectQuel\Visitors\DetectRangeReference;
 	
 	/**
 	 * Optimizes JOIN types based on WHERE clause analysis.
@@ -78,12 +78,12 @@
 		private function analyzeConditions(AstRetrieve $ast, AstRange $range): RangeConditionAnalysis {
 			// Check whether the WHERE clause contains IS NULL / IS NOT NULL for this range.
 			// If so, the join must stay LEFT — converting to INNER would drop those rows.
-			$nullCheckVisitor = new ContainsCheckIsNullForRange($range->getName());
+			$nullCheckVisitor = new DetectNullCheckOnRange($range->getName());
 			$this->runVisitor($ast, $nullCheckVisitor);
 			
 			// Check whether the WHERE clause references any field from this range at all.
 			// No references means no basis for conversion in either direction.
-			$usesRangeVisitor = new UsesRange($range->getName());
+			$usesRangeVisitor = new DetectRangeReference($range->getName());
 			$this->runVisitor($ast, $usesRangeVisitor);
 			
 			// Only run the nullability visitor when there are field references and no null checks,
@@ -121,13 +121,13 @@
 		 * Temporary ranges (subqueries) use a specialized visitor that inspects
 		 * the subquery's own output columns rather than entity metadata.
 		 * @param AstRange $range The range to build a visitor for
-		 * @return ContainsNonNullableFieldForRange|ContainsNonNullableFieldForRangeTemporary
+		 * @return DetectNonNullableField|DetectNonNullableFieldInSubquery
 		 */
-		private function buildNullabilityVisitor(AstRange $range): ContainsNonNullableFieldForRange|ContainsNonNullableFieldForRangeTemporary {
+		private function buildNullabilityVisitor(AstRange $range): DetectNonNullableField|DetectNonNullableFieldInSubquery {
 			// Database ranges can contain either a direct entity reference or a subquery
 			if (!$range instanceof AstRangeDatabaseSubquery) {
 				// Direct entity reference: nullability comes from entity metadata
-				return new ContainsNonNullableFieldForRange($range->getName(), $this->entityStore);
+				return new DetectNonNullableField($range->getName(), $this->entityStore);
 			}
 			
 			// Fetch the query
@@ -135,7 +135,7 @@
 			
 			// Subqueries produce a derived table, so nullability is determined
 			// from the subquery's output columns rather than entity metadata
-			return new ContainsNonNullableFieldForRangeTemporary(
+			return new DetectNonNullableFieldInSubquery(
 				$range->getName(),
 				$query,
 				$this->entityStore

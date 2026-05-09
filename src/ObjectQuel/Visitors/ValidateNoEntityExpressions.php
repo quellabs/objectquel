@@ -17,7 +17,7 @@
 	 * Class NoExpressionsAllowedOnEntitiesValidator
 	 * Validates that no operations are used on entire entities
 	 */
-	class NoExpressionsAllowedOnEntitiesValidator implements AstVisitorInterface {
+	class ValidateNoEntityExpressions implements AstVisitorInterface {
 		
 		/**
 		 * Visits a node in the Ast.

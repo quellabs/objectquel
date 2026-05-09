@@ -7,7 +7,7 @@
 	/**
 	 * Class GetMainEntityInAstException
 	 */
-	class GetMainEntityInAstException extends \Exception {
+	class DetectPrimaryKeyInClauseException extends \Exception {
 
 		/**
 		 * The AST object that is stored and passed with the exception.

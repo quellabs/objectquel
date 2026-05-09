@@ -53,7 +53,7 @@
 	 * @package Quellabs\ObjectQuel\ObjectQuel\Visitors
 	 * @author Quellabs
 	 */
-	class QuelToSQLConvertToString implements AstVisitorInterface {
+	class BuildSqlFromAst implements AstVisitorInterface {
 		
 		/** @var EntityStore Entity storage for metadata and schema information */
 		private EntityStore $entityStore;

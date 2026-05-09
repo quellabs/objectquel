@@ -13,7 +13,7 @@
 	/**
 	 * Class AddNamespacesToRanges
 	 */
-	class RangeDatabaseProxyResolver implements AstVisitorInterface {
+	class ResolveRangeDatabaseProxy implements AstVisitorInterface {
 		
 		/**
 		 * The EntityStore for storing and fetching entity metadata.

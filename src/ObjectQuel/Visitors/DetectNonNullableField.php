@@ -11,7 +11,7 @@
 	 * Visitor that checks if a range references any non-nullable fields in the AST.
 	 * Used to determine if a LEFT JOIN can be safely converted to an INNER JOIN.
 	 */
-	class ContainsNonNullableFieldForRange implements AstVisitorInterface {
+	class DetectNonNullableField implements AstVisitorInterface {
 		
 		/** @var string Name of the range */
 		private string $rangeName;

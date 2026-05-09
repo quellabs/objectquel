@@ -11,11 +11,11 @@
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRangeDatabaseSubquery;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRangeDatabaseTempTable;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRetrieve;
-	use Quellabs\ObjectQuel\ObjectQuel\Visitors\GetMainEntityInAst;
-	use Quellabs\ObjectQuel\ObjectQuel\Visitors\GetMainEntityInAstException;
+	use Quellabs\ObjectQuel\ObjectQuel\Visitors\DetectPrimaryKeyInClause;
+	use Quellabs\ObjectQuel\ObjectQuel\Visitors\DetectPrimaryKeyInClauseException;
 	use Quellabs\ObjectQuel\Capabilities\PlatformCapabilitiesInterface;
 	use Quellabs\ObjectQuel\Capabilities\NullPlatformCapabilities;
-	use Quellabs\ObjectQuel\ObjectQuel\Visitors\QuelToSQLConvertToString;
+	use Quellabs\ObjectQuel\ObjectQuel\Visitors\BuildSqlFromAst;
 	
 	class QuelToSQL {
 		
@@ -102,7 +102,7 @@
 			foreach ($retrieve->getValues() as $value) {
 				// Create a new QuelToSQLConvertToString converter, passing the outer range name
 				// so entity column aliases use the derived table's name (e.g. "x.id" not "y.id")
-				$quelToSQLConvertToString = new QuelToSQLConvertToString($this->entityStore, $this->parameters, "VALUES", $this->platform, $outerRangeName);
+				$quelToSQLConvertToString = new BuildSqlFromAst($this->entityStore, $this->parameters, "VALUES", $this->platform, $outerRangeName);
 				$value->accept($quelToSQLConvertToString);
 				$sqlResult = $quelToSQLConvertToString->getResult();
 				
@@ -211,7 +211,7 @@
 			
 			// Create a new instance of QuelToSQLConvertToString to convert the conditions to a SQL string.
 			// This object will process the Quel conditions and convert them into a format that SQL understands.
-			$retrieveEntitiesVisitor = new QuelToSQLConvertToString($this->entityStore, $this->parameters, "WHERE", $this->platform);
+			$retrieveEntitiesVisitor = new BuildSqlFromAst($this->entityStore, $this->parameters, "WHERE", $this->platform);
 			
 			// Use the accept method of the conditions to let the QuelToSQLConvertToString object perform the processing.
 			// This activates the logic for converting Quel to SQL.
@@ -237,14 +237,14 @@
 			$astIdentifier = new AstIdentifier($primaryKeyInfo->entityName);
 			
 			try {
-				$visitor = new GetMainEntityInAst($astIdentifier);
+				$visitor = new DetectPrimaryKeyInClause($astIdentifier);
 				$retrieve->getConditions()?->accept($visitor);
 				return $this->getSortDefault($retrieve);
-			} catch (GetMainEntityInAstException $exception) {
+			} catch (DetectPrimaryKeyInClauseException $exception) {
 				$astObject = $exception->getAstObject();
 				
 				// Convert Quel conditions to a SQL string
-				$retrieveEntitiesVisitor = new QuelToSQLConvertToString($this->entityStore, $this->parameters, "SORT", $this->platform);
+				$retrieveEntitiesVisitor = new BuildSqlFromAst($this->entityStore, $this->parameters, "SORT", $this->platform);
 				$astObject->getIdentifier()->accept($retrieveEntitiesVisitor);
 				
 				// Process the results into an SQL ORDER BY clause
@@ -284,7 +284,7 @@
 			foreach ($sort as $s) {
 				// Create a new instance of QuelToSQLConvertToString to convert the conditions to a SQL string.
 				// This object will process the Quel conditions and convert them into a format that SQL understands.
-				$retrieveEntitiesVisitor = new QuelToSQLConvertToString($this->entityStore, $this->parameters, "SORT", $this->platform);
+				$retrieveEntitiesVisitor = new BuildSqlFromAst($this->entityStore, $this->parameters, "SORT", $this->platform);
 				
 				// Guide the QUEL through to get a SQL query back
 				$s['ast']->accept($retrieveEntitiesVisitor);
@@ -339,7 +339,7 @@
 			$groupSQL = [];
 			
 			foreach ($groupBy as $group) {
-				$visitor = new QuelToSQLConvertToString($this->entityStore, $this->parameters, "CONDITION", $this->platform);
+				$visitor = new BuildSqlFromAst($this->entityStore, $this->parameters, "CONDITION", $this->platform);
 				$group->accept($visitor);
 				$groupSQL[] = $visitor->getResult();
 			}
@@ -388,7 +388,7 @@
 				$joinProperty = $range->getJoinProperty();
 				
 				// Convert the join condition to a SQL string.
-				$visitor = new QuelToSQLConvertToString($this->entityStore, $this->parameters, "CONDITION", $this->platform);
+				$visitor = new BuildSqlFromAst($this->entityStore, $this->parameters, "CONDITION", $this->platform);
 				$joinProperty->accept($visitor);
 				$joinColumn = $visitor->getResult();
 				

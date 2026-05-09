@@ -10,13 +10,13 @@
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRangeDatabaseSubquery;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRegExp;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRetrieve;
-	use Quellabs\ObjectQuel\ObjectQuel\Visitors\NodeTypeValidator;
-	use Quellabs\ObjectQuel\ObjectQuel\Visitors\EntityPropertyExistenceValidator;
-	use Quellabs\ObjectQuel\ObjectQuel\Visitors\NoExpressionsAllowedOnEntitiesValidator;
-	use Quellabs\ObjectQuel\ObjectQuel\Visitors\RangeReferenceCollector;
-	use Quellabs\ObjectQuel\ObjectQuel\Visitors\AmbiguousPropertyValidator;
-	use Quellabs\ObjectQuel\ObjectQuel\Visitors\ValidateRangeReferencesExist;
-	use Quellabs\ObjectQuel\ObjectQuel\Visitors\RelationshipPathValidator;
+	use Quellabs\ObjectQuel\ObjectQuel\Visitors\DetectRestrictedNodeType;
+	use Quellabs\ObjectQuel\ObjectQuel\Visitors\ValidateEntityPropertyExists;
+	use Quellabs\ObjectQuel\ObjectQuel\Visitors\ValidateNoEntityExpressions;
+	use Quellabs\ObjectQuel\ObjectQuel\Visitors\CollectRangeReferences;
+	use Quellabs\ObjectQuel\ObjectQuel\Visitors\ValidateUnambiguousProperty;
+	use Quellabs\ObjectQuel\ObjectQuel\Visitors\ValidateRangesDeclared;
+	use Quellabs\ObjectQuel\ObjectQuel\Visitors\ValidateRelationshipPath;
 	
 	/**
 	 * SemanticAnalyzer class responsible for validating ObjectQuel query ASTs
@@ -73,7 +73,7 @@
 			$this->validateAtLeastOneRangeWithoutVia($ast);
 			
 			// Step 3: Validate that each root identifier links to a range that exists
-			$this->processWithVisitor($ast, ValidateRangeReferencesExist::class, $this->entityStore);
+			$this->processWithVisitor($ast, ValidateRangesDeclared::class, $this->entityStore);
 			
 			// Step 4: Validate that via clauses do not form circular dependencies
 			$this->validateNoCircularViaDependencies($ast);
@@ -86,7 +86,7 @@
 			$this->validateUnambiguousProperties($ast);
 			
 			// Step 2: Validate property references against schema
-			$this->processWithVisitor($ast, EntityPropertyExistenceValidator::class, $this->entityStore);
+			$this->processWithVisitor($ast, ValidateEntityPropertyExists::class, $this->entityStore);
 			
 			// Step 3: Validate that referenced relationships lead back to the entity
 			$this->validateRelationshipPaths($ast);
@@ -98,7 +98,7 @@
 			$this->validateNoRegExpInValueList($ast);
 			
 			// Step 6: Ensure expressions are not used inappropriately on entities
-			$this->processWithVisitor($ast, NoExpressionsAllowedOnEntitiesValidator::class);
+			$this->processWithVisitor($ast, ValidateNoEntityExpressions::class);
 			
 			// Step 7: Validate SQL compliance rules (aggregates cannot be put in WHERE)
 			$this->validateNoAggregatesInWhereClause($ast);
@@ -117,7 +117,7 @@
 		 * @param AstRetrieve $ast The AST to validate
 		 */
 		private function validateUnambiguousProperties(AstRetrieve $ast): void {
-			$validator = new AmbiguousPropertyValidator($this->entityStore, $ast->getRanges());
+			$validator = new ValidateUnambiguousProperty($this->entityStore, $ast->getRanges());
 			$ast->accept($validator);
 		}
 		
@@ -281,7 +281,7 @@
 					try {
 						// Create a validator to check that all 'via' relations in the join property are valid
 						// This verifies that intermediate entities and properties exist in the entity store
-						$validator = new RelationshipPathValidator($this->entityStore, $entityName);
+						$validator = new ValidateRelationshipPath($this->entityStore, $entityName);
 						
 						// Apply the validator to the join property tree
 						// This traverses all parts of the join definition looking for invalid 'via' references
@@ -312,7 +312,7 @@
 			try {
 				// Create a visitor that searches for any of the prohibited aggregate
 				// function types in the condition tree
-				$visitor = new NodeTypeValidator([AstAggregate::class]);
+				$visitor = new DetectRestrictedNodeType([AstAggregate::class]);
 				
 				// Traverse the WHERE clause conditions looking for aggregate functions
 				// If any are found, the visitor will throw an exception
@@ -468,7 +468,7 @@
 		 * @return string[] List of referenced range names found in the expression
 		 */
 		private function extractRangeReferences(AstInterface $expression, array $knownRangeNames): array {
-			$collector = new RangeReferenceCollector($knownRangeNames);
+			$collector = new CollectRangeReferences($knownRangeNames);
 			$expression->accept($collector);
 			return $collector->getReferencedRanges();
 		}

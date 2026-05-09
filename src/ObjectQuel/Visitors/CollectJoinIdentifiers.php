@@ -12,7 +12,7 @@
 	 * Visitor class that detects if an AST node contains references to JSON sources
 	 * This visitor is used to identify mixed data source references in query conditions
 	 */
-	class CollectJoinConditionIdentifiers implements AstVisitorInterface {
+	class CollectJoinIdentifiers implements AstVisitorInterface {
 
 		/** @var AstRetrieve Retrieve AST Node */
 		private AstRetrieve $retrieve;

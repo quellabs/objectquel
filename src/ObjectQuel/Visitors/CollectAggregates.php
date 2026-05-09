@@ -11,7 +11,7 @@
 	/**
 	 * AST visitor that collects aggregate function nodes (Sum, Count, Avg, Min, Max).
 	 */
-	class AggregateCollector implements AstVisitorInterface {
+	class CollectAggregates implements AstVisitorInterface {
 		
 		/**
 		 * @var array<int, AstAggregate> All collected aggregate function nodes

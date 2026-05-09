@@ -9,7 +9,7 @@
 	/**
 	 * Visitor that checks whether a specific range is referenced anywhere in an AST subtree.
 	 */
-	class UsesRange implements AstVisitorInterface {
+	class DetectRangeReference implements AstVisitorInterface {
 		
 		/** @var string The name of the range to search for */
 		private string $rangeName;

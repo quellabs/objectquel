@@ -5,7 +5,7 @@
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstAlias;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstMin;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRetrieve;
-	use Quellabs\ObjectQuel\ObjectQuel\Visitors\CollectJoinConditionIdentifiers;
+	use Quellabs\ObjectQuel\ObjectQuel\Visitors\CollectJoinIdentifiers;
 	use Quellabs\ObjectQuel\Planner\Helpers\AstUtilities;
 	
 	/**
@@ -38,7 +38,7 @@
 			}
 			
 			// Find all database identifiers used in WHERE conditions that belong to joined ranges
-			$visitor = new CollectJoinConditionIdentifiers($ast);
+			$visitor = new CollectJoinIdentifiers($ast);
 			$ast->accept($visitor);
 			
 			// Add each identifier as a hidden projection field

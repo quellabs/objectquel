@@ -13,7 +13,7 @@
 	 * It replaces entity identifiers with their corresponding macros defined in the column section.
 	 * Part of a query processing system that handles entity substitution for ObjectQuel.
 	 */
-	class MacroSubstitutor implements AstVisitorInterface {
+	class SubstituteMacros implements AstVisitorInterface {
 		
 		/**
 		 * An array of macros where keys are entity names and values are their replacements

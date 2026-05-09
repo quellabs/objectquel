@@ -23,7 +23,7 @@
 	 * Transforms 'via' relationship references in the AST into direct property lookups
 	 * suitable for SQL JOIN condition generation.
 	 */
-	class TransformRelationInViaToPropertyLookup implements AstVisitorInterface {
+	class RewriteViaRelationToJoinCondition implements AstVisitorInterface {
 		
 		private EntityStore $entityStore;
 		private AstRangeDatabase $range;

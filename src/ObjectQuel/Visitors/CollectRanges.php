@@ -8,7 +8,7 @@
 	use Quellabs\ObjectQuel\ObjectQuel\AstInterface;
 	use Quellabs\ObjectQuel\ObjectQuel\AstVisitorInterface;
 	
-	class RangesCollector implements AstVisitorInterface {
+	class CollectRanges implements AstVisitorInterface {
 		
 		/** @var AstRange[] All nodes */
 		private array $collectedNodes;

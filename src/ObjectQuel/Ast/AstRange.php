@@ -4,7 +4,7 @@
 	
 	use Quellabs\ObjectQuel\ObjectQuel\AstInterface;
 	use Quellabs\ObjectQuel\ObjectQuel\AstVisitorInterface;
-	use Quellabs\ObjectQuel\ObjectQuel\Visitors\IdentifierLocator;
+	use Quellabs\ObjectQuel\ObjectQuel\Visitors\LocateIdentifier;
 	
 	/**
 	 * AstRange class is responsible for defining a range in the AST (Abstract Syntax Tree).
@@ -108,7 +108,7 @@
 			}
 			
 			try {
-				$findVisitor = new IdentifierLocator($entityName, $property);
+				$findVisitor = new LocateIdentifier($entityName, $property);
 				$this->joinProperty->accept($findVisitor);
 				return false;
 			} catch (\Exception $exception) {

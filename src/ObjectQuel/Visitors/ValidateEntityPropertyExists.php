@@ -15,7 +15,7 @@
 	 * Class EntityPropertyValidator
 	 * Validates the existence of properties and methods within entities
 	 */
-	class EntityPropertyExistenceValidator implements AstVisitorInterface {
+	class ValidateEntityPropertyExists implements AstVisitorInterface {
 		
 		/** @var EntityStore EntityStore holds entity metadata */
 		private EntityStore $entityStore;

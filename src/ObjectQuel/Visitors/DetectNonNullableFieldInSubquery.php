@@ -20,7 +20,7 @@
 	 * can be safely converted to an INNER JOIN. A non-nullable field in the join condition
 	 * means the join can never produce a useful NULL row, making the conversion safe.
 	 */
-	class ContainsNonNullableFieldForRangeTemporary implements AstVisitorInterface {
+	class DetectNonNullableFieldInSubquery implements AstVisitorInterface {
 		
 		/** @var string The name of the temporary range to check references against */
 		private string $rangeName;

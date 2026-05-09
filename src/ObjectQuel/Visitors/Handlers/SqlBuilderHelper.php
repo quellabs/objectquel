@@ -15,7 +15,7 @@
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstSearchScore;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstString;
 	use Quellabs\ObjectQuel\ObjectQuel\AstInterface;
-	use Quellabs\ObjectQuel\ObjectQuel\Visitors\QuelToSQLConvertToString;
+	use Quellabs\ObjectQuel\ObjectQuel\Visitors\BuildSqlFromAst;
 	
 	/**
 	 * This class serves as a utility for converting ObjectQuel AST nodes into SQL fragments.
@@ -222,7 +222,7 @@
 			// Check if we have access to the main visitor
 			if (!$this->mainVisitor) {
 				// Fallback: create new visitor only if main visitor not available
-				$visitor = new QuelToSQLConvertToString(
+				$visitor = new BuildSqlFromAst(
 					$this->entityStore,
 					$this->parameters,
 					$this->partOfQuery,

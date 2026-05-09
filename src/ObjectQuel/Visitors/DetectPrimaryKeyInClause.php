@@ -15,7 +15,7 @@
 	 * throws a GetMainEntityInAstException containing the found node, effectively terminating
 	 * the traversal.
 	 */
-	class GetMainEntityInAst implements AstVisitorInterface {
+	class DetectPrimaryKeyInClause implements AstVisitorInterface {
 		
 		/**
 		 * The primary key identifier that we're looking for in the AST
@@ -35,7 +35,7 @@
 		 * Traverse through the AST and throw an exception as soon as the AstIn node for the primary key is found.
 		 * @param AstInterface $node The current node being visited in the AST
 		 * @return void
-		 * @throws GetMainEntityInAstException When the target AstIn node is found
+		 * @throws DetectPrimaryKeyInClauseException When the target AstIn node is found
 		 */
 		public function visitNode(AstInterface $node): void {
 			// If the node is not an AstIn instance, we're not interested in it
@@ -64,6 +64,6 @@
 			
 			// If we've reached this point, we've found the AstIn node for our primary key
 			// Throw an exception with the found node to interrupt the traversal
-			throw new GetMainEntityInAstException($node);
+			throw new DetectPrimaryKeyInClauseException($node);
 		}
 	}

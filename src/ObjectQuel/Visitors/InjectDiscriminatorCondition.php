@@ -26,7 +26,7 @@
 	 * there is no need to traverse the full AST since ranges only ever
 	 * appear in AstRetrieve::$ranges.
 	 */
-	class DiscriminatorConditionInjector {
+	class InjectDiscriminatorCondition {
 		
 		/**
 		 * @var EntityStore Entity metadata registry

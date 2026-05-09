@@ -19,7 +19,7 @@
 	 * In this case, "a" is referenced but was never declared as a range,
 	 * so a SemanticException is thrown.
 	 */
-	class ValidateRangeReferencesExist implements AstVisitorInterface {
+	class ValidateRangesDeclared implements AstVisitorInterface {
 		
 		/**
 		 * Visits an AST node and validates that entity-style identifiers

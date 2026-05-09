@@ -19,7 +19,7 @@
 	 * Implements the visitor pattern to traverse an Abstract Syntax Tree and
 	 * records whether a null check operation on the specified range was found.
 	 */
-	class ContainsCheckIsNullForRange implements AstVisitorInterface {
+	class DetectNullCheckOnRange implements AstVisitorInterface {
 		
 		/**
 		 * The name of the range/table alias to check for null operations

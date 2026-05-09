@@ -9,7 +9,7 @@
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstIdentifier;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRange;
 	use Quellabs\ObjectQuel\ObjectQuel\AstInterface;
-	use Quellabs\ObjectQuel\ObjectQuel\Visitors\IdentifierCollector;
+	use Quellabs\ObjectQuel\ObjectQuel\Visitors\CollectIdentifiers;
 	
 	/**
 	 * RangeUsageAnalyzer
@@ -216,7 +216,7 @@
 				return [];
 			}
 			
-			$visitor = new IdentifierCollector();
+			$visitor = new CollectIdentifiers();
 			$node->accept($visitor);
 			return $visitor->getCollectedNodes();
 		}

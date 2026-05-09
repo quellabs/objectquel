@@ -18,8 +18,8 @@
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRangeDatabaseTempTable;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRetrieve;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\NodeBinary;
-	use Quellabs\ObjectQuel\ObjectQuel\Visitors\RangesCollector;
-	use Quellabs\ObjectQuel\ObjectQuel\Visitors\ContainsNonNullableFieldForRangeTemporary;
+	use Quellabs\ObjectQuel\ObjectQuel\Visitors\CollectRanges;
+	use Quellabs\ObjectQuel\ObjectQuel\Visitors\DetectNonNullableFieldInSubquery;
 	use Quellabs\ObjectQuel\Planner\Helpers\BinaryOperationHelper;
 	
 	/**
@@ -174,7 +174,7 @@
 		 */
 		private function getUsedRanges(AstRetrieve $ast, bool $traverseSubqueries = true): array {
 			// Initialize visitor pattern to collect range references
-			$visitor = new RangesCollector($traverseSubqueries);
+			$visitor = new CollectRanges($traverseSubqueries);
 			
 			// Traverse all SELECT clause values to find referenced ranges
 			foreach ($ast->getValues() as $value) {
@@ -275,7 +275,7 @@
 		 * @return array<int, AstRange>
 		 */
 		private function getRangesUsedInJoinConditions(AstRetrieve $ast): array {
-			$visitor = new RangesCollector(false);
+			$visitor = new CollectRanges(false);
 			
 			foreach ($ast->getRanges() as $range) {
 				$range->getJoinProperty()?->accept($visitor);
@@ -439,7 +439,7 @@
 			}
 			
 			// Use visitor to check field nullability
-			$visitor = new ContainsNonNullableFieldForRangeTemporary(
+			$visitor = new DetectNonNullableFieldInSubquery(
 				$joinedRange->getName(),
 				$joinedRange->getQuery(),
 				$this->entityStore

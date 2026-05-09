@@ -11,7 +11,7 @@
 	 * during tree traversal. This visitor is designed to detect unwanted or restricted
 	 * node types within an Abstract Syntax Tree and throw an exception when found.
 	 */
-	class NodeTypeValidator implements AstVisitorInterface {
+	class DetectRestrictedNodeType implements AstVisitorInterface {
 		
 		/**
 		 * Array of node type class names to check for during AST traversal

@@ -12,7 +12,7 @@
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRetrieve;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstSubquery;
 	use Quellabs\ObjectQuel\ObjectQuel\AstInterface;
-	use Quellabs\ObjectQuel\ObjectQuel\Visitors\IdentifierCollector;
+	use Quellabs\ObjectQuel\ObjectQuel\Visitors\CollectIdentifiers;
 	
 	class ExistsRewriter {
 		
@@ -399,7 +399,7 @@
 			$cloned = $predicate->deepClone();
 			
 			// Initialize visitor to traverse and collect all identifier nodes in the cloned AST
-			$visitor = new IdentifierCollector();
+			$visitor = new CollectIdentifiers();
 			$cloned->accept($visitor);
 			$ids = $visitor->getCollectedNodes();
 			

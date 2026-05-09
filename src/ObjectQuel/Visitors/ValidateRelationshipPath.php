@@ -16,7 +16,7 @@
 	 * Class RelationshipPathValidator
 	 * Validates the existence of entities within an AST.
 	 */
-	class RelationshipPathValidator implements AstVisitorInterface {
+	class ValidateRelationshipPath implements AstVisitorInterface {
 		
 		/** @var EntityStore EntityStore keeps the entity metadata */
 		private EntityStore $entityStore;

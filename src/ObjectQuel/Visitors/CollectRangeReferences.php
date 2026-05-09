@@ -16,7 +16,7 @@
 	 * complex (binary operators, function calls, identifier chains) — the visitor
 	 * pattern handles traversal correctly for all node types.
 	 */
-	class RangeReferenceCollector implements AstVisitorInterface {
+	class CollectRangeReferences implements AstVisitorInterface {
 		
 		/**
 		 * Map of declared range names used for fast membership lookup.

@@ -16,8 +16,8 @@
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRetrieve;
 	use Quellabs\ObjectQuel\ObjectQuel\PrimaryKeyInfo;
 	use Quellabs\ObjectQuel\ObjectQuel\QuelToSQL;
-	use Quellabs\ObjectQuel\ObjectQuel\Visitors\GetMainEntityInAst;
-	use Quellabs\ObjectQuel\ObjectQuel\Visitors\GetMainEntityInAstException;
+	use Quellabs\ObjectQuel\ObjectQuel\Visitors\DetectPrimaryKeyInClause;
+	use Quellabs\ObjectQuel\ObjectQuel\Visitors\DetectPrimaryKeyInClauseException;
 	
 	class QueryTransformer {
 		
@@ -114,13 +114,13 @@
 			try {
 				// Fetch IN() statement
 				$astIdentifier = $this->createPrimaryKeyIdentifier();
-				$visitor = new GetMainEntityInAst($astIdentifier);
+				$visitor = new DetectPrimaryKeyInClause($astIdentifier);
 				$ast->getConditions()?->accept($visitor);
 				
 				// If no exception, fall back to validation method
 				$this->processPaginationWithValidation($ast, $parameters, $window, $windowSize);
 				
-			} catch (GetMainEntityInAstException $exception) {
+			} catch (DetectPrimaryKeyInClauseException $exception) {
 				$astObject = $exception->getAstObject();
 				
 				$filteredParams = array_slice(
@@ -269,9 +269,9 @@
 			
 			// Check if AstIn already exists and replace its parameters
 			try {
-				$visitor = new GetMainEntityInAst($astIdentifier);
+				$visitor = new DetectPrimaryKeyInClause($astIdentifier);
 				$ast->getConditions()?->accept($visitor);
-			} catch (GetMainEntityInAstException $exception) {
+			} catch (DetectPrimaryKeyInClauseException $exception) {
 				$exception->getAstObject()->setParameters($astValues);
 				return;
 			}

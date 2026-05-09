@@ -5,7 +5,7 @@
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRange;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRetrieve;
 	use Quellabs\ObjectQuel\ObjectQuel\AstInterface;
-	use Quellabs\ObjectQuel\ObjectQuel\Visitors\RangesCollector;
+	use Quellabs\ObjectQuel\ObjectQuel\Visitors\CollectRanges;
 	
 	class RangeUtilities {
 		
@@ -19,7 +19,7 @@
 		 * @return AstRange[] Ranges referenced by the node
 		 */
 		public static function collectRangesFromNode(AstInterface $node): array {
-			$visitor = new RangesCollector();
+			$visitor = new CollectRanges();
 			$node->accept($visitor);
 			return $visitor->getCollectedNodes();
 		}
@@ -31,7 +31,7 @@
 		 * @return AstRange[] Ranges referenced by all nodes
 		 */
 		public static function collectRangesFromNodes(array $nodes): array {
-			$visitor = new RangesCollector();
+			$visitor = new CollectRanges();
 			
 			foreach ($nodes as $node) {
 				$node->accept($visitor);

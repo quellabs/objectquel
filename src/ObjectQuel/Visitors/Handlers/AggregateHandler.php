@@ -22,7 +22,7 @@
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstSumU;
 	use Quellabs\ObjectQuel\ObjectQuel\AstInterface;
 	use Quellabs\ObjectQuel\ObjectQuel\Visitors\NodeCollector;
-	use Quellabs\ObjectQuel\ObjectQuel\Visitors\QuelToSQLConvertToString;
+	use Quellabs\ObjectQuel\ObjectQuel\Visitors\BuildSqlFromAst;
 	
 	/**
 	 * Converts ObjectQuel aggregate AST nodes to SQL aggregate functions and existence checks.
@@ -51,21 +51,21 @@
 		/** @var SqlBuilderHelper Utility for constructing SQL fragments and join conditions */
 		private SqlBuilderHelper $sqlBuilder;
 		
-		/** @var QuelToSQLConvertToString Converts AST nodes to their SQL string representations */
-		private QuelToSQLConvertToString $convertToString;
+		/** @var BuildSqlFromAst Converts AST nodes to their SQL string representations */
+		private BuildSqlFromAst $convertToString;
 		
 		/**
 		 * Initializes the aggregate handler with required dependencies.
 		 * @param EntityStore $entityStore Maps entity names to table names and provides schema metadata
 		 * @param string $partOfQuery Current SQL clause context (SELECT, WHERE, etc.) for output formatting
 		 * @param SqlBuilderHelper $sqlBuilder Helper for building SQL components like joins and conditions
-		 * @param QuelToSQLConvertToString $convertToString Converts AST expressions to SQL strings
+		 * @param BuildSqlFromAst $convertToString Converts AST expressions to SQL strings
 		 */
 		public function __construct(
-			EntityStore              $entityStore,
-			string                   $partOfQuery,
-			SqlBuilderHelper         $sqlBuilder,
-			QuelToSQLConvertToString $convertToString,
+			EntityStore      $entityStore,
+			string           $partOfQuery,
+			SqlBuilderHelper $sqlBuilder,
+			BuildSqlFromAst  $convertToString,
 		) {
 			$this->entityStore = $entityStore;
 			$this->partOfQuery = $partOfQuery;
