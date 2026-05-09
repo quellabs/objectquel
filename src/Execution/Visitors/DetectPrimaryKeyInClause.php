@@ -1,7 +1,7 @@
 <?php
 	
 	
-	namespace Quellabs\ObjectQuel\ObjectQuel\Visitors;
+	namespace Quellabs\ObjectQuel\Execution\Visitors;
 	
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstIn;
 	use Quellabs\ObjectQuel\ObjectQuel\AstInterface;

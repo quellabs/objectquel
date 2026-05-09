@@ -5,7 +5,7 @@
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstAlias;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstMin;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRetrieve;
-	use Quellabs\ObjectQuel\ObjectQuel\Visitors\CollectJoinIdentifiers;
+	use Quellabs\ObjectQuel\Planner\Visitors\CollectJoinIdentifiers;
 	use Quellabs\ObjectQuel\Planner\Helpers\AstUtilities;
 	
 	/**

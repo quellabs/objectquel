@@ -18,8 +18,8 @@
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRangeDatabaseTempTable;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRetrieve;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\NodeBinary;
-	use Quellabs\ObjectQuel\ObjectQuel\Visitors\CollectRanges;
-	use Quellabs\ObjectQuel\ObjectQuel\Visitors\DetectNonNullableFieldInSubquery;
+	use Quellabs\ObjectQuel\Planner\Visitors\CollectRanges;
+	use Quellabs\ObjectQuel\Planner\Visitors\DetectNonNullableFieldInSubquery;
 	use Quellabs\ObjectQuel\Planner\Helpers\BinaryOperationHelper;
 	
 	/**

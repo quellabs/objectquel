@@ -12,7 +12,7 @@
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRetrieve;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstSubquery;
 	use Quellabs\ObjectQuel\ObjectQuel\AstInterface;
-	use Quellabs\ObjectQuel\ObjectQuel\Visitors\CollectIdentifiers;
+	use Quellabs\ObjectQuel\Planner\Visitors\CollectIdentifiers;
 	
 	class ExistsRewriter {
 		

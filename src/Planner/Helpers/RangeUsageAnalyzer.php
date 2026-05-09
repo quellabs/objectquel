@@ -9,7 +9,7 @@
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstIdentifier;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRange;
 	use Quellabs\ObjectQuel\ObjectQuel\AstInterface;
-	use Quellabs\ObjectQuel\ObjectQuel\Visitors\CollectIdentifiers;
+	use Quellabs\ObjectQuel\Planner\Visitors\CollectIdentifiers;
 	
 	/**
 	 * RangeUsageAnalyzer

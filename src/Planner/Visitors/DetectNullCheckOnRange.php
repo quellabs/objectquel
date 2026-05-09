@@ -1,7 +1,7 @@
 <?php
 	
 	
-	namespace Quellabs\ObjectQuel\ObjectQuel\Visitors;
+	namespace Quellabs\ObjectQuel\Planner\Visitors;
 	
 	use Quellabs\ObjectQuel\ObjectQuel\AstInterface;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstCheckNull;

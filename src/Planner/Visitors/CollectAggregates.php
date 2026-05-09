@@ -1,6 +1,6 @@
 <?php
 	
-	namespace Quellabs\ObjectQuel\ObjectQuel\Visitors;
+	namespace Quellabs\ObjectQuel\Planner\Visitors;
 	
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstAggregate;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstAny;

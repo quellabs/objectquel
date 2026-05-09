@@ -7,11 +7,11 @@
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRange;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRangeDatabaseSubquery;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRetrieve;
-	use Quellabs\ObjectQuel\ObjectQuel\Visitors\DetectNullCheckOnRange;
-	use Quellabs\ObjectQuel\ObjectQuel\Visitors\DetectNonNullableField;
-	use Quellabs\ObjectQuel\ObjectQuel\Visitors\DetectNonNullableFieldInSubquery;
 	use Quellabs\ObjectQuel\ObjectQuel\AstVisitorInterface;
-	use Quellabs\ObjectQuel\ObjectQuel\Visitors\DetectRangeReference;
+	use Quellabs\ObjectQuel\Planner\Visitors\DetectNullCheckOnRange;
+	use Quellabs\ObjectQuel\Planner\Visitors\DetectNonNullableField;
+	use Quellabs\ObjectQuel\Planner\Visitors\DetectNonNullableFieldInSubquery;
+	use Quellabs\ObjectQuel\Planner\Visitors\DetectRangeReference;
 	
 	/**
 	 * Optimizes JOIN types based on WHERE clause analysis.

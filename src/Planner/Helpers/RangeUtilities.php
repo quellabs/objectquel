@@ -5,7 +5,7 @@
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRange;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRetrieve;
 	use Quellabs\ObjectQuel\ObjectQuel\AstInterface;
-	use Quellabs\ObjectQuel\ObjectQuel\Visitors\CollectRanges;
+	use Quellabs\ObjectQuel\Planner\Visitors\CollectRanges;
 	
 	class RangeUtilities {
 		

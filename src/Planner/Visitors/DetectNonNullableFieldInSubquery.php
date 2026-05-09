@@ -1,6 +1,6 @@
 <?php
 	
-	namespace Quellabs\ObjectQuel\ObjectQuel\Visitors;
+	namespace Quellabs\ObjectQuel\Planner\Visitors;
 	
 	use Quellabs\ObjectQuel\Annotations\Orm\Column;
 	use Quellabs\ObjectQuel\EntityStore;

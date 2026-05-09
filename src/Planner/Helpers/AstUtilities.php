@@ -10,9 +10,9 @@
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRangeDatabase;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRetrieve;
 	use Quellabs\ObjectQuel\ObjectQuel\AstInterface;
-	use Quellabs\ObjectQuel\ObjectQuel\Visitors\CollectAggregates;
-	use Quellabs\ObjectQuel\ObjectQuel\Visitors\CollectIdentifiers;
 	use Quellabs\ObjectQuel\ObjectQuel\Visitors\NodeCollector;
+	use Quellabs\ObjectQuel\Planner\Visitors\CollectAggregates;
+	use Quellabs\ObjectQuel\Planner\Visitors\CollectIdentifiers;
 	
 	/**
 	 * AstUtilities provides common AST manipulation and inspection methods.

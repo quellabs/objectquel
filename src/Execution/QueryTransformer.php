@@ -16,8 +16,8 @@
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRetrieve;
 	use Quellabs\ObjectQuel\ObjectQuel\PrimaryKeyInfo;
 	use Quellabs\ObjectQuel\ObjectQuel\QuelToSQL;
-	use Quellabs\ObjectQuel\ObjectQuel\Visitors\DetectPrimaryKeyInClause;
-	use Quellabs\ObjectQuel\ObjectQuel\Visitors\DetectPrimaryKeyInClauseException;
+	use Quellabs\ObjectQuel\Execution\Visitors\DetectPrimaryKeyInClause;
+	use Quellabs\ObjectQuel\Execution\Visitors\DetectPrimaryKeyInClauseException;
 	
 	class QueryTransformer {
 		
