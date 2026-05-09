@@ -23,7 +23,7 @@
 	use Quellabs\ObjectQuel\ObjectQuel\QueryNormalizer;
 	use Quellabs\ObjectQuel\ObjectQuel\SemanticAnalyzer;
 	use Quellabs\ObjectQuel\Planner\ExecutionPlanBuilder;
-	use Quellabs\ObjectQuel\Planner\QueryTransformer;
+	use Quellabs\ObjectQuel\Planner\QueryOptimizer;
 	
 	/**
 	 * Orchestrates query execution by delegating to specialized executors.
@@ -38,7 +38,7 @@
 		private PlatformCapabilities $capabilities;
 		private DatabaseAdapter $connection;
 		private PlanExecutor $planExecutor;
-		private QueryTransformer $transformer;
+		private QueryOptimizer $transformer;
 		private QueryNormalizer $semanticAnalyserPrefilter;
 		private SemanticAnalyzer $semanticAnalyser;
 		private DatabaseQueryExecutor $databaseExecutor;
@@ -66,7 +66,7 @@
 			$this->planExecutor = new PlanExecutor($this);
 			
 			// Init the transformers
-			$this->transformer = new QueryTransformer($entityManager, $this->capabilities);
+			$this->transformer = new QueryOptimizer($entityManager, $this->capabilities);
 			$this->semanticAnalyserPrefilter = new QueryNormalizer($entityManager->getEntityStore());
 			$this->semanticAnalyser = new SemanticAnalyzer($entityManager->getEntityStore());
 		}

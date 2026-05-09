@@ -5,7 +5,7 @@
 	use Quellabs\ObjectQuel\Capabilities\PlatformCapabilities;
 	use Quellabs\ObjectQuel\EntityManager;
 	use Quellabs\ObjectQuel\Planner\ExecutionStageInterface;
-	use Quellabs\ObjectQuel\Planner\QueryTransformer;
+	use Quellabs\ObjectQuel\Planner\QueryOptimizer;
 	
 	/**
 	 * A dry-run executor that captures generated SQL without executing it.
@@ -21,7 +21,7 @@
 		private array $capturedSql = [];
 		
 		/** @var QueryTransformer Optimizing code */
-		private QueryTransformer $queryOptimizer;
+		private QueryOptimizer $queryOptimizer;
 		
 		/**
 		 * DryRunDatabaseQueryExecutor
@@ -30,7 +30,7 @@
 		 */
 		public function __construct(EntityManager $entityManager, PlatformCapabilities $capabilities) {
 			parent::__construct($entityManager, $capabilities);
-			$this->queryOptimizer = new QueryTransformer($this->entityManager, $this->capabilities);
+			$this->queryOptimizer = new QueryOptimizer($this->entityManager, $this->capabilities);
 		}
 		
 		/**

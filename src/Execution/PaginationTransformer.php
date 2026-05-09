@@ -19,7 +19,7 @@
 	use Quellabs\ObjectQuel\Execution\Visitors\DetectPrimaryKeyInClause;
 	use Quellabs\ObjectQuel\Execution\Visitors\DetectPrimaryKeyInClauseException;
 	
-	class QueryTransformer {
+	class PaginationTransformer {
 		
 		private EntityStore $entityStore;
 		private DatabaseAdapter $connection;

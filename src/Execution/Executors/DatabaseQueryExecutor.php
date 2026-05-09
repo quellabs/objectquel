@@ -8,7 +8,7 @@
 	use Quellabs\ObjectQuel\Exception\EntityResolutionException;
 	use Quellabs\ObjectQuel\Planner\ExecutionStageInterface;
 	use Quellabs\ObjectQuel\Capabilities\PlatformCapabilities;
-	use Quellabs\ObjectQuel\Execution\QueryTransformer;
+	use Quellabs\ObjectQuel\Execution\PaginationTransformer;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRetrieve;
 	use Quellabs\ObjectQuel\Exception\QuelException;
 	use Quellabs\ObjectQuel\ObjectQuel\QuelToSQL;
@@ -19,7 +19,7 @@
 	class DatabaseQueryExecutor {
 		protected EntityManager $entityManager;
 		protected DatabaseAdapter $connection;
-		protected QueryTransformer $queryTransformer;
+		protected PaginationTransformer $queryTransformer;
 		protected PlatformCapabilities $capabilities;
 		
 		/** @var list<string> */
@@ -33,7 +33,7 @@
 			$this->entityManager = $entityManager;
 			$this->connection = $entityManager->getConnection();
 			$this->capabilities = $capabilities;
-			$this->queryTransformer = new QueryTransformer($this->entityManager, $this->capabilities);
+			$this->queryTransformer = new PaginationTransformer($this->entityManager, $this->capabilities);
 		}
 		
 		/**

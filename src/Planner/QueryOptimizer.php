@@ -17,7 +17,7 @@
 	 * Main orchestrator that coordinates all query optimization strategies.
 	 * Acts as a facade that delegates to specialized optimizers.
 	 */
-	class QueryTransformer {
+	class QueryOptimizer {
 		
 		// EntityStore for metadata
 		private EntityStore $entityStore;
