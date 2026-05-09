@@ -258,12 +258,12 @@
 		 * Searches for entities based on the given entity type and primary key.
 		 * @template T
 		 * @param class-string<T> $entityType The fully qualified class name of the container
-		 * @param mixed $primaryKey The primary key of the entity
+		 * @param array<string, mixed> $primaryKey The primary key of the entity
 		 * @return T[] The found entities
 		 * @throws QuelException
 		 * @throws EntityResolutionException
 		 */
-		public function findBy(string $entityType, mixed $primaryKey): array {
+		public function findBy(string $entityType, array $primaryKey): array {
 			// Normalize the primary key
 			$primaryKeys = $this->entityStore->formatPrimaryKeyAsArray($primaryKey, $entityType);
 			
