@@ -45,8 +45,8 @@
 	use Quellabs\ObjectQuel\ObjectQuel\AstVisitorInterface;
 	use Quellabs\ObjectQuel\ObjectQuel\Handlers\AggregateHandler;
 	use Quellabs\ObjectQuel\ObjectQuel\Handlers\ExpressionHandler;
-	use Quellabs\ObjectQuel\ObjectQuel\Handlers\SqlBuilderHelper;
 	use Quellabs\ObjectQuel\ObjectQuel\Handlers\TypeInferenceHelper;
+	use Quellabs\ObjectQuel\ObjectQuel\Helpers\SqlBuilderHelper;
 	
 	/**
 	 * QuelToSQLConvertToString - AST to SQL Converter

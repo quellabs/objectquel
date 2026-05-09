@@ -1,6 +1,6 @@
 <?php
 	
-	namespace Quellabs\ObjectQuel\ObjectQuel\Handlers;
+	namespace Quellabs\ObjectQuel\ObjectQuel\Helpers;
 	
 	use Quellabs\ObjectQuel\Annotations\Orm\Column;
 	use Quellabs\ObjectQuel\Annotations\Orm\FullTextIndex;
