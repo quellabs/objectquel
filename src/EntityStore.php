@@ -618,7 +618,14 @@
 		 * @throws EntityResolutionException
 		 */
 		public function formatPrimaryKeyAsArray(mixed $primaryKey, string $entityType): array {
-			return $this->getMetadata($entityType)->formatPrimaryKeyAsArray($primaryKey);
+			// If the primary key is already an array, return it directly
+			if (is_array($primaryKey)) {
+				return $primaryKey;
+			}
+			
+			// Otherwise, get the first identifier key and create an array with the proper key and value
+			$firstKey = $this->getMetadata($entityType)->identifierKeys[0] ?? null;
+			return $firstKey ? [$firstKey => $primaryKey] : [];
 		}
 		
 		// ==================== Private Helper Methods ====================

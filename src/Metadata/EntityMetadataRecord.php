@@ -173,23 +173,4 @@
 		public function isVersioned(string $property): bool {
 			return isset($this->versionColumns[$property]);
 		}
-		
-		/**
-		 * Normalizes the primary key into an array.
-		 * This function checks if the given primary key is already an array.
-		 * If not, it converts the primary key into an array with the proper key
-		 * based on the entity's identifier keys.
-		 * @param mixed $primaryKey The primary key to be normalized
-		 * @return array<string, mixed> A normalized representation of the primary key as an array
-		 */
-		public function formatPrimaryKeyAsArray(mixed $primaryKey): array {
-			// If the primary key is already an array, return it directly
-			if (is_array($primaryKey)) {
-				return $primaryKey;
-			}
-			
-			// Otherwise, get the first identifier key and create an array with the proper key and value
-			$firstKey = $this->identifierKeys[0] ?? null;
-			return $firstKey ? [$firstKey => $primaryKey] : [];
-		}
 	}
