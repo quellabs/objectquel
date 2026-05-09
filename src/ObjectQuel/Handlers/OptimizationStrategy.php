@@ -1,6 +1,6 @@
 <?php
 	
-	namespace Quellabs\ObjectQuel\ObjectQuel\Visitors\Handlers;
+	namespace Quellabs\ObjectQuel\ObjectQuel\Handlers;
 	
 	/**
 	 * This enum-like class replaces multiple boolean checks with clear strategy types,

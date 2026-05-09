@@ -1,6 +1,6 @@
 <?php
 	
-	namespace Quellabs\ObjectQuel\ObjectQuel\Visitors\Handlers;
+	namespace Quellabs\ObjectQuel\ObjectQuel\Handlers;
 	
 	use Quellabs\ObjectQuel\EntityStore;
 	use Quellabs\ObjectQuel\Exception\EntityResolutionException;
@@ -38,7 +38,7 @@
 	 * - Subquery generation: Scalar subqueries for complex aggregation scenarios
 	 * - NULL handling: Automatic COALESCE for SUM operations
 	 *
-	 * @package Quellabs\ObjectQuel\ObjectQuel\Visitors\Handlers
+	 * @package Quellabs\ObjectQuel\ObjectQuel\Handlers
 	 */
 	class AggregateHandler {
 		

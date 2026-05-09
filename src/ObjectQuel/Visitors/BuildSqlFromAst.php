@@ -43,10 +43,10 @@
 	use Quellabs\ObjectQuel\Capabilities\PlatformCapabilitiesInterface;
 	use Quellabs\ObjectQuel\Capabilities\NullPlatformCapabilities;
 	use Quellabs\ObjectQuel\ObjectQuel\AstVisitorInterface;
-	use Quellabs\ObjectQuel\ObjectQuel\Visitors\Handlers\AggregateHandler;
-	use Quellabs\ObjectQuel\ObjectQuel\Visitors\Handlers\ExpressionHandler;
-	use Quellabs\ObjectQuel\ObjectQuel\Visitors\Handlers\SqlBuilderHelper;
-	use Quellabs\ObjectQuel\ObjectQuel\Visitors\Handlers\TypeInferenceHelper;
+	use Quellabs\ObjectQuel\ObjectQuel\Handlers\AggregateHandler;
+	use Quellabs\ObjectQuel\ObjectQuel\Handlers\ExpressionHandler;
+	use Quellabs\ObjectQuel\ObjectQuel\Handlers\SqlBuilderHelper;
+	use Quellabs\ObjectQuel\ObjectQuel\Handlers\TypeInferenceHelper;
 	
 	/**
 	 * QuelToSQLConvertToString - AST to SQL Converter
