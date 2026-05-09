@@ -612,12 +612,18 @@
 		 * This function checks if the given primary key is already an array.
 		 * If not, it converts the primary key into an array with the proper key
 		 * based on the entity type.
-		 * @param array<string, mixed> $primaryKey The primary key to be normalized
+		 * @param array<string, mixed>|int|string $primaryKey The primary key to be normalized
 		 * @param string $entityType The type of entity for which the primary key is needed
 		 * @return array<string, mixed> A normalized representation of the primary key as an array
 		 * @throws EntityResolutionException
 		 */
-		public function formatPrimaryKeyAsArray(array $primaryKey, string $entityType): array {
+		public function formatPrimaryKeyAsArray(array|int|string $primaryKey, string $entityType): array {
+			// If the primary key is already an array, return it directly
+			if (is_array($primaryKey)) {
+				return $primaryKey;
+			}
+			
+			// Otherwise, get the first identifier key and create an array with the proper key and value
 			$firstKey = $this->getMetadata($entityType)->identifierKeys[0] ?? null;
 			return $firstKey ? [$firstKey => $primaryKey] : [];
 		}
