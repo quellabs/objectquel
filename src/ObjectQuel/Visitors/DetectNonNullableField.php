@@ -3,6 +3,7 @@
 	namespace Quellabs\ObjectQuel\ObjectQuel\Visitors;
 	
 	use Quellabs\ObjectQuel\EntityStore;
+	use Quellabs\ObjectQuel\Exception\EntityResolutionException;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstIdentifier;
 	use Quellabs\ObjectQuel\ObjectQuel\AstInterface;
 	use Quellabs\ObjectQuel\ObjectQuel\AstVisitorInterface;
@@ -35,6 +36,7 @@
 		/**
 		 * Visits a node and records whether it is a non-nullable field reference for the target range.
 		 * @param AstInterface $node
+		 * @throws EntityResolutionException
 		 */
 		public function visitNode(AstInterface $node): void {
 			// Short-circuit once a match is already recorded
@@ -71,7 +73,7 @@
 			}
 			
 			// Get column definitions for this entity
-			$columnDefinitions = $this->entityStore->extractEntityColumnDefinitions($entityName);
+			$columnDefinitions = $this->entityStore->getEntityColumnDefinitions($entityName);
 			
 			// Get the column map to find the actual column name
 			$columnMap = $this->entityStore->getColumnMap($entityName);

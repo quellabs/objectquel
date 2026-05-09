@@ -238,7 +238,7 @@
 			
 			// Pull the column definition map from metadata, e.g.:
 			//   ['id' => ['nullable' => false, ...], 'name' => ['nullable' => true, ...], ...]
-			$columnMap = $this->entityStore->extractEntityColumnDefinitions($entityName);
+			$columnMap = $this->entityStore->getEntityColumnDefinitions($entityName);
 			
 			// Retrieve the immediate member name following the identifier (the "field").
 			// This assumes the AST organizes chained identifiers as a linked structure.

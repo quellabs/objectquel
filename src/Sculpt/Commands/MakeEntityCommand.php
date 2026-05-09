@@ -761,7 +761,7 @@
 					return $result;
 				}
 				
-				$columnDefinitions = $this->getEntityStore()->extractEntityColumnDefinitions($fullEntityName);
+				$columnDefinitions = $this->getEntityStore()->getEntityColumnDefinitions($fullEntityName);
 				$columnMap = $this->getEntityStore()->getColumnMap($fullEntityName);
 				
 				// Map the PHP field name to its database column name, then look up the column definition

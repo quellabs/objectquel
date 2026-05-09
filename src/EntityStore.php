@@ -603,7 +603,7 @@
 		 * @return array<string, mixed> An associative array of column definitions indexed by column name
 		 * @throws EntityResolutionException
 		 */
-		public function extractEntityColumnDefinitions(string $className): array {
+		public function getEntityColumnDefinitions(string $className): array {
 			return $this->getMetadata($className)->columnDefinitions;
 		}
 		
