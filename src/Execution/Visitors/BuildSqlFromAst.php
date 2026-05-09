@@ -3,6 +3,10 @@
 	namespace Quellabs\ObjectQuel\Execution\Visitors;
 	
 	use Quellabs\ObjectQuel\EntityStore;
+	use Quellabs\ObjectQuel\Execution\Helpers\BuildSqlFragments;
+	use Quellabs\ObjectQuel\Execution\Helpers\ProcessAggregate;
+	use Quellabs\ObjectQuel\Execution\Helpers\ProcessExpression;
+	use Quellabs\ObjectQuel\Execution\Helpers\ResolveType;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstAlias;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstAny;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstAvg;

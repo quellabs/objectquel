@@ -11,7 +11,7 @@
 	use Quellabs\ObjectQuel\Exception\TransformationException;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRangeDatabase;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRetrieve;
-	use Quellabs\ObjectQuel\Planner\Visitors\InjectDiscriminatorCondition;
+	use Quellabs\ObjectQuel\Planner\Helpers\InjectDiscriminatorCondition;
 	
 	/**
 	 * Main orchestrator that coordinates all query optimization strategies.

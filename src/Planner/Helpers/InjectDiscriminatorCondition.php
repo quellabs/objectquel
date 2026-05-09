@@ -1,6 +1,6 @@
 <?php
 	
-	namespace Quellabs\ObjectQuel\Planner\Visitors;
+	namespace Quellabs\ObjectQuel\Planner\Helpers;
 	
 	use Quellabs\AnnotationReader\Exception\AnnotationReaderException;
 	use Quellabs\ObjectQuel\Annotations\Orm\DiscriminatorColumn;

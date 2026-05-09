@@ -1,9 +1,10 @@
 <?php
 	
-	namespace Quellabs\ObjectQuel\Execution\Visitors;
+	namespace Quellabs\ObjectQuel\Execution\Helpers;
 	
 	use Quellabs\ObjectQuel\EntityStore;
 	use Quellabs\ObjectQuel\Exception\EntityResolutionException;
+	use Quellabs\ObjectQuel\Execution\Visitors\BuildSqlFromAst;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstAggregate;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstAny;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstAvg;
