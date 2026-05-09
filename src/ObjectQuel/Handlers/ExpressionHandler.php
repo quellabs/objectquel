@@ -28,6 +28,7 @@
 	use Quellabs\ObjectQuel\Capabilities\NullPlatformCapabilities;
 	use Quellabs\ObjectQuel\ObjectQuel\AstInterface;
 	use Quellabs\ObjectQuel\ObjectQuel\Helpers\SqlBuilderHelper;
+	use Quellabs\ObjectQuel\ObjectQuel\Helpers\TypeInferenceHelper;
 	
 	/**
 	 * ExpressionHandler - Converts AST expression nodes to SQL equivalents

@@ -45,7 +45,7 @@
 	use Quellabs\ObjectQuel\ObjectQuel\AstVisitorInterface;
 	use Quellabs\ObjectQuel\ObjectQuel\Handlers\AggregateHandler;
 	use Quellabs\ObjectQuel\ObjectQuel\Handlers\ExpressionHandler;
-	use Quellabs\ObjectQuel\ObjectQuel\Handlers\TypeInferenceHelper;
+	use Quellabs\ObjectQuel\ObjectQuel\Helpers\TypeInferenceHelper;
 	use Quellabs\ObjectQuel\ObjectQuel\Helpers\SqlBuilderHelper;
 	
 	/**
