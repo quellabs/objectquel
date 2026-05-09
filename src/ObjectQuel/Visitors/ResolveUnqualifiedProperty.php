@@ -32,7 +32,7 @@
 	 * qualified identifiers) and BEFORE EntityNameNormalizer (so the rewritten
 	 * nodes are normalized together with the rest of the AST).
 	 */
-	class ResolveUnqualifiedFindProperty extends FindPropertyRange implements AstVisitorInterface {
+	class ResolveUnqualifiedProperty extends FindPropertyRange implements AstVisitorInterface {
 		
 		/** @var AstRange[] */
 		private array $ranges;

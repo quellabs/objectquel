@@ -11,7 +11,7 @@
 	use Quellabs\ObjectQuel\ObjectQuel\Visitors\ResolveRangeDatabaseProxy;
 	use Quellabs\ObjectQuel\ObjectQuel\Visitors\ExpandMacros;
 	use Quellabs\ObjectQuel\ObjectQuel\Visitors\RewriteViaRelationToJoinCondition;
-	use Quellabs\ObjectQuel\ObjectQuel\Visitors\ResolveUnqualifiedFindProperty;
+	use Quellabs\ObjectQuel\ObjectQuel\Visitors\ResolveUnqualifiedProperty;
 	
 	/**
 	 * This class orchestrates a multistep transformation process that converts high-level
@@ -58,7 +58,7 @@
 			
 			// Step 3: Resolve unqualified property names to range-prefixed identifiers
 			// Allows bare names like 'name' to be written instead of 'p.name' when unambiguous
-			$this->processWithVisitor($ast, ResolveUnqualifiedFindProperty::class, $this->entityStore, $ast->getRanges());
+			$this->processWithVisitor($ast, ResolveUnqualifiedProperty::class, $this->entityStore, $ast->getRanges());
 			
 			// Step 4: Expand macro definitions with their actual implementations
 			// Replaces macro placeholder nodes with the full macro body/logic
