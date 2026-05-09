@@ -11,7 +11,7 @@
 	use Quellabs\ObjectQuel\ObjectQuel\Visitors\ResolveRangeDatabaseProxy;
 	use Quellabs\ObjectQuel\ObjectQuel\Visitors\ExpandMacros;
 	use Quellabs\ObjectQuel\ObjectQuel\Visitors\RewriteViaRelationToJoinCondition;
-	use Quellabs\ObjectQuel\ObjectQuel\Visitors\ResolveUnqualifiedProperty;
+	use Quellabs\ObjectQuel\ObjectQuel\Helpers\ResolveUnqualifiedProperty;
 	
 	/**
 	 * This class orchestrates a multistep transformation process that converts high-level
