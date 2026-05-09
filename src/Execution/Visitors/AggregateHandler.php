@@ -20,7 +20,6 @@
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstSum;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstSumU;
 	use Quellabs\ObjectQuel\ObjectQuel\AstInterface;
-	use Quellabs\ObjectQuel\ObjectQuel\Helpers\SqlBuilderHelper;
 	use Quellabs\ObjectQuel\ObjectQuel\Visitors\NodeCollector;
 	
 	/**

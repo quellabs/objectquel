@@ -7,9 +7,9 @@
 	use Quellabs\ObjectQuel\Exception\HydrationException;
 	use Quellabs\ObjectQuel\Exception\QuelException;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRetrieve;
-	use Quellabs\ObjectQuel\ObjectQuel\Helpers\EntityHydrator;
-	use Quellabs\ObjectQuel\ObjectQuel\Helpers\RelationshipLoader;
-	use Quellabs\ObjectQuel\ObjectQuel\Helpers\ResultTransformer;
+	use Quellabs\ObjectQuel\Execution\Hydration\EntityHydrator;
+	use Quellabs\ObjectQuel\Execution\Hydration\RelationshipLoader;
+	use Quellabs\ObjectQuel\Execution\Hydration\ResultTransformer;
 	
 	/**
 	 * Represents a Quel result.

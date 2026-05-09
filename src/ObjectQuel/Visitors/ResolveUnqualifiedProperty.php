@@ -8,7 +8,6 @@
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRange;
 	use Quellabs\ObjectQuel\ObjectQuel\AstInterface;
 	use Quellabs\ObjectQuel\ObjectQuel\AstVisitorInterface;
-	use Quellabs\ObjectQuel\ObjectQuel\Helpers\PropertyRangeFinder;
 	use Quellabs\ObjectQuel\ObjectQuel\IdentifierType;
 	
 	/**

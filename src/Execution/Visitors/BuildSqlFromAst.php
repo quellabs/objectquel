@@ -43,8 +43,6 @@
 	use Quellabs\ObjectQuel\Capabilities\PlatformCapabilitiesInterface;
 	use Quellabs\ObjectQuel\Capabilities\NullPlatformCapabilities;
 	use Quellabs\ObjectQuel\ObjectQuel\AstVisitorInterface;
-	use Quellabs\ObjectQuel\ObjectQuel\Helpers\TypeInferenceHelper;
-	use Quellabs\ObjectQuel\ObjectQuel\Helpers\SqlBuilderHelper;
 	
 	/**
 	 * BuildSqlFromAst - AST to SQL Converter
