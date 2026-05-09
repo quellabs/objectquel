@@ -14,12 +14,12 @@
 	use Quellabs\ObjectQuel\ObjectQuel\Visitors\ResolveUnqualifiedProperty;
 	
 	/**
-	 * This class orchestrates a multi-step transformation process that converts high-level
+	 * This class orchestrates a multistep transformation process that converts high-level
 	 * ObjectQuel queries into a format suitable for SQL generation. The transformation
 	 * handles macro expansion, range processing, namespace resolution, and relationship
 	 * mapping through a series of visitor pattern implementations.
 	 */
-	class SemanticAnalyserPrefilter {
+	class QueryNormalizer {
 		
 		/**
 		 * Entity store containing metadata about all available entities and their relationships.

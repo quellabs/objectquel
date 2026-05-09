@@ -20,7 +20,7 @@
 	use Quellabs\ObjectQuel\ObjectQuel\QuelResult;
 	use Quellabs\ObjectQuel\Execution\Executors\DatabaseQueryExecutor;
 	use Quellabs\ObjectQuel\Execution\Executors\JsonQueryExecutor;
-	use Quellabs\ObjectQuel\ObjectQuel\SemanticAnalyserPrefilter;
+	use Quellabs\ObjectQuel\ObjectQuel\QueryNormalizer;
 	use Quellabs\ObjectQuel\ObjectQuel\SemanticAnalyzer;
 	use Quellabs\ObjectQuel\Planner\ExecutionPlanBuilder;
 	use Quellabs\ObjectQuel\Planner\QueryTransformer;
@@ -39,7 +39,7 @@
 		private DatabaseAdapter $connection;
 		private PlanExecutor $planExecutor;
 		private QueryTransformer $transformer;
-		private SemanticAnalyserPrefilter $semanticAnalyserPrefilter;
+		private QueryNormalizer $semanticAnalyserPrefilter;
 		private SemanticAnalyzer $semanticAnalyser;
 		private DatabaseQueryExecutor $databaseExecutor;
 		private JsonQueryExecutor $jsonExecutor;
@@ -67,7 +67,7 @@
 			
 			// Init the transformers
 			$this->transformer = new QueryTransformer($entityManager, $this->capabilities);
-			$this->semanticAnalyserPrefilter = new SemanticAnalyserPrefilter($entityManager->getEntityStore());
+			$this->semanticAnalyserPrefilter = new QueryNormalizer($entityManager->getEntityStore());
 			$this->semanticAnalyser = new SemanticAnalyzer($entityManager->getEntityStore());
 		}
 		
