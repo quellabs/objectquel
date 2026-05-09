@@ -10,7 +10,7 @@
 	use Quellabs\ObjectQuel\ObjectQuel\AstVisitorInterface;
 	use Quellabs\ObjectQuel\Planner\Visitors\DetectNullCheckOnRange;
 	use Quellabs\ObjectQuel\Planner\Visitors\DetectNonNullableField;
-	use Quellabs\ObjectQuel\Planner\Visitors\DetectRangeReference;
+	use Quellabs\ObjectQuel\Planner\Visitors\CheckRangeReference;
 	
 	/**
 	 * Optimizes JOIN types based on WHERE clause analysis.
@@ -82,7 +82,7 @@
 			
 			// Check whether the WHERE clause references any field from this range at all.
 			// No references means no basis for conversion in either direction.
-			$usesRangeVisitor = new DetectRangeReference($range->getName());
+			$usesRangeVisitor = new CheckRangeReference($range);
 			$this->runVisitor($ast, $usesRangeVisitor);
 			
 			// Only run the nullability visitor when there are field references and no null checks,
