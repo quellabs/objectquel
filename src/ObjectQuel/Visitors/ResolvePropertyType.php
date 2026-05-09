@@ -1,7 +1,7 @@
 <?php
 	
 	
-	namespace Quellabs\ObjectQuel\ObjectQuel\Resolvers;
+	namespace Quellabs\ObjectQuel\ObjectQuel\Visitors;
 	
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstIdentifier;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRangeDatabase;

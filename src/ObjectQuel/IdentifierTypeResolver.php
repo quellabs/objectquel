@@ -4,9 +4,9 @@
 	
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRangeDatabaseSubquery;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRetrieve;
-	use Quellabs\ObjectQuel\ObjectQuel\Resolvers\ResolveIdentifierRange;
-	use Quellabs\ObjectQuel\ObjectQuel\Resolvers\ResolvePropertyType;
-	use Quellabs\ObjectQuel\ObjectQuel\Resolvers\ResolveRootIdentifierType;
+	use Quellabs\ObjectQuel\ObjectQuel\Visitors\ResolveIdentifierRange;
+	use Quellabs\ObjectQuel\ObjectQuel\Visitors\ResolvePropertyType;
+	use Quellabs\ObjectQuel\ObjectQuel\Visitors\ResolveRootIdentifierType;
 	
 	class IdentifierTypeResolver {
 		
