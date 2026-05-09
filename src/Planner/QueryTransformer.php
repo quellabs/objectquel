@@ -8,8 +8,10 @@
 	use Quellabs\ObjectQuel\EntityStore;
 	use Quellabs\ObjectQuel\Exception\EntityResolutionException;
 	use Quellabs\ObjectQuel\Exception\QuelException;
+	use Quellabs\ObjectQuel\Exception\TransformationException;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRangeDatabase;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRetrieve;
+	use Quellabs\ObjectQuel\Planner\Visitors\InjectDiscriminatorCondition;
 	
 	/**
 	 * Main orchestrator that coordinates all query optimization strategies.
@@ -54,9 +56,14 @@
 		 * Applies optimizations recursively to nested queries first (depth-first),
 		 * then optimizes the outer query.
 		 * @param AstRetrieve $ast The query AST to optimize in-place
-		 * @throws QuelException|EntityResolutionException
+		 * @throws QuelException|EntityResolutionException|TransformationException
 		 */
 		public function transform(AstRetrieve $ast): void {
+			// Step 2.5: Inject discriminator conditions for single-table inheritance
+			// Iterates ranges directly — no need for a full AST traversal since
+			// ranges only ever appear in AstRetrieve::$ranges.
+			$this->injectDiscriminatorConditions($ast);
+			
 			// Complete all database range entity namespaces
 			$this->resolveEntityNamespaces($ast);
 			
@@ -84,6 +91,24 @@
 			$this->joinOptimizer->optimize($ast);
 			$this->rangeOptimizer->removeUnusedLeftJoinRanges($ast, false);
 			$this->JoinConditionFieldInjector->optimize($ast);
+		}
+		
+		/**
+		 * Injects discriminator conditions into the WHERE clause for STI subclass ranges.
+		 * @param AstRetrieve $ast
+		 * @return void
+		 * @throws TransformationException
+		 */
+		private function injectDiscriminatorConditions(AstRetrieve $ast): void {
+			$injector = new InjectDiscriminatorCondition($this->entityStore);
+			
+			foreach ($ast->getRanges() as $range) {
+				if (!$range instanceof AstRangeDatabase) {
+					continue;
+				}
+				
+				$injector->process($range, $ast);
+			}
 		}
 		
 		/**

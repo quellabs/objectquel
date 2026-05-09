@@ -12,7 +12,6 @@
 	use Quellabs\ObjectQuel\ObjectQuel\Visitors\SubstituteMacroPlaceholders;
 	use Quellabs\ObjectQuel\ObjectQuel\Visitors\RewriteViaRelationToJoinCondition;
 	use Quellabs\ObjectQuel\ObjectQuel\Visitors\ResolveUnqualifiedProperty;
-	use Quellabs\ObjectQuel\ObjectQuel\Visitors\InjectDiscriminatorCondition;
 	
 	/**
 	 * This class orchestrates a multi-step transformation process that converts high-level
@@ -57,11 +56,6 @@
 			// Resolves entity names to their fully qualified forms using the entity store
 			$this->processWithVisitor($ast, ResolveRangeDatabaseProxy::class, $this->entityStore);
 			
-			// Step 2.5: Inject discriminator conditions for single-table inheritance
-			// Iterates ranges directly — no need for a full AST traversal since
-			// ranges only ever appear in AstRetrieve::$ranges.
-			$this->injectDiscriminatorConditions($ast);
-
 			// Step 3: Resolve unqualified property names to range-prefixed identifiers
 			// Allows bare names like 'name' to be written instead of 'p.name' when unambiguous
 			$this->processWithVisitor($ast, ResolveUnqualifiedProperty::class, $this->entityStore, $ast->getRanges());
@@ -108,24 +102,6 @@
 			// Apply the visitor to the AST using the visitor pattern
 			// The AST will traverse itself and call appropriate visitor methods
 			$ast->accept($visitor);
-		}
-		
-		/**
-		 * Injects discriminator conditions into the WHERE clause for STI subclass ranges.
-		 * @param AstRetrieve $ast
-		 * @return void
-		 * @throws TransformationException
-		 */
-		private function injectDiscriminatorConditions(AstRetrieve $ast): void {
-			$injector = new InjectDiscriminatorCondition($this->entityStore);
-
-			foreach ($ast->getRanges() as $range) {
-				if (!$range instanceof AstRangeDatabase) {
-					continue;
-				}
-
-				$injector->process($range, $ast);
-			}
 		}
 		
 		/**
