@@ -91,6 +91,7 @@
 		 * @throws \InvalidArgumentException When subquery type is not recognized
 		 */
 		public function handleSubquery(AstSubquery $subquery): string {
+			/** @noinspection PhpSwitchCanBeReplacedWithMatchExpressionInspection */
 			switch ($subquery->getType()) {
 				case AstSubquery::TYPE_SCALAR:
 					return $this->buildScalarSubquery($subquery);
@@ -223,17 +224,34 @@
 		 * @return string SQL function name in uppercase
 		 */
 		private function aggregateToString(AstAggregate $aggregateNode) : string {
-			return match (get_class($aggregateNode)) {
-				AstCount::class, AstCountU::class => "COUNT",
-				AstAvg::class, AstAvgU::class => "AVG",
-				AstSum::class, AstSumU::class => "SUM",
-				AstMin::class => "MIN",
-				AstMax::class => "MAX",
-				AstAny::class => "ANY",
-				default => throw new \InvalidArgumentException(
-					'Unsupported aggregate type: ' . get_class($aggregateNode)
-				),
-			};
+			/** @noinspection PhpSwitchCanBeReplacedWithMatchExpressionInspection */
+			switch (get_class($aggregateNode)) {
+				case AstCount::class:
+				case AstCountU::class:
+					return "COUNT";
+					
+				case AstAvg::class:
+				case AstAvgU::class:
+					return "AVG";
+					
+				case AstSum::class:
+				case AstSumU::class:
+					return "SUM";
+					
+				case AstMin::class:
+					return "MIN";
+					
+				case AstMax::class:
+					return "MAX";
+					
+				case AstAny::class:
+					return "ANY";
+					
+				default:
+					return throw new \InvalidArgumentException(
+						'Unsupported aggregate type: ' . get_class($aggregateNode)
+					);
+			}
 		}
 		
 		/**
@@ -262,7 +280,6 @@
 		
 		/**
 		 * Converts AstCount nodes to SQL COUNT() functions.
-		 *
 		 * @param AstCount $count The COUNT AST node to process
 		 * @return string SQL COUNT expression
 		 */
@@ -272,9 +289,7 @@
 		
 		/**
 		 * Converts AstCountU nodes to SQL COUNT(DISTINCT) functions.
-		 *
 		 * Ensures only distinct values are counted, eliminating duplicates.
-		 *
 		 * @param AstCountU $count The COUNT UNIQUE AST node to process
 		 * @return string SQL COUNT(DISTINCT) expression
 		 */
@@ -284,7 +299,6 @@
 		
 		/**
 		 * Converts AstAvg nodes to SQL AVG() functions.
-		 *
 		 * @param AstAvg $avg The AVG AST node to process
 		 * @return string SQL AVG expression
 		 */
@@ -294,9 +308,7 @@
 		
 		/**
 		 * Converts AstAvgU nodes to SQL AVG(DISTINCT) functions.
-		 *
 		 * Calculates average of only unique values, eliminating duplicates before averaging.
-		 *
 		 * @param AstAvgU $avg The AVG UNIQUE AST node to process
 		 * @return string SQL AVG(DISTINCT) expression
 		 */
@@ -306,7 +318,6 @@
 		
 		/**
 		 * Converts AstMax nodes to SQL MAX() functions.
-		 *
 		 * @param AstMax $max The MAX AST node to process
 		 * @return string SQL MAX expression
 		 */
@@ -316,7 +327,6 @@
 		
 		/**
 		 * Converts AstMin nodes to SQL MIN() functions.
-		 *
 		 * @param AstMin $min The MIN AST node to process
 		 * @return string SQL MIN expression
 		 */
@@ -326,9 +336,7 @@
 		
 		/**
 		 * Converts AstSum nodes to SQL SUM() functions.
-		 *
 		 * Automatically wraps result with COALESCE to return 0 instead of NULL when no rows match.
-		 *
 		 * @param AstSum $sum The SUM AST node to process
 		 * @return string SQL SUM expression with NULL handling
 		 */
@@ -338,10 +346,8 @@
 		
 		/**
 		 * Converts AstSumU nodes to SQL SUM(DISTINCT) functions.
-		 *
 		 * Sums only unique values, eliminating duplicates before summation.
 		 * Includes automatic NULL handling with COALESCE.
-		 *
 		 * @param AstSumU $sum The SUM UNIQUE AST node to process
 		 * @return string SQL SUM(DISTINCT) expression with NULL handling
 		 */
@@ -364,6 +370,7 @@
 		 *
 		 * @param AstSubquery $subquery Contains the ANY aggregate and related metadata
 		 * @return string SQL CASE WHEN statement with EXISTS subquery
+		 * @throws EntityResolutionException
 		 */
 		private function buildCaseWhenExistsSubquery(AstSubquery $subquery): string {
 			$ranges     = $subquery->getCorrelatedRanges();
@@ -433,6 +440,7 @@
 		 *
 		 * @param AstSubquery $subquery Contains the ANY aggregate and related metadata
 		 * @return string SQL EXISTS statement
+		 * @throws EntityResolutionException
 		 */
 		private function buildExistsSubquery(AstSubquery $subquery): string {
 			// FROM
@@ -469,6 +477,7 @@
 		 *
 		 * @param AstAny $ast The ANY AST node to process
 		 * @return string SQL existence check expression, or empty string if already processed
+		 * @throws EntityResolutionException
 		 */
 		public function handleAny(AstAny $ast): string {
 			// Check if this ANY is already processed by a parent subquery
@@ -569,7 +578,6 @@
 		
 		/**
 		 * Converts AST expressions to their SQL string representations.
-		 *
 		 * @param AstInterface $expression The AST expression to convert
 		 * @return string SQL string representation
 		 */
@@ -820,33 +828,5 @@
 			}
 			
 			return $result;
-		}
-		
-		// ============================================================================
-		// AST NAVIGATION UTILITIES
-		// ============================================================================
-		
-		/**
-		 * Searches up the AST tree to find the closest AstRetrieve parent node.
-		 *
-		 * AstRetrieve nodes represent the main query structure in ObjectQuel.
-		 * This method is useful for understanding the broader query context
-		 * when processing individual aggregate operations.
-		 *
-		 * @param AstInterface $ast Starting AST node to search from
-		 * @return AstRetrieve|null The closest AstRetrieve ancestor, or null if none found
-		 */
-		public function getRetrieveNode(AstInterface $ast): ?AstRetrieve {
-			$current = $ast->getParent();
-			
-			while ($current !== null) {
-				if ($current instanceof AstRetrieve) {
-					return $current;
-				}
-				
-				$current = $current->getParent();
-			}
-			
-			return null;
 		}
 	}
