@@ -111,6 +111,144 @@
 				return $this->buildColumnNameForEntity($identifier, $rangeName, $entityName);
 			}
 		}
+
+		/**
+		 * Builds the join condition SQL from a join property AST.
+		 * Delegates to the main visitor to process join condition AST nodes and
+		 * return the appropriate SQL string. Falls back to creating a new visitor
+		 * if main visitor is not available.
+		 * @param AstInterface $joinCondition The AST node representing the join condition
+		 * @return string SQL join condition
+		 */
+		public function buildJoinCondition(AstInterface $joinCondition): string {
+			// Check if we have access to the main visitor
+			if (!$this->mainVisitor) {
+				// Fallback: create new visitor only if main visitor not available
+				$visitor = new BuildSqlFromAst(
+					$this->entityStore,
+					$this->parameters,
+					$this->partOfQuery,
+					$this->platform
+				);
+				
+				// Process the join condition AST node
+				$joinCondition->accept($visitor);
+				return $visitor->getResult();
+			}
+			
+			// Use main visitor's visitNodeAndReturnSQL method for consistency
+			return $this->mainVisitor->visitNodeAndReturnSQL($joinCondition);
+		}
+		
+		/**
+		 * Generates SQL for entity column selections with proper aliasing.
+		 * Creates a comma-separated list of all columns for an entity with aliases
+		 * in the format "table.column as `alias.property`". This is used in SELECT
+		 * clauses when selecting entire entities.
+		 * @param AstIdentifier $ast The entity identifier
+		 * @return string Comma-separated list of aliased columns
+		 * @throws \LogicException
+		 * @throws EntityResolutionException
+		 */
+		public function buildEntityColumns(AstIdentifier $ast): string {
+			$result = [];
+			$range = $ast->getRange();
+			
+			if (!$range) {
+				throw new \LogicException(
+					"buildEntityColumns called with an identifier that has no range"
+				);
+			}
+
+			// Fetch the range name
+			$rangeName = $range->getName();
+			
+			// Alias name for subqueries
+			$aliasRangeName = $this->subqueryAliasRangeName ?? $rangeName;
+			
+			// Get all column mappings for this entity
+			$entityName = $ast->getEntityName();
+			
+			if (empty($entityName)) {
+				throw new \LogicException(
+					"buildEntityColumns called with an identifier that has no entity name for range '{$rangeName}'"
+				);
+			}
+			
+			// Fetch the column map
+			$columnMap = $this->entityStore->getColumnMap($entityName);
+			
+			// Build aliased column selections for each property
+			foreach ($columnMap as $item => $value) {
+				// Format: table.column as `alias.property`
+				$result[] = "{$rangeName}.{$value} as `{$aliasRangeName}.{$item}`";
+			}
+			
+			return implode(",", $result);
+		}
+		
+		/**
+		 * Builds search conditions for multiple identifiers based on parsed search terms.
+		 *
+		 * If all identifiers belong to the same entity and that entity has a FullTextIndex
+		 * covering all the searched columns, emits a single MATCH...AGAINST condition.
+		 * Otherwise falls back to LIKE chains for maximum compatibility.
+		 *
+		 * @param AstSearch $search The search AST node containing identifiers
+		 * @param array{
+		 *     or_terms: string[],
+		 *     and_terms: string[],
+		 *     not_terms: string[]
+		 * } $parsed
+		 * @param string $searchKey Unique key for parameter naming
+		 * @return string[] Array of SQL condition strings
+		 */
+		public function buildSearchConditions(AstSearch $search, array $parsed, string $searchKey): array {
+			$fullTextIndex = $this->detectFullTextIndex($search->getIdentifiers());
+			
+			if ($fullTextIndex !== null) {
+				return [$this->buildFullTextCondition($search->getIdentifiers(), $search->getSearchString(), $searchKey)];
+			}
+			
+			// Fall back to LIKE chains per identifier
+			$conditions = [];
+			
+			foreach ($search->getIdentifiers() as $identifier) {
+				$columnName = $this->buildColumnName($identifier);
+				$fieldConditions = $this->buildFieldConditions($columnName, $parsed, $searchKey);
+				
+				if (!empty($fieldConditions)) {
+					$conditions[] = '(' . implode(' AND ', $fieldConditions) . ')';
+				}
+			}
+			
+			return $conditions;
+		}
+		
+		/**
+		 * Builds a MATCH...AGAINST expression for use in SELECT / ORDER BY clauses.
+		 *
+		 * Unlike buildSearchConditions() which wraps the result in a WHERE condition,
+		 * this method returns the raw MATCH...AGAINST value expression so it can be
+		 * used as a numeric score column.
+		 *
+		 * When no FullTextIndex covers the requested columns, returns the literal 0.0.
+		 * All rows score equally, meaning no relevance ranking occurs, but the query
+		 * succeeds. Add a @FullTextIndex annotation to the entity to enable real scoring.
+		 *
+		 * @param AstSearchScore $searchScore The search_score AST node
+		 * @return string SQL MATCH...AGAINST expression, or '0.0' if no full-text index exists
+		 */
+		public function buildSearchScoreExpression(AstSearchScore $searchScore): string {
+			$identifiers = $searchScore->getIdentifiers();
+			$fullTextIndex = $this->detectFullTextIndex($identifiers);
+			
+			if ($fullTextIndex === null) {
+				return '0.0';
+			}
+			
+			return $this->buildFullTextCondition($identifiers, $searchScore->getSearchString(), uniqid());
+		}
 		
 		/**
 		 * Builds column name for entity-based ranges using entity metadata.
@@ -211,148 +349,12 @@
 		}
 		
 		/**
-		 * Builds the join condition SQL from a join property AST.
-		 * Delegates to the main visitor to process join condition AST nodes and
-		 * return the appropriate SQL string. Falls back to creating a new visitor
-		 * if main visitor is not available.
-		 * @param AstInterface $joinCondition The AST node representing the join condition
-		 * @return string SQL join condition
-		 */
-		public function buildJoinCondition(AstInterface $joinCondition): string {
-			// Check if we have access to the main visitor
-			if (!$this->mainVisitor) {
-				// Fallback: create new visitor only if main visitor not available
-				$visitor = new BuildSqlFromAst(
-					$this->entityStore,
-					$this->parameters,
-					$this->partOfQuery,
-					$this->platform
-				);
-				
-				// Process the join condition AST node
-				$joinCondition->accept($visitor);
-				return $visitor->getResult();
-			}
-			
-			// Use main visitor's visitNodeAndReturnSQL method for consistency
-			return $this->mainVisitor->visitNodeAndReturnSQL($joinCondition);
-		}
-		
-		/**
-		 * Generates SQL for entity column selections with proper aliasing.
-		 * Creates a comma-separated list of all columns for an entity with aliases
-		 * in the format "table.column as `alias.property`". This is used in SELECT
-		 * clauses when selecting entire entities.
-		 * @param AstIdentifier $ast The entity identifier
-		 * @return string Comma-separated list of aliased columns
-		 * @throws \LogicException
-		 * @throws EntityResolutionException
-		 */
-		public function buildEntityColumns(AstIdentifier $ast): string {
-			$result = [];
-			$range = $ast->getRange();
-			
-			if (!$range) {
-				throw new \LogicException(
-					"buildEntityColumns called with an identifier that has no range"
-				);
-			}
-
-			// Fetch the range name
-			$rangeName = $range->getName();
-			
-			// Alias name for subqueries
-			$aliasRangeName = $this->subqueryAliasRangeName ?? $rangeName;
-			
-			// Get all column mappings for this entity
-			$entityName = $ast->getEntityName();
-			
-			if (empty($entityName)) {
-				throw new \LogicException(
-					"buildEntityColumns called with an identifier that has no entity name for range '{$rangeName}'"
-				);
-			}
-			
-			$columnMap = $this->entityStore->getColumnMap($entityName);
-			
-			// Build aliased column selections for each property
-			foreach ($columnMap as $item => $value) {
-				// Format: table.column as `alias.property`
-				$result[] = "{$rangeName}.{$value} as `{$aliasRangeName}.{$item}`";
-			}
-			
-			return implode(",", $result);
-		}
-		
-		/**
-		 * Builds search conditions for multiple identifiers based on parsed search terms.
-		 *
-		 * If all identifiers belong to the same entity and that entity has a FullTextIndex
-		 * covering all the searched columns, emits a single MATCH...AGAINST condition.
-		 * Otherwise falls back to LIKE chains for maximum compatibility.
-		 *
-		 * @param AstSearch $search The search AST node containing identifiers
-		 * @param array{
-		 *     or_terms: string[],
-		 *     and_terms: string[],
-		 *     not_terms: string[]
-		 * } $parsed
-		 * @param string $searchKey Unique key for parameter naming
-		 * @return string[] Array of SQL condition strings
-		 */
-		public function buildSearchConditions(AstSearch $search, array $parsed, string $searchKey): array {
-			$fullTextIndex = $this->detectFullTextIndex($search->getIdentifiers());
-			
-			if ($fullTextIndex !== null) {
-				return [$this->buildFullTextCondition($search->getIdentifiers(), $search->getSearchString(), $searchKey)];
-			}
-			
-			// Fall back to LIKE chains per identifier
-			$conditions = [];
-			
-			foreach ($search->getIdentifiers() as $identifier) {
-				$columnName = $this->buildColumnName($identifier);
-				$fieldConditions = $this->buildFieldConditions($columnName, $parsed, $searchKey);
-				
-				if (!empty($fieldConditions)) {
-					$conditions[] = '(' . implode(' AND ', $fieldConditions) . ')';
-				}
-			}
-			
-			return $conditions;
-		}
-		
-		/**
-		 * Builds a MATCH...AGAINST expression for use in SELECT / ORDER BY clauses.
-		 *
-		 * Unlike buildSearchConditions() which wraps the result in a WHERE condition,
-		 * this method returns the raw MATCH...AGAINST value expression so it can be
-		 * used as a numeric score column.
-		 *
-		 * When no FullTextIndex covers the requested columns, returns the literal 0.0.
-		 * All rows score equally, meaning no relevance ranking occurs, but the query
-		 * succeeds. Add a @FullTextIndex annotation to the entity to enable real scoring.
-		 *
-		 * @param AstSearchScore $searchScore The search_score AST node
-		 * @return string SQL MATCH...AGAINST expression, or '0.0' if no full-text index exists
-		 */
-		public function buildSearchScoreExpression(AstSearchScore $searchScore): string {
-			$identifiers = $searchScore->getIdentifiers();
-			$fullTextIndex = $this->detectFullTextIndex($identifiers);
-			
-			if ($fullTextIndex === null) {
-				return '0.0';
-			}
-			
-			return $this->buildFullTextCondition($identifiers, $searchScore->getSearchString(), uniqid());
-		}
-		
-		/**
 		 * Checks whether all given identifiers belong to the same entity and whether
 		 * that entity has a FullTextIndex covering all of them. Returns the matching
 		 * FullTextIndex if found, null otherwise.
 		 * @param AstIdentifier[] $identifiers
 		 * @return FullTextIndex|null
+		 * @throws EntityResolutionException
 		 */
 		private function detectFullTextIndex(array $identifiers): ?FullTextIndex {
 			// Don't do anything if identifiers is empty
@@ -396,6 +398,8 @@
 		 * @param AstString|AstParameter $searchString The raw search term node
 		 * @param string $searchKey Unique key for parameter naming
 		 * @return string SQL MATCH...AGAINST expression
+		 * @throws EntityResolutionException
+		 * @throws QuelException
 		 */
 		private function buildFullTextCondition(array $identifiers, AstString|AstParameter $searchString, string $searchKey): string {
 			// MATCH() requires bare column names — no table alias prefix.
