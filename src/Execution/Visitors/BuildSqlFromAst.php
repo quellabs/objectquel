@@ -3,6 +3,8 @@
 	namespace Quellabs\ObjectQuel\Execution\Visitors;
 	
 	use Quellabs\ObjectQuel\EntityStore;
+	use Quellabs\ObjectQuel\Exception\EntityResolutionException;
+	use Quellabs\ObjectQuel\Exception\QuelException;
 	use Quellabs\ObjectQuel\Execution\Helpers\BuildSqlFragments;
 	use Quellabs\ObjectQuel\Execution\Helpers\ProcessAggregate;
 	use Quellabs\ObjectQuel\Execution\Helpers\ProcessExpression;
@@ -34,6 +36,7 @@
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstNull;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstNumber;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstParameter;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRangeDatabase;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRangeJsonSource;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstSearch;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstSearchScore;
@@ -72,7 +75,7 @@
 		
 		// Helper classes for specialized functionality
 		/** @var BuildSqlFragments Handles SQL construction and column name generation */
-		private BuildSqlFragments $sqlBuilder;
+		private BuildSqlFragments $sqlFragmentBuilder;
 		
 		/** @var ResolveType Handles type inference and validation */
 		private ResolveType $typeInference;
@@ -112,10 +115,33 @@
 			$this->platform = $platform;
 			
 			// Initialize helper classes with proper dependencies and references
-			$this->sqlBuilder = new BuildSqlFragments($this->entityStore, $this->parameters, $this->partOfQuery, $this, $this->platform, $subqueryAliasRangeName);
-			$this->typeInference = new ResolveType($this->entityStore);
-			$this->aggregateHandler = new ProcessAggregate($this->entityStore, $this->partOfQuery, $this->sqlBuilder, $this);
-			$this->expressionHandler = new ProcessExpression($this->sqlBuilder, $this->typeInference, $this->parameters, $this, $this->platform);
+			$this->sqlFragmentBuilder = new BuildSqlFragments(
+				$this->entityStore,
+				$this->parameters,
+				$this->partOfQuery,
+				$this,
+				$this->platform,
+				$subqueryAliasRangeName
+			);
+			
+			$this->typeInference = new ResolveType(
+				$this->entityStore
+			);
+			
+			$this->aggregateHandler = new ProcessAggregate(
+				$this->entityStore,
+				$this->partOfQuery,
+				$this->sqlFragmentBuilder,
+				$this
+			);
+			
+			$this->expressionHandler = new ProcessExpression(
+				$this->entityStore,
+				$this->typeInference,
+				$this->parameters,
+				$this,
+				$this->platform
+			);
 		}
 		
 		/**
@@ -185,6 +211,20 @@
 		}
 		
 		/**
+		 * Builds a fully qualified column name for SQL queries based on an AST identifier.
+		 * Handles both entity-based ranges (with metadata) and temporary table ranges
+		 * (derived from subqueries).
+		 * @param AstIdentifier $identifier The AST identifier to convert
+		 * @return string Fully qualified SQL column name or empty string if no range
+		 * @throws \LogicException
+		 * @throws EntityResolutionException
+		 * @throws QuelException
+		 */
+		public function buildColumnName(AstIdentifier $identifier): string {
+			return $this->expressionHandler->buildColumnName($identifier);
+		}
+		
+		/**
 		 * Get the generated SQL query
 		 * @return string The final SQL query as a concatenated string
 		 */
@@ -199,6 +239,8 @@
 		/**
 		 * Process an AstAlias node
 		 * @param AstAlias $ast The alias node to process
+		 * @throws EntityResolutionException
+		 * @throws QuelException
 		 */
 		protected function handleAlias(AstAlias $ast): void {
 			// Fetch expression
@@ -219,7 +261,7 @@
 			}
 			
 			// Check if this identifier represents an entity
-			if ($this->sqlBuilder->identifierIsEntity($expression)) {
+			if ($this->identifierIsEntity($expression)) {
 				$this->addToVisitedNodes($expression);
 				$this->handleEntity($expression);
 				return;
@@ -245,10 +287,10 @@
 			// Generate appropriate SQL based on query context
 			if ($this->partOfQuery === "SORT") {
 				// For sorting, we need sortable column references
-				$this->result[] = $this->sqlBuilder->buildSortableColumn($ast);
+				$this->result[] = $this->expressionHandler->buildSortableColumn($ast, $this->partOfQuery);
 			} else {
 				// For other contexts, use regular column names
-				$this->result[] = $this->sqlBuilder->buildColumnName($ast);
+				$this->result[] = $this->expressionHandler->buildColumnName($ast);
 			}
 		}
 		
@@ -265,7 +307,7 @@
 			}
 			
 			// Generate SQL for all columns of this entity
-			$this->result[] = $this->sqlBuilder->buildEntityColumns($ast);
+			$this->result[] = $this->sqlFragmentBuilder->buildEntityColumns($ast);
 		}
 		
 		/**
@@ -312,7 +354,7 @@
 		 * @param AstConcat $concat The concatenation node to process
 		 */
 		protected function handleConcat(AstConcat $concat): void {
-			$this->result[] = $this->expressionHandler->handleConcat($concat);
+			$this->result[] = $this->sqlFragmentBuilder->handleConcat($concat);
 		}
 		
 		/**
@@ -320,7 +362,7 @@
 		 * @param AstNot $ast The NOT operation node to process
 		 */
 		protected function handleNot(AstNot $ast): void {
-			$this->result[] = $this->expressionHandler->handleNot($ast);
+			$this->result[] = $this->sqlFragmentBuilder->handleNot($ast);
 		}
 		
 		/**
@@ -328,7 +370,7 @@
 		 * @param AstNull $ast The NULL value node to process
 		 */
 		protected function handleNull(AstNull $ast): void {
-			$this->result[] = $this->expressionHandler->handleNull($ast);
+			$this->result[] = $this->sqlFragmentBuilder->handleNull($ast);
 		}
 		
 		/**
@@ -336,7 +378,7 @@
 		 * @param AstBool $ast The boolean value node to process
 		 */
 		protected function handleBool(AstBool $ast): void {
-			$this->result[] = $this->expressionHandler->handleBool($ast);
+			$this->result[] = $this->sqlFragmentBuilder->handleBool($ast);
 		}
 		
 		/**
@@ -344,7 +386,7 @@
 		 * @param AstNumber $ast The numeric value node to process
 		 */
 		protected function handleNumber(AstNumber $ast): void {
-			$this->result[] = $this->expressionHandler->handleNumber($ast);
+			$this->result[] = $this->sqlFragmentBuilder->handleNumber($ast);
 		}
 		
 		/**
@@ -352,7 +394,7 @@
 		 * @param AstString $ast The string literal node to process
 		 */
 		protected function handleString(AstString $ast): void {
-			$this->result[] = $this->expressionHandler->handleString($ast);
+			$this->result[] = $this->sqlFragmentBuilder->handleString($ast);
 		}
 		
 		/**
@@ -361,7 +403,7 @@
 		 * @param AstParameter $ast The parameter node to process
 		 */
 		protected function handleParameter(AstParameter $ast): void {
-			$this->result[] = $this->expressionHandler->handleParameter($ast);
+			$this->result[] = $this->sqlFragmentBuilder->handleParameter($ast);
 		}
 		
 		/**
@@ -369,7 +411,7 @@
 		 * @param AstIn $ast The IN operation node to process
 		 */
 		protected function handleIn(AstIn $ast): void {
-			$this->result[] = $this->expressionHandler->handleIn($ast);
+			$this->result[] = $this->sqlFragmentBuilder->handleIn($ast);
 		}
 		
 		/**
@@ -377,7 +419,7 @@
 		 * @param AstCheckNull $ast The NULL check node to process
 		 */
 		protected function handleCheckNull(AstCheckNull $ast): void {
-			$this->result[] = $this->expressionHandler->handleCheckNull($ast);
+			$this->result[] = $this->sqlFragmentBuilder->handleCheckNull($ast);
 		}
 		
 		/**
@@ -385,7 +427,7 @@
 		 * @param AstCheckNotNull $ast The NOT NULL check node to process
 		 */
 		protected function handleCheckNotNull(AstCheckNotNull $ast): void {
-			$this->result[] = $this->expressionHandler->handleCheckNotNull($ast);
+			$this->result[] = $this->sqlFragmentBuilder->handleCheckNotNull($ast);
 		}
 		
 		/**
@@ -540,7 +582,7 @@
 		 * @return void
 		 */
 		protected function handleIfNull(AstIfNull $ast): void {
-			$this->result[] = $this->expressionHandler->handleIfNull($ast);
+			$this->result[] = $this->sqlFragmentBuilder->handleIfNull($ast);
 		}
 		
 		/**
@@ -611,5 +653,21 @@
 		 */
 		private function extractClassName(object $node): string {
 			return basename(str_replace('\\', '/', get_class($node)));
+		}
+		
+		/**
+		 * Returns true if the identifier is an entity, false if not.
+		 * Determines whether an AST identifier refers to an entire entity (table)
+		 * or a specific property within an entity. Entity identifiers don't have
+		 * a "next" node in the identifier chain.
+		 * @param AstInterface $ast The AST node to check
+		 * @return bool True if identifier represents an entity, false otherwise
+		 */
+		private function identifierIsEntity(AstInterface $ast): bool {
+			return (
+				$ast instanceof AstIdentifier &&           // Must be an identifier
+				$ast->getRange() instanceof AstRangeDatabase && // Must have database range
+				!$ast->hasNext()                          // Must not have property chain
+			);
 		}
 	}
