@@ -6,7 +6,9 @@
 	use Quellabs\ObjectQuel\DatabaseAdapter\TypeMapper;
 	use Quellabs\ObjectQuel\EntityStore;
 	use Quellabs\ObjectQuel\Exception\EntityResolutionException;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstAggregate;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstIdentifier;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstUnaryOperation;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\NodeBinary;
 	use Quellabs\ObjectQuel\ObjectQuel\AstInterface;
 	
@@ -50,6 +52,19 @@
 				return $this->inferReturnTypeOfIdentifier($ast);
 			}
 			
+			// Aggregates (SUM, AVG, MIN, MAX, and their DISTINCT variants) produce the
+			// same type as their argument. SUM(floatCol) is float, MIN(intCol) is integer.
+			// AstCount/AstCountU are intentionally excluded — they always return integer
+			// regardless of the argument type, and they declare that via getReturnType().
+			if ($ast instanceof AstAggregate) {
+				return $this->inferReturnType($ast->getIdentifier());
+			}
+
+			// Unary sign operators (+x, -x) do not change the numeric type of the operand.
+			if ($ast instanceof AstUnaryOperation) {
+				return $this->inferReturnType($ast->getExpression());
+			}
+
 			// Traverse down the parse tree for binary operations (terms/factors)
 			if ($ast instanceof NodeBinary) {
 				// Recursively get types of left and right operands
@@ -69,7 +84,10 @@
 				}
 			}
 			
-			// Fallback: use the node's own declared return type if available
+			// Fallback: use the node's own declared return type if available.
+			// Covers AstCount, AstCountU, AstBool, AstNull, AstString, AstNumber, etc.
+			// Nodes without getReturnType() (AstCase, AstTernary, AstIfNull) return null
+			// here, which causes the caller to fall back to a safe runtime REGEXP.
 			return $ast->getReturnType();
 		}
 		
