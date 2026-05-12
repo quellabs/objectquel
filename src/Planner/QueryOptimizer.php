@@ -60,6 +60,7 @@
 		 * Applies optimizations recursively to nested queries first (depth-first),
 		 * then optimizes the outer query.
 		 * @param AstRetrieve $ast The query AST to optimize in-place
+		 * @param array<string, mixed> $parameters Runtime query parameters
 		 * @throws QuelException|EntityResolutionException|TransformationException
 		 */
 		public function transform(AstRetrieve $ast, array $parameters): void {
@@ -108,7 +109,7 @@
 		 * Recursively transform all nested queries in temporary range definitions.
 		 * Ensures that inner queries are fully resolved before the outer query is processed.
 		 * @param AstRetrieve $ast The query AST containing potential nested queries
-		 * @param array $parameters
+		 * @param array<string, mixed> $parameters Runtime query parameters
 		 * @return void Modifies nested queries in-place
 		 * @throws TransformationException
 		 * @throws EntityResolutionException|QuelException

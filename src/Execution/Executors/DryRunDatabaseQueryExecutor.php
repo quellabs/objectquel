@@ -41,7 +41,7 @@
 		 * @return list<array<string, mixed>> Always returns an empty array
 		 */
 		public function execute(ExecutionStageInterface $stage, array $initialParams = []): array {
-			$this->queryOptimizer->transform($stage->getQuery());
+			$this->queryOptimizer->transform($stage->getQuery(), $initialParams);
 			$this->queryTransformer->transform($stage->getQuery(), $initialParams);
 			$this->capturedSql[] = $this->convertToSQL($stage->getQuery(), $initialParams);
 			return [];
