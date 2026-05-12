@@ -157,8 +157,8 @@
 			$queryType = $stage->getRange() instanceof AstRangeJsonSource ? 'json' : 'database';
 			
 			return match ($queryType) {
-				'json' => $this->jsonExecutor->execute($stage, $this->queryExecutor->normalizeParams($initialParams)),
-				'database' => $this->databaseExecutor->execute($stage, $this->queryExecutor->normalizeParams($initialParams)),
+				'json' => $this->jsonExecutor->execute($stage, $initialParams),
+				'database' => $this->databaseExecutor->execute($stage, $initialParams),
 			};
 		}
 		

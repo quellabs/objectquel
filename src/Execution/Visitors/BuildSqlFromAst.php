@@ -276,6 +276,8 @@
 		/**
 		 * Process an AstIdentifier node
 		 * @param AstIdentifier $ast The identifier node to process
+		 * @throws EntityResolutionException
+		 * @throws QuelException
 		 */
 		protected function handleIdentifier(AstIdentifier $ast): void {
 			// Mark this identifier as visited

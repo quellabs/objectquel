@@ -42,6 +42,7 @@
 		 * @param array<string, mixed> $initialParams
 		 * @return list<array<string, mixed>>
 		 * @throws QuelException
+		 * @throws EntityResolutionException
 		 */
 		public function execute(ExecutionStageInterface $stage, array $initialParams = []): array {
 			// Transform the query

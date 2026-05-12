@@ -618,7 +618,7 @@
 			
 			// Column aliases in derived tables are stored as "rangeName.property" (e.g. "x.id"),
 			// so reference them with the range prefix to match the subquery's SELECT aliases.
-			return "{$rangeName}.`{$rangeName}.{$columnName}`";
+			return "`{$rangeName}`.`{$rangeName}.{$columnName}`";
 		}
 		
 		/**
@@ -672,7 +672,7 @@
 			}
 			
 			// Return fully qualified column name
-			return "{$rangeName}.{$columnMap[$property]}";
+			return "`{$rangeName}`.`{$columnMap[$property]}`";
 		}
 
 		/**

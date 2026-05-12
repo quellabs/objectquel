@@ -151,7 +151,7 @@
 			// Build aliased column selections for each property
 			foreach ($columnMap as $item => $value) {
 				// Format: table.column as `alias.property`
-				$result[] = "{$rangeName}.{$value} as `{$aliasRangeName}.{$item}`";
+				$result[] = "`{$rangeName}`.`{$value}` as `{$aliasRangeName}.{$item}`";
 			}
 			
 			return implode(",", $result);

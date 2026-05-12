@@ -137,7 +137,7 @@
 				
 				// Decompose the query
 				$planner = new ExecutionPlanBuilder();
-				$executionPlan = $planner->build($ast, $this->normalizeParams($normalizedParameters));
+				$executionPlan = $planner->build($ast, $normalizedParameters);
 				
 				// Execute the returned execution plan and return the QuelResult
 				$result = $this->planExecutor->execute($executionPlan);
