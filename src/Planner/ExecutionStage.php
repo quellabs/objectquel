@@ -3,8 +3,10 @@
 	namespace Quellabs\ObjectQuel\Planner;
 	
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRange;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRangeJsonSource;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRetrieve;
 	use Quellabs\ObjectQuel\ObjectQuel\AstInterface;
+	use Quellabs\ObjectQuel\Planner\Visitors\DetectNotNullCheckOnRange;
 	
 	/**
 	 * Represents a single execution stage within a decomposed query execution plan.
@@ -19,7 +21,7 @@
 	 * - Stage 3: Join results from stages 1 and 2 based on join conditions
 	 */
 	class ExecutionStage implements ExecutionStageInterface {
-
+		
 		/**
 		 * Unique name/identifier for this stage
 		 * @var string
@@ -61,7 +63,13 @@
 		 * @param array<string, mixed> $staticParams Fixed parameters that don't depend on other stages' results
 		 * @param AstInterface|null $joinConditions The conditions for joining this stage with other stages
 		 */
-		public function __construct(string $name, AstRetrieve $query, ?AstRange $range, array $staticParams = [], ?AstInterface $joinConditions = null) {
+		public function __construct(
+			string        $name,
+			AstRetrieve   $query,
+			?AstRange     $range,
+			array         $staticParams = [],
+			?AstInterface $joinConditions = null
+		) {
 			$this->name = $name;
 			$this->query = $query;
 			$this->range = $range;
@@ -128,27 +136,59 @@
 		}
 		
 		/**
-		 * Determines the type of join this stage should perform
+		 * Determines the type of join this stage should perform when combining
+		 * its results with the accumulated result set.
 		 *
-		 * The join type affects how this stage's results are combined with
-		 * results from other stages:
-		 * - 'cross': No join conditions, creates cartesian product
-		 * - 'left': Left join based on join conditions
+		 * For database stages the join type is determined by QuelToSQL (INNER vs LEFT
+		 * based on AstRange::isRequired()). This method is only consulted for
+		 * in-memory joins, which currently means JSON source stages.
 		 *
-		 * @todo Implement more sophisticated logic to determine optimal join type
-		 * @todo Add support for 'inner', 'right', 'full outer' join types
-		 * @todo Consider query optimization hints for join type selection
+		 * Rules, in order of precedence:
+		 *   1. No join conditions → cross join (cartesian product).
+		 *   2. JSON stage with a scalar filter condition on the JSON range → inner join.
+		 *      Any filter (e.g. `j.status = "active"`) applied to a left-joined range
+		 *      eliminates unmatched rows anyway, so left join would be misleading.
+		 *   3. JSON stage with IS NOT NULL on the JSON range in the WHERE clause → inner join.
+		 *      The user is explicitly asserting the JSON side must contribute a value.
+		 *   4. Everything else → left join (enrichment: DB rows are preserved even when
+		 *      the JSON source has no matching record).
 		 *
-		 * @return string The join type ('cross' or 'left' currently)
+		 * @return string One of 'cross', 'inner', or 'left'
 		 */
 		public function getJoinType(): string {
-			// If no join conditions are specified, default to cross join
-			// which creates a cartesian product of all result sets
-			if ($this->getJoinConditions() === null) {
+			// No join conditions → cartesian product of both result sets.
+			// Checked against the property directly so PHPStan can narrow
+			// ?AstInterface to AstInterface for the accept() call below.
+			if ($this->joinConditions === null) {
 				return 'cross';
 			}
 			
-			// When join conditions exist, default to left join
+			// The remaining inference only applies to JSON source stages.
+			// DB-to-DB join type is handled by QuelToSQL, not here.
+			if (!$this->range instanceof AstRangeJsonSource) {
+				return 'left';
+			}
+
+			// Signal 1: a scalar filter condition on the JSON range exists.
+			// isolateFilterConditionsForRange() stored these on $this->query->getConditions()
+			// in StageFactory::createRangeExecutionStage(). If any survived, the user is
+			// filtering by a JSON field value, which requires a match → inner join.
+			if ($this->query->getConditions() !== null) {
+				return 'inner';
+			}
+			
+			// Signal 2: IS NOT NULL on a JSON field in the WHERE clause.
+			// Walk the full original condition tree (via joinConditions, which is extracted
+			// from the same WHERE clause) looking for `j.field IS NOT NULL`. That assertion
+			// means the user requires the JSON side to contribute a value → inner join.
+			$visitor = new DetectNotNullCheckOnRange($this->range->getName());
+			$this->joinConditions->accept($visitor);
+			
+			if ($visitor->isFound()) {
+				return 'inner';
+			}
+			
+			// No evidence of a required match: default to left join (enrichment).
 			return 'left';
 		}
 	}
