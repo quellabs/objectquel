@@ -114,11 +114,9 @@
 			if ($tokens === false) {
 				$errorCode = preg_last_error();
 				
-				if (function_exists('preg_last_error_msg')) {
-					$errorMessage = preg_last_error_msg();
-				} else {
-					$errorMessage = "PCRE error code {$errorCode}";
-				}
+				$errorMessage = function_exists('preg_last_error_msg')
+					? preg_last_error_msg()
+					: "PCRE error code {$errorCode}";
 				
 				throw new QuelException(
 					sprintf(

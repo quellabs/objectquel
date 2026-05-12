@@ -2,7 +2,7 @@
 	
 	namespace Quellabs\ObjectQuel\Execution;
 	
-	use Quellabs\ObjectQuel\ObjectQuel\IdentifierTypeResolver;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRangeDatabaseSubquery;
 	use Quellabs\ObjectQuel\Capabilities\PlatformCapabilities;
 	use Quellabs\ObjectQuel\EntityManager;
 	use Quellabs\ObjectQuel\DatabaseAdapter\DatabaseAdapter;
@@ -10,7 +10,6 @@
 	use Quellabs\ObjectQuel\Exception\HydrationException;
 	use Quellabs\ObjectQuel\Exception\SemanticException;
 	use Quellabs\ObjectQuel\Exception\TransformationException;
-	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRangeJsonSource;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRetrieve;
 	use Quellabs\ObjectQuel\ObjectQuel\Lexer;
 	use Quellabs\ObjectQuel\ObjectQuel\LexerException;
@@ -22,6 +21,9 @@
 	use Quellabs\ObjectQuel\Execution\Executors\JsonQueryExecutor;
 	use Quellabs\ObjectQuel\ObjectQuel\QueryNormalizer;
 	use Quellabs\ObjectQuel\ObjectQuel\SemanticAnalyzer;
+	use Quellabs\ObjectQuel\ObjectQuel\Visitors\ResolveIdentifierRange;
+	use Quellabs\ObjectQuel\ObjectQuel\Visitors\ResolvePropertyType;
+	use Quellabs\ObjectQuel\ObjectQuel\Visitors\ResolveRootIdentifierType;
 	use Quellabs\ObjectQuel\Planner\ExecutionPlanBuilder;
 	use Quellabs\ObjectQuel\Planner\QueryOptimizer;
 	
@@ -123,8 +125,7 @@
 				
 				// Resolve all identifier types. Note: this does no semantic checking.
 				// It just flags the type based on AST hierarchy
-				$identifierTypeResolver = new IdentifierTypeResolver($ast);
-				$identifierTypeResolver->resolve();
+				$this->resolveAndSetIdentifierTypes($ast);
 				
 				// Processing phase #1 - Transform and enhance the AST
 				$this->queryNormalizer->transform($ast);
@@ -158,28 +159,12 @@
 		}
 		
 		/**
-		 * Normalizes an array of parameters by casting all keys to strings.
-		 * @param array<int|string, mixed> $params The parameters to normalize.
-		 * @return array<string, mixed> The normalized parameters with string keys.
-		 */
-		public function normalizeParams(array $params): array {
-			$normalized = [];
-			
-			foreach ($params as $key => $value) {
-				$normalized[(string)$key] = $value;
-			}
-			
-			return $normalized;
-		}
-
-		/**
 		 * Return the executed SQL
 		 * @return list<string>
 		 */
 		public function getLastExecutedSql(): array {
 			return $this->databaseExecutor->getLastExecutedSql();
 		}
-
 		
 		/**
 		 * Parses a Quel query and returns its validated AST representation.
@@ -209,5 +194,40 @@
 			
 			// The AST is now fully validated
 			return $ast;
+		}
+		
+		/**
+		 * Walk through all identifiers and set their type
+		 * @param AstRetrieve $retrieve
+		 * @return void
+		 */
+		private function resolveAndSetIdentifierTypes(AstRetrieve $retrieve): void {
+			// First, recursively set types all nested queries in temporary ranges
+			// This ensures inner queries are fully resolved before outer query processing
+			foreach ($retrieve->getRanges() as $range) {
+				if ($range instanceof AstRangeDatabaseSubquery) {
+					$this->resolveAndSetIdentifierTypes($range->getQuery());
+				}
+			}
+			
+			// Then set types on current query
+			$retrieve->accept(new ResolveRootIdentifierType($retrieve));
+			$retrieve->accept(new ResolvePropertyType());
+			$retrieve->accept(new ResolveIdentifierRange($retrieve));
+		}
+		
+		/**
+		 * Normalizes an array of parameters by casting all keys to strings.
+		 * @param array<int|string, mixed> $params The parameters to normalize.
+		 * @return array<string, mixed> The normalized parameters with string keys.
+		 */
+		private function normalizeParams(array $params): array {
+			$normalized = [];
+			
+			foreach ($params as $key => $value) {
+				$normalized[(string)$key] = $value;
+			}
+			
+			return $normalized;
 		}
 	}

@@ -19,4 +19,13 @@
 		 * @return AstInterface
 		 */
 		public function getExpression(): AstInterface;
+		
+		/**
+		 * Replaces the inner expression wrapped by this node.
+		 * Required by ConditionFilter to reconstruct unary wrappers after
+		 * filtering their inner expression without knowing the concrete type.
+		 * @param AstInterface $expression
+		 * @return void
+		 */
+		public function setExpression(AstInterface $expression): void;
 	}

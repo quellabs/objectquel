@@ -359,6 +359,7 @@
 			
 			// Process each term type
 			foreach ($termTypes as $termType => $config) {
+				// Build the conditions
 				$termConditions = $this->buildTermConditions(
 					$columnName,
 					$parsed[$termType],
@@ -399,7 +400,7 @@
 			// Create a condition for each search term
 			foreach ($terms as $index => $term) {
 				// Generate unique parameter name
-				$paramName = "{$termType}{$searchKey}{$index}";
+				$paramName = "inject_" . uniqid();
 				
 				// Create SQL condition with parameter placeholder
 				$termConditions[] = "{$columnName} {$config['comparison']} :{$paramName}";

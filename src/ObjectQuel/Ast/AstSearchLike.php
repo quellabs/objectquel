@@ -61,6 +61,7 @@
 			// Wire parent references so the AST can be traversed upward
 			$this->searchString->setParent($this);
 			
+			// Set identifier parents
 			foreach ($this->identifiers as $identifier) {
 				$identifier->setParent($this);
 			}

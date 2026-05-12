@@ -51,7 +51,7 @@
 				$this->lexer->peekNext() === Token::ParenthesesOpen
 			) {
 				// Peek at the name without consuming — only consume once we know
-				// it's a recognised predicate, so unknown names fall through cleanly
+				// it's a recognized predicate, so unknown names fall through cleanly
 				$name = strtolower($this->lexer->peek()->getValue());
 				
 				// If the function matches something we know, parse it

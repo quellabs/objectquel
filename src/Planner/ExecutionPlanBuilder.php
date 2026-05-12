@@ -110,7 +110,7 @@
 		 * @param AstRangeDatabaseSubquery[] $tempRanges Already dependency-sorted temp ranges
 		 * @param array<string, mixed> $staticParams
 		 * @return string[] Map of rangeName → TempTableStage name
-		 * @throws QuelException
+		 * @throws QuelException|EntityResolutionException
 		 */
 		private function buildTempTableStages(ExecutionPlan $plan, array $tempRanges, array $staticParams): array {
 			// rangeName → TempTableStage name, built up as stages are added so inter-stage
