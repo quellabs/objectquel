@@ -157,6 +157,10 @@
 			return $parsed;
 		}
 		
+		/**
+		 * Clone the node
+		 * @return static
+		 */
 		public function deepClone(): static {
 			$clonedIdentifiers = $this->cloneArray($this->identifiers);
 			$clonedSearchString = $this->searchString->deepClone();

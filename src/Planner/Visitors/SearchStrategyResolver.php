@@ -134,7 +134,7 @@
 		private function buildLikeNode(AstSearch $search, array $parameters): AstSearchLike {
 			// Generate a unique key now so LIKE parameter names are stable and
 			// consistent across any number of re-renders of the same plan.
-			$searchKey = uniqid('s_', true);
+			$searchKey = uniqid('s_');
 			
 			// Pre-parse only when the search string is a known literal.
 			// AstParameter values are unknown until execution.

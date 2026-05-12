@@ -487,10 +487,12 @@
 			$this->addToVisitedNodes($search);
 			$this->result[] = $this->expressionHandler->handleSearchFullText($search);
 		}
-
+		
 		/**
 		 * Process a LIKE-chain search() and emit LIKE / NOT LIKE conditions.
 		 * @param AstSearchLike $search The LIKE-chain search node to process
+		 * @throws EntityResolutionException
+		 * @throws QuelException
 		 */
 		protected function handleSearchLike(AstSearchLike $search): void {
 			$this->addToVisitedNodes($search);
