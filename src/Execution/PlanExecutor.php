@@ -165,7 +165,7 @@
 			
 			// Create and cache the strategy
 			$strategy = match ($joinType) {
-				'cross' => new CrossJoinStrategy(),                          // Cartesian product join
+				'cross' => new CrossJoinStrategy(), // Cartesian product join
 				'left' => new LeftJoinStrategy(),   // Left outer join
 				'inner' => new InnerJoinStrategy(), // Inner join
 				default => throw new QuelException("Unsupported join type: {$joinType}")
