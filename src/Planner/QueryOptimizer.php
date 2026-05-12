@@ -32,6 +32,8 @@
 		private Optimizers\AggregateOptimizer $aggregateOptimizer;           // Optimizes aggregate functions (COUNT, SUM, etc.)
 		private Optimizers\ExistsOptimizer $existsOptimizer;                 // Converts EXISTS subqueries to more efficient forms
 		private Optimizers\JoinConditionFieldInjector $JoinConditionFieldInjector; // Optimizes value references and constants
+		private Optimizers\TypeCheckFoldingOptimizer $typeCheckFoldingOptimizer;         // Folds statically-known is_float/is_integer/is_numeric to boolean constants
+		private Optimizers\BooleanConstantOptimizer $booleanConstantOptimizer;           // Collapses boolean constants through AND / OR / NOT / comparisons
 		private Visitors\SearchStrategyResolver $searchResolver;
 		
 		/**
@@ -52,6 +54,8 @@
 			// Initialize stateless optimizers that work on AST structure alone
 			$this->existsOptimizer = new Optimizers\ExistsOptimizer();
 			$this->JoinConditionFieldInjector = new Optimizers\JoinConditionFieldInjector();
+			$this->typeCheckFoldingOptimizer = new Optimizers\TypeCheckFoldingOptimizer($entityManager);
+			$this->booleanConstantOptimizer = new Optimizers\BooleanConstantOptimizer();
 			$this->searchResolver = new SearchStrategyResolver($entityManager->getEntityStore());
 		}
 		
@@ -78,6 +82,8 @@
 			
 			// Phase 1: Basic range and relationship optimizations
 			// Apply filtering early to reduce dataset size for subsequent operations
+			$this->typeCheckFoldingOptimizer->optimize($ast);
+			$this->booleanConstantOptimizer->optimize($ast);
 			$this->rangePromotor->optimize($ast);
 			$this->rangeOptimizer->optimize($ast);
 			
