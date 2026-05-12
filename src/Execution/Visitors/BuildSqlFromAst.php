@@ -39,6 +39,8 @@
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRangeDatabase;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRangeJsonSource;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstSearch;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstSearchFullText;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstSearchLike;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstSearchScore;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstString;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstSubquery;
@@ -463,11 +465,34 @@
 		}
 		
 		/**
-		 * Process a search operation (full-text search or pattern matching)
+		 * Process a search() operation in the WHERE clause.
+		 *
+		 * AstSearch is an intermediate node that must not reach the executor — it is
+		 * always rewritten into AstSearchFullText or AstSearchLike during planning.
+		 * This handler delegates to the expression handler which throws if called.
+		 *
 		 * @param AstSearch $search The search operation node to process
 		 */
 		protected function handleSearch(AstSearch $search): void {
 			$this->result[] = $this->expressionHandler->handleSearch($search);
+		}
+		
+		/**
+		 * Process a full-text search() and emit a MATCH...AGAINST condition.
+		 * @param AstSearchFullText $search The full-text search node to process
+		 */
+		protected function handleSearchFullText(AstSearchFullText $search): void {
+			$this->addToVisitedNodes($search);
+			$this->result[] = $this->expressionHandler->handleSearchFullText($search);
+		}
+
+		/**
+		 * Process a LIKE-chain search() and emit LIKE / NOT LIKE conditions.
+		 * @param AstSearchLike $search The LIKE-chain search node to process
+		 */
+		protected function handleSearchLike(AstSearchLike $search): void {
+			$this->addToVisitedNodes($search);
+			$this->result[] = $this->expressionHandler->handleSearchLike($search);
 		}
 		
 		/**
@@ -618,8 +643,8 @@
 				return [$ast->getAggregation(), $ast->getConditions()];
 			}
 			
-			// AstSearch and AstSearchScore share the same child shape
-			if ($ast instanceof AstSearch || $ast instanceof AstSearchScore) {
+			// AstSearch, AstSearchFullText, AstSearchLike, and AstSearchScore share the same child shape
+			if ($ast instanceof AstSearch || $ast instanceof AstSearchFullText || $ast instanceof AstSearchLike || $ast instanceof AstSearchScore) {
 				return [...$ast->getIdentifiers(), $ast->getSearchString()];
 			}
 			

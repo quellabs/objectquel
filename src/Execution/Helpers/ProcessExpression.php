@@ -18,6 +18,8 @@
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstParameter;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRegExp;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstSearch;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstSearchFullText;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstSearchLike;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstSearchScore;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstString;
 	use Quellabs\ObjectQuel\Capabilities\PlatformCapabilitiesInterface;
@@ -230,64 +232,80 @@
 		}
 		
 		/**
-		 * Convert search operations to SQL conditions
-		 * Processes search functionality by parsing search data and building
-		 * appropriate SQL conditions. Uses OR logic to combine multiple search conditions.
-		 * @param AstSearch $search The search AST node
-		 * @return string SQL search conditions wrapped in parentheses
-		 * @throws QuelException|EntityResolutionException
+		 * Convert search() to SQL.
+		 *
+		 * AstSearch is an intermediate node that only exists between parsing and
+		 * planning. It must be rewritten into AstSearchFullText or AstSearchLike
+		 * before execution reaches this point. Receiving one here is a programming
+		 * error in plan construction.
+		 *
+		 * @param AstSearch $search
+		 * @return string
 		 */
 		public function handleSearch(AstSearch $search): string {
-			// Unique search key
-			$searchKey = uniqid();
+			throw new \LogicException(
+				'AstSearch reached the executor without being resolved. ' .
+				'SearchStrategyResolver must run on every ExecutionStage during planning.'
+			);
+		}
 			
-			// Parse the search data
-			$parsed = $search->parseSearchData($this->parameters);
+		/**
+		 * Convert a full-text search() to a MATCH(...) AGAINST(... IN BOOLEAN MODE) condition.
+		 *
+		 * The raw search string is passed directly to AGAINST so MySQL's boolean-mode
+		 * parser handles +/- prefixes natively, avoiding a redundant parse of the terms.
+		 *
+		 * @param AstSearchFullText $search The full-text search AST node
+		 * @return string SQL MATCH...AGAINST condition wrapped in parentheses
+		 */
+		public function handleSearchFullText(AstSearchFullText $search): string {
+			// Each AstSearchFullText uses a unique key to avoid parameter name collisions
+			// when multiple search() calls appear in the same query.
+			$sql = $this->buildFullTextCondition(
+				$search->getIdentifiers(),
+				$search->getSearchString(),
+				uniqid()
+			);
 			
-			// Build the condition
-			$conditions = $this->buildSearchConditions($search, $parsed, $searchKey);
-			
-			// Create the SQL
-			return '(' . implode(' OR ', $conditions) . ')';
+			return '(' . $sql . ')';
 		}
 		
 		/**
-		 * Builds search conditions for multiple identifiers based on parsed search terms.
+		 * Convert a LIKE-chain search() to a series of LIKE / NOT LIKE conditions.
 		 *
-		 * If all identifiers belong to the same entity and that entity has a FullTextIndex
-		 * covering all the searched columns, emits a single MATCH...AGAINST condition.
-		 * Otherwise falls back to LIKE chains for maximum compatibility.
+		 * Term buckets (or_terms, and_terms, not_terms) are read directly from the node
+		 * when the search string was a literal at planning time. When the search string
+		 * is a runtime parameter, the buckets are null and the string is parsed here
+		 * once the parameter value is available in $this->parameters.
 		 *
-		 * @param AstSearch $search The search AST node containing identifiers
-		 * @param array{
-		 *     or_terms: string[],
-		 *     and_terms: string[],
-		 *     not_terms: string[]
-		 * } $parsed
-		 * @param string $searchKey Unique key for parameter naming
-		 * @return string[] Array of SQL condition strings
+		 * Each identifier in the search list produces its own group of LIKE conditions.
+		 * The groups are joined with OR so a match in any searched column satisfies the
+		 * condition.
+		 *
+		 * @param AstSearchLike $search The LIKE-chain search AST node
+		 * @return string SQL OR-joined LIKE conditions wrapped in parentheses
 		 * @throws EntityResolutionException
 		 * @throws QuelException
 		 */
-		public function buildSearchConditions(AstSearch $search, array $parsed, string $searchKey): array {
-			// If this is a full index
-			if ($this->isFullTextIndex($search->getIdentifiers())) {
-				return [$this->buildFullTextCondition($search->getIdentifiers(), $search->getSearchString(), $searchKey)];
-			}
+		public function handleSearchLike(AstSearchLike $search): string {
+			// getParsed() returns null when the search string was a runtime parameter
+			// at planning time; parse it now that the value is available.
+			$parsed = $search->getParsed() ?? $search->parseSearchData($this->parameters);
 			
-			// Fall back to LIKE chains per identifier
 			$conditions = [];
 			
 			foreach ($search->getIdentifiers() as $identifier) {
+				// Build LIKE / NOT LIKE conditions for this column
 				$columnName = $this->buildColumnName($identifier);
-				$fieldConditions = $this->buildFieldConditions($columnName, $parsed, $searchKey);
+				$fieldConditions = $this->buildFieldConditions($columnName, $parsed, $search->getSearchKey());
 				
+				// Group the conditions for this column with AND, then collect them
 				if (!empty($fieldConditions)) {
 					$conditions[] = '(' . implode(' AND ', $fieldConditions) . ')';
 				}
 			}
 			
-			return $conditions;
+			return '(' . implode(' OR ', $conditions) . ')';
 		}
 		
 		/**
@@ -308,7 +326,7 @@
 		public function handleSearchScore(AstSearchScore $searchScore): string {
 			$identifiers = $searchScore->getIdentifiers();
 			
-			if ($this->isFullTextIndex($identifiers)) {
+			if (!$this->isFullTextIndex($identifiers)) {
 				return '0.0';
 			}
 			

@@ -4,11 +4,13 @@
 	
 	use Quellabs\ObjectQuel\Capabilities\PlatformCapabilities;
 	use Quellabs\ObjectQuel\EntityManager;
+	use Quellabs\ObjectQuel\EntityStore;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRangeDatabaseSubquery;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRangeDatabaseTempTable;
 	use Quellabs\ObjectQuel\Planner\Helpers\ConditionAnalyzer;
 	use Quellabs\ObjectQuel\Planner\Helpers\ConditionFilter;
 	use Quellabs\ObjectQuel\Planner\Helpers\StageFactory;
+	use Quellabs\ObjectQuel\Planner\Visitors\SearchStrategyResolver;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRangeDatabase;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRangeJsonSource;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRetrieve;
@@ -17,14 +19,14 @@
 	/**
 	 * Orchestrates the decomposition of a query into an ExecutionPlan.
 	 *
-	 * Delegates the three distinct sub-responsibilities to specialised classes:
+	 * Delegates the three distinct sub-responsibilities to specialized classes:
 	 *   - ConditionAnalyzer: answers questions about which ranges a condition references
 	 *   - ConditionFilter:   extracts and filters condition subtrees from the WHERE clause
 	 *   - StageFactory:      builds ExecutionStage objects from query ASTs
 	 *
 	 * ExecutionPlanBuilder itself is responsible for:
-	 *   - Detecting which subquery ranges require temp-table materialisation
-	 *   - Topologically sorting those ranges by their inter-dependencies
+	 *   - Detecting which subquery ranges require temp-table materialization
+	 *   - Topologically sorting those ranges by their interdependencies
 	 *   - Wiring TempTableStages and their dependency edges into the ExecutionPlan
 	 *   - Adding JSON/non-database range stages
 	 */
@@ -36,12 +38,17 @@
 		/** @var StageFactory */
 		private StageFactory $stageFactory;
 		
+		/** @var SearchStrategyResolver Rewrites AstSearch nodes to fulltext or LIKE form at planning time */
+		private SearchStrategyResolver $searchResolver;
+		
 		/**
 		 * Constructor
+		 * @param EntityStore $entityStore Entity metadata store, passed to SearchStrategyResolver
 		 */
-		public function __construct() {
+		public function __construct(EntityStore $entityStore) {
 			$this->analyzer = new ConditionAnalyzer();
 			$this->stageFactory = new StageFactory($this->analyzer, new ConditionFilter($this->analyzer));
+			$this->searchResolver = new SearchStrategyResolver($entityStore);
 		}
 		
 		/**
@@ -89,6 +96,15 @@
 			// JSON stages
 			foreach ($query->getOtherRanges() as $otherRange) {
 				$plan->addStage($this->stageFactory->createRangeExecutionStage($query, $otherRange, $staticParams));
+			}
+			
+			// Rewrite every AstSearch node in each stage's WHERE clause into either
+			// AstSearchFullText or AstSearchLike. Done as a post-pass over the finished
+			// plan so each stage's query AST is complete before the resolver inspects it.
+			foreach ($plan->getStagesInOrder() as $stage) {
+				if ($stage instanceof ExecutionStage) {
+					$this->searchResolver->resolve($stage->getQuery(), $stage->getStaticParams());
+				}
 			}
 			
 			// Return the plan

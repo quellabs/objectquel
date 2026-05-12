@@ -133,7 +133,7 @@
 				$this->transformer->transform($ast);
 				
 				// Decompose the query
-				$planner = new ExecutionPlanBuilder();
+				$planner = new ExecutionPlanBuilder($this->entityManager->getEntityStore());
 				$executionPlan = $planner->build($ast, $this->normalizeParams($parameters));
 				
 				// Execute the returned execution plan and return the QuelResult
