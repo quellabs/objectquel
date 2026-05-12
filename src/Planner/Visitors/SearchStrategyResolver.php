@@ -6,7 +6,6 @@
 	use Quellabs\ObjectQuel\EntityStore;
 	use Quellabs\ObjectQuel\Exception\EntityResolutionException;
 	use Quellabs\ObjectQuel\Exception\QuelException;
-	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstBinaryOperator;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstIdentifier;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstParameter;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRetrieve;
@@ -14,7 +13,8 @@
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstSearchFullText;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstSearchLike;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstString;
-	use Quellabs\ObjectQuel\ObjectQuel\AstInterface;
+	use Quellabs\ObjectQuel\ObjectQuel\Visitors\CollectNodes;
+	use Quellabs\ObjectQuel\Planner\Helpers\AstNodeReplacer;
 	
 	/**
 	 * Planning-time pass that rewrites AstSearch nodes in a query's WHERE clause
@@ -37,12 +37,14 @@
 		}
 		
 		/**
-		 * Walk the WHERE conditions of $query and rewrite every AstSearch node
-		 * into AstSearchFullText or AstSearchLike.
+		 * Collect all AstSearch nodes in $query's WHERE clause and rewrite each one
+		 * into AstSearchFullText or AstSearchLike in-place via its parent reference.
 		 *
 		 * @param AstRetrieve $query The query whose WHERE clause will be rewritten
 		 * @param array<string, mixed> $parameters Runtime parameters, used to pre-parse
 		 *        LIKE term buckets when the search string is a literal AstString.
+		 * @throws EntityResolutionException
+		 * @throws QuelException
 		 */
 		public function resolve(AstRetrieve $query, array $parameters): void {
 			$conditions = $query->getConditions();
@@ -52,70 +54,61 @@
 				return;
 			}
 			
-			$rewritten = $this->rewriteNode($conditions, $parameters);
+			// Collect all AstSearch nodes anywhere in the WHERE clause tree
+			$collector = new CollectNodes(AstSearch::class);
+			$conditions->accept($collector);
 			
-			// Only replace the conditions reference when something actually changed
-			if ($rewritten !== $conditions) {
-				$query->setConditions($rewritten);
-			}
-		}
-		
-		// =========================================================================
-		// Tree walk
-		// =========================================================================
-		
-		/**
-		 * Recursively walk $node and return a (possibly replaced) node.
-		 *
-		 * AstSearch nodes are replaced with the appropriate concrete type.
-		 * AstBinaryOperator nodes (AND / OR) are cloned with rewritten children
-		 * only when at least one child changed, to avoid unnecessary allocations.
-		 * All other node types are returned unchanged.
-		 *
-		 * @param AstInterface $node
-		 * @param array<string, mixed> $parameters
-		 * @return AstInterface
-		 * @throws EntityResolutionException
-		 * @throws QuelException
-		 */
-		private function rewriteNode(AstInterface $node, array $parameters): AstInterface {
-			if ($node instanceof AstSearch) {
-				return $this->rewriteSearch($node, $parameters);
-			}
-			
-			// Recurse into AND / OR operator trees
-			if ($node instanceof AstBinaryOperator) {
-				$left = $this->rewriteNode($node->getLeft(), $parameters);
-				$right = $this->rewriteNode($node->getRight(), $parameters);
-				
-				// Clone the operator node only if one of its children was rewritten
-				if ($left !== $node->getLeft() || $right !== $node->getRight()) {
-					$newNode = clone $node;
-					$newNode->setLeft($left);
-					$newNode->setRight($right);
-					return $newNode;
+			// Replace each collected node in-place via its parent reference.
+			// CollectNodes preserves document order, so replacements do not
+			// interfere with nodes that have not yet been processed.
+			foreach ($collector->getCollectedNodes() as $searchNode) {
+				// Fetch the parent
+				$parent = $searchNode->getParent();
+
+				// AstSearch always appears inside a WHERE clause, so it always has a
+				// parent. A null parent here means the AST was constructed incorrectly.
+				if ($parent === null) {
+					throw new \LogicException('AstSearch node has no parent; cannot replace it in the tree.');
 				}
+
+				// Generate replacement
+				$replacement = $this->rewriteSearch($searchNode, $parameters);
+				
+				// Replace the node
+				AstNodeReplacer::replaceChild($parent, $searchNode, $replacement);
 			}
-			
-			return $node;
 		}
+		
+		// =========================================================================
+		// Node rewriting
+		// =========================================================================
 		
 		/**
 		 * Replace a single AstSearch node with AstSearchFullText or AstSearchLike.
 		 * @param AstSearch $search
 		 * @param array<string, mixed> $parameters
 		 * @return AstSearchFullText|AstSearchLike
-		 * @throws QuelException
 		 * @throws EntityResolutionException
+		 * @throws QuelException
 		 */
 		private function rewriteSearch(AstSearch $search, array $parameters): AstSearchFullText|AstSearchLike {
 			$identifiers = $search->getIdentifiers();
 			
 			if ($this->detectFullTextIndex($identifiers) !== null) {
-				return new AstSearchFullText($identifiers, $search->getSearchString());
+				return $this->buildFullTextNode($identifiers, $search->getSearchString());
 			} else {
 				return $this->buildLikeNode($search, $parameters);
 			}
+		}
+		
+		/**
+		 * Build a full text node
+		 * @param AstIdentifier[] $identifiers
+		 * @param AstString|AstParameter $searchString
+		 * @return AstSearchFullText
+		 */
+		private function buildFullTextNode(array $identifiers, AstString|AstParameter $searchString): AstSearchFullText {
+			return new AstSearchFullText($identifiers, $searchString);
 		}
 		
 		/**
