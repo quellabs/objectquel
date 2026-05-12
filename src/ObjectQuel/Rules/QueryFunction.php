@@ -18,7 +18,6 @@
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstIsInteger;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstIsNumeric;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstParameter;
-	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstSearch;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstSearchScore;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstString;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstCountU;
@@ -80,7 +79,6 @@
 				'sumu' => $this->parseSumU(),
 				'any' => $this->parseAny(),
 				'concat' => $this->parseConcat(),
-				'search' => $this->parseSearch(),
 				'search_score' => $this->parseSearchScore(),
 				'is_empty' => $this->parseIsEmpty(),
 				'is_numeric' => $this->parseIsNumeric(),
@@ -100,7 +98,7 @@
 		 * @throws LexerException When token matching fails
 		 * @throws ParserException When parsing fails
 		 */
-		private function parseSingleParameter(string $astClass,): AstInterface {
+		private function parseSingleParameter(string $astClass): AstInterface {
 			// Match opening parenthesis
 			$this->lexer->match(Token::ParenthesesOpen);
 			
@@ -122,7 +120,7 @@
 		 * @throws LexerException When token matching fails
 		 * @throws ParserException When parsing fails
 		 */
-		private function parseAggregateFunction(string $astClass,): AstInterface {
+		private function parseAggregateFunction(string $astClass): AstInterface {
 			// Match opening parenthesis
 			$this->lexer->match(Token::ParenthesesOpen);
 			
@@ -395,41 +393,6 @@
 			return new AstSearchScore($identifiers, $searchString);
 		}
 		
-		/**
-		 * Parse SEARCH() function - performs text search across multiple fields.
-		 * Searches for the given search string across the specified identifier fields.
-		 * The last parameter must be a string literal or parameter containing the search term.
-		 * @return AstSearch The SEARCH AST node
-		 * @throws LexerException When token matching fails
-		 * @throws ParserException When identifier list is empty or search string is invalid
-		 */
-		protected function parseSearch(): AstSearch {
-			$this->lexer->match(Token::ParenthesesOpen);
-			
-			// Parse list of field identifiers to search in
-			$identifiers = $this->parseIdentifierList();
-			
-			if (empty($identifiers)) {
-				throw new ParserException("Missing identifier list for SEARCH operator.");
-			}
-			
-			// Parse the search string/parameter
-			$searchString = $this->expressionRule->parse();
-			
-			// Validate that search string is either a string literal or parameter.
-			// A bare identifier here means the user forgot to quote the search term
-			// or forgot to prefix a parameter with ':'.
-			if ((!$searchString instanceof AstString) && (!$searchString instanceof AstParameter)) {
-				throw new ParserException(
-					"SEARCH() requires a string literal or :parameter as its last argument, got " . get_class($searchString) . ". " .
-					"Did you mean to quote the search term or use a :parameter?"
-				);
-			}
-			
-			$this->lexer->match(Token::ParenthesesClose);
-			
-			return new AstSearch($identifiers, $searchString);
-		}
 		
 		/**
 		 * Helper method that parses a sequence of identifiers separated by commas,
@@ -458,8 +421,7 @@
 					break;
 				}
 				
-				/** @var AstIdentifier $identifier */
-				$identifier = $this->expressionRule->parse();
+				$identifier = $this->expressionRule->parsePropertyChain();
 				$identifiers[] = $identifier;
 			} while ($this->lexer->optionalMatch(Token::Comma));
 			

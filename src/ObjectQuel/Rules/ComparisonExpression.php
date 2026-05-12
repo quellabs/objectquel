@@ -12,6 +12,10 @@
 	
 	class ComparisonExpression {
 		
+		/**
+		 * Lexical Analysis class
+		 * @var Lexer $lexer
+		 */
 		protected Lexer $lexer;
 		
 		/**

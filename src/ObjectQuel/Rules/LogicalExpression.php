@@ -30,10 +30,10 @@
 		 */
 		protected function parseAndExpression(): AstInterface {
 			// Load parser for comparisons
-			$comparisonExpression = new ComparisonExpression($this->lexer);
+			$predicateExpression = new PredicateExpression($this->lexer);
 
 			// Parse the left-hand side of the AND expression
-			$left = $comparisonExpression->parse();
+			$left = $predicateExpression->parse();
 			
 			// Keep parsing as long as we encounter 'AND' tokens
 			while ($this->lexer->lookahead() == Token::And) {
@@ -42,7 +42,7 @@
 				
 				// Parse the right-hand side of the AND expression and combine it
 				// with the left-hand side to form a new AND expression
-				$left = new AstBinaryOperator($left, $comparisonExpression->parse(), 'AND');
+				$left = new AstBinaryOperator($left, $predicateExpression->parse(), 'AND');
 			}
 			
 			// Return the final AND expression

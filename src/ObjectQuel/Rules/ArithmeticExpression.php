@@ -19,17 +19,7 @@
 	use Quellabs\ObjectQuel\ObjectQuel\ParserException;
 	use Quellabs\ObjectQuel\ObjectQuel\Token;
 	
-	class ArithmeticExpression {
-		
-		protected Lexer $lexer;
-		
-		/**
-		 * Expression constructor
-		 * @param Lexer $lexer
-		 */
-		public function __construct(Lexer $lexer) {
-			$this->lexer = $lexer;
-		}
+	class ArithmeticExpression extends ExpressionRuleBase {
 		
 		/**
 		 * Parse an expression, which can either be a simple term, a ternary
@@ -40,50 +30,6 @@
 		 */
 		public function parse(): AstInterface {
 			return $this->parseTerm();
-		}
-		
-		/**
-		 * Returns the lexer instance
-		 * @return Lexer
-		 */
-		public function getLexer(): Lexer {
-			return $this->lexer;
-		}
-		
-		/**
-		 * Parse a chain of properties with optional namespace in the first element
-		 * @return AstIdentifier The root identifier with linked chain
-		 */
-		public function parsePropertyChain(): AstIdentifier {
-			// Parse the first identifier in the chain, which may include namespace
-			$token = $this->lexer->match(Token::Identifier);
-			$tokenValue = $token->getValue();
-			
-			// Handle any namespace segments in the first identifier
-			while ($this->lexer->optionalMatch(Token::Backslash)) {
-				$namespaceToken = $this->lexer->match(Token::Identifier);
-				$tokenValue .= "\\" . $namespaceToken->getValue();
-			}
-			
-			// Create the root identifier with the full (potentially namespaced) value
-			$rootIdentifier = new AstIdentifier($tokenValue);
-			$currentIdentifier = $rootIdentifier;
-			
-			// Continue parsing the property chain with dot notation
-			while ($this->lexer->optionalMatch(Token::Dot)) {
-				// Parse the next property name
-				$token = $this->lexer->match(Token::Identifier);
-				$nextIdentifier = new AstIdentifier($token->getValue());
-				$nextIdentifier->setParent($currentIdentifier);
-				
-				// Link it to the current identifier
-				$currentIdentifier->setNext($nextIdentifier);
-				
-				// Move to the new current identifier for potential next iteration
-				$currentIdentifier = $nextIdentifier;
-			}
-			
-			return $rootIdentifier;
 		}
 		
 		/**
@@ -188,7 +134,7 @@
 					throw new ParserException("Unexpected token '{$tokenTypeName}' on line {$this->lexer->getLineNumber()}");
 			}
 		}
-
+		
 		/**
 		 * Parse a term in an arithmetic expression. A term can either be a single
 		 * factor or an addition (+) or subtraction (-) operation between factors.
@@ -231,14 +177,14 @@
 				case Token::Star :
 					$this->lexer->match($this->lexer->lookahead());
 					return new AstFactor($unaryExpression, $this->parseFactor(), "*");
-					
+				
 				case Token::Slash :
 					$this->lexer->match($this->lexer->lookahead());
 					return new AstFactor($unaryExpression, $this->parseFactor(), "/");
-					
+				
 				default :
 					return $unaryExpression;
-					
+				
 			}
 		}
 		
