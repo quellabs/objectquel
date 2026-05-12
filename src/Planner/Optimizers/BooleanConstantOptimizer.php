@@ -5,6 +5,7 @@
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstBinaryOperator;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstBool;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstExpression;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstIdentifier;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstNot;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstNumber;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRetrieve;
@@ -160,6 +161,7 @@
 			$left = $this->normalizeBoolLiteral($left);
 			$right = $this->normalizeBoolLiteral($right);
 			
+			// Check if any side is bool
 			$leftIsBool = $left instanceof AstBool;
 			$rightIsBool = $right instanceof AstBool;
 			
@@ -177,6 +179,14 @@
 			
 			/** @var AstBool $right */
 			$constValue = $right->getValue();
+
+			// Do not fold comparisons like `p.published = true` when the non-constant
+			// side is a plain column identifier. ConditionFilter only accepts
+			// AstExpression leaves, so reducing to AstIdentifier drops the WHERE clause.
+			// Folding is only safe for derived boolean expressions (e.g. is_float()).
+			if ($left instanceof AstIdentifier) {
+				return null;
+			}
 			
 			// expr = true  → expr (identity)
 			// expr = false → NOT(expr) (negation)
