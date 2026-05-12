@@ -5,7 +5,7 @@
 	use Quellabs\ObjectQuel\ObjectQuel\AstInterface;
 	use Quellabs\ObjectQuel\ObjectQuel\AstVisitorInterface;
 	
-	class AstCheckNotNull extends Ast implements NodeSingleExpression {
+	class AstCheckNotNull extends Ast implements NodeSingleExpression, NodeConditionWrapper {
 		
 		protected AstInterface $expression;
 		

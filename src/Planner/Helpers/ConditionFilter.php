@@ -5,8 +5,8 @@
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstBinaryOperator;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstExpression;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRange;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\NodeConditionWrapper;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\NodeSearch;
-	use Quellabs\ObjectQuel\ObjectQuel\Ast\NodeSingleExpression;
 	use Quellabs\ObjectQuel\ObjectQuel\AstInterface;
 	
 	/**
@@ -24,9 +24,14 @@
 	 *     specific range to another range (e.g. x.id = y.xId).
 	 *
 	 * All three delegate tree traversal to filterTree(), which handles structural
-	 * node types (AstBinaryOperator, NodeSingleExpression) via their interfaces,
-	 * and passes leaf nodes to a caller-supplied predicate. This means adding a
-	 * new filter only requires writing a predicate — the traversal logic is shared.
+	 * node types (AstBinaryOperator, NodeConditionWrapper) via their interfaces
+	 * and passes leaf nodes to a caller-supplied predicate. Adding a new filter
+	 * only requires writing a predicate — the traversal logic is shared.
+	 *
+	 * Leaf classification is handled by three private helpers:
+	 *   - isDatabaseCompatibleExpression()
+	 *   - isFilterCondition()
+	 *   - isJoinCondition()
 	 */
 	class ConditionFilter {
 		
@@ -49,13 +54,13 @@
 		 * database (based on the provided database ranges), removing any parts that
 		 * require in-memory processing (e.g. JSON operations).
 		 * @param AstInterface|null $condition The condition AST to filter
-		 * @param array<int, AstRange> $dbRanges Array of ranges that can be handled by the database
-		 * @return AstInterface|null The filtered condition AST, or null if nothing can be handled by DB
+		 * @param array<int, AstRange> $dbRanges Ranges that can be handled by the database
+		 * @return AstInterface|null The filtered condition AST, or null if nothing can be handled by the DB
 		 */
 		public function filterDatabaseCompatibleConditions(?AstInterface $condition, array $dbRanges): ?AstInterface {
 			return $this->filterTree($condition, function (AstInterface $node) use ($dbRanges): ?AstInterface {
 				// NodeSearch covers AstSearch, AstSearchLike, and AstSearchFullText.
-				// Keep the node only if every identifier it searches references a DB range.
+				// Keep only if every identifier it searches references a DB range.
 				if ($node instanceof NodeSearch) {
 					foreach ($node->getIdentifiers() as $identifier) {
 						if (!$this->analyzer->hasReferenceToAnyRange($identifier, $dbRanges)) {
@@ -66,46 +71,23 @@
 					return $node;
 				}
 				
-				// Comparison expressions: keep when at least one side is a DB field
-				// and the other side is either also a DB field or a plain literal.
 				if ($node instanceof AstExpression) {
-					$leftDb = $this->analyzer->hasReferenceToAnyRange($node->getLeft(), $dbRanges);
-					$rightDb = $this->analyzer->hasReferenceToAnyRange($node->getRight(), $dbRanges);
-					
-					// field op field (join condition between two DB ranges)
-					if ($leftDb && $rightDb) {
-						return clone $node;
-					}
-					
-					// field op literal
-					if ($leftDb && !$this->analyzer->containsAnyRangeReference($node->getRight())) {
-						return clone $node;
-					}
-					
-					// literal op field
-					if ($rightDb && !$this->analyzer->containsAnyRangeReference($node->getLeft())) {
-						return clone $node;
-					}
-					
-					return null;
+					return $this->isDatabaseCompatibleExpression($node, $dbRanges) ? clone $node : null;
 				}
 				
-				// Pure literals (no range references at all) can be pushed to the DB.
-				if (!$this->analyzer->containsAnyRangeReference($node)) {
-					return clone $node;
-				}
-				
-				return null;
+				// Pure literals with no range references can be pushed to the DB.
+				return !$this->analyzer->containsAnyRangeReference($node) ? clone $node : null;
 			});
 		}
 		
 		/**
-		 * Extracts just the filtering conditions for a specific range (not join conditions).
-		 * A filter condition has one side referencing the given range and the other side
-		 * being a plain literal (e.g. x.value > 100).
+		 * Extracts scalar filter conditions for a specific range, excluding join conditions.
+		 *
+		 * A filter condition has one side referencing $range and the other side being
+		 * a plain literal with no range references (e.g. x.value > 100).
 		 * @param AstRange $range The range to extract filter conditions for
 		 * @param AstInterface|null $whereCondition The complete WHERE condition AST
-		 * @return AstInterface|null The filter conditions for this range
+		 * @return AstInterface|null The filter conditions for this range, or null if none exist
 		 */
 		public function isolateFilterConditionsForRange(AstRange $range, ?AstInterface $whereCondition): ?AstInterface {
 			return $this->filterTree($whereCondition, function (AstInterface $node) use ($range): ?AstInterface {
@@ -113,24 +95,19 @@
 					return null;
 				}
 				
-				$leftInvolvesRange = $this->analyzer->doesConditionInvolveRangeCached($node->getLeft(), $range);
-				$rightInvolvesRange = $this->analyzer->doesConditionInvolveRangeCached($node->getRight(), $range);
-				
-				$keep =
-					($leftInvolvesRange && !$this->analyzer->containsAnyRangeReference($node->getRight())) ||
-					($rightInvolvesRange && !$this->analyzer->containsAnyRangeReference($node->getLeft()));
-				
-				return $keep ? clone $node : null;
+				return $this->isFilterCondition($node, $range) ? clone $node : null;
 			});
 		}
 		
 		/**
-		 * Extracts the join conditions involving a specific range with any other range.
-		 * A join condition has one side referencing the given range and the other side
-		 * referencing a different range (e.g. x.id = y.xId).
+		 * Extracts join conditions that connect a specific range to any other range.
+		 *
+		 * A join condition has one side referencing $range and the other side referencing
+		 * a different range (e.g. x.id = y.xId). Conditions where both sides reference
+		 * the same range, or where one side is a literal, are excluded.
 		 * @param AstRange $range The range to extract join conditions for
 		 * @param AstInterface|null $whereCondition The complete WHERE condition AST
-		 * @return AstInterface|null The join conditions involving this range
+		 * @return AstInterface|null The join conditions involving this range, or null if none exist
 		 */
 		public function isolateJoinConditionsForRange(AstRange $range, ?AstInterface $whereCondition): ?AstInterface {
 			return $this->filterTree($whereCondition, function (AstInterface $node) use ($range): ?AstInterface {
@@ -138,15 +115,95 @@
 					return null;
 				}
 				
-				$leftInvolvesRange = $this->analyzer->doesConditionInvolveRangeCached($node->getLeft(), $range);
-				$rightInvolvesRange = $this->analyzer->doesConditionInvolveRangeCached($node->getRight(), $range);
-				
-				$keep =
-					($leftInvolvesRange && $this->analyzer->containsAnyRangeReference($node->getRight()) && !$rightInvolvesRange) ||
-					($rightInvolvesRange && $this->analyzer->containsAnyRangeReference($node->getLeft()) && !$leftInvolvesRange);
-				
-				return $keep ? clone $node : null;
+				return $this->isJoinCondition($node, $range) ? clone $node : null;
 			});
+		}
+		
+		/**
+		 * Returns true if the expression can be evaluated entirely by the database.
+		 *
+		 * An expression is DB-compatible when at least one side references a DB range
+		 * and the other side is either also a DB range (join) or a plain literal
+		 * (scalar filter). Expressions where one side is a non-DB range (e.g. JSON)
+		 * are excluded.
+		 * @param AstExpression $expr The comparison expression to test
+		 * @param array<int, AstRange> $dbRanges Ranges that can be handled by the database
+		 * @return bool
+		 */
+		private function isDatabaseCompatibleExpression(AstExpression $expr, array $dbRanges): bool {
+			$leftDb  = $this->analyzer->hasReferenceToAnyRange($expr->getLeft(),  $dbRanges);
+			$rightDb = $this->analyzer->hasReferenceToAnyRange($expr->getRight(), $dbRanges);
+			
+			// field op field — join between two DB ranges
+			if ($leftDb && $rightDb) {
+				return true;
+			}
+			
+			// field op literal — scalar filter on a DB range
+			if ($leftDb && !$this->analyzer->containsAnyRangeReference($expr->getRight())) {
+				return true;
+			}
+			
+			// literal op field — same as above, operands reversed
+			if ($rightDb && !$this->analyzer->containsAnyRangeReference($expr->getLeft())) {
+				return true;
+			}
+			
+			return false;
+		}
+		
+		/**
+		 * Returns true if the expression is a scalar filter condition for $range.
+		 *
+		 * Exactly one side must reference $range; the other side must contain no
+		 * range references at all (i.e. it is a literal or parameter). Expressions
+		 * where both sides reference a range are join conditions, not filter conditions.
+		 * @param AstExpression $expr The comparison expression to test
+		 * @param AstRange $range The range being filtered
+		 * @return bool
+		 */
+		private function isFilterCondition(AstExpression $expr, AstRange $range): bool {
+			$leftInvolvesRange  = $this->analyzer->doesConditionInvolveRangeCached($expr->getLeft(),  $range);
+			$rightInvolvesRange = $this->analyzer->doesConditionInvolveRangeCached($expr->getRight(), $range);
+			
+			// range op literal
+			if ($leftInvolvesRange && !$this->analyzer->containsAnyRangeReference($expr->getRight())) {
+				return true;
+			}
+			
+			// literal op range
+			if ($rightInvolvesRange && !$this->analyzer->containsAnyRangeReference($expr->getLeft())) {
+				return true;
+			}
+			
+			return false;
+		}
+		
+		/**
+		 * Returns true if the expression is a join condition involving $range.
+		 *
+		 * One side must reference $range and the other side must reference a different
+		 * range. Expressions where both sides reference the same range, or where one
+		 * side is a plain literal, are not join conditions.
+		 * @param AstExpression $expr The comparison expression to test
+		 * @param AstRange $range The range being joined
+		 * @return bool
+		 */
+		private function isJoinCondition(AstExpression $expr, AstRange $range): bool {
+			$leftInvolvesRange  = $this->analyzer->doesConditionInvolveRangeCached($expr->getLeft(),  $range);
+			$rightInvolvesRange = $this->analyzer->doesConditionInvolveRangeCached($expr->getRight(), $range);
+			
+			// range op other-range
+			if ($leftInvolvesRange && $this->analyzer->containsAnyRangeReference($expr->getRight()) && !$rightInvolvesRange) {
+				return true;
+			}
+			
+			// other-range op range
+			if ($rightInvolvesRange && $this->analyzer->containsAnyRangeReference($expr->getLeft()) && !$leftInvolvesRange) {
+				return true;
+			}
+			
+			return false;
 		}
 		
 		/**
@@ -155,19 +212,18 @@
 		 *
 		 * Structural dispatch:
 		 *   - AstBinaryOperator (AND/OR): recurse into both children; reconstruct the
-		 *     node only if at least one child survives, collapsing to a single child
-		 *     when only one side passes.
-		 *   - NodeSingleExpression (NOT, IS NULL, etc.): recurse into the inner
+		 *     node from whichever children survive, collapsing to a single child when
+		 *     only one side passes.
+		 *   - NodeConditionWrapper (NOT, IS NULL, IS NOT NULL): recurse into the inner
 		 *     expression; reconstruct the wrapper with the filtered inner node if it
-		 *     survives, otherwise discard.
+		 *     survives, otherwise discard the whole wrapper.
 		 *   - Everything else is a leaf: pass directly to $predicate and return its result.
 		 *
 		 * The predicate receives any non-structural node and returns either the node to
 		 * keep (cloned if needed) or null to discard it. The predicate is responsible
-		 * for cloning — filterTree itself never clones leaf nodes.
-		 *
+		 * for cloning — filterTree never clones leaf nodes itself.
 		 * @param AstInterface|null $condition Root of the subtree to filter
-		 * @param callable(AstInterface): ?AstInterface $predicate Leaf test
+		 * @param callable(AstInterface): ?AstInterface $predicate Leaf classification test
 		 * @return AstInterface|null Filtered subtree, or null if nothing survived
 		 */
 		private function filterTree(?AstInterface $condition, callable $predicate): ?AstInterface {
@@ -175,10 +231,9 @@
 				return null;
 			}
 			
-			// AND / OR: logical combinator — recurse into both children and
-			// reconstruct only from the parts that survive.
+			// AND / OR: recurse into both children and reconstruct from survivors.
 			if ($condition instanceof AstBinaryOperator) {
-				$left = $this->filterTree($condition->getLeft(), $predicate);
+				$left  = $this->filterTree($condition->getLeft(),  $predicate);
 				$right = $this->filterTree($condition->getRight(), $predicate);
 				
 				if ($left !== null && $right !== null) {
@@ -188,12 +243,13 @@
 					return $node;
 				}
 				
+				// One side was eliminated — collapse to whichever child survived.
 				return $left ?? $right;
 			}
 			
-			// NOT / IS NULL / IS NOT NULL / etc.: unary wrapper — recurse into the
-			// inner expression and rebuild the wrapper around the filtered result.
-			if ($condition instanceof NodeSingleExpression) {
+			// NOT / IS NULL / IS NOT NULL: recurse into the inner expression and
+			// rebuild the wrapper around it if the inner expression survives.
+			if ($condition instanceof NodeConditionWrapper) {
 				$inner = $this->filterTree($condition->getExpression(), $predicate);
 				
 				if ($inner !== null) {

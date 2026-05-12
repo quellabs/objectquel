@@ -6,29 +6,30 @@
 	use Quellabs\ObjectQuel\ObjectQuel\AstVisitorInterface;
 	
 	/**
-	 * Represents a unary operation in the AST (e.g. IS EMPTY, IS INTEGER, IS FLOAT).
+	 * Represents a unary arithmetic operation in the AST (e.g. -x, +x).
 	 *
-	 * Wraps a single inner expression and applies a named operator to it.
-	 * Implements NodeSingleExpression so that walkers can recurse into the inner
-	 * expression without knowing the concrete wrapper type.
+	 * Produced by the parser when a +/- sign precedes a non-numeric operand.
+	 * When a sign precedes a numeric literal, the sign is folded directly into
+	 * the AstNumber value instead, so this node only appears for operands that
+	 * are identifiers or sub-expressions.
 	 */
-	class AstUnaryOperation extends Ast implements NodeSingleExpression {
+	class AstUnaryOperation extends Ast {
 		
 		/**
-		 * The inner expression this operation is applied to.
+		 * The operand this sign operator is applied to.
 		 * @var AstInterface
 		 */
 		private AstInterface $expression;
 		
 		/**
-		 * The operator applied to the inner expression (e.g. 'IS EMPTY').
+		 * The sign operator: '+' or '-'.
 		 * @var string
 		 */
 		private string $operator;
 		
 		/**
-		 * @param AstInterface $expression The inner expression to operate on
-		 * @param string $operator The operator to apply
+		 * @param AstInterface $expression The operand to apply the sign to
+		 * @param string $operator The sign operator: '+' or '-'
 		 */
 		public function __construct(AstInterface $expression, string $operator) {
 			$this->expression = $expression;
@@ -38,7 +39,7 @@
 		}
 		
 		/**
-		 * Returns the inner expression this operation wraps.
+		 * Returns the operand this sign operator is applied to.
 		 * @return AstInterface
 		 */
 		public function getExpression(): AstInterface {
@@ -46,18 +47,7 @@
 		}
 		
 		/**
-		 * Replaces the inner expression.
-		 * Also updates the parent reference on the new expression.
-		 * @param AstInterface $expression
-		 * @return void
-		 */
-		public function setExpression(AstInterface $expression): void {
-			$this->expression = $expression;
-			$expression->setParent($this);
-		}
-		
-		/**
-		 * Returns the operator applied to the inner expression.
+		 * Returns the sign operator ('+' or '-').
 		 * @return string
 		 */
 		public function getOperator(): string {
@@ -66,7 +56,7 @@
 		
 		/**
 		 * Accepts a visitor to perform operations on this node.
-		 * Visits this node first, then recurses into the inner expression.
+		 * Visits this node first, then recurses into the operand.
 		 * @param AstVisitorInterface $visitor
 		 * @return void
 		 */
@@ -76,7 +66,7 @@
 		}
 		
 		/**
-		 * Returns a deep clone of this node with an independent copy of the inner expression.
+		 * Returns a deep clone of this node with an independent copy of the operand.
 		 * @return static
 		 */
 		public function deepClone(): static {
