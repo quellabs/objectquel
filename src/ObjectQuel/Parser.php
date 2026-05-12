@@ -21,63 +21,7 @@
             $this->rangeRule = new Range($lexer);
             $this->retrieveRule = new Retrieve($lexer);
         }
-	    
-	    /**
-	     * Helper function to match and return the value of a directive.
-	     * @param string $directiveName
-	     * @return mixed
-	     * @throws ParserException
-	     * @throws LexerException
-	     */
-	    protected function matchDirectiveValue(string $directiveName): mixed {
-		    if ($this->lexer->optionalMatch(Token::True)) {
-			    return true;
-		    } elseif ($this->lexer->optionalMatch(Token::False)) {
-			    return false;
-		    } elseif (($token = $this->lexer->optionalMatch(Token::Number)) !== null) {
-			    return $token->getValue();
-		    } elseif (($token = $this->lexer->optionalMatch(Token::Identifier)) !== null) {
-			    return $token->getValue();
-		    } else {
-			    throw new ParserException("Invalid compiler directive value for @{$directiveName}");
-		    }
-	    }
 		
-		/**
-		 * Parser compiler directives
-		 * @return array<string, bool|int|float|string>
-		 * @throws LexerException|ParserException
-		 */
-		protected function parseCompilerDirectives(): array {
-			$directives = [];
-			
-			while ($this->lexer->peek()->getType() == Token::CompilerDirective) {
-				$directive = $this->lexer->match(Token::CompilerDirective);
-				$directiveName = $directive->getValue();
-				
-				// Gebruik van een helper functie om de toewijzing te vereenvoudigen
-				$directives[$directiveName] = $this->matchDirectiveValue($directiveName);
-			}
-			
-			return $directives;
-		}
-		
-		/**
-		 * Parse ranges
-		 * @return AstRange[]
-		 * @throws LexerException
-		 * @throws ParserException
-		 */
-		protected function parseRanges(): array {
-			$ranges = [];
-			
-			while ($this->lexer->peek()->getType() == Token::Range) {
-				$ranges[] = $this->rangeRule->parse();
-			}
-			
-			return $ranges;
-		}
-	    
 	    /**
 	     * Parse queries
 	     * @return AstInterface|null
@@ -111,5 +55,61 @@
 		    // Return the first query AST object from the array.
 		    // Note: This assumes there is only one query.
 		    return $queries[0];
+	    }
+	    
+	    /**
+	     * Helper function to match and return the value of a directive.
+	     * @param string $directiveName
+	     * @return mixed
+	     * @throws ParserException
+	     * @throws LexerException
+	     */
+	    protected function matchDirectiveValue(string $directiveName): mixed {
+		    if ($this->lexer->optionalMatch(Token::True)) {
+			    return true;
+		    } elseif ($this->lexer->optionalMatch(Token::False)) {
+			    return false;
+		    } elseif (($token = $this->lexer->optionalMatch(Token::Number)) !== null) {
+			    return $token->getValue();
+		    } elseif (($token = $this->lexer->optionalMatch(Token::Identifier)) !== null) {
+			    return $token->getValue();
+		    } else {
+			    throw new ParserException("Invalid compiler directive value for @{$directiveName}");
+		    }
+	    }
+	    
+	    /**
+	     * Parser compiler directives
+	     * @return array<string, bool|int|float|string>
+	     * @throws LexerException|ParserException
+	     */
+	    protected function parseCompilerDirectives(): array {
+		    $directives = [];
+		    
+		    while ($this->lexer->peek()->getType() == Token::CompilerDirective) {
+			    $directive = $this->lexer->match(Token::CompilerDirective);
+			    $directiveName = $directive->getValue();
+			    
+			    // Gebruik van een helper functie om de toewijzing te vereenvoudigen
+			    $directives[$directiveName] = $this->matchDirectiveValue($directiveName);
+		    }
+		    
+		    return $directives;
+	    }
+	    
+	    /**
+	     * Parse ranges
+	     * @return AstRange[]
+	     * @throws LexerException
+	     * @throws ParserException
+	     */
+	    protected function parseRanges(): array {
+		    $ranges = [];
+		    
+		    while ($this->lexer->peek()->getType() == Token::Range) {
+			    $ranges[] = $this->rangeRule->parse();
+		    }
+		    
+		    return $ranges;
 	    }
     }

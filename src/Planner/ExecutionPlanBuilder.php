@@ -5,6 +5,7 @@
 	use Quellabs\ObjectQuel\Capabilities\PlatformCapabilities;
 	use Quellabs\ObjectQuel\EntityManager;
 	use Quellabs\ObjectQuel\EntityStore;
+	use Quellabs\ObjectQuel\Exception\EntityResolutionException;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRangeDatabaseSubquery;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRangeDatabaseTempTable;
 	use Quellabs\ObjectQuel\Planner\Helpers\ConditionAnalyzer;
@@ -38,17 +39,12 @@
 		/** @var StageFactory */
 		private StageFactory $stageFactory;
 		
-		/** @var SearchStrategyResolver Rewrites AstSearch nodes to fulltext or LIKE form at planning time */
-		private SearchStrategyResolver $searchResolver;
-		
 		/**
 		 * Constructor
-		 * @param EntityStore $entityStore Entity metadata store, passed to SearchStrategyResolver
 		 */
-		public function __construct(EntityStore $entityStore) {
+		public function __construct() {
 			$this->analyzer = new ConditionAnalyzer();
 			$this->stageFactory = new StageFactory($this->analyzer, new ConditionFilter($this->analyzer));
-			$this->searchResolver = new SearchStrategyResolver($entityStore);
 		}
 		
 		/**
@@ -68,7 +64,7 @@
 		 * @param AstRetrieve $query The ObjectQuel query to decompose
 		 * @param array<string, mixed> $staticParams Optional static parameters for the query
 		 * @return ExecutionPlan The execution plan containing all stages
-		 * @throws QuelException If the query cannot be properly decomposed
+		 * @throws QuelException|EntityResolutionException If the query cannot be properly decomposed
 		 */
 		public function build(AstRetrieve $query, array $staticParams = []): ExecutionPlan {
 			$this->analyzer->clearCache();
@@ -96,15 +92,6 @@
 			// JSON stages
 			foreach ($query->getOtherRanges() as $otherRange) {
 				$plan->addStage($this->stageFactory->createRangeExecutionStage($query, $otherRange, $staticParams));
-			}
-			
-			// Rewrite every AstSearch node in each stage's WHERE clause into either
-			// AstSearchFullText or AstSearchLike. Done as a post-pass over the finished
-			// plan so each stage's query AST is complete before the resolver inspects it.
-			foreach ($plan->getStagesInOrder() as $stage) {
-				if ($stage instanceof ExecutionStage) {
-					$this->searchResolver->resolve($stage->getQuery(), $stage->getStaticParams());
-				}
 			}
 			
 			// Return the plan

@@ -27,9 +27,11 @@
 	 */
 	class SearchStrategyResolver {
 		
+		/** @var EntityStore Holds entity metadata */
 		private EntityStore $entityStore;
 		
 		/**
+		 * SearchStrategyResolver constructor
 		 * @param EntityStore $entityStore Used to look up FullTextIndex annotations
 		 */
 		public function __construct(EntityStore $entityStore) {
@@ -47,6 +49,7 @@
 		 * @throws QuelException
 		 */
 		public function resolve(AstRetrieve $query, array $parameters): void {
+			// Fetch the query's conditions
 			$conditions = $query->getConditions();
 			
 			// Nothing to rewrite if the query has no WHERE clause

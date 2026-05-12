@@ -38,8 +38,8 @@
 		private PlatformCapabilities $capabilities;
 		private DatabaseAdapter $connection;
 		private PlanExecutor $planExecutor;
-		private QueryOptimizer $transformer;
-		private QueryNormalizer $semanticAnalyserPrefilter;
+		private QueryOptimizer $optimizer;
+		private QueryNormalizer $queryNormalizer;
 		private SemanticAnalyzer $semanticAnalyser;
 		private DatabaseQueryExecutor $databaseExecutor;
 		private JsonQueryExecutor $jsonExecutor;
@@ -66,8 +66,8 @@
 			$this->planExecutor = new PlanExecutor($this);
 			
 			// Init the transformers
-			$this->transformer = new QueryOptimizer($entityManager, $this->capabilities);
-			$this->semanticAnalyserPrefilter = new QueryNormalizer($entityManager->getEntityStore());
+			$this->optimizer = new QueryOptimizer($entityManager, $this->capabilities);
+			$this->queryNormalizer = new QueryNormalizer($entityManager->getEntityStore());
 			$this->semanticAnalyser = new SemanticAnalyzer($entityManager->getEntityStore());
 		}
 		
@@ -112,6 +112,9 @@
 		 */
 		public function executeQuery(string $query, array $parameters = []): QuelResult {
 			try {
+				// Normalize parameters
+				$normalizedParameters = $this->normalizeParams($parameters);
+				
 				// Clear SQL list
 				$this->databaseExecutor->resetLastExecutedSql();
 				
@@ -124,17 +127,17 @@
 				$identifierTypeResolver->resolve();
 				
 				// Processing phase #1 - Transform and enhance the AST
-				$this->semanticAnalyserPrefilter->transform($ast);
+				$this->queryNormalizer->transform($ast);
 				
 				// Validation phase - Ensure AST integrity and correctness
 				$this->semanticAnalyser->validate($ast);
 				
 				// Processing phase #2 - Transform and enhance the AST
-				$this->transformer->transform($ast);
+				$this->optimizer->transform($ast, $normalizedParameters);
 				
 				// Decompose the query
-				$planner = new ExecutionPlanBuilder($this->entityManager->getEntityStore());
-				$executionPlan = $planner->build($ast, $this->normalizeParams($parameters));
+				$planner = new ExecutionPlanBuilder();
+				$executionPlan = $planner->build($ast, $this->normalizeParams($normalizedParameters));
 				
 				// Execute the returned execution plan and return the QuelResult
 				$result = $this->planExecutor->execute($executionPlan);

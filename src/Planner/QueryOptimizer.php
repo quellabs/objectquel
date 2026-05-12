@@ -10,8 +10,10 @@
 	use Quellabs\ObjectQuel\Exception\QuelException;
 	use Quellabs\ObjectQuel\Exception\TransformationException;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRangeDatabase;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRangeDatabaseSubquery;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRetrieve;
 	use Quellabs\ObjectQuel\Planner\Helpers\InjectDiscriminatorCondition;
+	use Quellabs\ObjectQuel\Planner\Visitors\SearchStrategyResolver;
 	
 	/**
 	 * Main orchestrator that coordinates all query optimization strategies.
@@ -30,6 +32,7 @@
 		private Optimizers\AggregateOptimizer $aggregateOptimizer;           // Optimizes aggregate functions (COUNT, SUM, etc.)
 		private Optimizers\ExistsOptimizer $existsOptimizer;                 // Converts EXISTS subqueries to more efficient forms
 		private Optimizers\JoinConditionFieldInjector $JoinConditionFieldInjector; // Optimizes value references and constants
+		private Visitors\SearchStrategyResolver $searchResolver;
 		
 		/**
 		 * Initialize all optimizer components with shared EntityManager dependency.
@@ -49,6 +52,7 @@
 			// Initialize stateless optimizers that work on AST structure alone
 			$this->existsOptimizer = new Optimizers\ExistsOptimizer();
 			$this->JoinConditionFieldInjector = new Optimizers\JoinConditionFieldInjector();
+			$this->searchResolver = new SearchStrategyResolver($entityManager->getEntityStore());
 		}
 		
 		/**
@@ -58,7 +62,11 @@
 		 * @param AstRetrieve $ast The query AST to optimize in-place
 		 * @throws QuelException|EntityResolutionException|TransformationException
 		 */
-		public function transform(AstRetrieve $ast): void {
+		public function transform(AstRetrieve $ast, array $parameters): void {
+			// First, recursively transform all nested queries in temporary ranges
+			// This ensures inner queries are fully resolved before outer query processing
+			$this->transformNestedQueries($ast, $parameters);
+			
 			// Step 2.5: Inject discriminator conditions for single-table inheritance
 			// Iterates ranges directly — no need for a full AST traversal since
 			// ranges only ever appear in AstRetrieve::$ranges.
@@ -86,11 +94,35 @@
 			$this->anyOptimizer->optimize($ast);
 			$this->aggregateOptimizer->optimize($ast);
 			
+			// Convert search(...) to like/fulltext node
+			$this->searchResolver->resolve($ast, $parameters);
+			
 			// Phase 5: Final cleanup
 			// Optimize constant values and references last when structure is stable
 			$this->joinOptimizer->optimize($ast);
 			$this->rangeOptimizer->removeUnusedLeftJoinRanges($ast, false);
 			$this->JoinConditionFieldInjector->optimize($ast);
+		}
+		
+		/**
+		 * Recursively transform all nested queries in temporary range definitions.
+		 * Ensures that inner queries are fully resolved before the outer query is processed.
+		 * @param AstRetrieve $ast The query AST containing potential nested queries
+		 * @param array $parameters
+		 * @return void Modifies nested queries in-place
+		 * @throws TransformationException
+		 * @throws EntityResolutionException|QuelException
+		 */
+		private function transformNestedQueries(AstRetrieve $ast, array $parameters): void {
+			foreach ($ast->getRanges() as $range) {
+				// Only process temporary ranges that contain nested queries
+				if (!$range instanceof AstRangeDatabaseSubquery) {
+					continue;
+				}
+				
+				// Recursively transform the inner query with full transformation pipeline
+				$this->transform($range->getQuery(), $parameters);
+			}
 		}
 		
 		/**
