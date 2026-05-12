@@ -32,7 +32,7 @@
 		private Optimizers\AggregateOptimizer $aggregateOptimizer;           // Optimizes aggregate functions (COUNT, SUM, etc.)
 		private Optimizers\ExistsOptimizer $existsOptimizer;                 // Converts EXISTS subqueries to more efficient forms
 		private Optimizers\JoinConditionFieldInjector $JoinConditionFieldInjector; // Optimizes value references and constants
-		private Optimizers\foldingRuleOptimizer $constantFoldingOptimizer;          // Folds statically-resolvable nodes to boolean constants
+		private Optimizers\FoldingRuleOptimizer $constantFoldingOptimizer;          // Folds statically-resolvable nodes to boolean constants
 		private Optimizers\BooleanConstantOptimizer $booleanConstantOptimizer;           // Collapses boolean constants through AND / OR / NOT / comparisons
 		private Visitors\SearchStrategyResolver $searchResolver;
 		
@@ -58,7 +58,7 @@
 			$this->searchResolver = new SearchStrategyResolver($entityManager->getEntityStore());
 
 			// Constant folder
-			$this->constantFoldingOptimizer = new Optimizers\foldingRuleOptimizer([
+			$this->constantFoldingOptimizer = new Optimizers\FoldingRuleOptimizer([
 				new Optimizers\FoldingRules\TypeCheckFoldingRule($entityManager),
 			]);
 		}
