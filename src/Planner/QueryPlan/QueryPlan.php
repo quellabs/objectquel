@@ -1,6 +1,6 @@
 <?php
 	
-	namespace Quellabs\ObjectQuel\Planner;
+	namespace Quellabs\ObjectQuel\Planner\QueryPlan;
 	
 	/**
 	 * The combined result of a dry-run query explanation.
@@ -9,7 +9,7 @@
 	 * strategy was chosen, etc.) alongside the SQL that would be executed,
 	 * without having touched the database.
 	 */
-	readonly class QueryPlan {
+	readonly class QueryPlan implements \JsonSerializable {
 		
 		/**
 		 * @param PlanNote[] $notes Planning decisions in pipeline order
@@ -34,5 +34,15 @@
 		 */
 		public function getSql(): array {
 			return $this->sql;
+		}
+
+		/**
+		 * @return array<string, array<int, PlanNote>|array<int, string>>
+		 */
+		public function jsonSerialize(): array {
+			return [
+				'notes' => $this->notes,
+				'sql'   => $this->sql,
+			];
 		}
 	}

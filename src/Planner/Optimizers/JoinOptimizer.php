@@ -11,8 +11,8 @@
 	use Quellabs\ObjectQuel\Planner\Visitors\DetectNullCheckOnRange;
 	use Quellabs\ObjectQuel\Planner\Visitors\DetectNonNullableField;
 	use Quellabs\ObjectQuel\Planner\Visitors\CheckRangeReference;
-	use Quellabs\ObjectQuel\Planner\PlanLogInterface;
-	use Quellabs\ObjectQuel\Planner\NullPlanLog;
+	use Quellabs\ObjectQuel\Planner\QueryPlan\PlanLogInterface;
+	use Quellabs\ObjectQuel\Planner\QueryPlan\NullPlanLog;
 	
 	/**
 	 * Optimizes JOIN types based on WHERE clause analysis.

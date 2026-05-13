@@ -15,8 +15,8 @@
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstString;
 	use Quellabs\ObjectQuel\ObjectQuel\Visitors\CollectNodes;
 	use Quellabs\ObjectQuel\Planner\Helpers\AstNodeReplacer;
-	use Quellabs\ObjectQuel\Planner\PlanLogInterface;
-	use Quellabs\ObjectQuel\Planner\NullPlanLog;
+	use Quellabs\ObjectQuel\Planner\QueryPlan\PlanLogInterface;
+	use Quellabs\ObjectQuel\Planner\QueryPlan\NullPlanLog;
 	
 	/**
 	 * Planning-time pass that rewrites AstSearch nodes in a query's WHERE clause

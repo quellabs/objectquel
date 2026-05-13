@@ -30,7 +30,7 @@
 	use Quellabs\ObjectQuel\ProxyGenerator\ProxyInterface;
 	use Quellabs\ObjectQuel\Execution\QueryBuilder;
 	use Quellabs\ObjectQuel\Execution\QueryExecutor;
-	use Quellabs\ObjectQuel\Planner\QueryPlan;
+	use Quellabs\ObjectQuel\Planner\QueryPlan\QueryPlan;
 	use Quellabs\ObjectQuel\ReflectionManagement\PropertyHandler;
 	use Quellabs\ObjectQuel\Validation\EntityToValidation;
 	use Quellabs\ObjectQuel\Validation\ValidationInterface;

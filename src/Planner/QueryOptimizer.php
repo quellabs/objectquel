@@ -14,8 +14,8 @@
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRetrieve;
 	use Quellabs\ObjectQuel\Planner\Helpers\InjectDiscriminatorCondition;
 	use Quellabs\ObjectQuel\Planner\Visitors\SearchStrategyResolver;
-	use Quellabs\ObjectQuel\Planner\PlanLogInterface;
-	use Quellabs\ObjectQuel\Planner\NullPlanLog;
+	use Quellabs\ObjectQuel\Planner\QueryPlan\PlanLogInterface;
+	use Quellabs\ObjectQuel\Planner\QueryPlan\NullPlanLog;
 	
 	/**
 	 * Main orchestrator that coordinates all query optimization strategies.

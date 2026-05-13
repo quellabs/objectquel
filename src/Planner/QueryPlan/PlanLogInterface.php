@@ -1,6 +1,6 @@
 <?php
 	
-	namespace Quellabs\ObjectQuel\Planner;
+	namespace Quellabs\ObjectQuel\Planner\QueryPlan;
 	
 	/**
 	 * Receives planning decisions as they are made.
@@ -8,7 +8,7 @@
 	 * Pass a PlanLog to QueryOptimizer::transform() and ExecutionPlanBuilder::build()
 	 * to collect notes. Pass a NullPlanLog to disable collection with no overhead.
 	 */
-	interface PlanLogInterface {
+	interface PlanLogInterface extends \JsonSerializable {
 		
 		/**
 		 * Records a planning decision.

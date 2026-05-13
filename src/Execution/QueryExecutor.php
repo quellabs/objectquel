@@ -27,8 +27,8 @@
 	use Quellabs\ObjectQuel\Planner\ExecutionPlanBuilder;
 	use Quellabs\ObjectQuel\Planner\QueryOptimizer;
 	use Quellabs\ObjectQuel\Execution\Executors\DryRunDatabaseQueryExecutor;
-	use Quellabs\ObjectQuel\Planner\PlanLog;
-	use Quellabs\ObjectQuel\Planner\QueryPlan;
+	use Quellabs\ObjectQuel\Planner\QueryPlan\PlanLog;
+	use Quellabs\ObjectQuel\Planner\QueryPlan\QueryPlan;
 	
 	/**
 	 * Orchestrates query execution by delegating to specialized executors.

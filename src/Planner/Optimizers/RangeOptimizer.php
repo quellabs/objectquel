@@ -20,8 +20,8 @@
 	use Quellabs\ObjectQuel\Planner\Visitors\CollectRanges;
 	use Quellabs\ObjectQuel\Planner\Visitors\DetectNonNullableField;
 	use Quellabs\ObjectQuel\Planner\Helpers\BinaryOperationHelper;
-	use Quellabs\ObjectQuel\Planner\PlanLogInterface;
-	use Quellabs\ObjectQuel\Planner\NullPlanLog;
+	use Quellabs\ObjectQuel\Planner\QueryPlan\PlanLogInterface;
+	use Quellabs\ObjectQuel\Planner\QueryPlan\NullPlanLog;
 	
 	/**
 	 * Handles range-specific optimizations including required annotations

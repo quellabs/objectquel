@@ -1,6 +1,6 @@
 <?php
 	
-	namespace Quellabs\ObjectQuel\Planner;
+	namespace Quellabs\ObjectQuel\Planner\QueryPlan;
 	
 	/**
 	 * Represents a single decision made during query planning.
@@ -9,7 +9,7 @@
 	 * it applies to. Notes are produced by optimizers and collected by a
 	 * PlanLog for later inspection.
 	 */
-	readonly class PlanNote {
+	readonly class PlanNote implements \JsonSerializable {
 		
 		/**
 		 * @param string $source Where the decision was made: 'optimizer' or 'planner'
@@ -24,6 +24,18 @@
 			public string  $decision,
 			public string  $reason,
 			public ?string $subject = null,
-		) {
+		) {}
+
+		/**
+		 * @return array<string, string|null>
+		 */
+		public function jsonSerialize(): array {
+			return [
+				'source'   => $this->source,
+				'category' => $this->category,
+				'decision' => $this->decision,
+				'reason'   => $this->reason,
+				'subject'  => $this->subject,
+			];
 		}
 	}

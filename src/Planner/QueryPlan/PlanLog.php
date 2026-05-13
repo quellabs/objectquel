@@ -1,6 +1,6 @@
 <?php
 	
-	namespace Quellabs\ObjectQuel\Planner;
+	namespace Quellabs\ObjectQuel\Planner\QueryPlan;
 	
 	/**
 	 * Records planning decisions for later inspection.
@@ -31,6 +31,13 @@
 		 * @return PlanNote[]
 		 */
 		public function getNotes(): array {
+			return $this->notes;
+		}
+
+		/**
+		 * @return array<int, PlanNote>
+		 */
+		public function jsonSerialize(): array {
 			return $this->notes;
 		}
 	}

@@ -1,6 +1,6 @@
 <?php
 	
-	namespace Quellabs\ObjectQuel\Planner;
+	namespace Quellabs\ObjectQuel\Planner\QueryPlan;
 	
 	/**
 	 * No-op plan log used during normal (non-explain) query execution.
@@ -21,5 +21,12 @@
 			?string $subject = null
 		): void {
 			// intentional no-op
+		}
+
+		/**
+		 * @return array{}
+		 */
+		public function jsonSerialize(): array {
+			return [];
 		}
 	}

@@ -2,22 +2,16 @@
 	
 	namespace Quellabs\ObjectQuel\Planner;
 	
-	use Quellabs\ObjectQuel\Capabilities\PlatformCapabilities;
-	use Quellabs\ObjectQuel\EntityManager;
-	use Quellabs\ObjectQuel\EntityStore;
 	use Quellabs\ObjectQuel\Exception\EntityResolutionException;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRangeDatabaseSubquery;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRangeDatabaseTempTable;
 	use Quellabs\ObjectQuel\Planner\Helpers\ConditionAnalyzer;
 	use Quellabs\ObjectQuel\Planner\Helpers\ConditionFilter;
 	use Quellabs\ObjectQuel\Planner\Helpers\StageFactory;
-	use Quellabs\ObjectQuel\Planner\Visitors\SearchStrategyResolver;
-	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRangeDatabase;
-	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRangeJsonSource;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRetrieve;
 	use Quellabs\ObjectQuel\Exception\QuelException;
-	use Quellabs\ObjectQuel\Planner\PlanLogInterface;
-	use Quellabs\ObjectQuel\Planner\NullPlanLog;
+	use Quellabs\ObjectQuel\Planner\QueryPlan\PlanLogInterface;
+	use Quellabs\ObjectQuel\Planner\QueryPlan\NullPlanLog;
 	
 	/**
 	 * Orchestrates the decomposition of a query into an ExecutionPlan.
