@@ -30,7 +30,7 @@
 	use Quellabs\ObjectQuel\ProxyGenerator\ProxyInterface;
 	use Quellabs\ObjectQuel\Execution\QueryBuilder;
 	use Quellabs\ObjectQuel\Execution\QueryExecutor;
-	use Quellabs\ObjectQuel\Planner\PlanLog;
+	use Quellabs\ObjectQuel\Planner\QueryPlan;
 	use Quellabs\ObjectQuel\ReflectionManagement\PropertyHandler;
 	use Quellabs\ObjectQuel\Validation\EntityToValidation;
 	use Quellabs\ObjectQuel\Validation\ValidationInterface;
@@ -194,15 +194,15 @@
 		}
 		
 		/**
-		 * Returns a log of planner decisions for a query without executing it.
-		 * The ObjectQuel equivalent of SQL's EXPLAIN.
-		 * @param string $query The ObjectQuel query string to explain
+		 * Returns planner decisions and generated SQL for a query without executing it.
+		 * Combines explain() with a SQL dry-run into one coherent result.
+		 * @param string $query The ObjectQuel query string
 		 * @param array<string, mixed> $parameters Query parameters
-		 * @return PlanLog Planning decisions in pipeline order
+		 * @return QueryPlan Planning decisions and generated SQL
 		 * @throws QuelException
 		 */
-		public function explain(string $query, array $parameters = []): PlanLog {
-			return $this->queryExecutor->explain($query, $parameters);
+		public function explainQuery(string $query, array $parameters = []): QueryPlan {
+			return $this->queryExecutor->explainQuery($query, $parameters);
 		}
 		
 		/**
