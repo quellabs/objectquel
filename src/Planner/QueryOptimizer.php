@@ -109,8 +109,9 @@
 			$this->searchResolver->resolve($ast, $parameters);
 			
 			// Phase 5: Final cleanup
-			// Optimize constant values and references last when structure is stable
-			$this->joinOptimizer->optimize($ast);
+			// Optimizes value references and constants, and removes any LEFT JOIN ranges
+			// that became unreferenced after Phase 4 rewrites (e.g. AnyOptimizer moved
+			// a range entirely into a correlated subquery).
 			$this->rangeOptimizer->removeUnusedLeftJoinRanges($ast, false);
 			$this->JoinConditionFieldInjector->optimize($ast);
 		}
