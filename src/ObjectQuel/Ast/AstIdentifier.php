@@ -190,14 +190,6 @@
 		// =========================================================================
 		
 		/**
-		 * Returns true if this node is the root node (has no parent identifier).
-		 * @return bool
-		 */
-		public function isRoot(): bool {
-			return !$this->hasParentIdentifier();
-		}
-		
-		/**
 		 * Returns true if the node has an identifier as parent.
 		 * @return bool
 		 */
@@ -247,14 +239,6 @@
 		// =========================================================================
 		
 		/**
-		 * Returns true if a range (data source) was assigned to this identifier.
-		 * @return bool
-		 */
-		public function hasRange(): bool {
-			return $this->range !== null;
-		}
-		
-		/**
 		 * Returns the range (data source) directly attached to this identifier.
 		 * @return AstRange|null
 		 */
@@ -280,16 +264,6 @@
 		public function getSourceRange(): ?AstRange {
 			$baseIdentifier = $this->getBaseIdentifier();
 			return $baseIdentifier?->getRange();
-		}
-		
-		/**
-		 * Returns the name of the range this identifier belongs to.
-		 * For "user.id", returns "user".
-		 * For "c.title", returns "c".
-		 * @return string|null The range name, or null if no range attached.
-		 */
-		public function getSourceRangeName(): ?string {
-			return $this->getSourceRange()?->getName();
 		}
 
 		// =========================================================================

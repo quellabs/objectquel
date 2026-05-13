@@ -42,7 +42,7 @@
 			/**
 			 * Only use root nodes
 			 */
-			if (!$node->isRoot()) {
+			if ($node->hasParentIdentifier()) {
 				return;
 			}
 			

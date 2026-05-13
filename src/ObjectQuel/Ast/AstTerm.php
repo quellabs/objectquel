@@ -7,10 +7,21 @@
 	
 	class AstTerm extends Ast implements NodeBinary {
 		
+		/** @var AstInterface Left operand */
 		protected AstInterface $left;
+		
+		/** @var AstInterface Right operand */
 		protected AstInterface $right;
+		
+		/** @var string operator ('+' or '-') */
 		protected string $operator;
 		
+		/**
+		 * Term constructor
+		 * @param AstInterface $left
+		 * @param AstInterface $right
+		 * @param string $operator
+		 */
 		public function __construct(AstInterface $left, AstInterface $right, string $operator) {
 			$this->left = $left;
 			$this->right = $right;

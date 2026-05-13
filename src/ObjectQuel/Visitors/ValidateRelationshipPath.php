@@ -52,7 +52,7 @@
 			}
 			
 			// Skip chained segments — only the root of a chain represents a full path
-			if (!$node->isRoot()) {
+			if ($node->hasParentIdentifier()) {
 				return;
 			}
 			

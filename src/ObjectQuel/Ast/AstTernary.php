@@ -64,6 +64,16 @@
 		}
 		
 		/**
+		 * Sets a new condition
+		 * @param AstInterface $ast
+		 * @return $this
+		 */
+		public function setCondition(AstInterface $ast): self {
+			$this->condition = $ast;
+			return $this;
+		}
+		
+		/**
 		 * Get the true branch of the ternary operation.
 		 * @return AstInterface The true branch.
 		 */
@@ -79,6 +89,10 @@
 			return $this->false;
 		}
 		
+		/**
+		 * Clone the node
+		 * @return $this
+		 */
 		public function deepClone(): static {
 			// Clone both operands
 			$condition = $this->condition->deepClone();

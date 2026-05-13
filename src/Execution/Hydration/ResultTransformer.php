@@ -38,7 +38,7 @@
 					}
 					
 					return [
-						'range'     => $ast->getSourceRangeName(),
+						'range'     => $ast->getSourceRange()?->getName(),
 						'direction' => strtolower($item['direction'] ?? 'asc'),
 					];
 				},
