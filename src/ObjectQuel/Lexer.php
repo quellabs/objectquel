@@ -77,7 +77,7 @@
 		        'window'      => Token::Window,
 		        'using'       => Token::Using,
 		        'window_size' => Token::WindowSize,
-		        'json'        => Token::Json,
+		        'json_source' => Token::JsonSource,
 		        'filter'      => Token::Filter,
 	        ];
 			

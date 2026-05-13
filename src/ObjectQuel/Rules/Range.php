@@ -35,24 +35,29 @@
 		
 		/**
 		 * Parse a JSON source definition in a RANGE clause
-		 * Format: RANGE OF alias IS JSON_SOURCE("path/to/file.json"[, "optional filter expression"])
+		 * Format: RANGE OF alias IS JSON_SOURCE("path/to/file.json"[, "optional JSONPath expression"])
 		 * @param string $alias The alias
 		 * @return AstRangeJsonSource AST node representing a JSON data source
 		 * @throws LexerException If token matching fails
 		 */
 		private function parseJson(string $alias): AstRangeJsonSource {
+			// Consume the opening parenthesis
+			$this->lexer->match(Token::ParenthesesOpen);
+
 			// Get the file path string
 			$path = $this->lexer->match(Token::String);
 			
-			// Check for an optional filter expression (separated by comma)
+			// Check for an optional JSONPath expression (separated by comma)
 			$expression = null;
 
-			if ($this->lexer->optionalMatch(Token::Filter)) {
-				$expression = $this->lexer->match(Token::String);
-				$expression = $expression->getValue();
+			if ($this->lexer->optionalMatch(Token::Comma)) {
+				$expression = $this->lexer->match(Token::String)->getValue();
 			}
 			
-			// Create and return the AST node for a JSON source with the alias, path, and optional filter
+			// Consume the closing parenthesis
+			$this->lexer->match(Token::ParenthesesClose);
+
+			// Create and return the AST node for a JSON source with the alias, path, and optional JSONPath
 			return new AstRangeJsonSource($alias, $path->getValue(), $expression);
 		}
 		
@@ -157,15 +162,13 @@
 			// Match and consume the 'IS' keyword
 			$this->lexer->match(Token::Is);
 			
-			// Check if the next token is an opening parenthesis; if so it's a temp table specification
+			// Check if the next token is an opening parenthesis; if so it's a subquery specification
 			if ($this->lexer->lookahead() == Token::ParenthesesOpen) {
-				// Handle JSON source definition
 				return $this->parseQuery($alias->getValue());
 			}
 			
 			// Check if the next token is 'JSON' to determine the type of data source
-			if ($this->lexer->optionalMatch(Token::Json)) {
-				// Handle JSON source definition
+			if ($this->lexer->optionalMatch(Token::JsonSource)) {
 				return $this->parseJson($alias->getValue());
 			}
 			
