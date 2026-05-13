@@ -82,6 +82,14 @@
 		private ?int $defaultWindowSize = null;
 		
 		/**
+		 * @var bool Whether the application is running in development mode.
+		 * When enabled, every query emits a debug signal containing the full
+		 * query plan (planner decisions + generated SQL). Carries overhead per
+		 * query; never enable in production.
+		 */
+		private bool $developmentMode = false;
+		
+		/**
 		 * Retrieves entity path
 		 * @return string Primary entity path
 		 */
@@ -221,5 +229,23 @@
 		 */
 		public function setDefaultWindowSize(?int $defaultWindowSize): void {
 			$this->defaultWindowSize = $defaultWindowSize;
+		}
+		
+		/**
+		 * Returns whether the application is running in development mode.
+		 * @return bool
+		 */
+		public function getDevelopmentMode(): bool {
+			return $this->developmentMode;
+		}
+		
+		/**
+		 * Enables or disables development mode.
+		 * @param bool $developmentMode
+		 * @return self
+		 */
+		public function setDevelopmentMode(bool $developmentMode): self {
+			$this->developmentMode = $developmentMode;
+			return $this;
 		}
 	}

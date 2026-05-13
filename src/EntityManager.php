@@ -177,18 +177,24 @@
 			// Record end time to calculate execution duration
 			$end = microtime(true);
 			
-			// Emit debug signal with comprehensive query execution information
-			// Time is converted to milliseconds for easier readability
-			$this->debugQuerySignal?->emit([
-				'driver'            => 'objectquel',
-				'query'             => Tools::dedent($query),
-				'sql'               => $this->queryExecutor->getLastExecutedSql(),
-				'bound_parameters'  => $parameters,
-				'execution_time_ms' => round(($end - $start) * 1000, 0, PHP_ROUND_HALF_UP),
-				'timestamp'         => date('Y-m-d H:i:s'),
-				'memory_usage_kb'   => memory_get_usage(true) / 1024,
-				'peak_memory_kb'    => memory_get_peak_usage(true) / 1024
-			]);
+			// In development mode, emit a debug signal with the full query plan
+			// (planner decisions + generated SQL). Skipped entirely in production.
+			if ($this->configuration->getDevelopmentMode()) {
+				// Explain the query
+				$plan = $this->queryExecutor->explainQuery($query, $parameters);
+				
+				// Emit the query plan + additional query info
+				$this->debugQuerySignal?->emit([
+					'driver'            => 'objectquel',
+					'query'             => Tools::dedent($query),
+					'query_plan'        => $plan->getNotes(),
+					'bound_parameters'  => $parameters,
+					'execution_time_ms' => round(($end - $start) * 1000, 0, PHP_ROUND_HALF_UP),
+					'timestamp'         => date('Y-m-d H:i:s'),
+					'memory_usage_kb'   => memory_get_usage(true) / 1024,
+					'peak_memory_kb'    => memory_get_peak_usage(true) / 1024,
+				]);
+			}
 			
 			return $result;
 		}
