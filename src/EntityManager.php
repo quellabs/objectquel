@@ -192,7 +192,7 @@
 				$this->debugQuerySignal?->emit([
 					'driver'            => 'objectquel',
 					'query'             => Tools::dedent($query),
-					'query_plan'        => $plan->getNotes(),
+					'query_plan'        => $plan,
 					'bound_parameters'  => $parameters,
 					'execution_time_ms' => $executionTime,
 					'timestamp'         => date('Y-m-d H:i:s'),
