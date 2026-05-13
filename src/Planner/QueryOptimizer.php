@@ -14,6 +14,8 @@
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRetrieve;
 	use Quellabs\ObjectQuel\Planner\Helpers\InjectDiscriminatorCondition;
 	use Quellabs\ObjectQuel\Planner\Visitors\SearchStrategyResolver;
+	use Quellabs\ObjectQuel\Planner\PlanLogInterface;
+	use Quellabs\ObjectQuel\Planner\NullPlanLog;
 	
 	/**
 	 * Main orchestrator that coordinates all query optimization strategies.
@@ -69,12 +71,13 @@
 		 * then optimizes the outer query.
 		 * @param AstRetrieve $ast The query AST to optimize in-place
 		 * @param array<string, mixed> $parameters Runtime query parameters
+		 * @param PlanLogInterface $log Collects planning decisions; use NullPlanLog to disable
 		 * @throws QuelException|EntityResolutionException|TransformationException
 		 */
-		public function transform(AstRetrieve $ast, array $parameters): void {
+		public function transform(AstRetrieve $ast, array $parameters, PlanLogInterface $log = new NullPlanLog()): void {
 			// First, recursively transform all nested queries in temporary ranges
 			// This ensures inner queries are fully resolved before outer query processing
-			$this->transformNestedQueries($ast, $parameters);
+			$this->transformNestedQueries($ast, $parameters, $log);
 			
 			// Step 2.5: Inject discriminator conditions for single-table inheritance
 			// Iterates ranges directly — no need for a full AST traversal since
@@ -89,14 +92,14 @@
 			$this->constantFoldingOptimizer->optimize($ast);
 			$this->booleanConstantOptimizer->optimize($ast);
 			$this->rangePromotor->optimize($ast);
-			$this->rangeOptimizer->optimize($ast);
+			$this->rangeOptimizer->optimize($ast, $log);
 			
 			// Phase 2: Remove left joins that are not referenced in the query
-			$this->rangeOptimizer->removeUnusedLeftJoinRanges($ast);
+			$this->rangeOptimizer->removeUnusedLeftJoinRanges($ast, true, $log);
 			$this->rangeOptimizer->removeUnusedTemporaryRanges($ast);
 			
 			// Phase 3: Optimize joins
-			$this->joinOptimizer->optimize($ast);
+			$this->joinOptimizer->optimize($ast, $log);
 			
 			// Phase 4: Subquery and aggregate optimizations
 			// Convert EXISTS to JOINs where beneficial, then optimize aggregates
@@ -106,13 +109,13 @@
 			$this->aggregateOptimizer->optimize($ast);
 			
 			// Convert search(...) to like/fulltext node
-			$this->searchResolver->resolve($ast, $parameters);
+			$this->searchResolver->resolve($ast, $parameters, $log);
 			
 			// Phase 5: Final cleanup
-			// Optimizes value references and constants, and removes any LEFT JOIN ranges
-			// that became unreferenced after Phase 4 rewrites (e.g. AnyOptimizer moved
-			// a range entirely into a correlated subquery).
-			$this->rangeOptimizer->removeUnusedLeftJoinRanges($ast, false);
+			// Remove LEFT JOIN ranges that became unreferenced after Phase 4 rewrites
+			// (e.g. AnyOptimizer moved a range entirely into a correlated subquery).
+			// JoinConditionFieldInjector runs last so it sees the final range set.
+			$this->rangeOptimizer->removeUnusedLeftJoinRanges($ast, false, $log);
 			$this->JoinConditionFieldInjector->optimize($ast);
 		}
 		
@@ -125,7 +128,7 @@
 		 * @throws TransformationException
 		 * @throws EntityResolutionException|QuelException
 		 */
-		private function transformNestedQueries(AstRetrieve $ast, array $parameters): void {
+		private function transformNestedQueries(AstRetrieve $ast, array $parameters, PlanLogInterface $log): void {
 			foreach ($ast->getRanges() as $range) {
 				// Only process temporary ranges that contain nested queries
 				if (!$range instanceof AstRangeDatabaseSubquery) {
@@ -133,7 +136,7 @@
 				}
 				
 				// Recursively transform the inner query with full transformation pipeline
-				$this->transform($range->getQuery(), $parameters);
+				$this->transform($range->getQuery(), $parameters, $log);
 			}
 		}
 		

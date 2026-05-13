@@ -2,7 +2,6 @@
 	
 	namespace Quellabs\ObjectQuel\Planner\Optimizers;
 	
-	use Quellabs\AnnotationReader\AnnotationInterface;
 	use Quellabs\ObjectQuel\Annotations\Orm\ManyToOne;
 	use Quellabs\ObjectQuel\Annotations\Orm\OneToOne;
 	use Quellabs\ObjectQuel\Annotations\Orm\RequiredRelation;
@@ -21,6 +20,8 @@
 	use Quellabs\ObjectQuel\Planner\Visitors\CollectRanges;
 	use Quellabs\ObjectQuel\Planner\Visitors\DetectNonNullableField;
 	use Quellabs\ObjectQuel\Planner\Helpers\BinaryOperationHelper;
+	use Quellabs\ObjectQuel\Planner\PlanLogInterface;
+	use Quellabs\ObjectQuel\Planner\NullPlanLog;
 	
 	/**
 	 * Handles range-specific optimizations including required annotations
@@ -63,14 +64,14 @@
 		 * @throws EntityResolutionException
 		 * @throws TransformationException
 		 */
-		public function optimize(AstRetrieve $ast): void {
+		public function optimize(AstRetrieve $ast, PlanLogInterface $log = new NullPlanLog()): void {
 			// First, mark single ranges as required (trivial case)
 			// This is a quick win: single table queries can't use LEFT JOINs anyway
 			$this->setOnlyRangeToRequired($ast);
 			
 			// Then check for annotation-based requirements
 			// This uses ORM metadata to determine semantic requirements
-			$this->setRangesRequiredThroughAnnotations($ast);
+			$this->setRangesRequiredThroughAnnotations($ast, $log);
 		}
 		
 		/**
@@ -112,7 +113,7 @@
 		 * @throws EntityResolutionException
 		 * @throws TransformationException
 		 */
-		private function setRangesRequiredThroughAnnotations(AstRetrieve $ast): void {
+		private function setRangesRequiredThroughAnnotations(AstRetrieve $ast, PlanLogInterface $log): void {
 			// Get the main table (the one without a JOIN condition)
 			// This is our starting point - the FROM table in SQL terms
 			$mainRange = $ast->getMainDatabaseRange();
@@ -164,7 +165,7 @@
 				// Verify this range is actually part of the join condition
 				// Safety check to ensure we're analyzing the correct relationship
 				if ($left->getEntityName() === $range->getEntityName()) {
-					$this->checkAndSetRangeRequired($mainRange, $range, $left, $right);
+					$this->checkAndSetRangeRequired($mainRange, $range, $left, $right, $log);
 				}
 			}
 		}
@@ -225,7 +226,7 @@
 		 * @param bool $traverseSubqueries
 		 * @return void Modifies the AST in place
 		 */
-		public function removeUnusedLeftJoinRanges(AstRetrieve $ast, bool $traverseSubqueries = true): void {
+		public function removeUnusedLeftJoinRanges(AstRetrieve $ast, bool $traverseSubqueries = true, PlanLogInterface $log = new NullPlanLog()): void {
 			$result = [];
 			$mainRange = $ast->getMainDatabaseRange();
 			$usedRangeNames = $this->collectUsedRangeNames($ast, $traverseSubqueries);
@@ -233,6 +234,11 @@
 			foreach ($ast->getRanges() as $range) {
 				if ($range === $mainRange || $range->isRequired() || isset($usedRangeNames[$range->getName()])) {
 					$result[] = $range;
+				} else {
+					$log->note('optimizer', 'join', 'UNUSED_JOIN_REMOVED',
+						"Range '{$range->getName()}' is not referenced in SELECT, WHERE, or ORDER BY; removed",
+						$range->getName()
+					);
 				}
 			}
 			
@@ -318,13 +324,30 @@
 		}
 		
 		/**
-		 * Checks annotations on both sides of the join and sets range as required
-		 * if a matching RequiredRelation is found on either entity.
+		 * Checks annotations and sets range as required if a matching RequiredRelation is found.
 		 *
-		 * The annotation can legitimately be declared on the owning entity (the one
-		 * holding the FK) or on the related entity (pointing back). We check both
-		 * to avoid silently missing optimizations based on where the developer placed
-		 * the annotation.
+		 * This is the core of semantic optimization using ORM metadata.
+		 *
+		 * Process Flow:
+		 * 1. Determine the direction of the relationship (which table owns the foreign key)
+		 * 2. Extract property names from both sides of the JOIN condition
+		 * 3. Look up entity annotations for the owning entity (or analyze temporary range structure)
+		 * 4. Search for RequiredRelation annotations that match this relationship
+		 * 5. If found, mark the range as required (converting LEFT JOIN to INNER JOIN)
+		 *
+		 * Relationship Direction Examples:
+		 * - User.department_id = Department.id (User owns the relationship)
+		 * - Department.id = User.department_id (same relationship, different order)
+		 *
+		 * Annotation Matching:
+		 * - Target entity must match the joined table
+		 * - Relation column must match the foreign key field
+		 * - Inverse property must match the back-reference field
+		 *
+		 * Temporary Range Handling:
+		 * - For subqueries, uses nullability analysis instead of annotations
+		 * - Traces through the subquery structure to find source field nullability
+		 * - Converts LEFT JOIN to INNER JOIN if the joined field is non-nullable
 		 *
 		 * @param AstRangeDatabase $mainRange The main table range
 		 * @param AstRangeDatabase $range The range being checked for requirement
@@ -337,73 +360,56 @@
 			AstRangeDatabase $mainRange,
 			AstRangeDatabase $range,
 			AstIdentifier    $left,
-			AstIdentifier    $right
+			AstIdentifier    $right,
+			PlanLogInterface $log
 		): void {
 			// Determine relationship direction by checking which side references the main range
+			// This tells us which entity "owns" the relationship (has the foreign key)
 			$isMainRange = $right->getRange() === $mainRange;
 			
-			$ownEntityName     = $isMainRange ? $right->getEntityName() : $left->getEntityName();
-			$ownPropertyName   = $isMainRange ? $right->getName()       : $left->getName();
-			$relatedEntityName = $isMainRange ? $left->getEntityName()  : $right->getEntityName();
-			$relatedPropertyName = $isMainRange ? $left->getName()      : $right->getName();
+			// Extract property and entity names based on join direction
+			// These will be used to match against annotation metadata
+			$ownEntityName = $isMainRange ? $right->getEntityName() : $left->getEntityName();
+			$ownPropertyName = $isMainRange ? $right->getName() : $left->getName();
+			$relatedPropertyName = $isMainRange ? $left->getName() : $right->getName();
+			$relatedEntityName = $isMainRange ? $left->getEntityName() : $right->getEntityName();
 			
-			// Temporary ranges have no entity metadata — fall back to nullability analysis
+			// Handle temporary ranges (subqueries) with nullability analysis
+			// Temporary tables have no entity metadata or annotations.
+			// Also bail out if $relatedEntityName is null, since hasMatchingRequiredRelationAnnotation()
+			// requires a non-null string and getEntityName() can return null.
 			if (empty($ownEntityName) || $relatedEntityName === null) {
-				$this->checkTemporaryRangeRequired($range, $isMainRange, $left, $right);
+				$this->checkTemporaryRangeRequired($range, $isMainRange, $left, $right, $log);
 				return;
 			}
 			
 			// Check 1: annotation on the owning entity (holds the FK / relationColumn)
 			if ($this->hasMatchingRequiredRelationAnnotation($ownEntityName, $relatedEntityName, $ownPropertyName, $relatedPropertyName)) {
+				// Set range required
 				$range->setRequired();
+				
+				// Add note to log
+				$log->note('optimizer', 'join', 'ANNOTATION_INNER',
+					"Range '{$range->getName()}' has @RequiredRelation on '{$ownPropertyName}'; forced INNER JOIN",
+					$range->getName()
+				);
+				
 				return;
 			}
 			
 			// Check 2: annotation on the related entity (declared from the inverse side).
 			// When the annotation is placed on the joined entity rather than the main entity,
-			// the roles of ownPropertyName and relatedPropertyName are swapped relative to
-			// what isMatchingRequiredRelation expects.
+			// the roles of ownPropertyName and relatedPropertyName are swapped.
 			if ($this->hasMatchingRequiredRelationAnnotation($relatedEntityName, $ownEntityName, $relatedPropertyName, $ownPropertyName)) {
+				// Set range required
 				$range->setRequired();
-			}
-		}
-		
-		/**
-		 * Searches an entity's annotations for a RequiredRelation that matches the
-		 * described join relationship.
-		 * @param string $entityName Entity whose annotations are searched
-		 * @param string $relatedEntityName Entity on the other side of the join
-		 * @param string $ownPropertyName FK property on $entityName
-		 * @param string $relatedPropertyName Back-reference property on $relatedEntityName
-		 * @return bool
-		 * @throws EntityResolutionException
-		 */
-		private function hasMatchingRequiredRelationAnnotation(
-			string $entityName,
-			string $relatedEntityName,
-			string $ownPropertyName,
-			string $relatedPropertyName
-		): bool {
-			foreach ($this->entityStore->getAnnotations($entityName) as $annotations) {
-				// Only consider properties that are marked @RequiredRelation
-				if (!$this->containsRequiredRelationAnnotation($annotations)) {
-					continue;
-				}
 				
-				// Check whether the relationship annotation on this property matches the join
-				foreach ($annotations as $annotation) {
-					if (
-						($annotation instanceof ManyToOne || $annotation instanceof OneToOne) &&
-						$annotation->getTargetEntity() === $relatedEntityName &&
-						$annotation->getRelationColumn() === $ownPropertyName &&
-						$annotation->getInversedBy() === $relatedPropertyName
-					) {
-						return true;
-					}
-				}
+				// Add note to log
+				$log->note('optimizer', 'join', 'ANNOTATION_INNER',
+					"Range '{$range->getName()}' has @RequiredRelation on '{$relatedPropertyName}' (inverse side); forced INNER JOIN",
+					$range->getName()
+				);
 			}
-			
-			return false;
 		}
 		
 		/**
@@ -426,7 +432,8 @@
 			AstRange      $range,
 			bool          $isMainRange,
 			AstIdentifier $left,
-			AstIdentifier $right
+			AstIdentifier $right,
+			PlanLogInterface $log
 		): void {
 			// Identify which side contains the temporary range
 			$joinedRange = $isMainRange ? $right->getRange() : $left->getRange();
@@ -452,29 +459,60 @@
 			
 			// Non-nullable field in join condition = safe to convert to INNER JOIN
 			if ($visitor->isNonNullable()) {
+				// Set required
 				$range->setRequired();
+				
+				// Add note to the log
+				$log->note('optimizer', 'join', 'TEMP_RANGE_INNER',
+					"Range '{$range->getName()}' joins on a non-nullable field; LEFT JOIN promoted to INNER JOIN",
+					$range->getName()
+				);
 			}
 		}
 		
 		/**
-		 * Quick check if an annotation array contains any RequiredRelation annotations.
+		 * Searches an entity's annotations for a RequiredRelation that matches the
+		 * described join relationship. Checks for the presence of @RequiredRelation
+		 * on a property and then verifies the accompanying @ManyToOne or @OneToOne
+		 * annotation matches the expected entity, FK column, and inverse property.
 		 *
-		 * This is a performance optimization to avoid expensive annotation analysis
-		 * when we know there are no relevant annotations in a group.
-		 *
-		 * Why This Optimization Matters:
-		 * - Entity annotations can contain dozens of different annotation types
-		 * - Most annotation groups won't contain RequiredRelation annotations
-		 * - Early filtering prevents unnecessary detailed analysis
-		 * - Reduces overall optimization time for complex entities
-		 *
-		 * @param array<int, AnnotationInterface> $annotations Array of annotations to check
-		 * @return bool True if any RequiredRelation annotations are found
+		 * @param string $entityName Entity whose annotations are searched
+		 * @param string $relatedEntityName Entity on the other side of the join
+		 * @param string $ownPropertyName FK property on $entityName
+		 * @param string $relatedPropertyName Back-reference property on $relatedEntityName
+		 * @return bool
+		 * @throws EntityResolutionException
 		 */
-		private function containsRequiredRelationAnnotation(array $annotations): bool {
-			foreach ($annotations as $annotation) {
-				if ($annotation instanceof RequiredRelation) {
-					return true;
+		private function hasMatchingRequiredRelationAnnotation(
+			string $entityName,
+			string $relatedEntityName,
+			string $ownPropertyName,
+			string $relatedPropertyName
+		): bool {
+			$annotationBucket = $this->entityStore->getAnnotations($entityName);
+			
+			foreach ($annotationBucket as $annotations) {
+				$hasRequiredRelation = false;
+				$hasMatchingRelation = false;
+				
+				foreach ($annotations as $annotation) {
+					if ($annotation instanceof RequiredRelation) {
+						$hasRequiredRelation = true;
+						continue;
+					}
+					
+					if (
+						($annotation instanceof ManyToOne || $annotation instanceof OneToOne) &&
+						$annotation->getTargetEntity() === $relatedEntityName &&
+						$annotation->getRelationColumn() === $ownPropertyName &&
+						$annotation->getInversedBy() === $relatedPropertyName
+					) {
+						$hasMatchingRelation = true;
+					}
+					
+					if ($hasRequiredRelation && $hasMatchingRelation) {
+						return true;
+					}
 				}
 			}
 			

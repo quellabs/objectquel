@@ -15,6 +15,8 @@
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstString;
 	use Quellabs\ObjectQuel\ObjectQuel\Visitors\CollectNodes;
 	use Quellabs\ObjectQuel\Planner\Helpers\AstNodeReplacer;
+	use Quellabs\ObjectQuel\Planner\PlanLogInterface;
+	use Quellabs\ObjectQuel\Planner\NullPlanLog;
 	
 	/**
 	 * Planning-time pass that rewrites AstSearch nodes in a query's WHERE clause
@@ -48,7 +50,7 @@
 		 * @throws EntityResolutionException
 		 * @throws QuelException
 		 */
-		public function resolve(AstRetrieve $query, array $parameters): void {
+		public function resolve(AstRetrieve $query, array $parameters, PlanLogInterface $log = new NullPlanLog()): void {
 			// Fetch the query's conditions
 			$conditions = $query->getConditions();
 			
@@ -75,7 +77,7 @@
 				}
 				
 				// Generate replacement
-				$replacement = $this->rewriteSearch($searchNode, $parameters);
+				$replacement = $this->rewriteSearch($searchNode, $parameters, $log);
 				
 				// Replace the node
 				AstNodeReplacer::replaceChild($parent, $searchNode, $replacement);
@@ -94,12 +96,24 @@
 		 * @throws EntityResolutionException
 		 * @throws QuelException
 		 */
-		private function rewriteSearch(AstSearch $search, array $parameters): AstSearchFullText|AstSearchLike {
+		private function rewriteSearch(AstSearch $search, array $parameters, PlanLogInterface $log): AstSearchFullText|AstSearchLike {
 			$identifiers = $search->getIdentifiers();
-			
+			$rangeName = $identifiers[0]->getRange()?->getName() ?? 'unknown';
+			$columns = implode(', ', array_map(fn($id) => ($id->getNext()?->getName() ?? $id->getName()), $identifiers));
+
 			if ($this->detectFullTextIndex($identifiers) !== null) {
+				$log->note('optimizer', 'search', 'FULLTEXT',
+					"search() on [{$columns}] resolved to FULLTEXT INDEX (covering index found)",
+					$rangeName
+				);
+				
 				return $this->buildFullTextNode($identifiers, $search->getSearchString());
 			} else {
+				$log->note('optimizer', 'search', 'LIKE',
+					"search() on [{$columns}] resolved to LIKE (no covering FULLTEXT index found)",
+					$rangeName
+				);
+				
 				return $this->buildLikeNode($search, $parameters);
 			}
 		}

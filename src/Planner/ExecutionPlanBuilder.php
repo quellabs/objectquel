@@ -16,6 +16,8 @@
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRangeJsonSource;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRetrieve;
 	use Quellabs\ObjectQuel\Exception\QuelException;
+	use Quellabs\ObjectQuel\Planner\PlanLogInterface;
+	use Quellabs\ObjectQuel\Planner\NullPlanLog;
 	
 	/**
 	 * Orchestrates the decomposition of a query into an ExecutionPlan.
@@ -66,7 +68,7 @@
 		 * @return ExecutionPlan The execution plan containing all stages
 		 * @throws QuelException|EntityResolutionException If the query cannot be properly decomposed
 		 */
-		public function build(AstRetrieve $query, array $staticParams = []): ExecutionPlan {
+		public function build(AstRetrieve $query, array $staticParams = [], PlanLogInterface $log = new NullPlanLog()): ExecutionPlan {
 			$this->analyzer->clearCache();
 			
 			// Create a new plan to populate
@@ -84,10 +86,10 @@
 			}
 			
 			// Build TempTableStages and register inter-stage dependencies
-			$tempTableStageNames = $this->buildTempTableStages($plan, $tempRanges, $staticParams);
+			$tempTableStageNames = $this->buildTempTableStages($plan, $tempRanges, $staticParams, $log);
 			
 			// Build the main database stage and wire its dependencies on all TempTableStages
-			$this->buildDatabaseStage($plan, $query, $staticParams, $tempTableStageNames);
+			$this->buildDatabaseStage($plan, $query, $staticParams, $tempTableStageNames, $log);
 			
 			// JSON stages
 			foreach ($query->getOtherRanges() as $otherRange) {
@@ -112,7 +114,7 @@
 		 * @return string[] Map of rangeName → TempTableStage name
 		 * @throws QuelException|EntityResolutionException
 		 */
-		private function buildTempTableStages(ExecutionPlan $plan, array $tempRanges, array $staticParams): array {
+		private function buildTempTableStages(ExecutionPlan $plan, array $tempRanges, array $staticParams, PlanLogInterface $log): array {
 			// rangeName → TempTableStage name, built up as stages are added so inter-stage
 			// dependency checks can refer to stages that were created earlier in the loop.
 			$tempTableStageNames = [];
@@ -126,11 +128,17 @@
 				// Create a stage name
 				$tempStageName = uniqid('tmp_stage_');
 				
-				// Build the plan
-				$innerPlan = $this->build($tempRange->getQuery(), $staticParams);
+				// Build the plan, threading the log through so inner queries are also recorded
+				$innerPlan = $this->build($tempRange->getQuery(), $staticParams, $log);
 				
 				// Add the stage to the plan
 				$plan->addStage(new TempTableStage($tempStageName, $tempRange, $innerPlan, $staticParams));
+				
+				// Add note for the temp table materialization
+				$log->note('planner', 'stage', 'TEMP_TABLE',
+					"Range '{$tempRange->getName()}' requires temp table materialization (contains external/JSON source)",
+					$tempRange->getName()
+				);
 				
 				// Store in list
 				$tempTableStageNames[$tempRange->getName()] = $tempStageName;
@@ -162,7 +170,7 @@
 		 * @param array<string, mixed> $staticParams
 		 * @param string[] $tempTableStageNames Map of rangeName → TempTableStage name
 		 */
-		private function buildDatabaseStage(ExecutionPlan $plan, AstRetrieve $query, array $staticParams, array $tempTableStageNames): void {
+		private function buildDatabaseStage(ExecutionPlan $plan, AstRetrieve $query, array $staticParams, array $tempTableStageNames, PlanLogInterface $log): void {
 			// Create the stage
 			$databaseStage = $this->stageFactory->createDatabaseExecutionStage($query, $staticParams);
 			
@@ -178,6 +186,14 @@
 			// those must be fully materialized before the outer SQL can execute.
 			foreach ($tempTableStageNames as $tempStageName) {
 				$plan->addDependency($databaseStage->getName(), $tempStageName);
+			}
+			
+			// Add note to the log
+			if (!empty($tempTableStageNames)) {
+				$order = implode(' -> ', array_values($tempTableStageNames)) . ' -> ' . $databaseStage->getName();
+				$log->note('planner', 'stage', 'EXECUTION_ORDER',
+					"Stage execution order: {$order}"
+				);
 			}
 		}
 		
