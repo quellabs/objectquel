@@ -4,6 +4,9 @@
 	
 	use Quellabs\ObjectQuel\Capabilities\PlatformCapabilities;
 	use Quellabs\ObjectQuel\EntityManager;
+	use Quellabs\ObjectQuel\Exception\EntityResolutionException;
+	use Quellabs\ObjectQuel\Exception\QuelException;
+	use Quellabs\ObjectQuel\Exception\TransformationException;
 	use Quellabs\ObjectQuel\Planner\ExecutionStageInterface;
 	use Quellabs\ObjectQuel\Planner\QueryOptimizer;
 	
@@ -39,6 +42,9 @@
 		 * @param ExecutionStageInterface $stage
 		 * @param array<string, mixed> $initialParams
 		 * @return list<array<string, mixed>> Always returns an empty array
+		 * @throws EntityResolutionException
+		 * @throws QuelException
+		 * @throws TransformationException
 		 */
 		public function execute(ExecutionStageInterface $stage, array $initialParams = []): array {
 			$this->queryOptimizer->transform($stage->getQuery(), $initialParams);
