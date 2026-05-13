@@ -4,7 +4,7 @@
 	
 	use Flow\JSONPath\JSONPath;
 	use Flow\JSONPath\JSONPathException;
-	use Quellabs\ObjectQuel\Execution\ConditionEvaluator;
+	use Quellabs\ObjectQuel\Execution\Helpers\ConditionEvaluator;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRangeJsonSource;
 	use Quellabs\ObjectQuel\Exception\QuelException;
 	use Quellabs\ObjectQuel\Planner\ExecutionStageInterface;

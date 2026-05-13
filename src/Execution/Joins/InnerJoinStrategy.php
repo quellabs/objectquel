@@ -4,7 +4,7 @@
 	
 	use Quellabs\ObjectQuel\ObjectQuel\AstInterface;
 	use Quellabs\ObjectQuel\Exception\QuelException;
-	use Quellabs\ObjectQuel\Execution\ConditionEvaluator;
+	use Quellabs\ObjectQuel\Execution\Helpers\ConditionEvaluator;
 	
 	/**
 	 * Implements inner join between two result sets based on join conditions
