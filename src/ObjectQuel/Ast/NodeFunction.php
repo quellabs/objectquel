@@ -18,4 +18,11 @@
 		 * @return AstInterface
 		 */
 		public function getValue(): AstInterface;
+		
+		/**
+		 * Replaces the value expression.
+		 * @param AstInterface $value
+		 * @return void
+		 */
+		public function setValue(AstInterface $value): void;
 	}

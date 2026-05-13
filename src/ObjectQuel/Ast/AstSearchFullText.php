@@ -59,6 +59,15 @@
 		}
 		
 		/**
+		 * Sets new identifiers
+		 * @param AstIdentifier[] $identifiers
+		 * @return void
+		 */
+		public function setIdentifiers(array $identifiers): void {
+			$this->identifiers = $identifiers;
+		}
+		
+		/**
 		 * Returns the search string node passed to AGAINST.
 		 * @return AstString|AstParameter
 		 */

@@ -1,5 +1,5 @@
 <?php
-
+	
 	namespace Quellabs\ObjectQuel\Planner\Helpers;
 	
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstAggregate;

@@ -3,12 +3,14 @@
 	namespace Quellabs\ObjectQuel\ObjectQuel\Ast;
 	
 	use Quellabs\ObjectQuel\ObjectQuel\AstInterface;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\NodeWithAggregation;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\NodeWithConditions;
 	use Quellabs\ObjectQuel\ObjectQuel\AstVisitorInterface;
 	
 	/**
 	 * Class AstSubquery
 	 */
-	class AstSubquery extends Ast {
+	class AstSubquery extends Ast implements NodeWithConditions, NodeWithAggregation {
 		
 		public const string TYPE_SCALAR = 'scalar';        // (SELECT SUM(...))
 		public const string TYPE_EXISTS = 'exists';        // EXISTS(SELECT 1 ...)
@@ -108,6 +110,15 @@
 		 */
 		public function getConditions(): ?AstInterface {
 			return $this->conditions;
+		}
+		
+		/**
+		 * Replaces the WHERE conditions.
+		 * @param AstInterface|null $conditions
+		 * @return void
+		 */
+		public function setConditions(?AstInterface $conditions): void {
+			$this->conditions = $conditions;
 		}
 		
 		/**

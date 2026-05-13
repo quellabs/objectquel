@@ -72,20 +72,20 @@
 		}
 		
 		/**
-		 * Get the search string node
-		 * @return AstString|AstParameter The search string or parameter node
-		 */
-		public function getSearchString(): AstString|AstParameter {
-			return $this->searchString;
-		}
-		
-		/**
-		 * Sets the identifiers to use
+		 * Sets new identifiers
 		 * @param AstIdentifier[] $identifiers
 		 * @return void
 		 */
 		public function setIdentifiers(array $identifiers): void {
 			$this->identifiers = $identifiers;
+		}
+		
+		/**
+		 * Get the search string node
+		 * @return AstString|AstParameter The search string or parameter node
+		 */
+		public function getSearchString(): AstString|AstParameter {
+			return $this->searchString;
 		}
 		
 		/**

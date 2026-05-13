@@ -44,6 +44,15 @@
 		}
 		
 		/**
+		 * Sets a new value
+		 * @param AstInterface $value
+		 * @return void
+		 */
+		public function setValue(AstInterface $value): void {
+			$this->identifierOrString = $value;
+		}
+		
+		/**
 		 * Returns the return type of this node
 		 * @return string|null
 		 */

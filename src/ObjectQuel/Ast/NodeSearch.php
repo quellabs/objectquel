@@ -18,4 +18,11 @@
 		 * @return AstInterface[]
 		 */
 		public function getIdentifiers(): array;
+		
+		/**
+		 * Replaces the list of column identifiers.
+		 * @param AstInterface[] $identifiers
+		 * @return void
+		 */
+		public function setIdentifiers(array $identifiers): void;
 	}

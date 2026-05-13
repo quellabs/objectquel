@@ -67,13 +67,13 @@
 			foreach ($collector->getCollectedNodes() as $searchNode) {
 				// Fetch the parent
 				$parent = $searchNode->getParent();
-
+				
 				// AstSearch always appears inside a WHERE clause, so it always has a
 				// parent. A null parent here means the AST was constructed incorrectly.
 				if ($parent === null) {
 					throw new \LogicException('AstSearch node has no parent; cannot replace it in the tree.');
 				}
-
+				
 				// Generate replacement
 				$replacement = $this->rewriteSearch($searchNode, $parameters);
 				

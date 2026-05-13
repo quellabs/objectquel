@@ -19,4 +19,11 @@
 		 * @return AstInterface
 		 */
 		public function getIdentifier(): AstInterface;
+		
+		/**
+		 * Replaces the identifier.
+		 * @param AstInterface $identifier
+		 * @return void
+		 */
+		public function setIdentifier(AstInterface $identifier): void;
 	}

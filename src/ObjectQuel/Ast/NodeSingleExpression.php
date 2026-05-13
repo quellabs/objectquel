@@ -23,4 +23,11 @@
 		 * @return AstInterface
 		 */
 		public function getExpression(): AstInterface;
+		
+		/**
+		 * Replaces the inner expression.
+		 * @param AstInterface $expression
+		 * @return void
+		 */
+		public function setExpression(AstInterface $expression): void;
 	}

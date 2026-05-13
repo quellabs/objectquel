@@ -3,6 +3,7 @@
 	namespace Quellabs\ObjectQuel\ObjectQuel\Ast;
 	
 	use Quellabs\ObjectQuel\ObjectQuel\AstInterface;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\NodeWithConditions;
 	use Quellabs\ObjectQuel\ObjectQuel\AstVisitorInterface;
 	use Quellabs\ObjectQuel\ObjectQuel\Visitors\CollectIdentifiers;
 	use Quellabs\ObjectQuel\ObjectQuel\Visitors\DetectJsonSourceIdentifier;
@@ -21,7 +22,7 @@
 	 * - Uniqueness constraints (DISTINCT)
 	 * - Compiler directives and macros
 	 */
-	class AstRetrieve extends Ast {
+	class AstRetrieve extends Ast implements NodeWithConditions {
 		
 		/** @var array<string, mixed> Compiler directives that control query compilation behavior */
 		protected array $directives;

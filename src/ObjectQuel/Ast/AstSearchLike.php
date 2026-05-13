@@ -94,6 +94,15 @@
 		}
 		
 		/**
+		 * Sets new identifiers
+		 * @param AstIdentifier[] $identifiers
+		 * @return void
+		 */
+		public function setIdentifiers(array $identifiers): void {
+			$this->identifiers = $identifiers;
+		}
+		
+		/**
 		 * Returns the original search string node.
 		 * @return AstString|AstParameter
 		 */

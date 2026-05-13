@@ -2,11 +2,10 @@
 	
 	namespace Quellabs\ObjectQuel\Planner\Helpers;
 	
-	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstAggregate;
-	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRetrieve;
-	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstSubquery;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\NodeBinary;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\NodeConditionWrapper;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\NodeWithAggregation;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\NodeWithConditions;
 	use Quellabs\ObjectQuel\ObjectQuel\AstInterface;
 	
 	/**
@@ -44,27 +43,18 @@
 				return;
 			}
 			
-			// Replace conditions child (e.g., in WHERE clauses, aggregate filters).
-			// Only AstRetrieve and AstAggregate declare setConditions(); AstSubquery has
-			// getConditions() but no setter, so it is intentionally excluded here.
-			if (($parent instanceof AstRetrieve || $parent instanceof AstAggregate) && $parent->getConditions() === $oldChild) {
+			// Replace conditions child (e.g., in WHERE clauses, aggregate filters, subqueries).
+			// NodeWithConditions is implemented by AstRetrieve, AstAggregate, and AstSubquery,
+			// all of which declare both getConditions() and setConditions().
+			if ($parent instanceof NodeWithConditions && $parent->getConditions() === $oldChild) {
 				$parent->setConditions($newChild);
 				return;
 			}
 			
-			// Replace identifier child (e.g., the column reference inside an aggregate).
-			// AstAggregate declares both getIdentifier() and setIdentifier(). AstIn only
-			// has getIdentifier() with no setter, so testing the concrete abstract base
-			// class is the correct boundary here.
-			if ($parent instanceof AstAggregate && $parent->getIdentifier() === $oldChild) {
-				$parent->setIdentifier($newChild);
-				return;
-			}
-			
 			// Replace aggregation child (e.g., the aggregate expression inside a subquery).
-			// Only AstSubquery exposes getAggregation()/setAggregation(); the concrete
-			// class check is intentional — no shared interface exists for this slot.
-			if ($parent instanceof AstSubquery && $parent->getAggregation() === $oldChild) {
+			// NodeWithAggregation is implemented by AstSubquery, which exposes
+			// getAggregation() and setAggregation().
+			if ($parent instanceof NodeWithAggregation && $parent->getAggregation() === $oldChild) {
 				$parent->setAggregation($newChild);
 				return;
 			}
@@ -87,7 +77,7 @@
 		 * @param AstInterface $newChild The replacement child node
 		 * @throws \InvalidArgumentException When the old child is not found in either position
 		 */
-		public static function replaceBinaryChild(AstInterface $parent, AstInterface $oldChild, AstInterface $newChild): void {
+		private static function replaceBinaryChild(AstInterface $parent, AstInterface $oldChild, AstInterface $newChild): void {
 			// NodeBinary guarantees getLeft/setLeft and getRight/setRight, so no
 			// method_exists probing is needed — a plain instanceof suffices.
 			if (!($parent instanceof NodeBinary)) {
