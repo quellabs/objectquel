@@ -59,6 +59,7 @@
 				// Find the stage without a join property (the main FROM table)
 				$range = $stage->getRange();
 				
+				// If found, return the name
 				if ($range === null || $range->getJoinProperty() === null) {
 					return $stage->getName();
 				}

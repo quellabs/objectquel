@@ -164,9 +164,10 @@
 		 * @return ExecutionStage A new query containing only database-executable operations
 		 */
 		public function createRangeExecutionStage(AstRetrieve $query, AstRange $range, array $staticParams): ExecutionStage {
-			// Clone the query to avoid modifying the original
-			// This ensures we preserve the complete query for potential in-memory operations later
-			$dbQuery = clone $query;
+			// Deep-clone the query to avoid modifying the original.
+			// A shallow clone would share AstRange and AstAlias objects between stages,
+			// causing mutations in one stage (e.g. setRanges, setValues) to corrupt others.
+			$dbQuery = $query->deepClone();
 			
 			// Remove any non-database ranges (e.g., in-memory collections, JSON data)
 			// The resulting query will only reference actual database tables/views
