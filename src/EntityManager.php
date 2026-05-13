@@ -180,6 +180,11 @@
 			// In development mode, emit a debug signal with the full query plan
 			// (planner decisions + generated SQL). Skipped entirely in production.
 			if ($this->configuration->getDevelopmentMode()) {
+				// Fetch data
+				$executionTime = round(($end - $start) * 1000, 0, PHP_ROUND_HALF_UP);
+				$memoryUsage = memory_get_usage(true) / 1024;
+				$memoryPeakUsage = memory_get_peak_usage(true) / 1024;
+				
 				// Explain the query
 				$plan = $this->queryExecutor->explainQuery($query, $parameters);
 				
@@ -189,10 +194,10 @@
 					'query'             => Tools::dedent($query),
 					'query_plan'        => $plan->getNotes(),
 					'bound_parameters'  => $parameters,
-					'execution_time_ms' => round(($end - $start) * 1000, 0, PHP_ROUND_HALF_UP),
+					'execution_time_ms' => $executionTime,
 					'timestamp'         => date('Y-m-d H:i:s'),
-					'memory_usage_kb'   => memory_get_usage(true) / 1024,
-					'peak_memory_kb'    => memory_get_peak_usage(true) / 1024,
+					'memory_usage_kb'   => $memoryUsage,
+					'peak_memory_kb'    => $memoryPeakUsage,
 				]);
 			}
 			
