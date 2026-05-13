@@ -32,12 +32,17 @@
 			// Load the JSON file and perform initial filtering
 			$contents = $this->loadAndFilterJsonFile($jsonRange);
 			
+			// Load the conditions
+			$conditions = $stage->getQuery()->getConditions();
+			
 			// Use the conditions to further filter the file
 			$result = [];
 			
 			foreach ($contents as $row) {
-				if ($stage->getQuery()->getConditions() === null ||
-					ConditionEvaluator::evaluate($stage->getQuery()->getConditions(), $row, $initialParams)) {
+				if (
+					$conditions === null ||
+					ConditionEvaluator::evaluate($conditions, $contents, $row, $initialParams)
+				) {
 					$result[] = $row;
 				}
 			}

@@ -74,7 +74,7 @@
 					$candidateRow = array_merge($leftRow, $rightRow);
 					
 					try {
-						if (ConditionEvaluator::evaluate($conditions, $candidateRow)) {
+						if (ConditionEvaluator::evaluate($conditions, [], $candidateRow)) {
 							$combined[] = $candidateRow;
 							$matchFound = true;
 						}
