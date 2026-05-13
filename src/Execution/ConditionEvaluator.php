@@ -5,6 +5,7 @@
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstBinaryOperator;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstBool;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstConcat;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstExists;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstExpression;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstIdentifier;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstIfNull;
@@ -117,6 +118,10 @@
 					$left = self::evaluate($ast->getExpression(), $row, $initialParams);
 					$right = self::evaluate($ast->getAltValue(), $row, $initialParams);
 					return $left ?? $right;
+
+				// Exists() can only be used inside a database range
+				case AstExists::class:
+					return new QuelException("exists() is not allowed on non-database ranges");
 				
 				// Handle case where we encounter an unknown/unsupported AST node type
 				default:
