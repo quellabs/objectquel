@@ -169,11 +169,11 @@
 		
 		/**
 		 * Set the filtering conditions for this retrieve operation.
-		 * @param AstInterface|null $ast The WHERE clause conditions, or null to remove conditions
+		 * @param AstInterface|null $conditions The WHERE clause conditions, or null to remove conditions
 		 */
-		public function setConditions(?AstInterface $ast): void {
-			$ast?->setParent($this);
-			$this->conditions = $ast;
+		public function setConditions(?AstInterface $conditions): void {
+			$conditions?->setParent($this);
+			$this->conditions = $conditions;
 		}
 		
 		/**
