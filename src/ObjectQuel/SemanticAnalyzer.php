@@ -8,6 +8,7 @@
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstIdentifier;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRangeDatabase;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRangeDatabaseSubquery;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRangeJsonSource;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRegExp;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRetrieve;
 	use Quellabs\ObjectQuel\ObjectQuel\Visitors\DetectRestrictedNodeType;
@@ -228,7 +229,10 @@
 				// Check if this is a database range (actual table) without a join property
 				// A range without a join property means it's not dependent on another table
 				// and can serve as the primary data source (FROM clause in SQL)
-				$isDatabaseRange = $range instanceof AstRangeDatabase || $range instanceof AstRangeDatabaseSubquery;
+				$isDatabaseRange =
+					$range instanceof AstRangeDatabase ||
+					$range instanceof AstRangeDatabaseSubquery ||
+					$range instanceof AstRangeJsonSource;
 				
 				if ($isDatabaseRange && $range->getJoinProperty() === null) {
 					return; // Found a valid primary range - validation passes

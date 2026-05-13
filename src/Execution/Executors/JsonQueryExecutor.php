@@ -32,19 +32,32 @@
 			// Load the JSON file and perform initial filtering
 			$contents = $this->loadAndFilterJsonFile($jsonRange);
 			
-			// Load the conditions
+			// Retrieve the WHERE conditions and the retrieve() field list
 			$conditions = $stage->getQuery()->getConditions();
+			$values = $stage->getQuery()->getValues();
 			
-			// Use the conditions to further filter the file
+			// Evaluate all rows
 			$result = [];
 			
 			foreach ($contents as $row) {
-				if (
-					$conditions === null ||
-					ConditionEvaluator::evaluate($conditions, $contents, $row, $initialParams)
-				) {
-					$result[] = $row;
+				// Skip rows that don't satisfy the WHERE clause
+				if ($conditions !== null && !ConditionEvaluator::evaluate($conditions, $contents, $row, $initialParams)) {
+					continue;
 				}
+				
+				// Project the retrieve() field list onto the row
+				$projectedRow = [];
+				
+				foreach ($values as $alias) {
+					$projectedRow[$alias->getName()] = ConditionEvaluator::evaluate(
+						$alias->getExpression(),
+						$contents,
+						$row,
+						$initialParams
+					);
+				}
+				
+				$result[] = $projectedRow;
 			}
 			
 			return $result;
