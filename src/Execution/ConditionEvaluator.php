@@ -4,8 +4,10 @@
 	
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstBinaryOperator;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstBool;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstConcat;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstExpression;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstIdentifier;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstIfNull;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstIsFloat;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstIsInteger;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstIsNumeric;
@@ -100,6 +102,21 @@
 				case AstIsFloat::class:
 					$value = self::evaluate($ast->getValue(), $row, $initialParams);
 					return is_float($value);
+					
+				// Handle concat()
+				case AstConcat::class:
+					$parameters = [];
+					foreach($ast->getParameters() as $parameter) {
+						$parameters[] = (string)self::evaluate($parameter, $row, $initialParams);
+					}
+					
+					return implode($parameters);
+
+				// Handle ifnull()
+				case AstIfNull::class:
+					$left = self::evaluate($ast->getExpression(), $row, $initialParams);
+					$right = self::evaluate($ast->getAltValue(), $row, $initialParams);
+					return $left ?? $right;
 				
 				// Handle case where we encounter an unknown/unsupported AST node type
 				default:
