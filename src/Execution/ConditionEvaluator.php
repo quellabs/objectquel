@@ -6,6 +6,9 @@
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstBool;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstExpression;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstIdentifier;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstIsFloat;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstIsInteger;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstIsNumeric;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstNumber;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstParameter;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstString;
@@ -52,7 +55,7 @@
 				// (Parameters are external values passed into the evaluation)
 				case AstParameter::class:
 					return $initialParams[$ast->getName()];
-				
+
 				// Handle comparison expressions (e.g., a = b, x > y)
 				case AstExpression::class:
 					// Recursively evaluate both sides of the expression
@@ -83,9 +86,24 @@
 						default => throw new QuelException("Unknown operator {$ast->getOperator()}"),
 					};
 				
+				// Handle is_numeric
+				case AstIsNumeric::class:
+					$value = self::evaluate($ast->getValue(), $row, $initialParams);
+					return is_numeric($value);
+				
+				// Handle is_integer
+				case AstIsInteger::class:
+					$value = self::evaluate($ast->getValue(), $row, $initialParams);
+					return is_int($value);
+				
+				// Handle is_float
+				case AstIsFloat::class:
+					$value = self::evaluate($ast->getValue(), $row, $initialParams);
+					return is_float($value);
+				
 				// Handle case where we encounter an unknown/unsupported AST node type
 				default:
-					throw new QuelException("Unknown AST node " . get_class($ast));
+					throw new QuelException("Unhandled AST node " . get_class($ast));
 			}
 		}
 	}
