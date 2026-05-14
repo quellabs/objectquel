@@ -67,7 +67,7 @@
 		public function optimize(AstRetrieve $ast, PlanLogInterface $log = new NullPlanLog()): void {
 			// First, mark single ranges as required (trivial case)
 			// This is a quick win: single table queries can't use LEFT JOINs anyway
-			$this->setOnlyRangeToRequired($ast);
+			$this->setOnlyRangeToRequired($ast, $log);
 			
 			// Then check for annotation-based requirements
 			// This uses ORM metadata to determine semantic requirements
@@ -84,13 +84,17 @@
 		 *
 		 * @param AstRetrieve $ast The AST containing ranges
 		 */
-		private function setOnlyRangeToRequired(AstRetrieve $ast): void {
+		private function setOnlyRangeToRequired(AstRetrieve $ast, PlanLogInterface $log): void {
 			$ranges = $ast->getRanges();
 			
 			// Simple case: if there's only one table, it must be required
 			// (A query must return results from at least one table)
 			if (count($ranges) === 1) {
 				$ranges[0]->setRequired();
+				$log->note('optimizer', 'join', 'SINGLE_RANGE_INNER',
+					"Range '{\$ranges[0]->getName()}' is the only range in the query; forced INNER JOIN",
+					$ranges[0]->getName()
+				);
 			}
 		}
 		
@@ -407,6 +411,11 @@
 				// Add note to log
 				$log->note('optimizer', 'join', 'ANNOTATION_INNER',
 					"Range '{$range->getName()}' has @RequiredRelation on '{$relatedPropertyName}' (inverse side); forced INNER JOIN",
+					$range->getName()
+				);
+			} else {
+				$log->note('optimizer', 'join', 'LEFT_UNCHANGED',
+					"Range '{\$range->getName()}' has no @RequiredRelation annotation; kept as LEFT JOIN",
 					$range->getName()
 				);
 			}

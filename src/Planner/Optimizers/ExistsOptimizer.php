@@ -10,6 +10,8 @@
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstExists;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRetrieve;
 	use Quellabs\ObjectQuel\Planner\Helpers\BinaryOperationHelper;
+	use Quellabs\ObjectQuel\Planner\QueryPlan\PlanLogInterface;
+	use Quellabs\ObjectQuel\Planner\QueryPlan\NullPlanLog;
 	
 	/**
 	 * Processes EXISTS operators by removing them from conditions and converting
@@ -22,7 +24,7 @@
 		 * conditions and converts them to required ranges for performance improvement.
 		 * @param AstRetrieve $ast The retrieve AST node to optimize
 		 */
-		public function optimize(AstRetrieve $ast): void {
+		public function optimize(AstRetrieve $ast, PlanLogInterface $log = new NullPlanLog()): void {
 			// Fetch the conditions
 			$conditions = $ast->getConditions();
 			
@@ -34,9 +36,13 @@
 			// Extract all EXISTS operators from the condition tree
 			$existsList = $this->extractExistsOperators($ast, $conditions);
 			
+			if (empty($existsList)) {
+				return;
+			}
+			
 			// Convert each EXISTS to a required range (INNER JOIN)
 			foreach ($existsList as $exists) {
-				$this->setRangeRequiredForExists($ast, $exists);
+				$this->setRangeRequiredForExists($ast, $exists, $log);
 			}
 		}
 		
@@ -46,7 +52,7 @@
 		 * @param AstRetrieve $ast The main query AST
 		 * @param AstExists $exists The EXISTS operator to convert
 		 */
-		private function setRangeRequiredForExists(AstRetrieve $ast, AstExists $exists): void {
+		private function setRangeRequiredForExists(AstRetrieve $ast, AstExists $exists, PlanLogInterface $log): void {
 			// Fetch the identifier from the exists node
 			$identifier = $exists->getIdentifier();
 			
@@ -66,7 +72,14 @@
 			// Find the matching range in the main query and mark it as required
 			foreach ($ast->getRanges() as $range) {
 				if ($range->getName() === $existsRange->getName()) {
+					// Set range to required
 					$range->setRequired();
+					
+					// Add log
+					$log->note('optimizer', 'join', 'EXISTS_TO_INNER',
+						"Range '{$range->getName()}' used in EXISTS; converted to INNER JOIN",
+						$range->getName()
+					);
 					break;
 				}
 			}

@@ -13,6 +13,8 @@
 	use Quellabs\ObjectQuel\Planner\Helpers\ExistsRewriter;
 	use Quellabs\ObjectQuel\Planner\Helpers\RangeRemover;
 	use Quellabs\ObjectQuel\Planner\Helpers\RangeUtilities;
+	use Quellabs\ObjectQuel\Planner\QueryPlan\PlanLogInterface;
+	use Quellabs\ObjectQuel\Planner\QueryPlan\NullPlanLog;
 	
 	/**
 	 * Class AggregateOptimizer
@@ -64,7 +66,7 @@
 		 * @param AstRetrieve $root Root query node to mutate
 		 * @return void
 		 */
-		public function optimize(AstRetrieve $root): void {
+		public function optimize(AstRetrieve $root, PlanLogInterface $log = new NullPlanLog()): void {
 			// Compute once; passed into helpers to avoid repeated AST walks.
 			$isAggregateOnly = AstUtilities::areAllSelectFieldsAggregates($root);
 			
@@ -78,7 +80,7 @@
 			$aggregates = AstUtilities::collectAggregateNodes($root);
 			
 			// Apply per-aggregate strategies.
-			$this->applyAggregateStrategies($root, $aggregates, $isAggregateOnly);
+			$this->applyAggregateStrategies($root, $aggregates, $isAggregateOnly, $log);
 		}
 		
 		/**
@@ -111,7 +113,7 @@
 		 * @param bool $isAggregateOnly
 		 * @return void
 		 */
-		private function applyAggregateStrategies(AstRetrieve $root, array $aggregates, bool $isAggregateOnly): void {
+		private function applyAggregateStrategies(AstRetrieve $root, array $aggregates, bool $isAggregateOnly, PlanLogInterface $log): void {
 			// Invariant per query, not per aggregate — compute once outside the loop.
 			$nonAggItems = AstUtilities::collectNonAggregateSelectItems($root);
 			
@@ -126,6 +128,7 @@
 			
 			foreach ($aggregates as $agg) {
 				$strategy = $this->chooseStrategy($root, $agg, $isAggregateOnly, $nonAggItems);
+				$aggLabel = $agg->getType();
 				
 				switch ($strategy) {
 					case self::STRATEGY_DIRECT:
@@ -134,14 +137,28 @@
 							$root->setGroupBy($nonAggItems);
 						}
 						
+						$log->note('optimizer', 'aggregate', 'DIRECT',
+							"Aggregate {$aggLabel} evaluated inline with GROUP BY",
+							$aggLabel
+						);
 						break;
 					
 					case self::STRATEGY_SUBQUERY:
 						AggregateRewriter::rewriteAggregateAsCorrelatedSubquery($root, $agg);
+						
+						$log->note('optimizer', 'aggregate', 'SUBQUERY',
+							"Aggregate {$aggLabel} rewritten as correlated subquery",
+							$aggLabel
+						);
 						break;
 					
 					case self::STRATEGY_WINDOW:
 						AggregateRewriter::rewriteAggregateAsWindowFunction($agg);
+						
+						$log->note('optimizer', 'aggregate', 'WINDOW',
+							"Aggregate {$aggLabel} rewritten as window function",
+							$aggLabel
+						);
 						break;
 				}
 			}

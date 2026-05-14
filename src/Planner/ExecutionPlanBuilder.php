@@ -8,6 +8,9 @@
 	use Quellabs\ObjectQuel\Planner\Helpers\ConditionAnalyzer;
 	use Quellabs\ObjectQuel\Planner\Helpers\ConditionFilter;
 	use Quellabs\ObjectQuel\Planner\Helpers\StageFactory;
+	use Quellabs\ObjectQuel\Planner\Visitors\SearchStrategyResolver;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRangeDatabase;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRangeJsonSource;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRetrieve;
 	use Quellabs\ObjectQuel\Exception\QuelException;
 	use Quellabs\ObjectQuel\Planner\QueryPlan\PlanLogInterface;
@@ -187,6 +190,10 @@
 				$order = implode(' -> ', array_values($tempTableStageNames)) . ' -> ' . $databaseStage->getName();
 				$log->note('planner', 'stage', 'EXECUTION_ORDER',
 					"Stage execution order: {$order}"
+				);
+			} else {
+				$log->note('planner', 'stage', 'SINGLE_STAGE',
+					"Query executes in a single database stage; no temp table materialization required"
 				);
 			}
 		}

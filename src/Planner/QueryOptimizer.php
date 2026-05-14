@@ -104,9 +104,9 @@
 			// Phase 4: Subquery and aggregate optimizations
 			// Convert EXISTS to JOINs where beneficial, then optimize aggregates
 			// These may create new optimization opportunities for previous phases
-			$this->existsOptimizer->optimize($ast);
+			$this->existsOptimizer->optimize($ast, $log);
 			$this->anyOptimizer->optimize($ast);
-			$this->aggregateOptimizer->optimize($ast);
+			$this->aggregateOptimizer->optimize($ast, $log);
 			
 			// Convert search(...) to like/fulltext node
 			$this->searchResolver->resolve($ast, $parameters, $log);

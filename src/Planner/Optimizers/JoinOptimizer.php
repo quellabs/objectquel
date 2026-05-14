@@ -69,15 +69,26 @@
 					continue;
 				}
 				
+				// No WHERE references at all — not a candidate for promotion
+				if (!$analysis->hasFieldReferences) {
+					$log->note('optimizer', 'join', 'LEFT_UNCHANGED',
+						"Range '{$range->getName()}' has no WHERE references; kept as LEFT JOIN",
+						$range->getName()
+					);
+					continue;
+				}
+				
 				// Non-nullable Reference Promotion: LEFT JOIN → INNER JOIN when WHERE
 				// references a non-nullable field (NULL rows are already filtered out)
-				if ($analysis->hasFieldReferences && $analysis->eliminatesNulls) {
-					// Set to required
+				if ($analysis->eliminatesNulls) {
 					$range->setRequired(true);
-					
-					// Add note to the plan log
 					$log->note('optimizer', 'join', 'LEFT_TO_INNER',
 						"Range '{$range->getName()}' references a non-nullable field in WHERE; LEFT JOIN promoted to INNER JOIN",
+						$range->getName()
+					);
+				} else {
+					$log->note('optimizer', 'join', 'LEFT_UNCHANGED',
+						"Range '{$range->getName()}' references only nullable fields in WHERE; kept as LEFT JOIN",
 						$range->getName()
 					);
 				}
