@@ -11,6 +11,8 @@
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRangeJsonSource;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRegExp;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRetrieve;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstSearch;
+	use Quellabs\ObjectQuel\ObjectQuel\Visitors\CollectNodes;
 	use Quellabs\ObjectQuel\ObjectQuel\Visitors\DetectRestrictedNodeType;
 	use Quellabs\ObjectQuel\ObjectQuel\Visitors\ValidateEntityPropertyExists;
 	use Quellabs\ObjectQuel\ObjectQuel\Visitors\ValidateNoEntityExpressions;
@@ -103,6 +105,9 @@
 			
 			// Step 7: Validate SQL compliance rules (aggregates cannot be put in WHERE)
 			$this->validateNoAggregatesInWhereClause($ast);
+			
+			// Step 8: Validate that all identifiers in each search() call reference the same range
+			$this->validateSearchIdentifierRanges($ast);
 		}
 		
 		/**
@@ -331,6 +336,53 @@
 				
 				// Throw a user-friendly error explaining the SQL rule violation
 				throw new SemanticException("Aggregate function {$nodeType} is not allowed in WHERE clause");
+			}
+		}
+		
+		/**
+		 * Validates that all identifiers inside each search() call reference the same range.
+		 *
+		 * Mixing ranges inside a single search() call (e.g. search(x.title, y.name, 'term'))
+		 * is not supported: the database strategy requires a single table for MATCH...AGAINST
+		 * or a LIKE chain, and the in-memory strategy evaluates one row at a time from a
+		 * single source. A search() spanning multiple ranges has no defined semantics.
+		 *
+		 * @param AstRetrieve $ast The AST to validate
+		 * @throws SemanticException If any search() call mixes identifiers from different ranges
+		 */
+		private function validateSearchIdentifierRanges(AstRetrieve $ast): void {
+			// Nothing to validate if there is no WHERE clause
+			if ($ast->getConditions() === null) {
+				return;
+			}
+			
+			// Collect all search() nodes from the WHERE clause tree
+			$collector = new CollectNodes(AstSearch::class);
+			$ast->getConditions()->accept($collector);
+			
+			foreach ($collector->getCollectedNodes() as $searchNode) {
+				// Build a set of distinct range names referenced by this search() call.
+				// Using an associative array as a set so duplicates are naturally collapsed.
+				$rangeNames = [];
+				
+				foreach ($searchNode->getIdentifiers() as $identifier) {
+					$rangeName = $identifier->getSourceRange()?->getName();
+					
+					// Unresolved identifiers have no range yet — skip them here;
+					// ValidateRangesDeclared will catch them separately.
+					if ($rangeName !== null) {
+						$rangeNames[$rangeName] = true;
+					}
+				}
+				
+				// More than one distinct range name means the call mixes sources,
+				// which has no defined execution semantics.
+				if (count($rangeNames) > 1) {
+					throw new SemanticException(sprintf(
+						"All identifiers in a search() call must reference the same range, but found multiple ranges: %s",
+						implode(', ', array_keys($rangeNames))
+					));
+				}
 			}
 		}
 		
