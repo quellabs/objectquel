@@ -70,11 +70,12 @@
 		 * @throws QuelException
 		 */
 		private function loadAndFilterJsonFile(AstRangeJsonSource $source): array {
-			// Load the JSON file
-			$contents = file_get_contents($source->getPath());
+			// Load the JSON file, suppressing the PHP warning — the false return value
+			// is the signal we act on; the OS error message is captured below instead.
+			$contents = @file_get_contents($source->getPath());
 			
 			if ($contents === false) {
-				throw new QuelException("JSON file {$source->getName()} not found");
+				throw new QuelException("JSON file not found: {$source->getPath()}");
 			}
 			
 			// Decode the JSON file
