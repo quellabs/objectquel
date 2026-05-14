@@ -67,8 +67,8 @@
 					$range->setRequired(false);
 					
 					// Add note to the plan log
-					$log->note('optimizer', 'join', 'FORCED_LEFT',
-						"Range '{$range->getName()}' has IS NULL / IS NOT NULL in WHERE; cannot promote to INNER JOIN",
+					$log->note('optimizer', 'join', 'LEFT_UNCHANGED',
+						"Range '{$range->getName()}' has IS NULL / IS NOT NULL in WHERE; kept as LEFT JOIN (cannot promote)",
 						$range->getName()
 					);
 					

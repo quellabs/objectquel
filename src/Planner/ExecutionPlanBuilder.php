@@ -191,10 +191,6 @@
 				$log->note('planner', 'stage', 'EXECUTION_ORDER',
 					"Stage execution order: {$order}"
 				);
-			} else {
-				$log->note('planner', 'stage', 'SINGLE_STAGE',
-					"Query executes in a single database stage; no temp table materialization required"
-				);
 			}
 		}
 		

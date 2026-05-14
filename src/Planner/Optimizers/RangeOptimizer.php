@@ -90,9 +90,12 @@
 			// Simple case: if there's only one table, it must be required
 			// (A query must return results from at least one table)
 			if (count($ranges) === 1) {
+				// Set only range required for internal consistency reasons
 				$ranges[0]->setRequired();
-				$log->note('optimizer', 'join', 'SINGLE_RANGE_INNER',
-					"Range '{$ranges[0]->getName()}' is the only range in the query; forced INNER JOIN",
+				
+				// Add a note
+				$log->note('optimizer', 'join', 'SINGLE_RANGE_REQUIRED',
+					"Range '{$ranges[0]->getName()}' is the only range in the query; marked required (no JOIN applies)",
 					$ranges[0]->getName()
 				);
 			}
@@ -263,7 +266,7 @@
 		 *
 		 * @param AstRetrieve $ast The query AST to optimize
 		 */
-		public function removeUnusedTemporaryRanges(AstRetrieve $ast): void {
+		public function removeUnusedTemporaryRanges(AstRetrieve $ast, PlanLogInterface $log = new NullPlanLog()): void {
 			$usedRangeNames = $this->collectUsedRangeNames($ast, false);
 			$result = [];
 			
@@ -277,7 +280,13 @@
 				// For temporary ranges, keep only those actually referenced
 				if (isset($usedRangeNames[$range->getName()])) {
 					$result[] = $range;
+					continue;
 				}
+				
+				$log->note('optimizer', 'range', 'UNUSED_TEMP_REMOVED',
+					"Range '{$range->getName()}' is not referenced in SELECT, WHERE, or ORDER BY; removed",
+					$range->getName()
+				);
 			}
 			
 			$ast->setRanges($result);
