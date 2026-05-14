@@ -52,6 +52,12 @@
 			
 			// Analyze each table/range reference for JOIN optimization opportunities
 			foreach ($ast->getRanges() as $range) {
+				// Skip ranges already marked as required — no point analyzing them
+				// since they are already INNER JOINs by a prior optimizer pass.
+				if ($range->isRequired()) {
+					continue;
+				}
+				
 				// Analyzes a specific range to determine the optimal JOIN type.
 				$analysis = $this->analyzeConditions($ast, $range);
 				

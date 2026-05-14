@@ -92,7 +92,7 @@
 			if (count($ranges) === 1) {
 				$ranges[0]->setRequired();
 				$log->note('optimizer', 'join', 'SINGLE_RANGE_INNER',
-					"Range '{\$ranges[0]->getName()}' is the only range in the query; forced INNER JOIN",
+					"Range '{$ranges[0]->getName()}' is the only range in the query; forced INNER JOIN",
 					$ranges[0]->getName()
 				);
 			}
@@ -415,7 +415,7 @@
 				);
 			} else {
 				$log->note('optimizer', 'join', 'LEFT_UNCHANGED',
-					"Range '{\$range->getName()}' has no @RequiredRelation annotation; kept as LEFT JOIN",
+					"Range '{$range->getName()}' has no @RequiredRelation annotation; kept as LEFT JOIN",
 					$range->getName()
 				);
 			}
