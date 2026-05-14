@@ -13,6 +13,7 @@
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstIsInteger;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstIsNumeric;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstAggregate;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstNot;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstAvg;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstAvgU;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstCount;
@@ -64,6 +65,10 @@
 				// (Identifiers represent column/field names in the data)
 				case AstIdentifier::class:
 					return $row[$ast->getCompleteName()] ?? null;
+				
+				// Handle NOT — negate the boolean result of the inner expression
+				case AstNot::class:
+					return !self::evaluate($ast->getExpression(), $contents, $row, $initialParams);
 				
 				// Handle parameter node - fetch value from parameters array
 				// (Parameters are external values passed into the evaluation)

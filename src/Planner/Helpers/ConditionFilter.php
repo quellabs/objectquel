@@ -59,8 +59,7 @@
 		 */
 		public function filterDatabaseCompatibleConditions(?AstInterface $condition, array $dbRanges): ?AstInterface {
 			return $this->filterTree($condition, function (AstInterface $node) use ($dbRanges): ?AstInterface {
-				// NodeSearch covers AstSearch, AstSearchLike, and AstSearchFullText.
-				// Keep only if every identifier it searches references a DB range.
+				// NodeSearch: keep only if every identifier references a DB range.
 				if ($node instanceof NodeSearch) {
 					foreach ($node->getIdentifiers() as $identifier) {
 						if (!$this->analyzer->hasReferenceToAnyRange($identifier, $dbRanges)) {
@@ -71,8 +70,19 @@
 					return $node;
 				}
 				
+				// AstExpression: use isDatabaseCompatibleExpression() which checks both
+				// operands — needed to distinguish scalar filters from join conditions
+				// and to exclude expressions that mix DB and non-DB ranges.
 				if ($node instanceof AstExpression) {
 					return $this->isDatabaseCompatibleExpression($node, $dbRanges) ? clone $node : null;
+				}
+				
+				// Single-operand nodes (AstIsFloat, AstIsInteger, AstIsNumeric, AstIsEmpty,
+				// etc.): keep if they reference at least one DB range and no non-DB range.
+				// A single-operand node can't be a join condition, so referencing only DB
+				// ranges is sufficient to conclude it belongs in the database query.
+				if ($this->analyzer->hasReferenceToAnyRange($node, $dbRanges)) {
+					return $node;
 				}
 				
 				// Pure literals with no range references can be pushed to the DB.
@@ -83,16 +93,19 @@
 		/**
 		 * Extracts scalar filter conditions for a specific range, excluding join conditions.
 		 *
-		 * A filter condition has one side referencing $range and the other side being
-		 * a plain literal with no range references (e.g. x.value > 100).
+		 * A filter condition references $range and has no operand that references a
+		 * different range. This covers comparison expressions (x.value > 100), type
+		 * checks (is_float(x.value), is_integer(x.id)), search() calls, and any other
+		 * leaf node that references $range without involving a second range.
+		 *
 		 * @param AstRange $range The range to extract filter conditions for
 		 * @param AstInterface|null $whereCondition The complete WHERE condition AST
 		 * @return AstInterface|null The filter conditions for this range, or null if none exist
 		 */
 		public function isolateFilterConditionsForRange(AstRange $range, ?AstInterface $whereCondition): ?AstInterface {
 			return $this->filterTree($whereCondition, function (AstInterface $node) use ($range): ?AstInterface {
-				// NodeSearch (search()) is a scalar filter condition tied to specific
-				// identifiers — include it when all its identifiers reference $range.
+				// NodeSearch (search()) references specific identifiers directly rather
+				// than wrapping them in an AstExpression — check each identifier individually.
 				if ($node instanceof NodeSearch) {
 					foreach ($node->getIdentifiers() as $identifier) {
 						if (!$this->analyzer->doesConditionInvolveRangeCached($identifier, $range)) {
@@ -103,11 +116,22 @@
 					return $node;
 				}
 				
-				if (!$node instanceof AstExpression) {
+				// For all other leaf nodes (AstExpression, AstIsFloat, AstIsInteger,
+				// AstIsNumeric, AstIsEmpty, etc.): include the node when it references
+				// $range and its other operands (if any) are not references to a
+				// different range — i.e. it is a scalar filter, not a join condition.
+				if (!$this->analyzer->doesConditionInvolveRangeCached($node, $range)) {
 					return null;
 				}
 				
-				return $this->isFilterCondition($node, $range) ? clone $node : null;
+				// Exclude join conditions: expressions where another range is also referenced.
+				// For AstExpression this is handled by isFilterCondition(); for single-operand
+				// nodes like AstIsFloat the range check above is sufficient on its own.
+				if ($node instanceof AstExpression) {
+					return $this->isFilterCondition($node, $range) ? clone $node : null;
+				}
+				
+				return $node;
 			});
 		}
 		
@@ -143,7 +167,7 @@
 		 * @return bool
 		 */
 		private function isDatabaseCompatibleExpression(AstExpression $expr, array $dbRanges): bool {
-			$leftDb  = $this->analyzer->hasReferenceToAnyRange($expr->getLeft(),  $dbRanges);
+			$leftDb = $this->analyzer->hasReferenceToAnyRange($expr->getLeft(), $dbRanges);
 			$rightDb = $this->analyzer->hasReferenceToAnyRange($expr->getRight(), $dbRanges);
 			
 			// field op field — join between two DB ranges
@@ -175,7 +199,7 @@
 		 * @return bool
 		 */
 		private function isFilterCondition(AstExpression $expr, AstRange $range): bool {
-			$leftInvolvesRange  = $this->analyzer->doesConditionInvolveRangeCached($expr->getLeft(),  $range);
+			$leftInvolvesRange = $this->analyzer->doesConditionInvolveRangeCached($expr->getLeft(), $range);
 			$rightInvolvesRange = $this->analyzer->doesConditionInvolveRangeCached($expr->getRight(), $range);
 			
 			// range op literal
@@ -202,7 +226,7 @@
 		 * @return bool
 		 */
 		private function isJoinCondition(AstExpression $expr, AstRange $range): bool {
-			$leftInvolvesRange  = $this->analyzer->doesConditionInvolveRangeCached($expr->getLeft(),  $range);
+			$leftInvolvesRange = $this->analyzer->doesConditionInvolveRangeCached($expr->getLeft(), $range);
 			$rightInvolvesRange = $this->analyzer->doesConditionInvolveRangeCached($expr->getRight(), $range);
 			
 			// range op other-range
@@ -245,7 +269,7 @@
 			
 			// AND / OR: recurse into both children and reconstruct from survivors.
 			if ($condition instanceof AstBinaryOperator) {
-				$left  = $this->filterTree($condition->getLeft(),  $predicate);
+				$left = $this->filterTree($condition->getLeft(), $predicate);
 				$right = $this->filterTree($condition->getRight(), $predicate);
 				
 				if ($left !== null && $right !== null) {
