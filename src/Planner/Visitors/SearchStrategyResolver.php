@@ -11,7 +11,9 @@
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRetrieve;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstSearch;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstSearchFullText;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstSearchInMemory;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstSearchLike;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRangeDatabase;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstString;
 	use Quellabs\ObjectQuel\ObjectQuel\Visitors\CollectNodes;
 	use Quellabs\ObjectQuel\Planner\Helpers\AstNodeReplacer;
@@ -19,13 +21,19 @@
 	use Quellabs\ObjectQuel\Planner\QueryPlan\NullPlanLog;
 	
 	/**
-	 * Planning-time pass that rewrites AstSearch nodes in a query's WHERE clause
-	 * into either AstSearchFullText or AstSearchLike.
+	 * Planning-time pass that rewrites every AstSearch node in a query's WHERE
+	 * clause into one of three concrete strategy nodes:
 	 *
-	 * The choice is based on whether a FullTextIndex covers all searched columns on
-	 * the same entity. After this pass runs, the executor receives only the two
-	 * concrete node types and does not need to consult the EntityStore or make any
-	 * strategy decisions at render time.
+	 *   - AstSearchInMemory  — non-database ranges (JSON, temp tables); evaluated
+	 *                          entirely in PHP by ConditionEvaluator.
+	 *   - AstSearchFullText  — database ranges with a covering FullTextIndex;
+	 *                          rendered as MATCH...AGAINST in boolean mode.
+	 *   - AstSearchLike      — database ranges without a covering index;
+	 *                          rendered as a LIKE / NOT LIKE chain.
+	 *
+	 * After this pass runs the executor receives only concrete strategy nodes and
+	 * does not need to consult the EntityStore or make strategy decisions at
+	 * render time.
 	 */
 	class SearchStrategyResolver {
 		
@@ -89,17 +97,33 @@
 		// =========================================================================
 		
 		/**
-		 * Replace a single AstSearch node with AstSearchFullText or AstSearchLike.
+		 * Replace a single AstSearch node with the appropriate strategy node.
+		 *
+		 * - Non-database ranges (JSON, temp tables) → AstSearchInMemory
+		 * - Database ranges with a covering FullTextIndex → AstSearchFullText
+		 * - Database ranges without a covering FullTextIndex → AstSearchLike
+		 *
 		 * @param AstSearch $search
 		 * @param array<string, mixed> $parameters
-		 * @return AstSearchFullText|AstSearchLike
+		 * @return AstSearchInMemory|AstSearchFullText|AstSearchLike
 		 * @throws EntityResolutionException
 		 * @throws QuelException
 		 */
-		private function rewriteSearch(AstSearch $search, array $parameters, PlanLogInterface $log): AstSearchFullText|AstSearchLike {
+		private function rewriteSearch(AstSearch $search, array $parameters, PlanLogInterface $log): AstSearchInMemory|AstSearchFullText|AstSearchLike {
 			$identifiers = $search->getIdentifiers();
 			$rangeName = $identifiers[0]->getRange()?->getName() ?? 'unknown';
 			$columns = implode(', ', array_map(fn($id) => ($id->getNext()?->getName() ?? $id->getName()), $identifiers));
+
+			// Non-database ranges have no SQL layer — produce an in-memory node so
+			// the AST explicitly documents the chosen execution strategy.
+			if (!$identifiers[0]->getSourceRange() instanceof AstRangeDatabase) {
+				$log->note('optimizer', 'search', 'IN-MEMORY',
+					"search() on [{$columns}] resolved to IN-MEMORY (non-database range)",
+					$rangeName
+				);
+
+				return $this->buildInMemoryNode($identifiers, $search->getSearchString());
+			}
 
 			if ($this->detectFullTextIndex($identifiers) !== null) {
 				$log->note('optimizer', 'search', 'FULLTEXT',
@@ -118,6 +142,16 @@
 			}
 		}
 		
+		/**
+		 * Build an AstSearchInMemory node for non-database ranges.
+		 * @param AstIdentifier[] $identifiers
+		 * @param AstString|AstParameter $searchString
+		 * @return AstSearchInMemory
+		 */
+		private function buildInMemoryNode(array $identifiers, AstString|AstParameter $searchString): AstSearchInMemory {
+			return new AstSearchInMemory($identifiers, $searchString);
+		}
+
 		/**
 		 * Build a full text node
 		 * @param AstIdentifier[] $identifiers

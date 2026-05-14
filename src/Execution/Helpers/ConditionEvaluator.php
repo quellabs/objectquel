@@ -24,6 +24,7 @@
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstNumber;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstParameter;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstString;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstSearchInMemory;
 	use Quellabs\ObjectQuel\ObjectQuel\AstInterface;
 	use Quellabs\ObjectQuel\Exception\QuelException;
 	
@@ -190,10 +191,104 @@
 				case AstExists::class:
 					return new QuelException("exists() is not allowed on non-database ranges");
 				
-				// Handle case where we encounter an unknown/unsupported AST node type
+				// Handle search() on non-database ranges (JSON sources, temp tables, cross-joins).
+				case AstSearchInMemory::class:
+					return self::evaluateSearch($ast, $row, $initialParams);
+				
 				default:
 					throw new QuelException("Unhandled AST node " . get_class($ast));
 			}
+		}
+		
+		/**
+		 * Evaluates an AstSearchInMemory node against a single data row.
+		 *
+		 * Mirrors the LIKE-chain strategy used in SQL:
+		 *   - not_terms: row is excluded if any term appears in any field
+		 *   - and_terms: every term must appear in at least one field
+		 *   - or_terms:  at least one term must appear in at least one field
+		 *                (if or_terms is empty the row passes — and/not already decided it)
+		 *
+		 * Comparison is case-insensitive via mb_strtolower.
+		 *
+		 * @param AstSearchInMemory     $ast           The search node to evaluate
+		 * @param array<string, mixed>  $row           The data row to evaluate against
+		 * @param array<string, mixed>  $initialParams Runtime query parameters
+		 * @return bool
+		 * @throws QuelException
+		 */
+		private static function evaluateSearch(AstSearchInMemory $ast, array $row, array $initialParams): bool {
+			// Parse the search string into or/and/not term buckets.
+			// For literal search strings this was already done at planning time and is
+			// returned as-is; for parameter-based strings it is parsed now using the
+			// runtime value.
+			$parsed = $ast->parseSearchData($initialParams);
+			
+			// Collect the field values for all searched columns in this row, lowercased
+			// upfront so every subsequent comparison is case-insensitive without needing
+			// to call mb_strtolower inside the inner loops.
+			// NULL fields are skipped — a missing value cannot match any term.
+			$fieldValues = [];
+			
+			foreach ($ast->getIdentifiers() as $identifier) {
+				$value = $row[$identifier->getCompleteName()] ?? null;
+				
+				if ($value !== null) {
+					$fieldValues[] = mb_strtolower((string)$value);
+				}
+			}
+			
+			// not_terms: the row is excluded if any excluded term appears anywhere in
+			// any of the searched fields. Checked first because exclusion is absolute —
+			// a matching not_term overrules any and_term or or_term hits.
+			foreach ($parsed['not_terms'] as $term) {
+				$needle = mb_strtolower($term);
+				
+				foreach ($fieldValues as $fieldValue) {
+					if (str_contains($fieldValue, $needle)) {
+						return false;
+					}
+				}
+			}
+			
+			// and_terms: every required term must appear in at least one searched field.
+			// A single miss is enough to exclude the row, so we short-circuit as soon
+			// as any term goes unmatched.
+			foreach ($parsed['and_terms'] as $term) {
+				$needle = mb_strtolower($term);
+				$found  = false;
+				
+				foreach ($fieldValues as $fieldValue) {
+					if (str_contains($fieldValue, $needle)) {
+						$found = true;
+						break;
+					}
+				}
+				
+				if (!$found) {
+					return false;
+				}
+			}
+			
+			// or_terms: at least one term must appear in at least one searched field.
+			// We short-circuit on the first hit. If there are no or_terms the row
+			// passes automatically — the and/not checks above were sufficient.
+			if (!empty($parsed['or_terms'])) {
+				foreach ($parsed['or_terms'] as $term) {
+					$needle = mb_strtolower($term);
+					
+					foreach ($fieldValues as $fieldValue) {
+						if (str_contains($fieldValue, $needle)) {
+							return true;
+						}
+					}
+				}
+				
+				// Went through every or_term against every field with no match.
+				return false;
+			}
+			
+			return true;
 		}
 		
 		/**
