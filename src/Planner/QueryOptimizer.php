@@ -91,12 +91,12 @@
 			// Apply filtering early to reduce dataset size for subsequent operations
 			$this->constantFoldingOptimizer->optimize($ast);
 			$this->booleanConstantOptimizer->optimize($ast);
-			$this->rangePromotor->optimize($ast);
+			$this->rangePromotor->optimize($ast, $log);
 			$this->rangeOptimizer->optimize($ast, $log);
 			
 			// Phase 2: Remove left joins that are not referenced in the query
 			$this->rangeOptimizer->removeUnusedLeftJoinRanges($ast, true, $log);
-			$this->rangeOptimizer->removeUnusedTemporaryRanges($ast);
+			$this->rangeOptimizer->removeUnusedTemporaryRanges($ast, $log);
 			
 			// Phase 3: Optimize joins
 			$this->joinOptimizer->optimize($ast, $log);

@@ -266,7 +266,7 @@
 		 *
 		 * @param AstRetrieve $ast The query AST to optimize
 		 */
-		public function removeUnusedTemporaryRanges(AstRetrieve $ast): void {
+		public function removeUnusedTemporaryRanges(AstRetrieve $ast, PlanLogInterface $log = new NullPlanLog()): void {
 			$usedRangeNames = $this->collectUsedRangeNames($ast, false);
 			$result = [];
 			
@@ -280,7 +280,13 @@
 				// For temporary ranges, keep only those actually referenced
 				if (isset($usedRangeNames[$range->getName()])) {
 					$result[] = $range;
+					continue;
 				}
+				
+				$log->note('optimizer', 'range', 'UNUSED_TEMP_REMOVED',
+					"Range '{$range->getName()}' is not referenced in SELECT, WHERE, or ORDER BY; removed",
+					$range->getName()
+				);
 			}
 			
 			$ast->setRanges($result);

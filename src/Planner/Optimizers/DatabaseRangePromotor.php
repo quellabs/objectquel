@@ -8,6 +8,8 @@
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRangeDatabaseTempTable;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRangeJsonSource;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRetrieve;
+	use Quellabs\ObjectQuel\Planner\QueryPlan\PlanLogInterface;
+	use Quellabs\ObjectQuel\Planner\QueryPlan\NullPlanLog;
 	
 	/**
 	 * Class AggregateOptimizer
@@ -19,7 +21,7 @@
 		 * @param AstRetrieve $retrieve
 		 * @return void
 		 */
-		public function optimize(AstRetrieve $retrieve): void {
+		public function optimize(AstRetrieve $retrieve, PlanLogInterface $log = new NullPlanLog()): void {
 			$ranges = [];
 			
 			foreach ($retrieve->getRanges() as $i => $range) {
@@ -41,12 +43,22 @@
 						$range->getJoinProperty(),
 						$range->isRequired()
 					);
+					
+					$log->note('optimizer', 'range', 'SUBQUERY_TO_TEMP_TABLE',
+						"Range '{$range->getName()}' contains external source; promoted to temp table",
+						$range->getName()
+					);
 				} else {
 					$replacement = new AstRangeDatabaseMaterialized(
 						$range->getName(),
 						$innerQuery,
 						$range->getJoinProperty(),
 						$range->isRequired()
+					);
+					
+					$log->note('optimizer', 'range', 'SUBQUERY_MATERIALIZED',
+						"Range '{$range->getName()}' is pure SQL; kept as inline derived table",
+						$range->getName()
 					);
 				}
 				
