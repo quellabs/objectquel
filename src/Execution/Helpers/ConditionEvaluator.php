@@ -63,7 +63,7 @@
 				// Handle identifier node - fetch corresponding value from data row
 				// (Identifiers represent column/field names in the data)
 				case AstIdentifier::class:
-					return $row[$ast->getCompleteName()];
+					return $row[$ast->getCompleteName()] ?? null;
 				
 				// Handle parameter node - fetch value from parameters array
 				// (Parameters are external values passed into the evaluation)
@@ -231,8 +231,10 @@
 			$fieldValues = [];
 			
 			foreach ($ast->getIdentifiers() as $identifier) {
+				// Fetch the value
 				$value = $row[$identifier->getCompleteName()] ?? null;
 				
+				// If found, add it to the list
 				if ($value !== null) {
 					$fieldValues[] = mb_strtolower((string)$value);
 				}

@@ -85,12 +85,28 @@
 				throw new QuelException("Error decoding JSON file {$source->getName()}: " . json_last_error_msg());
 			}
 			
-			// If a JSONPath was given, use it to filter the output
+			// If a JSONPath was given, use it to filter the output.
+			// JSONPath::find()->getData() always returns an array of matches.
+			// For a path like $.rows, this is [<the rows array>] — one match wrapping
+			// the actual row list. We want the matched value itself, not the wrapper.
 			if (!empty($source->getExpression())) {
 				try {
-					$decoded = (new JSONPath($decoded))->find($source->getExpression())->getData();
+					$matches = (new JSONPath($decoded))->find($source->getExpression())->getData();
 				} catch (JSONPathException $e) {
 					throw new QuelException($e->getMessage(), 'jsonpath_error', $e->getCode(), $e);
+				}
+				
+				// If no matches found, return an empty array
+				if (empty($matches)) {
+					return [];
+				}
+				
+				// Unwrap: take the first match, which should be the target array.
+				$decoded = $matches[0];
+				
+				// If the result is not an array, show an error to the user
+				if (!is_array($decoded)) {
+					throw new QuelException("JSONPath expression '{$source->getExpression()}' did not resolve to an array");
 				}
 			}
 			

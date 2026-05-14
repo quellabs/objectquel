@@ -91,6 +91,18 @@
 		 */
 		public function isolateFilterConditionsForRange(AstRange $range, ?AstInterface $whereCondition): ?AstInterface {
 			return $this->filterTree($whereCondition, function (AstInterface $node) use ($range): ?AstInterface {
+				// NodeSearch (search()) is a scalar filter condition tied to specific
+				// identifiers — include it when all its identifiers reference $range.
+				if ($node instanceof NodeSearch) {
+					foreach ($node->getIdentifiers() as $identifier) {
+						if (!$this->analyzer->doesConditionInvolveRangeCached($identifier, $range)) {
+							return null;
+						}
+					}
+					
+					return $node;
+				}
+				
 				if (!$node instanceof AstExpression) {
 					return null;
 				}
