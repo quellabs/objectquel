@@ -95,7 +95,14 @@
 				
 				// Add stage to the plan
 				$plan->addStage($stage);
-
+				
+				// Log the in-memory join type chosen for this external source range.
+				// Suppressed when this is the only range in the query — a single-range
+				// query has nothing to join against, so the join type is meaningless.
+				if (count($query->getRanges()) === 1) {
+					continue;
+				}
+				
 				// Log the in-memory join type chosen for this external source range.
 				// The reason mirrors the logic in ExecutionStage::getJoinType() so the
 				// plan log accurately reflects what the executor will do at runtime.
