@@ -26,13 +26,12 @@
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstParameter;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstString;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstSearchInMemory;
-	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstSearchLike;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRegExp;
-	use Quellabs\ObjectQuel\Execution\Helpers\RegExpValue;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstIn;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstCheckNull;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstCheckNotNull;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstIsEmpty;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstAny;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstTernary;
 	use Quellabs\ObjectQuel\ObjectQuel\AstInterface;
 	use Quellabs\ObjectQuel\Exception\QuelException;
@@ -263,6 +262,37 @@
 					return $condition
 						? self::evaluate($ast->getTrue(), $contents, $row, $initialParams)
 						: self::evaluate($ast->getFalse(), $contents, $row, $initialParams);
+				
+				// ANY(identifier where conditions) — returns 1 if at least one row
+				// satisfies the conditions and has a non-null identifier value, 0 otherwise.
+				// The identifier is the subject of the existential quantification: a row
+				// only qualifies if both the conditions pass and the identifier is non-null.
+				// Correlated references to the outer row (e.g. p.id = order.productId)
+				// resolve naturally because $row is passed through to each inner evaluate().
+				case AstAny::class:
+					$anyConditions = $ast->getConditions();
+					
+					foreach ($contents as $innerRow) {
+						// Merge the inner row with the outer row so correlated references
+						// to the outer range (e.g. order.productId) are also resolvable.
+						// Inner row keys take precedence to avoid range name collisions.
+						$correlatedRow = array_merge($row, $innerRow);
+						
+						// Skip rows that do not satisfy the conditions
+						if ($anyConditions !== null && !self::evaluate($anyConditions, $contents, $correlatedRow, $initialParams)) {
+							continue;
+						}
+						
+						// The identifier is the subject of the existential quantification —
+						// a null value means no subject exists for this row, so skip it.
+						if (self::evaluate($ast->getIdentifier(), $contents, $correlatedRow, $initialParams) === null) {
+							continue;
+						}
+						
+						return 1;
+					}
+					
+					return 0;
 				
 				default:
 					throw new QuelException("Unhandled AST node " . get_class($ast));
