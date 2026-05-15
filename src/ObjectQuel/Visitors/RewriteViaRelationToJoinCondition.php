@@ -160,6 +160,7 @@
 				case $relation instanceof OneToMany:
 					return $this->createOneToManyJoinCondition($relation, $range, $entityName);
 				
+				/** @phpstan-ignore instanceof.alwaysTrue */
 				case $relation instanceof OneToOne:
 					return $this->createOneToOneJoinCondition($joinProperty, $relation, $range, $entityName);
 				
@@ -348,6 +349,15 @@
 				// The FK property on the owning side is that annotation's mappedBy value,
 				// and the FK column is its relationColumn (defaulting to mappedBy + 'Id').
 				$backRelation = $targetRelations[$inversedBy];
+
+				// inversedBy must point to a OneToMany on the target entity; other relation
+				// types do not have getMappedBy(), so we guard and throw if the type is wrong
+				if (!$backRelation instanceof OneToMany) {
+					throw new TransformationException(
+						"inversedBy '{$inversedBy}' on {$targetEntity} does not point to a OneToMany relation"
+					);
+				}
+
 				$fkProperty = $backRelation->getMappedBy() ?? throw new TransformationException(
 					"OneToMany '{$inversedBy}' on {$targetEntity} is missing mappedBy"
 				);
