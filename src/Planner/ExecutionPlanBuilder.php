@@ -90,7 +90,45 @@
 			
 			// JSON stages
 			foreach ($query->getOtherRanges() as $otherRange) {
-				$plan->addStage($this->stageFactory->createRangeExecutionStage($query, $otherRange, $staticParams));
+				// Create the stage
+				$stage = $this->stageFactory->createRangeExecutionStage($query, $otherRange, $staticParams);
+				
+				// Add stage to the plan
+				$plan->addStage($stage);
+
+				// Log the in-memory join type chosen for this external source range.
+				// The reason mirrors the logic in ExecutionStage::getJoinType() so the
+				// plan log accurately reflects what the executor will do at runtime.
+				$joinType = $stage->getJoinType();
+				
+				/** @noinspection PhpSwitchCanBeReplacedWithMatchExpressionInspection */
+				switch ($joinType) {
+					case 'cross':
+						$joinReason = 'no join condition — cartesian product';
+						break;
+						
+					case 'inner':
+						if ($stage->getQuery()->getConditions() !== null) {
+							$joinReason = 'scalar filter on JSON field requires a match';
+						} else {
+							$joinReason = 'IS NOT NULL on JSON field requires a match';
+						}
+						
+						break;
+						
+					case 'left':
+						$joinReason = 'join condition only — unmatched DB rows kept with null JSON fields';
+						break;
+						
+					default:
+						$joinReason = $joinType;
+						break;
+				}
+
+				$log->note('planner', 'join', 'JSON_JOIN_TYPE',
+					"Non database range '{$otherRange->getName()}' uses {$joinType} join: {$joinReason}",
+					$otherRange->getName()
+				);
 			}
 			
 			// Return the plan
