@@ -92,12 +92,6 @@
 			if (count($ranges) === 1) {
 				// Set only range required for internal consistency reasons
 				$ranges[0]->setRequired();
-				
-				// Add a note
-				$log->note('optimizer', 'join', 'SINGLE_RANGE_REQUIRED',
-					"Range '{$ranges[0]->getName()}' is the only range in the query; marked required (no JOIN applies)",
-					$ranges[0]->getName()
-				);
 			}
 		}
 		
