@@ -103,11 +103,18 @@
 				
 				// Unwrap: take the first match, which should be the target array.
 				$decoded = $matches[0];
-				
-				// If the result is not an array, show an error to the user
-				if (!is_array($decoded)) {
-					throw new QuelException("JSONPath expression '{$source->getExpression()}' did not resolve to an array");
-				}
+			}
+			
+			// Without a JSONPath expression the decoded value is whatever the top-level
+			// JSON structure is. If it is not a sequential array of rows there is nothing
+			// to iterate — return empty rather than letting foreach blow up on a string
+			// or associative object.
+			if (!is_array($decoded) || !array_is_list($decoded)) {
+				throw new QuelException(
+					$source->getExpression() !== null
+						? "JSONPath expression '{$source->getExpression()}' did not resolve to an array of rows."
+						: "JSON source '{$source->getPath()}' did not resolve to an array of rows. Use a JSONPath expression (e.g. '$.rows') to select the correct array."
+				);
 			}
 			
 			// Prefix all items with the range alias
