@@ -26,6 +26,14 @@
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstParameter;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstString;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstSearchInMemory;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstSearchLike;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRegExp;
+	use Quellabs\ObjectQuel\Execution\Helpers\RegExpValue;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstIn;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstCheckNull;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstCheckNotNull;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstIsEmpty;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstTernary;
 	use Quellabs\ObjectQuel\ObjectQuel\AstInterface;
 	use Quellabs\ObjectQuel\Exception\QuelException;
 	
@@ -77,19 +85,21 @@
 				
 				// Handle comparison expressions (e.g., a = b, x > y)
 				case AstExpression::class:
-					// Recursively evaluate both sides of the expression
+					// Evaluate both sides uniformly — AstRegExp evaluates to a RegExpValue,
+					// which evaluateEquals() detects to apply the right matching strategy.
+					$operator = $ast->getOperator();
 					$left = self::evaluate($ast->getLeft(), $contents, $row, $initialParams);
 					$right = self::evaluate($ast->getRight(), $contents, $row, $initialParams);
 					
 					// Apply the appropriate comparison operator
-					return match ($ast->getOperator()) {
-						'=' => $left == $right,         // Equality check (loose comparison)
-						'<>', '!=' => $left != $right,  // Not equal (supports both syntaxes)
-						'<' => $left < $right,          // Less than
-						'>' => $left > $right,          // Greater than
-						'<=' => $left <= $right,        // Less than or equal to
-						'>=' => $left >= $right,        // Greater than or equal to
-						default => throw new QuelException("Unknown operator {$ast->getOperator()}"),
+					return match ($operator) {
+						'=' => self::evaluateEquals($left, $right),
+						'<>', '!=' => !self::evaluateEquals($left, $right),
+						'<' => $left < $right,
+						'>' => $left > $right,
+						'<=' => $left <= $right,
+						'>=' => $left >= $right,
+						default => throw new QuelException("Unknown operator {$operator}"),
 					};
 				
 				// Handle logical operators (AND, OR) for boolean conditions
@@ -192,6 +202,11 @@
 					
 					return count($values);
 				
+				// Regular expression literal — returns a typed RegExpValue carrier so the
+				// parent AstExpression handler can detect it after both sides are evaluated.
+				case AstRegExp::class:
+					return new RegExpValue($ast->getValue(), $ast->getFlags());
+				
 				// Exists() can only be used inside a database range
 				case AstExists::class:
 					return new QuelException("exists() is not allowed on non-database ranges");
@@ -200,9 +215,91 @@
 				case AstSearchInMemory::class:
 					return self::evaluateSearch($ast, $row, $initialParams);
 				
+				// IS NULL — true when the evaluated expression is null
+				case AstCheckNull::class:
+					$value = self::evaluate($ast->getExpression(), $contents, $row, $initialParams);
+					return $value === null;
+				
+				// IS NOT NULL — true when the evaluated expression is not null
+				case AstCheckNotNull::class:
+					$value = self::evaluate($ast->getExpression(), $contents, $row, $initialParams);
+					return $value !== null;
+				
+				// IN — checks whether the left side matches any value in the list, or
+				// whether a scalar appears in an array field (e.g. 'wireless' in product.tags).
+				case AstIn::class:
+					$needle = self::evaluate($ast->getIdentifier(), $contents, $row, $initialParams);
+					$parameters = $ast->getParameters();
+					
+					// Single-parameter IN where the parameter evaluates to an array:
+					// handles 'wireless' in product.tags where product.tags is a JSON array.
+					if (count($parameters) === 1) {
+						$listValue = self::evaluate($parameters[0], $contents, $row, $initialParams);
+						
+						if (is_array($listValue)) {
+							return in_array($needle, $listValue, false);
+						}
+					}
+					
+					// Standard IN (value, value, ...) — check each parameter
+					foreach ($parameters as $parameter) {
+						$candidate = self::evaluate($parameter, $contents, $row, $initialParams);
+						
+						if ($needle == $candidate) {
+							return true;
+						}
+					}
+					
+					return false;
+				
+				// is_empty() — true when the value is null, empty string, or numeric zero
+				case AstIsEmpty::class:
+					$value = self::evaluate($ast->getValue(), $contents, $row, $initialParams);
+					return $value === null || $value === '' || $value === 0 || $value === 0.0 || $value === false;
+				
+				// Ternary — condition ? trueValue : falseValue
+				case AstTernary::class:
+					$condition = self::evaluate($ast->getCondition(), $contents, $row, $initialParams);
+					return $condition
+						? self::evaluate($ast->getTrue(), $contents, $row, $initialParams)
+						: self::evaluate($ast->getFalse(), $contents, $row, $initialParams);
+				
 				default:
 					throw new QuelException("Unhandled AST node " . get_class($ast));
 			}
+		}
+		
+		/**
+		 * Evaluates equality between two values, handling regexp and wildcard patterns.
+		 *
+		 * Three matching strategies, applied in order:
+		 *   1. RegExpValue (produced by evaluating AstRegExp): apply preg_match() with
+		 *      the stored PCRE pattern and flags.
+		 *   2. String containing * or ?: apply fnmatch() case-insensitively to mirror
+		 *      SQL LIKE wildcard behaviour (* = any sequence, ? = single character).
+		 *   3. Anything else: loose equality (==), matching SQL's implicit type coercion.
+		 *
+		 * Called by the AstExpression handler for both = and <> operators;
+		 * the caller negates the result for <>.
+		 *
+		 * @param mixed $left The evaluated left-hand side value.
+		 * @param mixed $right The evaluated right-hand side value (may be a RegExpValue).
+		 * @return bool
+		 */
+		private static function evaluateEquals(mixed $left, mixed $right): bool {
+			// Regexp: right side evaluated to a RegExpValue carrier
+			if ($right instanceof RegExpValue) {
+				return (bool)preg_match($right->toPcre(), (string)$left);
+			}
+			
+			// Wildcard: right side is a string containing * or ?
+			// fnmatch() with FNM_CASEFOLD mirrors SQL LIKE case-insensitive behaviour
+			if (is_string($right) && (str_contains($right, '*') || str_contains($right, '?'))) {
+				return fnmatch($right, (string)$left, FNM_CASEFOLD);
+			}
+			
+			// Plain equality — loose comparison to match SQL's implicit type coercion
+			return $left == $right;
 		}
 		
 		/**
@@ -216,9 +313,9 @@
 		 *
 		 * Comparison is case-insensitive via mb_strtolower.
 		 *
-		 * @param AstSearchInMemory     $ast           The search node to evaluate
-		 * @param array<string, mixed>  $row           The data row to evaluate against
-		 * @param array<string, mixed>  $initialParams Runtime query parameters
+		 * @param AstSearchInMemory $ast The search node to evaluate
+		 * @param array<string, mixed> $row The data row to evaluate against
+		 * @param array<string, mixed> $initialParams Runtime query parameters
 		 * @return bool
 		 * @throws QuelException
 		 */
@@ -263,7 +360,7 @@
 			// as any term goes unmatched.
 			foreach ($parsed['and_terms'] as $term) {
 				$needle = mb_strtolower($term);
-				$found  = false;
+				$found = false;
 				
 				foreach ($fieldValues as $fieldValue) {
 					if (str_contains($fieldValue, $needle)) {
@@ -307,8 +404,8 @@
 		 * own reduction (min, max, mean, sum, count) to the returned array.
 		 *
 		 * @param AstAggregate $ast The aggregate node supplying identifier and conditions
-		 * @param list<array<string, mixed>> $contents        The full row dataset to scan
-		 * @param array<string, mixed>       $initialParams   Query parameters for condition evaluation
+		 * @param list<array<string, mixed>> $contents The full row dataset to scan
+		 * @param array<string, mixed> $initialParams Query parameters for condition evaluation
 		 * @return list<mixed> Non-null values collected from qualifying rows
 		 * @throws QuelException
 		 */
