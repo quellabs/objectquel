@@ -201,10 +201,7 @@
 		 * @return string One of self::STRATEGY_* constants
 		 */
 		private function chooseStrategy(AstRetrieve $root, AstAggregate $aggregate, bool $isAggregateOnly, array $nonAggItems): string {
-			// 0. Non-database ranges (JSON sources, etc.) are evaluated entirely in memory
-			//    by ConditionEvaluator — no SQL rewrite of any kind is applicable.
-			//    This check must come first so that filtered JSON aggregates (which have
-			//    conditions) do not fall through to STRATEGY_SUBQUERY.
+			// 1. Non-database ranges (JSON sources, etc.) are evaluated entirely in memory
 			$aggRanges = RangeUtilities::collectRangesFromNode($aggregate);
 
 			$allNonDatabase = !empty($aggRanges) && array_reduce(
@@ -217,25 +214,25 @@
 				return self::STRATEGY_MEMORY;
 			}
 
-			// 1. Filtered aggregates must use a subquery to apply WHERE before aggregation.
+			// 2. Filtered aggregates must use a subquery to apply WHERE before aggregation.
 			if ($aggregate->getConditions() !== null) {
 				return self::STRATEGY_SUBQUERY;
 			}
 			
-			// 2. Pure aggregate query: no GROUP BY needed, execute directly.
+			// 3. Pure aggregate query: no GROUP BY needed, execute directly.
 			if ($isAggregateOnly) {
 				return self::STRATEGY_DIRECT;
 			}
 			
-			// 3. Window function check comes before the range-overlap check.
+			// 4. Window function check comes before the range-overlap check.
 			//    A single-table mixed query (SELECT id, SUM(x) FROM t) can avoid
 			//    GROUP BY entirely by using a window function — more efficient.
 			if ($this->canRewriteAsWindowFunction($root, $aggregate)) {
 				return self::STRATEGY_WINDOW;
 			}
 			
-			// 4–5. Mixed query: determine whether aggregate and non-aggregate fields
-			//      share enough range overlap to be grouped in a single query.
+			// 5. Mixed query: determine whether aggregate and non-aggregate fields
+			//    share enough range overlap to be grouped in a single query.
 			if (!empty($nonAggItems)) {
 				$aggRanges = RangeUtilities::collectRangesFromNode($aggregate);
 				$nonAggRanges = RangeUtilities::collectRangesFromNodes($nonAggItems);
