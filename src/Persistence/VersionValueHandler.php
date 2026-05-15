@@ -6,6 +6,7 @@
 	use Quellabs\ObjectQuel\Annotations\Orm\Version;
 	use Quellabs\ObjectQuel\DatabaseAdapter\DatabaseAdapter;
 	use Quellabs\ObjectQuel\EntityStore;
+	use Quellabs\ObjectQuel\Exception\EntityResolutionException;
 	use Quellabs\ObjectQuel\ReflectionManagement\PropertyHandler;
 	use Quellabs\ObjectQuel\UnitOfWork;
 	
@@ -104,6 +105,7 @@
 		 * @param object $entity The entity to update
 		 * @param array<string, mixed> $fetchedValues Fetched version values as property_name => value pairs
 		 * @return void
+		 * @throws EntityResolutionException
 		 */
 		public function updateEntityVersionValues(object $entity, array $fetchedValues): void {
 			// Nothing to do if the insert/update produced no version values
