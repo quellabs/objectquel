@@ -489,6 +489,65 @@
 		}
 		
 		/**
+		 * Resolves the back-reference property name on the target entity for a ManyToOne or OneToOne relation.
+		 *
+		 * For OneToOne, inversedBy and mappedBy are already direct property names, so they are
+		 * returned as-is. If neither is set, the target entity's primary key is used as a fallback.
+		 *
+		 * For ManyToOne, inversedBy supports two modes:
+		 *
+		 * - ObjectQuel-style: inversedBy is a direct PK property name on the target entity (e.g. 'id').
+		 *   Returned as-is.
+		 *
+		 * - Doctrine-style: inversedBy names a relation property on the target entity
+		 *   (e.g. the OneToMany 'orders' on Customer). What callers need is the PK property
+		 *   on the target side, so the target entity's primary key is returned instead.
+		 *
+		 * Returns null when no property can be determined.
+		 *
+		 * @param ManyToOne|OneToOne $relation The relation annotation to resolve
+		 * @return string|null The back-reference property name on the target entity, or null if unresolvable
+		 * @throws EntityResolutionException When target entity metadata cannot be loaded
+		 */
+		public function resolveTargetProperty(ManyToOne|OneToOne $relation): ?string {
+			// OneToOne: inversedBy and mappedBy are always direct property names — no two-mode
+			// ambiguity exists, so return whichever is set, falling back to the primary key
+			if ($relation instanceof OneToOne) {
+				return $relation->getInversedBy()
+					?? $relation->getMappedBy()
+					?? $this->getPrimaryKey($relation->getTargetEntity());
+			}
+			
+			// ManyToOne: inversedBy may be a direct PK property name (ObjectQuel-style) or a relation
+			// property name on the target entity (Doctrine-style)
+			$inversedBy = $relation->getInversedBy();
+			
+			// No inversedBy at all — fall back to the target entity's primary key
+			if ($inversedBy === null) {
+				return $this->getPrimaryKey($relation->getTargetEntity());
+			}
+			
+			// Check whether inversedBy names a relation property on the target entity
+			// (Doctrine-style) rather than a direct PK property name (ObjectQuel-style)
+			$targetEntity = $relation->getTargetEntity();
+			$targetRelations = array_merge(
+				$this->getOneToOneDependencies($targetEntity),
+				$this->getManyToOneDependencies($targetEntity),
+				$this->getOneToManyDependencies($targetEntity),
+			);
+			
+			if (isset($targetRelations[$inversedBy])) {
+				// Doctrine-style: inversedBy points to a relation on the target entity.
+				// What callers need is the PK property on the target side, not the FK
+				// property on the owning side, so we return the target's primary key.
+				return $this->getPrimaryKey($targetEntity);
+			}
+			
+			// ObjectQuel-style: inversedBy is already the PK property name on the target entity
+			return $inversedBy;
+		}
+		
+		/**
 		 * Return true if the entity is immutable (readonly), false if not.
 		 * An immutable entity is marked with the @Immutable annotation.
 		 * @param string|object $entity The entity to check

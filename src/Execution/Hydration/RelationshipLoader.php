@@ -58,21 +58,6 @@
 		}
 		
 		/**
-		 * Determines the correct property name on the proxy based on the dependency.
-		 * @param ManyToOne|OneToOne $dependency The OneToOne dependency.
-		 * @return string The name of the property.
-		 */
-		private function determineRelationPropertyName(ManyToOne|OneToOne $dependency): string {
-			// ManyToOne
-			if ($dependency instanceof ManyToOne) {
-				return $dependency->getInversedBy() ?? '';
-			}
-			
-			// OneToOne
-			return $dependency->getInversedBy() ?? $dependency->getMappedBy() ?? '';
-		}
-		
-		/**
 		 * Processes the dependency of an entity and updates the property with the specified dependency.
 		 * This function checks if the current relation is null or not initialized and then searches
 		 * for the related entity based on the given dependency. If a matching entity
@@ -103,7 +88,7 @@
 			
 			// Determine the name and property of the target entity based on the dependency.
 			$targetEntityName = $dependency->getTargetEntity();
-			$inversedPropertyName = $this->getInversedPropertyName($dependency);
+			$inversedPropertyName = $this->entityStore->resolveTargetProperty($dependency) ?? '';
 			
 			// Add the namespace to the target entity name and find the related entity.
 			$targetEntity = $this->entityStore->resolveProxyClass($targetEntityName);
@@ -124,42 +109,6 @@
 					$this->propertyHandler->set($entity, $property, $relationEntity);
 				}
 			}
-		}
-		
-		/**
-		 * Determines the appropriate property name for the inverse relationship based on the dependency type.
-		 * This method extracts the correct property name that should be used when navigating
-		 * from the target entity back to the source entity.
-		 * @param ManyToOne|OneToOne $dependency The relationship dependency (OneToOne or ManyToOne).
-		 * @return string The name of the inverse relationship property.
-		 * @throws EntityResolutionException
-		 */
-		private function getInversedPropertyName(ManyToOne|OneToOne $dependency): string {
-			if ($dependency instanceof OneToOne) {
-				// OneToOne relationships can be either the owning or inverse side.
-				// The owning side declares inversedBy (points to the inverse side's property),
-				// while the inverse side declares mappedBy (points back to the owning side's property).
-				// Check inversedBy first, as it takes precedence on the owning side.
-				if (!empty($dependency->getInversedBy())) {
-					return $dependency->getInversedBy();
-				}
-				
-				// Fall back to mappedBy if this is the inverse side of the relationship.
-				if (!empty($dependency->getMappedBy())) {
-					return $dependency->getMappedBy();
-				}
-				
-				// Neither side explicitly declared the inverse property name,
-				// so fall back to the target entity's primary key as the property name.
-				return $this->entityStore->getPrimaryKey($dependency->getTargetEntity()) ?? '';
-			}
-			
-			// ManyToOne is always the owning side, so only inversedBy is relevant here —
-			// mappedBy is not valid on ManyToOne and is intentionally not checked.
-			// If inversedBy is absent, fall back to the target entity's primary key.
-			return $dependency->getInversedBy()
-				?? $this->entityStore->getPrimaryKey($dependency->getTargetEntity())
-				?? '';
 		}
 		
 		/**
@@ -186,11 +135,8 @@
 			// Gather information needed to create the proxy
 			$targetEntityName = $dependency->getTargetEntity();
 			
-			if ($dependency instanceof ManyToOne) {
-				$relationPropertyName = $dependency->getInversedBy();
-			} else {
-				$relationPropertyName = $this->determineRelationPropertyName($dependency);
-			}
+			// resolveTargetProperty handles both ManyToOne and OneToOne transparently
+			$relationPropertyName = $this->entityStore->resolveTargetProperty($dependency);
 			
 			// Check if the entity already exists in the UnitOfWork
 			$proxyEntity = $this->unitOfWork->findEntity($targetEntityName, [
@@ -214,7 +160,7 @@
 				// Set the primary key on the proxy using the target entity's primary key property name
 				$targetPrimaryKeys = $this->entityStore->getIdentifierKeys($targetEntityName);
 				$this->propertyHandler->set($proxyEntity, $targetPrimaryKeys[0], $relationColumnValue);
-
+				
 				// Put the proxy under ownership
 				$this->entityManager->persist($proxyEntity);
 			}

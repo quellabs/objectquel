@@ -447,10 +447,10 @@
 		 * @param AstIdentifier $right Right side of join condition
 		 */
 		private function checkTemporaryRangeRequired(
-			AstRange      $range,
-			bool          $isMainRange,
-			AstIdentifier $left,
-			AstIdentifier $right,
+			AstRange         $range,
+			bool             $isMainRange,
+			AstIdentifier    $left,
+			AstIdentifier    $right,
 			PlanLogInterface $log
 		): void {
 			// Identify which side contains the temporary range
@@ -522,10 +522,17 @@
 					if (
 						($annotation instanceof ManyToOne || $annotation instanceof OneToOne) &&
 						$annotation->getTargetEntity() === $relatedEntityName &&
-						$annotation->getRelationColumn() === $ownPropertyName &&
-						$annotation->getInversedBy() === $relatedPropertyName
+						$annotation->getRelationColumn() === $ownPropertyName
 					) {
-						$hasMatchingRelation = true;
+						// For ManyToOne, inversedBy may be either a direct PK property name
+						// (ObjectQuel-style) or a relation property name on the target entity
+						// (Doctrine-style). resolveTargetProperty handles both cases, and also
+						// covers OneToOne (inversedBy, mappedBy, or PK fallback) transparently.
+						$resolvedInversedBy = $this->entityStore->resolveTargetProperty($annotation);
+						
+						if ($resolvedInversedBy === $relatedPropertyName) {
+							$hasMatchingRelation = true;
+						}
 					}
 					
 					if ($hasRequiredRelation && $hasMatchingRelation) {

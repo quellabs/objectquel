@@ -223,7 +223,7 @@
 			// Create equality expression
 			return new AstExpression($identifierA, $identifierB, '=');
 		}
-
+		
 		/**
 		 * Builds a JOIN condition AST for a ManyToOne relation.
 		 * The FK is on $this->range (the owning/child entity); the PK is on $range (the parent entity).
@@ -235,26 +235,26 @@
 		 * @throws EntityResolutionException When target entity metadata cannot be loaded
 		 */
 		private function createManyToOneJoinCondition(AstIdentifier $joinProperty, ManyToOne $relation, AstRange|AstRangeDatabase|AstRangeJsonSource $range): AstInterface {
-				// Fetch inversedBy
-				$inversedBy = $relation->getInversedBy();
-				
-				// InversedBy is mandatory
-				if ($inversedBy === null) {
-					throw new TransformationException('ManyToOne relation is missing inversedBy');
-				}
-				
-				// Resolve the FK property name and FK column for the owning side.
-				// inversedBy can be used in two ways:
-				//   - Legacy: a direct FK property name on $this->range (e.g. 'customerId')
-				//   - Doctrine-style: a relation property name on the target entity (e.g. 'orders'),
-				//     from which the FK property and column are derived via that annotation's mappedBy
-				//     and relationColumn.
-				[$fkProperty, $relationColumn] = $this->resolveManyToOneFkColumn($relation, $inversedBy, $joinProperty->getName());
-				
-				// Return new property lookup
-				return $this->createPropertyLookupAst($fkProperty, $range, $relationColumn);
+			// Fetch inversedBy
+			$inversedBy = $relation->getInversedBy();
+			
+			// InversedBy is mandatory
+			if ($inversedBy === null) {
+				throw new TransformationException('ManyToOne relation is missing inversedBy');
 			}
 			
+			// Resolve the FK property name and FK column for the owning side.
+			// inversedBy can be used in two ways:
+			//   - Legacy: a direct FK property name on $this->range (e.g. 'customerId')
+			//   - Doctrine-style: a relation property name on the target entity (e.g. 'orders'),
+			//     from which the FK property and column are derived via that annotation's mappedBy
+			//     and relationColumn.
+			[$fkProperty, $relationColumn] = $this->entityStore->resolveManyToOneFkColumn($relation, $inversedBy, $joinProperty->getName());
+			
+			// Return new property lookup
+			return $this->createPropertyLookupAst($fkProperty, $range, $relationColumn);
+		}
+		
 		/**
 		 * Builds a JOIN condition AST for a OneToMany relation.
 		 * The FK is on $this->range (the child entity); the PK is on $range (the parent entity).
@@ -266,22 +266,22 @@
 		 * @throws EntityResolutionException When entity metadata cannot be loaded
 		 */
 		private function createOneToManyJoinCondition(OneToMany $relation, AstRange|AstRangeDatabase|AstRangeJsonSource $range, string $entityName): AstInterface {
-				// Fetch mappedBy
-				$mappedBy = $relation->getMappedBy();
-				
-				// MappedBy is mandatory
-				if ($mappedBy === null) {
-					throw new TransformationException('OneToMany relation is missing mappedBy');
-				}
-				
-				// For OneToMany, relationColumn is the PK on the parent side
-				// Default to the entity's primary key
-				$relationColumn = $relation->getRelationColumn() ?? $this->entityStore->getPrimaryKey($entityName) ?? throw new TransformationException('OneToMany relation is missing relationColumn and PK');
-				
-				// Return the new property lookup
-				return $this->createPropertyLookupAst($mappedBy, $range, $relationColumn);
+			// Fetch mappedBy
+			$mappedBy = $relation->getMappedBy();
+			
+			// MappedBy is mandatory
+			if ($mappedBy === null) {
+				throw new TransformationException('OneToMany relation is missing mappedBy');
 			}
 			
+			// For OneToMany, relationColumn is the PK on the parent side
+			// Default to the entity's primary key
+			$relationColumn = $relation->getRelationColumn() ?? $this->entityStore->getPrimaryKey($entityName) ?? throw new TransformationException('OneToMany relation is missing relationColumn and PK');
+			
+			// Return the new property lookup
+			return $this->createPropertyLookupAst($mappedBy, $range, $relationColumn);
+		}
+		
 		/**
 		 * Builds a JOIN condition AST for a OneToOne relation.
 		 * The FK can be on either side depending on whether inversedBy or mappedBy is set.
@@ -294,81 +294,21 @@
 		 * @throws EntityResolutionException When entity metadata cannot be loaded
 		 */
 		private function createOneToOneJoinCondition(AstIdentifier $joinProperty, OneToOne $relation, AstRange|AstRangeDatabase|AstRangeJsonSource $range, string $entityName): AstInterface {
-				// OneToOne with inversedBy
-				$inversedBy = $relation->getInversedBy();
-				$mappedBy = $relation->getMappedBy();
-				
-				if (!empty($inversedBy)) {
-					$relationColumn = $relation->getRelationColumn() ?? $joinProperty->getName() . 'Id';
-					return $this->createPropertyLookupAst($relationColumn, $range, $inversedBy);
-				}
-				
-				if (!empty($mappedBy)) {
-					$relationColumn = $relation->getRelationColumn() ?? $this->entityStore->getPrimaryKey($entityName) ?? throw new TransformationException('OneToOne relation is missing relationColumn and PK');
-					return $this->createPropertyLookupAst($relationColumn, $range, $mappedBy);
-				}
-				
-				throw new TransformationException('OneToOne relation has neither inversedBy nor mappedBy');
+			// OneToOne with inversedBy
+			$inversedBy = $relation->getInversedBy();
+			$mappedBy = $relation->getMappedBy();
+			
+			if (!empty($inversedBy)) {
+				$relationColumn = $relation->getRelationColumn() ?? $joinProperty->getName() . 'Id';
+				return $this->createPropertyLookupAst($relationColumn, $range, $inversedBy);
 			}
 			
-		/**
-		 * Resolves the FK property name and FK column for a ManyToOne relation.
-		 *
-		 * inversedBy supports two modes:
-		 *
-		 * - Legacy: inversedBy is a direct property name on the owning entity (e.g. 'customerId').
-		 *   The FK column is taken from $relation->getRelationColumn(), falling back to
-		 *   the join property name + 'Id'.
-		 *
-		 * - Doctrine-style: inversedBy names a relation property on the target entity
-		 *   (e.g. the OneToMany 'orders' on Customer). The FK property on the owning side
-		 *   is taken from that annotation's mappedBy, and the FK column from its relationColumn,
-		 *   falling back to mappedBy + 'Id'.
-		 *
-		 * @param ManyToOne $relation         The ManyToOne annotation being resolved
-		 * @param string    $inversedBy        The raw inversedBy value from the annotation
-		 * @param string    $joinPropertyName  The property name used in the via-clause (for default column name)
-		 * @return array{0: string, 1: string} Tuple of [fkProperty, fkColumn] on the owning entity
-		 * @throws TransformationException When Doctrine-style inversedBy resolves to a OneToMany missing mappedBy
-		 * @throws EntityResolutionException When target entity metadata cannot be loaded
-		 */
-		private function resolveManyToOneFkColumn(ManyToOne $relation, string $inversedBy, string $joinPropertyName): array {
-			// Load all relation annotations declared on the target entity so we can
-			// check whether inversedBy names one of them (Doctrine-style) or not (legacy)
-			$targetEntity = $relation->getTargetEntity();
-			
-			// Fetch relations
-			$targetRelations = array_merge(
-				$this->entityStore->getOneToOneDependencies($targetEntity),
-				$this->entityStore->getManyToOneDependencies($targetEntity),
-				$this->entityStore->getOneToManyDependencies($targetEntity),
-			);
-			
-			if (isset($targetRelations[$inversedBy])) {
-				// Doctrine-style: inversedBy is a relation property on the target entity.
-				// The FK property on the owning side is that annotation's mappedBy value,
-				// and the FK column is its relationColumn (defaulting to mappedBy + 'Id').
-				$backRelation = $targetRelations[$inversedBy];
-
-				// inversedBy must point to a OneToMany on the target entity; other relation
-				// types do not have getMappedBy(), so we guard and throw if the type is wrong
-				if (!$backRelation instanceof OneToMany) {
-					throw new TransformationException(
-						"inversedBy '{$inversedBy}' on {$targetEntity} does not point to a OneToMany relation"
-					);
-				}
-
-				$fkProperty = $backRelation->getMappedBy() ?? throw new TransformationException(
-					"OneToMany '{$inversedBy}' on {$targetEntity} is missing mappedBy"
-				);
-				$fkColumn = $backRelation->getRelationColumn() ?? $fkProperty . 'Id';
-				return [$fkProperty, $fkColumn];
+			if (!empty($mappedBy)) {
+				$relationColumn = $relation->getRelationColumn() ?? $this->entityStore->getPrimaryKey($entityName) ?? throw new TransformationException('OneToOne relation is missing relationColumn and PK');
+				return $this->createPropertyLookupAst($relationColumn, $range, $mappedBy);
 			}
 			
-			// Legacy: inversedBy is a direct FK property name on the owning entity.
-			// The FK column comes from this annotation's relationColumn, defaulting to
-			// the join property name + 'Id'.
-			$fkColumn = $relation->getRelationColumn() ?? $joinPropertyName . 'Id';
-			return [$inversedBy, $fkColumn];
+			throw new TransformationException('OneToOne relation has neither inversedBy nor mappedBy');
 		}
+		
 	}
