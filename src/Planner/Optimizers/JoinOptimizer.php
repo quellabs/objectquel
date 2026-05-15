@@ -5,6 +5,7 @@
 	use Quellabs\ObjectQuel\EntityManager;
 	use Quellabs\ObjectQuel\EntityStore;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRange;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRangeDatabase;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRangeDatabaseSubquery;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRetrieve;
 	use Quellabs\ObjectQuel\ObjectQuel\AstVisitorInterface;
@@ -52,6 +53,22 @@
 			
 			// Analyze each table/range reference for JOIN optimization opportunities
 			foreach ($ast->getRanges() as $range) {
+				// Only database ranges participate in SQL joins. Non-database ranges
+				// (JSON sources, etc.) are joined in memory by PlanExecutor — the
+				// isRequired() flag has no meaning for them and must not be modified.
+				if (
+					!$range instanceof AstRangeDatabase &&
+					!$range instanceof AstRangeDatabaseSubquery
+				) {
+					continue;
+				}
+				
+				// Ranges without a via clause are the primary FROM range, not a JOIN.
+				// The INNER/LEFT distinction only applies to joined ranges, so skip them.
+				if ($range->getJoinProperty() === null) {
+					continue;
+				}
+
 				// Skip ranges already marked as required — no point analyzing them
 				// since they are already INNER JOINs by a prior optimizer pass.
 				if ($range->isRequired()) {
