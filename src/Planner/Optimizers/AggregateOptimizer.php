@@ -6,6 +6,7 @@
 	use Quellabs\ObjectQuel\Capabilities\NullPlatformCapabilities;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstAggregate;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstAlias;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRangeJsonSource;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRetrieve;
 	use Quellabs\ObjectQuel\Planner\Helpers\AggregateConstants;
 	use Quellabs\ObjectQuel\Planner\Helpers\AggregateRewriter;
@@ -37,6 +38,10 @@
 		
 		/** Strategy label: compute aggregate as a window function. */
 		private const string STRATEGY_WINDOW = 'WINDOW';
+		
+		// Aggregate is over a non-database range (e.g. JSON source) — evaluated
+		// in memory by ConditionEvaluator; no SQL rewrite of any kind applies.
+		private const string STRATEGY_MEMORY = 'MEMORY';
 		
 		/** @var PlatformCapabilitiesInterface Database engine capability descriptor */
 		private PlatformCapabilitiesInterface $platform;
@@ -160,6 +165,16 @@
 							$aggLabel
 						);
 						break;
+
+					case self::STRATEGY_MEMORY:
+						// Non-database aggregate — evaluated in memory by ConditionEvaluator.
+						// No SQL rewrite applies; leave the AST node untouched.
+						$log->note('optimizer', 'aggregate', 'MEMORY',
+							"Aggregate {$aggLabel} evaluated in memory (non-database range)",
+							$aggLabel
+						);
+						
+						break;
 				}
 			}
 		}
@@ -186,6 +201,22 @@
 		 * @return string One of self::STRATEGY_* constants
 		 */
 		private function chooseStrategy(AstRetrieve $root, AstAggregate $aggregate, bool $isAggregateOnly, array $nonAggItems): string {
+			// 0. Non-database ranges (JSON sources, etc.) are evaluated entirely in memory
+			//    by ConditionEvaluator — no SQL rewrite of any kind is applicable.
+			//    This check must come first so that filtered JSON aggregates (which have
+			//    conditions) do not fall through to STRATEGY_SUBQUERY.
+			$aggRanges = RangeUtilities::collectRangesFromNode($aggregate);
+
+			$allNonDatabase = !empty($aggRanges) && array_reduce(
+				$aggRanges,
+				fn(bool $carry, $range) => $carry && $range instanceof AstRangeJsonSource,
+				true
+			);
+
+			if ($allNonDatabase) {
+				return self::STRATEGY_MEMORY;
+			}
+
 			// 1. Filtered aggregates must use a subquery to apply WHERE before aggregation.
 			if ($aggregate->getConditions() !== null) {
 				return self::STRATEGY_SUBQUERY;
