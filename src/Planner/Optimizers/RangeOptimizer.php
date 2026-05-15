@@ -507,34 +507,41 @@
 			string $ownPropertyName,
 			string $relatedPropertyName
 		): bool {
+			// Load all annotations for the entity, grouped by property
 			$annotationBucket = $this->entityStore->getAnnotations($entityName);
 			
 			foreach ($annotationBucket as $annotations) {
+				// Both flags must be set on the same property for a match:
+				// @RequiredRelation marks the relation as non-nullable, and the
+				// relation annotation itself must confirm the correct join columns
 				$hasRequiredRelation = false;
 				$hasMatchingRelation = false;
 				
 				foreach ($annotations as $annotation) {
+					// Track whether this property carries @RequiredRelation
 					if ($annotation instanceof RequiredRelation) {
 						$hasRequiredRelation = true;
 						continue;
 					}
 					
+					// Only ManyToOne and OneToOne annotations own a FK column —
+					// check that this annotation points to the right entity and column
 					if (
 						($annotation instanceof ManyToOne || $annotation instanceof OneToOne) &&
 						$annotation->getTargetEntity() === $relatedEntityName &&
 						$annotation->getRelationColumn() === $ownPropertyName
 					) {
-						// For ManyToOne, inversedBy may be either a direct PK property name
-						// (ObjectQuel-style) or a relation property name on the target entity
-						// (Doctrine-style). resolveTargetProperty handles both cases, and also
-						// covers OneToOne (inversedBy, mappedBy, or PK fallback) transparently.
+						// resolveTargetProperty handles both ManyToOne (inversedBy or PK fallback)
+						// and OneToOne (inversedBy, mappedBy, or PK fallback) transparently.
 						$resolvedInversedBy = $this->entityStore->resolveTargetProperty($annotation);
 						
+						// Confirm the back-reference property matches what the join expects
 						if ($resolvedInversedBy === $relatedPropertyName) {
 							$hasMatchingRelation = true;
 						}
 					}
 					
+					// Short-circuit as soon as both flags are confirmed on the same property
 					if ($hasRequiredRelation && $hasMatchingRelation) {
 						return true;
 					}
