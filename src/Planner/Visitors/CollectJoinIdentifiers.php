@@ -4,6 +4,7 @@
 	
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstIdentifier;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRangeDatabase;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRangeJsonSource;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRetrieve;
 	use Quellabs\ObjectQuel\ObjectQuel\AstInterface;
 	use Quellabs\ObjectQuel\ObjectQuel\AstVisitorInterface;
@@ -47,11 +48,17 @@
 			}
 			
 			/**
-			 * Only use database ranges
+			 * Only use database ranges and JSON source ranges.
+			 * JSON source ranges appear in cross-source join conditions (e.g. y.id=x.id)
+			 * and their referenced columns must also be injected as hidden projections
+			 * so the in-memory join can evaluate the condition against the result row.
 			 */
 			$range = $node->getRange();
 			
-			if (!$range instanceof AstRangeDatabase) {
+			if (
+				!$range instanceof AstRangeDatabase &&
+				!$range instanceof AstRangeJsonSource
+			) {
 				return;
 			}
 			
@@ -63,7 +70,9 @@
 			}
 			
 			/**
-			 * Do not use if we optimized the range away using a subquery
+			 * Do not use if we optimized the range away using a subquery.
+			 * This flag only exists on AstRangeDatabase; JSON source ranges are
+			 * never promoted to subqueries, so the check is skipped for them.
 			 */
 			if (!$range->includeAsJoin()) {
 				return;

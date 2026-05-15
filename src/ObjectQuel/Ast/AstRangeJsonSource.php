@@ -65,6 +65,19 @@
 			$this->expression = $expression;
 		}
 		
+		
+		// ========================================
+		// Join Inclusion Control
+		// ========================================
+		
+		/**
+		 * Check whether this range should be included as a JOIN clause.
+		 * @return bool True if this range should be included as a JOIN
+		 */
+		public function includeAsJoin(): bool {
+			return true;
+		}
+		
 		/**
 		 * Creates a deep clone of this range node.
 		 * @return static A new instance with the same property values
