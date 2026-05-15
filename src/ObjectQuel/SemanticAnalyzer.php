@@ -584,6 +584,7 @@
 			// Inspect each value in the projection list and look for entity ranges
 			// whose class carries ambiguous @SourceField annotations
 			foreach ($ast->getValues() as $alias) {
+				// Fetch the Expression
 				$expression = $alias->getExpression();
 
 				// Only top-level entity identifiers (no parent, no chained property)
@@ -592,7 +593,8 @@
 				if (!$expression instanceof AstIdentifier) {
 					continue;
 				}
-
+				
+				// Check if this is the base identifier
 				if ($expression->hasParentIdentifier() || $expression->hasNext()) {
 					continue;
 				}
