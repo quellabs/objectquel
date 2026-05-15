@@ -86,12 +86,14 @@
 		public function resetLastExecutedSql(): void {
 			$this->lastExecutedSql = [];
 		}
-
+		
 		/**
 		 * Convert AstRetrieve node to SQL
 		 * @param AstRetrieve $retrieve The AST to convert
 		 * @param array<string, mixed> $parameters Query parameters (passed by reference)
 		 * @return string The generated SQL query
+		 * @throws EntityResolutionException
+		 * @throws QuelException
 		 */
 		protected function convertToSQL(AstRetrieve $retrieve, array &$parameters): string {
 			$quelToSQL = new QuelToSQL($this->entityManager->getEntityStore(), $parameters, $this->capabilities);
