@@ -224,24 +224,11 @@
 					$value = self::evaluate($ast->getExpression(), $contents, $row, $initialParams);
 					return $value !== null;
 				
-				// IN — checks whether the left side matches any value in the list, or
-				// whether a scalar appears in an array field (e.g. 'wireless' in product.tags).
+				// IN — checks whether the left side matches any value in the list.
 				case AstIn::class:
 					$needle = self::evaluate($ast->getIdentifier(), $contents, $row, $initialParams);
-					$parameters = $ast->getParameters();
-					
-					// Single-parameter IN where the parameter evaluates to an array:
-					// handles 'wireless' in product.tags where product.tags is a JSON array.
-					if (count($parameters) === 1) {
-						$listValue = self::evaluate($parameters[0], $contents, $row, $initialParams);
 						
-						if (is_array($listValue)) {
-							return in_array($needle, $listValue, false);
-						}
-					}
-					
-					// Standard IN (value, value, ...) — check each parameter
-					foreach ($parameters as $parameter) {
+					foreach ($ast->getParameters() as $parameter) {
 						$candidate = self::evaluate($parameter, $contents, $row, $initialParams);
 						
 						if ($needle == $candidate) {
