@@ -204,34 +204,31 @@
 		
 		/**
 		 * Checks if a specific entity type was requested via a specific join property.
+		 * @param string $currentEntity
 		 * @param string $targetEntity The entity class name
 		 * @param string $joinProperty The specific join property we are looking for
 		 * @return bool
 		 */
 		private function wasEntityRequested(string $currentEntity, string $targetEntity, string $joinProperty): bool {
-			// Always return false when this is a self-referencing entity
+			// Avoid false positives on self-referencing entities
 			if ($currentEntity === $targetEntity) {
 				return false;
 			}
 			
-			// Find a range that matches the relation criteria. If one is found, return true.
 			foreach ($this->retrieve->getValues() as $value) {
+				// Fetch the expression (value of AstAlias)
 				$expression = $value->getExpression();
 				
-				// Omit non entity values
+				// Skip non-entity expressions (scalars, dot-access, subqueries)
 				if (!($expression instanceof AstIdentifier) ||
 					!($expression->getRange() instanceof AstRangeDatabase) ||
 					$expression->hasNext()) {
 					continue;
 				}
 				
-				// Check if the entity matches and if the join property occurs in the range
-				$range = $expression->getRange();
-				
-				if (
-					$expression->getEntityName() === $targetEntity &&
-					$range->hasJoinProperty($targetEntity, $joinProperty)
-				) {
+				// If the target entity appears in the projection, it was explicitly
+				// fetched as part of this query — no lazy loading needed
+				if ($expression->getEntityName() === $targetEntity) {
 					return true;
 				}
 			}
