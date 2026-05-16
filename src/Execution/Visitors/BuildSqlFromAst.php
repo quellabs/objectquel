@@ -482,6 +482,8 @@
 		/**
 		 * Process a full-text search() and emit a MATCH...AGAINST condition.
 		 * @param AstSearchFullText $search The full-text search node to process
+		 * @throws EntityResolutionException
+		 * @throws QuelException
 		 */
 		protected function handleSearchFullText(AstSearchFullText $search): void {
 			$this->addToVisitedNodes($search);

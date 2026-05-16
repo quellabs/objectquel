@@ -22,8 +22,9 @@
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstSearchLike;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstSearchScore;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstString;
-	use Quellabs\ObjectQuel\Capabilities\PlatformCapabilitiesInterface;
+	use Quellabs\ObjectQuel\Capabilities\FulltextIndexStyle;
 	use Quellabs\ObjectQuel\Capabilities\NullPlatformCapabilities;
+	use Quellabs\ObjectQuel\Capabilities\PlatformCapabilitiesInterface;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\NodeBinary;
 	use Quellabs\ObjectQuel\ObjectQuel\AstInterface;
 	use Quellabs\ObjectQuel\ObjectQuel\IdentifierType;
@@ -179,7 +180,7 @@
 			if ($valueNode instanceof AstNumber) {
 				return (float)$valueNode->getValue() == 0 ? '1' : '0';
 			}
-
+			
 			// Bool equals to 1 or 0
 			if ($valueNode instanceof AstBool) {
 				return !$valueNode->getValue() ? '1' : '0';
@@ -248,24 +249,23 @@
 				'SearchStrategyResolver must run on every ExecutionStage during planning.'
 			);
 		}
-			
+		
 		/**
-		 * Convert a full-text search() to a MATCH(...) AGAINST(... IN BOOLEAN MODE) condition.
-		 *
-		 * The raw search string is passed directly to AGAINST so MySQL's boolean-mode
-		 * parser handles +/- prefixes natively, avoiding a redundant parse of the terms.
-		 *
-		 * @param AstSearchFullText $search The full-text search AST node
-		 * @return string SQL MATCH...AGAINST condition wrapped in parentheses
+		 * Convert a full-text search() to the appropriate SQL predicate for the platform.
+		 * Dispatches to buildFullTextCondition, buildTsvectorCondition, or buildFts5Condition.
+		 * @param AstSearchFullText $search
+		 * @return string SQL fulltext predicate wrapped in parentheses
+		 * @throws EntityResolutionException
+		 * @throws QuelException
 		 */
 		public function handleSearchFullText(AstSearchFullText $search): string {
-			// Each AstSearchFullText uses a unique key to avoid parameter name collisions
-			// when multiple search() calls appear in the same query.
-			$sql = $this->buildFullTextCondition(
-				$search->getIdentifiers(),
-				$search->getSearchString(),
-				uniqid()
-			);
+			$searchKey = uniqid();
+			
+			$sql = match ($this->platform->getFulltextIndexStyle()) {
+				FulltextIndexStyle::Fulltext => $this->buildFullTextCondition($search->getIdentifiers(), $search->getSearchString(), $searchKey),
+				FulltextIndexStyle::Tsvector => $this->buildTsvectorCondition($search->getIdentifiers(), $search->getSearchString(), $searchKey),
+				FulltextIndexStyle::Fts5     => $this->buildFts5Condition($search->getIdentifiers(), $search->getSearchString(), $searchKey),
+			};
 			
 			return '(' . $sql . ')';
 		}
@@ -309,28 +309,35 @@
 		}
 		
 		/**
-		 * Convert a search_score() call to a MATCH...AGAINST value expression.
-		 *
-		 * Returns the relevance score of the full-text search as a numeric SQL expression,
-		 * suitable for use in SELECT clause column lists and ORDER BY clauses.
-		 *
-		 * When no @FullTextIndex annotation covers the searched columns, returns 0.0 so
-		 * that the query succeeds without ranking. Add a @FullTextIndex to the entity to
-		 * enable real relevance scoring.
-		 *
-		 * @param AstSearchScore $searchScore The search_score AST node
-		 * @return string SQL MATCH...AGAINST expression, or '0.0' if no full-text index exists
+		 * Convert a search_score() call to a relevance score SQL expression.
+		 * Returns MATCH...AGAINST for MySQL, ts_rank() for PostgreSQL, or 0.0 for SQLite
+		 * (FTS5 rank is not expressible as a standalone scalar). Also returns 0.0 when
+		 * no @FullTextIndex annotation covers the searched columns.
+		 * @param AstSearchScore $searchScore
+		 * @return string SQL relevance score expression, or '0.0' if unavailable
 		 * @throws EntityResolutionException
 		 * @throws QuelException
 		 */
 		public function handleSearchScore(AstSearchScore $searchScore): string {
+			// Fetch the identifiers
 			$identifiers = $searchScore->getIdentifiers();
 			
+			// If not full text, return 0
 			if (!$this->isFullTextIndex($identifiers)) {
 				return '0.0';
 			}
 			
-			return $this->buildFullTextCondition($identifiers, $searchScore->getSearchString(), uniqid());
+			// Build score
+			$searchKey = uniqid();
+			
+			return match ($this->platform->getFulltextIndexStyle()) {
+				FulltextIndexStyle::Fulltext => $this->buildFullTextScore($identifiers, $searchScore->getSearchString(), $searchKey),
+				FulltextIndexStyle::Tsvector => $this->buildTsvectorScore($identifiers, $searchScore->getSearchString(), $searchKey),
+				
+				// SQLite FTS5 rank is only available inside the virtual-table MATCH
+				// predicate and cannot be expressed as a standalone scalar expression.
+				FulltextIndexStyle::Fts5 => '0.0',
+			};
 		}
 		
 		/**
@@ -413,19 +420,12 @@
 		}
 		
 		/**
-		 * Builds a single MATCH...AGAINST condition from a raw search string node.
-		 *
-		 * The search string is passed directly to MySQL in boolean mode, which parses
-		 * the +/- prefixes natively. This avoids the double-parse that would occur if
-		 * we reconstructed the boolean string from the already-parsed terms array.
-		 *
-		 * Used by both search() (boolean condition) and search_score() (value expression)
-		 * to ensure both code paths produce identical SQL for the same inputs.
-		 *
+		 * Builds a MATCH...AGAINST IN BOOLEAN MODE predicate for MySQL/MariaDB/SQL Server.
+		 * Used by handleSearchFullText (boolean condition).
 		 * @param AstIdentifier[] $identifiers
-		 * @param AstString|AstParameter $searchString The raw search term node
+		 * @param AstString|AstParameter $searchString
 		 * @param string $searchKey Unique key for parameter naming
-		 * @return string SQL MATCH...AGAINST expression
+		 * @return string SQL MATCH...AGAINST IN BOOLEAN MODE expression
 		 * @throws EntityResolutionException
 		 * @throws QuelException
 		 */
@@ -433,30 +433,142 @@
 			// MATCH() requires bare column names — no table alias prefix.
 			// buildColumnName() returns `alias.column`; we extract only the column part.
 			$columns = array_map(function ($id) {
+				// Build the column name
 				$full = $this->buildColumnName($id);
+				
 				// Strip "alias." prefix if present — MATCH(content) not MATCH(p.content)
 				$dotPos = strpos($full, '.');
-				return $dotPos !== false ? substr($full, $dotPos + 1) : $full;
+				
+				if ($dotPos !== false) {
+					return substr($full, $dotPos + 1);
+				} else {
+					return $full;
+				}
 			}, $identifiers);
-
+			
 			// Implode the column list
 			$columnList = implode(', ', $columns);
 			
 			// Match existing parameter or create a new one
-			if ($searchString instanceof AstParameter) {
-				// Pass the caller's named parameter through directly.
-				// MATCH...AGAINST() rejects named params with MySQL native prepares —
-				// DatabaseAdapter::execute() enables emulated prepares for MATCH queries.
-				$term = ':' . $searchString->getName();
-			} else {
-				// Inline string literal — bind under a unique ft_ key
-				$paramName = 'ft_' . $searchKey;
-				$this->parameters[$paramName] = $searchString->getValue();
-				$term = ':' . $paramName;
-			}
+			$term = $this->bindSearchParameter($searchString, 'ft_', $searchKey);
 			
 			// Return SQL
 			return "MATCH({$columnList}) AGAINST({$term} IN BOOLEAN MODE)";
+		}
+		
+		/**
+		 * Builds a MATCH...AGAINST relevance score expression for MySQL/MariaDB/SQL Server.
+		 * Used by handleSearchScore. Omits IN BOOLEAN MODE so the engine returns a
+		 * floating-point relevance score rather than a boolean match result.
+		 * @param AstIdentifier[] $identifiers
+		 * @param AstString|AstParameter $searchString
+		 * @param string $searchKey Unique key for parameter naming
+		 * @return string SQL MATCH...AGAINST expression
+		 * @throws EntityResolutionException
+		 * @throws QuelException
+		 */
+		private function buildFullTextScore(array $identifiers, AstString|AstParameter $searchString, string $searchKey): string {
+			// MATCH() requires bare column names — strip the "alias." prefix same as buildFullTextCondition.
+			$columns = array_map(function ($id) {
+				$full = $this->buildColumnName($id);
+				$dotPos = strpos($full, '.');
+				return $dotPos !== false ? substr($full, $dotPos + 1) : $full;
+			}, $identifiers);
+			
+			$columnList = implode(', ', $columns);
+			$term = $this->bindSearchParameter($searchString, 'ft_', $searchKey);
+			
+			// Omitting IN BOOLEAN MODE switches MySQL to natural-language mode,
+			// which returns a floating-point relevance score instead of a boolean result.
+			return "MATCH({$columnList}) AGAINST({$term})";
+		}
+		
+		/**
+		 * Builds a PostgreSQL tsvector fulltext search predicate: col @@ plainto_tsquery(:term).
+		 * Multiple columns are combined with || so a match in any column satisfies the predicate.
+		 * @param AstIdentifier[] $identifiers
+		 * @param AstString|AstParameter $searchString
+		 * @param string $searchKey Unique key for parameter naming
+		 * @return string
+		 * @throws EntityResolutionException
+		 * @throws QuelException
+		 */
+		private function buildTsvectorCondition(array $identifiers, AstString|AstParameter $searchString, string $searchKey): string {
+			$columns = array_map(fn($id) => $this->buildColumnName($id), $identifiers);
+			
+			// Multiple tsvector columns are combined with || so a match in any of them satisfies the predicate.
+			$columnExpr = count($columns) === 1 ? $columns[0] : '(' . implode(' || ', $columns) . ')';
+			$term = $this->bindSearchParameter($searchString, 'ft_', $searchKey);
+			
+			// plainto_tsquery() accepts plain prose without requiring tsquery operators (&, |, !),
+			// which matches the intent of MySQL's boolean-mode search for everyday input.
+			return "{$columnExpr} @@ plainto_tsquery({$term})";
+		}
+		
+		/**
+		 * Builds a PostgreSQL relevance score expression: ts_rank(col, plainto_tsquery(:term)).
+		 * Multiple columns are combined with ||.
+		 * @param AstIdentifier[] $identifiers
+		 * @param AstString|AstParameter $searchString
+		 * @param string $searchKey Unique key for parameter naming
+		 * @return string
+		 * @throws EntityResolutionException
+		 * @throws QuelException
+		 */
+		private function buildTsvectorScore(array $identifiers, AstString|AstParameter $searchString, string $searchKey): string {
+			$columns = array_map(fn($id) => $this->buildColumnName($id), $identifiers);
+			
+			// Multiple tsvector columns are combined with || — ts_rank scores the concatenated vector.
+			$columnExpr = count($columns) === 1 ? $columns[0] : '(' . implode(' || ', $columns) . ')';
+			$term = $this->bindSearchParameter($searchString, 'ft_', $searchKey);
+			return "ts_rank({$columnExpr}, plainto_tsquery({$term}))";
+		}
+		
+		/**
+		 * Builds a SQLite FTS5 MATCH predicate: fts_table MATCH :term.
+		 * The virtual table name comes from the @FullTextIndex annotation's index name.
+		 * Note: the FTS5 virtual table JOIN must be injected separately by the query builder.
+		 * @param AstIdentifier[] $identifiers
+		 * @param AstString|AstParameter $searchString
+		 * @param string $searchKey Unique key for parameter naming
+		 * @return string
+		 * @throws EntityResolutionException
+		 * @throws QuelException
+		 */
+		private function buildFts5Condition(array $identifiers, AstString|AstParameter $searchString, string $searchKey): string {
+			// Derive the FTS5 virtual table name from the entity's FullTextIndex annotation.
+			$entityName = $identifiers[0]->getEntityName() ?? '';
+			$propertyNames = $this->extractPropertyNames($identifiers);
+			$ftIndex = $this->entityStore->getFullTextIndexForColumns($entityName, $propertyNames);
+			
+			// Fall back to a conventional name if no annotation is found.
+			$ftsTable = $ftIndex !== null ? $ftIndex->getName() : 'fts_' . strtolower(basename(str_replace('\\', '/', $entityName)));
+			$term = $this->bindSearchParameter($searchString, 'ft_', $searchKey);
+			
+			// The MATCH predicate targets the virtual table, not the real table column.
+			// The query builder is responsible for injecting the required JOIN to the FTS5 table.
+			return "{$ftsTable} MATCH {$term}";
+		}
+		
+		/**
+		 * Resolves a search string node to a SQL parameter placeholder, binding the value
+		 * into $this->parameters when the node is an inline string literal.
+		 * @param AstString|AstParameter $searchString
+		 * @param string $prefix Prefix for the generated parameter name (e.g. 'ft_')
+		 * @param string $searchKey Unique suffix to avoid collisions across multiple search() calls
+		 * @return string             SQL placeholder, e.g. ':ft_abc123'
+		 */
+		private function bindSearchParameter(AstString|AstParameter $searchString, string $prefix, string $searchKey): string {
+			if ($searchString instanceof AstParameter) {
+				// Named parameter — pass through directly without rebinding.
+				return ':' . $searchString->getName();
+			}
+			
+			// Inline string literal — bind it under a unique key to avoid collisions
+			// when multiple search() calls appear in the same query.
+			$paramName = $prefix . $searchKey;
+			$this->parameters[$paramName] = $searchString->getValue();
+			return ':' . $paramName;
 		}
 		
 		/**
@@ -490,8 +602,6 @@
 				return $this->buildColumnNameForEntity($identifier, $rangeName, $entityName);
 			}
 		}
-		
-		
 		
 		/**
 		 * Builds a SQL column expression for the given identifier.
@@ -675,7 +785,7 @@
 			// Return fully qualified column name
 			return "`{$rangeName}`.`{$columnMap[$property]}`";
 		}
-
+		
 		/**
 		 * Handles type validation for numeric, integer, and float types using
 		 * predefined regex patterns. Optimizes for literal values and uses
