@@ -459,14 +459,16 @@
 		 */
 		private function candidateMapsToParent(object $candidate, string $mappedBy, string $parentClass): bool {
 			$candidateClass = $this->entityStore->resolveProxyClass($candidate);
-			$deps = $this->entityStore->getAllDependencies($candidateClass)[$mappedBy] ?? [];
+			$deps = $this->entityStore->getAllDependencies($candidateClass);
 			
-			foreach ($deps as $dep) {
-				if (
-					($dep instanceof ManyToOne || $dep instanceof OneToOne) &&
-					$this->entityStore->resolveProxyClass($dep->getTargetEntity()) === $parentClass
-				) {
-					return true;
+			foreach ($deps as $property => $propertyDeps) {
+				foreach ($propertyDeps as $dep) {
+					if (
+						($dep instanceof ManyToOne || $dep instanceof OneToOne) &&
+						$this->entityStore->resolveProxyClass($dep->getTargetEntity()) === $parentClass
+					) {
+						return true;
+					}
 				}
 			}
 			
