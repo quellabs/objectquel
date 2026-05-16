@@ -7,6 +7,7 @@
 	use Iterator;
 	use Quellabs\ObjectQuel\EntityManager;
 	use Quellabs\ObjectQuel\EntityStore;
+	use Quellabs\ObjectQuel\Exception\EntityResolutionException;
 	use Quellabs\ObjectQuel\Exception\QuelException;
 	use Quellabs\ObjectQuel\ReflectionManagement\PropertyHandler;
 	
@@ -59,13 +60,22 @@
 			$this->id = $id;
 			$this->initialized = false;
 		}
+
+		/**
+		 * Returns true if the collection has been initialized (i.e. its data has been loaded
+		 * from the database), false if the load is still pending.
+		 * @return bool
+		 */
+		public function isInitialized(): bool {
+			return $this->initialized;
+		}
 		
 		/**
 		 * Initializes the collection with entities.
 		 * This is a lazy-loading mechanism where entities are only loaded
 		 * when needed, which improves performance with large datasets.
 		 * @return void
-		 * @throws QuelException When there's an error loading the entities
+		 * @throws QuelException|EntityResolutionException When there's an error loading the entities
 		 */
 		private function doInitialize(): void {
 			// Check if initialization has already been performed to prevent duplicate initialization
@@ -101,6 +111,7 @@
 		 * Removes all entities from the list
 		 * @return void
 		 * @throws QuelException
+		 * @throws EntityResolutionException
 		 */
 		public function clear(): void {
 			$this->doInitialize();
@@ -111,9 +122,9 @@
 		 * Returns true if the entity is in the collection, false if not.
 		 * @param object $entity The entity to check for
 		 * @return bool True if the entity exists in the collection
-		 * @throws QuelException
+		 * @throws QuelException|EntityResolutionException
 		 */
-		public function contains($entity): bool {
+		public function contains(object $entity): bool {
 			// For performance, we can check if the entity exists without initializing
 			// the entire collection in some cases
 			$objectId = spl_object_hash($entity);
@@ -131,7 +142,7 @@
 		/**
 		 * Checks whether the collection is empty (contains no elements).
 		 * @return bool
-		 * @throws QuelException
+		 * @throws QuelException|EntityResolutionException
 		 */
 		public function isEmpty(): bool {
 			$this->doInitialize();
@@ -139,9 +150,9 @@
 		}
 		
 		/**
-		 * Returns the entity currently pointed to by the internal iterator
-		 * @return mixed|null
-		 * @throws QuelException
+		 * Returns the element at the current iterator position, or null if the position is invalid.
+		 * @return T|null
+		 * @throws QuelException|EntityResolutionException
 		 */
 		public function current(): mixed {
 			$this->doInitialize();
@@ -151,7 +162,7 @@
 		/**
 		 * Returns number of entities
 		 * @return int
-		 * @throws QuelException
+		 * @throws QuelException|EntityResolutionException
 		 */
 		public function getCount(): int {
 			$this->doInitialize();
@@ -162,7 +173,7 @@
 		 * Advances the internal iterator to the next entity and returns that entity.
 		 * If no items left, this function returns null
 		 * @return void
-		 * @throws QuelException
+		 * @throws QuelException|EntityResolutionException
 		 */
 		public function next(): void {
 			$this->doInitialize();
@@ -173,7 +184,7 @@
 		 * Checks if the specified offset exists in the collection.
 		 * @param int|string $offset The offset to check for
 		 * @return bool True if the offset exists
-		 * @throws QuelException
+		 * @throws QuelException|EntityResolutionException
 		 */
 		public function offsetExists(mixed $offset): bool {
 			$this->doInitialize();
@@ -181,10 +192,10 @@
 		}
 		
 		/**
-		 * Gets the entity at the specified offset.
-		 * @param int|string $offset The offset to retrieve
-		 * @return T|null The entity at the specified offset
-		 * @throws QuelException
+		 * Returns the element at the specified offset, or null if the offset does not exist.
+		 * @param mixed $offset The offset to retrieve
+		 * @return T|null
+		 * @throws QuelException|EntityResolutionException
 		 */
 		public function offsetGet(mixed $offset): mixed {
 			$this->doInitialize();
@@ -192,12 +203,12 @@
 		}
 		
 		/**
-		 * Sets an entity at the specified offset.
-		 * If no offset is provided, uses the entity's object ID.
-		 * @param int|string|null $offset The offset to set
+		 * Sets an element at the specified offset.
+		 * If no offset is provided, uses the entity's object hash as key.
+		 * @param mixed $offset The offset to assign the value to, or null to append
 		 * @param T $value The entity to store
 		 * @return void
-		 * @throws QuelException
+		 * @throws QuelException|EntityResolutionException
 		 */
 		public function offsetSet(mixed $offset, mixed $value): void {
 			$this->doInitialize();
@@ -213,7 +224,7 @@
 		 * Removes an entity at the specified offset.
 		 * @param int|string $offset The offset to remove
 		 * @return void
-		 * @throws QuelException
+		 * @throws QuelException|EntityResolutionException
 		 */
 		public function offsetUnset(mixed $offset): void {
 			$this->doInitialize();
@@ -223,7 +234,7 @@
 		/**
 		 * Returns the key of the current element in the collection.
 		 * @return mixed The current key
-		 * @throws QuelException
+		 * @throws QuelException|EntityResolutionException
 		 */
 		public function key(): mixed {
 			$this->doInitialize();
@@ -233,7 +244,7 @@
 		/**
 		 * Returns true if the current position of the iterator is valid.
 		 * @return bool True if the current position is valid
-		 * @throws QuelException
+		 * @throws QuelException|EntityResolutionException
 		 */
 		public function valid(): bool {
 			$this->doInitialize();
@@ -243,7 +254,7 @@
 		/**
 		 * Rewinds the iterator to the first element in the collection.
 		 * @return void
-		 * @throws QuelException
+		 * @throws QuelException|EntityResolutionException
 		 */
 		public function rewind(): void {
 			$this->doInitialize();
@@ -254,7 +265,7 @@
 		 * Returns the number of elements in the collection.
 		 * Alias for getCount() to implement Countable.
 		 * @return int The number of entities
-		 * @throws QuelException
+		 * @throws QuelException|EntityResolutionException
 		 */
 		public function count(): int {
 			$this->doInitialize();
@@ -264,7 +275,7 @@
 		/**
 		 * Returns an array of keys from the collection.
 		 * @return array<int|string> The array of keys
-		 * @throws QuelException
+		 * @throws QuelException|EntityResolutionException
 		 */
 		public function getKeys(): array {
 			$this->doInitialize();
@@ -272,20 +283,12 @@
 		}
 		
 		/**
-		 * Returns true if the object is initialized, false if not.
-		 * @return bool True if initialized
-		 */
-		public function isInitialized(): bool {
-			return $this->initialized;
-		}
-		
-		/**
 		 * Adds an entity to the collection if it doesn't already exist.
 		 * @param T $entity The entity to add
 		 * @return void
-		 * @throws QuelException
+		 * @throws QuelException|EntityResolutionException
 		 */
-		public function add($entity): void {
+		public function add(object $entity): void {
 			$this->doInitialize();
 			
 			if (!$this->contains($entity)) {
@@ -297,9 +300,9 @@
 		 * Removes an entity from the collection.
 		 * @param T $entity The entity to remove
 		 * @return bool True if the entity was removed, false if it wasn't in the collection
-		 * @throws QuelException
+		 * @throws QuelException|EntityResolutionException
 		 */
-		public function remove($entity): bool {
+		public function remove(object $entity): bool {
 			$this->doInitialize();
 			$objectId = spl_object_hash($entity);
 			
@@ -314,7 +317,7 @@
 		/**
 		 * Returns all entities as an array.
 		 * @return array<T> Array of entities
-		 * @throws QuelException
+		 * @throws QuelException|EntityResolutionException
 		 */
 		public function toArray(): array {
 			$this->doInitialize();

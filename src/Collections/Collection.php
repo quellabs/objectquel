@@ -51,6 +51,14 @@
 		}
 		
 		/**
+		 * Always returns true, as a non-lazy collection is initialized by definition.
+		 * @return bool
+		 */
+		public function isInitialized(): bool {
+			return true;
+		}
+		
+		/**
 		 * Sort callback based on the sortOrder string
 		 * This function is used to compare two elements of the collection
 		 * @param mixed $a The first element to compare
@@ -216,7 +224,7 @@
 		 * @param T $entity
 		 * @return bool
 		 */
-		public function contains(mixed $entity): bool {
+		public function contains(object $entity): bool {
 			return in_array($entity, $this->collection, true);
 		}
 		
@@ -376,7 +384,7 @@
 		 * @param T $entity
          * @return void
 		 */
-		public function add($entity): void {
+		public function add(object $entity): void {
 			$this->collection[] = $entity;
 			$this->isDirty = true;
 		}
@@ -386,7 +394,7 @@
 		 * @param T $entity
          * @return bool
          */
-		public function remove($entity): bool {
+		public function remove(object $entity): bool {
 			$key = array_search($entity, $this->collection, true);
 			
 			if ($key !== false) {
