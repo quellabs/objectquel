@@ -4,6 +4,9 @@
 	
 	use Quellabs\ObjectQuel\DatabaseAdapter\DatabaseAdapter;
 	use Quellabs\ObjectQuel\DatabaseAdapter\TypeMapper;
+	use Quellabs\ObjectQuel\Capabilities\FulltextIndexStyle;
+	use Quellabs\ObjectQuel\Capabilities\NullPlatformCapabilities;
+	use Quellabs\ObjectQuel\Capabilities\PlatformCapabilitiesInterface;
 	use Quellabs\ObjectQuel\Sculpt\SculptTypes;
 	
 	/**
@@ -54,13 +57,18 @@
 		/** @var string Absolute path to the directory where migration files are written */
 		private string $migrationsPath;
 		
+		/** @var PlatformCapabilitiesInterface Describes what the connected database engine supports */
+		private PlatformCapabilitiesInterface $platform;
+		
 		/**
 		 * @param DatabaseAdapter $adapter Active database connection
 		 * @param string $migrationsPath Directory that will receive the generated file
+		 * @param PlatformCapabilitiesInterface $platform Database engine capability descriptor
 		 */
-		public function __construct(DatabaseAdapter $adapter, string $migrationsPath) {
+		public function __construct(DatabaseAdapter $adapter, string $migrationsPath, PlatformCapabilitiesInterface $platform = new NullPlatformCapabilities()) {
 			$this->connection = $adapter;
 			$this->migrationsPath = $migrationsPath;
+			$this->platform = $platform;
 		}
 		
 		// -------------------------------------------------------------------------
@@ -281,7 +289,11 @@ PHP;
 			}
 			
 			foreach ($indexes as $indexName => $indexConfig) {
-				$builder->addIndex($indexConfig['columns'], $this->buildIndexOptions($indexName, $indexConfig));
+				if ($this->isPostgresFulltext($indexConfig)) {
+					$this->applyPostgresFulltextIndex($builder, $tableName, $indexName, $indexConfig);
+				} else {
+					$this->applyStandardIndex($builder, $indexName, $indexConfig);
+				}
 			}
 			
 			return $builder->create();
@@ -369,7 +381,11 @@ PHP;
 			$builder = new MigrationCodeBuilder($tableName);
 			
 			foreach ($indexes as $name => $indexConfig) {
-				$builder->addIndex($indexConfig['columns'], $this->buildIndexOptions($name, $indexConfig));
+				if ($this->isPostgresFulltext($indexConfig)) {
+					$this->applyPostgresFulltextIndex($builder, $tableName, $name, $indexConfig);
+				} else {
+					$this->applyStandardIndex($builder, $name, $indexConfig);
+				}
 			}
 			
 			return $builder->update();
@@ -384,8 +400,12 @@ PHP;
 		private function buildRemoveIndexesCode(string $tableName, array $indexes): string {
 			$builder = new MigrationCodeBuilder($tableName);
 			
-			foreach (array_keys($indexes) as $name) {
-				$builder->removeIndexByName($name);
+			foreach ($indexes as $name => $indexConfig) {
+				if ($this->isPostgresFulltext($indexConfig)) {
+					$this->applyPostgresFulltextDrop($builder, $tableName, $name, $indexConfig);
+				} else {
+					$this->applyStandardDrop($builder, $name);
+				}
 			}
 			
 			return $builder->update();
@@ -407,12 +427,14 @@ PHP;
 			$builder = new MigrationCodeBuilder($tableName);
 			
 			foreach ($indexes as $name => $configs) {
-				$builder->removeIndexByName($name);
-				
-				$builder->addIndex(
-					$configs['entity']['columns'],
-					$this->buildIndexOptions($name, $configs['entity'])
-				);
+				if ($this->isPostgresFulltext($configs['entity'])) {
+					// For PostgreSQL fulltext, drop the GIN index and generated column, then recreate
+					$this->applyPostgresFulltextDrop($builder, $tableName, $name, $configs['database']);
+					$this->applyPostgresFulltextIndex($builder, $tableName, $name, $configs['entity']);
+				} else {
+					$this->applyStandardDrop($builder, $name);
+					$this->applyStandardIndex($builder, $name, $configs['entity']);
+				}
 			}
 			
 			return $builder->update();
@@ -544,11 +566,85 @@ PHP;
 		// -------------------------------------------------------------------------
 		
 		/**
+		 * Returns true when the index is a FULLTEXT type on a PostgreSQL platform.
+		 * @param IndexConfig $indexConfig
+		 */
+		private function isPostgresFulltext(array $indexConfig): bool {
+			return strtoupper($indexConfig['type']) === 'FULLTEXT'
+				&& $this->platform->getFulltextIndexStyle() === FulltextIndexStyle::Tsvector;
+		}
+		
+		/**
+		 * Emits raw SQL to create a PostgreSQL fulltext index.
+		 *
+		 * PostgreSQL fulltext search requires a generated tsvector column and a GIN
+		 * index on that column. Neither can be expressed through Phinx's fluent API,
+		 * so we fall back to $this->execute() with raw DDL.
+		 *
+		 * The generated column is named after the index (e.g. idx_posts_search) so
+		 * it can be unambiguously dropped alongside the index during rollback.
+		 *
+		 * @param MigrationCodeBuilder $builder
+		 * @param string $tableName
+		 * @param string $indexName
+		 * @param IndexConfig $indexConfig
+		 */
+		private function applyPostgresFulltextIndex(MigrationCodeBuilder $builder, string $tableName, string $indexName, array $indexConfig): void {
+			$columns = $indexConfig['columns'];
+			
+			// Combine columns into a single tsvector expression with coalesce to handle NULLs.
+			$tsvectorExpr = implode(" || ' ' || ", array_map(
+				fn($col) => "to_tsvector('english', coalesce({$col}, ''))",
+				$columns
+			));
+			
+			// Add a generated tsvector column — no Phinx equivalent for GENERATED ALWAYS AS.
+			$builder->execute("ALTER TABLE {$tableName} ADD COLUMN {$indexName} tsvector GENERATED ALWAYS AS ({$tsvectorExpr}) STORED");
+			
+			// Let Phinx create the GIN index on the generated column.
+			$builder->addIndex([$indexName], ["'type' => 'gin'", "'name' => '{$indexName}_gin'"]);
+		}
+		
+		/**
+		 * Emits DDL to drop a PostgreSQL fulltext index and its generated tsvector column.
+		 * @param MigrationCodeBuilder $builder
+		 * @param string $tableName
+		 * @param string $indexName
+		 * @param IndexConfig $indexConfig
+		 */
+		private function applyPostgresFulltextDrop(MigrationCodeBuilder $builder, string $tableName, string $indexName, array $indexConfig): void {
+			$builder->removeIndexByName("{$indexName}_gin");
+			$builder->execute("ALTER TABLE {$tableName} DROP COLUMN IF EXISTS {$indexName}");
+		}
+		
+		/**
+		 * Adds a standard (non-PostgreSQL-fulltext) index to the builder.
+		 * @param MigrationCodeBuilder $builder
+		 * @param string $indexName
+		 * @param IndexConfig $indexConfig
+		 */
+		private function applyStandardIndex(MigrationCodeBuilder $builder, string $indexName, array $indexConfig): void {
+			$builder->addIndex($indexConfig['columns'], $this->buildIndexOptions($indexName, $indexConfig));
+		}
+		
+		/**
+		 * Removes a standard (non-PostgreSQL-fulltext) index from the builder.
+		 * @param MigrationCodeBuilder $builder
+		 * @param string $indexName
+		 */
+		private function applyStandardDrop(MigrationCodeBuilder $builder, string $indexName): void {
+			$builder->removeIndexByName($indexName);
+		}
+		
+		/**
 		 * Build the Phinx options array for an index configuration.
 		 *
 		 * Maps INDEX / UNIQUE / FULLTEXT type strings to the correct Phinx addIndex()
 		 * options. The index name is always included so Phinx can reference it later
 		 * for removal (removeIndexByName relies on having a known name).
+		 *
+		 * Note: FULLTEXT on PostgreSQL is handled separately via applyPostgresFulltextIndex()
+		 * and never reaches this method.
 		 *
 		 * @param string $indexName Index name — always emitted as 'name'
 		 * @param IndexConfig $indexConfig

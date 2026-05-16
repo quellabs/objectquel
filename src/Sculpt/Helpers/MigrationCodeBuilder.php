@@ -14,16 +14,33 @@
 	 */
 	class MigrationCodeBuilder {
 		
-		/** @var string[] Accumulated lines of the fluent Phinx call chain */
-		private array $lines;
+		/**
+		 * Segments of output to render. Each entry is either:
+		 *   ['type' => 'chain',   'lines' => string[]]  — a fluent $this->table(...)->...->create/update() block
+		 *   ['type' => 'execute', 'sql'   => string]    — a standalone $this->execute('...'); statement
+		 *
+		 * execute() calls cannot be part of the fluent chain, so each one forces the
+		 * current chain to be closed and a new one to be opened for any subsequent
+		 * fluent calls.
+		 *
+		 * @var array<int, array{type: 'chain', lines: string[]}|array{type: 'execute', sql: string}>
+		 */
+		private array $segments;
+		
+		/** @var string Table name, needed to restart a fresh chain after execute() */
+		private string $tableName;
+		
+		/** @var string[] Table options, needed to restart a fresh chain after execute() */
+		private array $tableOptions;
 		
 		/**
 		 * @param string   $tableName    The table this builder targets
 		 * @param string[] $tableOptions Pre-formatted option strings, e.g. ["'id' => false"]
 		 */
 		public function __construct(string $tableName, array $tableOptions = []) {
-			$optionsStr  = empty($tableOptions) ? '' : ', [' . implode(', ', $tableOptions) . ']';
-			$this->lines = ["        \$this->table('{$tableName}'{$optionsStr})"];
+			$this->tableName    = $tableName;
+			$this->tableOptions = $tableOptions;
+			$this->segments     = [['type' => 'chain', 'lines' => [$this->chainHeader()]]];
 		}
 		
 		/**
@@ -35,7 +52,7 @@
 		 */
 		public function addColumn(string $name, string $type, array $options = []): static {
 			$optionsStr    = empty($options) ? '' : ', [' . implode(', ', $options) . ']';
-			$this->lines[] = "            ->addColumn('{$name}', '{$type}'{$optionsStr})";
+			$this->appendToChain("            ->addColumn('{$name}', '{$type}'{$optionsStr})");
 			return $this;
 		}
 		
@@ -48,7 +65,7 @@
 		 */
 		public function changeColumn(string $name, string $type, array $options = []): static {
 			$optionsStr    = empty($options) ? '' : ', [' . implode(', ', $options) . ']';
-			$this->lines[] = "            ->changeColumn('{$name}', '{$type}'{$optionsStr})";
+			$this->appendToChain("            ->changeColumn('{$name}', '{$type}'{$optionsStr})");
 			return $this;
 		}
 		
@@ -58,7 +75,7 @@
 		 * @param string $name Column name
 		 */
 		public function removeColumn(string $name): static {
-			$this->lines[] = "            ->removeColumn('{$name}')";
+			$this->appendToChain("            ->removeColumn('{$name}')");
 			return $this;
 		}
 		
@@ -71,7 +88,7 @@
 		public function addIndex(array $columns, array $options): static {
 			$columnsList   = "'" . implode("', '", $columns) . "'";
 			$optionsStr    = implode(', ', $options);
-			$this->lines[] = "            ->addIndex([{$columnsList}], [{$optionsStr}])";
+			$this->appendToChain("            ->addIndex([{$columnsList}], [{$optionsStr}])");
 			return $this;
 		}
 		
@@ -81,7 +98,22 @@
 		 * @param string $name Index name
 		 */
 		public function removeIndexByName(string $name): static {
-			$this->lines[] = "            ->removeIndexByName('{$name}')";
+			$this->appendToChain("            ->removeIndexByName('{$name}')");
+			return $this;
+		}
+		
+		/**
+		 * Append a raw $this->execute() statement.
+		 * Used for DDL that Phinx cannot express through its fluent API,
+		 * such as PostgreSQL GIN indexes or generated tsvector columns.
+		 * The execute call is emitted as a standalone statement outside the fluent
+		 * chain; any subsequent fluent calls open a new chain automatically.
+		 * @param string $sql Raw SQL to execute
+		 */
+		public function execute(string $sql): static {
+			$this->segments[] = ['type' => 'execute', 'sql' => $sql];
+			// Open a fresh chain so any subsequent fluent calls have a valid header.
+			$this->segments[] = ['type' => 'chain', 'lines' => [$this->chainHeader()]];
 			return $this;
 		}
 		
@@ -92,7 +124,7 @@
 		 */
 		public function changePrimaryKey(array $keys): static {
 			$keysStr       = "'" . implode("', '", $keys) . "'";
-			$this->lines[] = "            ->changePrimaryKey([{$keysStr}])";
+			$this->appendToChain("            ->changePrimaryKey([{$keysStr}])");
 			return $this;
 		}
 		
@@ -101,7 +133,7 @@
 		 * Use this when generating a new table.
 		 */
 		public function create(): string {
-			return implode("\n", $this->lines) . "\n            ->create();";
+			return $this->render('create');
 		}
 		
 		/**
@@ -109,6 +141,51 @@
 		 * Use this when modifying an existing table.
 		 */
 		public function update(): string {
-			return implode("\n", $this->lines) . "\n            ->update();";
+			return $this->render('update');
+		}
+		
+		/**
+		 * Append a line to the current (last) chain segment.
+		 * If the last segment is an execute, a new chain segment was already opened
+		 * by execute(), so this always finds a chain segment at the end.
+		 */
+		private function appendToChain(string $line): void {
+			$last = &$this->segments[array_key_last($this->segments)];
+			assert($last['type'] === 'chain');
+			$last['lines'][] = $line;
+		}
+		
+		/**
+		 * Build the $this->table(...) header line for a new chain segment.
+		 */
+		private function chainHeader(): string {
+			$optionsStr = empty($this->tableOptions) ? '' : ', [' . implode(', ', $this->tableOptions) . ']';
+			return "        \$this->table('{$this->tableName}'{$optionsStr})";
+		}
+		
+		/**
+		 * Render all segments into a single code block.
+		 * Each chain segment is closed with ->create() or ->update(); each execute
+		 * segment becomes a standalone $this->execute('...'); statement.
+		 * Empty chain segments (header only, no fluent calls) are omitted.
+		 * @param 'create'|'update' $terminator
+		 */
+		private function render(string $terminator): string {
+			$parts = [];
+			
+			foreach ($this->segments as $segment) {
+				if ($segment['type'] === 'execute') {
+					$parts[] = "        \$this->execute('" . addslashes($segment['sql']) . "');";
+				} else {
+					// Omit chain segments that contain only the header and no fluent calls.
+					if (count($segment['lines']) <= 1) {
+						continue;
+					}
+					
+					$parts[] = implode("\n", $segment['lines']) . "\n            ->{$terminator}();";
+				}
+			}
+			
+			return implode("\n", $parts);
 		}
 	}
