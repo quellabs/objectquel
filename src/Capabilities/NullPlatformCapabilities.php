@@ -32,4 +32,15 @@
 		public function supportsIndexHiding(): bool {
 			return false;
 		}
+		
+		/**
+		 * @inheritDoc
+		 *
+		 * Falls back to the most broadly-compatible fulltext style.
+		 * MySQL/MariaDB/SQL Server syntax is the most widely recognised default
+		 * when no database connection is available to detect the actual engine.
+		 */
+		public function getFulltextIndexStyle(): FulltextIndexStyle {
+			return FulltextIndexStyle::Fulltext;
+		}
 	}

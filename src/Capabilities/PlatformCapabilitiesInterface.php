@@ -64,4 +64,23 @@
 		 * @return bool
 		 */
 		public function supportsIndexHiding(): bool;
+		
+		/**
+		 * Returns the fulltext search style supported by the current database engine.
+		 *
+		 * The returned value determines how ObjectQuel generates fulltext index DDL
+		 * and fulltext search predicates:
+		 *
+		 * - FulltextIndexStyle::Fulltext  → FULLTEXT INDEX + MATCH(col) AGAINST('term')
+		 *                                   (MySQL, MariaDB, SQL Server)
+		 *
+		 * - FulltextIndexStyle::Fts5      → FTS5 virtual table + MATCH predicate
+		 *                                   (SQLite)
+		 *
+		 * - FulltextIndexStyle::Tsvector  → tsvector column + GIN index + @@ to_tsquery()
+		 *                                   (PostgreSQL)
+		 *
+		 * @return FulltextIndexStyle
+		 */
+		public function getFulltextIndexStyle(): FulltextIndexStyle;
 	}

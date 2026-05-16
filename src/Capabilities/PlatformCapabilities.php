@@ -100,4 +100,21 @@
 			// is safe to use directly for both engines.
 			return version_compare($this->adapter->getServerVersion(), $minimumVersions[$dbType], '>=');
 		}
+		
+		/**
+		 * @inheritDoc
+		 *
+		 * Maps each supported database engine to its fulltext search style:
+		 * - MySQL / MariaDB: FULLTEXT index with MATCH ... AGAINST
+		 * - SQL Server:      FULLTEXT index with MATCH ... AGAINST
+		 * - SQLite:          FTS5 virtual table with MATCH predicate
+		 * - PostgreSQL:      tsvector column + GIN index + @@ to_tsquery()
+		 */
+		public function getFulltextIndexStyle(): FulltextIndexStyle {
+			return match($this->adapter->getDatabaseType()) {
+				'postgres', 'postgresql' => FulltextIndexStyle::Tsvector,
+				'sqlite'                 => FulltextIndexStyle::Fts5,
+				default                  => FulltextIndexStyle::Fulltext,
+			};
+		}
 	}
