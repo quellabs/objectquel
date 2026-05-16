@@ -136,11 +136,18 @@
 				return;
 			}
 			
-			// Gather information needed to create the proxy
-			$targetEntityName = $dependency->getTargetEntity();
+			// Gather information needed to create the proxy.
+			// resolveProxyClass ensures we have the fully-qualified class name.
+			$targetEntityName = $this->entityStore->resolveProxyClass($dependency->getTargetEntity());
 			
-			// resolveTargetProperty handles both ManyToOne and OneToOne transparently
+			// resolveTargetProperty handles both ManyToOne and OneToOne transparently.
+			// If it returns null, the target property is unknown and we cannot build a proxy.
 			$relationPropertyName = $this->entityStore->resolveTargetProperty($dependency);
+			
+			// Return if the property could not be resolved
+			if ($relationPropertyName === null) {
+				return;
+			}
 			
 			// Create the proxy
 			$proxy = $this->findOrCreateProxy($targetEntityName, $relationPropertyName, $relationColumnValue);
@@ -151,7 +158,7 @@
 		
 		/**
 		 * Returns an existing entity from the UnitOfWork, or instantiates and persists a new proxy.
-		 * @param string $targetEntityName
+		 * @param class-string $targetEntityName
 		 * @param string $relationPropertyName The property on the target that holds the PK
 		 * @param mixed $relationColumnValue
 		 * @return object
