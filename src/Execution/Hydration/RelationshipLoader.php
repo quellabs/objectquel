@@ -57,7 +57,8 @@
 			// Set up collections for empty OneToMany relations
 			$this->setupOneToManyCollections($entities);
 			
-			// Set up collections for already fetched data
+			// Wire hydrated related entities back into parent collections
+			// for OneToMany relations that were explicitly joined in the query
 			$this->wireJoinedCollections($entities);
 		}
 		
@@ -400,12 +401,13 @@
 		}
 
 		/**
-		 * For OneToMany relations where the related entity was explicitly joined in the
-		 * query (and therefore setupOneToManyCollections skipped them), wire the already-
-		 * hydrated related entities back into the parent entity's collection.
+		 * Wires already-hydrated related entities back into their parent entity's collection,
+		 * for OneToMany relations where the related entity was explicitly joined in the query.
 		 *
-		 * Without this, c.addresses stays as an empty Collection even though Address
-		 * entities were hydrated and are present in the result.
+		 * setupOneToManyCollections() deliberately skips these relations (leaving the collection
+		 * empty) because it assumes the join already produced the data. This method completes
+		 * that contract by scanning the hydrated entity set and populating the collection from it,
+		 * rather than issuing an additional query.
 		 *
 		 * @param array<int, object> $entities All hydrated entities from the result set
 		 * @throws EntityResolutionException
@@ -465,8 +467,35 @@
 								continue;
 							}
 							
-							// Read the FK value from the candidate and compare it to the
-							// parent's primary key — this is how we determine ownership
+							// Verify that the candidate's mappedBy property is actually
+							// annotated as a relation pointing back to this parent entity type.
+							// This prevents false matches in schemas where two unrelated entity
+							// types share the same FK property name and overlapping ID values.
+							$candidateClass = $this->entityStore->resolveProxyClass($candidate);
+							$candidateDependencies = $this->entityStore->getAllDependencies($candidateClass);
+							$mappedByDependencies = $candidateDependencies[$mappedBy] ?? [];
+							
+							$pointsToParent = false;
+							
+							foreach ($mappedByDependencies as $mappedByDep) {
+								// The mappedBy property must be a ManyToOne or OneToOne
+								// annotation explicitly referencing the parent entity class
+								if (($mappedByDep instanceof ManyToOne || $mappedByDep instanceof OneToOne) &&
+									$this->entityStore->resolveProxyClass($mappedByDep->getTargetEntity()) === $objectClass
+								) {
+									$pointsToParent = true;
+									break;
+								}
+							}
+							
+							// Skip candidates whose mappedBy property does not explicitly
+							// reference this parent entity type — they belong to a different relation
+							if (!$pointsToParent) {
+								continue;
+							}
+							
+							// Compare the candidate's FK value against the parent's primary key.
+							// Only candidates where these match belong in this collection.
 							$fkValue = $this->propertyHandler->get($candidate, $mappedBy);
 							
 							if ($fkValue !== $parentKeyValue) {
@@ -474,8 +503,8 @@
 							}
 							
 							// Add the candidate to the parent's collection, but only if
-							// it isn't already in there (avoids duplicates when the same
-							// result set is processed more than once)
+							// it isn't already present — avoids duplicates when the same
+							// result set is processed more than once
 							$collection = $this->propertyHandler->get($entity, $property);
 							
 							if ($collection instanceof CollectionInterface && !$collection->contains($candidate)) {
