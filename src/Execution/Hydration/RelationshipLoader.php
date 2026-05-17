@@ -248,7 +248,7 @@
 				$entityClass = $this->entityStore->resolveProxyClass($entity);
 				
 				// Iterate through each property and its dependencies in the relationship cache
-				foreach ($this->entityStore->getAllDependencies($entityClass) as $property => $dependencies) {
+				foreach ($this->entityStore->getRelationAnnotations($entityClass) as $property => $dependencies) {
 					// Iterate through each dependency of the property
 					foreach ($dependencies as $dependency) {
 						// Check if the dependency is a OneToOne or ManyToOne relationship
@@ -283,7 +283,7 @@
 				$objectClass = $this->entityStore->resolveProxyClass($entity);
 				
 				// Get all dependencies of the entity class
-				$entityDependencies = $this->entityStore->getAllDependencies($objectClass);
+				$entityDependencies = $this->entityStore->getRelationAnnotations($objectClass);
 				
 				// Loop through all properties and their dependencies
 				foreach ($entityDependencies as $property => $dependencies) {
@@ -354,7 +354,7 @@
 			// Resolve the real class name in case this is a proxy object
 			$objectClass = $this->entityStore->resolveProxyClass($entity);
 			
-			foreach ($this->entityStore->getAllDependencies($objectClass) as $property => $dependencies) {
+			foreach ($this->entityStore->getRelationAnnotations($objectClass) as $property => $dependencies) {
 				foreach ($dependencies as $dependency) {
 					// We only care about OneToMany here; OneToOne and ManyToOne
 					// are handled by setupToOneRelations
@@ -459,7 +459,7 @@
 		 */
 		private function candidateMapsToParent(object $candidate, string $mappedBy, string $parentClass): bool {
 			$candidateClass = $this->entityStore->resolveProxyClass($candidate);
-			$deps = $this->entityStore->getAllDependencies($candidateClass);
+			$deps = $this->entityStore->getRelationAnnotations($candidateClass);
 			
 			foreach ($deps as $property => $propertyDeps) {
 				foreach ($propertyDeps as $dep) {

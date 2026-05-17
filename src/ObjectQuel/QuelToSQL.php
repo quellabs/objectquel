@@ -231,7 +231,7 @@
 		 */
 		private function getSortUsingIn(AstRetrieve $retrieve): string {
 			// Check and retrieve the primary key information
-			$primaryKeyInfo = $this->entityStore->fetchPrimaryKeyOfMainRange($retrieve);
+			$primaryKeyInfo = $this->entityStore->extractMainRangePrimaryKey($retrieve);
 			
 			// Create an AstIdentifier for searching for an IN() in the query
 			$astIdentifier = new AstIdentifier($primaryKeyInfo->entityName);

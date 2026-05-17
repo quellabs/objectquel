@@ -56,7 +56,7 @@
 				!$ast->getSortInApplicationLogic()
 			) {
 				try {
-					$this->primaryKeyInfo = $this->entityStore->fetchPrimaryKeyOfMainRange($ast);
+					$this->primaryKeyInfo = $this->entityStore->extractMainRangePrimaryKey($ast);
 				$this->processPagination($ast, $parameters, $window, $windowSize);
 				} finally {
 					$this->primaryKeyInfo = null;

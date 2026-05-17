@@ -305,7 +305,7 @@
 			// Filter the dependency graph to entities that list $normalizedClass as a dependency,
 			// then return their class names. array_keys on array<class-string, ...> yields array<int, class-string>.
 			return array_keys(array_filter(
-				$this->getAllEntityDependencies(),
+				$this->getOrderedDependentEntities(),
 				fn(array $entityDependencies) => in_array($normalizedClass, $entityDependencies, true)
 			));
 		}
@@ -316,7 +316,7 @@
 		 * @return PrimaryKeyInfo
 		 * @throws EntityResolutionException|\LogicException
 		 */
-		public function fetchPrimaryKeyOfMainRange(AstRetrieve $astRetrieve): PrimaryKeyInfo {
+		public function extractMainRangePrimaryKey(AstRetrieve $astRetrieve): PrimaryKeyInfo {
 			foreach ($astRetrieve->getRanges() as $range) {
 				// Only accept database ranges
 				if (!$range instanceof AstRangeDatabase) {
@@ -535,16 +535,15 @@
 		 * @return array<string, array<int, ManyToOne|OneToOne|OneToMany>> Property name => array of relationship annotations
 		 * @throws EntityResolutionException
 		 */
-		public function getAllDependencies(string|object $entity): array {
+		public function getRelationAnnotations(string|object $entity): array {
 			$metadata = $this->getMetadata($entity);
-			
-			// Combine all relationship types into a single result array
-			$result = [];
 			
 			// Get all annotations for the entity
 			$annotationList = $metadata->annotations;
 			
 			// Loop through each annotation to check for a relationship
+			$result = [];
+			
 			foreach (array_keys($annotationList) as $property) {
 				foreach ($annotationList[$property] as $annotation) {
 					if ($annotation instanceof OneToMany || $annotation instanceof OneToOne || $annotation instanceof ManyToOne) {
@@ -705,7 +704,7 @@
 		 * @return array<class-string, array<int, class-string>> Entity class name => array of dependent entity class names
 		 * @throws EntityResolutionException
 		 */
-		private function getAllEntityDependencies(): array {
+		private function getOrderedDependentEntities(): array {
 			// Build the dependency graph only once, then cache it
 			if ($this->dependencyGraph === null) {
 				$this->dependencyGraph = [];
@@ -714,10 +713,9 @@
 				foreach (array_keys($this->entityRegistry) as $className) {
 					$metadata = $this->getMetadata($className);
 					
-					$dependencies = [];
-					
 					// Add ManyToOne dependencies
 					// These represent foreign key relationships where this entity depends on another
+					$dependencies = [];
 					foreach ($metadata->manyToOneRelations as $relation) {
 						$dependencies[] = $this->resolveProxyClass ($relation->getTargetEntity());
 					}
