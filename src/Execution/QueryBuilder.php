@@ -5,6 +5,7 @@
 	use Quellabs\ObjectQuel\Annotations\Orm\ManyToOne;
 	use Quellabs\ObjectQuel\Annotations\Orm\OneToOne;
 	use Quellabs\ObjectQuel\EntityStore;
+	use Quellabs\ObjectQuel\Exception\EntityResolutionException;
 	
 	class QueryBuilder {
 		
@@ -33,6 +34,7 @@
 		 * @param array<string, mixed> $primaryKeys Primary key column-to-value pairs for the WHERE clause.
 		 *                                          Pass an empty array to retrieve all instances.
 		 * @return string The complete query string.
+		 * @throws EntityResolutionException
 		 */
 		public function prepareQuery(string $entityType, array $primaryKeys): string {
 			// Collect all range definitions: 'main' plus any eagerly-joined relations.
@@ -218,6 +220,7 @@
 		 *
 		 * @param string $entityType The entity type for which relationships should be retrieved.
 		 * @return array<string, string> Range definitions keyed by alias.
+		 * @throws EntityResolutionException
 		 */
 		private function getRelationRanges(string $entityType): array {
 			// 'main' is always the first and anchor range — the entity being retrieved.
@@ -257,13 +260,6 @@
 		
 		/**
 		 * Converts an associative array of primary-key parameters to an ObjectQuel WHERE fragment.
-		 *
-		 * Each entry becomes: "{$prefix}.{$key}=:{$key}", joined by " AND ".
-		 *
-		 * Note: key names are used verbatim as named placeholders. The caller is responsible
-		 * for ensuring that keys are valid identifiers and that the downstream query executor
-		 * handles binding safely (i.e. this method does not perform SQL escaping).
-		 *
 		 * @param array<string, mixed> $parameters Key-value pairs where keys are column/property names.
 		 * @return string
 		 */
@@ -280,5 +276,4 @@
 			// Multiple primary-key columns (composite keys) are ANDed together.
 			return implode(" AND ", $parts);
 		}
-
 	}

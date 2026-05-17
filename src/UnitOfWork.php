@@ -25,6 +25,7 @@
 	use Quellabs\ObjectQuel\Annotations\Orm\OneToOne;
 	use Quellabs\ObjectQuel\Collections\EntityCollection;
 	use Quellabs\ObjectQuel\DatabaseAdapter\DatabaseAdapter;
+	use Quellabs\ObjectQuel\Exception\EntityResolutionException;
 	use Quellabs\ObjectQuel\Persistence\DeletePersister;
 	use Quellabs\ObjectQuel\Persistence\InsertPersister;
 	use Quellabs\ObjectQuel\Persistence\UpdatePersister;
@@ -469,11 +470,12 @@
 			// Process dependent entities that should be cascade deleted
 			$this->executeCascadingDeletions($entity);
 		}
-
+		
 		/**
 		 * Determines the state of an entity (e.g., new, modified, not managed, etc.).
 		 * @param object $entity The entity whose state needs to be determined.
 		 * @return int The state of the entity, represented as a constant from DirtyState.
+		 * @throws EntityResolutionException
 		 */
 		private function getEntityState(object $entity): int {
 			// Checks if the entity is not being managed.
@@ -492,17 +494,12 @@
 			}
 			
 			// Checks if the entity is new based on the absence of primary keys.
-			$primaryKeys = $this->entityStore->getIdentifierKeys($entity);
-			
-			if ($this->hasNullPrimaryKeys($entity, $primaryKeys)) {
+			if ($this->hasNullPrimaryKeys($entity)) {
 				return DirtyState::New;
 			}
 			
 			// Checks if the entity has been modified compared to the original data.
-			$originalData = $this->getOriginalEntityData($entity);
-			$serializedEntity = $this->getSerializer()->serialize($entity);
-			
-			if ($originalData === null || $this->isEntityDirty($serializedEntity, $originalData)) {
+			if ($this->isEntityDirty($entity)) {
 				return DirtyState::Dirty;
 			}
 			
@@ -526,10 +523,12 @@
 		/**
 		 * Returns true if the entity has no populated primary keys, false if it does.
 		 * @param object $entity
-		 * @param array<int, string> $primaryKeys
 		 * @return bool
+		 * @throws EntityResolutionException
 		 */
-		private function hasNullPrimaryKeys(object $entity, array $primaryKeys): bool {
+		private function hasNullPrimaryKeys(object $entity): bool {
+			$primaryKeys = $this->entityStore->getIdentifierKeys($entity);
+			
 			foreach ($primaryKeys as $primaryKey) {
 				if ($this->propertyHandler->get($entity, $primaryKey) === null) {
 					return true;
@@ -541,12 +540,24 @@
 		
 		/**
 		 * Returns true if any of the entity columns changed, false if not.
-		 * @param array<string, mixed> $extractedEntity
-		 * @param array<string, mixed> $originalData
+		 * @param object $entity
 		 * @return bool
 		 */
-		private function isEntityDirty(array $extractedEntity, array $originalData): bool {
-			foreach ($extractedEntity as $key => $value) {
+		private function isEntityDirty(object $entity): bool {
+			// Retrieve the snapshot taken when the entity was loaded from the database
+			$originalData = $this->getOriginalEntityData($entity);
+			
+			// No snapshot means the entity was never persisted, treat it as dirty
+			if ($originalData === null) {
+				return true;
+			}
+			
+			// Serialize the current state of the entity for comparison
+			$serializedEntity = $this->getSerializer()->serialize($entity);
+			
+			// Compare each current column value against the original snapshot
+			// A single mismatch is enough to consider the entity dirty
+			foreach ($serializedEntity as $key => $value) {
 				if ($value !== ($originalData[$key] ?? null)) {
 					return true;
 				}
@@ -562,26 +573,6 @@
 		 */
 		private function isEntityScheduledForDeletion(object $entity): bool {
 			return isset($this->entityRemovalList[$entity]);
-		}
-		
-		/**
-		 * Retrieves a property value from an entity object using getter method or property handler.
-		 * @param object $entity The object to extract the value from
-		 * @param string $property The property name to retrieve
-		 * @return mixed           The value of the requested property
-		 */
-		private function getValueFromEntity(object $entity, string $property): mixed {
-			// Generate the getter method name by capitalizing the first letter of the property
-			$getterMethod = 'get' . ucfirst($property);
-			
-			// Check if the entity has the getter method and call it if exists
-			if (method_exists($entity, $getterMethod)) {
-				return $entity->$getterMethod();
-			}
-			
-			// Fallback to using the property handler if no getter method exists
-			// This likely accesses properties through alternative means (e.g., reflection)
-			return $this->propertyHandler->get($entity, $property);
 		}
 		
 		/**
