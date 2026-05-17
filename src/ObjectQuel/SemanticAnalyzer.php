@@ -111,6 +111,10 @@
 			//          unexported fields must be a compile-time error, not a silent patch.
 			$this->validateSubqueryRangeWhereReferences($ast);
 			
+			// Step 4d: Validates that the outer retrieve list only references fields that subquery
+			//          ranges actually export. Mirrors 4c for the projection rather than WHERE.
+			$this->validateSubqueryRangeProjectionReferences($ast);
+			
 			// Step 5: Validates that REGEXP is not used in the VALUES portion of the query
 			$this->validateNoRegExpInValueList($ast);
 			
@@ -278,6 +282,65 @@
 					throw new SemanticException(sprintf(
 						"Field '%s.%s' referenced in WHERE clause is not exported by subquery range '%s'.",
 						$node->getName(),
+						$field,
+						$rangeName
+					));
+				}
+			}
+		}
+		
+		/**
+		 * Validates that the outer retrieve list only references fields that subquery ranges export.
+		 *
+		 * Mirrors validateSubqueryRangeWhereReferences but covers the projection (retrieve list)
+		 * rather than the WHERE clause. Both enforce the same contract: a subquery's projection
+		 * is the complete set of fields the outer query may reference.
+		 *
+		 * @throws SemanticException If the outer projection references an unexported subquery field
+		 */
+		private function validateSubqueryRangeProjectionReferences(AstRetrieve $ast): void {
+			// Build a map of subquery range name → exported field names for fast lookup.
+			$subqueryExports = [];
+			
+			foreach ($ast->getRanges() as $range) {
+				if (!$range instanceof AstRangeDatabaseSubquery) {
+					continue;
+				}
+				
+				$subqueryExports[$range->getName()] = array_map(fn($alias) => $alias->getName(), $range->getQuery()->getValues());
+			}
+			
+			// Nothing to check if there are no subquery ranges in this query
+			if (empty($subqueryExports)) {
+				return;
+			}
+			
+			// Walk the outer retrieve list and check every identifier that points at a subquery range
+			foreach ($ast->getValues() as $alias) {
+				$expression = $alias->getExpression();
+				
+				if (!$expression instanceof AstIdentifier) {
+					continue;
+				}
+				
+				// Only root identifiers — hasParentIdentifier() is false for the range segment
+				if ($expression->hasParentIdentifier()) {
+					continue;
+				}
+				
+				$rangeName = $expression->getRange()?->getName();
+				
+				if ($rangeName === null || !array_key_exists($rangeName, $subqueryExports)) {
+					continue;
+				}
+				
+				// If the field is not in the export list, throw
+				$field = $expression->getPropertyName();
+				
+				if (!in_array($field, $subqueryExports[$rangeName], true)) {
+					throw new SemanticException(sprintf(
+						"Field '%s.%s' referenced in retrieve list is not exported by subquery range '%s'.",
+						$expression->getName(),
 						$field,
 						$rangeName
 					));
