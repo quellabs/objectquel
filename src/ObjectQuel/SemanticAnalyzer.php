@@ -231,7 +231,10 @@
 				return;
 			}
 			
-			// Build a map of subquery range name → set of exported field names for fast lookup
+			// Build a map of subquery range name → exported field names for fast lookup.
+			// A null entry means the inner query selects a whole entity (e.g. retrieve(y)),
+			// which implicitly exports all fields — any outer property reference is valid.
+			// An array entry is an explicit export list that the outer WHERE must respect.
 			$subqueryExports = [];
 			
 			foreach ($ast->getRanges() as $range) {
@@ -239,10 +242,24 @@
 					continue;
 				}
 				
-				$subqueryExports[$range->getName()] = array_map(
-					fn($alias) => $alias->getName(),
-					$range->getQuery()->getValues()
-				);
+				$exportsWholeEntity = false;
+				
+				foreach ($range->getQuery()->getValues() as $alias) {
+					$expression = $alias->getExpression();
+					
+					// A bare entity identifier with no property chain means the entire
+					// entity is selected, which implicitly exports all of its fields.
+					if ($expression instanceof AstIdentifier && !$expression->hasNext()) {
+						$exportsWholeEntity = true;
+						break;
+					}
+				}
+				
+				if ($exportsWholeEntity) {
+					$subqueryExports[$range->getName()] = null;
+				} else {
+					$subqueryExports[$range->getName()] = array_map(fn($alias) => $alias->getName(), $range->getQuery()->getValues());
+				}
 			}
 			
 			// Nothing to check if there are no subquery ranges in this query
@@ -263,7 +280,12 @@
 				// Skip if no range found
 				$rangeName = $node->getRange()?->getName();
 				
-				if ($rangeName === null || !isset($subqueryExports[$rangeName])) {
+				if ($rangeName === null || !array_key_exists($rangeName, $subqueryExports)) {
+					continue;
+				}
+				
+				// null means the whole entity is exported — any field reference is valid
+				if ($subqueryExports[$rangeName] === null) {
 					continue;
 				}
 				
