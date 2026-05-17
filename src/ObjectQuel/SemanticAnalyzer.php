@@ -102,9 +102,14 @@
 			$this->validateNoSubqueryRangeInOuterProjection($ast);
 			
 			// Step 4b: Validates that a subquery's own projection does not select a bare entity.
-			//          A subquery defines a column-set contract; retrieve(y) erases that contract
-			//          and makes the derived table's schema implicit and unverifiable.
+			//           A subquery defines a column-set contract; retrieve(y) erases that contract
+			//           and makes the derived table's schema implicit and unverifiable.
 			$this->validateNoEntityInSubqueryProjection($ast);
+			
+			// Step 4b2: Validates that the outer projection does not select a bare json source range.
+			//            retrieve(y) where y is a json source produces empty arrays at runtime
+			//            because the engine has no schema to hydrate fields from.
+			$this->validateNoBareJsonSourceInProjection($ast);
 			
 			// Step 4c: Validates that WHERE conditions only reference fields that subquery ranges
 			//          actually export. A subquery's projection is its contract; reaching into
@@ -358,6 +363,16 @@
 		 *
 		 * @throws SemanticException If any subquery projects a bare entity identifier
 		 */
+		/**
+		 * Validates that a subquery's own retrieve list does not project a bare entity variable.
+		 *
+		 * A subquery range defines an explicit column-set contract for the outer query.
+		 * Projecting a bare entity (e.g. retrieve(y) instead of retrieve(y.id, y.title))
+		 * erases that contract: the derived table's schema becomes implicit, unverifiable
+		 * at compile time, and impossible to enforce in WHERE-clause export checks.
+		 *
+		 * @throws SemanticException If any subquery projects a bare entity identifier
+		 */
 		private function validateNoEntityInSubqueryProjection(AstRetrieve $ast): void {
 			foreach ($ast->getRanges() as $range) {
 				if (!$range instanceof AstRangeDatabaseSubquery) {
@@ -373,6 +388,32 @@
 							"Use retrieve(y.id, y.title) instead of retrieve(y)."
 						);
 					}
+				}
+			}
+		}
+		
+		/**
+		 * Validates that the outer projection does not select a bare json source range.
+		 *
+		 * Json source ranges have no defined schema. Selecting the entire range (e.g. retrieve(y))
+		 * produces empty arrays at runtime because the engine has no fields to hydrate from.
+		 * Explicit property selection (e.g. retrieve(y.field)) is required.
+		 *
+		 * @throws SemanticException If a bare json source range identifier is selected
+		 */
+		private function validateNoBareJsonSourceInProjection(AstRetrieve $ast): void {
+			foreach ($ast->getValues() as $alias) {
+				$expression = $alias->getExpression();
+				
+				if (
+					$expression instanceof AstIdentifier &&
+					$expression->getRange() instanceof AstRangeJsonSource &&
+					!$expression->hasNext()
+				) {
+					throw new SemanticException(
+						"A json source range must project explicit properties, not the entire range. " .
+						"Use retrieve(y.field) instead of retrieve(y)."
+					);
 				}
 			}
 		}
