@@ -260,12 +260,14 @@
 					continue;
 				}
 				
+				// Skip if no range found
 				$rangeName = $node->getRange()?->getName();
 				
 				if ($rangeName === null || !isset($subqueryExports[$rangeName])) {
 					continue;
 				}
 				
+				// If the field is not in the projection list, throw
 				$field = $node->getPropertyName();
 				
 				if (!in_array($field, $subqueryExports[$rangeName], true)) {
