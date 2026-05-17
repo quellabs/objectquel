@@ -112,9 +112,19 @@
 						// Fetch the alias name
 						$aliasName = $value->getName();
 						
-						// When emitting as a subquery, rewrite "y.id" → "x.id"
-						if ($outerRangeName !== null && str_contains($aliasName, '.')) {
-							$aliasName = $outerRangeName . '.' . substr($aliasName, strpos($aliasName, '.') + 1);
+						// When emitting as a subquery, rewrite the alias to use the outer range name
+						// (e.g. "a.id" or "id" → "x.id") so the derived table column matches what
+						// buildColumnNameForTemporaryTable expects. The parser strips the inner range
+						// prefix from subquery aliases at parse time, so the alias may or may not
+						// still carry a dot; strip any existing prefix before prepending the outer name.
+						if ($outerRangeName !== null) {
+							if (!str_contains($aliasName, '.')) {
+								// Case (a): parser already stripped the prefix ("id") — just prepend outer.
+								$aliasName = $outerRangeName . '.' . $aliasName;
+							} else {
+								// Case (b): alias still has inner prefix ("a.id") — replace with outer.
+								$aliasName = $outerRangeName . '.' . substr($aliasName, strpos($aliasName, '.') + 1);
+							}
 						}
 						
 						// Add the alias to the SQL result
