@@ -47,7 +47,7 @@
 		/**
 		 * Main validation entry point - performs comprehensive query validation
 		 * @param AstRetrieve $ast The parsed query AST to validate
-		 * @throws SemanticException If any validation fails
+		 * @throws SemanticException|EntityResolutionException If any validation fails
 		 */
 		public function validate(AstRetrieve $ast): void {
 			// First, recursively validate all nested queries in temporary ranges
@@ -99,9 +99,14 @@
 			$this->validateRelationshipPaths($ast);
 			
 			// Step 4: Validates that the value list does not directly select entire subquery ranges.
-			$this->validateNoBareSubqueryRangesInValueList($ast);
+			$this->validateNoSubqueryRangeInOuterProjection($ast);
 			
-			// Step 4b: Validates that WHERE conditions only reference fields that subquery ranges
+			// Step 4b: Validates that a subquery's own projection does not select a bare entity.
+			//          A subquery defines a column-set contract; retrieve(y) erases that contract
+			//          and makes the derived table's schema implicit and unverifiable.
+			$this->validateNoEntityInSubqueryProjection($ast);
+			
+			// Step 4c: Validates that WHERE conditions only reference fields that subquery ranges
 			//          actually export. A subquery's projection is its contract; reaching into
 			//          unexported fields must be a compile-time error, not a silent patch.
 			$this->validateSubqueryRangeWhereReferences($ast);
@@ -232,9 +237,8 @@
 			}
 			
 			// Build a map of subquery range name → exported field names for fast lookup.
-			// A null entry means the inner query selects a whole entity (e.g. retrieve(y)),
-			// which implicitly exports all fields — any outer property reference is valid.
-			// An array entry is an explicit export list that the outer WHERE must respect.
+			// By this point, validateNoBareEntityInSubqueryProjection has already rejected
+			// any subquery that projects a bare entity, so every entry is an explicit list.
 			$subqueryExports = [];
 			
 			foreach ($ast->getRanges() as $range) {
@@ -242,24 +246,7 @@
 					continue;
 				}
 				
-				$exportsWholeEntity = false;
-				
-				foreach ($range->getQuery()->getValues() as $alias) {
-					$expression = $alias->getExpression();
-					
-					// A bare entity identifier with no property chain means the entire
-					// entity is selected, which implicitly exports all of its fields.
-					if ($expression instanceof AstIdentifier && !$expression->hasNext()) {
-						$exportsWholeEntity = true;
-						break;
-					}
-				}
-				
-				if ($exportsWholeEntity) {
-					$subqueryExports[$range->getName()] = null;
-				} else {
-					$subqueryExports[$range->getName()] = array_map(fn($alias) => $alias->getName(), $range->getQuery()->getValues());
-				}
+				$subqueryExports[$range->getName()] = array_map(fn($alias) => $alias->getName(), $range->getQuery()->getValues());
 			}
 			
 			// Nothing to check if there are no subquery ranges in this query
@@ -284,11 +271,6 @@
 					continue;
 				}
 				
-				// null means the whole entity is exported — any field reference is valid
-				if ($subqueryExports[$rangeName] === null) {
-					continue;
-				}
-				
 				// If the field is not in the projection list, throw
 				$field = $node->getPropertyName();
 				
@@ -304,15 +286,44 @@
 		}
 		
 		/**
-		 * Ensures the value list does not contain bare subquery ranges.
+		 * Validates that a subquery's own retrieve list does not project a bare entity variable.
+		 *
+		 * A subquery range defines an explicit column-set contract for the outer query.
+		 * Projecting a bare entity (e.g. retrieve(y) instead of retrieve(y.id, y.title))
+		 * erases that contract: the derived table's schema becomes implicit, unverifiable
+		 * at compile time, and impossible to enforce in WHERE-clause export checks.
+		 *
+		 * @throws SemanticException If any subquery projects a bare entity identifier
+		 */
+		private function validateNoEntityInSubqueryProjection(AstRetrieve $ast): void {
+			foreach ($ast->getRanges() as $range) {
+				if (!$range instanceof AstRangeDatabaseSubquery) {
+					continue;
+				}
+				
+				foreach ($range->getQuery()->getValues() as $alias) {
+					$expression = $alias->getExpression();
+					
+					if ($expression instanceof AstIdentifier && !$expression->hasNext()) {
+						throw new SemanticException(
+							"A subquery range must project explicit properties, not an entire entity. " .
+							"Use retrieve(y.id, y.title) instead of retrieve(y)."
+						);
+					}
+				}
+			}
+		}
+		
+		/**
+		 * Validates that the outer projection does not select an entire subquery range.
 		 *
 		 * Subquery ranges represent derived tables and cannot be hydrated as a single value.
 		 * Expressions like `x` are invalid when `x` is a subquery range; users must select
 		 * concrete properties such as `x.id`.
 		 *
-		 * @throws SemanticException If a bare subquery range identifier is selected
+		 * @throws SemanticException If a subquery range identifier is selected without a property
 		 */
-		private function validateNoBareSubqueryRangesInValueList(AstRetrieve $ast): void {
+		private function validateNoSubqueryRangeInOuterProjection(AstRetrieve $ast): void {
 			foreach ($ast->getValues() as $value) {
 				$expression = $value->getExpression();
 				
