@@ -4,7 +4,11 @@
 [![License](https://img.shields.io/badge/license-MIT-brightgreen.svg)](LICENSE)
 [![Downloads](https://img.shields.io/packagist/dt/quellabs/objectquel.svg)](https://packagist.org/packages/quellabs/objectquel)
 
-A PHP ORM with its own query language. ObjectQuel uses the Data Mapper pattern and a declarative syntax inspired by [QUEL](https://en.wikipedia.org/wiki/QUEL_query_language) to express entity queries at the domain level — not the table level.
+A domain-level query language and engine for PHP, with a full ORM attached.
+ObjectQuel's declarative syntax inspired by [QUEL](https://en.wikipedia.org/wiki/QUEL_query_languages)
+expresses entity queries above the table level — relationships, patterns,
+full-text search, and cross-source joins are first-class expressions, not raw SQL escapes.
+Supports MySQL, PostgreSQL, SQLite, and SQL Server.
 
 ```php
 $results = $entityManager->executeQuery("
@@ -18,103 +22,14 @@ $results = $entityManager->executeQuery("
 ]);
 ```
 
-The engine resolves entity relationships, decomposes the query into optimized SQL, and hydrates the results. You write intent; ObjectQuel handles the mechanics.
-
-## What the query language can do that others can't
-
-Most ORM query languages are SQL with different syntax. ObjectQuel's abstraction layer sits above SQL, which lets it do things that aren't possible in DQL, Eloquent, or raw query builders:
-
-**Pattern matching and regex in where clauses:**
-
-```php
-// Wildcard matching — no LIKE syntax needed
-retrieve (p) where p.sku = "ABC*XYZ"
-
-// Regex with flags
-retrieve (p) where p.name = /^tech/i
-```
-
-The equivalent in Doctrine requires `$qb->expr()->like()` or a raw `REGEXP` call. In Eloquent you'd write `whereRaw('name REGEXP ?', [...])`. ObjectQuel treats patterns as first-class query expressions.
-
-**Full-text search with boolean operators and weighting:**
-
-```php
-retrieve (p) where search(p.description, "banana +pear -apple")
-```
-
-No raw SQL, no engine-specific syntax. The query engine translates this to the appropriate full-text implementation for your database.
-
-**Hybrid data sources — database + JSON in one query:**
-
-```php
-range of order is App\\Entity\\OrderEntity
-range of product is json_source('external/product_catalog.json')
-retrieve (order, product.name, product.manufacturer)
-where order.productSku = product.sku and order.status = :status
-sort by order.orderDate desc
-```
-
-ObjectQuel can join database entities with JSON files in a single query — the engine handles the cross-source matching. Neither Doctrine nor Eloquent can do this. You'd query the database, load the JSON separately, and merge results in PHP. ObjectQuel also supports JSONPath prefiltering to extract nested structures before the query runs, keeping memory usage low on large files.
-
-**Existence checks as expressions:**
-
-```php
-// In the retrieve clause
-retrieve (p.name, ANY(o.orderId) as hasOrders)
-
-// In the where clause
-retrieve (p) where ANY(o.orderId)
-```
-
-**Automatic query decomposition:**
-
-Complex queries are split into optimized sub-tasks by the engine rather than sent as a single monolithic SQL statement. This means ObjectQuel can optimize execution paths that a single SQL query cannot express efficiently.
-
-## Comparison
-
-A multi-entity query with filtering and relationship traversal:
-
-**ObjectQuel:**
-```php
-$results = $entityManager->executeQuery("
-    range of o is App\\Entity\\Order
-    range of c is App\\Entity\\Customer via o.customerId
-    retrieve (o, c.name) where o.createdAt > :since
-    sort by o.createdAt desc
-    window 0 using window_size 20
-");
-```
-
-**Doctrine DQL:**
-```php
-$results = $entityManager->createQuery(
-    'SELECT o, c.name FROM App\\Entity\\Order o
-     JOIN o.customer c
-     WHERE o.createdAt > :since
-     ORDER BY o.createdAt DESC'
-)->setParameter('since', $since)
- ->setMaxResults(20)
- ->getResult();
-```
-
-**Eloquent:**
-```php
-$results = Order::with('customer:id,name')
-    ->where('created_at', '>', $since)
-    ->orderByDesc('created_at')
-    ->take(20)
-    ->get();
-```
-
-The difference becomes more pronounced with regex filtering, existence checks, hybrid sources, and multi-relationship traversals — operations that require raw SQL or post-processing in other ORMs.
+The engine resolves entity relationships, decomposes the query into optimized SQL, and hydrates the results. You write
+intent; ObjectQuel handles the mechanics.
 
 ## Installation
 
 ```bash
 composer require quellabs/objectquel
 ```
-
-Supports MySQL, PostgreSQL, SQLite, and SQL Server through CakePHP's database abstraction layer (used for connection handling and SQL execution only — ObjectQuel implements its own query engine, Data Mapper, and entity management).
 
 ## Quick start
 
@@ -140,6 +55,112 @@ $results = $entityManager->executeQuery("
     window 0 using window_size 10
 ");
 ```
+
+## What the query language can do that others can't
+
+Most ORM query languages are SQL with different syntax. ObjectQuel's abstraction layer sits above SQL, which lets it do
+things that aren't possible in DQL, Eloquent, or raw query builders:
+
+**Pattern matching and regex in where clauses:**
+
+```php
+// Wildcard matching — no LIKE syntax needed
+retrieve (p) where p.sku = "ABC*XYZ"
+
+// Regex with flags
+retrieve (p) where p.name = /^tech/i
+```
+
+The equivalent in Doctrine requires `$qb->expr()->like()` or a raw `REGEXP` call. In Eloquent you'd write
+`whereRaw('name REGEXP ?', [...])`. ObjectQuel treats patterns as first-class query expressions.
+
+**Full-text search with boolean operators and weighting:**
+
+```php
+retrieve (p) where search(p.description, "banana +pear -apple")
+```
+
+No raw SQL, no engine-specific syntax. The query engine translates this to the appropriate full-text implementation for
+your database.
+
+**Hybrid data sources — database + JSON in one query:**
+
+```php
+range of order is App\\Entity\\OrderEntity
+range of product is json_source('external/product_catalog.json')
+retrieve (order, product.name, product.manufacturer)
+where order.productSku = product.sku and order.status = :status
+sort by order.orderDate desc
+```
+
+ObjectQuel can join database entities with JSON files in a single query, applying
+inner, left, or cross joins based on context — the engine handles the cross-source matching.
+Neither Doctrine nor Eloquent can do this. You'd query the database, load the JSON separately, and merge results in PHP.
+ObjectQuel also supports JSONPath prefiltering to extract nested structures before the query runs, keeping memory usage
+low on large files.
+
+**Existence checks as expressions:**
+
+```php
+// In the retrieve clause
+retrieve (p.name, hasOrders=ANY(o.orderId))
+
+// In the where clause
+retrieve (p) where ANY(o.orderId)
+```
+
+**Automatic query decomposition:**
+
+Complex queries are split into optimized sub-tasks by the engine rather than sent as a single monolithic SQL statement.
+This means ObjectQuel can optimize execution paths that a single SQL query cannot express efficiently.
+
+**Database dialect abstraction:**
+
+Features like full-text search, regex matching, and window functions compile to the correct SQL for your target
+database. The same ObjectQuel query runs on MySQL, PostgreSQL, SQLite, and SQL Server without modification. Switching
+databases means changing the connection, not rewriting queries.
+
+## Comparison
+
+A multi-entity query with filtering and relationship traversal:
+
+**ObjectQuel:**
+
+```php
+$results = $entityManager->executeQuery("
+    range of o is App\\Entity\\Order
+    range of c is App\\Entity\\Customer via o.customerId
+    retrieve (o, c.name) where o.createdAt > :since
+    sort by o.createdAt desc
+    window 0 using window_size 20
+");
+```
+
+**Doctrine DQL:**
+
+```php
+$results = $entityManager->createQuery(
+    'SELECT o, c.name FROM App\\Entity\\Order o
+     JOIN o.customer c
+     WHERE o.createdAt > :since
+     ORDER BY o.createdAt DESC'
+)->setParameter('since', $since)
+ ->setMaxResults(20)
+ ->getResult();
+```
+
+**Eloquent:**
+
+```php
+$results = Order::with('customer:id,name')
+    ->where('created_at', '>', $since)
+    ->orderByDesc('created_at')
+    ->take(20)
+    ->get();
+```
+
+The difference becomes more pronounced with regex filtering, existence checks, hybrid sources, and multi-relationship
+traversals — operations that require raw SQL or post-processing in other ORMs.
 
 ## ORM capabilities
 
@@ -175,11 +196,13 @@ php bin/sculpt make:migrations
 php bin/sculpt quel:migrate
 ```
 
-`make:entity-from-table` is particularly useful when adopting ObjectQuel in an existing project — point it at your tables and get annotated entities without writing them by hand.
+`make:entity-from-table` is particularly useful when adopting ObjectQuel in an existing project — point it at your
+tables and get annotated entities without writing them by hand.
 
 ## Framework integration
 
-ObjectQuel works standalone or with the [Canvas framework](https://canvasphp.com). The `quellabs/canvas-objectquel` package provides automatic service discovery, dependency injection, and Sculpt CLI integration within Canvas.
+ObjectQuel works standalone or with the [Canvas framework](https://canvasphp.com). The `quellabs/canvas-objectquel`
+package provides automatic service discovery, dependency injection, and Sculpt CLI integration within Canvas.
 
 For other frameworks, configure the `EntityManager` directly — it has no framework dependencies.
 
