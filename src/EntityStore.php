@@ -529,34 +529,6 @@
 		}
 		
 		/**
-		 * Internal helper function for retrieving properties with a specific annotation.
-		 * Returns all relationship annotations (ManyToOne, OneToMany, OneToOne) for the entity.
-		 * @param string|object $entity The name of the entity for which you want to get dependencies
-		 * @return array<string, array<int, ManyToOne|OneToOne|OneToMany>> Property name => array of relationship annotations
-		 * @throws EntityResolutionException
-		 */
-		public function getRelationAnnotations(string|object $entity): array {
-			$metadata = $this->getMetadata($entity);
-			
-			// Get all annotations for the entity
-			$annotationList = $metadata->annotations;
-			
-			// Loop through each annotation to check for a relationship
-			$result = [];
-			
-			foreach (array_keys($annotationList) as $property) {
-				foreach ($annotationList[$property] as $annotation) {
-					if ($annotation instanceof OneToMany || $annotation instanceof OneToOne || $annotation instanceof ManyToOne) {
-						$result[$property][] = $annotation;
-						continue 2;
-					}
-				}
-			}
-			
-			return $result;
-		}
-		
-		/**
 		 * Retrieves all index annotations defined for a given entity class.
 		 * @param string|object $entity The entity class to analyze (can be string classname or object instance)
 		 * @return array<int, object> A collection of Index, UniqueIndex and FullTextIndex annotation objects

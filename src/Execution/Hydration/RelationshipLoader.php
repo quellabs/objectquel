@@ -248,7 +248,7 @@
 				$entityClass = $this->entityStore->resolveProxyClass($entity);
 				
 				// Iterate through each property and its dependencies in the relationship cache
-				foreach ($this->entityStore->getRelationAnnotations($entityClass) as $property => $dependencies) {
+				foreach ($this->getRelationAnnotations($entityClass) as $property => $dependencies) {
 					// Iterate through each dependency of the property
 					foreach ($dependencies as $dependency) {
 						// Check if the dependency is a OneToOne or ManyToOne relationship
@@ -283,7 +283,7 @@
 				$objectClass = $this->entityStore->resolveProxyClass($entity);
 				
 				// Get all dependencies of the entity class
-				$entityDependencies = $this->entityStore->getRelationAnnotations($objectClass);
+				$entityDependencies = $this->getRelationAnnotations($objectClass);
 				
 				// Loop through all properties and their dependencies
 				foreach ($entityDependencies as $property => $dependencies) {
@@ -354,7 +354,7 @@
 			// Resolve the real class name in case this is a proxy object
 			$objectClass = $this->entityStore->resolveProxyClass($entity);
 			
-			foreach ($this->entityStore->getRelationAnnotations($objectClass) as $property => $dependencies) {
+			foreach ($this->getRelationAnnotations($objectClass) as $property => $dependencies) {
 				foreach ($dependencies as $dependency) {
 					// We only care about OneToMany here; OneToOne and ManyToOne
 					// are handled by setupToOneRelations
@@ -459,7 +459,7 @@
 		 */
 		private function candidateMapsToParent(object $candidate, string $mappedBy, string $parentClass): bool {
 			$candidateClass = $this->entityStore->resolveProxyClass($candidate);
-			$deps = $this->entityStore->getRelationAnnotations($candidateClass);
+			$deps = $this->getRelationAnnotations($candidateClass);
 			
 			foreach ($deps as $property => $propertyDeps) {
 				foreach ($propertyDeps as $dep) {
@@ -473,5 +473,34 @@
 			}
 			
 			return false;
+		}
+		
+		
+		/**
+		 * Internal helper function for retrieving properties with a specific annotation.
+		 * Returns all relationship annotations (ManyToOne, OneToMany, OneToOne) for the entity.
+		 * @param string|object $entity The name of the entity for which you want to get dependencies
+		 * @return array<string, array<int, ManyToOne|OneToOne|OneToMany>> Property name => array of relationship annotations
+		 * @throws EntityResolutionException
+		 */
+		public function getRelationAnnotations(string|object $entity): array {
+			$metadata = $this->entityStore->getMetadata($entity);
+			
+			// Get all annotations for the entity
+			$annotationList = $metadata->annotations;
+			
+			// Loop through each annotation to check for a relationship
+			$result = [];
+			
+			foreach (array_keys($annotationList) as $property) {
+				foreach ($annotationList[$property] as $annotation) {
+					if ($annotation instanceof OneToMany || $annotation instanceof OneToOne || $annotation instanceof ManyToOne) {
+						$result[$property][] = $annotation;
+						continue 2;
+					}
+				}
+			}
+			
+			return $result;
 		}
 	}
