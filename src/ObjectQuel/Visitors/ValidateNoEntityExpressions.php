@@ -15,7 +15,7 @@
 	
 	/**
 	 * Class NoExpressionsAllowedOnEntitiesValidator
-	 * Validates that no operations are used on entire entities
+	 * Validates that no operations are used on entire entities or bare range references
 	 */
 	class ValidateNoEntityExpressions implements AstVisitorInterface {
 		
@@ -28,36 +28,38 @@
 		public function visitNode(AstInterface $node): void {
 			// Entire entities in expressions are not allowed.
 			if ($node instanceof NodeBinary) {
-				if ($this->identifierIsEntity($node->getLeft()) || $this->identifierIsEntity($node->getRight())) {
+				if ($this->identifierIsBareRange($node->getLeft()) || $this->identifierIsBareRange($node->getRight())) {
 					throw new SemanticException("Unsupported operation on entire entities. You cannot perform arithmetic operations directly on entities. Please specify the specific fields or properties of the entities you wish to use in the calculation.");
 				}
 			}
 			
 			// Entire entities in QUEL functions (is_numeric, is_float, etc) are not allowed
 			if ($node instanceof NodeFunction) {
-				if ($this->identifierIsEntity($node->getValue())) {
+				if ($this->identifierIsBareRange($node->getValue())) {
 					throw new SemanticException("Unsupported operation on entire entities. You cannot pass an entire entity as a function argument. Please specify the specific field or property you wish to use (e.g. e.id or e.name instead of e).");
 				}
 			}
 			
 			// Entire entities in QUEL functions (is_numeric, is_float, etc) are not allowed
 			if ($node instanceof NodeAggregate) {
-				if ($this->identifierIsEntity($node->getIdentifier())) {
+				if ($this->identifierIsBareRange($node->getIdentifier())) {
 					throw new SemanticException("Unsupported operation on entire entities. You cannot pass an entire entity to an aggregate function. Please specify the specific field or property you wish to aggregate (e.g. e.price or e.quantity instead of e).");
 				}
 			}
 		}
 		
 		/**
-		 * Returns true if the identifier is an entity, false if not
+		 * Returns true if the identifier is a bare range reference (entity or json source), false if not
 		 * @param AstInterface $ast
 		 * @return bool
 		 */
-		protected function identifierIsEntity(AstInterface $ast): bool {
+		protected function identifierIsBareRange(AstInterface $ast): bool {
 			if (!$ast instanceof AstIdentifier) {
 				return false;
 			}
 			
-			return $ast->getType() === IdentifierType::EntityReference;
+			return
+				$ast->getType() === IdentifierType::EntityReference ||
+				$ast->getType() === IdentifierType::JsonRoot;
 		}
 	}
