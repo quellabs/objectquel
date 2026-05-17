@@ -255,8 +255,20 @@
 					continue;
 				}
 				
+				// Validate the class exists and implements NormalizerInterface
+				$typeName = strtolower(substr($fileName, 0, $pos));
+				$class = "\\Quellabs\\ObjectQuel\\Serialization\\Normalizer\\" . ucfirst($typeName) . "Normalizer";
+				
+				if (!class_exists($class)) {
+					throw new \RuntimeException("Normalizer file found but class missing: {$class}");
+				}
+				
+				if (!is_a($class, NormalizerInterface::class, true)) {
+					throw new \RuntimeException("{$class} does not implement NormalizerInterface");
+				}
+				
 				// Construct the entity name based on the file name.
-				$this->normalizers[] = strtolower(substr($fileName, 0, $pos));
+				$this->normalizers[] = $typeName;
 			}
 		}
 		
