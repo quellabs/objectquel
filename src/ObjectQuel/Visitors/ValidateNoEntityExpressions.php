@@ -58,8 +58,15 @@
 				return false;
 			}
 			
-			return
-				$ast->getType() === IdentifierType::EntityReference ||
-				$ast->getType() === IdentifierType::JsonRoot;
+			if ($ast->getType() === IdentifierType::EntityReference) {
+				return true;
+			}
+			
+			// JsonRoot is only bare when it has no chained property (y alone, not y.id)
+			if ($ast->getType() === IdentifierType::JsonRoot && $ast->getNext() === null) {
+				return true;
+			}
+			
+			return false;
 		}
 	}
