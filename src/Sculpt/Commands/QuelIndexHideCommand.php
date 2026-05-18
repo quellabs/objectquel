@@ -79,10 +79,10 @@
 			}
 			
 			// Ensure the entity is registered in the ORM metadata store
-			$entityStore = $this->getEntityStore();
-			
 			try {
-				$tableName = $entityStore->getOwningTable($entityName);
+				$entityStore = $this->getEntityStore();
+				$metadata = $entityStore->getMetadata($entityName);
+				$tableName = $metadata->tableName;
 			} catch (EntityResolutionException $e) {
 				$this->output->error("Entity '{$entityName}' does not exist.");
 				return 1;

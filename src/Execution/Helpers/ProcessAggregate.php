@@ -640,19 +640,15 @@
 			}
 			
 			// Start with the main table and its alias
-			$entityName = $mainRange->getEntityName();
-			$tableName = $this->entityStore->getOwningTable($entityName);
+			$metadata = $this->entityStore->getMetadata($mainRange->getEntityName());
 			
 			// Convert to SQL
-			$sql = "`{$tableName}` {$mainRange->getName()}";
+			$sql = "`{$metadata->tableName}` {$mainRange->getName()}";
 			
 			// Add JOIN clauses for each related range
 			foreach ($joinRanges as $range) {
-				// Fetch entity name
-				$joinEntityName = $range->getEntityName();
-				
-				// Fetch owning table of entity
-				$joinTableName = $this->entityStore->getOwningTable($joinEntityName);
+				// Fetch metadata of entity
+				$metadata = $this->entityStore->getMetadata($range->getEntityName());
 				
 				// Convert join property to SQL condition
 				$joinProperty = $range->getJoinProperty();
@@ -669,7 +665,7 @@
 				$joinType = $range->isRequired() ? "INNER" : "LEFT";
 				
 				// Add it to the query
-				$sql .= " {$joinType} JOIN `{$joinTableName}` {$range->getName()} ON {$joinCondition}";
+				$sql .= " {$joinType} JOIN `{$metadata->tableName}` {$range->getName()} ON {$joinCondition}";
 			}
 			
 			return $sql;

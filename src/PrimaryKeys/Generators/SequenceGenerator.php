@@ -24,13 +24,13 @@
 			$connection = $em->getConnection();
 			
 			// Get the table name associated with the entity
-			$tableName = $em->getEntityStore()->getOwningTable($entity);
+			$metadata = $em->getEntityStore()->getMetadata($entity);
 			
 			// Get the identifier keys (primary key fields) of the entity
-			$identifierKeys = $em->getEntityStore()->getIdentifierKeys($entity);
+			$identifierKeys = $metadata->identifierKeys;
 			
 			// Get the column mapping for the entity
-			$columnMap = $em->getEntityStore()->getColumnMap($entity);
+			$columnMap = $metadata->columnMap;
 			
 			// Get the actual database column name for the primary key
 			$primaryKey = $columnMap[$identifierKeys[0]];
@@ -40,12 +40,12 @@
 			$rs = $connection->execute("
 				 SELECT
 					COALESCE(MAX(`{$primaryKey}`), 0) + 1
-				 FROM `{$tableName}`
+				 FROM `{$metadata->tableName}`
 			  ");
 			
 			// execute() returns StatementInterface|null
 			if ($rs === null) {
-				throw new \RuntimeException("SequenceGenerator could not generate a sequence for table `{$tableName}`.");
+				throw new \RuntimeException("SequenceGenerator could not generate a sequence for table `{$metadata->tableName}`.");
 			}
 			
 			// Fetch the single scalar result and return it

@@ -237,12 +237,11 @@
 		 * @throws EntityResolutionException
 		 */
 		protected function getPrimaryKeyStrategy(object $entity, string $primaryKey): string {
-			// Fetch owning table
-			$table = $this->entityStore->getOwningTable($entity);
+			$metadata = $this->entityStore->getMetadata($entity);
 			
 			// Fetch key from cache if present
-			if (isset($this->strategyColumnCache[$table][$primaryKey])) {
-				return $this->strategyColumnCache[$table][$primaryKey];
+			if (isset($this->strategyColumnCache[$metadata->tableName][$primaryKey])) {
+				return $this->strategyColumnCache[$metadata->tableName][$primaryKey];
 			}
 			
 			// Get all annotations for the entity from the entity store
@@ -250,7 +249,7 @@
 			
 			// If no annotations exist for the specified primary key, return "identity"
 			if (empty($annotations[$primaryKey])) {
-				return $this->strategyColumnCache[$table][$primaryKey] = "identity";
+				return $this->strategyColumnCache[$metadata->tableName][$primaryKey] = "identity";
 			}
 			
 			// Iterate through all annotations for the primary key
@@ -258,16 +257,16 @@
 				// Check if the current annotation is a PrimaryKeyStrategy instance
 				if ($annotation instanceof PrimaryKeyStrategy) {
 					// Return the value of the PrimaryKeyStrategy annotation
-					return $this->strategyColumnCache[$table][$primaryKey] = $annotation->getValue();
+					return $this->strategyColumnCache[$metadata->tableName][$primaryKey] = $annotation->getValue();
 				}
 			}
 			
 			// No PrimaryKeyStrategy annotation found for this primary key
-			return $this->strategyColumnCache[$table][$primaryKey] = "identity";
+			return $this->strategyColumnCache[$metadata->tableName][$primaryKey] = "identity";
 		}
 		
 		/**
-		 * Returns the inital version column for new entities
+		 * Returns the initial version column for new entities
 		 * @param string $columnType
 		 * @return int|string
 		 * @throws \Exception

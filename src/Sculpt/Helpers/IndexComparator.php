@@ -7,6 +7,7 @@
 	use Quellabs\ObjectQuel\Annotations\Orm\UniqueIndex;
 	use Quellabs\ObjectQuel\DatabaseAdapter\DatabaseAdapter;
 	use Quellabs\ObjectQuel\EntityStore;
+	use Quellabs\ObjectQuel\Exception\EntityResolutionException;
 	use Quellabs\ObjectQuel\Sculpt\SculptTypes;
 	
 	/**
@@ -47,13 +48,15 @@
 		 *
 		 * @param mixed $entity The entity class to analyze
 		 * @return IndexChangeSet An array containing differences between DB and entity indexes
+		 * @throws EntityResolutionException
+		 * @throws \Exception
 		 */
 		public function compareIndexes(mixed $entity): array {
-			// Fetch the owning table of this entity
-			$tableName = $this->entityStore->getOwningTable($entity);
+			// Fetch the metadata
+			$metadata = $this->entityStore->getMetadata($entity);
 			
 			// Get database indexes
-			$tableIndexes = $this->getTableIndexes($tableName);
+			$tableIndexes = $this->getTableIndexes($metadata->tableName);
 			
 			// Get entity indexes
 			$entityIndexes = $this->getEntityIndexes($entity);

@@ -218,16 +218,6 @@
 		}
 		
 		/**
-		 * Returns the table name attached to the entity.
-		 * @param string|object $entity The entity object, class name, or ReflectionClass
-		 * @return string The database table name, or null if entity is not registered
-		 * @throws EntityResolutionException
-		 */
-		public function getOwningTable(string|object $entity): string {
-			return $this->getMetadata($entity)->tableName;
-		}
-		
-		/**
 		 * Normalizes the entity name by resolving proxies and namespaces.
 		 * @param string|object $entity Fully qualified class name, short name, object, or ReflectionClass
 		 * @return class-string Normalized, fully qualified class name
@@ -479,16 +469,18 @@
 		 * @throws EntityResolutionException When target entity metadata cannot be loaded
 		 */
 		public function resolveTargetProperty(ManyToOne|OneToOne $relation): ?string {
+			$metadata = $this->getMetadata($relation->getTargetEntity());
+			
 			// OneToOne: return inversedBy or mappedBy as-is, falling back to the primary key
 			if ($relation instanceof OneToOne) {
 				return $relation->getInversedBy()
 					?? $relation->getMappedBy()
-					?? $this->getPrimaryKey($relation->getTargetEntity());
+					?? $metadata->getPrimaryKey();
 			}
 			
 			// ManyToOne: inversedBy is a direct property name on the target entity.
 			// If absent, fall back to the target entity's primary key.
-			return $relation->getInversedBy() ?? $this->getPrimaryKey($relation->getTargetEntity());
+			return $relation->getInversedBy() ?? $metadata->getPrimaryKey();
 		}
 		
 		/**
