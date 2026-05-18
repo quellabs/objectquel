@@ -467,6 +467,7 @@
 		 * @param OrmRelationshipType $relationshipType Type of relationship
 		 * @param string|null $inversedBy Property name for the inverse side (if bidirectional)
 		 * @param string $foreignColumn Database column name being referenced
+		 * @throws EntityResolutionException
 		 */
 		private function createRelationshipInTargetEntity(
 			string  $targetEntity,
@@ -674,6 +675,7 @@
 		 *     referencedField: string,
 		 *     foreignColumn: string
 		 * }
+		 * @throws EntityResolutionException
 		 */
 		private function getTargetEntityInfo(array $availableEntities): array {
 			$targetEntity = $this->selectTargetEntity($availableEntities);
@@ -692,12 +694,12 @@
 			$primaryKeyField = $primaryKeys[0] ?? 'id';
 			
 			$fullEntityName = $this->configuration->getEntityNameSpace() . '\\' . $targetEntity . 'Entity';
-			$columnMap = $this->getEntityStore()->getColumnMap($fullEntityName);
+			$metadata = $this->getEntityStore()->getMetadata($fullEntityName);
 			
 			return [
 				'targetEntity'    => $targetEntity,
 				'referencedField' => $primaryKeyField,
-				'foreignColumn'   => $columnMap[$primaryKeyField] ?? $primaryKeyField
+				'foreignColumn'   => $metadata->columnMap[$primaryKeyField] ?? $primaryKeyField
 			];
 		}
 		
@@ -758,23 +760,25 @@
 			$result = ['type' => 'integer', 'unsigned' => true];
 			
 			try {
+				// Assemble the full entity name
 				$fullEntityName = $this->configuration->getEntityNameSpace() . '\\' . $targetEntity . 'Entity';
 				
+				// Validate the entity's existence
 				if (!$this->getEntityStore()->exists($fullEntityName)) {
 					return $result;
 				}
-				
-				$columnDefinitions = $this->getEntityStore()->getEntityColumnDefinitions($fullEntityName);
-				$columnMap = $this->getEntityStore()->getColumnMap($fullEntityName);
+
+				// Fetch the entity's metadata
+				$metadata = $this->getEntityStore()->getMetadata($fullEntityName);
 				
 				// Map the PHP field name to its database column name, then look up the column definition
-				$referencedDbColumn = $columnMap[$referencedField] ?? null;
+				$referencedDbColumn = $metadata->columnMap[$referencedField] ?? null;
 				
-				if ($referencedDbColumn && isset($columnDefinitions[$referencedDbColumn])) {
+				if ($referencedDbColumn && isset($metadata->columnDefinitions[$referencedDbColumn])) {
 					/** @var PhinxColumnType $colType */
-					$colType = $columnDefinitions[$referencedDbColumn]['type'];
+					$colType = $metadata->columnDefinitions[$referencedDbColumn]['type'];
 					$result['type'] = $colType;
-					$result['unsigned'] = $columnDefinitions[$referencedDbColumn]['unsigned'] ?? true;
+					$result['unsigned'] = $metadata->columnDefinitions[$referencedDbColumn]['unsigned'] ?? true;
 				}
 			} catch (\Exception $e) {
 				$this->output->writeLn("\nCouldn't determine FK type, defaulting to integer");

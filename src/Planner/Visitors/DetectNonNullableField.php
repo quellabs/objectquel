@@ -98,11 +98,13 @@
 				return;
 			}
 			
-			$columnDefinitions = $this->entityStore->getEntityColumnDefinitions($entityName);
-			$columnMap = $this->entityStore->getColumnMap($entityName);
-			$columnName = $columnMap[$fieldName] ?? $fieldName;
+			$metadata = $this->entityStore->getMetadata($entityName);
+			$columnName = $metadata->columnMap[$fieldName] ?? $fieldName;
 			
-			if (isset($columnDefinitions[$columnName]) && !$columnDefinitions[$columnName]['nullable']) {
+			if (
+				isset($metadata->columnDefinitions[$columnName]) &&
+				!$metadata->columnDefinitions[$columnName]['nullable']
+			) {
 				$this->nonNullableFound = true;
 			}
 		}

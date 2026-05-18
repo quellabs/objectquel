@@ -358,19 +358,6 @@
 		//   NEW: $metadata = $store->getMetadata($entity);
 		//        $keys = $metadata->identifierKeys;
 		//        $cols = $metadata->columnMap;
-
-		/**
-		 * Obtains the map between properties and column names for a given entity.
-		 * This function generates an associative array that links the properties of an entity
-		 * to their respective column names in the database. The results are cached
-		 * to prevent repeated calculations.
-		 * @param string|object $entity The object or class name of the entity
-		 * @return array<string, string> An associative array with the property as key and the column name as value
-		 * @throws EntityResolutionException
-		 */
-		public function getColumnMap(string|object $entity): array {
-			return $this->getMetadata($entity)->columnMap;
-		}
 		
 		/**
 		 * Returns all annotations grouped by property.

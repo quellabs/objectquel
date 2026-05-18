@@ -52,9 +52,9 @@
 				$entityName = $range->getEntityName();
 				
 				// Check scalar columns first (@Column-annotated properties)
-				$columnMap = $this->entityStore->getColumnMap($entityName);
+				$metadata = $this->entityStore->getMetadata($entityName);
 				
-				if (isset($columnMap[$propertyName])) {
+				if (isset($metadata->columnMap[$propertyName])) {
 					$matches[] = $range;
 					continue;
 				}

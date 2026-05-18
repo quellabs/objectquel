@@ -637,17 +637,17 @@
 			// Temporary table ranges carry no entity metadata; the property name from
 			// the subquery's SELECT is already a valid column name, so use it directly.
 			$rangeName = $range->getName();
-			$propertyName = $nextNode->getName();
 			$entityName = $ast->getEntityName();
+			$propertyName = $nextNode->getName();
 			
 			if (empty($entityName)) {
 				return "{$rangeName}.`{$rangeName}.{$propertyName}`";
 			}
 			
 			// Map the ORM property name to its physical database column name.
-			$columnMap = $this->entityStore->getColumnMap($entityName);
+			$metadata = $this->entityStore->getMetadata($entityName);
 			
-			if (!isset($columnMap[$propertyName])) {
+			if (!isset($metadata->columnMap[$propertyName])) {
 				// If semantic validation ran correctly this should never happen
 				throw new \LogicException(
 					"Property '{$propertyName}' has no column mapping in entity '{$entityName}'"
@@ -655,7 +655,7 @@
 			}
 			
 			// Create the column
-			$columnRef = "{$rangeName}.{$columnMap[$propertyName]}";
+			$columnRef = "{$rangeName}.{$metadata->columnMap[$propertyName]}";
 			
 			// Outside a SORT clause there is no need for NULL handling; return as-is.
 			if ($partOfQuery !== "SORT") {
@@ -771,19 +771,19 @@
 				);
 			}
 			
-			// Look up the database column name for this property
-			$columnMap = $this->entityStore->getColumnMap($entityName);
+			// Fetch the entity's metadata
+			$metadata = $this->entityStore->getMetadata($entityName);
 			
 			// Throw when the property is not present. This should already
 			// have been checked in the semantic analyzer.
-			if (!isset($columnMap[$property])) {
+			if (!isset($metadata->columnMap[$property])) {
 				throw new \LogicException(
 					"Property '{$property}' has no column mapping in entity '{$entityName}'"
 				);
 			}
 			
 			// Return fully qualified column name
-			return "`{$rangeName}`.`{$columnMap[$property]}`";
+			return "`{$rangeName}`.`{$metadata->columnMap[$property]}`";
 		}
 		
 		/**
