@@ -358,16 +358,6 @@
 		//   NEW: $metadata = $store->getMetadata($entity);
 		//        $keys = $metadata->identifierKeys;
 		//        $cols = $metadata->columnMap;
-		
-		/**
-		 * This function retrieves the primary keys of a given entity.
-		 * @param string|object $entity The entity from which the primary keys are retrieved
-		 * @return array<int, string> An array with the names of the properties that are the primary keys
-		 * @throws EntityResolutionException
-		 */
-		public function getIdentifierKeys(string|object $entity): array {
-			return $this->getMetadata($entity)->identifierKeys;
-		}
 
 		/**
 		 * Obtains the map between properties and column names for a given entity.

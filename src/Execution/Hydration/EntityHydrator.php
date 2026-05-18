@@ -104,7 +104,7 @@
 				'entities' => $entities
 			];
 		}
-
+		
 		/**
 		 * Quickly checks if the array contains any non-null values
 		 * @param array<string|int, mixed> $array The array to check
@@ -166,26 +166,26 @@
 		 */
 		private function collectJsonRangeNames(array $ast): array {
 			$jsonRangeNames = [];
-
+			
 			foreach ($ast as $alias) {
 				$expression = $alias->getExpression();
-
+				
 				// Only top-level identifiers carry range information
 				if (!$expression instanceof AstIdentifier) {
 					continue;
 				}
-
+				
 				$range = $expression->getRange();
-
+				
 				// Record the alias of every JSON source range found in the AST
 				if ($range instanceof AstRangeJsonSource) {
 					$jsonRangeNames[$range->getName()] = true;
 				}
 			}
-
+			
 			return $jsonRangeNames;
 		}
-
+		
 		/**
 		 * Resolves which JSON range to use for a given @SourceField annotation.
 		 *
@@ -198,8 +198,8 @@
 		 *     must add an explicit range to the annotation to resolve the ambiguity.
 		 *   - No JSON ranges present         → return null (no-op).
 		 *
-		 * @param SourceField $annotation          The @SourceField annotation being resolved.
-		 * @param string    $propertyName          The entity property name, used for error messages.
+		 * @param SourceField $annotation The @SourceField annotation being resolved.
+		 * @param string $propertyName The entity property name, used for error messages.
 		 * @param array<string, true> $presentJsonRanges
 		 *        JSON range names that actually appear as prefixes in the current row,
 		 *        keyed by range name for O(1) lookup.
@@ -209,29 +209,29 @@
 			// Explicit range declared on the annotation — use it as-is.
 			// If that range is not present in the row the caller applies no-op logic.
 			$explicitRange = $annotation->getRange();
-
+			
 			if ($explicitRange !== null) {
 				return $explicitRange;
 			}
-
+			
 			// No explicit range: infer from the JSON ranges present in this row
 			$count = count($presentJsonRanges);
-
+			
 			if ($count === 0) {
 				// No JSON data in the row at all — nothing to enrich from
 				return null;
 			}
-
+			
 			if ($count === 1) {
 				// Exactly one JSON range: safe to infer automatically
 				return array_key_first($presentJsonRanges);
 			}
-
+			
 			// Ambiguous — multiple JSON ranges, no explicit range declared on the annotation.
 			// Unreachable in a validated query; the semantic analyser catches this first.
 			return null;
 		}
-
+		
 		/**
 		 * Applies @SourceField annotations to an entity by writing values from JSON source
 		 * ranges in the current row directly onto the entity's properties.
@@ -245,11 +245,11 @@
 		 *  - The resolved range is not present in this row.
 		 *  - The field key does not exist in the JSON range's data.
 		 *
-		 * @param object                $entity         The fully resolved entity to enrich.
-		 * @param string                $entityName     Fully qualified class name of the entity.
-		 * @param array<string, mixed>  $fullRow        The complete merged result row, containing
+		 * @param object $entity The fully resolved entity to enrich.
+		 * @param string $entityName Fully qualified class name of the entity.
+		 * @param array<string, mixed> $fullRow The complete merged result row, containing
 		 *                                              prefixed keys from all stages (e.g. "product.name").
-		 * @param array<string, true>   $jsonRangeNames All JSON range names declared in the AST,
+		 * @param array<string, true> $jsonRangeNames All JSON range names declared in the AST,
 		 *                                              used to build the set of ranges present in the row.
 		 * @return void
 		 * @throws EntityResolutionException   When the entity class cannot be resolved.
@@ -258,17 +258,17 @@
 			// Collect @SourceField annotations for this entity class, keyed by property name.
 			// getAnnotationsOfType() returns array<string, array<int, T>>.
 			$jsonFieldAnnotations = $this->entityStore->getAnnotationsOfType($entityName, SourceField::class);
-
+			
 			// Nothing to do when the entity declares no @SourceField properties
 			if (empty($jsonFieldAnnotations)) {
 				return;
 			}
-
+			
 			// Determine which JSON ranges are actually present in this row by intersecting
 			// the AST-level set with keys that appear as prefixes in the flat row.
 			// This subset drives ambiguity detection when a range is not explicitly declared.
 			$presentJsonRanges = [];
-
+			
 			foreach ($jsonRangeNames as $rangeName => $_) {
 				// A range is "present" when at least one of its prefixed keys exists in the row
 				if (array_key_exists("{$rangeName}.", array_flip(
@@ -277,50 +277,50 @@
 					$presentJsonRanges[$rangeName] = true;
 				}
 			}
-
+			
 			// Simpler and more efficient: rebuild presentJsonRanges by scanning row keys once
 			$presentJsonRanges = [];
-
+			
 			foreach (array_keys($fullRow) as $rowKey) {
 				// Row keys from JSON stages are always in the format "{rangeName}.{field}"
 				$dotPos = strpos($rowKey, '.');
-
+				
 				if ($dotPos === false) {
 					continue;
 				}
-
+				
 				$prefix = substr($rowKey, 0, $dotPos);
-
+				
 				// Only count it as a present JSON range if it is known to the AST
 				if (isset($jsonRangeNames[$prefix])) {
 					$presentJsonRanges[$prefix] = true;
 				}
 			}
-
+			
 			// Process each property that carries a @SourceField annotation
 			foreach ($jsonFieldAnnotations as $propertyName => $annotations) {
 				foreach ($annotations as $annotation) {
 					// Resolve which range to read from (explicit or inferred)
 					$rangeName = $this->resolveJsonRange($annotation, $propertyName, $presentJsonRanges);
-
+					
 					// No usable range — skip this property
 					if ($rangeName === null) {
 						continue;
 					}
-
+					
 					// The range was declared but is not present in this particular row — no-op
 					if (!isset($presentJsonRanges[$rangeName])) {
 						continue;
 					}
-
+					
 					// Build the fully-qualified row key: "{rangeName}.{field}"
 					$rowKey = "{$rangeName}.{$annotation->getField()}";
-
+					
 					// The field does not exist in the JSON data for this row — no-op
 					if (!array_key_exists($rowKey, $fullRow)) {
 						continue;
 					}
-
+					
 					// Write the value directly onto the entity via PropertyHandler,
 					// bypassing any setter so the entity stays passive
 					$this->propertyHandler->set($entity, $propertyName, $fullRow[$rowKey]);
@@ -397,7 +397,7 @@
 				
 				// Apply @SourceField enrichment to the resolved existing entity
 				$this->enrichEntityFromJsonSources($existingEntity, $entityName, $fullRow, $jsonRangeNames);
-
+				
 				// Return the existing entity (possibly newly initialized)
 				return $existingEntity;
 			}
@@ -410,10 +410,10 @@
 			// Add the new entity to the Unit of Work as an existing entity
 			// (not as a new entity since it came from the database)
 			$this->unitOfWork->persistExisting($newEntity);
-
+			
 			// Apply @SourceField enrichment to the newly created entity
 			$this->enrichEntityFromJsonSources($newEntity, $entityName, $fullRow, $jsonRangeNames);
-
+			
 			return $newEntity;
 		}
 		
@@ -465,9 +465,9 @@
 				// Subquery range property (e.g. x.id where x is a derived table) —
 				// no entity metadata exists, so return the raw value directly.
 				if ($node->getRange()?->getEntityName() === null) {
-				return $row[$value->getName()] ?? null;
-			}
-			
+					return $row[$value->getName()] ?? null;
+				}
+				
 				return $this->processPropertyValue($row[$value->getName()] ?? null, $node);
 			}
 			
@@ -653,20 +653,19 @@
 				
 				// Collect all row keys belonging to this range (e.g. "alias.field")
 				$rangeName = $range->getName();
-				$prefix = "{$rangeName}.";
 				
 				$keys = array_keys(array_filter(
 					$row,
-					static fn($_, string $rowKey) => str_starts_with($rowKey, $prefix),
+					static fn($_, string $rowKey) => str_starts_with($rowKey, "{$rangeName}."),
 					ARRAY_FILTER_USE_BOTH
 				));
 				
 				// Store flipped variants for O(1) reverse lookup by callers
-				$identifierKeys = $this->entityStore->getIdentifierKeys($class);
+				$metadata = $this->entityStore->getMetadata($class);
 				
 				$relationCache[$rangeName] = [
-					'identifiers'         => $identifierKeys,
-					'identifiers_flipped' => array_flip($identifierKeys),
+					'identifiers'         => $metadata->identifierKeys,
+					'identifiers_flipped' => array_flip($metadata->identifierKeys),
 					'keys'                => $keys,
 					'keys_flipped'        => array_flip($keys),
 				];

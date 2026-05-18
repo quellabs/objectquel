@@ -192,8 +192,8 @@
 			$proxy = new $proxyClassName($this->entityManager);
 			
 			// Set the primary key on the proxy using the target entity's primary key property name
-			$pk = $this->entityStore->getIdentifierKeys($targetEntityName);
-			$this->propertyHandler->set($proxy, $pk[0], $relationColumnValue);
+			$metadata = $this->entityStore->getMetadata($targetEntityName);
+			$this->propertyHandler->set($proxy, $metadata->identifierKeys[0], $relationColumnValue);
 			
 			// Put the proxy under ownership
 			$this->entityManager->persist($proxy);

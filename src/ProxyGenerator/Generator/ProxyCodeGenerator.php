@@ -3,6 +3,7 @@
 	namespace Quellabs\ObjectQuel\ProxyGenerator\Generator;
 	
 	use Quellabs\ObjectQuel\EntityStore;
+	use Quellabs\ObjectQuel\Exception\EntityResolutionException;
 	use Quellabs\ObjectQuel\ReflectionManagement\ReflectionHandler;
 	use Quellabs\ObjectQuel\ProxyGenerator\ProxyInterface;
 	
@@ -234,12 +235,11 @@ PHP
 		 * Generates the PHP source for all proxy methods of the given entity.
 		 * @param class-string $entity Fully-qualified entity class name
 		 * @return string
+		 * @throws EntityResolutionException
 		 */
 		private function makeProxyMethods(string $entity): string {
-			$result = [];
-			
-			$identifierKeys = $this->entityStore->getIdentifierKeys($entity);
-			$identifierKeysGetterMethod = 'get' . ucfirst($identifierKeys[0]);
+			$metadata = $this->entityStore->getMetadata($entity);
+			$identifierKeysGetterMethod = 'get' . ucfirst($metadata->identifierKeys[0]);
 			
 			['declaration' => $ctorDeclaration, 'passthrough' => $ctorPassthrough] =
 				$this->buildParentConstructorArgs($entity);
@@ -263,6 +263,7 @@ PHP
 			// otherwise PHP treats \{ as an escape sequence and emits it literally.
 			$entityClass = '\\' . $entity;
 			
+			$result = [];
 			$result[] = <<<PHP
 
     /**

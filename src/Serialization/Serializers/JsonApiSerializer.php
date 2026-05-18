@@ -3,6 +3,7 @@
 	namespace Quellabs\ObjectQuel\Serialization\Serializers;
 	
 	use Quellabs\ObjectQuel\EntityManager;
+	use Quellabs\ObjectQuel\Exception\EntityResolutionException;
 	use Quellabs\ObjectQuel\Exception\QuelException;
 	use Quellabs\ObjectQuel\Serialization\UrlBuilders\UrlBuilderInterface;
 	
@@ -74,11 +75,14 @@
 		 * @return array<int, mixed> Array of identifier values in the order they're defined
 		 */
 		protected function getIdentifierValues(object $entity): array {
-			$result = [];
+			// Fetch metadata
+			$metadata = $this->entityStore->getMetadata($entity);
 			
 			// Get all identifier property names from entity metadata
 			// Use property handler to safely extract values (handles private/protected properties)
-			foreach ($this->entityStore->getIdentifierKeys($entity) as $key) {
+			$result = [];
+			
+			foreach ($metadata->identifierKeys as $key) {
 				$result[] = $this->propertyHandler->get($entity, $key);
 			}
 			
@@ -98,7 +102,7 @@
 		 *      data: array<int, array{type: string, id: string}>,
 		 *      links: array<string, string>
 		 *  }>
-		 * @throws QuelException
+		 * @throws QuelException|EntityResolutionException
 		 */
 		public function serializeRelationships(object $entity, mixed $identifierValue): array {
 			// Get all relationship mappings from entity metadata
@@ -180,19 +184,20 @@
 		 *         }>
 		 *     }
 		 * }
-		 * @throws \InvalidArgumentException If entity has no identifier keys
+		 * @throws EntityResolutionException
+		 * @throws QuelException
 		 */
 		public function serialize(object $entity): array {
 			$entityName = $this->resolveProxyClass(get_class($entity));
-			$identifierKeys = $this->entityStore->getIdentifierKeys($entity);
+			$metadata = $this->entityStore->getMetadata($entityName);
 			
 			// Validate that entity has proper identification
-			if (empty($identifierKeys)) {
+			if (empty($metadata->identifierKeys)) {
 				throw new \InvalidArgumentException("Entity " . get_class($entity) . " must have at least one identifier");
 			}
 			
 			// Get primary identifier value for relationship queries
-			$identifierValue = $this->propertyHandler->get($entity, $identifierKeys[0]);
+			$identifierValue = $this->propertyHandler->get($entity, $metadata->identifierKeys[0]);
 			
 			// Create composite ID string for resource identification
 			$entityId = implode("_", $this->getIdentifierValues($entity));

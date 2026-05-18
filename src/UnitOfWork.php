@@ -527,9 +527,9 @@
 		 * @throws EntityResolutionException
 		 */
 		private function hasNullPrimaryKeys(object $entity): bool {
-			$primaryKeys = $this->entityStore->getIdentifierKeys($entity);
+			$metadata = $this->entityStore->getMetadata($entity);
 			
-			foreach ($primaryKeys as $primaryKey) {
+			foreach ($metadata->identifierKeys as $primaryKey) {
 				if ($this->propertyHandler->get($entity, $primaryKey) === null) {
 					return true;
 				}
@@ -842,14 +842,13 @@
 		 *               the values are their corresponding values from the entity.
 		 */
 		private function getIdentifiers(object $entity): array {
-			// Fetch the primary key names from the entity store
-			$primaryKeys = $this->getEntityStore()->getIdentifierKeys($entity);
+			// Fetch the metadata from the entity store
+			$metadata = $this->getEntityStore()->getMetadata($entity);
 			
 			// Loop through each primary key name
 			$result = [];
 
-			foreach ($primaryKeys as $key) {
-				// Fetch the corresponding value for each primary key from the entity using the property handler
+			foreach ($metadata->identifierKeys as $key) {
 				$result[$key] = $this->propertyHandler->get($entity, $key);
 			}
 			

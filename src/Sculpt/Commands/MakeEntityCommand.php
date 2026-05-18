@@ -4,6 +4,7 @@
 	
 	use Quellabs\ObjectQuel\Configuration;
 	use Quellabs\ObjectQuel\EntityStore;
+	use Quellabs\ObjectQuel\Exception\EntityResolutionException;
 	use Quellabs\ObjectQuel\Sculpt\Helpers\EntityModifier;
 	use Quellabs\ObjectQuel\Sculpt\SculptTypes;
 	use Quellabs\ObjectQuel\Sculpt\ServiceProvider;
@@ -732,15 +733,17 @@
 		 * Get primary key field names for an entity.
 		 * @param string $entityName Name of the entity (without 'Entity' suffix)
 		 * @return string[] Array of primary key field names
+		 * @throws EntityResolutionException
 		 */
 		public function getEntityPrimaryKeys(string $entityName): array {
 			$fullEntityName = $this->configuration->getEntityNameSpace() . '\\' . $entityName . 'Entity';
 			
-			if ($this->getEntityStore()->exists($fullEntityName)) {
-				return $this->getEntityStore()->getIdentifierKeys($fullEntityName);
-			} else {
+			if (!$this->getEntityStore()->exists($fullEntityName)) {
 				return ['id'];
 			}
+			
+			$metadata = $this->getEntityStore()->getMetadata($fullEntityName);
+			return $metadata->identifierKeys;
 		}
 		
 		/**
