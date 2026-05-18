@@ -40,7 +40,7 @@
 				}
 			}
 			
-			// Entire entities in QUEL functions (is_numeric, is_float, etc) are not allowed
+			// Entire entities in aggregates (sum, avg, min, max, etc) are not allowed
 			if ($node instanceof NodeAggregate) {
 				if ($this->identifierIsBareRange($node->getIdentifier())) {
 					throw new SemanticException("Unsupported operation on entire entities. You cannot pass an entire entity to an aggregate function. Please specify the specific field or property you wish to aggregate (e.g. e.price or e.quantity instead of e).");
