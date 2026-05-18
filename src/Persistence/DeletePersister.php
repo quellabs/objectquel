@@ -78,16 +78,12 @@
 		 * @throws EntityResolutionException
 		 */
 		public function persist(object $entity): void {
-			// Get the name of the table where the entity is stored
-			$tableName = $this->entityStore->getOwningTable($entity);
-			$tableNameEscaped = $this->escapeIdentifier($tableName);
-			
-			// Obtain the primary keys and corresponding column names of the entity
-			$primaryKeys = $this->entityStore->getIdentifierKeys($entity);
-			$primaryKeyColumns = $this->entityStore->getIdentifierColumnNames($entity);
+			// Fetch metadata
+			$metadata = $this->entityStore->getMetadata($entity);
+			$tableName = $this->escapeIdentifier($metadata->tableName);
 			
 			// Create a mapping of primary key column names to their values for this specific entity
-			$primaryKeyValues = $this->extractPrimaryKeyValueMap($entity, $primaryKeys, $primaryKeyColumns);
+			$primaryKeyValues = $this->extractPrimaryKeyValueMap($entity, $metadata->identifierKeys, $metadata->identifierColumns);
 			
 			// Construct the SQL query for deleting the entity, using each primary key value
 			// in the WHERE clause to target this specific entity.
@@ -107,7 +103,7 @@
 			
 			// Execute the DELETE query with the constructed conditions
 			// Use the primary key values as parameters for the prepared statement to prevent SQL injection
-			if (!$this->connection->execute("DELETE FROM {$tableNameEscaped} WHERE {$sql}", $params)) {
+			if (!$this->connection->execute("DELETE FROM {$tableName} WHERE {$sql}", $params)) {
 				// If execution fails, throw an exception with the last error message and error code
 				// from the database connection to help identify and resolve the issue
 				throw new OrmException("Error deleting entity: " . $this->connection->getLastErrorMessage(), $this->connection->getLastError());

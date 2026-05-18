@@ -382,18 +382,7 @@
 		public function getIdentifierColumnNames(string|object $entity): array {
 			return $this->getMetadata($entity)->identifierColumns;
 		}
-		
-		/**
-		 * Retrieves the columns that serve as version columns for a specific entity.
-		 * Version columns are used for optimistic locking.
-		 * @param string|object $entity The entity for which the version columns are retrieved
-		 * @return array<string, array{name: string, column: Column, version: Version}> An array with the names of the columns that serve as version columns
-		 * @throws EntityResolutionException
-		 */
-		public function getVersionColumns(string|object $entity): array {
-			return $this->getMetadata($entity)->versionColumns;
-		}
-		
+
 		/**
 		 * Obtains the map between properties and column names for a given entity.
 		 * This function generates an associative array that links the properties of an entity
@@ -443,16 +432,6 @@
 			}
 			
 			return $result;
-		}
-		
-		/**
-		 * Returns all properties of an entity.
-		 * @param string|object $entity The entity object or class name string
-		 * @return array<int, string> An array of property names
-		 * @throws EntityResolutionException
-		 */
-		public function getProperties(string|object $entity): array {
-			return $this->getMetadata($entity)->properties;
 		}
 		
 		/**

@@ -61,16 +61,11 @@
 		 * @throws EntityResolutionException
 		 */
 		public function persist(object $entity): void {
-			// Retrieve basic information needed for the update
-			// Get the table name where the entity is stored
-			$tableName = $this->entityStore->getOwningTable($entity);
-			$tableNameEscaped = $this->valueHandler->escapeIdentifier($tableName);
-			
-			// Serialize the entity's current state into an array of column name => value pairs
+			// Retrieve metadata
+			$metadata = $this->entityStore->getMetadata($entity);
+			$tableName = $this->valueHandler->escapeIdentifier($metadata->tableName);
 			$serializedEntity = $this->unitOfWork->getSerializer()->serialize($entity);
-			
-			// Get the entity's original data (snapshot) from when it was loaded or last persisted
-			$originalData = $this->unitOfWork->getOriginalEntityData($entity);
+			$originalData = $this->unitOfWork->getEntitySnapshot($entity);
 
 			// If there's no original data, this entity was never loaded from the database.
 			// Updating an untracked entity is a programming error.
@@ -82,10 +77,10 @@
 			}
 			
 			// Get the column names that make up the primary key
-			$primaryKeyColumnNames = $this->entityStore->getIdentifierColumnNames($entity);
+			$primaryKeyColumnNames = $metadata->identifierColumns;
 			
 			// Get the version column names. These will auto update
-			$versionColumns = $this->entityStore->getVersionColumns($entity);
+			$versionColumns = $metadata->versionColumns;
 			$versionColumnNames = array_column($versionColumns, 'name');
 			
 			// Extract the primary key values from the original data
@@ -108,7 +103,7 @@
 			$whereClause = $this->buildWhereClause($primaryKeyColumnNames, $primaryKeyValues, $versionColumns, $originalData, $params);
 			
 			// Build query
-			$query = "UPDATE {$tableNameEscaped} SET " . implode(", ", $setClauseParts) . " WHERE {$whereClause}";
+			$query = "UPDATE {$tableName} SET " . implode(", ", $setClauseParts) . " WHERE {$whereClause}";
 			
 			// Execute the UPDATE query with the merged parameters
 			$rs = $this->connection->Execute($query, $params);

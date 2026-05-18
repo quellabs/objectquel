@@ -57,7 +57,7 @@
 		protected array $indexByClass = [];
 		
 		/** @var \WeakMap<object, array<string, mixed>> */
-		protected \WeakMap $originalEntityData;
+		protected \WeakMap $entitySnapshots;
 		
 		/** @var \WeakMap<object, bool> */
 		protected \WeakMap $entityRemovalList;
@@ -80,7 +80,7 @@
 			$this->entityStore = $entityManager->getEntityStore();
 			$this->propertyHandler = new PropertyHandler();
 			$this->serializer = new SQLSerializer($entityManager->getEntityStore());
-			$this->originalEntityData = new \WeakMap();
+			$this->entitySnapshots = new \WeakMap();
 			$this->entityRemovalList = new \WeakMap();
 			
 			// Register the signals
@@ -191,8 +191,8 @@
 		 * @param object $entity
 		 * @return array<string, mixed>|null
 		 */
-		public function getOriginalEntityData(object $entity): ?array {
-			return $this->originalEntityData[$entity] ?? null;
+		public function getEntitySnapshot(object $entity): ?array {
+			return $this->entitySnapshots[$entity] ?? null;
 		}
 		
 		/**
@@ -242,7 +242,7 @@
 			// This baseline is used later to detect changes when flush() is called
 			/** @var array<string, mixed> $serialized */
 			$serialized = $this->getSerializer()->serialize($entity);
-			$this->originalEntityData[$entity] = $serialized;
+			$this->entitySnapshots[$entity] = $serialized;
 		}
 		
 		/**
@@ -407,7 +407,7 @@
 		public function clear(): void {
 			$this->entitiesByClass = [];
 			$this->indexByClass = [];
-			$this->originalEntityData = new \WeakMap();
+			$this->entitySnapshots = new \WeakMap();
 			$this->entityRemovalList = new \WeakMap();
 			
 			// Add garbage collection hint for large datasets
@@ -446,7 +446,7 @@
 			
 			// Remove the entity's original data snapshot used for change detection
 			// This effectively stops tracking any changes to the entity's properties
-			unset($this->originalEntityData[$entity]);
+			unset($this->entitySnapshots[$entity]);
 			
 			// If the entity was previously scheduled for deletion, remove it from that list
 			// This prevents it from being included in the next DELETE operation
@@ -489,7 +489,7 @@
 			}
 			
 			// Checks if the entity is new based on the absence of original data.
-			if (!isset($this->originalEntityData[$entity])) {
+			if (!isset($this->entitySnapshots[$entity])) {
 				return DirtyState::New;
 			}
 			
@@ -545,7 +545,7 @@
 		 */
 		private function isEntityDirty(object $entity): bool {
 			// Retrieve the snapshot taken when the entity was loaded from the database
-			$originalData = $this->getOriginalEntityData($entity);
+			$originalData = $this->getEntitySnapshot($entity);
 			
 			// No snapshot means the entity was never persisted, treat it as dirty
 			if ($originalData === null) {
@@ -757,7 +757,7 @@
 				// This helps track changes in the entity over time
 				/** @var array<string, mixed> $serialized */
 				$serialized = $this->getSerializer()->serialize($entity);
-				$this->originalEntityData[$entity] = $serialized;
+				$this->entitySnapshots[$entity] = $serialized;
 			}
 			
 			// Remove deleted entities from tracking

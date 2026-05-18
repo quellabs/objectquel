@@ -94,19 +94,13 @@
 		 * @throws \Exception
 		 */
 		public function persist(object $entity): void {
-			// Gather the necessary information for the insert operation
-			// Get the table name where the entity should be stored
-			$tableName = $this->entityStore->getOwningTable($entity);
+			// Get metadata
+			$metadata = $this->entityStore->getMetadata($entity);
+			$tableName = $metadata->tableName;
 			$tableNameEscaped = $this->valueHandler->escapeIdentifier($tableName);
-			
-			// Fetch the column map
-			$columnMap = array_flip($this->entityStore->getColumnMap($entity));
-			
-			// Get the primary key property names and their corresponding column names
-			$primaryKeys = $this->entityStore->getIdentifierKeys($entity);
-			
-			// Get the column names that make up the primary key
-			$primaryKeyColumnNames = $this->entityStore->getIdentifierColumnNames($entity);
+			$columnMap = array_flip($metadata->columnMap);
+			$primaryKeys = $metadata->identifierKeys;
+			$primaryKeyColumnNames = $metadata->identifierColumns;
 			
 			// Iterate through each identified primary key for the entity
 			foreach ($primaryKeys as $primaryKey) {
@@ -142,7 +136,7 @@
 			}
 			
 			// Get the primary key property names and their corresponding column names
-			$versionColumns = $this->entityStore->getVersionColumns($entity);
+			$versionColumns = $metadata->versionColumns;
 			$versionColumnNames = array_flip(array_column($versionColumns, 'name'));
 			
 			// Serialize the entity into an array of column name => value pairs
