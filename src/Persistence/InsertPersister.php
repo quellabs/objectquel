@@ -192,9 +192,7 @@
 			
 			// After successful query execution, check if the entity has a primary key with identity/auto-increment strategy
 			// This identifies columns marked either with @PrimaryKeyStrategy(strategy="identity") or primary keys with no strategy
-			$autoincrementColumn = $this->entityStore->findAutoIncrementPrimaryKey($entity);
-			
-			if ($autoincrementColumn !== null) {
+			if ($metadata->autoIncrementColumn !== null) {
 				// Entity has an identity primary key column that should receive the auto-generated ID from the database
 				// Get the last inserted ID value from the database connection
 				$autoIncrementId = $this->connection->getInsertId();
@@ -204,10 +202,10 @@
 					// Non-zero ID was returned, indicating the database successfully generated a new primary key value
 					// Update the entity's property with the database-generated ID
 					// This ensures the entity's state is synchronized with its database representation
-					$this->propertyHandler->set($entity, $autoincrementColumn, (int)$autoIncrementId);
+					$this->propertyHandler->set($entity, $metadata->autoIncrementColumn, (int)$autoIncrementId);
 					
 					// Also set it in $serializedEntity
-					$serializedEntity[$autoincrementColumn] = (int)$autoIncrementId;
+					$serializedEntity[$metadata->autoIncrementColumn] = (int)$autoIncrementId;
 				}
 				
 				// If the auto-increment ID is 0, it may indicate no new ID was generated

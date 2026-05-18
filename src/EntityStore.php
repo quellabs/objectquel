@@ -235,7 +235,13 @@
 		 */
 		public function resolveProxyClass(string|object $entity): string {
 			// Determine the class name of the entity
-			$className = $this->extractClassName($entity);
+			if ($entity instanceof \ReflectionClass) {
+				$className = $entity->getName();
+			} elseif (is_object($entity)) {
+				$className = get_class($entity);
+			} else {
+				$className = ltrim($entity, "\\");
+			}
 			
 			// Return cached entity name if present
 			if (isset($this->normalizedNameCache[$className])) {
@@ -372,16 +378,6 @@
 		public function getIdentifierKeys(string|object $entity): array {
 			return $this->getMetadata($entity)->identifierKeys;
 		}
-		
-		/**
-		 * Retrieves the column names that serve as primary keys for a specific entity.
-		 * @param string|object $entity The entity for which the primary key columns are retrieved
-		 * @return array<int, string> An array with the names of the columns that serve as primary keys
-		 * @throws EntityResolutionException
-		 */
-		public function getIdentifierColumnNames(string|object $entity): array {
-			return $this->getMetadata($entity)->identifierColumns;
-		}
 
 		/**
 		 * Obtains the map between properties and column names for a given entity.
@@ -508,16 +504,6 @@
 		}
 		
 		/**
-		 * Retrieves all index annotations defined for a given entity class.
-		 * @param string|object $entity The entity class to analyze (can be string classname or object instance)
-		 * @return array<int, object> A collection of Index, UniqueIndex and FullTextIndex annotation objects
-		 * @throws EntityResolutionException
-		 */
-		public function getIndexes(string|object $entity): array {
-			return $this->getMetadata($entity)->indexes;
-		}
-		
-		/**
 		 * Finds a FullTextIndex annotation that covers all the given property names.
 		 *
 		 * Used by the SQL generator to decide whether search() and search_score() can
@@ -561,20 +547,7 @@
 		public function getPrimaryKey(string|object $entity): ?string {
 			return $this->getMetadata($entity)->getPrimaryKey();
 		}
-		
-		/**
-		 * This method finds primary key columns that are configured to receive
-		 * database-generated values, which are either:
-		 * 1. Primary keys with a PrimaryKeyStrategy annotation set to "identity", or
-		 * 2. Primary keys with no explicitly defined strategy (defaulting to auto-increment)
-		 * @param string|object $entity The entity to examine
-		 * @return string|null The name of the auto-incrementing primary key field, or null if none found
-		 * @throws EntityResolutionException
-		 */
-		public function findAutoIncrementPrimaryKey(string|object $entity): ?string {
-			return $this->getMetadata($entity)->autoIncrementColumn;
-		}
-		
+
 		/**
 		 * Extracts database column definitions from an entity class using reflection and annotations.
 		 * @param string $className The fully qualified class name of the entity
@@ -607,21 +580,6 @@
 		}
 		
 		// ==================== Private Helper Methods ====================
-		
-		/**
-		 * Extract class name from various entity representations.
-		 * @param string|object $entity The entity in any supported format
-		 * @return string The extracted class name
-		 */
-		private function extractClassName(string|object $entity): string {
-			if ($entity instanceof \ReflectionClass) {
-				return $entity->getName();
-			} elseif (is_object($entity)) {
-				return get_class($entity);
-			} else {
-				return ltrim($entity, "\\");
-			}
-		}
 		
 		/**
 		 * Initialize entity classes using the EntityLocator.
@@ -687,5 +645,4 @@
 			
 			return $this->dependencyGraph;
 		}
-		
 	}
