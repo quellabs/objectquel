@@ -28,6 +28,7 @@
 	use Quellabs\ObjectQuel\Annotations\Orm\PostUpdate;
 	use Quellabs\ObjectQuel\Annotations\Orm\PreDelete;
 	use Quellabs\ObjectQuel\Annotations\Orm\PostDelete;
+	use Quellabs\SignalHub\Slot;
 	
 	/**
 	 * Manages lifecycle event callbacks for entities
@@ -63,26 +64,14 @@
 			$this->entityStore = $unitOfWork->getEntityStore();
 			
 			// Connect to all entity lifecycle signals
-			$this->unitOfWork->signalPrePersist->connect([$this, 'handlePrePersist']);
-			$this->unitOfWork->signalPostPersist->connect([$this, 'handlePostPersist']);
-			$this->unitOfWork->signalPreUpdate->connect([$this, 'handlePreUpdate']);
-			$this->unitOfWork->signalPostUpdate->connect([$this, 'handlePostUpdate']);
-			$this->unitOfWork->signalPreDelete->connect([$this, 'handlePreDelete']);
-			$this->unitOfWork->signalPostDelete->connect([$this, 'handlePostDelete']);
+			$this->unitOfWork->signalPrePersist->connect(new Slot([$this, 'handlePrePersist']));
+			$this->unitOfWork->signalPostPersist->connect(new Slot([$this, 'handlePostPersist']));
+			$this->unitOfWork->signalPreUpdate->connect(new Slot([$this, 'handlePreUpdate']));
+			$this->unitOfWork->signalPostUpdate->connect(new Slot([$this, 'handlePostUpdate']));
+			$this->unitOfWork->signalPreDelete->connect(new Slot([$this, 'handlePreDelete']));
+			$this->unitOfWork->signalPostDelete->connect(new Slot([$this, 'handlePostDelete']));
 		}
-		
-		/**
-		 * Disconnect the slots from the events
-		 */
-		public function __destruct() {
-			$this->unitOfWork->signalPostDelete->disconnect([$this, 'handlePostDelete']);
-			$this->unitOfWork->signalPreDelete->disconnect([$this, 'handlePreDelete']);
-			$this->unitOfWork->signalPostUpdate->disconnect([$this, 'handlePostUpdate']);
-			$this->unitOfWork->signalPreUpdate->disconnect([$this, 'handlePreUpdate']);
-			$this->unitOfWork->signalPostPersist->disconnect([$this, 'handlePostPersist']);
-			$this->unitOfWork->signalPrePersist->disconnect([$this, 'handlePrePersist']);
-		}
-		
+
 		/**
 		 * Handle prePersist event
 		 * @param object $entity The entity being persisted
