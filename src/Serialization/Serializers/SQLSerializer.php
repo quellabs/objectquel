@@ -3,6 +3,7 @@
 	namespace Quellabs\ObjectQuel\Serialization\Serializers;
 	
 	use Quellabs\ObjectQuel\EntityStore;
+	use Quellabs\ObjectQuel\Exception\EntityResolutionException;
 	
 	class SQLSerializer extends Serializer {
 		
@@ -19,19 +20,17 @@
 		 * Extracts all values from the entity that are marked as Column.
 		 * @param object $entity The entity from which the values must be extracted.
 		 * @return array<string, mixed> An array with property names as keys and their values.
+		 * @throws EntityResolutionException
 		 */
 		public function serialize(object $entity): array {
 			// Serialize the data
 			$serializedData = parent::serialize($entity);
 			
-			// Retrieve the column map (property > database column)
-			$columnMap = $this->entityStore->getColumnMap($entity);
+			// Retrieve the entity's metadata
+			$metadata = $this->entityStore->getMetadata($entity);
 			
 			// Return updates data
-			return array_combine(
-				array_values($columnMap),
-				array_values($serializedData),
-			);
+			return array_combine(array_values($metadata->columnMap), array_values($serializedData));
 		}
 		
 		/**
@@ -39,16 +38,17 @@
 		 * @param object $entity The entity into which the values must be injected.
 		 * @param array<string, mixed> $values The values to be injected, with property names as keys.
 		 * @return void
+		 * @throws EntityResolutionException
 		 */
 		public function deserialize(object $entity, array $values): void {
-			// Retrieve the column map (property > database column)
-			$columnMap = $this->entityStore->getColumnMap($entity);
+			// Retrieve the entity's metadata
+			$metadata = $this->entityStore->getMetadata($entity);
 			
 			// Step 1: Create a temporary array with column names as both key and value
 			// This is necessary because array_intersect_key() works with array keys
 			$tempColumnMap = array_combine(
-				array_values($columnMap),
-				array_values($columnMap)
+				array_values($metadata->columnMap),
+				array_values($metadata->columnMap)
 			);
 			
 			// Step 2: Filter the keys that exist in both $columnMap and $values

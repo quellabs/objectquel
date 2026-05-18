@@ -145,12 +145,11 @@
 				);
 			}
 			
-			// Fetch the column map
-			$columnMap = $this->entityStore->getColumnMap($entityName);
+			// Fetch the entity's metadata
+			$metadata = $this->entityStore->getMetadata($entityName);
 			
 			// Build aliased column selections for each property
-			foreach ($columnMap as $item => $value) {
-				// Format: table.column as `alias.property`
+			foreach ($metadata->columnMap as $item => $value) {
 				$result[] = "`{$rangeName}`.`{$value}` as `{$aliasRangeName}.{$item}`";
 			}
 			

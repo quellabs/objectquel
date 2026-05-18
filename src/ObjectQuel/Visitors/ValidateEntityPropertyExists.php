@@ -71,11 +71,11 @@
 			
 			// Fetch column map and relations
 			$propertyName = $node->getName();
-			$columnMap = $this->entityStore->getColumnMap($entityName);
-			$relations = $this->entityStore->getOneToManyDependencies($entityName);
+			$metadata = $this->entityStore->getMetadata($entityName);
+			$relations = $metadata->getOneToManyDependencies();
 			
 			// Check if the property exists in the entity.
-			if (!isset($columnMap[$propertyName]) && !isset($relations[$propertyName])) {
+			if (!isset($metadata->columnMap[$propertyName]) && !isset($relations[$propertyName])) {
 				throw new SemanticException("The property {$propertyName} does not exist in entity {$entityName}. Please check for typos or verify that the correct entity is being referenced in the query.");
 			}
 		}
