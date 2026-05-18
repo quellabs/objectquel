@@ -29,7 +29,7 @@
 			// Entire entities in expressions are not allowed.
 			if ($node instanceof NodeBinary) {
 				if ($this->identifierIsBareRange($node->getLeft()) || $this->identifierIsBareRange($node->getRight())) {
-					throw new SemanticException("Unsupported operation on entire entities. You cannot perform arithmetic operations directly on entities. Please specify the specific fields or properties of the entities you wish to use in the calculation.");
+					throw new SemanticException("Cannot use an entire entity in an expression. Please specify a field or property instead (e.g. 'order.total' instead of 'order').");
 				}
 			}
 			
