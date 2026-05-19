@@ -314,7 +314,7 @@
 		 */
 		public function find(string $entityType, int|string $primaryKey): ?object {
 			// Normalize the primary key
-			$firstKey = $this->getEntityStore()->getMetadata($entityType)->getPrimaryKey();
+			$firstKey = $this->entityStore->getMetadata($entityType)->getPrimaryKey();
 			$primaryKeys = $firstKey ? [$firstKey => $primaryKey] : [];
 			
 			// Return early if the entity is already tracked and fully initialized
