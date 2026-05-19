@@ -282,20 +282,17 @@
 		 * Searches for entities based on the given entity type and primary key.
 		 * @template T
 		 * @param class-string<T> $entityType The fully qualified class name of the container
-		 * @param array<string, mixed>|int|string $primaryKey The primary key of the entity
+		 * @param array<string, mixed> $searchData Associative array of field names and values to filter by
 		 * @return T[] The found entities
 		 * @throws QuelException
 		 * @throws EntityResolutionException
 		 */
-		public function findBy(string $entityType, array|int|string $primaryKey): array {
-			// Normalize the primary key
-			$primaryKeys = $this->formatPrimaryKeyAsArray($primaryKey, $entityType);
-			
+		public function findBy(string $entityType, array $searchData): array {
 			// Prepare a query in case the entity is not found
-			$query = $this->queryBuilder->prepareQuery($entityType, $primaryKeys);
+			$query = $this->queryBuilder->prepareQuery($entityType, $searchData);
 			
 			// Execute query and retrieve result
-			$result = $this->getAll($query, $primaryKeys);
+			$result = $this->getAll($query, $searchData);
 			
 			// Extract the main column from the result
 			$filteredResult = array_column($result, "main");
