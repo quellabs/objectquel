@@ -625,10 +625,9 @@
 		 * indicating an unresolvable dependency between entities (e.g., A depends on B, B depends on A).
 		 */
 		private function scheduleEntitiesForPersistence(): array {
-			// Initialize the data structures for topological sorting algorithm.
-			$graph = []; // Adjacency list representation of the entity dependency graph.
-			$inDegree = []; // Tracks the number of dependencies (incoming edges) for each entity.
-			$flattenedIdentityMap = $this->getFlattenedIdentityMap(); // Get all managed entities as a flat array.
+			$graph = [];
+			$inDegree = [];
+			$flattenedIdentityMap = $this->getFlattenedIdentityMap();
 			
 			// Prepare the graph and inDegree counters for each entity.
 			// This initializes every entity with an empty list of dependents and zero dependencies.
@@ -1118,6 +1117,11 @@
 				
 				// Skip uninitialized collections to prevent lazy loading
 				if ($collection instanceof EntityCollection && !$collection->isInitialized()) {
+					continue;
+				}
+				
+				// Skip if collection is not iterable (satisfies PHPStan)
+				if (!is_iterable($collection)) {
 					continue;
 				}
 				
