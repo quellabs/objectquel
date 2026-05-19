@@ -8,11 +8,18 @@
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRangeDatabase;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRetrieve;
 	
-	final class PrimaryKeyInfo {
+	final readonly class PrimaryKeyInfo {
+		
+		/**
+		 * PrimaryKeyInfo constructor
+		 * @param AstRange $range
+		 * @param string $entityName
+		 * @param string $primaryKey
+		 */
 		public function __construct(
-			public readonly AstRange $range,
-			public readonly string   $entityName,
-			public readonly string   $primaryKey,
+			public AstRange $range,
+			public string   $entityName,
+			public string   $primaryKey,
 		) {
 		}
 		
