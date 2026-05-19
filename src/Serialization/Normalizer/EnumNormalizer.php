@@ -36,7 +36,7 @@
 				);
 			}
 			
-			$this->enumType = $parameters['enumType'];
+			$this->enumType = (string)$parameters['enumType'];
 		}
 
 		/**
