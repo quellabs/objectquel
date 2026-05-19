@@ -824,7 +824,8 @@
 				
 				// Fetch all @SourceField annotations declared on this entity's properties.
 				// getAnnotationsOfType() returns array<propertyName, array<int, SourceField>>.
-				$jsonFieldAnnotations = $this->entityStore->getAnnotationsOfType($entityName, SourceField::class);
+				$metadata = $this->entityStore->getMetadata($entityName);
+				$jsonFieldAnnotations = $metadata->getAnnotationsOfType(SourceField::class);
 				
 				// Check each annotated property for a missing range parameter
 				foreach ($jsonFieldAnnotations as $propertyName => $annotations) {

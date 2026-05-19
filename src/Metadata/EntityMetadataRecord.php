@@ -20,9 +20,11 @@
 	
 	namespace Quellabs\ObjectQuel\Metadata;
 	
+	use Quellabs\AnnotationReader\AnnotationInterface;
 	use Quellabs\AnnotationReader\Collection\AnnotationCollection;
 	use Quellabs\ObjectQuel\Annotations\Orm\Column;
 	use Quellabs\ObjectQuel\Annotations\Orm\FullTextIndex;
+	use Quellabs\ObjectQuel\Annotations\Orm\Immutable;
 	use Quellabs\ObjectQuel\Annotations\Orm\Index;
 	use Quellabs\ObjectQuel\Annotations\Orm\OneToMany;
 	use Quellabs\ObjectQuel\Annotations\Orm\OneToOne;
@@ -30,6 +32,7 @@
 	use Quellabs\ObjectQuel\Annotations\Orm\UniqueIndex;
 	use Quellabs\ObjectQuel\Annotations\Orm\Version;
 	use Quellabs\ObjectQuel\DatabaseAdapter\DatabaseAdapter;
+	use Quellabs\ObjectQuel\Exception\EntityResolutionException;
 	
 	/**
 	 * Immutable value object containing all metadata for a single entity.
@@ -207,5 +210,80 @@
 			}
 			
 			return $result;
+		}
+		
+		/**
+		 * Finds a FullTextIndex annotation that covers all the given property names.
+		 *
+		 * Used by the SQL generator to decide whether search() and search_score() can
+		 * use MATCH...AGAINST instead of LIKE chains. A full-text index matches when its
+		 * column list is identical to (or a superset of) the requested property names.
+		 *
+		 * Note: the columns defined on FullTextIndex annotations are property names,
+		 * not database column names. This method compares at the property level.
+		 *
+		 * @param array<int, string> $propertyNames The property names passed to search() or search_score()
+		 * @return FullTextIndex|null The matching index, or null if none covers all columns
+		 */
+		public function getFullTextIndexForColumns(array $propertyNames): ?FullTextIndex {
+			foreach ($this->indexes as $index) {
+				if (!$index instanceof FullTextIndex) {
+					continue;
+				}
+				
+				// All requested property names must be present in this index's column list
+				$missingColumns = array_diff($propertyNames, $index->getColumns());
+				
+				if (empty($missingColumns)) {
+					return $index;
+				}
+			}
+			
+			return null;
+		}
+		
+		
+		/**
+		 * Returns all annotations grouped by property.
+		 * @return array<string, array<int, AnnotationInterface>>
+		 */
+		public function getAnnotations(): array {
+			$result = [];
+			
+			foreach ($this->annotations as $property => $collection) {
+				foreach ($collection->ofType(AnnotationInterface::class) as $annotation) {
+					$result[$property][] = $annotation;
+				}
+			}
+			
+			return $result;
+		}
+		
+		/**
+		 * Returns annotations filtered by a specific type.
+		 * @template T of AnnotationInterface
+		 * @param class-string<T> $annotationType
+		 * @return array<string, array<int, T>>
+		 */
+		public function getAnnotationsOfType(string $annotationType): array {
+			$result = [];
+			
+			foreach ($this->annotations as $property => $annotationCollection) {
+				foreach ($annotationCollection->ofType($annotationType) as $annotation) {
+					$result[$property][] = $annotation;
+				}
+			}
+			
+			return $result;
+		}
+		
+		/**
+		 * Return true if the entity is immutable (readonly), false if not.
+		 * An immutable entity is marked with the @Immutable annotation.
+		 * @return bool True if the entity is immutable, false otherwise
+		 */
+		public function isImmutable(): bool {
+			$annotationList = $this->getAnnotationsOfType(Immutable::class);
+			return !empty($annotationList);
 		}
 	}

@@ -28,7 +28,7 @@
 		 */
 		public function create(): string {
 			$baseName = $this->extractBaseName();
-			$entityData = $this->prepareEntityData($this->entityStore);
+			$entityData = $this->prepareEntityData();
 			$codeComponents = $this->generateCodeComponents($entityData);
 			
 			return $this->buildJavaScriptCode($baseName, $codeComponents);

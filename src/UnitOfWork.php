@@ -329,6 +329,9 @@
 					$deleted = [];
 					
 					foreach ($sortedEntities as $entity) {
+						// Fetch entity metadata
+						$metadata = $this->getEntityStore()->getMetadata($entity);
+						
 						// Copy the primary keys from the parent entity to this entity, if available.
 						// This only happens if the relationship is not self-referential.
 						foreach($this->extractParentPrimaryKeyData($entity) as $parentEntity) {
@@ -338,7 +341,7 @@
 						// Perform the corresponding database operation based on the state of the entity.
 						switch ($this->getEntityState($entity)) {
 							case DirtyState::New:
-								if ($this->getEntityStore()->isImmutable($entity)) {
+								if ($metadata->isImmutable()) {
 									throw new OrmException(
 										"Cannot insert immutable entity " . get_class($entity)
 									);
@@ -352,7 +355,7 @@
 								break;
 							
 							case DirtyState::Dirty:
-								if ($this->getEntityStore()->isImmutable($entity)) {
+								if ($metadata->isImmutable()) {
 									throw new OrmException(
 										"Cannot update immutable entity " . get_class($entity)
 									);
@@ -366,7 +369,7 @@
 								break;
 							
 							case DirtyState::Deleted:
-								if ($this->getEntityStore()->isImmutable($entity)) {
+								if ($metadata->isImmutable()) {
 									throw new OrmException(
 										"Cannot delete immutable entity " . get_class($entity)
 									);
@@ -779,17 +782,14 @@
 		 * @throws EntityResolutionException
 		 */
 		private function extractParentPrimaryKeyData(object $entity): array {
-			// Initialize an empty array to store the results.
-			// This will hold all parent entities and their relationship data
-			$result = [];
-			
-			// Retrieve all annotations associated with the given entity.
-			// Annotations contain metadata about the entity's properties and relationships
-			$annotationList = $this->getEntityStore()->getAnnotations($entity);
+			// Retrieve metadata for entity
+			$metadata = $this->getEntityStore()->getMetadata($entity);
 			
 			// Loop through each set of annotations for each property of the entity.
 			// Each property might have multiple annotations defining its behavior
-			foreach ($annotationList as $property => $annotations) {
+			$result = [];
+
+			foreach ($metadata->getAnnotations() as $property => $annotations) {
 				// Loop through the annotations for a single property of the entity.
 				foreach ($annotations as $annotation) {
 					// Check if the current annotation is a ManyToOne annotation or a bidirectional OneToOne.
@@ -953,10 +953,12 @@
 		 * @param string $entityClass Entity class name
 		 * @param string $property Property name
 		 * @return Cascade|null The cascade annotation if found, null otherwise
+		 * @throws EntityResolutionException
 		 */
 		private function getCascadeInfo(string $entityClass, string $property): ?Cascade {
 			// Retrieve all annotations for the specified entity class from the entity store
-			$entityAnnotations = $this->entityStore->getAnnotations($entityClass);
+			$metadata = $this->entityStore->getMetadata($entityClass);
+			$entityAnnotations = $metadata->getAnnotations();
 			
 			// Check if the specified property exists in the entity annotations
 			// If not, return null immediately since no cascade can exist

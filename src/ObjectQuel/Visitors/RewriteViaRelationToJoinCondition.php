@@ -276,9 +276,12 @@
 				throw new TransformationException('OneToMany relation is missing mappedBy');
 			}
 			
+			// Fetch metadata of entity
+			$metadata = $this->entityStore->getMetadata($entityName);
+			
 			// For OneToMany, relationColumn is the PK on the parent side
 			// Default to the entity's primary key
-			$relationColumn = $relation->getRelationColumn() ?? $this->entityStore->getPrimaryKey($entityName) ?? throw new TransformationException('OneToMany relation is missing relationColumn and PK');
+			$relationColumn = $relation->getRelationColumn() ?? $metadata->getPrimaryKey() ?? throw new TransformationException('OneToMany relation is missing relationColumn and PK');
 			
 			// Return the new property lookup
 			return $this->createPropertyLookupAst($mappedBy, $range, $relationColumn);
@@ -306,7 +309,8 @@
 			}
 			
 			if (!empty($mappedBy)) {
-				$relationColumn = $relation->getRelationColumn() ?? $this->entityStore->getPrimaryKey($entityName) ?? throw new TransformationException('OneToOne relation is missing relationColumn and PK');
+				$metadata = $this->entityStore->getMetadata($entityName);
+				$relationColumn = $relation->getRelationColumn() ?? $metadata->getPrimaryKey() ?? throw new TransformationException('OneToOne relation is missing relationColumn and PK');
 				return $this->createPropertyLookupAst($relationColumn, $range, $mappedBy);
 			}
 			

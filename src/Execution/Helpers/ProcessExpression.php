@@ -539,7 +539,8 @@
 			// Derive the FTS5 virtual table name from the entity's FullTextIndex annotation.
 			$entityName = $identifiers[0]->getEntityName() ?? '';
 			$propertyNames = $this->extractPropertyNames($identifiers);
-			$ftIndex = $this->entityStore->getFullTextIndexForColumns($entityName, $propertyNames);
+			$metadata = $this->entityStore->getMetadata($entityName);
+			$ftIndex = $metadata->getFullTextIndexForColumns($propertyNames);
 			
 			// Fall back to a conventional name if no annotation is found.
 			$ftsTable = $ftIndex !== null ? $ftIndex->getName() : 'fts_' . strtolower(basename(str_replace('\\', '/', $entityName)));
@@ -665,7 +666,8 @@
 			// In SORT context, find the Column annotation for this property so we can
 			// inspect nullability and type. Filter to Column instances only since a
 			// property may carry multiple annotation types (e.g. Index, Relation).
-			$annotations = $this->entityStore->getAnnotations($entityName);
+			$metadata = $this->entityStore->getMetadata($entityName);
+			$annotations = $metadata->getAnnotations();
 			$columnAnnotations = array_values(array_filter(
 				$annotations[$propertyName] ?? [],
 				fn($annotation) => $annotation instanceof Column
@@ -929,7 +931,8 @@
 			
 			// Collect the property names being searched
 			$propertyNames = $this->extractPropertyNames($identifiers);
-			return $this->entityStore->getFullTextIndexForColumns($entityName, $propertyNames) !== null;
+			$metadata = $this->entityStore->getMetadata($entityName);
+			return $metadata->getFullTextIndexForColumns($propertyNames) !== null;
 		}
 		
 		/**

@@ -115,7 +115,8 @@
 			
 			// Fetch Column annotations so the serializer can normalize each raw database value
 			// to the correct PHP type (e.g. datetime string → DateTimeImmutable)
-			$annotations = $this->entityStore->getAnnotationsOfType($entity, Column::class);
+			$metadata = $this->entityStore->getMetadata($entity);
+			$annotations = $metadata->getAnnotationsOfType(Column::class);
 			
 			foreach ($fetchedValues as $property => $newValue) {
 				// Fetch first column annotation

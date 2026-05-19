@@ -7,6 +7,7 @@
 	use Quellabs\ObjectQuel\Annotations\SerializationGroups;
 	use Quellabs\ObjectQuel\DatabaseAdapter\TypeMapper;
 	use Quellabs\ObjectQuel\EntityStore;
+	use Quellabs\ObjectQuel\Exception\EntityResolutionException;
 	use Quellabs\ObjectQuel\ReflectionManagement\PropertyHandler;
 	use Quellabs\ObjectQuel\ReflectionManagement\ReflectionHandler;
 	use Quellabs\ObjectQuel\Serialization\Normalizer\NormalizerInterface;
@@ -136,6 +137,7 @@
 		 * Extracts all values from the entity that are marked as Column.
 		 * @param object $entity The entity from which the values must be extracted.
 		 * @return array<string, mixed> An array with property names as keys and their values.
+		 * @throws EntityResolutionException
 		 */
 		public function serialize(object $entity): array {
 			// Early return if the entity does not exist in the entity store.
@@ -143,13 +145,13 @@
 				return [];
 			}
 			
-			// Retrieve annotations for the entity class.
-			$annotationList = $this->entityStore->getAnnotations($entity);
+			// Retrieve metadata for the entity class.
+			$metadata = $this->entityStore->getMetadata($entity);
 			
 			// Iterate through each property's annotations.
 			$result = [];
 			
-			foreach ($annotationList as $property => $annotations) {
+			foreach ($metadata->getAnnotations() as $property => $annotations) {
 				// Find the first valid annotation.
 				foreach ($annotations as $annotation) {
 					if ($annotation instanceof Column) {
@@ -181,16 +183,17 @@
 		 * @param object $entity De entiteit waarin de waarden geïnjecteerd moeten worden.
 		 * @param array<string, mixed> $values De te injecteren waarden, met property namen als keys.
 		 * @return void
+		 * @throws EntityResolutionException
 		 */
 		public function deserialize(object $entity, array $values): void {
 			// Store the class name
 			$className = get_class($entity);
 			
-			// Retrieve annotations for the entity class to understand how to map properties
-			$annotationList = $this->entityStore->getAnnotations($entity);
+			// Retrieve metadata for entity
+			$metadata = $this->entityStore->getMetadata($entity);
 			
 			// Loop through each property's annotations to check how each should be handled
-			foreach ($annotationList as $property => $annotations) {
+			foreach ($metadata->getAnnotations() as $property => $annotations) {
 				// Skip this property if the provided data array doesn't contain this column name
 				if (!array_key_exists($property, $values)) {
 					continue;

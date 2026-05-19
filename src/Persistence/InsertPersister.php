@@ -245,7 +245,7 @@
 			}
 			
 			// Get all annotations for the entity from the entity store
-			$annotations = $this->entityStore->getAnnotations($entity);
+			$annotations = $metadata->getAnnotations();
 			
 			// If no annotations exist for the specified primary key, return "identity"
 			if (empty($annotations[$primaryKey])) {

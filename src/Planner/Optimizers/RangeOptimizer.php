@@ -502,9 +502,9 @@
 			string $relatedPropertyName
 		): bool {
 			// Load all annotations for the entity, grouped by property
-			$annotationBucket = $this->entityStore->getAnnotations($entityName);
+			$metadata = $this->entityStore->getMetadata($entityName);
 			
-			foreach ($annotationBucket as $annotations) {
+			foreach ($metadata->getAnnotations() as $annotations) {
 				// Both flags must be set on the same property for a match:
 				// @RequiredRelation marks the relation as non-nullable, and the
 				// relation annotation itself must confirm the correct join columns

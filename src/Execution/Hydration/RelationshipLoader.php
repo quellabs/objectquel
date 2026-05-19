@@ -409,7 +409,8 @@
 			// Determine which property on this entity holds its primary key value.
 			// The OneToMany annotation may specify a relationColumn explicitly;
 			// if not, fall back to the entity's primary key.
-			$relationColumn = $dependency->getRelationColumn() ?? $this->entityStore->getPrimaryKey($entity);
+			$metadata = $this->entityStore->getMetadata($targetEntity);
+			$relationColumn = $dependency->getRelationColumn() ?? $metadata->getPrimaryKey();
 			
 			if ($relationColumn === null) {
 				return;

@@ -58,35 +58,19 @@
 		
 		/**
 		 * Prepares all entity metadata needed for JavaScript code generation
-		 * @param EntityStore $entityStore The entity store instance for metadata retrieval
 		 * @return array{
 		 *     columns: array<string, string>,
 		 *     identifiers: array<int, string>,
 		 *     columnAnnotations: array<string, array<int, Column>>,
 		 *     relationships: array<int, string>
 		 * }
-		 * @throws EntityResolutionException
 		 */
-		protected function prepareEntityData(EntityStore $entityStore): array {
+		protected function prepareEntityData(): array {
 			return [
 				'columns'           => $this->metadata->columnMap,
 				'identifiers'       => $this->metadata->identifierKeys,
-				'columnAnnotations' => $entityStore->getAnnotationsOfType($this->entityName, Column::class),
-				'relationships'     => $this->extractManyToOneRelationShips()
+				'columnAnnotations' => $this->metadata->getAnnotationsOfType(Column::class),
+				'relationships'     => array_keys($this->metadata->getOneToManyDependencies())
 			];
-		}
-		
-		/**
-		 * Extracts one-to-many relationship properties from the entity
-		 * @return array<int, string> Array of property names that represent one-to-many relationships
-		 */
-		protected function extractManyToOneRelationShips(): array {
-			$result = [];
-			
-			foreach ($this->metadata->getOneToManyDependencies() as $property => $annotation) {
-				$result[] = $property;
-			}
-			
-			return $result;
 		}
 	}

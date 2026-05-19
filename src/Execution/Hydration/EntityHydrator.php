@@ -257,7 +257,8 @@
 		private function enrichEntityFromJsonSources(object $entity, string $entityName, array $fullRow, array $jsonRangeNames): void {
 			// Collect @SourceField annotations for this entity class, keyed by property name.
 			// getAnnotationsOfType() returns array<string, array<int, T>>.
-			$jsonFieldAnnotations = $this->entityStore->getAnnotationsOfType($entityName, SourceField::class);
+			$metadata = $this->entityStore->getMetadata($entityName);
+			$jsonFieldAnnotations = $metadata->getAnnotationsOfType(SourceField::class);
 			
 			// Nothing to do when the entity declares no @SourceField properties
 			if (empty($jsonFieldAnnotations)) {
@@ -537,7 +538,8 @@
 			}
 			
 			// Retrieve annotations for the entity from the entity store
-			$annotations = $this->entityStore->getAnnotations($entityName);
+			$metadata = $this->entityStore->getMetadata($entityName);
+			$annotations = $metadata->getAnnotations();
 			
 			// Iterate through all annotations for this property
 			foreach ($annotations[$propertyName] ?? [] as $annotation) {

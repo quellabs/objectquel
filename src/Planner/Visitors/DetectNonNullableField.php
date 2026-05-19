@@ -205,7 +205,8 @@
 			}
 			
 			// Property not mapped — treat as nullable to avoid false positives
-			$annotations = $this->entityStore->getAnnotations($entityName);
+			$metadata = $this->entityStore->getMetadata($entityName);
+			$annotations = $metadata->getAnnotations();
 			
 			if (!isset($annotations[$fieldName])) {
 				return false;

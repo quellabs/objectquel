@@ -90,6 +90,7 @@
 		 * @param string $property The property name on the dependent entity that holds the relation.
 		 * @param ManyToOne|OneToOne $relation The relation annotation/metadata object.
 		 * @return string
+		 * @throws EntityResolutionException
 		 */
 		private function buildRangeString(
 			string $alias,
@@ -98,6 +99,9 @@
 			string $property,
 			ManyToOne|OneToOne $relation
 		): string {
+			// Fetch entity metadata
+			$metadata = $this->entityStore->getMetadata($entityType);
+			
 			// The relation column is the foreign-key column on the *dependent* side.
 			// The annotation may declare it explicitly; if not, we fall back to the
 			// conventional "{propertyName}Id" naming (e.g. property "order" → "orderId").
@@ -110,7 +114,7 @@
 			//   3. Neither available → programming error; throw immediately rather than
 			//      silently producing a broken join clause.
 			$foreignColumn = $relation->getForeignColumn()
-				?? $this->entityStore->getPrimaryKey($entityType)
+				?? $metadata->getPrimaryKey()
 				?? throw new \RuntimeException("Entity '{$entityType}' has no primary key defined.");
 			
 			// Produces a clause like:

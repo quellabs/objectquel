@@ -112,7 +112,8 @@
 			}
 			
 			// Get all annotations for the entity that this identifier belongs to
-			$annotationList = $this->entityStore->getAnnotations($entityName);
+			$metadata = $this->entityStore->getMetadata($entityName);
+			$annotationList = $metadata->getAnnotations();
 			
 			// Check if this specific identifier has any annotations
 			if (!isset($annotationList[$identifier->getName()])) {

@@ -249,6 +249,7 @@
 			}, $identifiers);
 			
 			// Check the entity store for full text indexes
-			return $this->entityStore->getFullTextIndexForColumns($entityName, $propertyNames);
+			$metadata = $this->entityStore->getMetadata($entityName);
+			return $metadata->getFullTextIndexForColumns($propertyNames);
 		}
 	}
