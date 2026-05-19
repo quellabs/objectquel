@@ -2,9 +2,6 @@
 	
 	namespace Quellabs\ObjectQuel\Collections;
 	
-	use Countable;
-	use ArrayAccess;
-	use Iterator;
 	use Quellabs\ObjectQuel\EntityManager;
 	use Quellabs\ObjectQuel\EntityStore;
 	use Quellabs\ObjectQuel\Exception\EntityResolutionException;
@@ -20,12 +17,6 @@
 		
 		/** @var EntityManager */
 		protected EntityManager $entity_manager;
-		
-		/** @var EntityStore */
-		protected EntityStore $entity_store;
-		
-		/** @var PropertyHandler */
-		protected PropertyHandler $property_handler;
 		
 		/** @var Collection<T> */
 		protected Collection $collection;
@@ -50,10 +41,14 @@
 		 * @param mixed $id The id value of the parent entity
 		 * @param string $sortOrder Optional sort order for the collection
 		 */
-		public function __construct(EntityManager $entityManager, string $targetEntity, string $propertyName, mixed $id, string $sortOrder = '') {
+		public function __construct(
+			EntityManager $entityManager,
+			string $targetEntity,
+			string $propertyName,
+			mixed $id,
+			string $sortOrder = ''
+		) {
 			$this->entity_manager = $entityManager;
-			$this->entity_store = $entityManager->getUnitOfWork()->getEntityStore();
-			$this->property_handler = $entityManager->getUnitOfWork()->getPropertyHandler();
 			$this->collection = new Collection($sortOrder);
 			$this->target_entity = $targetEntity;
 			$this->property_name = $propertyName;
@@ -96,9 +91,7 @@
 				// Add each found entity to the collection
 				// But first check if the entity is already present in the collection to avoid duplicates
 				foreach ($entities as $entity) {
-					if (!$this->contains($entity)) {
-						$this->collection[] = $entity;
-					}
+					$this->collection->offsetSet(spl_object_hash($entity), $entity);
 				}
 			} catch (QuelException $e) {
 				// Log the exception or handle it appropriately
@@ -125,18 +118,8 @@
 		 * @throws QuelException|EntityResolutionException
 		 */
 		public function contains(object $entity): bool {
-			// For performance, we can check if the entity exists without initializing
-			// the entire collection in some cases
-			$objectId = spl_object_hash($entity);
-			
-			// If already initialized or the entity is in the collection, return the result
-			if ($this->initialized) {
-				return $this->collection->containsKey($objectId);
-			}
-			
-			// Otherwise initialize and check
 			$this->doInitialize();
-			return $this->collection->containsKey($objectId);
+			return $this->collection->containsKey(spl_object_hash($entity));
 		}
 		
 		/**
@@ -154,7 +137,7 @@
 		 * @return T|null
 		 * @throws QuelException|EntityResolutionException
 		 */
-		public function current(): mixed {
+		public function current(): ?object {
 			$this->doInitialize();
 			return $this->collection->current();
 		}
@@ -193,11 +176,11 @@
 		
 		/**
 		 * Returns the element at the specified offset, or null if the offset does not exist.
-		 * @param mixed $offset The offset to retrieve
+		 * @param string|int $offset The offset to retrieve
 		 * @return T|null
 		 * @throws QuelException|EntityResolutionException
 		 */
-		public function offsetGet(mixed $offset): mixed {
+		public function offsetGet(mixed $offset): ?object {
 			$this->doInitialize();
 			return $this->collection->offsetGet($offset);
 		}
@@ -205,15 +188,22 @@
 		/**
 		 * Sets an element at the specified offset.
 		 * If no offset is provided, uses the entity's object hash as key.
-		 * @param mixed $offset The offset to assign the value to, or null to append
+		 * @param string|int|null $offset The offset to assign the value to, or null to append
 		 * @param T $value The entity to store
 		 * @return void
 		 * @throws QuelException|EntityResolutionException
 		 */
 		public function offsetSet(mixed $offset, mixed $value): void {
+			// Run lazy load query if not already done
 			$this->doInitialize();
 			
-			if (is_null($offset)) {
+			// Do nothing if the value is not an object
+			if (!is_object($value)) {
+				return;
+			}
+			
+			// No offset. Add value to collection
+			if ($offset === null) {
 				$this->collection->offsetSet(spl_object_hash($value), $value);
 			} else {
 				$this->collection->offsetSet($offset, $value);

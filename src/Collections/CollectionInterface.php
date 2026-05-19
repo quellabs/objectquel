@@ -4,8 +4,8 @@
 	
 	/**
 	 * @template T of object
-	 * @extends \ArrayAccess<int, T>
-	 * @extends \Iterator<int, T>
+	 * @extends \ArrayAccess<string|int, T>
+	 * @extends \Iterator<string|int, T>
 	 */
 	interface CollectionInterface extends \ArrayAccess, \Iterator, \Countable {
 		
@@ -63,14 +63,14 @@
 		
 		/**
 		 * Returns the element at the specified offset, or null if the offset does not exist.
-		 * @param mixed $offset The offset to retrieve
+		 * @param string|int $offset The offset to retrieve
 		 * @return T|null
 		 */
 		public function offsetGet(mixed $offset): mixed;
 		
 		/**
 		 * Sets an element at the specified offset.
-		 * @param mixed $offset The offset to assign the value to, or null to append
+		 * @param string|int|null $offset The offset to assign the value to, or null to append
 		 * @param T $value The entity to store
 		 * @return void
 		 */
@@ -80,5 +80,5 @@
 		 * Returns the element at the current iterator position, or null if the position is invalid.
 		 * @return T|null
 		 */
-		public function current(): mixed;
+		public function current(): ?object;
 	}
