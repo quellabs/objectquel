@@ -53,7 +53,11 @@
 		 * @return string The index name or empty string if not defined
 		 */
 		public function getName(): string {
-			return $this->parameters['name'] ?? '';
+			if (!is_string($this->parameters['name'] ?? null)) {
+				return '';
+			}
+			
+			return $this->parameters['name'];
 		}
 		
 		/**
@@ -62,6 +66,15 @@
 		 * @return array<int, string> List of property names included in the full-text index
 		 */
 		public function getColumns(): array {
-			return $this->parameters['columns'] ?? [];
+			// Read the configured columns or fall back to an empty array
+			$columns = $this->parameters['columns'] ?? [];
+			
+			// Guard against invalid annotation values
+			if (!is_array($columns)) {
+				return [];
+			}
+			
+			// Keep only string values and normalize keys to sequential integers
+			return array_values(array_filter($columns, 'is_string'));
 		}
 	}

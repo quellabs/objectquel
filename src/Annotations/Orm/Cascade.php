@@ -41,11 +41,16 @@
 		 * @return array<int, string> List of operations to cascade
 		 */
 		public function getOperations(): array {
-			if (!is_array($this->parameters['operations'])) {
+			if (!isset($this->parameters['operations']) || !is_array($this->parameters['operations'])) {
 				return [];
 			}
 			
-			return $this->parameters['operations'];
+			$operations = array_filter(
+				$this->parameters['operations'],
+				static fn($operation): bool => is_string($operation)
+			);
+			
+			return array_values($operations);
 		}
 		
 		/**
