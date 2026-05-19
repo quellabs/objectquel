@@ -382,6 +382,7 @@
 				
 				// Loop through all registered entities
 				foreach (array_keys($this->entityRegistry) as $className) {
+					// Fetch metadata
 					$metadata = $this->getMetadata($className);
 					
 					// Add ManyToOne dependencies
