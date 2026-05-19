@@ -10,62 +10,98 @@
 	 */
 	abstract class BasicEnum {
 
-		/**
-		 * Cache for storing reflection constants to avoid repeated reflection calls
-		 * Static property shared across all child classes
-		 * @var array<string, mixed>
-		 */
+		/** @var array<class-string, array<string, mixed>> */
 		private static array $constCache = [];
 		
 		/**
-		 * Returns all the constants defined in the calling enum class
-		 * @return array<string, mixed> Array of constant name => value pairs, or null if none found
+		 * Returns all the constants in this Enum
+		 * @return array<string, mixed>
+		 * @throws \ReflectionException
 		 */
 		public static function getConstants(): array {
-			// Check if constants are already cached to avoid repeated reflection
-			if (self::$constCache === []) {
-				$reflect = new \ReflectionClass(get_called_class());
-				self::$constCache = $reflect->getConstants();
+			$class = get_called_class();
+			
+			if (!isset(self::$constCache[$class])) {
+				$reflect = new \ReflectionClass($class);
+				self::$constCache[$class] = $reflect->getConstants();
 			}
 			
-			return self::$constCache;
+			return self::$constCache[$class];
 		}
 		
 		/**
-		 * Converts an enum constant name to its corresponding value
-		 * @param string $key The constant name to look up
-		 * @param bool $strict Whether to perform case-sensitive matching (default: false)
-		 * @return bool|int|string The constant value if found, false if not found
+		 * Returns the lowest value in this enum
+		 * @return mixed
+		 * @throws \ReflectionException
 		 */
-		public static function toValue(string $key, bool $strict = false): bool|int|string {
+		public static function lowestValue(): mixed {
+			$values = array_values(self::getConstants());
+			
+			if ($values === []) {
+				throw new \LogicException('Enum has no constants');
+			}
+			
+			return min($values);
+		}
+		
+		/**
+		 * Returns true if the given name is present in the enum, false if not
+		 * @param string $name
+		 * @param bool $strict
+		 * @return bool
+		 * @throws \ReflectionException
+		 */
+		public static function isValidName(string $name, $strict = false): bool {
 			$constants = self::getConstants();
 			
-			// Case-sensitive lookup: return value if key exists, false otherwise
+			if ($strict) {
+				return array_key_exists($name, $constants);
+			}
+			
+			$keys = array_map('strtolower', array_keys($constants));
+			return in_array(strtolower($name), $keys, true);
+		}
+		
+		/**
+		 * Returns true if the given value is present in the enum, false if not
+		 * @param mixed $value
+		 * @return bool
+		 * @throws \ReflectionException
+		 */
+		public static function isValidValue(mixed $value): bool {
+			return in_array($value, self::getConstants(), true);
+		}
+		
+		/**
+		 * Converts a key to a value
+		 * @param string $key
+		 * @param bool $strict
+		 * @return mixed
+		 * @throws \ReflectionException
+		 */
+		public static function toValue(string $key, bool $strict = false): mixed {
+			$constants = self::getConstants();
+			
 			if ($strict) {
 				return array_key_exists($key, $constants) ? $constants[$key] : false;
 			}
 			
-			// Case-insensitive lookup: iterate through all constants
 			foreach ($constants as $k => $v) {
-				if (strcasecmp($key, $k) == 0) {
+				if (strcasecmp($key, $k) === 0) {
 					return $v;
 				}
 			}
 			
-			// Return false if no matching key found
 			return false;
 		}
 		
 		/**
-		 * Performs reverse lookup to find the constant name for a given value.
-		 * Note: If multiple constants have the same value, this will return
-		 * the first match found by array_search().
-		 * @param mixed $value The enum value to convert to a constant name
-		 * @return bool|int|string The constant name if found, false if not found
+		 * Converts a value to a key
+		 * @param mixed $value
+		 * @return bool|int|string
+		 * @throws \ReflectionException
 		 */
 		public static function toString(mixed $value): bool|int|string {
-			// Use array_search to find the key for the given value
-			// Returns the key if found, false if not found
-			return array_search($value, self::getConstants());
+			return array_search($value, self::getConstants(), true);
 		}
 	}
