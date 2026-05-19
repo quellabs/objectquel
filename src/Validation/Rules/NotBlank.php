@@ -28,10 +28,22 @@
 			return $this->conditions;
 		}
 		
+		/**
+		 * Validates that the given value is not empty after trimming whitespace.
+		 * @param mixed $value The value to validate.
+		 * @return bool True when the value contains non-whitespace characters, false otherwise.
+		 */
 		public function validate(mixed $value): bool {
-			return strlen(trim($value)) > 0;
+			// Convert scalar values to strings and remove surrounding whitespace.
+			// Non-scalar values are treated as empty.
+			$normalizedValue = is_scalar($value) ? trim((string)$value) : '';
+			return strlen($normalizedValue) > 0;
 		}
 		
+		/**
+		 * Returns error
+		 * @return string
+		 */
 		public function getError(): string {
 			if (!empty($this->errorMessage)) {
 				return $this->errorMessage;

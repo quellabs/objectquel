@@ -19,23 +19,34 @@
 			$this->conditions = $conditions;
 			$this->errorMessage = $errorMessage;
 		}
-
+		
 		/**
 		 * Returns the conditions used in this Rule
 		 * @return array<string, mixed>
 		 */
-		public function getConditions() : array {
+		public function getConditions(): array {
 			return $this->conditions;
 		}
 		
-		public function validate(mixed  $value): bool {
-            if (($value === "") || is_null($value)) {
-                return true;
-            }
-            
-            return $this->dateExtractFormat($value) !== false;
+		/**
+		 * Validates that the given value matches a recognizable date format.
+		 * @param mixed $value The value to validate.
+		 * @return bool True when the value is a valid date string, false otherwise.
+		 */
+		public function validate(mixed $value): bool {
+			// Allow empty values; required validation belongs elsewhere.
+			if ($value === '' || $value === null) {
+				return true;
+			}
+			
+			// Only strings can be validated as dates.
+			return is_string($value) && $this->dateExtractFormat($value) !== false;
 		}
 		
+		/**
+		 * Return error
+		 * @return string
+		 */
 		public function getError(): string {
 			if (!empty($this->errorMessage)) {
 				return $this->errorMessage;
@@ -76,7 +87,7 @@
 		 */
 		protected function patterns(): array {
 			return [
-				'/\b\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}.\d{3,8}Z\b/'     => 'Y-m-d\TH:i:s.u\Z', // format DATE ISO 8601
+				'/\b\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}.\d{3,8}Z\b/'  => 'Y-m-d\TH:i:s.u\Z', // format DATE ISO 8601
 				'/\b\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[1-2]\d|3[0-1])\b/' => 'Y-m-d',
 				'/\b\d{4}-(0[1-9]|[1-2]\d|3[0-1])-(0[1-9]|1[0-2])\b/' => 'Y-d-m',
 				'/\b([1-9]|[1-2]\d|3[0-1])-([1-9]|1[0-2])-\d{4}\b/'   => 'd-m-Y',

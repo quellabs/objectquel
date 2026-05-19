@@ -6,12 +6,12 @@
 	
 	class RegExp implements ValidationInterface {
 		
-		/** @var array<string, mixed> */
+		/** @var array{regexp?: string} */
 		protected array $conditions;
 		protected ?string $errorMessage;
 		
 		/**
-		 * Email constructor
+		 * RegExp constructor
 		 * @param array<string, mixed> $conditions
 		 * @param string|null $errorMessage
 		 */
@@ -28,14 +28,30 @@
 			return $this->conditions;
 		}
 		
+		/**
+		 * Validates that the given value matches the configured regular expression.
+		 * @param mixed $value The value to validate.
+		 * @return bool True when the value matches the configured pattern, false otherwise.
+		 */
 		public function validate(mixed $value): bool {
-			if (($value === "") || is_null($value) || empty($this->conditions["regexp"])) {
+			// Allow empty values and skip validation when no pattern is configured.
+			if ($value === '' || $value === null || empty($this->conditions['regexp'])) {
 				return true;
 			}
 			
-			return preg_match($this->conditions["regexp"], $value) !== false;
+			// Only strings can be validated against a regular expression.
+			if (!is_string($value)) {
+				return false;
+			}
+			
+			// Return true only when the pattern successfully matches.
+			return preg_match($this->conditions['regexp'], $value) === 1;
 		}
 		
+		/**
+		 * Return error
+		 * @return string
+		 */
 		public function getError(): string {
 			if (!empty($this->errorMessage)) {
 				return $this->errorMessage;

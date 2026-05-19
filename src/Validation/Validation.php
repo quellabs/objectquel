@@ -5,52 +5,67 @@
 	class Validation {
 		
 		/**
-		 * Validate the data
-		 * @param array<string, mixed> $input
-		 * @param array<string, ValidationInterface|array<ValidationInterface>> $rules
-		 * @param array<string, string|array<string>|null> $errors
+		 * Validates input data against the provided validation rules.
+		 * @param array<string, mixed> $input Input data to validate
+		 * @param array<string, ValidationInterface|array<ValidationInterface>> $rules Validation rules keyed by input field
+		 * @param array<string, string|array<string>> $errors Validation errors keyed by input field
 		 * @return void
 		 */
 		public function validate(array $input, array $rules, array &$errors): void {
-			foreach ($rules as $key => $value) {
-				if (is_array($value)) {
-					foreach ($value as $v) {
-						if (!$v->validate($input[$key])) {
-							$errors[$key] = $this->replaceVariablesInErrorString($v->getError(), array_merge($v->getConditions(), [
-								'key'   => $key,
-								'value' => $input[$key],
-							]));
-						}
+			foreach ($rules as $key => $validators) {
+				// Normalize validators so we can always iterate over an array
+				$validators = is_array($validators) ? $validators : [$validators];
+				
+				// Missing input values are treated as null
+				$value = $input[$key] ?? null;
+				
+				// Run all validator
+				foreach ($validators as $validator) {
+					// Continue when validation succeeds
+					if ($validator->validate($value)) {
+						continue;
 					}
 					
-					continue;
-				}
-				
-				if (!$value->validate($input[$key])) {
-					$errors[$key] = $this->replaceVariablesInErrorString($value->getError(), array_merge($value->getConditions(), [
-						'key'   => $key,
-						'value' => $input[$key],
-					]));
+					// Store the formatted error message for the failed validator
+					$errors[$key] = $this->replaceVariablesInErrorString(
+						$validator->getError(),
+						array_merge(
+							$validator->getConditions(),
+							[
+								'key'   => $key,
+								'value' => $value,
+							]
+						)
+					);
+					
+					// Stop at the first validation error for this field
+					break;
 				}
 			}
 		}
 		
 		/**
-		 * Takes an error string and replaces variables within with the values stored in $variables
-		 * @template T of string|array
-		 * @param T $string
-		 * @param array<string, mixed> $variables
-		 * @return (T is array<string> ? array<string> : string)|null
+		 * Replaces template variables inside an error string or array of strings.
+		 * @template T of string|array<string>
+		 * @param T $string Error string or array of error strings
+		 * @param array<string, mixed> $variables Variables available for replacement
+		 * @return T
 		 */
-		protected function replaceVariablesInErrorString(string|array $string, array $variables): string|array|null {
-			$pattern = '/{{\s{1}([a-zA-Z_]\w*)\s{1}}}/';
-			
-			return preg_replace_callback(
-				$pattern,
+		protected function replaceVariablesInErrorString(string|array $string, array $variables): string|array {
+			// Replace {{ variable }} placeholders with provided values
+			$result = preg_replace_callback(
+				'/{{\s*([a-zA-Z_]\w*)\s*}}/',
 				function (array $matches) use ($variables): string {
-					return (string) ($variables[$matches[1]] ?? '');
+					// Use empty string when variable is not available
+					$value = $variables[$matches[1]] ?? '';
+					
+					// Only scalar values can be converted to strings
+					return is_scalar($value) ? (string)$value : '';
 				},
 				$string
 			);
+			
+			// preg_replace_callback may return null on failure
+			return $result ?? $string;
 		}
 	}

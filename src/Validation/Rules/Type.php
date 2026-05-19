@@ -103,10 +103,18 @@
 			if ($value === null || $value === '') {
 				return true;
 			}
-			
+
 			// Nothing to validate without a type constraint
 			if (!isset($this->conditions['type'])) {
 				return true;
+			}
+
+			// Validate type of type constraint
+			$typeCondition = $this->conditions['type'];
+			
+			if (!is_string($typeCondition) || $typeCondition === '') {
+				$this->error = "Invalid type constraint.";
+				return false;
 			}
 			
 			// Normalize deprecated/alias type names (e.g. 'long' -> 'int', 'boolean' -> 'bool')
@@ -187,10 +195,6 @@
 		
 		/**
 		 * Returns the error message from the last failed validation.
-		 *
-		 * If a custom message was provided at construction, it always takes precedence
-		 * over any generated message, regardless of which type check failed.
-		 *
 		 * @return string The custom error message if set, otherwise the generated one
 		 */
 		public function getError(): string {

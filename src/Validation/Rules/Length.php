@@ -30,17 +30,31 @@
 			return $this->conditions;
 		}
 		
+		/**
+		 * Validates that the given value satisfies configured length constraints.
+		 * @param mixed $value The value to validate.
+		 * @return bool True when valid, false otherwise.
+		 */
 		public function validate(mixed $value): bool {
-			if (($value === "") || is_null($value)) {
+			// Allow empty values; required validation belongs elsewhere.
+			if ($value === '' || $value === null) {
 				return true;
 			}
 			
-			if (isset($this->conditions['min']) && strlen($value) < $this->conditions['min']) {
+			// Only scalar values can be measured for string length.
+			// Non-scalar values are treated as zero-length.
+			$length = is_scalar($value) ? strlen((string)$value) : 0;
+			$min = $this->conditions['min'] ?? null;
+			$max = $this->conditions['max'] ?? null;
+			
+			// Fail when the value is shorter than the configured minimum.
+			if (is_int($min) && $length < $min) {
 				$this->error = "This value is too short. It should have {{ min }} characters or more.";
 				return false;
 			}
 			
-			if (isset($this->conditions['max']) && strlen($value) > $this->conditions['max']) {
+			// Fail when the value exceeds the configured maximum.
+			if (is_int($max) && $length > $max) {
 				$this->error = "This value is too long. It should have {{ max }} characters or less.";
 				return false;
 			}
