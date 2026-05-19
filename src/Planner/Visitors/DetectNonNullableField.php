@@ -5,6 +5,7 @@
 	use Quellabs\ObjectQuel\Annotations\Orm\Column;
 	use Quellabs\ObjectQuel\EntityStore;
 	use Quellabs\ObjectQuel\Exception\EntityResolutionException;
+	use Quellabs\ObjectQuel\Metadata\EntityMetadataRecord;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstIdentifier;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRangeDatabaseSubquery;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRetrieve;
@@ -22,6 +23,8 @@
 	 *
 	 * Pass a $subquery to activate the subquery strategy; omit it (or pass null)
 	 * for the direct entity strategy.
+	 *
+	 * @phpstan-import-type ColumnDefinitionRecord from EntityMetadataRecord
 	 */
 	class DetectNonNullableField implements AstVisitorInterface {
 		

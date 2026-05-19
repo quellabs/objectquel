@@ -304,8 +304,11 @@
 						// Complete short entity names to their full namespace form
 						$targetEntity = $this->entityStore->resolveProxyClass($dependency->getTargetEntity());
 						
+						// Fetch metadata for this entity
+						$metadata = $this->entityStore->getMetadata($targetEntity);
+						
 						// Fetch the relation column. If absent use the primary key
-						$relationColumn = $dependency->getRelationColumn() ?? $this->entityStore->getPrimaryKey($entity);
+						$relationColumn = $dependency->getRelationColumn() ?? $metadata->getPrimaryKey();
 						
 						if ($relationColumn === null) {
 							throw new QuelException(

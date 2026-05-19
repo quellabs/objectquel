@@ -29,6 +29,7 @@
 	use Quellabs\ObjectQuel\Annotations\Orm\ManyToOne;
 	use Quellabs\ObjectQuel\Annotations\Orm\UniqueIndex;
 	use Quellabs\ObjectQuel\Annotations\Orm\Version;
+	use Quellabs\ObjectQuel\DatabaseAdapter\DatabaseAdapter;
 	
 	/**
 	 * Immutable value object containing all metadata for a single entity.
@@ -40,11 +41,29 @@
 	 *
 	 * All properties are readonly to ensure immutability and prevent accidental
 	 * modification of cached metadata.
+	 *
+	 * @phpstan-import-type ColumnDefinition from DatabaseAdapter
+	 *
+	 * @phpstan-type ColumnDefinitionRecord array{
+	 *       property_name: string,
+	 *       type: string,
+	 *       php_type: \ReflectionType|null,
+	 *       limit: mixed,
+	 *       nullable: bool,
+	 *       unsigned: bool,
+	 *       default: mixed,
+	 *       primary_key: bool,
+	 *       scale: mixed,
+	 *       precision: mixed,
+	 *       identity: bool,
+	 *       values: mixed
+	 *  }
 	 */
 	readonly class EntityMetadataRecord {
 		
 		/**
 		 * Constructor for EntityMetadataRecord.
+		 *
 		 * @param string $className Fully qualified, normalized class name
 		 * @param string $tableName Database table name from @Table annotation
 		 * @param array<int, string> $properties Property names
@@ -58,20 +77,7 @@
 		 * @param array<string, OneToOne> $oneToOneRelations Property => OneToOne annotation mapping
 		 * @param array<Index|UniqueIndex|FullTextIndex> $indexes Index annotations from class level
 		 * @param string|null $autoIncrementColumn Property name of auto-increment primary key (if any)
-		 * @param array<string, array{
-		 *     property_name: string,
-		 *     type: string,
-		 *     php_type: \ReflectionType|null,
-		 *     limit: mixed,
-		 *     nullable: bool,
-		 *     unsigned: bool,
-		 *     default: mixed,
-		 *     primary_key: bool,
-		 *     scale: mixed,
-		 *     precision: mixed,
-		 *     identity: bool,
-		 *     values: mixed
-		 * }> $columnDefinitions
+		 * @param array<string, ColumnDefinitionRecord> $columnDefinitions
 		 */
 		public function __construct(
 			public string  $className,
@@ -172,5 +178,34 @@
 		 */
 		public function isVersioned(string $property): bool {
 			return isset($this->versionColumns[$property]);
+		}
+		
+		/**
+		 * Returns column definitions in the shape expected by the Sculpt subsystem (ColumnDefinition).
+		 * Converts ORM-internal metadata to the database-comparable format used by SchemaComparator.
+		 * @return array<string, ColumnDefinition>
+		 */
+		public function getColumnDefinitionsForSchema(): array {
+			$result = [];
+			
+			/** @noinspection PhpLoopCanBeConvertedToArrayMapInspection */
+			foreach ($this->columnDefinitions as $columnName => $def) {
+				$result[$columnName] = [
+					'type'        => $def['type'],
+					'php_type'    => $def['php_type'] instanceof \ReflectionNamedType ? $def['php_type']->getName() : 'mixed',
+					'limit'       => is_int($def['limit']) ? $def['limit'] : null,
+					'default'     => $def['default'],
+					'nullable'    => $def['nullable'],
+					'precision'   => is_int($def['precision']) ? $def['precision'] : null,
+					'scale'       => is_int($def['scale']) ? $def['scale'] : null,
+					'unsigned'    => $def['unsigned'],
+					'generated'   => null,
+					'identity'    => $def['identity'],
+					'primary_key' => $def['primary_key'],
+					'values'      => is_array($def['values']) ? $def['values'] : null,
+				];
+			}
+			
+			return $result;
 		}
 	}

@@ -396,29 +396,6 @@
 			
 			return $result;
 		}
-		
-		/**
-		 * Retrieve the ManyToOne dependencies for a given entity class.
-		 * This function uses annotations to determine which other entities
-		 * are related to the given entity class via a ManyToOne relationship.
-		 * The names of these related entities are returned as an array.
-		 * @param string|object $entity The name of the entity class to inspect
-		 * @return array<string, ManyToOne> An array of entity names with which the given class has a ManyToOne relationship
-		 * @throws EntityResolutionException
-		 */
-		public function getManyToOneDependencies(string|object $entity): array {
-			return $this->getMetadata($entity)->getManyToOneDependencies();
-		}
-		
-		/**
-		 * Retrieves all OneToMany dependencies for a specific entity.
-		 * @param string|object $entity The name of the entity for which you want to get the OneToMany dependencies
-		 * @return array<string, OneToMany> An associative array with the name of the target entity as key and the annotation as value
-		 * @throws EntityResolutionException
-		 */
-		public function getOneToManyDependencies(string|object $entity): array {
-			return $this->getMetadata($entity)->getOneToManyDependencies();
-		}
 
 		/**
 		 * Resolves the back-reference property name on the target entity for a ManyToOne or OneToOne relation.
@@ -507,16 +484,6 @@
 			return $this->getMetadata($entity)->getPrimaryKey();
 		}
 
-		/**
-		 * Extracts database column definitions from an entity class using reflection and annotations.
-		 * @param string $className The fully qualified class name of the entity
-		 * @return array<string, mixed> An associative array of column definitions indexed by column name
-		 * @throws EntityResolutionException
-		 */
-		public function getEntityColumnDefinitions(string $className): array {
-			return $this->getMetadata($className)->columnDefinitions;
-		}
-		
 		/**
 		 * Normalizes the primary key into an array.
 		 * This function checks if the given primary key is already an array.

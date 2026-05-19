@@ -729,6 +729,7 @@
 		 * Checks if a given entity is present in the identity map.
 		 * @param object $entity The entity to check.
 		 * @return bool Returns true if the entity is in the identity map, otherwise false.
+		 * @throws EntityResolutionException
 		 */
 		private function isInIdentityMap(object $entity): bool {
 			// Get the normalized class name of the entity.
@@ -775,6 +776,7 @@
 		 * for the given entity. If the parent entity doesn't exist, null is returned.
 		 * @param object $entity The entity for which to retrieve the parent entity and annotation.
 		 * @return array<int, array{entity: object, property: string, value: mixed}> An associative array with 'entity' and 'annotation' as keys, or null if not found.
+		 * @throws EntityResolutionException
 		 */
 		private function extractParentPrimaryKeyData(object $entity): array {
 			// Initialize an empty array to store the results.

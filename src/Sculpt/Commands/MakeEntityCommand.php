@@ -5,6 +5,7 @@
 	use Quellabs\ObjectQuel\Configuration;
 	use Quellabs\ObjectQuel\EntityStore;
 	use Quellabs\ObjectQuel\Exception\EntityResolutionException;
+	use Quellabs\ObjectQuel\Metadata\EntityMetadataRecord;
 	use Quellabs\ObjectQuel\Sculpt\Helpers\EntityModifier;
 	use Quellabs\ObjectQuel\Sculpt\SculptTypes;
 	use Quellabs\ObjectQuel\Sculpt\ServiceProvider;
@@ -27,6 +28,7 @@
 	 * @phpstan-import-type OrmRelationshipType from SculptTypes
 	 * @phpstan-import-type RelationshipMappingConfig from SculptTypes
 	 * @phpstan-import-type PropertyDefinition from SculptTypes
+	 * @phpstan-import-type ColumnDefinitionRecord from EntityMetadataRecord
 	 */
 	class MakeEntityCommand extends CommandBase {
 		

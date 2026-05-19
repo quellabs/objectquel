@@ -3,6 +3,7 @@
 	namespace Quellabs\ObjectQuel\Planner\Helpers;
 	
 	use Quellabs\ObjectQuel\EntityStore;
+	use Quellabs\ObjectQuel\Exception\EntityResolutionException;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstAny;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstBinaryOperator;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstCheckNull;
@@ -225,6 +226,7 @@
 		 * Determine whether the provided identifier refers to a known, non-nullable field.
 		 * @param AstIdentifier $id Identifier pointing to (or starting from) an entity member.
 		 * @return bool True if the field exists in metadata and is marked non-nullable; false otherwise.
+		 * @throws EntityResolutionException
 		 */
 		private function isNonNullableField(AstIdentifier $id): bool {
 			// Resolve the entity name (left side of "entity.field").
@@ -238,7 +240,8 @@
 			
 			// Pull the column definition map from metadata, e.g.:
 			//   ['id' => ['nullable' => false, ...], 'name' => ['nullable' => true, ...], ...]
-			$columnMap = $this->entityStore->getEntityColumnDefinitions($entityName);
+			$metadata = $this->entityStore->getMetadata($entityName);
+			$columnMap = $metadata->columnDefinitions;
 			
 			// Retrieve the immediate member name following the identifier (the "field").
 			// This assumes the AST organizes chained identifiers as a linked structure.

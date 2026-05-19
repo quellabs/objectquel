@@ -119,8 +119,10 @@
 		 */
 		private function compareSchemas(string $tableName, string $className, array $existingTables): array {
 			// Extract column definitions from entity class properties
-			$entityColumns = $this->entityStore->getEntityColumnDefinitions($className);
+			$metadata = $this->entityStore->getMetadata($className);
+			$entityColumns = $metadata->getColumnDefinitionsForSchema();
 			
+			// Entity without columns. Weird, but not impossible
 			if (empty($entityColumns)) {
 				throw new RuntimeException("No properties found for entity {$className}");
 			}
