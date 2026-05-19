@@ -82,12 +82,15 @@
 			// Fetch property name
 			$propertyName = $propertyNode->getName();
 			
+			// Fetch metadata
+			$metadata = $this->entityStore->getMetadata($entityName);
+			
 			// Collect all relation types for this entity into a single flat map
 			// keyed by property name so we can look up the annotation directly
 			$relations = array_merge(
-				$this->entityStore->getOneToOneDependencies($entityName),
-				$this->entityStore->getManyToOneDependencies($entityName),
-				$this->entityStore->getOneToManyDependencies($entityName)
+				$metadata->getOneToOneDependencies(),
+				$metadata->getManyToOneDependencies(),
+				$metadata->getOneToManyDependencies(),
 			);
 			
 			// Safeguard: isRelationProperty confirmed it exists, but verify before using
@@ -189,11 +192,14 @@
 			// Fetch property name from node
 			$propertyName = $node->getName();
 			
+			// Fetch metadata
+			$metadata = $this->entityStore->getMetadata($entityName);
+			
 			// Check if the property is a key in any of the dependencies
 			return array_key_exists($propertyName, array_merge(
-				$this->entityStore->getOneToOneDependencies($entityName),
-				$this->entityStore->getManyToOneDependencies($entityName),
-				$this->entityStore->getOneToManyDependencies($entityName)
+				$metadata->getOneToOneDependencies(),
+				$metadata->getManyToOneDependencies(),
+				$metadata->getOneToManyDependencies(),
 			));
 		}
 		

@@ -419,17 +419,7 @@
 		public function getOneToManyDependencies(string|object $entity): array {
 			return $this->getMetadata($entity)->getOneToManyDependencies();
 		}
-		
-		/**
-		 * Retrieves all OneToOne dependencies for a specific entity.
-		 * @param string|object $entity The name of the entity for which you want to get the OneToOne dependencies
-		 * @return array<string, OneToOne> An associative array with the name of the target entity as key and the annotation as value
-		 * @throws EntityResolutionException
-		 */
-		public function getOneToOneDependencies(string|object $entity): array {
-			return $this->getMetadata($entity)->getOneToOneDependencies();
-		}
-		
+
 		/**
 		 * Resolves the back-reference property name on the target entity for a ManyToOne or OneToOne relation.
 		 *

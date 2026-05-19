@@ -233,12 +233,15 @@
 			$rangeCounter = 0;
 
 			foreach ($this->entityStore->getDependentEntities($entityType) as $dependentEntityType) {
+				// Fetch entity data
+				$metadata = $this->entityStore->getMetadata($dependentEntityType);
+				
 				// OneToOne: pass requireNoInversedBy=true so only the owning side
 				// (the entity that actually holds the FK column) generates a range.
 				$this->addRanges(
 					$entityType,
 					$dependentEntityType,
-					$this->entityStore->getOneToOneDependencies($dependentEntityType),
+					$metadata->getOneToOneDependencies(),
 					$ranges,
 					$rangeCounter,
 					requireNoInversedBy: true
@@ -249,7 +252,7 @@
 				$this->addRanges(
 					$entityType,
 					$dependentEntityType,
-					$this->entityStore->getManyToOneDependencies($dependentEntityType),
+					$metadata->getManyToOneDependencies(),
 					$ranges,
 					$rangeCounter
 				);

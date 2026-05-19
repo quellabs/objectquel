@@ -89,10 +89,14 @@
 		 * @throws SemanticException|EntityResolutionException When the relationship path does not lead to the expected entity
 		 */
 		private function validateRelationshipPath(string $entityName, string $rangeName, string $propertyName): void {
+			// Fetch metadata
+			$metadata = $this->entityStore->getMetadata($entityName);
+			
+			// Map of dependencies
 			$dependencies = [
-				'oneToOne'  => $this->entityStore->getOneToOneDependencies($entityName),
-				'manyToOne' => $this->entityStore->getManyToOneDependencies($entityName),
-				'oneToMany' => $this->entityStore->getOneToManyDependencies($entityName),
+				'oneToOne'  => $metadata->getOneToOneDependencies(),
+				'manyToOne' => $metadata->getManyToOneDependencies(),
+				'oneToMany' => $metadata->getOneToManyDependencies(),
 			];
 			
 			// For each relationship type, check whether the accessed property is declared

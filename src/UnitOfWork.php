@@ -618,6 +618,7 @@
 		 *
 		 * @return array<int, object> The sorted entities in the correct insertion/update order.
 		 * @throws OrmException When a cycle is detected in the entity relations,
+		 * @throws EntityResolutionException
 		 * indicating an unresolvable dependency between entities (e.g., A depends on B, B depends on A).
 		 */
 		private function scheduleEntitiesForPersistence(): array {
@@ -635,12 +636,15 @@
 			
 			// Build the dependency graph by examining each entity's relationships
 			foreach ($flattenedIdentityMap as $hash => $entity) {
+				// Fetch metadata
+				$metadata = $this->getEntityStore()->getMetadata($entity);
+				
 				// Get all ManyToOne relationships where this entity is the "many" side
 				// These are dependencies where this entity depends on a parent entity
-				$manyToOneParents = $this->getEntityStore()->getManyToOneDependencies($entity);
+				$manyToOneParents = $metadata->getManyToOneDependencies();
 				
 				// Get all OneToOne relationships where this entity is the owning side
-				$oneToOneParents = $this->getEntityStore()->getOneToOneDependencies($entity);
+				$oneToOneParents = $metadata->getOneToOneDependencies();
 				
 				// Filter OneToOne relationships to only include those that are bidirectional
 				// This is determined by checking if inversedBy is not empty
@@ -679,8 +683,8 @@
 			}
 			
 			// Begin topological sorting using Kahn's algorithm
-			$queue = []; // Queue for processing entities that have no remaining dependencies
-			$result = []; // Output array of sorted entity IDs
+			$queue = [];
+			$result = [];
 			
 			// First, find all entities that have no dependencies (inDegree = 0)
 			// These are "root" entities that can be safely processed first
@@ -889,15 +893,19 @@
 		 * @param string $normalizedClass The normalized class name of the parent entity being deleted
 		 * @param object $entity The parent entity object instance being deleted
 		 * @return void
+		 * @throws EntityResolutionException
 		 */
 		private function handleDependentEntityClass(string $dependentEntityClass, string $normalizedClass, object $entity): void {
+			// Fetch metadata for this entity
+			$metadata = $this->getEntityStore()->getMetadata($dependentEntityClass);
+			
 			// Retrieve all ManyToOne relationships defined in the dependent entity class
 			// These are relationships where the dependent entity has a foreign key to some parent
-			$manyToOneDependencies = $this->entityStore->getManyToOneDependencies($dependentEntityClass);
+			$manyToOneDependencies = $metadata->getManyToOneDependencies();
 			
 			// Retrieve all OneToOne relationships defined in the dependent entity class
 			// These are one-to-one associations between entities
-			$oneToOneDependencies = $this->entityStore->getOneToOneDependencies($dependentEntityClass);
+			$oneToOneDependencies = $metadata->getOneToOneDependencies();
 			
 			// Filter OneToOne relationships to only include bidirectional ones
 			// We only want relationships where both sides reference each other
@@ -1078,13 +1086,14 @@
 		 * when the parent entity is persisted.
 		 * @param object $entity The entity whose OneToMany relationships should be processed
 		 * @return void
+		 * @throws EntityResolutionException
 		 */
 		private function processCascadingOneToManyPersists(object $entity): void {
-			// Get OneToMany dependencies for this entity
-			$oneToManyDependencies = $this->getEntityStore()->getOneToManyDependencies($entity);
+			// Fetch metadata for this entity
+			$metadata = $this->getEntityStore()->getMetadata($entity);
 			
 			// Check each OneToMany relationship defined in this entity
-			foreach ($oneToManyDependencies as $property => $annotation) {
+			foreach ($metadata->getOneToManyDependencies() as $property => $annotation) {
 				// Retrieve cascade configuration from metadata for this property
 				$cascadeInfo = $this->getCascadeInfo(get_class($entity), $property);
 				
@@ -1130,13 +1139,14 @@
 		 * when the parent entity is persisted.
 		 * @param object $entity The entity whose OneToOne relationships should be processed
 		 * @return void
+		 * @throws EntityResolutionException
 		 */
 		private function processCascadingOneToOnePersists(object $entity): void {
-			// Get OneToOne dependencies for this entity
-			$oneToOneDependencies = $this->getEntityStore()->getOneToOneDependencies($entity);
+			// Fetch metadata of this entity
+			$metadata = $this->getEntityStore()->getMetadata($entity);
 			
 			// Check each OneToOne relationship defined in this entity
-			foreach ($oneToOneDependencies as $property => $annotation) {
+			foreach ($metadata->getOneToOneDependencies() as $property => $annotation) {
 				// Skip if this is the owning side of the relationship - we only want to process non-owning sides
 				if (empty($annotation->getMappedBy())) {
 					continue;

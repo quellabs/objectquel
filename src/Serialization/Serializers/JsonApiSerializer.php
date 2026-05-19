@@ -105,11 +105,14 @@
 		 * @throws QuelException|EntityResolutionException
 		 */
 		public function serializeRelationships(object $entity, mixed $identifierValue): array {
+			// Fetch metadata
+			$metadata = $this->entityStore->getMetadata($entity);
+			
 			// Get all relationship mappings from entity metadata
 			// Merge one-to-many and one-to-one dependencies
 			$relationships = array_merge(
-				$this->entityStore->getOneToManyDependencies($entity),
-				$this->entityStore->getOneToOneDependencies($entity)
+				$metadata->getOneToManyDependencies(),
+				$metadata->getOneToOneDependencies()
 			);
 			
 			$result = [];

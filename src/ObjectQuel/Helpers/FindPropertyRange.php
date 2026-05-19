@@ -61,9 +61,9 @@
 				
 				// Check all relation types (@OneToOne, @ManyToOne, @OneToMany)
 				$relations = array_merge(
-					$this->entityStore->getOneToOneDependencies($entityName),
-					$this->entityStore->getManyToOneDependencies($entityName),
-					$this->entityStore->getOneToManyDependencies($entityName)
+					$metadata->getOneToOneDependencies(),
+					$metadata->getManyToOneDependencies(),
+					$metadata->getOneToManyDependencies(),
 				);
 				
 				if (isset($relations[$propertyName])) {
