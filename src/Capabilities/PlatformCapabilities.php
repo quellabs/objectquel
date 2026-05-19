@@ -31,6 +31,14 @@
 		}
 		
 		/**
+		 * Checks whether the database supports native ENUM column types
+		 * @return bool True if native ENUM types are supported (MySQL/MariaDB), false otherwise
+		 */
+		public function supportsNativeEnums(): bool {
+			return in_array($this->adapter->getDatabaseType(), ['mysql', 'mariadb']);
+		}
+		
+		/**
 		 * @inheritDoc
 		 *
 		 * REGEXP_LIKE(col, pattern, flags) is available in MySQL 8.0.0 and later.

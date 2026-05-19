@@ -20,47 +20,25 @@
 	interface PlatformCapabilitiesInterface {
 		
 		/**
+		 * Checks whether the database supports native ENUM column types
+		 * @return bool True if native ENUM types are supported (MySQL/MariaDB), false otherwise
+		 */
+		public function supportsNativeEnums(): bool;
+		
+		/**
 		 * Returns true if the database engine supports REGEXP_LIKE(col, pattern, flags).
-		 *
-		 * When true, ObjectQuel will emit REGEXP_LIKE() for regex patterns that carry
-		 * flags (e.g. /pattern/i), enabling features like case-insensitive matching
-		 * that the plain REGEXP operator cannot express.
-		 *
-		 * When false, ObjectQuel falls back to col REGEXP "pattern" and flags are
-		 * silently ignored — behavior is then determined by the column's collation.
-		 *
-		 * MySQL: supported from 8.0.0 onward.
-		 * MariaDB: not supported (REGEXP_LIKE does not accept a flags argument).
-		 *
 		 * @return bool
 		 */
 		public function supportsRegexpLike(): bool;
 		
 		/**
 		 * Returns true if the database engine supports SQL window functions (OVER clause).
-		 *
-		 * When true, ObjectQuel's aggregate optimizer may rewrite eligible aggregates
-		 * as window functions (e.g. COUNT(*) OVER()) for better performance.
-		 * When false, the optimizer falls back to correlated subqueries.
-		 *
-		 * MySQL: supported from 8.0.0 onward.
-		 * MariaDB: supported from 10.2 onward.
-		 *
 		 * @return bool
 		 */
 		public function supportsWindowFunctions(): bool;
 		
 		/**
 		 * Returns true if the database engine supports invisible (hidden) indexes.
-		 *
-		 * When true, ObjectQuel's schema manager may mark indexes as invisible
-		 * rather than dropping them outright, allowing them to be re-enabled
-		 * without a full index rebuild if needed.
-		 * When false, the schema manager falls back to dropping and recreating indexes.
-		 *
-		 * MySQL:   supported from 8.0.0 onward.
-		 * MariaDB: supported from 10.6.0 onward.
-		 *
 		 * @return bool
 		 */
 		public function supportsIndexHiding(): bool;

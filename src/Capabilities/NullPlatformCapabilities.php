@@ -15,6 +15,13 @@
 		/**
 		 * @inheritDoc
 		 */
+		public function supportsNativeEnums(): bool {
+			return false;
+		}
+		
+		/**
+		 * @inheritDoc
+		 */
 		public function supportsRegexpLike(): bool {
 			return false;
 		}
