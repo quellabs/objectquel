@@ -30,6 +30,10 @@
 		 * @return string
 		 */
 		public function getValue(): string {
-			return $this->parameters['value'] ?? '';
+			if (!isset($this->parameters["value"]) || !is_string($this->parameters["value"])) {
+				return "";
+			}
+			
+			return $this->parameters['value'];
 		}
 	}

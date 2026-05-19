@@ -10,7 +10,7 @@
 		protected array $parameters;
 		
 		/**
-		 * Constructor.
+		 * DiscriminatorColumn constructor.
 		 * @param array<string, mixed> $parameters
 		 */
 		public function __construct(array $parameters) {
@@ -30,6 +30,10 @@
 		 * @return string
 		 */
 		public function getName(): string {
-			return $this->parameters['name'] ?? '';
+			if (!isset($this->parameters["name"]) || !is_string($this->parameters["name"])) {
+				return "";
+			}
+			
+			return $this->parameters['name'];
 		}
 	}
