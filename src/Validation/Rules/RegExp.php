@@ -12,7 +12,7 @@
 		
 		/**
 		 * RegExp constructor
-		 * @param array<string, mixed> $conditions
+		 * @param array{regexp?: string} $conditions
 		 * @param string|null $errorMessage
 		 */
 		public function __construct(array $conditions = [], ?string $errorMessage = null) {

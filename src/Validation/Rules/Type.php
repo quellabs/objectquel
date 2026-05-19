@@ -118,7 +118,7 @@
 			}
 			
 			// Normalize deprecated/alias type names (e.g. 'long' -> 'int', 'boolean' -> 'bool')
-			$type = $this->typeAliases[$this->conditions['type']] ?? $this->conditions['type'];
+			$type = $this->typeAliases[$typeCondition] ?? $typeCondition;
 			
 			// Validate types that can be checked through is_*() functions
 			if (in_array($type, $this->is_a_types, strict: true)) {
