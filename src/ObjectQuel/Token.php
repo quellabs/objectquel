@@ -125,6 +125,28 @@
 		}
 		
 		/**
+		 * Returns the token value as a string.
+		 * Only valid for tokens that carry a string value (Annotation, Parameter, String).
+		 * @return string
+		 */
+		public function getStringValue(): string {
+			return (string)$this->value;
+		}
+		
+		/**
+		 * Returns the token value as a number.
+		 * Only valid for tokens that carry a numeric value (Number).
+		 * @return float|int
+		 */
+		public function getNumericValue(): float|int {
+			if (!is_int($this->value) && !is_float($this->value)) {
+				throw new \LogicException('getNumericValue() called on a non-numeric token');
+			}
+			
+			return $this->value;
+		}
+		
+		/**
 		 * Returns the (optional) extra data for this token
 		 * @return array<string, mixed>
 		 */
