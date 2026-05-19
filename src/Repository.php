@@ -81,4 +81,16 @@
 		public function findBy(array $searchData, ?array $sortBy=null): array {
 			return $this->em()->findBy($this->entityClass, $searchData, $sortBy);
 		}
+		
+		/**
+		 * Find a single entity matching the given criteria
+		 * @param array<string, mixed> $searchData Associative array of field names and values to filter by
+		 * @param array<string, string>|null $sortBy Associative array of field names and sort directions
+		 * @return TEntity|null The found entity or null if not found
+		 * @throws QuelException
+		 * @throws EntityResolutionException
+		 */
+		public function findOneBy(array $searchData, ?array $sortBy = null): ?object {
+			return $this->em()->findOneBy($this->entityClass, $searchData, $sortBy);
+		}
 	}

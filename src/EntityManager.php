@@ -279,30 +279,6 @@
 		}
 		
 		/**
-		 * Searches for entities based on the given entity type and primary key.
-		 * @template T
-		 * @param class-string<T> $entityType The fully qualified class name of the container
-		 * @param array<string, mixed> $searchData Associative array of field names and values to filter by
-		 * @param array<string, string>|null $sortBy Associative array of field names and sort directions
-		 * @return T[] The found entities
-		 * @throws QuelException
-		 * @throws EntityResolutionException
-		 */
-		public function findBy(string $entityType, array $searchData, ?array $sortBy = null): array {
-			// Prepare a query in case the entity is not found
-			$query = $this->queryBuilder->prepareQuery($entityType, $searchData, $sortBy);
-			
-			// Execute query and retrieve result
-			$result = $this->getAll($query, $searchData);
-			
-			// Extract the main column from the result
-			$filteredResult = array_column($result, "main");
-			
-			// Return deduplicated results
-			return ResultProcessor::deDuplicateObjects($filteredResult);
-		}
-		
-		/**
 		 * Searches for a single entity based on the given entity type and primary key.
 		 * @template T of object
 		 * @param class-string<T> $entityType The fully qualified class name of the entity
@@ -343,6 +319,45 @@
 			 */
 			$entity = $result[0];
 			return $entity;
+		}
+		
+		/**
+		 * Searches for entities based on the given entity type and primary key.
+		 * @template T
+		 * @param class-string<T> $entityType The fully qualified class name of the container
+		 * @param array<string, mixed> $searchData Associative array of field names and values to filter by
+		 * @param array<string, string>|null $sortBy Associative array of field names and sort directions
+		 * @return T[] The found entities
+		 * @throws QuelException
+		 * @throws EntityResolutionException
+		 */
+		public function findBy(string $entityType, array $searchData, ?array $sortBy = null): array {
+			// Prepare a query in case the entity is not found
+			$query = $this->queryBuilder->prepareQuery($entityType, $searchData, $sortBy);
+			
+			// Execute query and retrieve result
+			$result = $this->getAll($query, $searchData);
+			
+			// Extract the main column from the result
+			$filteredResult = array_column($result, "main");
+			
+			// Return deduplicated results
+			return ResultProcessor::deDuplicateObjects($filteredResult);
+		}
+		
+		/**
+		 * Searches for entities based on the given entity type and primary key.
+		 * @template T of object
+		 * @param class-string<T> $entityType The fully qualified class name of the container
+		 * @param array<string, mixed> $searchData Associative array of field names and values to filter by
+		 * @param array<string, string>|null $sortBy Associative array of field names and sort directions
+		 * @return T|null The found entity or null if not found
+		 * @throws QuelException
+		 * @throws EntityResolutionException
+		 */
+		public function findOneBy(string $entityType, array $searchData, ?array $sortBy = null): ?object {
+			$results = $this->findBy($entityType, $searchData, $sortBy);
+			return $results[0] ?? null;
 		}
 		
 		/**
