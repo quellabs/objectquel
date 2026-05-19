@@ -72,7 +72,7 @@
 		/**
 		 * Collect all identifier values for the given entity.
 		 * @param object $entity The entity to extract identifiers from
-		 * @return array<int, mixed> Array of identifier values in the order they're defined
+		 * @return array<int, string> Array of identifier values in the order they're defined
 		 */
 		protected function getIdentifierValues(object $entity): array {
 			// Fetch metadata
@@ -83,7 +83,7 @@
 			$result = [];
 			
 			foreach ($metadata->identifierKeys as $key) {
-				$result[] = $this->propertyHandler->get($entity, $key);
+				$result[] = (string)$this->propertyHandler->get($entity, $key);
 			}
 			
 			return $result;
@@ -119,7 +119,7 @@
 			$entityName = $this->resolveProxyClass(get_class($entity));
 			
 			// Create composite ID string for URL generation
-			$entityId = implode("_", $this->getIdentifierValues($entity));
+			$entityId = implode("_", array_map('strval', $this->getIdentifierValues($entity)));
 			
 			// Process each relationship mapping
 			foreach ($relationships as $property => $relationship) {
@@ -147,7 +147,7 @@
 				foreach ($relationshipEntities as $relationshipEntity) {
 					$relationshipEntries[] = [
 						'type' => $relationshipEntityName,
-						'id'   => implode("_", $this->getIdentifierValues($relationshipEntity))
+						'id'   => implode("_", array_map('strval', $this->getIdentifierValues($relationshipEntity)))
 					];
 				}
 				
@@ -203,7 +203,7 @@
 			$identifierValue = $this->propertyHandler->get($entity, $metadata->identifierKeys[0]);
 			
 			// Create composite ID string for resource identification
-			$entityId = implode("_", $this->getIdentifierValues($entity));
+			$entityId = implode("_", array_map('strval', $this->getIdentifierValues($entity)));
 			
 			// Build the core resource object
 			$result = [

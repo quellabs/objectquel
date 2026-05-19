@@ -68,8 +68,8 @@
 			
 			// Perform casting if needed
 			return match (TypeMapper::phinxTypeToPhpType($columnType)) {
-				'int' => (int)$value,
-				'float' => (float)$value,
+				'int' => is_numeric($value) ? (int)$value : 0,
+				'float' => is_numeric($value) ? (float)$value : 0.0,
 				'bool' => (bool)$value,
 				default => $value,
 			};
