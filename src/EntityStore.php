@@ -20,27 +20,18 @@
 	
 	namespace Quellabs\ObjectQuel;
 	
-	use Quellabs\AnnotationReader\AnnotationInterface;
 	use Quellabs\AnnotationReader\AnnotationReader;
 	use Quellabs\AnnotationReader\Exception\AnnotationReaderException;
-	use Quellabs\ObjectQuel\Annotations\Orm\Column;
-	use Quellabs\ObjectQuel\Annotations\Orm\Immutable;
-	use Quellabs\ObjectQuel\Annotations\Orm\FullTextIndex;
 	use Quellabs\ObjectQuel\Annotations\Orm\ManyToOne;
-	use Quellabs\ObjectQuel\Annotations\Orm\OneToMany;
 	use Quellabs\ObjectQuel\Annotations\Orm\OneToOne;
 	use Quellabs\ObjectQuel\Annotations\Orm\Table;
-	use Quellabs\ObjectQuel\Annotations\Orm\Version;
 	use Quellabs\ObjectQuel\Exception\EntityResolutionException;
 	use Quellabs\ObjectQuel\Metadata\EntityMetadataRecord;
 	use Quellabs\ObjectQuel\Metadata\EntityMetadataBuilder;
-	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRangeDatabase;
-	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRetrieve;
 	use Quellabs\ObjectQuel\ProxyGenerator\ProxyGenerator;
 	use Quellabs\ObjectQuel\ReflectionManagement\EntityLocator;
 	use Quellabs\ObjectQuel\ReflectionManagement\ReflectionHandler;
 	use Quellabs\Support\NamespaceResolver;
-	use Quellabs\ObjectQuel\ObjectQuel\PrimaryKeyInfo;
 	
 	/**
 	 * Entity metadata registry and access point.
@@ -52,13 +43,26 @@
 	 * - Manage proxy generation
 	 */
 	class EntityStore {
+		
+		/** @var Configuration Holds paths, namespaces, etc */
 		private Configuration $configuration;
+		
+		/** @var AnnotationReader Reads the annotations in classes, methods and properties */
 		private AnnotationReader $annotationReader;
+		
+		/** @var ReflectionHandler Reads properties using reflection */
 		private ReflectionHandler $reflectionHandler;
+		
+		/** @var ProxyGenerator Reads and writes entity proxy files for lazy loading */
 		private ProxyGenerator $proxyGenerator;
+		
+		/** @var EntityMetadataBuilder Gives access to entity metadata */
 		private EntityMetadataBuilder $metadataBuilder;
 		
+		/** @var string Namespace to be used for proxies */
 		private string $proxyNamespace;
+		
+		/** @var string Namespace to be added to entities when none given */
 		private string $entityNamespace;
 		
 		// Simple registry of normalized class name => table name
