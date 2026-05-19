@@ -46,7 +46,7 @@
 		 * - Indexes that exist in the entity but not in the database
 		 * - Indexes that exist in both but have different configurations
 		 *
-		 * @param mixed $entity The entity class to analyze
+		 * @param class-string|object $entity The entity class to analyze
 		 * @return IndexChangeSet An array containing differences between DB and entity indexes
 		 * @throws EntityResolutionException
 		 * @throws \Exception
@@ -110,7 +110,7 @@
 		
 		/**
 		 * Retrieves database index configurations for an entity
-		 * @param mixed $entity The entity object or class to get indexes for
+		 * @param class-string|object $entity The entity object or class to get indexes for
 		 * @return array<string, IndexDefinition> Formatted array of database indexes with their configurations
 		 * @throws \Exception
 		 */
