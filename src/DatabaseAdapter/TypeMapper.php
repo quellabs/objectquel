@@ -212,12 +212,13 @@
 		}
 		
 		/**
-		 * Format a value for inclusion in PHP code
+		 * Format a value for inclusion in PHP code.
+		 * Unsupported values return an empty string.
 		 * @param mixed $value The value to format
 		 * @return string Formatted value
 		 */
 		public static function formatValue(mixed $value): string {
-			if (is_null($value)) {
+			if ($value === null) {
 				return 'null';
 			}
 			
@@ -229,8 +230,13 @@
 				return (string)$value;
 			}
 			
-			// Strings are single-quoted with internal single quotes escaped
-			return "'" . addslashes($value) . "'";
+			// Strings are single-quoted with internal quotes escaped
+			if (is_string($value) || $value instanceof \Stringable) {
+				return var_export((string)$value, true);
+			}
+			
+			// Unsupported values produce empty string
+			return '';
 		}
 		
 		/**
@@ -273,7 +279,7 @@
 		}
 		
 		/**
-		 * Format an integer limit value as a SQL parenthesised suffix.
+		 * Format an integer limit value as a SQL parenthesized suffix.
 		 * Returns $default when $limit is null or an array (not usable as a scalar width).
 		 * @param int|null $limit
 		 * @param string   $default Returned verbatim when $limit is not a plain int
