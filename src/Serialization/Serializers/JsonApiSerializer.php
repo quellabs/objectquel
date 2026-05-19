@@ -83,7 +83,15 @@
 			$result = [];
 			
 			foreach ($metadata->identifierKeys as $key) {
-				$result[] = (string)$this->propertyHandler->get($entity, $key);
+				$value = $this->propertyHandler->get($entity, $key);
+				
+				if (!is_scalar($value) && !($value instanceof \Stringable)) {
+					throw new \UnexpectedValueException(
+						sprintf('Identifier "%s" on %s must be scalar or Stringable, got %s', $key, get_class($entity), get_debug_type($value))
+					);
+				}
+				
+				$result[] = (string)$value;
 			}
 			
 			return $result;

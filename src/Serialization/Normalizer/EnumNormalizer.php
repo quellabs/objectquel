@@ -30,15 +30,20 @@
 		public function __construct(array $parameters) {
 			$this->parameters = $parameters;
 			
+			// Validate enumType is set
 			if (!isset($parameters['enumType'])) {
-				throw new \RuntimeException(
-					"EnumNormalizer requires 'enumType' parameter"
-				);
+				throw new \RuntimeException("EnumNormalizer requires 'enumType' parameter");
 			}
 			
-			$this->enumType = (string)$parameters['enumType'];
+			// Validate enumType is string
+			if (!is_string($parameters['enumType'])) {
+				throw new \RuntimeException("EnumNormalizer 'enumType' parameter must be a string");
+			}
+			
+			// Set enum type
+			$this->enumType = $parameters['enumType'];
 		}
-
+		
 		/**
 		 * Normalize converts a scalar value to an enum instance.
 		 * Used when hydrating entity properties from database values.
