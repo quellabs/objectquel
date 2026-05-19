@@ -33,10 +33,11 @@
 		 * @param string $entityType The entity type to retrieve.
 		 * @param array<string, mixed> $primaryKeys Primary key column-to-value pairs for the WHERE clause.
 		 *                                          Pass an empty array to retrieve all instances.
+		 * @param array<string, string>|null $sortBy
 		 * @return string The complete query string.
 		 * @throws EntityResolutionException
 		 */
-		public function prepareQuery(string $entityType, array $primaryKeys): string {
+		public function prepareQuery(string $entityType, array $primaryKeys, ?array $sortBy = null): string {
 			// Collect all range definitions: 'main' plus any eagerly-joined relations.
 			$relationRanges = $this->getRelationRanges($entityType);
 			
@@ -50,14 +51,11 @@
 				$whereString = "";
 			}
 			
-			// Final shape:
-			//   range of main is App\Entity\Order
-			//   range of r0 is App\Entity\OrderLine via r0.orderId=main.id
-			//   retrieve unique (main,r0) where main.id=:id
-			//
-			// "retrieve unique" tells the executor to deduplicate result rows, which is
-			// necessary because the joins can fan out (one Order → many OrderLines).
-			return "{$rangesImpl}\nretrieve unique (" . implode(",", array_keys($relationRanges)) . "){$whereString}";
+			// Sort
+			$sortString = !empty($sortBy) ? " sort by " . $this->sortByToString($sortBy) : "";
+			
+			// Final shape
+			return "{$rangesImpl}\nretrieve unique (" . implode(",", array_keys($relationRanges)) . "){$whereString}{$sortString}";
 		}
 		
 		/**
@@ -282,5 +280,21 @@
 			
 			// Multiple primary-key columns (composite keys) are ANDed together.
 			return implode(" AND ", $parts);
+		}
+		
+		/**
+		 * Converts an associative array of sort parameters to an ObjectQuel SORT BY fragment.
+		 * @param array<string, string> $orderBy Key-value pairs where keys are field names and values are sort directions ('ASC' or 'DESC').
+		 * @return string
+		 */
+		private function sortByToString(array $orderBy): string {
+			$parts = [];
+			
+			foreach ($orderBy as $field => $direction) {
+				$direction = strtoupper($direction) === 'DESC' ? 'DESC' : 'ASC';
+				$parts[] = "main.{$field} {$direction}";
+			}
+			
+			return implode(", ", $parts);
 		}
 	}

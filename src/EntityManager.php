@@ -283,13 +283,14 @@
 		 * @template T
 		 * @param class-string<T> $entityType The fully qualified class name of the container
 		 * @param array<string, mixed> $searchData Associative array of field names and values to filter by
+		 * @param array<string, string>|null $sortBy
 		 * @return T[] The found entities
 		 * @throws QuelException
 		 * @throws EntityResolutionException
 		 */
-		public function findBy(string $entityType, array $searchData): array {
+		public function findBy(string $entityType, array $searchData, ?array $sortBy = null): array {
 			// Prepare a query in case the entity is not found
-			$query = $this->queryBuilder->prepareQuery($entityType, $searchData);
+			$query = $this->queryBuilder->prepareQuery($entityType, $searchData, $sortBy);
 			
 			// Execute query and retrieve result
 			$result = $this->getAll($query, $searchData);
