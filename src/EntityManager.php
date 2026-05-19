@@ -305,13 +305,13 @@
 		 * Searches for a single entity based on the given entity type and primary key.
 		 * @template T of object
 		 * @param class-string<T> $entityType The fully qualified class name of the entity
-		 * @param mixed $primaryKey The primary key of the entity
+		 * @param array<string, mixed>|int|string $primaryKey The primary key of the entity
 		 * @return T|null The found entity or null if not found
 		 * @throws QuelException
 		 * @throws EntityResolutionException
 		 * @psalm-return T|null
 		 */
-		public function find(string $entityType, mixed $primaryKey): ?object {
+		public function find(string $entityType, array|int|string $primaryKey): ?object {
 			// Normalize the primary key
 			$primaryKeys = $this->formatPrimaryKeyAsArray($primaryKey, $entityType);
 			
@@ -328,7 +328,7 @@
 			}
 			
 			// Fall back to a database query
-			$result = $this->findBy($entityType, $primaryKey);
+			$result = $this->findBy($entityType, $primaryKeys);
 			
 			// If the query returns no results, return null
 			if (empty($result)) {
