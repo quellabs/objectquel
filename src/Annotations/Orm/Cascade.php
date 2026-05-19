@@ -31,7 +31,7 @@
 		public function getParameters(): array {
 			return $this->parameters;
 		}
-
+		
 		/**
 		 * Get the operations that should cascade
 		 *
@@ -41,7 +41,11 @@
 		 * @return array<int, string> List of operations to cascade
 		 */
 		public function getOperations(): array {
-			return $this->parameters['operations'] ?? [];
+			if (!is_array($this->parameters['operations'])) {
+				return [];
+			}
+			
+			return $this->parameters['operations'];
 		}
 		
 		/**
@@ -55,6 +59,10 @@
 		 * @return string The cascading strategy
 		 */
 		public function getStrategy(): string {
-			return $this->parameters['strategy'] ?? "both";
+			if (!isset($this->parameters['strategy']) || !is_string($this->parameters['strategy'])) {
+				return "both";
+			}
+			
+			return $this->parameters['strategy'];
 		}
 	}
