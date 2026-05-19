@@ -17,7 +17,7 @@
 		
 		/**
 		 * An array of sorted keys, if present.
-		 * @var array<string|int>|null
+		 * @var list<string|int>|null
 		 */
 		protected ?array $sortedKeys = null;
 		
@@ -107,10 +107,14 @@
 						if ($result < 0) {
 							return -$direction;
 						}
-					} elseif ($valueA > $valueB) {
-						return $direction;
-					} elseif ($valueA < $valueB) {
-						return -$direction;
+					} elseif (is_scalar($valueA) && is_scalar($valueB)) {
+						if ($valueA > $valueB) {
+							return $direction;
+						}
+						
+						if ($valueA < $valueB) {
+							return -$direction;
+						}
 					}
 					
 					// If the values are equal, continue to the next field
@@ -183,7 +187,7 @@
 			
 			// Sort the keys if a sort order is set
 			if (!empty($this->sortOrder)) {
-				usort($this->sortedKeys, function($keyA, $keyB) {
+				usort($this->sortedKeys, function ($keyA, $keyB) {
 					return $this->sortCallback($this->collection[$keyA], $this->collection[$keyB]);
 				});
 			}
@@ -194,7 +198,7 @@
 		
 		/**
 		 * Get the sorted keys of the collection
-		 * @return array<string|int>
+		 * @return list<string|int>
 		 */
 		protected function getSortedKeys(): array {
 			$this->calculateSortedKeys();
@@ -207,7 +211,9 @@
 		 */
 		public function clear(): void {
 			$this->collection = [];
+			$this->sortedKeys = null;
 			$this->position = null;
+			$this->isDirty = false;
 		}
 		
 		/**
@@ -216,7 +222,7 @@
 		 * @return bool
 		 */
 		public function containsKey(string|int $key): bool {
-			return isset($this->collection[$key]);
+			return array_key_exists($key, $this->collection);
 		}
 		
 		/**
@@ -292,31 +298,40 @@
 		 * @return bool
 		 */
 		public function offsetExists(mixed $offset): bool {
-			return array_key_exists($offset, $this->collection);
+			return (is_int($offset) || is_string($offset)) && array_key_exists($offset, $this->collection);
 		}
 		
 		/**
 		 * Retrieves an element from the collection based on the given key.
-		 * @param string|int $offset The key that identifies the element in the collection.
+		 * @param mixed $offset The key that identifies the element in the collection.
 		 * @return T|null The element that corresponds to the given key, or null if the key doesn't exist.
 		 */
-		public function offsetGet($offset): ?object {
+		public function offsetGet(mixed $offset): ?object {
+			if (!is_int($offset) && !is_string($offset)) {
+				return null;
+			}
+			
 			return $this->collection[$offset] ?? null;
 		}
 		
 		/**
 		 * Sets an element in the collection at a specific key.
-		 * @param mixed $offset
+		 * @param string|int|null $offset
 		 * @param T $value
 		 */
 		public function offsetSet(mixed $offset, mixed $value): void {
-			if (is_null($offset)) {
+			// No offset
+			if ($offset === null) {
 				$this->collection[] = $value;
-			} else {
-				$this->collection[$offset] = $value;
+				$this->isDirty = true;
+				return;
 			}
 			
-			$this->isDirty = true;
+			// Scalar offset
+			if (is_int($offset) || is_string($offset)) {
+				$this->collection[$offset] = $value;
+				$this->isDirty = true;
+			}
 		}
 		
 		/**
@@ -324,7 +339,10 @@
 		 * @param mixed $offset The key of the element to be removed.
 		 */
 		public function offsetUnset(mixed $offset): void {
-			unset($this->collection[$offset]);
+			if (is_int($offset) || is_string($offset)) {
+				unset($this->collection[$offset]);
+			}
+			
 			$this->isDirty = true;
 		}
 		
@@ -382,7 +400,7 @@
 		/**
 		 * Adds a new value to the collection
 		 * @param T $entity
-         * @return void
+		 * @return void
 		 */
 		public function add(object $entity): void {
 			$this->collection[] = $entity;
@@ -392,8 +410,8 @@
 		/**
 		 * Removes a value from the collection
 		 * @param T $entity
-         * @return bool
-         */
+		 * @return bool
+		 */
 		public function remove(object $entity): bool {
 			$key = array_search($entity, $this->collection, true);
 			
@@ -412,11 +430,11 @@
 		 */
 		public function toArray(): array {
 			$result = [];
-
+			
 			foreach ($this->getSortedKeys() as $key) {
 				$result[] = $this->collection[$key];
 			}
-
+			
 			return $result;
 		}
 		
