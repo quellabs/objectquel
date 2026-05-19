@@ -62,13 +62,13 @@
 		
 		/**
 		 * Find a single entity by its primary key/identifier
-		 * @param mixed $id The primary key value to search for
-		 * @return object|null The found entity or null if not found
+		 * @param int|string $primaryKey The primary key of the entity
+		 * @return TEntity|null The found entity or null if not found
 		 * @throws QuelException If a database error occurs during the operation
 		 * @throws EntityResolutionException
 		 */
-		public function find(mixed $id): ?object {
-			return $this->em()->find($this->entityClass, $id);
+		public function find(int|string $primaryKey): ?object {
+			return $this->em()->find($this->entityClass, $primaryKey);
 		}
 		
 		/**
