@@ -283,7 +283,7 @@
 		 * @template T
 		 * @param class-string<T> $entityType The fully qualified class name of the container
 		 * @param array<string, mixed> $searchData Associative array of field names and values to filter by
-		 * @param array<string, string>|null $sortBy
+		 * @param array<string, string>|null $sortBy Associative array of field names and sort directions
 		 * @return T[] The found entities
 		 * @throws QuelException
 		 * @throws EntityResolutionException
