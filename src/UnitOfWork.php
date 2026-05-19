@@ -660,8 +660,8 @@
 					// Get the actual parent entity object from the current entity's property
 					$parentEntity = $this->propertyHandler->get($entity, $property);
 					
-					// Skip if the relationship is null (no parent entity assigned)
-					if ($parentEntity === null) {
+					// Skip if the relationship is not an object (no parent entity assigned)
+					if (!is_object($parentEntity)) {
 						continue;
 					}
 					
@@ -670,7 +670,7 @@
 					if (($parentEntity instanceof ProxyInterface) && !$parentEntity->isInitialized()) {
 						continue;
 					}
-					
+
 					// Get a unique identifier for the parent entity
 					$parentId = spl_object_hash($parentEntity);
 					
@@ -806,7 +806,7 @@
 					$parentEntity = $this->propertyHandler->get($entity, $property);
 					
 					// If the parent entity exists, add it to the result with its relationship details.
-					if (!empty($parentEntity)) {
+					if (!empty($parentEntity) && is_object($parentEntity)) {
 						// Get the relation column name, or fall back to a convention
 						$relationColumn = $annotation->getRelationColumn() ?? "{$property}Id";
 						
@@ -1123,6 +1123,11 @@
 				
 				// Iterate through each entity in the collection
 				foreach ($collection as $relatedEntity) {
+					// Skip if related entity is not an object. Here to satisfy phpstan
+					if (!is_object($relatedEntity)) {
+						continue;
+					}
+					
 					// Check if the related entity is already being tracked in the identity map
 					if ($this->isInIdentityMap($relatedEntity)) {
 						continue;
@@ -1178,7 +1183,7 @@
 				}
 				
 				// Check if the related entity is already being tracked
-				if ($this->isInIdentityMap($relatedEntity)) {
+				if (!is_object($relatedEntity) || $this->isInIdentityMap($relatedEntity)) {
 					continue;
 				}
 				
