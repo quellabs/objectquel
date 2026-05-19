@@ -352,6 +352,11 @@
 			$entityLocator = new EntityLocator($this->configuration, $this->annotationReader);
 			
 			foreach ($entityLocator->discoverEntities() as $entityName) {
+				// Validate the class exists
+				if (!class_exists($entityName)) {
+					continue;
+				}
+				
 				// Find all table class annotations
 				$table = $this->annotationReader
 					->getClassAnnotations($entityName)

@@ -302,7 +302,7 @@
 		
 		/**
 		 * Extract index annotations from class-level annotations.
-		 * @param string $className The fully qualified class name
+		 * @param class-string $className The fully qualified class name
 		 * @return array<int, Index|UniqueIndex|FullTextIndex> Array of Index, UniqueIndex and FullTextIndex annotation objects
 		 * @throws AnnotationReaderException
 		 */

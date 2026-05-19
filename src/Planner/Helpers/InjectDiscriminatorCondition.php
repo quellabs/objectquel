@@ -53,7 +53,12 @@
 			// Ranges backed by subqueries have no entity name — nothing to check
 			$entityName = $range->getEntityName();
 			
+			// Valide the entity name
 			if (empty($entityName)) {
+				return;
+			}
+			
+			if (!class_exists($entityName)) {
 				return;
 			}
 			
@@ -102,7 +107,7 @@
 		 * child), so a single call on the subclass returns both @DiscriminatorValue
 		 * (declared on the subclass) and @DiscriminatorColumn (declared on the parent).
 		 *
-		 * @param string $entityName Fully qualified entity class name
+		 * @param class-string $entityName Fully qualified entity class name
 		 * @return array{column: string, value: string}|null
 		 * @throws TransformationException
 		 */

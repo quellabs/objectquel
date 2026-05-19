@@ -24,7 +24,7 @@
 		private AnnotationReader $annotationReader;
 		
 		/**
-		 * @var string[] Discovered entity classes
+		 * @var class-string[] Discovered entity classes
 		 */
 		private array $entityClasses = [];
 		
@@ -51,7 +51,7 @@
 		
 		/**
 		 * Discover all entity classes in configured paths, including subdirectories
-		 * @return string[] List of discovered entity class names
+		 * @return class-string[] List of discovered entity class names
 		 * @throws AnnotationReaderException
 		 */
 		public function discoverEntities(): array {
@@ -86,7 +86,7 @@
 		/**
 		 * Recursively process a directory and its subdirectories for entity files
 		 * @param string $directory The directory path to process
-		 * @param string[] $result
+		 * @param class-string[] $result
 		 * @throws AnnotationReaderException
 		 */
 		private function processDirectory(string $directory, array &$result): void {
@@ -100,6 +100,11 @@
 				
 				// Skip if we couldn't determine the entity name
 				if ($entityName === null) {
+					continue;
+				}
+				
+				// Skip if this is not a valid class
+				if (!class_exists($entityName)) {
 					continue;
 				}
 				
@@ -159,7 +164,7 @@
 		
 		/**
 		 * Checks if the class is an ORM entity
-		 * @param string $entityName
+		 * @param class-string $entityName
 		 * @return bool
 		 * @throws AnnotationReaderException
 		 */
