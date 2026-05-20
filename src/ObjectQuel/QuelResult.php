@@ -199,7 +199,7 @@
 		 * @return bool True if offset exists, false otherwise
 		 */
 		public function offsetExists(mixed $offset): bool {
-			return isset($this->result[$offset]);
+			return isset($this->result[$this->validOffset($offset)]);
 		}
 		
 		/**
@@ -208,7 +208,7 @@
 		 * @return array<string, mixed>|null The value at the specified offset or null if not found
 		 */
 		public function offsetGet(mixed $offset): mixed {
-			return $this->result[$offset] ?? null;
+			return $this->result[$this->validOffset($offset)] ?? null;
 		}
 		
 		/**
@@ -221,7 +221,7 @@
 			if (is_null($offset)) {
 				$this->result[] = $value;
 			} else {
-				$this->result[$offset] = $value;
+				$this->result[$this->validOffset($offset)] = $value;
 			}
 		}
 		
@@ -231,7 +231,7 @@
 		 * @return void
 		 */
 		public function offsetUnset(mixed $offset): void {
-			unset($this->result[$offset]);
+			unset($this->result[$this->validOffset($offset)]);
 		}
 		
 		/**
@@ -248,5 +248,23 @@
 		 */
 		public function count(): int {
 			return count($this->result);
+		}
+		
+		/**
+		 * Asserts that an offset is a valid array key type (int or string).
+		 * Used by ArrayAccess methods to satisfy static analysis; mixed offsets
+		 * are rejected at runtime rather than silently coerced.
+		 * @param mixed $offset
+		 * @return int|string
+		 */
+		private function validOffset(mixed $offset): int|string {
+			if (!is_int($offset) && !is_string($offset)) {
+				throw new \InvalidArgumentException(sprintf(
+					'Array offset must be int or string, %s given.',
+					get_debug_type($offset)
+				));
+			}
+			
+			return $offset;
 		}
 	}
