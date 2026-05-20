@@ -9,12 +9,21 @@
 		/** @var array<string, mixed> */
 		protected array $parameters;
 		
+		/** @var string Column name */
+		private string $name;
+		
 		/**
 		 * DiscriminatorColumn constructor.
 		 * @param array<string, mixed> $parameters
+		 * @throws \InvalidArgumentException
 		 */
 		public function __construct(array $parameters) {
+			if (!isset($parameters['name']) || !is_string($parameters['name'])) {
+				throw new \InvalidArgumentException("DiscriminatorColumn annotation requires a valid 'name' parameter");
+			}
+			
 			$this->parameters = $parameters;
+			$this->name = $parameters['name'];
 		}
 		
 		/**
@@ -30,10 +39,6 @@
 		 * @return string
 		 */
 		public function getName(): string {
-			if (!isset($this->parameters["name"]) || !is_string($this->parameters["name"])) {
-				return "";
-			}
-			
-			return $this->parameters['name'];
+			return $this->name;
 		}
 	}

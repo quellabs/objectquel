@@ -16,12 +16,34 @@
 		 */
 		protected array $parameters;
 		
+		/** @var array<int, string> */
+		private array $operations;
+		
+		/** @var string Cascading strategy */
+		private string $strategy;
+		
 		/**
 		 * Cascade constructor.
 		 * @param array<string, mixed> $parameters Array of parameters from the annotation
+		 * @throws \InvalidArgumentException
 		 */
 		public function __construct(array $parameters) {
+			$strategy = $parameters['strategy'] ?? 'both';
+			$operations = $parameters['operations'] ?? [];
+			
+			if (!in_array($strategy, ['orm', 'database', 'both'], true)) {
+				throw new \InvalidArgumentException(
+					'Cascade: strategy must be one of: orm, database, both'
+				);
+			}
+			
+			if (!is_array($operations)) {
+				$operations = [];
+			}
+			
 			$this->parameters = $parameters;
+			$this->operations = array_values(array_filter($operations, 'is_string'));
+			$this->strategy = $strategy;
 		}
 		
 		/**
@@ -41,16 +63,7 @@
 		 * @return array<int, string> List of operations to cascade
 		 */
 		public function getOperations(): array {
-			if (!isset($this->parameters['operations']) || !is_array($this->parameters['operations'])) {
-				return [];
-			}
-			
-			$operations = array_filter(
-				$this->parameters['operations'],
-				static fn($operation): bool => is_string($operation)
-			);
-			
-			return array_values($operations);
+			return $this->operations;
 		}
 		
 		/**
@@ -64,20 +77,6 @@
 		 * @return string The cascading strategy
 		 */
 		public function getStrategy(): string {
-			// Default value when strategy not set
-			if (!isset($this->parameters['strategy'])) {
-				return 'both';
-			}
-			
-			// Validate contents
-			if (
-				!is_string($this->parameters['strategy']) ||
-				!in_array($this->parameters['strategy'], ['orm', 'database', 'both'])
-			) {
-				throw new \InvalidArgumentException('Strategy must be either orm, database or both');
-			}
-			
-			// Return contents
-			return $this->parameters['strategy'];
+			return $this->strategy;
 		}
 	}

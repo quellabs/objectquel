@@ -18,22 +18,57 @@
 		 */
 		protected array $parameters;
 		
+		private string $name;
+		private string $type;
+		private bool $primaryKey;
+		private bool $unsigned;
+		private bool $nullable;
+		private ?int $precision;
+		private ?int $scale;
+		private ?string $enumType;
+		
 		/**
 		 * Column constructor
 		 * @param array<string, mixed> $parameters Associative array of column parameters
+		 * @throws \InvalidArgumentException
 		 */
 		public function __construct(array $parameters) {
-			$this->parameters = $parameters;
+			$name = $parameters['name'] ?? null;
+			$type = $parameters['type'] ?? null;
+			$primaryKey = $parameters['primary_key'] ?? false;
+			$unsigned = $parameters['unsigned'] ?? false;
+			$nullable = $parameters['nullable'] ?? false;
+			$precision = $parameters['precision'] ?? null;
+			$scale = $parameters['scale'] ?? null;
+			$enumType = $parameters['enumType'] ?? null;
 			
-			// Column name parameter is mandatory
-			if (!isset($this->parameters["name"])) {
-				throw new \InvalidArgumentException('Column annotation requires a "name" parameter');
+			if (!is_string($name)) {
+				throw new \InvalidArgumentException(
+					'Column annotation requires a "name" parameter'
+				);
 			}
-
-			// Column type parameter is mandatory
-			if (!isset($this->parameters["type"])) {
-				throw new \InvalidArgumentException('Column annotation requires a "type" parameter');
+			
+			if (!is_string($type)) {
+				throw new \InvalidArgumentException(
+					'Column annotation requires a "type" parameter'
+				);
 			}
+			
+			if ($enumType !== null && !is_string($enumType)) {
+				throw new \InvalidArgumentException(
+					'Column annotation "enumType" must be a string or null'
+				);
+			}
+			
+			$this->parameters = $parameters;
+			$this->name = $name;
+			$this->type = $type;
+			$this->primaryKey = is_bool($primaryKey) && $primaryKey;
+			$this->unsigned = is_bool($unsigned) && $unsigned;
+			$this->nullable = is_bool($nullable) && $nullable;
+			$this->precision = is_int($precision) ? $precision : null;
+			$this->scale = is_int($scale) ? $scale : null;
+			$this->enumType = $enumType;
 		}
 		
 		/**
@@ -49,11 +84,7 @@
 		 * @return string The name of the database column
 		 */
 		public function getName(): string {
-			if (!isset($this->parameters["name"]) || !is_string($this->parameters["name"])) {
-				return "";
-			}
-			
-			return $this->parameters["name"];
+			return $this->name;
 		}
 		
 		/**
@@ -61,11 +92,7 @@
 		 * @return string The SQL data type of the column
 		 */
 		public function getType(): string {
-			if (!isset($this->parameters["type"]) || !is_string($this->parameters["type"])) {
-				return "";
-			}
-			
-			return $this->parameters["type"];
+			return $this->type;
 		}
 		
 		/**
@@ -73,11 +100,7 @@
 		 * @return string|null
 		 */
 		public function getEnumType(): ?string {
-			if (!isset($this->parameters["enumType"]) || !is_string($this->parameters["enumType"])) {
-				return null;
-			}
-			
-			return $this->parameters["enumType"];
+			return $this->enumType;
 		}
 		
 		/**
@@ -131,11 +154,7 @@
 		 * @return bool True if this column is a primary key, false otherwise
 		 */
 		public function isPrimaryKey(): bool {
-			if (!isset($this->parameters["primary_key"]) || !is_bool($this->parameters["primary_key"])) {
-				return false;
-			}
-			
-			return $this->parameters["primary_key"];
+			return $this->primaryKey;
 		}
 		
 		/**
@@ -143,11 +162,7 @@
 		 * @return bool True if this column is unsigned, false otherwise
 		 */
 		public function isUnsigned(): bool {
-			if (!isset($this->parameters["unsigned"]) || !is_bool($this->parameters["unsigned"])) {
-				return false;
-			}
-			
-			return $this->parameters["unsigned"];
+			return $this->unsigned;
 		}
 		
 		/**
@@ -155,11 +170,7 @@
 		 * @return bool True if this column allows NULL values, false otherwise
 		 */
 		public function isNullable(): bool {
-			if (!isset($this->parameters["nullable"]) || !is_bool($this->parameters["nullable"])) {
-				return false;
-			}
-			
-			return $this->parameters["nullable"];
+			return $this->nullable;
 		}
 		
 		/**
@@ -167,11 +178,7 @@
 		 * @return int|null The precision value or null if not set
 		 */
 		public function getPrecision(): ?int {
-			if (!isset($this->parameters["precision"]) || !is_integer($this->parameters["precision"])) {
-				return null;
-			}
-			
-			return $this->parameters["precision"];
+			return $this->precision;
 		}
 		
 		/**
@@ -179,10 +186,6 @@
 		 * @return int|null The scale value or null if not set
 		 */
 		public function getScale(): ?int {
-			if (!isset($this->parameters["scale"]) || !is_integer($this->parameters["scale"])) {
-				return null;
-			}
-			
-			return $this->parameters["scale"];
+			return $this->scale;
 		}
 	}

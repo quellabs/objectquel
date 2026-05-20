@@ -7,53 +7,63 @@
 	/**
 	 * Marks a property as receiving its value from an external source range during hydration.
 	 *
-	 * When a query joins a database entity against an external source range (json_source(), csv_source(), etc.), ObjectQuel
-	 * can automatically write matching fields directly onto the entity rather than
+	 * When a query joins a database entity against an external source range (json_source(), etc.),
+	 * ObjectQuel can automatically write matching fields directly onto the entity rather than
 	 * surfacing them as separate scalar columns in the result row.
 	 *
 	 * Usage (explicit range — required when multiple JSON sources are present):
-	 *   @SourceField(field="name", range="product")
+	 * @SourceField(field="name", range="product")
 	 *
 	 * Usage (implicit range — only valid when exactly one JSON source is in the query):
-	 *   @SourceField(field="name")
+	 * @SourceField(field="name")
 	 *
 	 * Rules:
 	 *  - If `range` is omitted and exactly one JSON range exists in the row, that range
 	 *    is used automatically.
-	 *  - If `range` is omitted and multiple JSON ranges exist, a SemanticException is thrown
+	 *  - If `range` is omitted and multiple JSON ranges exist, a LogicException is thrown
 	 *    instructing the developer to add an explicit range.
-	 *  - If the named range is not present in the current query row, no action is taken
-	 *    (the property retains its default value).
+	 *  - If the named range is not present in the current query row, no action is taken.
 	 *
 	 * @package Quellabs\ObjectQuel\Annotations\Orm
 	 */
 	class SourceField implements AnnotationInterface {
 		
-		/**
-		 * All parameters passed to this annotation
-		 * @var array<string, mixed>
-		 */
+		/** @var array<string, mixed> */
 		protected array $parameters;
+		
+		/** @var string Source Field */
+		private string $field;
+		
+		/** @var string|null Source range */
+		private ?string $range;
 		
 		/**
 		 * SourceField constructor.
-		 * @param array<string, mixed> $parameters Associative array of annotation parameters.
-		 *                                          Recognised keys: 'field' (required), 'range' (optional).
-		 * @throws \InvalidArgumentException When the required 'field' parameter is absent.
+		 * @param array<string, mixed> $parameters Recognised keys: 'field' (required), 'range' (optional).
+		 * @throws \InvalidArgumentException When 'field' is absent or not a string.
 		 */
 		public function __construct(array $parameters) {
-			$this->parameters = $parameters;
+			$field = $parameters['field'] ?? null;
+			$range = $parameters['range'] ?? null;
 			
-			// 'field' is mandatory — without it we cannot know which source key to read
-			if (empty($this->parameters['field'])) {
-				throw new \InvalidArgumentException('SourceField annotation requires a "field" parameter');
+			if (!is_string($field) || $field === '') {
+				throw new \InvalidArgumentException(
+					'SourceField annotation requires a non-empty "field" parameter'
+				);
 			}
+			
+			if ($range !== null && !is_string($range)) {
+				throw new \InvalidArgumentException(
+					'SourceField: "range" must be a string'
+				);
+			}
+			
+			$this->parameters = $parameters;
+			$this->field = $field;
+			$this->range = $range;
 		}
 		
-		/**
-		 * Returns all parameters supplied to this annotation.
-		 * @return array<string, mixed>
-		 */
+		/** @return array<string, mixed> */
 		public function getParameters(): array {
 			return $this->parameters;
 		}
@@ -64,30 +74,15 @@
 		 * @return string
 		 */
 		public function getField(): string {
-			if (
-				!isset($this->parameters['field']) ||
-				!is_string($this->parameters['field'])
-			) {
-				throw new \InvalidArgumentException('SourceField annotation requires a "field" parameter');
-			}
-
-			return $this->parameters['field'];
+			return $this->field;
 		}
 		
 		/**
 		 * Returns the explicit range alias this field should be sourced from, or null
 		 * when the range is to be inferred automatically from the query context.
-		 * @return string|null The range alias (e.g. 'product'), or null if not specified.
+		 * @return string|null
 		 */
 		public function getRange(): ?string {
-			if (!isset($this->parameters['range'])) {
-				return null;
-			}
-			
-			if (!is_string($this->parameters['range'])) {
-				throw new \InvalidArgumentException('Invalid range parameter for SourceField annotation');
-			}
-			
-			return $this->parameters['range'];
+			return $this->range;
 		}
 	}

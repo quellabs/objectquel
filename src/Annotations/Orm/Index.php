@@ -24,12 +24,28 @@
 		 */
 		protected array $parameters;
 		
+		private string $name;
+		
+		/** @var array<int, string> */
+		private array $columns;
+		
 		/**
 		 * Index constructor.
 		 * @param array<string, mixed> $parameters Array of parameters from the annotation
+		 * @throws \InvalidArgumentException
 		 */
 		public function __construct(array $parameters) {
+			if (!isset($parameters['name']) || !is_string($parameters['name'])) {
+				throw new \InvalidArgumentException("Index annotation requires a valid 'name' parameter");
+			}
+			
+			if (!is_array($parameters['columns']) || empty($parameters['columns'])) {
+				throw new \InvalidArgumentException("Index annotation requires a non-empty 'columns' array");
+			}
+			
 			$this->parameters = $parameters;
+			$this->name = $parameters['name'];
+			$this->columns = array_values(array_filter($parameters['columns'], 'is_string'));
 		}
 		
 		/**
@@ -42,17 +58,10 @@
 		
 		/**
 		 * Returns the name of the index
-		 * @return string The index name or empty string if not defined
+		 * @return string The index name
 		 */
 		public function getName(): string {
-			if (
-				!isset($this->parameters['name']) ||
-				!is_string($this->parameters['name'])
-			) {
-				throw new \InvalidArgumentException("Index annotation requires a valid 'name' parameter");
-			}
-			
-			return $this->parameters['name'];
+			return $this->name;
 		}
 		
 		/**
@@ -60,13 +69,6 @@
 		 * @return array<int, string> List of column names to be indexed
 		 */
 		public function getColumns(): array {
-			if (
-				!isset($this->parameters['columns']) ||
-				!is_array($this->parameters['columns'])
-			) {
-				return [];
-			}
-			
-			return array_values(array_filter($this->parameters['columns'], 'is_string'));
+			return $this->columns;
 		}
 	}

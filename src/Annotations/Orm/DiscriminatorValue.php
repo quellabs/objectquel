@@ -9,12 +9,21 @@
 		/** @var array<string, mixed> */
 		protected array $parameters;
 		
+		/** @var string Value to be set in DiscriminatorColumn */
+		private string $value;
+		
 		/**
 		 * Constructor.
 		 * @param array<string, mixed> $parameters
+		 * @throws \InvalidArgumentException
 		 */
 		public function __construct(array $parameters) {
+			if (!isset($parameters['value']) || !is_string($parameters['value'])) {
+				throw new \InvalidArgumentException("DiscriminatorValue annotation requires a valid 'value' parameter");
+			}
+			
 			$this->parameters = $parameters;
+			$this->value = $parameters['value'];
 		}
 		
 		/**
@@ -30,10 +39,6 @@
 		 * @return string
 		 */
 		public function getValue(): string {
-			if (!isset($this->parameters["value"]) || !is_string($this->parameters["value"])) {
-				return "";
-			}
-			
-			return $this->parameters['value'];
+			return $this->value;
 		}
 	}

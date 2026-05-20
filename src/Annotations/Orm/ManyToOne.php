@@ -13,12 +13,50 @@
 		/** @var array<string, mixed> */
 		protected array $parameters;
 		
+		private string $targetEntity;
+		private ?string $inversedBy;
+		private ?string $relationColumn;
+		private ?string $foreignColumn;
+		private string $fetch;
+		
 		/**
 		 * Constructor to initialize the parameters.
 		 * @param array<string, mixed> $parameters Array with parameters that describe the relationship.
+		 * @throws \InvalidArgumentException
 		 */
 		public function __construct(array $parameters) {
+			$targetEntity = $parameters['targetEntity'] ?? null;
+			$inversedBy = $parameters['inversedBy'] ?? null;
+			$relationColumn = $parameters['relationColumn'] ?? null;
+			$foreignColumn = $parameters['foreignColumn'] ?? null;
+			$fetch = $parameters['fetch'] ?? 'EAGER';
+			
+			if (!is_string($targetEntity)) {
+				throw new \InvalidArgumentException("ManyToOne: 'targetEntity' must be a string");
+			}
+			
+			if ($inversedBy !== null && !is_string($inversedBy)) {
+				throw new \InvalidArgumentException("ManyToOne: 'inversedBy' must be a string or null");
+			}
+			
+			if ($relationColumn !== null && !is_string($relationColumn)) {
+				throw new \InvalidArgumentException("ManyToOne: 'relationColumn' must be a string or null");
+			}
+			
+			if ($foreignColumn !== null && !is_string($foreignColumn)) {
+				throw new \InvalidArgumentException("ManyToOne: 'foreignColumn' must be a string or null");
+			}
+			
+			if (!is_string($fetch)) {
+				throw new \InvalidArgumentException("ManyToOne: 'fetch' must be a string");
+			}
+			
 			$this->parameters = $parameters;
+			$this->targetEntity = $targetEntity;
+			$this->inversedBy = $inversedBy;
+			$this->relationColumn = $relationColumn;
+			$this->foreignColumn = $foreignColumn;
+			$this->fetch = strtoupper($fetch);
 		}
 		
 		/**
@@ -34,11 +72,7 @@
 		 * @return string The full namespace of the target entity.
 		 */
 		public function getTargetEntity(): string {
-			if (!is_string($this->parameters["targetEntity"] ?? null)) {
-				throw new \InvalidArgumentException("ManyToOne: 'targetEntity' must be a string");
-			}
-			
-			return $this->parameters["targetEntity"];
+			return $this->targetEntity;
 		}
 		
 		/**
@@ -47,7 +81,8 @@
 		 * @return void
 		 */
 		public function setTargetEntity(string $targetEntity): void {
-			$this->parameters["targetEntity"] = $targetEntity;
+			$this->targetEntity = $targetEntity;
+			$this->parameters['targetEntity'] = $targetEntity;
 		}
 		
 		/**
@@ -55,13 +90,7 @@
 		 * @return string|null The name of the field in the target entity that refers to the current entity, or null if it is not set.
 		 */
 		public function getInversedBy(): ?string {
-			$value = $this->parameters["inversedBy"] ?? null;
-			
-			if ($value !== null && !is_string($value)) {
-				throw new \InvalidArgumentException("ManyToOne: 'inversedBy' must be a string or null");
-			}
-			
-			return $value;
+			return $this->inversedBy;
 		}
 		
 		/**
@@ -70,13 +99,7 @@
 		 * @return string|null The name of the join column or null if it is not set.
 		 */
 		public function getRelationColumn(): ?string {
-			$value = $this->parameters["relationColumn"] ?? null;
-			
-			if ($value !== null && !is_string($value)) {
-				throw new \InvalidArgumentException("ManyToOne: 'relationColumn' must be a string or null");
-			}
-			
-			return $value;
+			return $this->relationColumn;
 		}
 		
 		/**
@@ -84,13 +107,7 @@
 		 * @return string|null The name of the join column or null if it is not set.
 		 */
 		public function getForeignColumn(): ?string {
-			$value = $this->parameters["foreignColumn"] ?? null;
-			
-			if ($value !== null && !is_string($value)) {
-				throw new \InvalidArgumentException("ManyToOne: 'foreignColumn' must be a string or null");
-			}
-			
-			return $value;
+			return $this->foreignColumn;
 		}
 		
 		/**
@@ -98,12 +115,6 @@
 		 * @return string
 		 */
 		public function getFetch(): string {
-			$value = $this->parameters["fetch"] ?? null;
-			
-			if ($value !== null && !is_string($value)) {
-				throw new \InvalidArgumentException("ManyToOne: 'fetch' must be a string or null");
-			}
-			
-			return $value !== null ? strtoupper($value) : "EAGER";
+			return $this->fetch;
 		}
 	}
