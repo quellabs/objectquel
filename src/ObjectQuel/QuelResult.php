@@ -255,12 +255,12 @@
 		 * Used by ArrayAccess methods to satisfy static analysis; mixed offsets
 		 * are rejected at runtime rather than silently coerced.
 		 * @param mixed $offset
-		 * @return int|string
+		 * @return int
 		 */
-		private function validOffset(mixed $offset): int|string {
-			if (!is_int($offset) && !is_string($offset)) {
+		private function validOffset(mixed $offset): int {
+			if (!is_int($offset)) {
 				throw new \InvalidArgumentException(sprintf(
-					'Array offset must be int or string, %s given.',
+					'Array offset must be int, %s given.',
 					get_debug_type($offset)
 				));
 			}
