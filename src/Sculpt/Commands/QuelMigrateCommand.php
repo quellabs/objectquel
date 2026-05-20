@@ -237,7 +237,7 @@ HELP;
 			
 			// Check if a specific target version was requested
 			// This allows migrating to a specific version instead of the latest one
-			$target = $config->get('target');
+			$target = $config->getAsString('target');
 			
 			if ($target) {
 				// Migrate to the specific target version
@@ -260,8 +260,8 @@ HELP;
 		 * @return int
 		 */
 		private function performRollback(Manager $manager, ConfigurationManager $config): int {
-			$steps = (int)$config->get('steps', 1);
-			$target = $config->get('target');
+			$steps = $config->getAsInt('steps', 1);
+			$target = $config->getAsString('target');
 			$force = $config->hasFlag('force') || $config->hasFlag('f');
 			$isDryRun = $config->hasFlag('dry-run') || $config->hasFlag('d');
 			
