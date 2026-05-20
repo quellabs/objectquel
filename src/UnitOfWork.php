@@ -167,6 +167,7 @@
 		 * @param class-string<T> $entityType The type of entity being searched for.
 		 * @param array<string, mixed> $primaryKeys The serialized primary key data of the entity
 		 * @return object|null The found entity or null if it is not found.
+		 * @throws EntityResolutionException
 		 */
 		public function findEntity(string $entityType, array $primaryKeys): ?object {
 			// Normalize the entity name for dealing with proxies
@@ -200,6 +201,7 @@
 		 * This method is used for entities that already exist in the database but need to be managed.
 		 * @param object $entity The entity object to persist and track.
 		 * @return void
+		 * @throws EntityResolutionException
 		 */
 		public function persistExisting(object $entity): void {
 			// Check if the entity class is registered in the entity store
@@ -250,6 +252,7 @@
 		 * This method is specifically for entities that don't yet exist in the database but will be created.
 		 * @param object $entity The new entity object to persist.
 		 * @return bool True if the entity was successfully added to the tracking system, false otherwise.
+		 * @throws EntityResolutionException
 		 */
 		public function persistNew(object $entity): bool {
 			// Check if the entity is already being tracked in the identity map
@@ -746,6 +749,7 @@
 		 * @param array<int, object> $changed List of changed entities
 		 * @param array<int, object> $deleted List of deleted entities
 		 * @return void
+		 * @throws EntityResolutionException
 		 */
 		private function resetAfterCommit(array $changed, array $deleted): void {
 			foreach ($changed as $entity) {
@@ -845,6 +849,7 @@
 		 * @param object $entity The entity from which to retrieve the primary keys.
 		 * @return array<string, mixed> An associative array where the keys are the primary key names and
 		 *               the values are their corresponding values from the entity.
+		 * @throws EntityResolutionException
 		 */
 		private function getIdentifiers(object $entity): array {
 			// Fetch the metadata from the entity store
@@ -868,6 +873,7 @@
 		 * that would otherwise become orphaned.
 		 * @param object $entity The parent entity being deleted
 		 * @return void
+		 * @throws EntityResolutionException
 		 */
 		private function executeCascadingDeletions(object $entity): void {
 			// Normalize the entity class name to ensure consistent format
@@ -1011,6 +1017,7 @@
 		 * @param string $property Property name with the relationship
 		 * @param object $parentEntity The parent entity object
 		 * @return void
+		 * @throws EntityResolutionException|Exception\QuelException
 		 */
 		private function cascadeDeleteDependentObjects(string $dependentEntityClass, string $property, object $parentEntity): void {
 			// Extract the primary key identifiers from the parent entity
@@ -1074,6 +1081,7 @@
 		 * they are configured with cascade=persist in their relationship annotations.
 		 * @param object $entity The entity whose relationships should be checked for cascade persist
 		 * @return void
+		 * @throws EntityResolutionException
 		 */
 		private function executeCascadingPersistsForEntity(object $entity): void {
 			// Process OneToMany relationships
