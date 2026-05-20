@@ -108,7 +108,7 @@
 		/**
 		 * Reads a row of a result set and advances the recordset pointer
 		 * Similar to PDO's fetch() method
-		 * @return array<string, mixed>|bool The current row (entity or array) or false if no more rows
+		 * @return array<string, mixed>|false The current row (entity or array) or false if no more rows
 		 */
 		public function fetchRow(): array|false {
 			if ($this->index >= $this->recordCount()) {
