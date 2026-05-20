@@ -73,6 +73,7 @@
 		 * Collect all identifier values for the given entity.
 		 * @param object $entity The entity to extract identifiers from
 		 * @return array<int, string> Array of identifier values in the order they're defined
+		 * @throws EntityResolutionException
 		 */
 		protected function getIdentifierValues(object $entity): array {
 			// Fetch metadata
@@ -133,6 +134,11 @@
 			foreach ($relationships as $property => $relationship) {
 				// Fetch the target entity
 				$targetEntity = $relationship->getTargetEntity();
+				
+				// Validate the class exists
+				if (!class_exists($targetEntity)) {
+					throw new \RuntimeException("Relationship target '{$targetEntity}' is not a loadable class");
+				}
 				
 				// Get the target entity's resource type name
 				$relationshipEntityName = $this->resolveProxyClass($targetEntity);
