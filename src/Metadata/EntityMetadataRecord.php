@@ -46,27 +46,12 @@
 	 * modification of cached metadata.
 	 *
 	 * @phpstan-import-type ColumnDefinition from DatabaseAdapter
-	 *
-	 * @phpstan-type ColumnDefinitionRecord array{
-	 *       property_name: string,
-	 *       type: string,
-	 *       php_type: \ReflectionType|null,
-	 *       limit: mixed,
-	 *       nullable: bool,
-	 *       unsigned: bool,
-	 *       default: mixed,
-	 *       primary_key: bool,
-	 *       scale: mixed,
-	 *       precision: mixed,
-	 *       identity: bool,
-	 *       values: mixed
-	 *  }
-	 */
+	 * @phpstan-import-type ColumnDefinitionRecord from EntityMetadataBuilder
+     */
 	readonly class EntityMetadataRecord {
 		
 		/**
 		 * Constructor for EntityMetadataRecord.
-		 *
 		 * @param string $className Fully qualified, normalized class name
 		 * @param string $tableName Database table name from @Table annotation
 		 * @param array<int, string> $properties Property names

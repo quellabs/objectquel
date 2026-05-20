@@ -242,7 +242,7 @@
 		/**
 		 * Extracts all enum cases from a Column annotation's enum type.
 		 * @param string|null $enumType
-		 * @return array<int, int|string> Array of enum case values for backed enums, or names for unit enums
+		 * @return array<int, string> Array of enum case values for backed enums, or names for unit enums
 		 */
 		public static function getEnumCases(?string $enumType): array {
 			// Return empty array if no enum type is defined
@@ -269,13 +269,13 @@
 			if (is_subclass_of($enumType, \BackedEnum::class)) {
 				// For backed enums, extract the scalar values
 				return array_map(
-					fn(\UnitEnum $case): int|string => $case instanceof \BackedEnum ? $case->value : $case->name,
+					fn(\UnitEnum $case): string => $case instanceof \BackedEnum ? (string)$case->value : $case->name,
 					$cases
 				);
 			}
 			
 			// For unit enums, extract the case names instead
-			return array_map(fn(\UnitEnum $case) => $case->name, $cases);
+			return array_map(fn(\UnitEnum $case): string => $case->name, $cases);
 		}
 		
 		/**
