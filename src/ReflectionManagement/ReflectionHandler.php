@@ -435,7 +435,7 @@
 		 *     type: string,
 		 *     nullable: bool,
 		 *     has_default: bool,
-		 *     default: mixed,
+		 *     default: scalar|null,
 		 *     passed_by_reference: bool
 		 * }>
 		 */
@@ -457,6 +457,8 @@
 				foreach ($parameterClass as $parameter) {
 					$type = $parameter->getType();
 					$isDefaultValueAvailable = $parameter->isDefaultValueAvailable();
+					$default = $isDefaultValueAvailable ? $parameter->getDefaultValue() : null;
+					assert($default === null || is_scalar($default));
 					
 					$result[] = [
 						'index'               => $parameter->getPosition(),
@@ -464,7 +466,7 @@
 						'type'                => $type !== null ? $this->reflectionTypeToString($type) : "",
 						'nullable'            => $parameter->allowsNull(),
 						'has_default'         => $isDefaultValueAvailable,
-						'default'             => $isDefaultValueAvailable ? $parameter->getDefaultValue() : null,
+						'default'             => $default,
 						'passed_by_reference' => $parameter->isPassedByReference(),
 					];
 				}
@@ -658,7 +660,7 @@
 			/** @var ReflectionClass<T> */
 			return $this->reflection_classes[$className];
 		}
-
+		
 		/**
 		 * Converts a ReflectionType to its string representation.
 		 * Handles union types (A|B), intersection types (A&B), and named types.

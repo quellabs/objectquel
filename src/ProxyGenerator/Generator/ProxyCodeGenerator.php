@@ -216,10 +216,11 @@ PHP
 				} elseif ($parameter['default'] === null) {
 					$declaration[] = ltrim("{$parameterType} \${$parameter['name']} = null");
 				} elseif ($parameter['type'] === 'string') {
-					$escaped = addslashes($parameter['default']);
+					$escaped = addslashes((string) $parameter['default']);
 					$declaration[] = ltrim("{$parameterType} \${$parameter['name']} = '{$escaped}'");
 				} else {
-					$declaration[] = ltrim("{$parameterType} \${$parameter['name']} = {$parameter['default']}");
+					/** @noinspection PhpUnnecessaryStringCastInspection */
+					$declaration[] = ltrim("{$parameterType} \${$parameter['name']} = " . (string)$parameter['default']);
 				}
 				
 				$passthrough[] = "\${$parameter['name']}";
@@ -347,7 +348,7 @@ PHP;
 					} elseif ($parameter['default'] === null) {
 						$parameterList[] = ltrim("{$parameterType} \${$parameter['name']} = null");
 					} elseif ($parameter['type'] === 'string') {
-						$escaped = addslashes($parameter['default']);
+						$escaped = addslashes((string)$parameter['default']);
 						$parameterList[] = ltrim("{$parameterType} \${$parameter['name']} = '{$escaped}'");
 					} else {
 						$parameterList[] = ltrim("{$parameterType} \${$parameter['name']} = {$parameter['default']}");
