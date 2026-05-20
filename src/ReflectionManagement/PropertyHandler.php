@@ -30,11 +30,11 @@
 		
 		/**
 		 * Returns true if the property exists, false if not
-		 * @param mixed $objectOrClass
+		 * @param object|class-string $objectOrClass
 		 * @param string $propertyName
 		 * @return bool
 		 */
-		public function exists(mixed $objectOrClass, string $propertyName): bool {
+		public function exists(object|string $objectOrClass, string $propertyName): bool {
 			try {
 				$reflection = $this->getReflectionClass($objectOrClass);
 				return $reflection->hasProperty($propertyName);
@@ -110,7 +110,7 @@
 		 * @return \ReflectionClass<object> A ReflectionClass instance.
 		 * @throws \ReflectionException
 		 */
-		private function getReflectionClass(mixed $class): \ReflectionClass {
+		private function getReflectionClass(object|string $class): \ReflectionClass {
 			// Determine the class name from the object or directly use the provided class name
 			$className = $this->normalizeClassName($class);
 			
@@ -126,11 +126,11 @@
 		
 		/**
 		 * Retrieves the correct ReflectionProperty for a given property name in the class hierarchy.
-		 * @param mixed $class The class name or object to inspect.
+		 * @param object|class-string $class The class name or object to inspect.
 		 * @param string $propertyName The name of the property to search for.
 		 * @return \ReflectionProperty|null The ReflectionProperty object if found, or null otherwise.
 		 */
-		private function getCorrectPropertyClass(mixed $class, string $propertyName): ?\ReflectionProperty {
+		private function getCorrectPropertyClass(object|string $class, string $propertyName): ?\ReflectionProperty {
 			try {
 				// Initialize ReflectionClass for the given class name or object
 				$reflectionClass = $this->getReflectionClass($class);
@@ -155,14 +155,14 @@
 		
 		/**
 		 * Retrieves a ReflectionProperty instance for the specified property of a class.
-		 * @param mixed $class The object or the name of the class to get the property from.
+		 * @param object|class-string $class The object or the name of the class to get the property from.
 		 * @param string $propertyName The name of the property to reflect.
 		 * @return \ReflectionProperty A ReflectionProperty instance.
 		 * @throws \ReflectionException
 		 */
-		private function getReflectionProperty(mixed $class, string $propertyName): \ReflectionProperty {
+		private function getReflectionProperty(object|string $class, string $propertyName): \ReflectionProperty {
 			// Determine the class name from the object or directly use the provided class name
-			$className = is_object($class) ? get_class($class) : $class;
+			$className = $this->normalizeClassName($class);
 			
 			// Create a key based on the class name and property name
 			$key = "{$className}:{$propertyName}";
