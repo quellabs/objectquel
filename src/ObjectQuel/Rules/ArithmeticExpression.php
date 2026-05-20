@@ -70,8 +70,7 @@
 		/**
 		 * Parses a constant
 		 * @return AstInterface
-		 * @throws LexerException
-		 * @throws ParserException
+		 * @throws LexerException|ParserException|\ReflectionException
 		 */
 		public function parsePrimaryExpression(): AstInterface {
 			$token = $this->lexer->peek();
@@ -82,11 +81,11 @@
 			switch ($tokenType) {
 				case Token::Number :
 					$this->lexer->match($tokenType);
-					return new AstNumber($tokenValue);
+					return new AstNumber($token->getStringValue());
 				
 				case Token::String :
 					$this->lexer->match($tokenType);
-					return new AstString($tokenValue, $tokenExtraData['char'] ?? '"');
+					return new AstString($token->getStringValue(), (string)($tokenExtraData['char'] ?? '"'));
 				
 				case Token::False :
 					$this->lexer->match($tokenType);
@@ -102,7 +101,7 @@
 				
 				case Token::Parameter :
 					$this->lexer->match($tokenType);
-					return new AstParameter($tokenValue);
+					return new AstParameter($token->getStringValue());
 				
 				case Token::Slash :
 					// In a primary expression context, a slash is always the start of a regex
@@ -191,8 +190,7 @@
 		/**
 		 * Parse unary expressions (-, +, *, &, etc.)
 		 * @return AstInterface
-		 * @throws LexerException
-		 * @throws ParserException
+		 * @throws LexerException|ParserException|\ReflectionException
 		 */
 		protected function parseUnaryExpression(): AstInterface {
 			$token = $this->lexer->peek();
@@ -204,16 +202,15 @@
 				case Token::Minus:
 					$this->lexer->match($tokenType);
 					
-					// Handle +/- followed by a number as a literal with sign
-					if (($resultToken = $this->lexer->optionalMatch(Token::Number)) !== null) {
-						$number = ($tokenValue == "-") ? 0 - $resultToken->getValue() : $resultToken->getValue();
-						return new AstNumber($number);
+					if (($resultToken = $this->lexer->optionalMatch(Token::Number)) === null) {
+						$operand = $this->parseUnaryExpression();
+						return new AstUnaryOperation($operand, $token->getStringValue());
+					} elseif ($tokenValue === "-") {
+						return new AstNumber((string)(0 - $resultToken->getNumericValue()));
+					} else {
+						return new AstNumber($resultToken->getStringValue());
 					}
-					
-					// Otherwise, it's a unary operator applied to an expression
-					$operand = $this->parseUnaryExpression();
-					return new AstUnaryOperation($operand, $tokenValue);
-				
+
 				default:
 					// If not a unary operator, parse a primary expression
 					return $this->parsePrimaryExpression();
