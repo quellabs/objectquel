@@ -237,7 +237,7 @@ HELP;
 			
 			// Check if a specific target version was requested
 			// This allows migrating to a specific version instead of the latest one
-			$target = $config->getAsString('target');
+			$target = $config->getAsIntOrNull('target');
 			
 			if ($target) {
 				// Migrate to the specific target version

@@ -62,14 +62,14 @@
 		public function execute(ConfigurationManager $config): int {
 			// Prefer positional CLI arguments; fall back to interactive prompts
 			$entityName = $config->getPositional(0);
-			$indexName = $config->getPositional(1);
+			$indexName  = $config->getPositional(1);
 			
-			if (empty($entityName)) {
-				$entityName = $this->input->ask("Entity name");
+			if (!is_string($entityName) || $entityName === "") {
+				$entityName = $this->input->ask("Entity name") ?? '';
 			}
 			
-			if (empty($indexName)) {
-				$indexName = $this->input->ask("Index name");
+			if (!is_string($indexName) || $indexName === "") {
+				$indexName = $this->input->ask("Index name") ?? '';
 			}
 			
 			// Both values are required; exit cleanly if the user provides neither
@@ -77,9 +77,6 @@
 				return 0;
 			}
 			
-			// Ensure the entity is registered in the ORM metadata store
-			$entityStore = $this->getEntityStore();
-
 			try {
 				$entityStore = $this->getEntityStore();
 				$metadata = $entityStore->getMetadata($entityName);

@@ -140,7 +140,7 @@ HELP;
 			$entityName = $config->getPositional(0);
 			
 			// If entity name was provided as a command line argument, return it
-			if ($entityName !== null) {
+			if (is_string($entityName) && $entityName !== "") {
 				return $entityName;
 			}
 			
@@ -170,8 +170,8 @@ HELP;
 		 */
 		private function getJavaScriptOutputPath(ConfigurationManager $config, string $entityName): string {
 			// Check if a custom output path was explicitly provided via the "o" option
-			if ($config->get("o") !== null) {
-				return $config->get("o");
+			if ($config->getAsString("o") !== '') {
+				return $config->getAsString("o");
 			}
 			
 			// If no custom path specified, get the provider configuration to build default path

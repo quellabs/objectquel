@@ -41,7 +41,22 @@
 		
 		/**
 		 * Returns the default configuration
-		 * @return array<string, string|int>
+		 * @return array{
+		 *      driver: string,
+		 *      host: string,
+		 *      database: string,
+		 *      username: string,
+		 *      password: string,
+		 *      port: int,
+		 *      encoding: string,
+		 *      collation: string,
+		 *      migrations_path: string,
+		 *      entity_namespace: string,
+		 *      entity_path: string,
+		 *      proxy_namespace: string,
+		 *      proxy_path: string,
+		 *      metadata_cache_path: string
+		 * }
 		 */
 		public static function getDefaults(): array {
 			return [
@@ -67,14 +82,12 @@
 		 * @return Configuration
 		 */
 		public function getConfiguration(): Configuration {
-			$config = $this->getConfig();
 			$defaults = $this->getDefaults();
+			
 			$configuration = new Configuration();
-			
-			$configuration->setEntityPath($config['entity_path'] ?? $defaults['entity_path'] ?? '');
-			$configuration->setEntityNameSpace($config['entity_namespace'] ?? $defaults['entity_namespace'] ?? '');
-			$configuration->setMigrationsPath($config['migrations_path'] ?? $defaults['migrations_path'] ?? '');
-			
+			$configuration->setEntityPath($this->getConfigValueAsString('entity_path', $defaults['entity_path']));
+			$configuration->setEntityNameSpace($this->getConfigValueAsString('entity_namespace', $defaults['entity_namespace']));
+			$configuration->setMigrationsPath($this->getConfigValueAsString('migrations_path', $defaults['migrations_path']));
 			return $configuration;
 		}
 		
@@ -127,26 +140,23 @@
 			// Fetch default values
 			$defaults = $this->getDefaults();
 			
-			// Fetch contents of configuration file
-			$configuration = $this->getConfig();
-			
 			// Make a phinx config configuration array
 			return [
 				'paths'        => [
-					'migrations' => $configuration['migrations_path'] ?? $defaults['migrations_path'] ?? '',
+					'migrations' => $this->getConfigValueAsString('migrations_path', $defaults['migrations_path']),
 				],
 				'environments' => [
-					'default_migration_table' => $configuration['migration_table'] ?? $defaults['migration_table'] ?? 'phinxlog',
+					'default_migration_table' => $this->getConfigValueAsString('migration_table', 'phinxlog'),
 					'default_environment'     => 'development',
 					'development'             => [
-						'adapter'   => $configuration['driver'] ?? $defaults['driver'] ?? 'mysql',
-						'host'      => $configuration['host'] ?? $defaults['host'] ?? '',
-						'name'      => $configuration['database'] ?? $defaults['database'] ?? '',
-						'user'      => $configuration['username'] ?? $defaults['username'] ?? '',
-						'pass'      => $configuration['password'] ?? $defaults['password'] ?? '',
-						'port'      => $configuration['port'] ?? $defaults['port'] ?? 3306,
-						'charset'   => $configuration['encoding'] ?? $defaults['encoding'] ?? 'utf8mb4',
-						'collation' => $configuration['collation'] ?? $defaults['collation'] ?? 'utf8mb4_unicode_ci',
+						'adapter'   => $this->getConfigValueAsString('driver', $defaults['driver']),
+						'host'      => $this->getConfigValueAsString('host', $defaults['host']),
+						'name'      => $this->getConfigValueAsString('database', $defaults['database']),
+						'user'      => $this->getConfigValueAsString('username', $defaults['username']),
+						'pass'      => $this->getConfigValueAsString('password', $defaults['password']),
+						'port'      => $this->getConfigValueAsInt('port', $defaults['port']),
+						'charset'   => $this->getConfigValueAsString('encoding', $defaults['encoding']),
+						'collation' => $this->getConfigValueAsString('collation', $defaults['collation']),
 					],
 				],
 			];
@@ -160,21 +170,18 @@
 			// Get default configuration values
 			$defaults = self::getDefaults();
 			
-			// Load user configuration from config file
-			$configData = $this->getConfig();
-			
 			// Resolve the driver
-			$driver = $this->resolveDriver($configData['driver'] ?? $defaults['driver']);
+			$driver = $this->resolveDriver($this->getConfigValueAsString('driver', $defaults['driver']));
 			
 			// Build final configuration with defaults as fallback
 			return [
 				'driver'   => $driver,
-				'host'     => $configData['host'] ?? $defaults['host'],
-				'username' => $configData['username'] ?? $defaults['username'],
-				'password' => $configData['password'] ?? $defaults['password'],
-				'database' => $configData['database'] ?? $defaults['database'],
-				'port'     => $configData['port'] ?? $defaults['port'],
-				'encoding' => $configData['encoding'] ?? $defaults['encoding']
+				'host'     => $this->getConfigValueAsString('host', $defaults['host']),
+				'username' => $this->getConfigValueAsString('username', $defaults['username']),
+				'password' => $this->getConfigValueAsString('password', $defaults['password']),
+				'database' => $this->getConfigValueAsString('database', $defaults['database']),
+				'port'     => $this->getConfigValueAsInt('port', $defaults['port']),
+				'encoding' => $this->getConfigValueAsString('encoding', $defaults['encoding']),
 			];
 		}
 		
