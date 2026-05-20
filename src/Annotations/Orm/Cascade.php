@@ -64,14 +64,20 @@
 		 * @return string The cascading strategy
 		 */
 		public function getStrategy(): string {
+			// Default value when strategy not set
+			if (!isset($this->parameters['strategy'])) {
+				return 'both';
+			}
+			
+			// Validate contents
 			if (
-				!isset($this->parameters['strategy']) ||
 				!is_string($this->parameters['strategy']) ||
 				!in_array($this->parameters['strategy'], ['orm', 'database', 'both'])
 			) {
 				throw new \InvalidArgumentException('Strategy must be either orm, database or both');
 			}
 			
+			// Return contents
 			return $this->parameters['strategy'];
 		}
 	}
