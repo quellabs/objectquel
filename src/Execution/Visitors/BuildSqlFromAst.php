@@ -302,15 +302,10 @@
 		 * Process an entity by generating SQL for all its columns
 		 * When an entity is referenced (typically through an alias), we need to
 		 * generate SQL that selects all columns belonging to that entity.
-		 * @param AstInterface $ast The entity identifier node
+		 * @param AstIdentifier  $ast The entity identifier node
+		 * @throws EntityResolutionException
 		 */
-		protected function handleEntity(AstInterface $ast): void {
-			// Ensure we're dealing with an identifier
-			if (!$ast instanceof AstIdentifier) {
-				return;
-			}
-			
-			// Generate SQL for all columns of this entity
+		protected function handleEntity(AstIdentifier $ast): void {
 			$this->result[] = $this->sqlFragmentBuilder->buildEntityColumns($ast);
 		}
 		
