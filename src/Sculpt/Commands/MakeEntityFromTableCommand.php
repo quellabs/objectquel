@@ -399,8 +399,8 @@
 			}
 			
 			// Add default value annotation if specified
-			if (!empty($column["default"])) {
-				$details[] = "default=\"{$column["default"]}\"";
+			if (is_scalar($column["default"]) && $column["default"] !== '') {
+				$details[] = "default=\"" . $column["default"] . "\"";
 			}
 			
 			// Add precision annotation for decimal/numeric columns if specified
@@ -457,7 +457,11 @@
 			}
 			
 			// For all other values (strings, etc.), wrap in double quotes
-			return "\"{$defaultValue}\"";
+			if (is_scalar($defaultValue)) {
+				return "\"" . $defaultValue . "\"";
+			}
+			
+			return "\"\"";
 		}
 		
 		/**

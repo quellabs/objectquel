@@ -85,10 +85,10 @@
 		public function execute(ConfigurationManager $config): int {
 			// Allow passing the entity name directly on the command line (e.g. `sculpt make:entity Elephant`),
 			// falling back to an interactive prompt if omitted
-			$entityName = $config->getPositional(0) ?? $this->input->ask("Class name of the entity to create or update (e.g. AgreeableElephant)");
+			$entityName = $config->getPositional(0);
 			
-			if (empty($entityName)) {
-				return 0;
+			if (!is_string($entityName) || $entityName === "") {
+				$entityName = $this->input->ask("Class name of the entity to create or update (e.g. AgreeableElephant)") ?? '';
 			}
 			
 			// Show message that we are making a new or modifying an exising entiy
