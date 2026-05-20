@@ -121,10 +121,10 @@
 		/**
 		 * Normalizes the entity name by resolving proxies and namespaces.
 		 * Exposed publicly so EntityStore can delegate its own resolveProxyClass() here.
-		 * @param mixed $entity Fully qualified class name, short name, object, or ReflectionClass
+		 * @param string|object $entity Fully qualified class name, short name, object, or ReflectionClass
 		 * @return string Normalized, fully qualified class name
 		 */
-		public function resolveProxyClass(mixed $entity): string {
+		public function resolveProxyClass(string|object $entity): string {
 			$className = $this->extractClassName($entity);
 			
 			// Return early if we've resolved this name before
@@ -174,8 +174,10 @@
 		
 		/**
 		 * Extract class name from various entity representations.
+		 * @param string|object $entity
+		 * @return string
 		 */
-		private function extractClassName(mixed $entity): string {
+		private function extractClassName(string|object $entity): string {
 			if ($entity instanceof \ReflectionClass) {
 				// ReflectionClass already knows its own name
 				return $entity->getName();
