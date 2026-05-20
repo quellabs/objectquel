@@ -165,23 +165,25 @@
 				// A node reached the visitor that doesn't follow the naming convention.
 				// This is a programming error — flag it loudly in debug mode rather
 				// than silently producing incomplete SQL.
-				trigger_error(
+				throw new \LogicException(
 					sprintf(
 						'%s: node class "%s" does not follow the Ast* naming convention; no handler will be invoked.',
 						self::class,
 						$className
-					),
-					E_USER_WARNING
+					)
 				);
-				return;
 			}
 			
+			// Determine the method that handles the method
 			$handleMethod = 'handle' . substr($className, 3); // Remove 'Ast' prefix
 			
-			// Call the appropriate handler method if it exists
-			if (method_exists($this, $handleMethod)) {
-				$this->{$handleMethod}($node);
+			// If the handler does not exist, something is very wrong
+			if (!method_exists($this, $handleMethod)) {
+				throw new \LogicException("BuildSqlFromAst: No handler for {$className}");
 			}
+
+			// Call the appropriate handler
+			$this->{$handleMethod}($node);
 			
 			// Mark this node as visited
 			$this->addToVisitedNodes($node);
