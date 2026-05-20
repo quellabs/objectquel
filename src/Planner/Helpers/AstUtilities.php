@@ -3,6 +3,7 @@
 	namespace Quellabs\ObjectQuel\Planner\Helpers;
 	
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstAggregate;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstAlias;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstAny;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstBinaryOperator;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstExpression;
@@ -135,7 +136,7 @@
 		/**
 		 * Returns all query projections that are not aggregates
 		 * @param AstRetrieve $root Query node
-		 * @return array<int,mixed> Non-aggregate SELECT value nodes
+		 * @return array<int,AstAlias> Non-aggregate SELECT value nodes
 		 */
 		public static function collectNonAggregateSelectItems(AstRetrieve $root): array {
 			$result = [];

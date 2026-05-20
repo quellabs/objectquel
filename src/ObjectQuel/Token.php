@@ -130,7 +130,7 @@
 		 * @return string
 		 */
 		public function getStringValue(): string {
-			return is_string($this->value) ? $this->value : '';
+			return is_scalar($this->value) ? (string)$this->value : '';
 		}
 		
 		/**

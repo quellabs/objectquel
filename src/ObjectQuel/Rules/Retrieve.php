@@ -135,7 +135,7 @@
 			// Explicit aliases are used as-is and never rewritten
 			// Example: "custom_id = x.id" -> always "custom_id"
 			if ($aliasToken) {
-				return $aliasToken->getValue();
+				return $aliasToken->getStringValue();
 			}
 			
 			// Auto-generated aliases are derived from source text
@@ -155,15 +155,15 @@
 		 * Process alias macros and validate for duplicates within the retrieve statement.
 		 * @param AstRetrieve $retrieve The retrieve AST node managing macros
 		 * @param Token|null $aliasToken The alias token if an explicit alias was provided
-		 * @param mixed $expression The expression associated with this alias
+		 * @param AstInterface $expression The expression associated with this alias
 		 * @throws ParserException if duplicate alias name is detected
 		 */
-		private function processAliasMacro(AstRetrieve $retrieve, ?Token $aliasToken, $expression): void {
+		private function processAliasMacro(AstRetrieve $retrieve, ?Token $aliasToken, AstInterface $expression): void {
 			if (!$aliasToken) {
 				return;
 			}
 			
-			$aliasName = $aliasToken->getValue();
+			$aliasName = $aliasToken->getStringValue();;
 			
 			if ($retrieve->macroExists($aliasName)) {
 				throw new ParserException(
@@ -273,7 +273,7 @@
 			
 			// Apply the parsed pagination settings to the retrieve AST node
 			// Set which window/page number to retrieve (0-based)
-			$retrieve->setWindow($windowNumber->getValue());
+			$retrieve->setWindow((int)$windowNumber->getNumericValue());
 			
 			// Set how many records should be included in each window/page
 			$retrieve->setWindowSize($windowSize);
@@ -288,14 +288,14 @@
 			// Short notation: WINDOW 1, 10
 			if ($this->lexer->optionalMatch(Token::Comma)) {
 				$sizeToken = $this->lexer->match(Token::Number);
-				return $sizeToken->getValue();
+				return (int)$sizeToken->getNumericValue();
 			}
 			
 			// Explicit notation: WINDOW 1 USING WINDOW_SIZE 10
 			if ($this->lexer->optionalMatch(Token::Using)) {
 				$this->lexer->match(Token::WindowSize);
 				$sizeToken = $this->lexer->match(Token::Number);
-				return $sizeToken->getValue();
+				return (int)$sizeToken->getNumericValue();
 			}
 			
 			return self::DEFAULT_WINDOW_SIZE;
