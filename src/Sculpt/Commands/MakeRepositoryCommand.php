@@ -150,10 +150,12 @@ HELP;
 		 * @return string Entity name
 		 */
 		private function getEntityName(ConfigurationManager $config): string {
+			// Fetch entity name from cli
 			$entityName = $config->getPositional(0);
 			
-			if (empty($entityName)) {
-				$entityName = $this->input->ask('Enter the entity name (without Entity suffix)');
+			// If not given, ask user for the entity name explicitly
+			if (!is_string($entityName) || $entityName === "") {
+				$entityName = $this->input->ask('Enter the entity name (without Entity suffix)') ?? '';
 			}
 			
 			return trim($entityName);

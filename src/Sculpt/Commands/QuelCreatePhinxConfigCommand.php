@@ -169,8 +169,10 @@ EOT;
 					$output .= ($value ? 'true' : 'false') . $terminator . PHP_EOL;
 				} elseif (is_int($value) || is_float($value)) {
 					$output .= $value . $terminator . PHP_EOL;
-				} else {
+				} elseif (is_string($value)) {
 					$output .= "'" . addslashes($value) . "'" . $terminator . PHP_EOL;
+				} else {
+					$output .= var_export($value, true) . $terminator . PHP_EOL;
 				}
 				
 				$i++;
