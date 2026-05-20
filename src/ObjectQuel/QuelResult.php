@@ -110,7 +110,7 @@
 		 * Similar to PDO's fetch() method
 		 * @return array<string, mixed>|bool The current row (entity or array) or false if no more rows
 		 */
-		public function fetchRow(): array|bool {
+		public function fetchRow(): array|false {
 			if ($this->index >= $this->recordCount()) {
 				return false;
 			}
