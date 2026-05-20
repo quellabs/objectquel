@@ -34,7 +34,7 @@
 		
 		/**
 		 * Retrieve the target entity.
-		 * @return class-string The full namespace of the target entity.
+		 * @return string The full namespace of the target entity.
 		 */
 		public function getTargetEntity(): string {
 			if (!is_string($this->parameters["targetEntity"] ?? null)) {

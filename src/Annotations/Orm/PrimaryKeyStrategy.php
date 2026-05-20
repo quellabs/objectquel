@@ -30,6 +30,14 @@
 		 * @return string
 		 */
 		public function getValue(): string {
-			return $this->parameters["strategy"] ?? 'identity';
+			if (!isset($this->parameters['strategy'])) {
+				return "identity";
+			}
+			
+			if (!is_string($this->parameters['strategy'])) {
+				throw new \InvalidArgumentException('invalid strategy parameter');
+			}
+			
+			return $this->parameters["strategy"];
 		}
 	}

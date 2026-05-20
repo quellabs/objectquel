@@ -64,6 +64,13 @@
 		 * @return string
 		 */
 		public function getField(): string {
+			if (
+				!isset($this->parameters['field']) ||
+				!is_string($this->parameters['field'])
+			) {
+				throw new \InvalidArgumentException('SourceField annotation requires a "field" parameter');
+			}
+
 			return $this->parameters['field'];
 		}
 		
@@ -73,6 +80,14 @@
 		 * @return string|null The range alias (e.g. 'product'), or null if not specified.
 		 */
 		public function getRange(): ?string {
-			return $this->parameters['range'] ?? null;
+			if (!isset($this->parameters['range'])) {
+				return null;
+			}
+			
+			if (!is_string($this->parameters['range'])) {
+				throw new \InvalidArgumentException('Invalid range parameter for SourceField annotation');
+			}
+			
+			return $this->parameters['range'];
 		}
 	}
