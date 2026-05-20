@@ -135,7 +135,7 @@
 				case AstConcat::class:
 					$parameters = [];
 					foreach ($ast->getParameters() as $parameter) {
-						$parameters[] = (string)self::evaluate($parameter, $contents, $row, $initialParams);
+						$parameters[] = self::stringify(self::evaluate($parameter, $contents, $row, $initialParams));
 					}
 					
 					return implode('', $parameters);
@@ -170,7 +170,7 @@
 					}
 					
 					if ($ast instanceof AstAvgU) {
-						$values = array_values(array_unique($values));
+						$values = array_values(array_unique($values, SORT_REGULAR));
 					}
 					
 					return array_sum($values) / count($values);
@@ -183,7 +183,7 @@
 					$values = self::collectAggregateValues($ast, $contents, $initialParams);
 					
 					if ($ast instanceof AstSumU) {
-						$values = array_values(array_unique($values));
+						$values = array_values(array_unique($values, SORT_REGULAR));
 					}
 					
 					return array_sum($values);
@@ -196,7 +196,7 @@
 					$values = self::collectAggregateValues($ast, $contents, $initialParams);
 					
 					if ($ast instanceof AstCountU) {
-						$values = array_values(array_unique($values));
+						$values = array_values(array_unique($values, SORT_REGULAR));
 					}
 					
 					return count($values);
@@ -306,13 +306,13 @@
 		private static function evaluateEquals(mixed $left, mixed $right): bool {
 			// Regexp: right side evaluated to a RegExpValue carrier
 			if ($right instanceof RegExpValue) {
-				return (bool)preg_match($right->toPcre(), (string)$left);
+				return (bool)preg_match($right->toPcre(), self::stringify($left));
 			}
 			
 			// Wildcard: right side is a string containing * or ?
 			// fnmatch() with FNM_CASEFOLD mirrors SQL LIKE case-insensitive behaviour
 			if (is_string($right) && (str_contains($right, '*') || str_contains($right, '?'))) {
-				return fnmatch($right, (string)$left, FNM_CASEFOLD);
+				return fnmatch($right, self::stringify($left), FNM_CASEFOLD);
 			}
 			
 			// Plain equality — loose comparison to match SQL's implicit type coercion
@@ -355,7 +355,7 @@
 				
 				// If found, add it to the list
 				if ($value !== null) {
-					$fieldValues[] = mb_strtolower((string)$value);
+					$fieldValues[] = mb_strtolower(self::stringify($value));
 				}
 			}
 			
@@ -454,5 +454,27 @@
 			}
 			
 			return $values;
+		}
+		
+		/**
+		 * Converts a mixed value to string for comparison or concatenation.
+		 * Null is coerced to empty string; all other scalars are cast normally.
+		 * Non-scalar types (arrays, objects without __toString) are not expected
+		 * here and will trigger a native PHP error, which is the correct behaviour.
+		 * @param mixed $value
+		 * @return string
+		 */
+		private static function stringify(mixed $value): string {
+			// Null values are allowed
+			if ($value === null) {
+				return '';
+			}
+			
+			// Otherwise it needs to be a scalar value (int, float, bool, string)
+			if (!is_scalar($value)) {
+				throw new \InvalidArgumentException('stringify() expects a scalar or null value');
+			}
+			
+			return (string)$value;
 		}
 	}
