@@ -58,12 +58,12 @@
 			
 			// Check if the next token is an opening parenthesis; if so it's a subquery specification
 			if ($this->lexer->lookahead() == Token::ParenthesesOpen) {
-				return $this->parseQuery($alias->getValue());
+				return $this->parseQuery($alias->getStringValue());
 			}
 			
 			// Check if the next token is 'JSON' to determine the type of data source
 			if ($this->lexer->optionalMatch(Token::JsonSource)) {
-				return $this->parseJson($alias->getValue());
+				return $this->parseJson($alias->getStringValue());
 			}
 			
 			// Otherwise, treat it as a database entity source
@@ -122,11 +122,11 @@
 		 */
 		private function parseEntity(Token $alias): AstRangeDatabase {
 			// Match and consume an 'Identifier' token for the entity name
-			$entityName = $this->lexer->match(Token::Identifier)->getValue();
+			$entityName = $this->lexer->match(Token::Identifier)->getStringValue();
 			
 			// Handle namespaced entity names (Entity\SubEntity\SubSubEntity)
 			while ($this->lexer->optionalMatch(Token::Backslash)) {
-				$entityName .= "\\" . $this->lexer->match(Token::Identifier)->getValue();
+				$entityName .= "\\" . $this->lexer->match(Token::Identifier)->getStringValue();
 			}
 			
 			// Parse an optional 'VIA' statement (for filtering)
@@ -146,7 +146,7 @@
 			}
 			
 			// Create and return the AST node for a database entity with alias, entity name, and optional VIA condition
-			return new AstRangeDatabase($alias->getValue(), $entityName, $viaIdentifier);
+			return new AstRangeDatabase($alias->getStringValue(), $entityName, $viaIdentifier);
 		}
 		
 		/**
@@ -188,14 +188,14 @@
 			$expression = null;
 			
 			if ($this->lexer->optionalMatch(Token::Comma)) {
-				$expression = $this->lexer->match(Token::String)->getValue();
+				$expression = $this->lexer->match(Token::String)->getStringValue();
 			}
 			
 			// Consume the closing parenthesis
 			$this->lexer->match(Token::ParenthesesClose);
 			
 			// Create and return the AST node for a JSON source with the alias, path, and optional JSONPath
-			return new AstRangeJsonSource($alias, $path->getValue(), $expression);
+			return new AstRangeJsonSource($alias, $path->getStringValue(), $expression);
 		}
 		
 		/**
@@ -216,9 +216,9 @@
 			
 			do {
 				// Consume the argument name, the '=' separator, and the string value
-				$name = $this->lexer->match(Token::Identifier)->getValue();
+				$name = $this->lexer->match(Token::Identifier)->getStringValue();
 				$this->lexer->match(Token::Equals);
-				$value = $this->lexer->match(Token::String)->getValue();
+				$value = $this->lexer->match(Token::String)->getStringValue();
 				
 				switch ($name) {
 					case 'file':

@@ -126,11 +126,16 @@
 		
 		/**
 		 * Returns the token value as a string.
-		 * Only valid for tokens that carry a string value (Annotation, Parameter, String).
+		 * Only valid for tokens that carry a string value (Annotation, Parameter, String, Identifier).
 		 * @return string
+		 * @throws \LogicException if the token value is not a scalar
 		 */
 		public function getStringValue(): string {
-			return is_scalar($this->value) ? (string)$this->value : '';
+			if (!is_string($this->value)) {
+				throw new \LogicException('getStringValue() called on a non-string token');
+			}
+			
+			return $this->value;
 		}
 		
 		/**

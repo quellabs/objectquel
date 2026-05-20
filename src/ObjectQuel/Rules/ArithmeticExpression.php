@@ -41,17 +41,23 @@
 		public function parseSimpleValue(): AstInterface {
 			$token = $this->lexer->peek();
 			$tokenType = $token->getType();
-			$tokenValue = $token->getValue();
 			$tokenExtraData = $token->getExtraData();
 			
 			switch ($tokenType) {
 				case Token::Number :
 					$this->lexer->match($tokenType);
-					return new AstNumber($tokenValue);
+					return new AstNumber((string)$token->getNumericValue());
 				
 				case Token::String :
 					$this->lexer->match($tokenType);
-					return new AstString($tokenValue, $tokenExtraData['char'] ?? '"');
+					
+					if (isset($tokenExtraData['char']) && is_string($tokenExtraData['char'])) {
+						$enclosingChar = $tokenExtraData['char'];
+					} else {
+						$enclosingChar = '"';
+					}
+					
+					return new AstString($token->getStringValue(), $enclosingChar);
 				
 				case Token::False :
 					$this->lexer->match($tokenType);
@@ -75,18 +81,24 @@
 		public function parsePrimaryExpression(): AstInterface {
 			$token = $this->lexer->peek();
 			$tokenType = $token->getType();
-			$tokenValue = $token->getValue();
 			$tokenExtraData = $token->getExtraData();
 			
 			switch ($tokenType) {
 				case Token::Number :
 					$this->lexer->match($tokenType);
-					return new AstNumber($token->getStringValue());
+					return new AstNumber((string)$token->getNumericValue());
 				
 				case Token::String :
 					$this->lexer->match($tokenType);
-					return new AstString($token->getStringValue(), (string)($tokenExtraData['char'] ?? '"'));
-				
+					
+					if (isset($tokenExtraData['char']) && is_string($tokenExtraData['char'])) {
+						$enclosingChar = $tokenExtraData['char'];
+					} else {
+						$enclosingChar = '"';
+					}
+					
+					return new AstString($token->getStringValue(), $enclosingChar);
+					
 				case Token::False :
 					$this->lexer->match($tokenType);
 					return new AstBool(false);
@@ -165,7 +177,7 @@
 		 * can have multiplication (*) or division (/) operations.
 		 * @return AstInterface The resulting AST node representing the parsed factor.
 		 * @throws LexerException
-		 * @throws ParserException
+		 * @throws ParserException|\ReflectionException
 		 */
 		protected function parseFactor(): AstInterface {
 			// Parse a constant or an identifier (like a variable)
@@ -195,7 +207,7 @@
 		protected function parseUnaryExpression(): AstInterface {
 			$token = $this->lexer->peek();
 			$tokenType = $token->getType();
-			$tokenValue = $token->getValue();
+			$tokenValue = $token->getStringValue();
 			
 			switch ($tokenType) {
 				case Token::Plus:

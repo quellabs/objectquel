@@ -55,7 +55,7 @@
 			}
 			
 			// Create and return a new AstExpression node
-			return new AstExpression($term, $rightSide, $operatorToken->getValue());
+			return new AstExpression($term, $rightSide, $operatorToken->getStringValue());
 		}
 		
 		/**

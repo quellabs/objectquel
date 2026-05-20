@@ -52,7 +52,7 @@
 			) {
 				// Peek at the name without consuming — only consume once we know
 				// it's a recognized predicate, so unknown names fall through cleanly
-				$name = strtolower($this->lexer->peek()->getValue());
+				$name = strtolower($this->lexer->peek()->getStringValue());
 				
 				// If the function matches something we know, parse it
 				$node = match ($name) {

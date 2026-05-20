@@ -18,9 +18,11 @@
 	 */
 	abstract class ExpressionRuleBase {
 		
+		/** @var Lexer Lexical Analysis */
 		protected Lexer $lexer;
 		
 		/**
+		 * ExpressionRuleBase constructor
 		 * @param Lexer $lexer
 		 */
 		public function __construct(Lexer $lexer) {
@@ -44,12 +46,12 @@
 		public function parsePropertyChain(): AstIdentifier {
 			// Parse the first identifier in the chain, which may include namespace
 			$token = $this->lexer->match(Token::Identifier);
-			$tokenValue = $token->getValue();
+			$tokenValue = $token->getStringValue();
 			
 			// Handle any namespace segments in the first identifier
 			while ($this->lexer->optionalMatch(Token::Backslash)) {
 				$namespaceToken = $this->lexer->match(Token::Identifier);
-				$tokenValue .= "\\" . $namespaceToken->getValue();
+				$tokenValue .= "\\" . $namespaceToken->getStringValue();
 			}
 			
 			// Create the root identifier with the full (potentially namespaced) value
@@ -59,7 +61,7 @@
 			// Continue parsing the property chain with dot notation
 			while ($this->lexer->optionalMatch(Token::Dot)) {
 				$token = $this->lexer->match(Token::Identifier);
-				$nextIdentifier = new AstIdentifier($token->getValue());
+				$nextIdentifier = new AstIdentifier($token->getStringValue());
 				$nextIdentifier->setParent($currentIdentifier);
 				$currentIdentifier->setNext($nextIdentifier);
 				$currentIdentifier = $nextIdentifier;
