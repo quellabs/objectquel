@@ -30,6 +30,13 @@
          * @return string
          */
         public function getName(): string {
+			if (
+				!isset($this->parameters['name']) ||
+	            !is_string($this->parameters['name'])
+			) {
+				throw new \InvalidArgumentException("Table annotation requires a valid 'name' parameter");
+			}
+	        
             return $this->parameters["name"];
         }
     }

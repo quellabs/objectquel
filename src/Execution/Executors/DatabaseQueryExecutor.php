@@ -68,6 +68,7 @@
 				$result[] = $row;
 			}
 			
+			/** @var list<array<string, mixed>> $result */
 			return $result;
 		}
 		

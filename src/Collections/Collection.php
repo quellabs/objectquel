@@ -183,7 +183,7 @@
 			}
 			
 			// Get the keys
-			$this->sortedKeys = $this->getKeys();
+			$this->sortedKeys = array_values($this->getKeys());
 			
 			// Sort the keys if a sort order is set
 			if (!empty($this->sortOrder)) {
