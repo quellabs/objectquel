@@ -130,7 +130,7 @@
 		 * @return string
 		 */
 		public function getStringValue(): string {
-			return (string)$this->value;
+			return is_string($this->value) ? $this->value : '';
 		}
 		
 		/**
