@@ -304,7 +304,7 @@
 						 * expanding to the full namespace before they can be used elsewhere.
 						 */
 						$annotation->setTargetEntity(
-							$this->resolveProxyClass($annotation->getTargetEntity()) // @phpstan-ignore-line argument.type
+							$this->resolveProxyClass($annotation->getTargetEntity())
 						);
 						
 						// One relation annotation per property — the first match wins

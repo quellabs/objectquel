@@ -34,6 +34,10 @@
 		 * @return class-string The full namespace of the target entity.
 		 */
 		public function getTargetEntity(): string {
+			if (!is_string($this->parameters["targetEntity"] ?? null)) {
+				throw new \InvalidArgumentException("ManyToOne: 'targetEntity' must be a string");
+			}
+			
 			return $this->parameters["targetEntity"];
 		}
 		
@@ -51,7 +55,13 @@
 		 * @return string|null The name of the field in the target entity that refers to the current entity, or null if it is not set.
 		 */
 		public function getInversedBy(): ?string {
-			return $this->parameters["inversedBy"] ?? null;
+			$value = $this->parameters["inversedBy"] ?? null;
+			
+			if ($value !== null && !is_string($value)) {
+				throw new \InvalidArgumentException("ManyToOne: 'inversedBy' must be a string or null");
+			}
+			
+			return $value;
 		}
 		
 		/**
@@ -60,7 +70,13 @@
 		 * @return string|null The name of the join column or null if it is not set.
 		 */
 		public function getRelationColumn(): ?string {
-			return $this->parameters["relationColumn"] ?? null;
+			$value = $this->parameters["relationColumn"] ?? null;
+			
+			if ($value !== null && !is_string($value)) {
+				throw new \InvalidArgumentException("ManyToOne: 'relationColumn' must be a string or null");
+			}
+			
+			return $value;
 		}
 		
 		/**
@@ -68,7 +84,13 @@
 		 * @return string|null The name of the join column or null if it is not set.
 		 */
 		public function getForeignColumn(): ?string {
-			return $this->parameters["foreignColumn"] ?? null;
+			$value = $this->parameters["foreignColumn"] ?? null;
+			
+			if ($value !== null && !is_string($value)) {
+				throw new \InvalidArgumentException("ManyToOne: 'foreignColumn' must be a string or null");
+			}
+			
+			return $value;
 		}
 		
 		/**
@@ -76,6 +98,12 @@
 		 * @return string
 		 */
 		public function getFetch(): string {
-			return isset($this->parameters["fetch"]) ? strtoupper($this->parameters["fetch"]) : "EAGER";
+			$value = $this->parameters["fetch"] ?? null;
+			
+			if ($value !== null && !is_string($value)) {
+				throw new \InvalidArgumentException("ManyToOne: 'fetch' must be a string or null");
+			}
+			
+			return $value !== null ? strtoupper($value) : "EAGER";
 		}
 	}

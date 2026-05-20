@@ -31,15 +31,19 @@
 		
 		/**
 		 * Retrieves the target entity.
-		 * @return class-string The full namespace of the target entity.
+		 * @return string The full namespace of the target entity.
 		 */
 		public function getTargetEntity(): string {
+			if (!is_string($this->parameters["targetEntity"] ?? null)) {
+				throw new \InvalidArgumentException("OneToOne: 'targetEntity' must be a string");
+			}
+			
 			return $this->parameters["targetEntity"];
 		}
 		
 		/**
 		 * Retrieve the target entity.
-		 * @param class-string $targetEntity
+		 * @param string $targetEntity
 		 * @return void The full namespace of the target entity.
 		 */
 		public function setTargetEntity(string $targetEntity): void {
@@ -51,7 +55,13 @@
 		 * @return string|null The value of the 'mappedBy' parameter or an empty string if it is not set.
 		 */
 		public function getMappedBy(): ?string {
-			return $this->parameters["mappedBy"] ?? null;
+			$value = $this->parameters["mappedBy"] ?? null;
+			
+			if ($value !== null && !is_string($value)) {
+				throw new \InvalidArgumentException("OneToOne: 'mappedBy' must be a string or null");
+			}
+			
+			return $value;
 		}
 		
 		/**
@@ -59,7 +69,13 @@
 		 * @return string|null The name of the field in the target entity that refers to the current entity, or null if it is not set.
 		 */
 		public function getInversedBy(): ?string {
-			return $this->parameters["inversedBy"] ?? null;
+			$value = $this->parameters["inversedBy"] ?? null;
+			
+			if ($value !== null && !is_string($value)) {
+				throw new \InvalidArgumentException("OneToOne: 'inversedBy' must be a string or null");
+			}
+			
+			return $value;
 		}
 		
 		/**
@@ -68,7 +84,13 @@
 		 * @return string|null The name of the join column or null if it is not set.
 		 */
 		public function getRelationColumn(): ?string {
-			return $this->parameters["relationColumn"] ?? null;
+			$value = $this->parameters["relationColumn"] ?? null;
+			
+			if ($value !== null && !is_string($value)) {
+				throw new \InvalidArgumentException("OneToOne: 'relationColumn' must be a string or null");
+			}
+			
+			return $value;
 		}
 		
 		/**
@@ -76,7 +98,13 @@
 		 * @return string|null The name of the join column or null if it is not set.
 		 */
 		public function getForeignColumn(): ?string {
-			return $this->parameters["foreignColumn"] ?? null;
+			$value = $this->parameters["foreignColumn"] ?? null;
+			
+			if ($value !== null && !is_string($value)) {
+				throw new \InvalidArgumentException("OneToOne: 'foreignColumn' must be a string or null");
+			}
+			
+			return $value;
 		}
 		
 		/**
@@ -84,10 +112,12 @@
 		 * @return string
 		 */
 		public function getFetch(): string {
-			if (empty($this->parameters["fetch"])) {
-				return "LAZY";
+			$value = $this->parameters["fetch"] ?? null;
+			
+			if ($value !== null && !is_string($value)) {
+				throw new \InvalidArgumentException("OneToOne: 'fetch' must be a string or null");
 			}
 			
-			return strtoupper($this->parameters["fetch"]);
+			return $value !== null ? strtoupper($value) : "LAZY";
 		}
 	}

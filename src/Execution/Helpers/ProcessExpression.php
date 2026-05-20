@@ -27,6 +27,7 @@
 	use Quellabs\ObjectQuel\Capabilities\PlatformCapabilitiesInterface;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\NodeBinary;
 	use Quellabs\ObjectQuel\ObjectQuel\AstInterface;
+	use Quellabs\ObjectQuel\ObjectQuel\AstVisitorInterface;
 	use Quellabs\ObjectQuel\ObjectQuel\IdentifierType;
 	
 	/**
@@ -84,8 +85,8 @@
 		/** @var array<string, mixed> Reference to the parameter array for prepared statements */
 		private array $parameters;
 		
-		/** @var mixed Reference to the main visitor to avoid circular dependencies */
-		private mixed $mainVisitor;
+		/** @var AstVisitorInterface Reference to the main visitor to avoid circular dependencies */
+		private AstVisitorInterface $mainVisitor;
 		
 		/** @var PlatformCapabilitiesInterface Describes what the connected database engine supports */
 		private PlatformCapabilitiesInterface $platform;
@@ -95,14 +96,14 @@
 		 * @param EntityStore $entityStore EntityStore holds entity metadata
 		 * @param ResolveType $typeInference Helper for type analysis
 		 * @param array<string, mixed> $parameters Reference to parameters array for prepared statements
-		 * @param mixed $mainVisitor Reference to the main AST visitor (avoids circular dependency)
+		 * @param AstVisitorInterface $mainVisitor Reference to the main AST visitor (avoids circular dependency)
 		 * @param PlatformCapabilitiesInterface $platform Database engine capability descriptor
 		 */
 		public function __construct(
 			EntityStore                   $entityStore,
 			ResolveType                   $typeInference,
 			array                         &$parameters,
-			mixed                         $mainVisitor,
+			AstVisitorInterface           $mainVisitor,
 			PlatformCapabilitiesInterface $platform = new NullPlatformCapabilities()
 		) {
 			$this->entityStore = $entityStore;
@@ -264,7 +265,7 @@
 			$sql = match ($this->platform->getFulltextIndexStyle()) {
 				FulltextIndexStyle::Fulltext => $this->buildFullTextCondition($search->getIdentifiers(), $search->getSearchString(), $searchKey),
 				FulltextIndexStyle::Tsvector => $this->buildTsvectorCondition($search->getIdentifiers(), $search->getSearchString(), $searchKey),
-				FulltextIndexStyle::Fts5     => $this->buildFts5Condition($search->getIdentifiers(), $search->getSearchString(), $searchKey),
+				FulltextIndexStyle::Fts5 => $this->buildFts5Condition($search->getIdentifiers(), $search->getSearchString(), $searchKey),
 			};
 			
 			return '(' . $sql . ')';

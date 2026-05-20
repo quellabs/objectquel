@@ -37,6 +37,10 @@
 		 * @return class-string The full namespace of the target entity.
 		 */
 		public function getTargetEntity(): string {
+			if (!is_string($this->parameters["targetEntity"] ?? null)) {
+				throw new \InvalidArgumentException("OneToMany: 'targetEntity' must be a string");
+			}
+			
 			return $this->parameters["targetEntity"];
 		}
 		
@@ -54,7 +58,13 @@
 		 * @return string|null The value of the 'mappedBy' parameter or an empty string if it is not set.
 		 */
 		public function getMappedBy(): ?string {
-			return $this->parameters["mappedBy"] ?? null;
+			$value = $this->parameters["mappedBy"] ?? null;
+			
+			if ($value !== null && !is_string($value)) {
+				throw new \InvalidArgumentException("OneToMany: 'mappedBy' must be a string or null");
+			}
+			
+			return $value;
 		}
 		
 		/**
@@ -63,7 +73,13 @@
 		 * @return string|null The name of the join column or null if it is not set.
 		 */
 		public function getRelationColumn(): ?string {
-			return $this->parameters["relationColumn"] ?? null;
+			$value = $this->parameters["relationColumn"] ?? null;
+			
+			if ($value !== null && !is_string($value)) {
+				throw new \InvalidArgumentException("OneToMany: 'relationColumn' must be a string or null");
+			}
+			
+			return $value;
 		}
 		
 		/**
@@ -71,6 +87,12 @@
 		 * @return string
 		 */
 		public function getOrderBy(): string {
-			return $this->parameters["orderBy"] ?? '';
+			$value = $this->parameters["orderBy"] ?? null;
+			
+			if ($value !== null && !is_string($value)) {
+				throw new \InvalidArgumentException("OneToMany: 'orderBy' must be a string or null");
+			}
+			
+			return $value ?? '';
 		}
 	}
