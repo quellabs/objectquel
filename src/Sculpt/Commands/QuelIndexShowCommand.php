@@ -113,10 +113,11 @@
 				$sql = "ALTER TABLE `{$tableName}` ALTER INDEX `{$indexName}` NOT IGNORED";
 			}
 			
+			// Execute the query
 			$result = $databaseAdapter->execute($sql);
 			
 			// If the call failed, output an error
-			if ($result === false) {
+			if ($result === null) {
 				$this->output->error("Failed to make index visible: " . $databaseAdapter->getLastErrorMessage());
 				return 1;
 			}

@@ -115,11 +115,11 @@
 				$sql = "ALTER TABLE `{$tableName}` ALTER INDEX `{$indexName}` IGNORED";
 			}
 			
-			// If the call failed, output an error
+			// Execute the query
 			$result = $databaseAdapter->execute($sql);
 			
 			// If the call failed, output an error
-			if ($result === false) {
+			if ($result === null) {
 				$this->output->error("Failed to hide index: " . $databaseAdapter->getLastErrorMessage());
 				return 1;
 			}
