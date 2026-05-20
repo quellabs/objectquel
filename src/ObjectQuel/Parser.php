@@ -48,7 +48,8 @@
 					    break;
 				    
 				    default :
-					    throw new ParserException("Unexpected token '{$token->getValue()}' on line {$this->lexer->getLineNumber()}");
+					    $tokenName = Token::toString($token->getType()) ?: 'unknown';
+					    throw new ParserException("Unexpected token '{$tokenName}' on line {$this->lexer->getLineNumber()}");
 			    }
 		    } while ($this->lexer->peek()->getType() !== Token::Eof);
 		    
@@ -60,19 +61,19 @@
 	    /**
 	     * Helper function to match and return the value of a directive.
 	     * @param string $directiveName
-	     * @return mixed
+	     * @return bool|int|float|string
 	     * @throws ParserException
 	     * @throws LexerException
 	     */
-	    protected function matchDirectiveValue(string $directiveName): mixed {
+	    protected function matchDirectiveValue(string $directiveName): bool|int|float|string {
 		    if ($this->lexer->optionalMatch(Token::True)) {
 			    return true;
 		    } elseif ($this->lexer->optionalMatch(Token::False)) {
 			    return false;
 		    } elseif (($token = $this->lexer->optionalMatch(Token::Number)) !== null) {
-			    return $token->getValue();
+			    return $token->getNumericValue();
 		    } elseif (($token = $this->lexer->optionalMatch(Token::Identifier)) !== null) {
-			    return $token->getValue();
+			    return $token->getStringValue();
 		    } else {
 			    throw new ParserException("Invalid compiler directive value for @{$directiveName}");
 		    }
@@ -88,7 +89,7 @@
 		    
 		    while ($this->lexer->peek()->getType() == Token::CompilerDirective) {
 			    $directive = $this->lexer->match(Token::CompilerDirective);
-			    $directiveName = $directive->getValue();
+			    $directiveName = $directive->getStringValue();
 			    
 			    // Gebruik van een helper functie om de toewijzing te vereenvoudigen
 			    $directives[$directiveName] = $this->matchDirectiveValue($directiveName);
