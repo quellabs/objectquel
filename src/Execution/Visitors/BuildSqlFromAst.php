@@ -167,7 +167,7 @@
 				// than silently producing incomplete SQL.
 				throw new \LogicException(
 					sprintf(
-						'%s: node class "%s" does not follow the Ast* naming convention; no handler will be invoked.',
+						'%s: node class "%s" does not follow the Ast* naming convention.',
 						self::class,
 						$className
 					)
@@ -179,7 +179,14 @@
 			
 			// If the handler does not exist, something is very wrong
 			if (!method_exists($this, $handleMethod)) {
-				throw new \LogicException("BuildSqlFromAst: No handler for {$className}");
+				throw new \LogicException(
+					sprintf(
+						'%s: no handler found for node class "%s" (expected method "%s").',
+						self::class,
+						$className,
+						$handleMethod
+					)
+				);
 			}
 
 			// Call the appropriate handler

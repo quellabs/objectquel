@@ -56,11 +56,6 @@
 			// Find the best table to serve as the primary anchor
 			$anchorCandidate = self::selectBestAnchor($ranges, $analysis);
 			
-			// Critical error: no viable anchor means malformed query
-			if ($anchorCandidate === null) {
-				throw new \LogicException("No valid anchor range found for query optimization");
-			}
-			
 			// Apply the selected optimization strategy
 			return self::applyAnchorOptimization($ranges, $anchorCandidate, $whereClause);
 		}
@@ -75,9 +70,10 @@
 		 *
 		 * @param AstRange[] $ranges All table references to evaluate
 		 * @param QueryAnalysisResult $analysis Table usage analysis data
-		 * @return AnchorCandidate|null Best anchor candidate or null if none viable
+		 * @return AnchorCandidate
+		 * @throws \LogicException If no viable anchor exists — the parser should prevent this.
 		 */
-		private static function selectBestAnchor(array $ranges, QueryAnalysisResult $analysis): ?AnchorCandidate {
+		private static function selectBestAnchor(array $ranges, QueryAnalysisResult $analysis): AnchorCandidate {
 			$candidates = [];
 			
 			foreach ($ranges as $index => $range) {
@@ -90,10 +86,9 @@
 				}
 			}
 			
-			// No viable anchors found - query structure issue
-			// Should never happen, because parser enforces correct structure
+			// The parser enforces valid query structure, so this should be unreachable.
 			if (empty($candidates)) {
-				return null;
+				throw new \LogicException("No valid anchor range found for query optimization.");
 			}
 			
 			// Select highest priority candidate (best optimization potential)

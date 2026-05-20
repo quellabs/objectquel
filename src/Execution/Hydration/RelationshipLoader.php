@@ -140,13 +140,16 @@
 			// resolveProxyClass ensures we have the fully-qualified class name.
 			$targetEntityName = $this->entityStore->resolveProxyClass($dependency->getTargetEntity());
 			
-			// resolveTargetProperty handles both ManyToOne and OneToOne transparently.
-			// If it returns null, the target property is unknown and we cannot build a proxy.
+			// resolveTargetProperty returns null only when the target entity has no
+			// primary key — a configuration error that should have been caught earlier.
 			$relationPropertyName = $this->entityStore->resolveTargetProperty($dependency);
 			
-			// Return if the property could not be resolved
+			// Error when entity has no primary key
 			if ($relationPropertyName === null) {
-				return;
+				throw new \LogicException(
+					"Cannot build proxy for '{$property}': target entity '{$dependency->getTargetEntity()}' " .
+					"has no primary key. Ensure the entity is correctly annotated."
+				);
 			}
 			
 			// Create the proxy
