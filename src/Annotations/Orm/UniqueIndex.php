@@ -47,6 +47,13 @@
 		 * @return string The unique index name or empty string if not defined
 		 */
 		public function getName(): string {
+			if (
+				!isset($this->parameters['name']) ||
+				!is_string($this->parameters['name'])
+			) {
+				throw new \InvalidArgumentException("UniqueIndex annotation requires a valid 'name' parameter");
+			}
+			
 			return $this->parameters['name'] ?? '';
 		}
 		

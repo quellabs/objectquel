@@ -53,8 +53,11 @@
 		 * @return string The index name or empty string if not defined
 		 */
 		public function getName(): string {
-			if (!is_string($this->parameters['name'] ?? null)) {
-				return '';
+			if (
+				!isset($this->parameters['name']) ||
+				!is_string($this->parameters['name'])
+			) {
+				throw new \InvalidArgumentException("FullTextIndex annotation requires a valid 'name' parameter");
 			}
 			
 			return $this->parameters['name'];
