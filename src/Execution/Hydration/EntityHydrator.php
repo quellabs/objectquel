@@ -206,6 +206,7 @@
 			$resultRow = [];
 			
 			foreach ($ast as $value) {
+				// Value was tagged as hidden
 				if (!$value->showInResult()) {
 					continue;
 				}
@@ -242,10 +243,11 @@
 		private function isEntityAlias(AstAlias $alias): bool {
 			$node = $alias->getExpression();
 			
-			return $node instanceof AstIdentifier
-				&& !$node->getRange() instanceof AstRangeJsonSource
-				&& !$node->hasParentIdentifier()
-				&& !$node->hasNext();
+			return
+				$node instanceof AstIdentifier &&
+				!$node->getRange() instanceof AstRangeJsonSource &&
+				!$node->hasParentIdentifier() &&
+				!$node->hasNext();
 		}
 		
 		/**
@@ -260,8 +262,12 @@
 		 * @throws \LogicException
 		 */
 		private function resolveEntityCacheEntry(AstAlias $alias, array $relationCache): array {
+			/**
+			 * isEntityAlias() has already confirmed the expression is an AstIdentifier.
+			 * @var AstIdentifier $node
+			 */
 			$node = $alias->getExpression();
-			$rangeName = $node instanceof AstIdentifier ? $node->getRange()?->getName() : null;
+			$rangeName = $node->getRange()?->getName();
 			
 			if ($rangeName === null || !isset($relationCache[$rangeName])) {
 				throw new \LogicException(
@@ -300,20 +306,23 @@
 				return null;
 			}
 			
+			/**
+			 * isEntityAlias() has already confirmed the expression is an AstIdentifier.
+			 * @var AstIdentifier $expression
+			 */
 			$expression = $value->getExpression();
 			
-			if (!$expression instanceof AstIdentifier) {
-				throw new HydrationException("Expression should be of type AstIdentifier");
-			}
-			
+			// Extract and validate entity name
 			$entityName = $expression->getEntityName();
 			
 			if ($entityName === null) {
 				throw new HydrationException("Missing entity name in the AstIdentifier");
 			}
 			
+			// Resolve entity to fully namespaced
 			$entity = $this->entityStore->resolveProxyClass($entityName);
 			
+			// Extract and validate range
 			$rangeName = $expression->getRange()?->getName();
 			
 			if ($rangeName === null) {
