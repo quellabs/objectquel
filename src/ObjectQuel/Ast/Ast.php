@@ -116,9 +116,10 @@
 		
 		/**
 		 * Helper method for cloning arrays of AST nodes
-		 * @param array<array-key, mixed> $array Array potentially containing AST nodes
+		 * @template T
+		 * @param array<array-key, T> $array Array potentially containing AST nodes
 		 * @param Ast|null $newParent The parent for cloned nodes
-		 * @return array<array-key, mixed> Cloned array
+		 * @return array<array-key, T> Cloned array
 		 */
 		protected function cloneArray(array $array, ?Ast $newParent = null): array {
 			$cloned = [];

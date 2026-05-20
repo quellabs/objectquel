@@ -383,7 +383,7 @@
 		/**
 		 * Returns a specific compiler directive value.
 		 * @param string $name The directive name
-		 * @return array<string, mixed> The directive value or null if not found
+		 * @return mixed The directive value or null if not found
 		 */
 		public function getDirective(string $name): mixed {
 			return $this->directives[$name] ?? null;

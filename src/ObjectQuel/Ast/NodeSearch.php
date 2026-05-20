@@ -22,11 +22,11 @@
 		protected AstString|AstParameter $searchString;
 		
 		/**
-		 * @param AstIdentifier[]        $identifiers
+		 * @param AstIdentifier[] $identifiers
 		 * @param AstString|AstParameter $searchString
 		 */
 		public function __construct(array $identifiers, AstString|AstParameter $searchString) {
-			$this->identifiers  = $identifiers;
+			$this->identifiers = $identifiers;
 			$this->searchString = $searchString;
 			
 			$this->searchString->setParent($this);
@@ -85,19 +85,30 @@
 		 * When the search string is an AstParameter the value is resolved
 		 * from $parameters at call time.
 		 *
-		 * @param  array<string, mixed> $parameters Runtime query parameters
+		 * @param array<string, mixed> $parameters Runtime query parameters
 		 * @return array{or_terms: list<string>, and_terms: list<string>, not_terms: list<string>}
 		 * @throws QuelException
 		 */
 		public function parseSearchData(array $parameters): array {
+			// Resolve the search string from either a literal value or a runtime parameter
 			if ($this->searchString instanceof AstString) {
 				$searchString = $this->searchString->getValue();
 			} else {
-				$searchString = ($parameters[$this->searchString->getName()] ?? '');
+				$searchString = $parameters[$this->searchString->getName()] ?? '';
+				
+				if (!is_string($searchString)) {
+					throw new QuelException(sprintf(
+						'Parameter "%s" must be a string, got %s',
+						$this->searchString->getName(),
+						get_debug_type($searchString)
+					));
+				}
 			}
 			
+			// Split on whitespace that is not inside double quotes,
+			// so quoted phrases like "foo bar" are kept as single tokens
 			$pattern = '/\s+(?=(?:[^"]*"[^"]*")*[^"]*$)/';
-			$tokens  = preg_split($pattern, $searchString);
+			$tokens = preg_split($pattern, $searchString);
 			
 			if ($tokens === false) {
 				throw new QuelException(sprintf(
@@ -111,13 +122,17 @@
 			
 			foreach ($tokens as $token) {
 				if (preg_match('/^"(.+)"$/', $token, $matches)) {
-					$parsed['or_terms'][]  = $matches[1];
+					// Quoted phrase → or_term (matched as a single exact unit)
+					$parsed['or_terms'][] = $matches[1];
 				} elseif (str_starts_with($token, '+')) {
+					// +word → and_term (must match at least one field)
 					$parsed['and_terms'][] = trim(substr($token, 1), '"');
 				} elseif (str_starts_with($token, '-')) {
+					// -word → not_term (must not match any field)
 					$parsed['not_terms'][] = trim(substr($token, 1), '"');
 				} else {
-					$parsed['or_terms'][]  = $token;
+					// Plain word → or_term (any match is sufficient)
+					$parsed['or_terms'][] = $token;
 				}
 			}
 			
