@@ -199,6 +199,7 @@
 				$result[$property] = $this->normalizePropertyValue($property, $value, $columnType);
 			}
 			
+			/** @var ColumnDefinition $result */
 			return $result;
 		}
 		
