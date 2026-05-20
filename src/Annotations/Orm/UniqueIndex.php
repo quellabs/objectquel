@@ -62,6 +62,13 @@
 		 * @return array<int, string> List of column names to be uniquely indexed
 		 */
 		public function getColumns(): array {
-			return $this->parameters['columns'] ?? [];
+			if (
+				!isset($this->parameters['columns']) ||
+				!is_array($this->parameters['columns'])
+			) {
+				return [];
+			}
+			
+			return array_values(array_filter($this->parameters['columns'], 'is_string'));
 		}
 	}

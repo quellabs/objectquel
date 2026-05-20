@@ -97,7 +97,7 @@
 				}
 				
 				// If no matches found, return an empty array
-				if (empty($matches)) {
+				if (!is_array($matches) || empty($matches)) {
 					return [];
 				}
 				

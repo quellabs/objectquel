@@ -69,15 +69,13 @@
 		 * @return array<int, string> List of property names included in the full-text index
 		 */
 		public function getColumns(): array {
-			// Read the configured columns or fall back to an empty array
-			$columns = $this->parameters['columns'] ?? [];
-			
-			// Guard against invalid annotation values
-			if (!is_array($columns)) {
+			if (
+				!isset($this->parameters['columns']) ||
+				!is_array($this->parameters['columns'])
+			) {
 				return [];
 			}
 			
-			// Keep only string values and normalize keys to sequential integers
-			return array_values(array_filter($columns, 'is_string'));
+			return array_values(array_filter($this->parameters['columns'], 'is_string'));
 		}
 	}
