@@ -5,7 +5,6 @@
 	use Cake\Database\Schema\CollectionInterface;
 	use Cake\Database\StatementInterface;
 	use Cake\Database\Connection;
-	use Cake\Datasource\ConnectionManager;
 	use Phinx\Db\Adapter\AdapterInterface;
 	use Quellabs\ObjectQuel\Configuration;
 	use Phinx\Db\Adapter\AdapterFactory;
@@ -163,6 +162,8 @@
 			];
 			
 			// Get the appropriate adapter name
+			/** @var array<string, string> $config */
+			$config = $connection->config();
 			$adapter = $driverMap[$config['driver']] ?? 'mysql';
 			
 			// Convert CakePHP connection config to Phinx format
@@ -314,8 +315,12 @@
 				
 				// Check if this constraint is a primary key constraint
 				if (isset($constraintData['type']) && $constraintData['type'] === 'primary') {
-					// Return the column names that make up the primary key
-					// This supports both single and composite primary keys
+					/**
+					 * Return the column names that make up the primary key
+					 * This supports both single and composite primary keys
+					 * @var array{type: string, columns: array<string>} $constraintData
+					 */
+					$constraintData = $schema->getConstraint($constraint);
 					return $constraintData['columns'];
 				}
 			}
@@ -350,10 +355,13 @@
 				
 				// Store the index details in the result array, using the index name as key
 				// Index details include columns, type (PRIMARY, UNIQUE, INDEX), and other properties
+				/** @var array{type: string, columns: array<string>, length: array<int,int>|null} $index */
+				$index = $tableSchema->getIndex($indexName);
+				
 				$result[$indexName] = [
-					'type'    => $index['type'] ?? 'index',
-					'columns' => $index['columns'] ?? [],
-					'length'  => $index['length'] ?: null,
+					'type'    => in_array($index['type'], ['primary', 'unique', 'index'], true) ? $index['type'] : 'index',
+					'columns' => $index['columns'],
+					'length'  => $index['length'],
 				];
 			}
 			
