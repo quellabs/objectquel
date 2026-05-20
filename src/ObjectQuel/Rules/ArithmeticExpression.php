@@ -207,7 +207,6 @@
 		protected function parseUnaryExpression(): AstInterface {
 			$token = $this->lexer->peek();
 			$tokenType = $token->getType();
-			$tokenValue = $token->getStringValue();
 			
 			switch ($tokenType) {
 				case Token::Plus:
@@ -217,7 +216,7 @@
 					if (($resultToken = $this->lexer->optionalMatch(Token::Number)) === null) {
 						$operand = $this->parseUnaryExpression();
 						return new AstUnaryOperation($operand, $token->getStringValue());
-					} elseif ($tokenValue === "-") {
+					} elseif ($token->getStringValue() === "-") {
 						return new AstNumber((string)(0 - $resultToken->getNumericValue()));
 					} else {
 						return new AstNumber($resultToken->getStringValue());
