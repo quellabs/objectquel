@@ -316,7 +316,7 @@
 			$entityName = $expression->getEntityName();
 			
 			if ($entityName === null) {
-				throw new HydrationException("Missing entity name in the AstIdentifier");
+				throw new \LogicException("Entity alias '{$value->getName()}' has no entity name — this should have been caught by the semantic analyser.");
 			}
 			
 			// Resolve entity to fully namespaced
@@ -326,7 +326,7 @@
 			$rangeName = $expression->getRange()?->getName();
 			
 			if ($rangeName === null) {
-				throw new HydrationException("Missing range in the AstIdentifier");
+				throw new \LogicException("Entity alias '{$value->getName()}' has no range name — this should have been caught by the semantic analyser.");
 			}
 			
 			// Remove the range prefix from column names so they match the entity's property map.
