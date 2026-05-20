@@ -47,6 +47,6 @@
 				return [];
 			}
 			
-			return $this->parameters["groups"];
+			return array_values(array_filter($this->parameters['groups'], 'is_string'));
 		}
 	}
