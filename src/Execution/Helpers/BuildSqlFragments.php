@@ -2,11 +2,9 @@
 	
 	namespace Quellabs\ObjectQuel\Execution\Helpers;
 	
-	use Quellabs\ObjectQuel\Annotations\Orm\Column;
-	use Quellabs\ObjectQuel\Capabilities\PlatformCapabilitiesInterface;
-	use Quellabs\ObjectQuel\Capabilities\NullPlatformCapabilities;
 	use Quellabs\ObjectQuel\EntityStore;
 	use Quellabs\ObjectQuel\Exception\EntityResolutionException;
+	use Quellabs\ObjectQuel\Execution\SqlGeneratorInterface;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstBool;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstCheckNotNull;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstCheckNull;
@@ -20,7 +18,6 @@
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstParameter;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstString;
 	use Quellabs\ObjectQuel\ObjectQuel\AstInterface;
-	use Quellabs\ObjectQuel\Execution\Visitors\BuildSqlFromAst;
 	
 	/**
 	 * This class serves as a utility for converting ObjectQuel AST nodes into SQL fragments.
@@ -32,17 +29,8 @@
 		/** @var EntityStore Stores entity metadata and column mappings */
 		private EntityStore $entityStore;
 		
-		/** @var PlatformCapabilitiesInterface Database engine capability descriptor */
-		private PlatformCapabilitiesInterface $platform;
-		
-		/** @var array<string, mixed> Reference to query parameters array for prepared statements */
-		private array $parameters;
-		
-		/** @var string Current part of query being processed (SELECT, WHERE, SORT, etc.) */
-		private string $partOfQuery;
-		
-		/** @var mixed Reference to the main visitor instance for delegating node processing */
-		private mixed $mainVisitor;
+		/** @var SqlGeneratorInterface Reference to the main visitor instance for delegating node processing */
+		private SqlGeneratorInterface $mainVisitor;
 		
 		/** @var string|null When set, column aliases in buildEntityColumns use this name instead of the inner range name */
 		private ?string $subqueryAliasRangeName;
@@ -50,27 +38,18 @@
 		/**
 		 * Constructor - initializes the SQL builder helper with required dependencies
 		 * @param EntityStore $entityStore Entity metadata store
-		 * @param array<string, mixed> $parameters Reference to parameters array for prepared statements
-		 * @param string $partOfQuery Current query part being processed
-		 * @param mixed|null $mainVisitor Optional reference to main visitor instance
-		 * @param PlatformCapabilitiesInterface $platform Database engine capability descriptor
+		 * @param SqlGeneratorInterface $mainVisitor Optional reference to main visitor instance
 		 * @param string|null $subqueryAliasRangeName When set, buildEntityColumns() aliases columns
 		 *        using this name instead of the inner range name, so derived table columns match
 		 *        what the outer query expects (e.g. "x.id" instead of "y.id")
 		 */
 		public function __construct(
-			EntityStore                   $entityStore,
-			array                         &$parameters,
-			string                        $partOfQuery,
-			mixed                         $mainVisitor = null,
-			PlatformCapabilitiesInterface $platform = new NullPlatformCapabilities(),
-			?string                       $subqueryAliasRangeName = null
+			EntityStore           $entityStore,
+			SqlGeneratorInterface $mainVisitor,
+			?string               $subqueryAliasRangeName = null
 		) {
 			$this->entityStore = $entityStore;
-			$this->parameters = &$parameters; // Store reference to allow parameter modification
-			$this->partOfQuery = $partOfQuery;
 			$this->mainVisitor = $mainVisitor;
-			$this->platform = $platform;
 			$this->subqueryAliasRangeName = $subqueryAliasRangeName;
 		}
 		
@@ -91,22 +70,6 @@
 		 * @return string SQL join condition
 		 */
 		public function buildJoinCondition(AstInterface $joinCondition): string {
-			// Check if we have access to the main visitor
-			if (!$this->mainVisitor) {
-				// Fallback: create new visitor only if main visitor not available
-				$visitor = new BuildSqlFromAst(
-					$this->entityStore,
-					$this->parameters,
-					$this->partOfQuery,
-					$this->platform
-				);
-				
-				// Process the join condition AST node
-				$joinCondition->accept($visitor);
-				return $visitor->getResult();
-			}
-			
-			// Use main visitor's visitNodeAndReturnSQL method for consistency
 			return $this->mainVisitor->visitNodeAndReturnSQL($joinCondition);
 		}
 		
@@ -303,9 +266,6 @@
 		 * @return string Escaped string safe for embedding between SQL quotes
 		 */
 		private function escapeSqlString(string $value): string {
-			// addslashes() is a stopgap. Replace this body with:
-			//   return $this->connection->real_escape_string($value);
-			// or route through the parameter binding system when that becomes feasible.
 			return addslashes($value);
 		}
 	}

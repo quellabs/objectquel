@@ -9,6 +9,7 @@
 	use Quellabs\ObjectQuel\Execution\Helpers\ProcessAggregate;
 	use Quellabs\ObjectQuel\Execution\Helpers\ProcessExpression;
 	use Quellabs\ObjectQuel\Execution\Helpers\ResolveType;
+	use Quellabs\ObjectQuel\Execution\SqlGeneratorInterface;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstAlias;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstAny;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstAvg;
@@ -58,7 +59,7 @@
 	 * @package Quellabs\ObjectQuel\ObjectQuel\Visitors
 	 * @author Quellabs
 	 */
-	class BuildSqlFromAst implements AstVisitorInterface {
+	class BuildSqlFromAst implements SqlGeneratorInterface {
 		
 		/** @var EntityStore Entity storage for metadata and schema information */
 		private EntityStore $entityStore;
@@ -119,10 +120,7 @@
 			// Initialize helper classes with proper dependencies and references
 			$this->sqlFragmentBuilder = new BuildSqlFragments(
 				$this->entityStore,
-				$this->parameters,
-				$this->partOfQuery,
 				$this,
-				$this->platform,
 				$subqueryAliasRangeName
 			);
 			

@@ -7,6 +7,7 @@
 	use Quellabs\ObjectQuel\EntityStore;
 	use Quellabs\ObjectQuel\Exception\EntityResolutionException;
 	use Quellabs\ObjectQuel\Exception\QuelException;
+	use Quellabs\ObjectQuel\Execution\SqlGeneratorInterface;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstBool;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstIdentifier;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstIsEmpty;
@@ -85,8 +86,8 @@
 		/** @var array<string, mixed> Reference to the parameter array for prepared statements */
 		private array $parameters;
 		
-		/** @var AstVisitorInterface Reference to the main visitor to avoid circular dependencies */
-		private AstVisitorInterface $mainVisitor;
+		/** @var SqlGeneratorInterface Reference to the main visitor to avoid circular dependencies */
+		private SqlGeneratorInterface $mainVisitor;
 		
 		/** @var PlatformCapabilitiesInterface Describes what the connected database engine supports */
 		private PlatformCapabilitiesInterface $platform;
@@ -96,14 +97,14 @@
 		 * @param EntityStore $entityStore EntityStore holds entity metadata
 		 * @param ResolveType $typeInference Helper for type analysis
 		 * @param array<string, mixed> $parameters Reference to parameters array for prepared statements
-		 * @param AstVisitorInterface $mainVisitor Reference to the main AST visitor (avoids circular dependency)
+		 * @param SqlGeneratorInterface $mainVisitor Reference to the main AST visitor (avoids circular dependency)
 		 * @param PlatformCapabilitiesInterface $platform Database engine capability descriptor
 		 */
 		public function __construct(
 			EntityStore                   $entityStore,
 			ResolveType                   $typeInference,
 			array                         &$parameters,
-			AstVisitorInterface           $mainVisitor,
+			SqlGeneratorInterface         $mainVisitor,
 			PlatformCapabilitiesInterface $platform = new NullPlatformCapabilities()
 		) {
 			$this->entityStore = $entityStore;
