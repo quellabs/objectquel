@@ -27,7 +27,7 @@
 			'binary'       => 255,
 		];
 		
-    	/**
+		/**
 		 * Get the default limit for a column type
 		 * @param string $type Column type
 		 * @return int|null The default limit (null if not applicable)
@@ -83,84 +83,6 @@
 			];
 			
 			return $typeMap[$phinxType] ?? 'mixed';
-		}
-		
-		/**
-		 * Convert Phinx type to SQL CREATE TABLE type definition
-		 * @param string $phinxType The Phinx column type
-		 * @param Column $annotation Column annotation with additional metadata
-		 * @return string SQL type definition
-		 */
-		public static function phinxTypeToSqlType(string $phinxType, Column $annotation): string {
-			// Get limit if specified, otherwise use default
-			$limit = $annotation->getLimit() ?? TypeMapper::getDefaultLimit($phinxType);
-			
-			// Pre-compute the plain limit suffix; VARCHAR/VARBINARY handle their own default below
-			$limitSql = self::formatLimit($limit);
-			
-			return match ($phinxType) {
-				// Integer types
-				'tinyinteger'  => 'TINYINT' . $limitSql,
-				'smallinteger' => 'SMALLINT' . $limitSql,
-				'integer'      => 'INT' . $limitSql,
-				'biginteger'   => 'BIGINT' . $limitSql,
-				
-				// String types — VARCHAR requires a width, so fall back to (255) when none is set
-				'string', 'char' => 'VARCHAR' . self::formatLimit($limit, '(255)'),
-				'text' => 'TEXT',
-				
-				// Float/decimal types
-				'float' => 'FLOAT',
-				'decimal' => self::buildDecimalType($annotation),
-				
-				// Boolean type
-				'boolean' => 'BOOLEAN',
-				
-				// Date and time types
-				'date' => 'DATE',
-				'datetime' => 'DATETIME',
-				'time' => 'TIME',
-				'timestamp' => 'TIMESTAMP',
-				
-				// Binary types — VARBINARY also requires a width, same fallback as VARCHAR
-				'binary' => 'VARBINARY' . self::formatLimit($limit, '(255)'),
-				'blob' => 'BLOB',
-				
-				// JSON type
-				'json', 'jsonb' => 'JSON',
-				
-				// Enum type
-				'enum' => self::buildEnumType($annotation),
-				
-				// Default fallback
-				default => 'VARCHAR(255)'
-			};
-		}
-		
-		/**
-		 * Converts a Phinx database column type to its corresponding JavaScript/TypeScript type.
-		 * This method first converts the Phinx type to a PHP type, then maps that PHP type
-		 * to the appropriate JavaScript equivalent for use in frontend code or API documentation.
-		 * @param string $phinxType The Phinx column type (e.g., 'integer', 'text', 'datetime')
-		 * @return string The corresponding JavaScript type (e.g., 'number', 'string', 'Date')
-		 */
-		public static function phinxTypeToJsType(string $phinxType): string {
-			// First convert Phinx type to PHP type using existing method
-			$phpType = self::phinxTypeToPhpType($phinxType);
-			
-			// Map PHP types to their JavaScript equivalents
-			$typeMap = [
-				'int'               => 'number',        // PHP integers become JS numbers
-				'float'             => 'number',        // PHP floats become JS numbers
-				'bool'              => 'boolean',       // PHP booleans become JS booleans
-				'string'            => 'string',        // PHP strings remain strings
-				'array'             => 'array',         // PHP arrays become JS arrays
-				'DateTime'          => 'Date',          // PHP DateTime objects become JS Date objects
-				'DateTimeImmutable' => 'Date'           // PHP DateTimeImmutable objects become JS Date objects
-			];
-			
-			// Return the mapped JavaScript type, defaulting to 'string' for unknown types
-			return $typeMap[$phpType] ?? 'string';
 		}
 		
 		/**
@@ -276,49 +198,5 @@
 			
 			// For unit enums, extract the case names instead
 			return array_map(fn(\UnitEnum $case): string => $case->name, $cases);
-		}
-		
-		/**
-		 * Format an integer limit value as a SQL parenthesized suffix.
-		 * Returns $default when $limit is null or an array (not usable as a scalar width).
-		 * @param int|null $limit
-		 * @param string   $default Returned verbatim when $limit is not a plain int
-		 * @return string  e.g. "(255)" or ""
-		 */
-		private static function formatLimit(int|null $limit, string $default = ''): string {
-			if (is_int($limit)) {
-				return "({$limit})";
-			}
-			
-			return $default;
-		}
-		
-		/**
-		 * Build DECIMAL type with precision and scale
-		 * @param Column $annotation
-		 * @return string
-		 */
-		private static function buildDecimalType(Column $annotation): string {
-			$precision = $annotation->getPrecision() ?? 10;
-			$scale = $annotation->getScale() ?? 0;
-			return "DECIMAL({$precision},{$scale})";
-		}
-		
-		/**
-		 * Build ENUM type with values
-		 * @param Column $annotation
-		 * @return string
-		 */
-		private static function buildEnumType(Column $annotation): string {
-			$values = self::getEnumCases($annotation->getEnumType());
-			
-			// Fall back to VARCHAR when the enum has no cases or the class is invalid
-			if (empty($values)) {
-				return 'VARCHAR(255)';
-			}
-			
-			// Quote each value for use in the SQL ENUM definition
-			$quotedValues = array_map(fn($v) => "'{$v}'", $values);
-			return 'ENUM(' . implode(',', $quotedValues) . ')';
 		}
 	}
