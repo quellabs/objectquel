@@ -39,9 +39,7 @@
 		 * @return array<string, mixed>
 		 */
 		public function getParameters(): array {
-			return array_filter($this->parameters, function($key) {
-				return !in_array($key, ['message', 'property']);
-			}, ARRAY_FILTER_USE_KEY);
+			return $this->parameters;
 		}
 		
 		/**
