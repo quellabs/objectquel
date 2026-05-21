@@ -77,15 +77,13 @@
 			if ($this->initialized) {
 				return;
 			}
-			
-			// Mark as initialized to prevent repeated initialization
-			// This prevents querying the database multiple times for the same data
+
+			// Guard against re-entrant initialization: findBy() may load the parent entity and
+			// touch this collection again. Reset on failure so the collection remains retryable.
 			$this->initialized = true;
 			
-			// Retrieve entities from the database that match the specified criteria
-			// $this->target_entity is the entity class we want to retrieve
-			// $this->mapped_id is the name of the field in the entity that references $this->id
 			try {
+				// Load the entities
 				$entities = $this->entity_manager->findBy($this->target_entity, [$this->property_name => $this->id]);
 				
 				// Add each found entity to the collection
@@ -94,7 +92,9 @@
 					$this->collection->offsetSet(spl_object_hash($entity), $entity);
 				}
 			} catch (QuelException $e) {
-				// Log the exception or handle it appropriately
+				// Reset the flag so a subsequent access can attempt initialization again
+				$this->initialized = false;
+				
 				// Re-throw with more context to aid debugging
 				throw new QuelException("Failed to initialize entity collection: " . $e->getMessage(), 'initialization_error', 0, $e);
 			}

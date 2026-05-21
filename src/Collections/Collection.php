@@ -34,6 +34,19 @@
 		protected string $sortOrder;
 		
 		/**
+		 * Parsed sort rules derived from $sortOrder.
+		 * Each entry is ['property' => string, 'direction' => int] where direction is 1 (ASC) or -1 (DESC).
+		 * @var list<array{property: string, direction: int}>
+		 */
+		protected array $sortRules = [];
+		
+		/**
+		 * Cache of ReflectionClass instances keyed by class name, to avoid repeated instantiation during sorting.
+		 * @var array<class-string, \ReflectionClass<object>>
+		 */
+		protected array $reflectionCache = [];
+		
+		/**
 		 * Flag indicating whether the collection has been modified and needs to be resorted.
 		 * @var bool
 		 */
@@ -44,10 +57,11 @@
 		 * @param string $sortOrder The sort order for the collection, default is an empty string.
 		 */
 		public function __construct(string $sortOrder = '') {
-			$this->collection = []; // Initialization of the collection array
-			$this->sortOrder = $sortOrder; // Initialization of the sort order
-			$this->position = null; // Initialization of the position
-			$this->isDirty = false; // The collection is not yet marked as modified
+			$this->collection = [];
+			$this->sortOrder = $sortOrder;
+			$this->sortRules = $this->parseSortOrder($sortOrder);
+			$this->position = null;
+			$this->isDirty = false;
 		}
 		
 		/**
@@ -59,80 +73,97 @@
 		}
 		
 		/**
-		 * Sort callback based on the sortOrder string
-		 * This function is used to compare two elements of the collection
+		 * Parses a sort order string into a structured list of rules.
+		 * Parsing happens once (at construction or when sort order changes) rather than
+		 * on every comparison during usort.
+		 * @param string $sortOrder Comma-separated list of "property [ASC|DESC]" tokens
+		 * @return list<array{property: string, direction: int}>
+		 */
+		protected function parseSortOrder(string $sortOrder): array {
+			if ($sortOrder === '') {
+				return [];
+			}
+			
+			$rules = [];
+			
+			foreach (explode(',', $sortOrder) as $token) {
+				// Split on whitespace and discard empty parts, so "name    DESC" works correctly
+				$parts = array_values(array_filter(array_map('trim', explode(' ', trim($token)))));
+				
+				if (empty($parts) || $parts[0] === '') {
+					continue;
+				}
+				
+				$rules[] = [
+					'property'  => $parts[0],
+					'direction' => isset($parts[1]) && strtolower($parts[1]) === 'desc' ? -1 : 1,
+				];
+			}
+			
+			return $rules;
+		}
+		
+		/**
+		 * Sort callback based on the pre-parsed sortRules.
 		 * @param mixed $a The first element to compare
 		 * @param mixed $b The second element to compare
-		 * @return int An integer indicating whether $a is less than, equal to, or greater than $b
+		 * @return int Negative, zero, or positive as required by usort
+		 * @throws \ReflectionException When property access via reflection fails
 		 */
 		protected function sortCallback(mixed $a, mixed $b): int {
-			try {
-				$fields = array_map('trim', explode(',', $this->sortOrder));
+			foreach ($this->sortRules as $rule) {
+				$property = $rule['property'];
+				$direction = $rule['direction'];
 				
-				foreach ($fields as $field) {
-					// Split each field into property and direction
-					// For example, "name ASC" becomes ["name", "ASC"]
-					$parts = array_map('trim', explode(' ', $field));
-					$property = $parts[0];
+				$valueA = $this->extractValue($a, $property);
+				$valueB = $this->extractValue($b, $property);
+				
+				// If both values are null, continue to the next field
+				if ($valueA === null && $valueB === null) {
+					continue;
+				}
+				
+				// Null values are considered larger
+				if ($valueA === null) {
+					return $direction;
+				}
+				
+				if ($valueB === null) {
+					return -$direction;
+				}
+				
+				// If both values are strings, use case-insensitive comparison
+				if (is_string($valueA) && is_string($valueB)) {
+					$result = strcasecmp($valueA, $valueB);
 					
-					// Determine the sort direction: -1 for DESC, 1 for ASC (default)
-					$direction = isset($parts[1]) && strtolower($parts[1]) === 'desc' ? -1 : 1;
-					
-					// Get the values for comparison
-					$valueA = $this->extractValue($a, $property);
-					$valueB = $this->extractValue($b, $property);
-					
-					// If both values are null, continue to the next field
-					if ($valueA === null && $valueB === null) {
-						continue;
+					if ($result !== 0) {
+						return $result > 0 ? $direction : -$direction;
 					}
-					
-					// Null values are considered larger in PHP
-					if ($valueA === null) {
+				} elseif (is_scalar($valueA) && is_scalar($valueB)) {
+					if ($valueA > $valueB) {
 						return $direction;
 					}
 					
-					if ($valueB === null) {
+					if ($valueA < $valueB) {
 						return -$direction;
 					}
-					
-					// If both values are strings, use case-insensitive comparison
-					if (is_string($valueA) && is_string($valueB)) {
-						$result = strcasecmp($valueA, $valueB);
-						
-						if ($result > 0) {
-							return $direction;
-						}
-						
-						if ($result < 0) {
-							return -$direction;
-						}
-					} elseif (is_scalar($valueA) && is_scalar($valueB)) {
-						if ($valueA > $valueB) {
-							return $direction;
-						}
-						
-						if ($valueA < $valueB) {
-							return -$direction;
-						}
-					}
-					
-					// If the values are equal, continue to the next field
 				}
-			} catch (\ReflectionException $e) {
-				// Log any reflection errors
-				error_log("Reflection error in collection sort");
+				
+				// Values are equal on this field; continue to the next
 			}
 			
-			// If all fields are equal, maintain the original order
+			// All fields equal; maintain original order
 			return 0;
 		}
 		
 		/**
-		 * Extract a value from a variable based on the given property
+		 * Extract a value from a variable based on the given property.
+		 * ReflectionClass instances are cached by class name to avoid repeated instantiation
+		 * across the O(n log n) comparisons that usort performs.
 		 * @param mixed $var The variable to extract the value from
 		 * @param string $property The name of the property to extract
 		 * @return mixed The extracted value, or null if not found
+		 * @throws \ReflectionException When reflection fails unexpectedly
 		 */
 		protected function extractValue(mixed $var, string $property): mixed {
 			// If $var is an array, try to get the value with the property as key
@@ -147,19 +178,23 @@
 					return $var->{'get' . ucfirst($property)}();
 				}
 				
-				// Use reflection to access private/protected properties
-				try {
-					$reflection = new \ReflectionClass($var);
-					
-					if ($reflection->hasProperty($property)) {
-						$prop = $reflection->getProperty($property);
-						$prop->setAccessible(true);
-						return $prop->getValue($var);
-					}
-				} catch (\ReflectionException $e) {
-					// Log the error if reflection fails
-					error_log("Reflection error in collection sort: " . $e->getMessage());
+				// Use reflection to access private/protected properties.
+				// ReflectionClass instances are cached per class name.
+				$className = get_class($var);
+				
+				if (!isset($this->reflectionCache[$className])) {
+					$this->reflectionCache[$className] = new \ReflectionClass($var);
 				}
+				
+				$reflection = $this->reflectionCache[$className];
+				
+				if ($reflection->hasProperty($property)) {
+					$prop = $reflection->getProperty($property);
+					$prop->setAccessible(true);
+					return $prop->getValue($var);
+				}
+				
+				return null;
 			}
 			
 			// For scalar values (int, float, string, bool), if
@@ -175,6 +210,7 @@
 		/**
 		 * Calculate and sort the keys if needed.
 		 * @return void
+		 * @throws \ReflectionException
 		 */
 		protected function calculateSortedKeys(): void {
 			// Check if the data hasn't changed and the keys are already calculated
@@ -185,8 +221,8 @@
 			// Get the keys
 			$this->sortedKeys = array_values($this->getKeys());
 			
-			// Sort the keys if a sort order is set
-			if (!empty($this->sortOrder)) {
+			// Sort the keys if sort rules are present
+			if (!empty($this->sortRules)) {
 				usort($this->sortedKeys, function ($keyA, $keyB) {
 					return $this->sortCallback($this->collection[$keyA], $this->collection[$keyB]);
 				});
@@ -320,6 +356,12 @@
 		 * @param T $value
 		 */
 		public function offsetSet(mixed $offset, mixed $value): void {
+			// Enforce the object-only contract; non-objects are silently ignored to satisfy
+			// the ArrayAccess interface signature while keeping the collection type-safe.
+			if (!is_object($value)) {
+				return;
+			}
+			
 			// No offset
 			if ($offset === null) {
 				$this->collection[] = $value;
@@ -445,6 +487,9 @@
 		public function updateSortOrder(string $sortOrder): void {
 			// Save the new sort order
 			$this->sortOrder = $sortOrder;
+			
+			// Parse into structured rules
+			$this->sortRules = $this->parseSortOrder($sortOrder);
 			
 			// Reset sorted keys
 			$this->sortedKeys = null;
