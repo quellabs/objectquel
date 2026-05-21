@@ -3,10 +3,8 @@
 	namespace Quellabs\ObjectQuel\Collections;
 	
 	use Quellabs\ObjectQuel\EntityManager;
-	use Quellabs\ObjectQuel\EntityStore;
 	use Quellabs\ObjectQuel\Exception\EntityResolutionException;
 	use Quellabs\ObjectQuel\Exception\QuelException;
-	use Quellabs\ObjectQuel\ReflectionManagement\PropertyHandler;
 	
 	/**
 	 * Collection class for managing entities with lazy-loading capabilities.

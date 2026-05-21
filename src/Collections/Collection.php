@@ -80,10 +80,12 @@
 		 * @return list<array{property: string, direction: int}>
 		 */
 		protected function parseSortOrder(string $sortOrder): array {
+			// Do not re-sort if no sort order provided
 			if ($sortOrder === '') {
 				return [];
 			}
 			
+			// Perform sorting
 			$rules = [];
 			
 			foreach (explode(',', $sortOrder) as $token) {
@@ -108,7 +110,7 @@
 		 * @param mixed $a The first element to compare
 		 * @param mixed $b The second element to compare
 		 * @return int Negative, zero, or positive as required by usort
-		 * @throws \ReflectionException When property access via reflection fails
+		 * @throws \RuntimeException When property access via reflection fails
 		 */
 		protected function sortCallback(mixed $a, mixed $b): int {
 			foreach ($this->sortRules as $rule) {
@@ -163,7 +165,7 @@
 		 * @param mixed $var The variable to extract the value from
 		 * @param string $property The name of the property to extract
 		 * @return mixed The extracted value, or null if not found
-		 * @throws \ReflectionException When reflection fails unexpectedly
+		 * @throws \RuntimeException When reflection fails unexpectedly
 		 */
 		protected function extractValue(mixed $var, string $property): mixed {
 			// If $var is an array, try to get the value with the property as key
@@ -182,16 +184,24 @@
 				// ReflectionClass instances are cached per class name.
 				$className = get_class($var);
 				
-				if (!isset($this->reflectionCache[$className])) {
-					$this->reflectionCache[$className] = new \ReflectionClass($var);
-				}
-				
-				$reflection = $this->reflectionCache[$className];
-				
-				if ($reflection->hasProperty($property)) {
-					$prop = $reflection->getProperty($property);
-					$prop->setAccessible(true);
-					return $prop->getValue($var);
+				try {
+					if (!isset($this->reflectionCache[$className])) {
+						$this->reflectionCache[$className] = new \ReflectionClass($var);
+					}
+					
+					$reflection = $this->reflectionCache[$className];
+					
+					if ($reflection->hasProperty($property)) {
+						$prop = $reflection->getProperty($property);
+						$prop->setAccessible(true);
+						return $prop->getValue($var);
+					}
+				} catch (\ReflectionException $e) {
+					throw new \RuntimeException(
+						"Failed to read property '{$property}' on {$className} during collection sort: " . $e->getMessage(),
+						0,
+						$e
+					);
 				}
 				
 				return null;
@@ -210,7 +220,7 @@
 		/**
 		 * Calculate and sort the keys if needed.
 		 * @return void
-		 * @throws \ReflectionException
+		 * @throws \RuntimeException
 		 */
 		protected function calculateSortedKeys(): void {
 			// Check if the data hasn't changed and the keys are already calculated
