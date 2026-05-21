@@ -2,31 +2,46 @@
 	
 	namespace Quellabs\ObjectQuel\Annotations\Validation;
 	
-	/**
-	 * @phpstan-type DateParams array{
-	 *     property?: string,
-	 *     message?: string|null
-	 * }
-	 */
 	class Date implements PropertyValidationInterface {
 		
-		/** @var DateParams */
+		/** @var array<string, mixed>  */
 		protected array $parameters;
+		
+		/** @var string The property to check */
+		protected string $property;
+		
+		/** @var string|null The error message to show if check failed */
+		protected ?string $message;
 		
 		/**
 		 * Date constructor.
-		 * @param DateParams $parameters
+		 * @param array<string, mixed> $parameters
 		 */
 		public function __construct(array $parameters) {
+			$property = $parameters['property'] ?? '';
+			$message = $parameters['message'] ?? null;
+
+			if (!is_string($property)) {
+				throw new \InvalidArgumentException("Date: 'property' must be a string.");
+			}
+			
+			if ($message !== null && !is_string($message)) {
+				throw new \InvalidArgumentException("Date: 'message' must be a string or null.");
+			}
+			
 			$this->parameters = $parameters;
+			$this->property = $property;
+			$this->message = $message;
 		}
 		
 		/**
-		 * Returns all parameters
-		 * @return DateParams
+		 * Returns all parameters, except property and message
+		 * @return array<string, mixed>
 		 */
 		public function getParameters(): array {
-			return $this->parameters;
+			return array_filter($this->parameters, function($key) {
+				return !in_array($key, ['message', 'property']);
+			}, ARRAY_FILTER_USE_KEY);
 		}
 		
 		/**
@@ -34,15 +49,15 @@
 		 * @return bool
 		 */
 		public function hasProperty(): bool {
-			return !empty($this->parameters['property']);
+			return $this->property !== '';
 		}
 		
 		/**
-		 * Returns the value of 'column'
+		 * Returns the value of 'property'
 		 * @return string
 		 */
 		public function getProperty(): string {
-			return $this->parameters['property'] ?? '';
+			return $this->property;
 		}
 		
 		/**
@@ -50,6 +65,6 @@
 		 * @return string|null
 		 */
 		public function getMessage(): ?string {
-			return $this->parameters['message'] ?? null;
+			return $this->message;
 		}
 	}

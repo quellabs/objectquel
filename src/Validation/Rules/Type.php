@@ -9,6 +9,9 @@
 		/** @var array<string, mixed> */
 		protected array $conditions;
 		
+		/** @var string|null The type constraint to enforce */
+		protected ?string $typeCondition;
+		
 		/** @var string|null Custom error message */
 		protected ?string $errorMessage;
 		
@@ -76,7 +79,14 @@
 		 * @param string|null $errorMessage Optional custom error message that overrides all generated ones
 		 */
 		public function __construct(array $conditions = [], ?string $errorMessage = null) {
+			$typeCondition = $conditions['type'] ?? null;
+			
+			if ($typeCondition !== null && !is_string($typeCondition)) {
+				throw new \InvalidArgumentException("Type: 'type' must be a string or null.");
+			}
+			
 			$this->conditions = $conditions;
+			$this->typeCondition = $typeCondition;
 			$this->errorMessage = $errorMessage;
 		}
 		
@@ -103,22 +113,14 @@
 			if ($value === null || $value === '') {
 				return true;
 			}
-
-			// Nothing to validate without a type constraint
-			if (!isset($this->conditions['type'])) {
-				return true;
-			}
-
-			// Validate type of type constraint
-			$typeCondition = $this->conditions['type'];
 			
-			if (!is_string($typeCondition) || $typeCondition === '') {
-				$this->error = "Invalid type constraint.";
-				return false;
+			// Nothing to validate without a type constraint
+			if ($this->typeCondition === null) {
+				return true;
 			}
 			
 			// Normalize deprecated/alias type names (e.g. 'long' -> 'int', 'boolean' -> 'bool')
-			$type = $this->typeAliases[$typeCondition] ?? $typeCondition;
+			$type = $this->typeAliases[$this->typeCondition] ?? $this->typeCondition;
 			
 			// Validate types that can be checked through is_*() functions
 			if (in_array($type, $this->is_a_types, strict: true)) {

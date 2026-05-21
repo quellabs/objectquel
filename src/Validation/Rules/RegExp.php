@@ -6,17 +6,29 @@
 	
 	class RegExp implements ValidationInterface {
 		
-		/** @var array{regexp?: string} */
+		/** @var array<string, mixed> */
 		protected array $conditions;
+		
+		/** @var string|null The regular expression pattern */
+		protected ?string $regexp;
+		
+		/** @var string|null Custom error message */
 		protected ?string $errorMessage;
 		
 		/**
 		 * RegExp constructor
-		 * @param array{regexp?: string} $conditions
+		 * @param array<string, mixed> $conditions
 		 * @param string|null $errorMessage
 		 */
 		public function __construct(array $conditions = [], ?string $errorMessage = null) {
+			$regexp = $conditions['regexp'] ?? null;
+			
+			if ($regexp !== null && !is_string($regexp)) {
+				throw new \InvalidArgumentException("RegExp: 'regexp' must be a string or null.");
+			}
+			
 			$this->conditions = $conditions;
+			$this->regexp = $regexp;
 			$this->errorMessage = $errorMessage;
 		}
 		
@@ -35,7 +47,7 @@
 		 */
 		public function validate(mixed $value): bool {
 			// Allow empty values and skip validation when no pattern is configured.
-			if ($value === '' || $value === null || empty($this->conditions['regexp'])) {
+			if ($value === '' || $value === null || $this->regexp === null) {
 				return true;
 			}
 			
@@ -45,7 +57,7 @@
 			}
 			
 			// Return true only when the pattern successfully matches.
-			return preg_match($this->conditions['regexp'], $value) === 1;
+			return preg_match($this->regexp, $value) === 1;
 		}
 		
 		/**

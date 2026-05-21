@@ -2,29 +2,50 @@
 	
 	namespace Quellabs\ObjectQuel\Annotations\Validation;
 	
-	/**
-	 * @phpstan-type RegExpParams array{
-	 *     property?: string,
-	 *     regexp?: string|null,
-	 *     message?: string|null
-	 * }
-	 */
 	class RegExp implements PropertyValidationInterface {
 		
-		/** @var RegExpParams */
+		/** @var array<string, mixed> */
 		protected array $parameters;
+		
+		/** @var string The property to check */
+		protected string $property;
+		
+		/** @var string|null The regular expression to validate against */
+		protected ?string $regexp;
+		
+		/** @var string|null The error message to show if check failed */
+		protected ?string $message;
 		
 		/**
 		 * RegExp constructor.
-		 * @param RegExpParams $parameters
+		 * @param array<string, mixed> $parameters
 		 */
 		public function __construct(array $parameters) {
+			$property = $parameters['property'] ?? '';
+			$regexp = $parameters['regexp'] ?? null;
+			$message = $parameters['message'] ?? null;
+			
+			if (!is_string($property)) {
+				throw new \InvalidArgumentException("RegExp: 'property' must be a string.");
+			}
+			
+			if ($regexp !== null && !is_string($regexp)) {
+				throw new \InvalidArgumentException("RegExp: 'regexp' must be a string or null.");
+			}
+			
+			if ($message !== null && !is_string($message)) {
+				throw new \InvalidArgumentException("RegExp: 'message' must be a string or null.");
+			}
+			
 			$this->parameters = $parameters;
+			$this->property = $property;
+			$this->regexp = $regexp;
+			$this->message = $message;
 		}
 		
 		/**
 		 * Returns all parameters
-		 * @return RegExpParams
+		 * @return array<string, mixed>
 		 */
 		public function getParameters(): array {
 			return $this->parameters;
@@ -35,23 +56,23 @@
 		 * @return bool
 		 */
 		public function hasProperty(): bool {
-			return !empty($this->parameters['property']);
+			return $this->property !== '';
 		}
 		
 		/**
-		 * Returns the value of 'column'
+		 * Returns the value of 'property'
 		 * @return string
 		 */
 		public function getProperty(): string {
-			return $this->parameters['property'] ?? '';
+			return $this->property;
 		}
 		
 		/**
-		 * Returns the regexp to check
+		 * Returns the regular expression to validate against
 		 * @return string|null
 		 */
 		public function getRegExp(): ?string {
-			return $this->parameters['regexp'] ?? null;
+			return $this->regexp;
 		}
 		
 		/**
@@ -59,6 +80,6 @@
 		 * @return string|null
 		 */
 		public function getMessage(): ?string {
-			return $this->parameters['message'] ?? null;
+			return $this->message;
 		}
 	}

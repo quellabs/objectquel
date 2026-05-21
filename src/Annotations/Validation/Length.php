@@ -2,30 +2,59 @@
 	
 	namespace Quellabs\ObjectQuel\Annotations\Validation;
 	
-	/**
-	 * @phpstan-type LengthParams array{
-	 *     property?: string,
-	 *     min?: int,
-	 *     max?: int,
-	 *     message?: string|null
-	 * }
-	 */
 	class Length implements PropertyValidationInterface {
 		
-		/** @var LengthParams */
+		/** @var array<string, mixed> */
 		protected array $parameters;
+		
+		/** @var string The property to check */
+		protected string $property;
+		
+		/** @var int|null The minimum length */
+		protected ?int $min;
+		
+		/** @var int|null The maximum length */
+		protected ?int $max;
+		
+		/** @var string|null The error message to show if check failed */
+		protected ?string $message;
 		
 		/**
 		 * Length constructor.
-		 * @param LengthParams $parameters
+		 * @param array<string, mixed> $parameters
 		 */
 		public function __construct(array $parameters) {
+			$property = $parameters['property'] ?? '';
+			$min = $parameters['min'] ?? null;
+			$max = $parameters['max'] ?? null;
+			$message = $parameters['message'] ?? null;
+			
+			if (!is_string($property)) {
+				throw new \InvalidArgumentException("Length: 'property' must be a string.");
+			}
+			
+			if ($min !== null && !is_int($min)) {
+				throw new \InvalidArgumentException("Length: 'min' must be an integer or null.");
+			}
+			
+			if ($max !== null && !is_int($max)) {
+				throw new \InvalidArgumentException("Length: 'max' must be an integer or null.");
+			}
+			
+			if ($message !== null && !is_string($message)) {
+				throw new \InvalidArgumentException("Length: 'message' must be a string or null.");
+			}
+			
 			$this->parameters = $parameters;
+			$this->property = $property;
+			$this->min = $min;
+			$this->max = $max;
+			$this->message = $message;
 		}
 		
 		/**
 		 * Returns all parameters
-		 * @return LengthParams
+		 * @return array<string, mixed>
 		 */
 		public function getParameters(): array {
 			return $this->parameters;
@@ -36,15 +65,15 @@
 		 * @return bool
 		 */
 		public function hasProperty(): bool {
-			return !empty($this->parameters['property']);
+			return $this->property !== '';
 		}
 		
 		/**
-		 * Returns the value of 'column'
+		 * Returns the value of 'property'
 		 * @return string
 		 */
 		public function getProperty(): string {
-			return $this->parameters['property'] ?? '';
+			return $this->property;
 		}
 		
 		/**
@@ -52,7 +81,7 @@
 		 * @return int|null
 		 */
 		public function getMin(): ?int {
-			return $this->parameters['min'] ?? null;
+			return $this->min;
 		}
 		
 		/**
@@ -60,7 +89,7 @@
 		 * @return int|null
 		 */
 		public function getMax(): ?int {
-			return $this->parameters['max'] ?? null;
+			return $this->max;
 		}
 		
 		/**
@@ -68,6 +97,6 @@
 		 * @return string|null
 		 */
 		public function getMessage(): ?string {
-			return $this->parameters['message'] ?? null;
+			return $this->message;
 		}
 	}

@@ -2,29 +2,50 @@
 	
 	namespace Quellabs\ObjectQuel\Annotations\Validation;
 	
-	/**
-	 * @phpstan-type TypeParams array{
-	 *     property?: string,
-	 *     type?: string|null,
-	 *     message?: string|null
-	 * }
-	 */
 	class Type implements PropertyValidationInterface {
 		
-		/** @var TypeParams */
+		/** @var array<string, mixed> */
 		protected array $parameters;
+		
+		/** @var string The property to check */
+		protected string $property;
+		
+		/** @var string|null The expected type */
+		protected ?string $type;
+		
+		/** @var string|null The error message to show if check failed */
+		protected ?string $message;
 		
 		/**
 		 * Type constructor.
-		 * @param TypeParams $parameters
+		 * @param array<string, mixed> $parameters
 		 */
 		public function __construct(array $parameters) {
+			$property = $parameters['property'] ?? '';
+			$type = $parameters['type'] ?? null;
+			$message = $parameters['message'] ?? null;
+			
+			if (!is_string($property)) {
+				throw new \InvalidArgumentException("Type: 'property' must be a string.");
+			}
+			
+			if ($type !== null && !is_string($type)) {
+				throw new \InvalidArgumentException("Type: 'type' must be a string or null.");
+			}
+			
+			if ($message !== null && !is_string($message)) {
+				throw new \InvalidArgumentException("Type: 'message' must be a string or null.");
+			}
+			
 			$this->parameters = $parameters;
+			$this->property = $property;
+			$this->type = $type;
+			$this->message = $message;
 		}
 		
 		/**
 		 * Returns all parameters
-		 * @return TypeParams
+		 * @return array<string, mixed>
 		 */
 		public function getParameters(): array {
 			return $this->parameters;
@@ -35,23 +56,23 @@
 		 * @return bool
 		 */
 		public function hasProperty(): bool {
-			return !empty($this->parameters['property']);
+			return $this->property !== '';
 		}
 		
 		/**
-		 * Returns the value of 'column'
+		 * Returns the value of 'property'
 		 * @return string
 		 */
 		public function getProperty(): string {
-			return $this->parameters['property'] ?? '';
+			return $this->property;
 		}
 		
 		/**
-		 * Returns the type to check
+		 * Returns the expected type
 		 * @return string|null
 		 */
 		public function getType(): ?string {
-			return $this->parameters['type'] ?? null;
+			return $this->type;
 		}
 		
 		/**
@@ -59,6 +80,6 @@
 		 * @return string|null
 		 */
 		public function getMessage(): ?string {
-			return $this->parameters['message'] ?? null;
+			return $this->message;
 		}
 	}

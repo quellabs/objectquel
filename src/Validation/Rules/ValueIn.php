@@ -10,11 +10,14 @@
 	 */
 	class ValueIn implements ValidationInterface {
 		
-		/**
-		 * List of allowed values.
-		 * @var array<mixed>
-		 */
+		/** @var array<string, mixed> */
 		protected array $conditions;
+		
+		/**
+		 * The allowed values extracted from conditions.
+		 * @var array<mixed>|null
+		 */
+		protected ?array $values;
 		
 		/**
 		 * Custom error message to return when validation fails.
@@ -25,17 +28,24 @@
 		
 		/**
 		 * ValueIn constructor
-		 * @param array<mixed> $conditions Allowed values to validate against
+		 * @param array<string, mixed> $conditions Allowed values to validate against
 		 * @param string|null $errorMessage Optional custom validation error message
 		 */
 		public function __construct(array $conditions = [], ?string $errorMessage = null) {
+			$values = $conditions['values'] ?? null;
+			
+			if ($values !== null && !is_array($values)) {
+				throw new \InvalidArgumentException("ValueIn: 'values' must be an array or null.");
+			}
+			
 			$this->conditions = $conditions;
+			$this->values = $values;
 			$this->errorMessage = $errorMessage;
 		}
 		
 		/**
 		 * Returns the allowed values configured for this rule.
-		 * @return array<mixed>
+		 * @return array<string, mixed>
 		 */
 		public function getConditions(): array {
 			return $this->conditions;
@@ -47,14 +57,14 @@
 		 * @return bool True when validation succeeds
 		 */
 		public function validate(mixed $value): bool {
-			// Skip validation when no conditions are defined
+			// Skip validation when no values are defined
 			// or when the value is considered intentionally empty.
-			if (empty($this->conditions) || $value === '' || $value === null) {
+			if ($this->values === null || $value === '' || $value === null) {
 				return true;
 			}
 			
 			// Use strict comparison to prevent type juggling.
-			return in_array($value, $this->conditions, true);
+			return in_array($value, $this->values, true);
 		}
 		
 		/**
@@ -73,7 +83,7 @@
 				', ',
 				array_map(
 					fn($value) => "'" . (string)$value . "'",
-					array_filter($this->conditions, 'is_scalar')
+					array_filter($this->values ?? [], 'is_scalar')
 				)
 			);
 			

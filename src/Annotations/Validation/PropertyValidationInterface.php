@@ -11,10 +11,6 @@
 	 * properties and carry configuration parameters such as which property to
 	 * validate and the error message to display on failure.
 	 *
-	 * @phpstan-type AnnotationParameters array{
-	 *     property?: string,
-	 *     message?: string|null
-	 * }
 	 */
 	interface PropertyValidationInterface extends AnnotationInterface {
 		
@@ -36,7 +32,7 @@
 		
 		/**
 		 * Returns the raw annotation parameters as an associative array.
-		 * @return AnnotationParameters
+		 * @return array<string, mixed>
 		 */
 		public function getParameters(): array;
 		
