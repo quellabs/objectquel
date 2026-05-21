@@ -111,11 +111,15 @@
 		
 		/**
 		 * Returns true if the entity is in the collection, false if not.
-		 * @param object $entity The entity to check for
+		 * @param T $entity The entity to check for
 		 * @return bool True if the entity exists in the collection
 		 * @throws QuelException|EntityResolutionException
 		 */
-		public function contains(object $entity): bool {
+		public function contains(mixed $entity): bool {
+			if (!is_object($entity)) {
+				return false;
+			}
+			
 			$this->doInitialize();
 			return $this->collection->containsKey(spl_object_hash($entity));
 		}
@@ -135,7 +139,7 @@
 		 * @return T|null
 		 * @throws QuelException|EntityResolutionException
 		 */
-		public function current(): ?object {
+		public function current(): mixed {
 			$this->doInitialize();
 			return $this->collection->current();
 		}
@@ -178,7 +182,7 @@
 		 * @return T|null
 		 * @throws QuelException|EntityResolutionException
 		 */
-		public function offsetGet(mixed $offset): ?object {
+		public function offsetGet(mixed $offset): mixed {
 			$this->doInitialize();
 			return $this->collection->offsetGet($offset);
 		}
@@ -276,7 +280,11 @@
 		 * @return void
 		 * @throws QuelException|EntityResolutionException
 		 */
-		public function add(object $entity): void {
+		public function add(mixed $entity): void {
+			if (!is_object($entity)) {
+				return;
+			}
+			
 			$this->doInitialize();
 			
 			if (!$this->contains($entity)) {
@@ -290,7 +298,11 @@
 		 * @return bool True if the entity was removed, false if it wasn't in the collection
 		 * @throws QuelException|EntityResolutionException
 		 */
-		public function remove(object $entity): bool {
+		public function remove(mixed $entity): bool {
+			if (!is_object($entity)) {
+				return false;
+			}
+			
 			$this->doInitialize();
 			$objectId = spl_object_hash($entity);
 			

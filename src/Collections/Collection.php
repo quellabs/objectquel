@@ -4,7 +4,7 @@
 	
 	/**
 	 * A generic collection class
-	 * @template T of object
+	 * @template T
 	 * @implements CollectionInterface<T>
 	 */
 	class Collection implements CollectionInterface {
@@ -273,11 +273,11 @@
 		
 		/**
 		 * Returns true if the given value exists in the collection, false if not
-		 * @param T $entity
+		 * @param T $value
 		 * @return bool
 		 */
-		public function contains(object $entity): bool {
-			return in_array($entity, $this->collection, true);
+		public function contains(mixed $value): bool {
+			return in_array($value, $this->collection, true);
 		}
 		
 		/**
@@ -300,7 +300,7 @@
 		 * Returns the current element in the collection based on the current position.
 		 * @return T|null
 		 */
-		public function current(): ?object {
+		public function current(): mixed {
 			if ($this->position === null) {
 				return null;
 			}
@@ -318,7 +318,7 @@
 		 * Returns the first element in the collection.
 		 * @return T|null The first element in the collection, or null if the collection is empty.
 		 */
-		public function first(): ?object {
+		public function first(): mixed {
 			$keys = $this->getSortedKeys();
 			
 			if (!empty($keys)) {
@@ -352,7 +352,7 @@
 		 * @param mixed $offset The key that identifies the element in the collection.
 		 * @return T|null The element that corresponds to the given key, or null if the key doesn't exist.
 		 */
-		public function offsetGet(mixed $offset): ?object {
+		public function offsetGet(mixed $offset): mixed {
 			if (!is_int($offset) && !is_string($offset)) {
 				return null;
 			}
@@ -366,12 +366,6 @@
 		 * @param T $value
 		 */
 		public function offsetSet(mixed $offset, mixed $value): void {
-			// Enforce the object-only contract; non-objects are silently ignored to satisfy
-			// the ArrayAccess interface signature while keeping the collection type-safe.
-			if (!is_object($value)) {
-				return;
-			}
-			
 			// No offset
 			if ($offset === null) {
 				$this->collection[] = $value;
@@ -451,21 +445,21 @@
 		
 		/**
 		 * Adds a new value to the collection
-		 * @param T $entity
+		 * @param T $value
 		 * @return void
 		 */
-		public function add(object $entity): void {
-			$this->collection[] = $entity;
+		public function add(mixed $value): void {
+			$this->collection[] = $value;
 			$this->isDirty = true;
 		}
 		
 		/**
 		 * Removes a value from the collection
-		 * @param T $entity
+		 * @param T $value
 		 * @return bool
 		 */
-		public function remove(object $entity): bool {
-			$key = array_search($entity, $this->collection, true);
+		public function remove(mixed $value): bool {
+			$key = array_search($value, $this->collection, true);
 			
 			if ($key !== false) {
 				unset($this->collection[$key]);
