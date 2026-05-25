@@ -1,8 +1,8 @@
 # ObjectQuel
 
 [![Latest Version](https://img.shields.io/packagist/v/quellabs/objectquel.svg)](https://packagist.org/packages/quellabs/objectquel)
+[![PHPStan](https://img.shields.io/badge/PHPStan-level%209-brightgreen.svg)](https://phpstan.org)
 [![License](https://img.shields.io/badge/license-MIT-brightgreen.svg)](LICENSE)
-[![Downloads](https://img.shields.io/packagist/dt/quellabs/objectquel.svg)](https://packagist.org/packages/quellabs/objectquel)
 
 A domain-level query language and engine for PHP, with a full ORM attached.
 ObjectQuel's declarative syntax inspired by [QUEL](https://en.wikipedia.org/wiki/QUEL_query_languages)
