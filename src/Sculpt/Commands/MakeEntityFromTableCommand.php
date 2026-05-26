@@ -280,8 +280,13 @@
 				// Begin generating the PHPDoc comment block with ORM annotations
 				$output .= "        /**\n";
 				
+				// Normalize the database-native type to the ORM canonical type before
+				// writing the annotation. PostgreSQL returns 'jsonb' from its schema
+				// catalog but the ORM only knows 'json'.
+				$ormType = $column["type"] === 'jsonb' ? 'json' : $column["type"];
+
 				// Add the Column annotation with name and type
-				$output .= "         * @Orm\Column(name=\"{$columnName}\", type=\"{$column["type"]}\"";
+				$output .= "         * @Orm\Column(name=\"{$columnName}\", type=\"{$ormType}\"";
 				$output .= $this->getColumnAnnotationDetails($column);
 				$output .= ")\n";
 				
