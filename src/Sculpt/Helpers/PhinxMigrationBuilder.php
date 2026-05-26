@@ -480,6 +480,12 @@ PHP;
 				return 'string';
 			}
 			
+			// The ORM canonical type is 'json'. The migration layer translates it to
+			// the correct DDL type for the connected engine ('json' or 'jsonb').
+			if ($definition['type'] === 'json') {
+				return $this->platform->getNativeJsonType();
+			}
+			
 			return $definition['type'];
 		}
 		

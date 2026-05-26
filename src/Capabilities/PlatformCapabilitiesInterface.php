@@ -61,4 +61,17 @@
 		 * @return FulltextIndexStyle
 		 */
 		public function getFulltextIndexStyle(): FulltextIndexStyle;
+		
+		/**
+		 * Returns the native JSON column type name for the current database engine.
+		 *
+		 * ObjectQuel uses 'json' as the canonical ORM type. This method maps it to
+		 * the correct DDL type for the connected engine:
+		 *   - MySQL / MariaDB / SQLite → 'json'
+		 *   - PostgreSQL               → 'jsonb'  (binary JSON; preferred over 'json'
+		 *                                           because it supports GIN indexing)
+		 *
+		 * @return string The DDL type string to use in migrations ('json' or 'jsonb').
+		 */
+		public function getNativeJsonType(): string;
 	}

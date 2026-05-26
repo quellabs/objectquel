@@ -71,9 +71,9 @@
 				'binary'       => 'string',
 				'blob'         => 'string',
 				
-				// JSON type
-				'json'         => 'array',  // Assuming JSON is decoded to array
-				'jsonb'        => 'array',  // PostgreSQL JSON type
+				// JSON type — 'json' is the ORM canonical type; the migration layer
+				// translates it to 'jsonb' on PostgreSQL. 'jsonb' never appears here.
+				'json'         => 'array',
 				
 				// Other types
 				'enum'         => 'string',

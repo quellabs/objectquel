@@ -50,4 +50,14 @@
 		public function getFulltextIndexStyle(): FulltextIndexStyle {
 			return FulltextIndexStyle::Fulltext;
 		}
+		
+		/**
+		 * @inheritDoc
+		 *
+		 * Falls back to 'json', the most broadly-compatible type, when no database
+		 * connection is available to detect the actual engine.
+		 */
+		public function getNativeJsonType(): string {
+			return 'json';
+		}
 	}

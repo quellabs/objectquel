@@ -125,4 +125,18 @@
 				default                  => FulltextIndexStyle::Fulltext,
 			};
 		}
+		
+		/**
+		 * @inheritDoc
+		 *
+		 * PostgreSQL's 'jsonb' binary type is preferred over 'json' because it
+		 * supports GIN indexing and generally has better performance for reads.
+		 * All other engines use 'json'.
+		 */
+		public function getNativeJsonType(): string {
+			return match($this->adapter->getDatabaseType()) {
+				'postgres', 'postgresql' => 'jsonb',
+				default                  => 'json',
+			};
+		}
 	}
