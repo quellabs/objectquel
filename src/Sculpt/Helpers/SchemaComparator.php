@@ -2,6 +2,8 @@
 	
 	namespace Quellabs\ObjectQuel\Sculpt\Helpers;
 	
+	use Quellabs\ObjectQuel\Capabilities\NullPlatformCapabilities;
+	use Quellabs\ObjectQuel\Capabilities\PlatformCapabilitiesInterface;
 	use Quellabs\ObjectQuel\DatabaseAdapter\DatabaseAdapter;
 	use Quellabs\ObjectQuel\DatabaseAdapter\TypeMapper;
 	use Quellabs\ObjectQuel\Sculpt\SculptTypes;
@@ -21,12 +23,17 @@
 		/** @var DatabaseAdapter Database connection adapter for querying schema information */
 		private DatabaseAdapter $connection;
 		
+		/** @var PlatformCapabilitiesInterface Describes what the connected database engine supports */
+		private PlatformCapabilitiesInterface $platform;
+		
 		/**
 		 * SchemaComparator constructor
 		 * @param DatabaseAdapter $connection
+		 * @param PlatformCapabilitiesInterface $platform Database engine capability descriptor
 		 */
-		public function __construct(DatabaseAdapter $connection) {
+		public function __construct(DatabaseAdapter $connection, PlatformCapabilitiesInterface $platform = new NullPlatformCapabilities()) {
 			$this->connection = $connection;
+			$this->platform = $platform;
 		}
 		
 		/**
@@ -130,6 +137,14 @@
 			// Step 2: If database does not support ENUM, normalize enum to string
 			if ($normalized['type'] === 'enum' && !$this->connection->supportsNativeEnums()) {
 				$normalized['type'] = 'string';
+			}
+			
+			// Step 2b: Normalize the database-native JSON type back to the ORM canonical
+			// type 'json'. On PostgreSQL the database returns 'jsonb', but the entity
+			// always declares 'json'. Without this step every run would generate a
+			// spurious ALTER COLUMN for every JSON column on PostgreSQL.
+			if ($normalized['type'] === $this->platform->getNativeJsonType() && $normalized['type'] !== 'json') {
+				$normalized['type'] = 'json';
 			}
 			
 			// Step 3: Remove irrelevant or comparison-specific properties that shouldn't affect equality

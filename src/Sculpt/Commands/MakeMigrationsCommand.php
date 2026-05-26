@@ -6,6 +6,7 @@
 	use Quellabs\ObjectQuel\Configuration;
 	use Quellabs\ObjectQuel\DatabaseAdapter\DatabaseAdapter;
 	use Quellabs\ObjectQuel\EntityStore;
+	use Quellabs\ObjectQuel\Capabilities\PlatformCapabilities;
 	use Quellabs\ObjectQuel\Sculpt\Helpers\EntitySchemaAnalyzer;
 	use Quellabs\ObjectQuel\Sculpt\SculptTypes;
 	use Quellabs\ObjectQuel\Sculpt\Helpers\PhinxMigrationBuilder;
@@ -67,8 +68,12 @@
 			}
 			
 			// Step 2: Analyze changes between entities and database
+			// Build a platform descriptor so both the analyzer and migration builder
+			// can make engine-specific decisions (e.g. json vs jsonb, enum support).
+			$platform = new PlatformCapabilities($databaseAdapter);
+			
 			// Instantiate the schema analyzer
-			$entitySchemaAnalyzer = new EntitySchemaAnalyzer($databaseAdapter, $this->getEntityStore());
+			$entitySchemaAnalyzer = new EntitySchemaAnalyzer($databaseAdapter, $this->getEntityStore(), $platform);
 			
 			// And perform the analysis
 			$allChanges = $entitySchemaAnalyzer->analyzeEntityChanges($entityMap);
@@ -115,7 +120,7 @@
 			$this->output->writeLn("");
 			
 			// Step 4: Generate a migration file based on changes.
-			$migrationBuilder = new PhinxMigrationBuilder($databaseAdapter, $this->migrationsPath);
+			$migrationBuilder = new PhinxMigrationBuilder($databaseAdapter, $this->migrationsPath, $platform);
 			$result = $migrationBuilder->generateMigrationFile($allChanges);
 			
 			if (!$result['success']) {

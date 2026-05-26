@@ -2,6 +2,8 @@
 	
 	namespace Quellabs\ObjectQuel\Sculpt\Helpers;
 	
+	use Quellabs\ObjectQuel\Capabilities\NullPlatformCapabilities;
+	use Quellabs\ObjectQuel\Capabilities\PlatformCapabilitiesInterface;
 	use Quellabs\ObjectQuel\DatabaseAdapter\DatabaseAdapter;
 	use Quellabs\ObjectQuel\EntityStore;
 	use Quellabs\ObjectQuel\Sculpt\SculptTypes;
@@ -52,12 +54,13 @@
 		 * Constructor - Initializes the analyzer with required dependencies
 		 * @param DatabaseAdapter $connection Database adapter for schema queries
 		 * @param EntityStore $entityStore Entity metadata extraction service
+		 * @param PlatformCapabilitiesInterface $platform Database engine capability descriptor
 		 */
-		public function __construct(DatabaseAdapter $connection, EntityStore $entityStore) {
+		public function __construct(DatabaseAdapter $connection, EntityStore $entityStore, PlatformCapabilitiesInterface $platform = new NullPlatformCapabilities()) {
 			$this->connection = $connection;
 			$this->entityStore = $entityStore;
 			$this->indexComparator = new IndexComparator($connection, $entityStore);
-			$this->schemaComparator = new SchemaComparator($connection);
+			$this->schemaComparator = new SchemaComparator($connection, $platform);
 		}
 		
 		/**
