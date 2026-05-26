@@ -573,12 +573,15 @@
 		 * @throws EntityResolutionException
 		 */
 		private function processPropertyValue(mixed $rawValue, AstIdentifier $node): mixed {
+			// No value. Return null and be done with it
 			if ($rawValue === null) {
 				return null;
 			}
 			
+			// Fetch the entity from the node
 			$entityName = $node->getEntityName();
 			
+			// No entity. This is bad. Throw exception.
 			if ($entityName === null) {
 				throw new HydrationException("Missing entity name in the AstIdentifier");
 			}
@@ -590,11 +593,18 @@
 				throw new HydrationException("Missing property name in the AstIdentifier");
 			}
 			
-			$metadata = $this->entityStore->getMetadata($entityName);
-			$annotations = $metadata->getAnnotations();
+			// If the chain extends beyond the column node (e.g. x.testJSON.test),
+			// the SQL has already extracted the scalar via JSON path — return it as-is.
+			// Running normalizeValue on it would attempt json_decode() and produce null.
+			if ($node->getNext()?->getNext() !== null) {
+				return $rawValue;
+			}
 			
 			// Find the @Column annotation and use it to cast the raw database value
 			// to its proper PHP type
+			$metadata = $this->entityStore->getMetadata($entityName);
+			$annotations = $metadata->getAnnotations();
+			
 			foreach ($annotations[$propertyName] ?? [] as $annotation) {
 				if (!$annotation instanceof Column) {
 					continue;
@@ -603,6 +613,7 @@
 				return $this->unitOfWork->getSerializer()->normalizeValue($annotation, $rawValue);
 			}
 			
+			// No column annotation. Should never happen. Semantic analyzer already detected it.
 			throw new HydrationException("No @Column annotation found for property '{$propertyName}' on '{$entityName}'");
 		}
 		
