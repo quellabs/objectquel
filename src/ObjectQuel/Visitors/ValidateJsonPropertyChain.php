@@ -83,7 +83,12 @@
 						$parent->getName()
 					));
 				}
-			} elseif ($parentType !== IdentifierType::JsonProperty) {
+			} elseif (
+				$parentType !== IdentifierType::JsonProperty &&
+				$parentType !== IdentifierType::JsonRoot
+			) {
+				// JsonRoot is a valid parent: it covers json_source() ranges where
+				// every child is already a JSON path segment by definition.
 				// Any other parent type (EntityRoot, SubqueryRoot, etc.) is invalid.
 				throw new SemanticException(sprintf(
 					"JSON property '%s' appears after an unexpected parent type. " .
