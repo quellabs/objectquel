@@ -17,6 +17,7 @@
 	use Quellabs\ObjectQuel\ObjectQuel\Visitors\CollectNodes;
 	use Quellabs\ObjectQuel\ObjectQuel\Visitors\DetectRestrictedNodeType;
 	use Quellabs\ObjectQuel\ObjectQuel\Visitors\ValidateEntityPropertyExists;
+	use Quellabs\ObjectQuel\ObjectQuel\Visitors\ValidateJsonPropertyChain;
 	use Quellabs\ObjectQuel\ObjectQuel\Visitors\ValidateNoEntityExpressions;
 	use Quellabs\ObjectQuel\ObjectQuel\Visitors\CollectRangeReferences;
 	use Quellabs\ObjectQuel\ObjectQuel\Visitors\ValidateUnambiguousProperty;
@@ -94,6 +95,9 @@
 			
 			// Step 2: Validate property references against schema
 			$this->processWithVisitor($ast, ValidateEntityPropertyExists::class, $this->entityStore);
+			
+			// Step 2b: Validate that JSON path segments only appear after a JSON-typed column
+			$this->processWithVisitor($ast, ValidateJsonPropertyChain::class, $this->entityStore);
 			
 			// Step 3: Validate that referenced relationships lead back to the entity
 			$this->validateRelationshipPaths($ast);

@@ -601,6 +601,12 @@
 			// Check if this is a temporary table (no entity name)
 			if ($identifier->getType() === IdentifierType::SubqueryRoot) {
 				return $this->buildColumnNameForTemporaryTable($identifier, $rangeName);
+			}
+			
+			// When the first property in the chain is a JSON column, further segments
+			// are JSON path keys and must be emitted as JSON_UNQUOTE(JSON_EXTRACT(...)).
+			if ($this->chainContainsJsonProperty($identifier)) {
+				return $this->buildColumnNameForJson($identifier, $rangeName, $entityName);
 			} else {
 				return $this->buildColumnNameForEntity($identifier, $rangeName, $entityName);
 			}
@@ -647,6 +653,13 @@
 				return "{$rangeName}.`{$rangeName}.{$propertyName}`";
 			}
 			
+			// When the chain contains a JSON property, defer to the dedicated JSON
+			// extraction builder — sorting by a JSON path is structurally identical
+			// to selecting one, and COALESCE wrapping is not applied to JSON extracts.
+			if ($this->chainContainsJsonProperty($ast)) {
+				return $this->buildColumnNameForJson($ast, $rangeName, $entityName);
+			}
+
 			// Map the ORM property name to its physical database column name.
 			$metadata = $this->entityStore->getMetadata($entityName);
 			
@@ -982,5 +995,95 @@
 		 */
 		private function visitNodeAndReturnSQL(AstInterface $node): string {
 			return $this->mainVisitor->visitNodeAndReturnSQL($node);
+		}
+
+		/**
+		 * Returns true when the identifier chain rooted at the given EntityRoot node
+		 * contains at least one JsonProperty segment.
+		 *
+		 * The check looks only at the first property node (the immediate child of the
+		 * EntityRoot). If that node is typed JsonProperty then ResolvePropertyType has
+		 * already determined that the column is JSON-typed and all further segments
+		 * are JSON path keys. Looking deeper is unnecessary: the type propagation
+		 * guarantees consistency for the entire tail of the chain.
+		 * @param AstIdentifier $root The EntityRoot node of the identifier chain.
+		 * @return bool True when the chain has JSON path segments, false otherwise.
+		 */
+		private function chainContainsJsonProperty(AstIdentifier $root): bool {
+			// The first child of an EntityRoot is the direct entity property. When that
+			// child carries JsonProperty type it means the column is JSON-typed and the
+			// chain has at least one JSON path segment after it.
+			$firstProperty = $root->getNext();
+			
+			if ($firstProperty === null) {
+				return false;
+			}
+			
+			return $firstProperty->getNext()?->getType() === IdentifierType::JsonProperty;
+		}
+		
+		/**
+		 * Builds a JSON_UNQUOTE(JSON_EXTRACT(...)) expression for an identifier chain
+		 * that passes through a JSON-typed entity column.
+		 *
+		 * Given a chain like `a.meta.id.sub` where `meta` is a JSON column,
+		 * this method produces:
+		 *   JSON_UNQUOTE(JSON_EXTRACT(`a`.`meta_col`, '$.id.sub'))
+		 *
+		 * The JSON path is built from all JsonProperty segments that follow the
+		 * JSON column node, joined by dots and prefixed with '$.' per the SQL/JSON
+		 * path syntax supported by MySQL, MariaDB, and SQLite (via json_extract).
+		 * @param AstIdentifier $root      The EntityRoot node (range alias, e.g. 'a').
+		 * @param string        $rangeName The SQL table alias (e.g. 'a').
+		 * @param string        $entityName The fully qualified entity class name.
+		 * @return string SQL expression using JSON_UNQUOTE(JSON_EXTRACT(...)).
+		 * @throws \LogicException When the chain structure is inconsistent with JSON access.
+		 * @throws EntityResolutionException
+		 */
+		private function buildColumnNameForJson(AstIdentifier $root, string $rangeName, string $entityName): string {
+			// The first child of the EntityRoot is the JSON column property node.
+			$jsonColumnNode = $root->getNext();
+			
+			if ($jsonColumnNode === null) {
+				throw new \LogicException(
+					"JSON extraction requested for '{$rangeName}' but the chain has no property node"
+				);
+			}
+			
+			// Resolve the ORM property name to its physical column name.
+			$metadata = $this->entityStore->getMetadata($entityName);
+			$propertyName = $jsonColumnNode->getName();
+			
+			if (!isset($metadata->columnMap[$propertyName])) {
+				throw new \LogicException(
+					"JSON column property '{$propertyName}' has no column mapping in entity '{$entityName}'"
+				);
+			}
+			
+			$columnName = $metadata->columnMap[$propertyName];
+			
+			// Collect all JsonProperty segment names that follow the JSON column node.
+			// These form the path inside the JSON value (e.g. 'id', 'nested', 'value').
+			$pathSegments = [];
+			$current = $jsonColumnNode->getNext();
+			
+			while ($current !== null) {
+				$pathSegments[] = $current->getName();
+				$current = $current->getNext();
+			}
+			
+			if (empty($pathSegments)) {
+				throw new \LogicException(
+					"JSON extraction requested for '{$rangeName}.{$propertyName}' but no path segments follow the JSON column"
+				);
+			}
+			
+			// Build the JSON path expression: $.segment1.segment2...
+			$jsonPath = '$.' . implode('.', $pathSegments);
+			
+			// JSON_UNQUOTE strips the surrounding double-quotes that JSON_EXTRACT
+			// returns for string scalars, making the result behave like a plain
+			// string column in comparisons and ORDER BY clauses.
+			return "JSON_UNQUOTE(JSON_EXTRACT(`{$rangeName}`.`{$columnName}`, '{$jsonPath}'))";
 		}
 	}

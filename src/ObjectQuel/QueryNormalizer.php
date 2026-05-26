@@ -10,6 +10,8 @@
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRetrieve;
 	use Quellabs\ObjectQuel\ObjectQuel\Visitors\ResolveRangeDatabaseProxy;
 	use Quellabs\ObjectQuel\ObjectQuel\Visitors\ExpandMacros;
+	use Quellabs\ObjectQuel\ObjectQuel\Visitors\ResolvePropertyType;
+	use Quellabs\ObjectQuel\ObjectQuel\Visitors\ResolveRootIdentifierType;
 	use Quellabs\ObjectQuel\ObjectQuel\Visitors\RewriteViaRelationToJoinCondition;
 	use Quellabs\ObjectQuel\ObjectQuel\Helpers\ResolveUnqualifiedProperty;
 	
@@ -64,8 +66,13 @@
 			// Replaces macro placeholder nodes with the full macro body/logic
 			$this->processWithVisitor($ast, ExpandMacros::class, $ast->getMacros());
 			
-			// Step 6: Converts indirect relationships through intermediate entities into direct joins
+			// Step 5: Converts indirect relationships through intermediate entities into direct joins
 			$this->transformViaRelations($ast);
+			
+			// Step 6: Assign IdentifierType to every root identifier node in the chain.
+			// This must run after all structural rewrites (macros, namespace resolution,
+			// via-relation expansion) so that range attachments are final.
+			$this->resolveIdentifierTypes($ast);
 		}
 		
 		/**
@@ -86,6 +93,36 @@
 				// Recursively transform the inner query with full transformation pipeline
 				$this->transform($range->getQuery());
 			}
+		}
+		
+		/**
+		 * Assigns IdentifierType values to all identifier nodes in the AST.
+		 *
+		 * Runs ResolveRootIdentifierType first (sets types on chain-root nodes based
+		 * on which kind of range they reference), then ResolvePropertyType (propagates
+		 * types downward through the chain, detecting JSON column boundaries so that
+		 * child nodes become JsonProperty rather than EntityProperty).
+		 *
+		 * Nested subquery ranges are processed recursively so that inner chains are
+		 * typed before the outer query's chains are resolved.
+		 * @param AstRetrieve $ast The AST to process
+		 * @return void Modifies identifier type fields in-place
+		 * @throws EntityResolutionException
+		 */
+		private function resolveIdentifierTypes(AstRetrieve $ast): void {
+			// Recursively type the inner query of every subquery range first, so that
+			// inner chains are settled before outer references to them are resolved.
+			foreach ($ast->getRanges() as $range) {
+				if ($range instanceof AstRangeDatabaseSubquery) {
+					$this->resolveIdentifierTypes($range->getQuery());
+				}
+			}
+			
+			// Phase 1: type root nodes (EntityRoot, SubqueryRoot, JsonRoot, EntityReference).
+			$ast->accept(new ResolveRootIdentifierType($ast));
+			
+			// Phase 2: type non-root nodes, respecting JSON column boundaries.
+			$ast->accept(new ResolvePropertyType($this->entityStore));
 		}
 		
 		/**

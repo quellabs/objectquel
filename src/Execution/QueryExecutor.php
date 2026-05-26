@@ -281,7 +281,7 @@
 			
 			// Then set types on current query
 			$retrieve->accept(new ResolveRootIdentifierType($retrieve));
-			$retrieve->accept(new ResolvePropertyType());
+			$retrieve->accept(new ResolvePropertyType($this->entityManager->getEntityStore()));
 			$retrieve->accept(new ResolveIdentifierRange($retrieve));
 		}
 		
