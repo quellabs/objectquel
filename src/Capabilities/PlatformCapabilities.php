@@ -119,10 +119,10 @@
 		 * - PostgreSQL:      tsvector column + GIN index + @@ to_tsquery()
 		 */
 		public function getFulltextIndexStyle(): FulltextIndexStyle {
-			return match($this->adapter->getDatabaseType()) {
+			return match ($this->adapter->getDatabaseType()) {
 				'postgres', 'postgresql' => FulltextIndexStyle::Tsvector,
-				'sqlite'                 => FulltextIndexStyle::Fts5,
-				default                  => FulltextIndexStyle::Fulltext,
+				'sqlite' => FulltextIndexStyle::Fts5,
+				default => FulltextIndexStyle::Fulltext,
 			};
 		}
 		
@@ -134,9 +134,31 @@
 		 * All other engines use 'json'.
 		 */
 		public function getNativeJsonType(): string {
-			return match($this->adapter->getDatabaseType()) {
+			return match ($this->adapter->getDatabaseType()) {
 				'postgres', 'postgresql' => 'jsonb',
-				default                  => 'json',
+				default => 'json',
+			};
+		}
+		
+		/**
+		 * @inheritDoc
+		 *
+		 * JSON path extraction style depends on the engine and version:
+		 * - PostgreSQL:        col #>> '{a,b}'          (all versions)
+		 * - MariaDB >= 10.9:  JSON_VALUE(col, '$.a.b')
+		 * - SQLite >= 3.38:   JSON_VALUE(col, '$.a.b')
+		 * - All others:       JSON_UNQUOTE(JSON_EXTRACT(col, '$.a.b'))
+		 */
+		public function getJsonExtractionStyle(): JsonExtractionStyle {
+			return match ($this->adapter->getDatabaseType()) {
+				'postgres', 'postgresql' => JsonExtractionStyle::HashDoubleArrow,
+				'mariadb' => version_compare($this->adapter->getServerVersion(), '10.9.0', '>=')
+					? JsonExtractionStyle::JsonValue
+					: JsonExtractionStyle::JsonUnquote,
+				'sqlite' => version_compare($this->adapter->getServerVersion(), '3.38.0', '>=')
+					? JsonExtractionStyle::JsonValue
+					: JsonExtractionStyle::JsonUnquote,
+				default => JsonExtractionStyle::JsonUnquote,
 			};
 		}
 	}

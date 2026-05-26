@@ -5,6 +5,7 @@
 	use Quellabs\ObjectQuel\Annotations\Orm\Column;
 	use Quellabs\ObjectQuel\Annotations\Orm\FullTextIndex;
 	use Quellabs\ObjectQuel\EntityStore;
+	use Quellabs\ObjectQuel\Capabilities\JsonExtractionStyle;
 	use Quellabs\ObjectQuel\Exception\EntityResolutionException;
 	use Quellabs\ObjectQuel\Exception\QuelException;
 	use Quellabs\ObjectQuel\Execution\SqlGeneratorInterface;
@@ -101,10 +102,10 @@
 		 * @param PlatformCapabilitiesInterface $platform Database engine capability descriptor
 		 */
 		public function __construct(
-			EntityStore                   $entityStore,
-			ResolveType                   $typeInference,
-			array                         &$parameters,
-			SqlGeneratorInterface         $mainVisitor,
+			EntityStore $entityStore,
+			ResolveType $typeInference,
+			array &$parameters,
+			SqlGeneratorInterface $mainVisitor,
 			PlatformCapabilitiesInterface $platform = new NullPlatformCapabilities()
 		) {
 			$this->entityStore = $entityStore;
@@ -399,8 +400,8 @@
 		 */
 		private function buildTermConditions(
 			string $columnName,
-			array  $terms,
-			array  $config,
+			array $terms,
+			array $config,
 			string $termType,
 			string $searchKey
 		): array {
@@ -659,7 +660,7 @@
 			if ($this->chainContainsJsonProperty($ast)) {
 				return $this->buildColumnNameForJson($ast, $rangeName, $entityName);
 			}
-
+			
 			// Map the ORM property name to its physical database column name.
 			$metadata = $this->entityStore->getMetadata($entityName);
 			
@@ -996,7 +997,7 @@
 		private function visitNodeAndReturnSQL(AstInterface $node): string {
 			return $this->mainVisitor->visitNodeAndReturnSQL($node);
 		}
-
+		
 		/**
 		 * Returns true when the identifier chain rooted at the given EntityRoot node
 		 * contains at least one JsonProperty segment.
@@ -1033,9 +1034,9 @@
 		 * The JSON path is built from all JsonProperty segments that follow the
 		 * JSON column node, joined by dots and prefixed with '$.' per the SQL/JSON
 		 * path syntax supported by MySQL, MariaDB, and SQLite (via json_extract).
-		 * @param AstIdentifier $root      The EntityRoot node (range alias, e.g. 'a').
-		 * @param string        $rangeName The SQL table alias (e.g. 'a').
-		 * @param string        $entityName The fully qualified entity class name.
+		 * @param AstIdentifier $root The EntityRoot node (range alias, e.g. 'a').
+		 * @param string $rangeName The SQL table alias (e.g. 'a').
+		 * @param string $entityName The fully qualified entity class name.
 		 * @return string SQL expression using JSON_UNQUOTE(JSON_EXTRACT(...)).
 		 * @throws \LogicException When the chain structure is inconsistent with JSON access.
 		 * @throws EntityResolutionException
@@ -1078,12 +1079,25 @@
 				);
 			}
 			
-			// Build the JSON path expression: $.segment1.segment2...
-			$jsonPath = '$.' . implode('.', $pathSegments);
-			
-			// JSON_UNQUOTE strips the surrounding double-quotes that JSON_EXTRACT
-			// returns for string scalars, making the result behave like a plain
-			// string column in comparisons and ORDER BY clauses.
-			return "JSON_UNQUOTE(JSON_EXTRACT(`{$rangeName}`.`{$columnName}`, '{$jsonPath}'))";
+			// Build the JSON path expression and emit dialect-specific SQL.
+			return match ($this->platform->getJsonExtractionStyle()) {
+				JsonExtractionStyle::HashDoubleArrow => (function () use ($rangeName, $columnName, $pathSegments) {
+					// PostgreSQL: col #>> '{segment1,segment2,...}'
+					$pgPath = implode(',', $pathSegments);
+					return "\"{$rangeName}\".\"{$columnName}\" #>> '{" . $pgPath . "}'";
+				})(),
+				
+				JsonExtractionStyle::JsonValue => (function () use ($rangeName, $columnName, $pathSegments) {
+					// SQL:2016 JSON_VALUE — SQLite 3.38+, MariaDB 10.9+, SQL Server 2022+
+					$jsonPath = '$.' . implode('.', $pathSegments);
+					return "JSON_VALUE(`{$rangeName}`.`{$columnName}`, '{$jsonPath}')";
+				})(),
+				
+				// Default: MySQL/MariaDB JSON_UNQUOTE(JSON_EXTRACT(...))
+				default => (function () use ($rangeName, $columnName, $pathSegments) {
+					$jsonPath = '$.' . implode('.', $pathSegments);
+					return "JSON_UNQUOTE(JSON_EXTRACT(`{$rangeName}`.`{$columnName}`, '{$jsonPath}'))";
+				})(),
+			};
 		}
 	}

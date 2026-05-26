@@ -74,4 +74,10 @@
 		 * @return string The DDL type string to use in migrations ('json' or 'jsonb').
 		 */
 		public function getNativeJsonType(): string;
+		
+		/**
+		 * Returns the JSON path extraction style used by the connected engine.
+		 * @return JsonExtractionStyle
+		 */
+		public function getJsonExtractionStyle(): JsonExtractionStyle;
 	}

@@ -60,4 +60,12 @@
 		public function getNativeJsonType(): string {
 			return 'json';
 		}
+		
+		/**
+		 * Returns the JSON path extraction style used by the connected engine.
+		 * @return JsonExtractionStyle
+		 */
+		public function getJsonExtractionStyle(): JsonExtractionStyle {
+			return JsonExtractionStyle::JsonUnquote ;
+		}
 	}
