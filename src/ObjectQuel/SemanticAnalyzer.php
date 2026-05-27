@@ -155,6 +155,11 @@
 			// Step 10: Validate that no aggregate references both database and non-database
 			//          ranges — such aggregates have no defined execution strategy
 			$this->validateNoMixedRangeAggregates($ast);
+
+			// Step 11: Validate that every cast uses a type name supported by the
+			//          connected engine. Enforced here rather than in the parser so
+			//          that the error message can name the supported alternatives.
+			$this->validateCastTypes($ast);
 		}
 		
 		/**

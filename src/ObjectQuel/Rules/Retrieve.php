@@ -3,6 +3,8 @@
 	namespace Quellabs\ObjectQuel\ObjectQuel\Rules;
 	
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstAlias;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstCast;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstIdentifier;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRange;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRetrieve;
 	use Quellabs\ObjectQuel\ObjectQuel\AstInterface;
@@ -109,7 +111,7 @@
 			$expression = $this->expressionRule->parse();
 			
 			// Determine the final alias name (either from explicit token or auto-generated)
-			$aliasName = $this->determineAliasName($aliasToken, $startPos);
+			$aliasName = $this->determineAliasName($aliasToken, $startPos, $expression);
 			
 			// Handle any macro processing related to this alias definition
 			$this->processAliasMacro($retrieve, $aliasToken, $expression);
@@ -131,14 +133,25 @@
 		 * @return string The resolved alias name
 		 * @throws ParserException
 		 */
-		private function determineAliasName(?Token $aliasToken, int $startPos): string {
+		private function determineAliasName(?Token $aliasToken, int $startPos, AstInterface $expression): string {
 			// Explicit aliases are used as-is and never rewritten
 			// Example: "custom_id = x.id" -> always "custom_id"
 			if ($aliasToken) {
 				return $aliasToken->getStringValue();
 			}
 			
-			// Auto-generated aliases are derived from source text
+			// For a cast expression, derive the alias from the inner property chain
+			// rather than the raw source text. The source slice would include the
+			// "(int)" prefix, producing an alias like "(int)x.testJSON.id" which is
+			// not a valid identifier and is not what the caller expects.
+			// Example: (int)x.testJSON.id -> "x.testJSON.id"
+			if ($expression instanceof AstCast && $expression->getExpression() instanceof AstIdentifier) {
+				$inner = $expression->getExpression();
+				assert($inner instanceof AstIdentifier);
+				return $inner->getCompleteName();
+			}
+
+			// Auto-generated aliases for all other expressions are derived from source text
 			$sourceSlice = $this->lexer->getSourceSlice($startPos, $this->lexer->getPos() - $startPos);
 			
 			// Validate that we received a valid source slide
