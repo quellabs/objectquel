@@ -11,6 +11,7 @@
 	use Quellabs\ObjectQuel\Exception\QuelException;
 	use Quellabs\ObjectQuel\UnitOfWork;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstAlias;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstCast;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstIdentifier;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRangeJsonSource;
 	use Quellabs\ObjectQuel\ProxyGenerator\ProxyInterface;
@@ -527,6 +528,28 @@
 		private function processValue(AstAlias $value, array $row, array $fullRow, array $jsonRangeNames): mixed {
 			$node = $value->getExpression();
 			
+			// Cast expression: coerce the raw PDO value to the PHP type the user
+			// requested. PDO type mapping is driver-dependent and does not reliably
+			// match the cast keyword (e.g. DECIMAL returns a string). The cast
+			// keyword is the explicit type intent; honour it unconditionally.
+			if ($node instanceof AstCast) {
+				$rawValue = $row[$value->getName()] ?? null;
+
+				if (!is_scalar($rawValue)) {
+					return $rawValue;
+				}
+				
+				/** @noinspection PhpDuplicateMatchArmBodyInspection */
+				return match ($node->getCastType()) {
+					'int'     => intval($rawValue),
+					'float'   => floatval($rawValue),
+					'string'  => strval($rawValue),
+					'bool'    => (bool) $rawValue,
+					'decimal' => floatval($rawValue),
+					default   => $rawValue,
+				};
+			}
+
 			// Top-level identifier with no chained property — either a JSON source
 			// range or a subquery (derived-table) range. Mapped entity aliases are
 			// handled before this call, so neither reaches here.
