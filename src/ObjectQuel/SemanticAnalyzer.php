@@ -155,7 +155,7 @@
 			// Step 10: Validate that no aggregate references both database and non-database
 			//          ranges — such aggregates have no defined execution strategy
 			$this->validateNoMixedRangeAggregates($ast);
-
+			
 			// Step 11: Validate that every cast uses a type name supported by the
 			//          connected engine. Enforced here rather than in the parser so
 			//          that the error message can name the supported alternatives.
@@ -927,6 +927,7 @@
 		 * @throws SemanticException
 		 */
 		private function validateCastTypes(AstRetrieve $ast): void {
+			// Fetch all cast types the database supports
 			$supportedTypes = $this->platform->getSupportedCastTypes();
 			
 			// Collect every AstCast node in the entire query tree
@@ -934,14 +935,11 @@
 			$ast->accept($collector);
 			
 			foreach ($collector->getCollectedNodes() as $castNode) {
-				/** @var AstCast $castNode */
 				$castType = $castNode->getCastType();
 				
 				if (!array_key_exists($castType, $supportedTypes)) {
 					$valid = implode(', ', array_keys($supportedTypes));
-					throw new SemanticException(
-						"Unknown cast type '{$castType}'. Supported cast types for this database engine are: {$valid}."
-					);
+					throw new SemanticException("Unknown cast type '{$castType}'. Supported cast types for this database engine are: {$valid}.");
 				}
 			}
 		}

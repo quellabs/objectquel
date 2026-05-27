@@ -539,13 +539,21 @@
 					return null;
 				}
 				
+				// is_scalar() narrows $rawValue from mixed to scalar (bool|int|float|string),
+				// which is accepted by intval/floatval/strval. A non-scalar value from the
+				// database (e.g. an array from a JSON column) cannot be meaningfully cast
+				// to a primitive type, so we return it as-is and let the caller handle it.
+				if (!is_scalar($rawValue)) {
+					return $rawValue;
+				}
+				
 				/** @noinspection PhpDuplicateMatchArmBodyInspection */
 				return match ($node->getCastType()) {
-					'int'     => (int) $rawValue,
-					'float'   => (float) $rawValue,
-					'string'  => (string) $rawValue,
+					'int'     => intval($rawValue),
+					'float'   => floatval($rawValue),
+					'string'  => strval($rawValue),
 					'bool'    => (bool) $rawValue,
-					'decimal' => (float) $rawValue,
+					'decimal' => floatval($rawValue),
 					default   => $rawValue,
 				};
 			}
@@ -619,7 +627,7 @@
 			// If the chain extends beyond the column node (e.g. x.testJSON.test),
 			// the SQL has already extracted the scalar via JSON path — return it as-is.
 			// Running normalizeValue on it would attempt json_decode() and produce null.
-			if ($node->getNext()?->getNext() !== null) {
+			if ($node->getNext()->getNext() !== null) {
 				return $rawValue;
 			}
 			

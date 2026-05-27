@@ -120,7 +120,7 @@
 			// Trim whitespace from alias name to ensure clean identifiers
 			return new AstAlias(trim($aliasName), $expression);
 		}
-
+		
 		/**
 		 * Determine the appropriate alias name for a field expression.
 		 *
@@ -145,12 +145,14 @@
 			// "(int)" prefix, producing an alias like "(int)x.testJSON.id" which is
 			// not a valid identifier and is not what the caller expects.
 			// Example: (int)x.testJSON.id -> "x.testJSON.id"
-			if ($expression instanceof AstCast && $expression->getExpression() instanceof AstIdentifier) {
+			if ($expression instanceof AstCast) {
 				$inner = $expression->getExpression();
-				assert($inner instanceof AstIdentifier);
-				return $inner->getCompleteName();
+				
+				if ($inner instanceof AstIdentifier) {
+					return $inner->getCompleteName();
+				}
 			}
-
+			
 			// Auto-generated aliases for all other expressions are derived from source text
 			$sourceSlice = $this->lexer->getSourceSlice($startPos, $this->lexer->getPos() - $startPos);
 			
