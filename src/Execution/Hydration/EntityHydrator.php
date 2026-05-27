@@ -596,7 +596,7 @@
 			// If the chain extends beyond the column node (e.g. x.testJSON.test),
 			// the SQL has already extracted the scalar via JSON path — return it as-is.
 			// Running normalizeValue on it would attempt json_decode() and produce null.
-			if ($node->getNext()?->getNext() !== null) {
+			if ($node->getNext()->getNext() !== null) {
 				return $rawValue;
 			}
 			

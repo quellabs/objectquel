@@ -37,9 +37,12 @@
 				return;
 			}
 			
-			// Find all database identifiers used in WHERE conditions that belong to joined ranges
+			// Find all database identifiers used in WHERE conditions that belong to joined ranges.
+			// Walk only the conditions subtree: walking the full retrieve would also visit
+			// projection identifiers (e.g. inside AstCast nodes) and inject them as
+			// duplicate hidden projections, producing extra columns in the generated SQL.
 			$visitor = new CollectJoinIdentifiers($ast);
-			$ast->accept($visitor);
+			$ast->getConditions()->accept($visitor);
 			
 			// Add each identifier as a hidden projection field
 			foreach ($visitor->getIdentifiers() as $identifier) {
