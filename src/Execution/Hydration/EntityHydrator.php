@@ -11,7 +11,6 @@
 	use Quellabs\ObjectQuel\Exception\QuelException;
 	use Quellabs\ObjectQuel\UnitOfWork;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstAlias;
-	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstCast;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstIdentifier;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRangeJsonSource;
 	use Quellabs\ObjectQuel\ProxyGenerator\ProxyInterface;
@@ -528,36 +527,6 @@
 		private function processValue(AstAlias $value, array $row, array $fullRow, array $jsonRangeNames): mixed {
 			$node = $value->getExpression();
 			
-			// A cast expression applies a PHP type coercion after reading the raw
-			// scalar. The database already applied CAST() in SQL, but we honour the
-			// requested PHP type here too so that the returned value is exactly the
-			// type the caller requested (e.g. int, float, string).
-			if ($node instanceof AstCast) {
-				$rawValue = $row[$value->getName()] ?? null;
-
-				if ($rawValue === null) {
-					return null;
-				}
-				
-				// is_scalar() narrows $rawValue from mixed to scalar (bool|int|float|string),
-				// which is accepted by intval/floatval/strval. A non-scalar value from the
-				// database (e.g. an array from a JSON column) cannot be meaningfully cast
-				// to a primitive type, so we return it as-is and let the caller handle it.
-				if (!is_scalar($rawValue)) {
-					return $rawValue;
-				}
-				
-				/** @noinspection PhpDuplicateMatchArmBodyInspection */
-				return match ($node->getCastType()) {
-					'int'     => intval($rawValue),
-					'float'   => floatval($rawValue),
-					'string'  => strval($rawValue),
-					'bool'    => (bool) $rawValue,
-					'decimal' => floatval($rawValue),
-					default   => $rawValue,
-				};
-			}
-
 			// Top-level identifier with no chained property — either a JSON source
 			// range or a subquery (derived-table) range. Mapped entity aliases are
 			// handled before this call, so neither reaches here.
@@ -627,7 +596,7 @@
 			// If the chain extends beyond the column node (e.g. x.testJSON.test),
 			// the SQL has already extracted the scalar via JSON path — return it as-is.
 			// Running normalizeValue on it would attempt json_decode() and produce null.
-			if ($node->getNext()->getNext() !== null) {
+			if ($node->getNext()?->getNext() !== null) {
 				return $rawValue;
 			}
 			

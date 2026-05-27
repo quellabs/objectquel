@@ -32,6 +32,7 @@
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstCheckNotNull;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstIsEmpty;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstAny;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstCast;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstTernary;
 	use Quellabs\ObjectQuel\ObjectQuel\AstInterface;
 	use Quellabs\ObjectQuel\Exception\QuelException;
@@ -58,6 +59,7 @@
 		 * @param array<string, mixed> $initialParams Optional parameters that can be referenced in the AST
 		 * @return mixed The result of the evaluation (could be boolean, string, number, etc.)
 		 * @throws QuelException When an unknown AST node or operator is encountered
+		 * @noinspection PhpDuplicateMatchArmBodyInspection
 		 */
 		public static function evaluate(AstInterface $ast, array $contents, array $row, array $initialParams = []): mixed {
 			// Determine the type of AST node and process accordingly
@@ -72,6 +74,25 @@
 				// (Identifiers represent column/field names in the data)
 				case AstIdentifier::class:
 					return $row[$ast->getCompleteName()] ?? null;
+				
+				// Handle cast expression: evaluate the inner expression, then coerce the
+				// result to the requested PHP type. This is the in-memory equivalent of
+				// SQL CAST() for JSON source ranges, which are never sent to a database.
+				case AstCast::class:
+					$castValue = self::evaluate($ast->getExpression(), $contents, $row, $initialParams);
+
+					if (!is_scalar($castValue)) {
+						return $castValue;
+					}
+
+					return match ($ast->getCastType()) {
+						'int'     => intval($castValue),
+						'float'   => floatval($castValue),
+						'string'  => strval($castValue),
+						'bool'    => (bool) $castValue,
+						'decimal' => floatval($castValue),
+						default   => $castValue,
+					};
 				
 				// Handle NOT — negate the boolean result of the inner expression
 				case AstNot::class:
