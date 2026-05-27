@@ -361,10 +361,6 @@
 		 * @param AstCast $ast The cast node to process
 		 */
 		protected function handleCast(AstCast $ast): void {
-			// Mark this node visited before recursing so the inner expression
-			// is not visited a second time through the normal accept() path.
-			$this->addToVisitedNodes($ast);
-
 			// Resolve the SQL type token for the target engine.
 			// The semantic analyser has already verified that this cast type is
 			// supported, so the key is guaranteed to exist here.
@@ -686,6 +682,11 @@
 			// AstSearch, AstSearchFullText, AstSearchLike, and AstSearchScore share the same child shape
 			if ($ast instanceof AstSearch || $ast instanceof AstSearchFullText || $ast instanceof AstSearchLike || $ast instanceof AstSearchScore) {
 				return [...$ast->getIdentifiers(), $ast->getSearchString()];
+			}
+			
+			// AstCast wraps a single inner expression
+			if ($ast instanceof AstCast) {
+				return [$ast->getExpression()];
 			}
 			
 			return [];
