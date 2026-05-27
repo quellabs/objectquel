@@ -4,6 +4,7 @@
 	namespace Quellabs\ObjectQuel\ObjectQuel\Visitors;
 	
 	use Quellabs\ObjectQuel\Exception\SemanticException;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstCast;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstIdentifier;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRangeDatabase;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\NodeAggregate;
@@ -44,6 +45,14 @@
 			if ($node instanceof NodeAggregate) {
 				if ($this->identifierIsBareRange($node->getIdentifier())) {
 					throw new SemanticException("Unsupported operation on entire entities. You cannot pass an entire entity to an aggregate function. Please specify the specific field or property you wish to aggregate (e.g. e.price or e.quantity instead of e).");
+				}
+			}
+
+			// Casts on bare entity references are not allowed: (int)x is meaningless.
+			// Only property casts are valid: (int)x.id
+			if ($node instanceof AstCast) {
+				if ($this->identifierIsBareRange($node->getExpression())) {
+					throw new SemanticException("Cannot cast an entire entity. You must cast a specific property instead (e.g. (int)x.id instead of (int)x).");
 				}
 			}
 		}

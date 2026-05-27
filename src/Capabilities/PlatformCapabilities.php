@@ -161,4 +161,45 @@
 				default => JsonExtractionStyle::JsonUnquote,
 			};
 		}
+		/**
+		 * @inheritDoc
+		 *
+		 * Cast type maps per engine:
+		 *
+		 * MySQL / MariaDB
+		 *   Integer arithmetic uses SIGNED (signed 64-bit) rather than INT because
+		 *   CAST(x AS INT) is not valid in MySQL; SIGNED / UNSIGNED are the correct
+		 *   integer target types for CAST().
+		 *
+		 * PostgreSQL
+		 *   Uses standard ANSI type names. INTEGER and FLOAT are the idiomatic choices;
+		 *   TEXT is preferred over VARCHAR (no length constraint) for string casts.
+		 *
+		 * SQLite
+		 *   SQLite CAST() accepts a limited set of type affinities: INTEGER, REAL,
+		 *   TEXT, NUMERIC, BLOB. There is no separate FLOAT or DOUBLE type.
+		 */
+		public function getSupportedCastTypes(): array {
+			return match ($this->adapter->getDatabaseType()) {
+				'postgres', 'postgresql' => [
+					'int'     => 'INTEGER',
+					'float'   => 'FLOAT',
+					'string'  => 'TEXT',
+					'decimal' => 'DECIMAL',
+					'bool'    => 'BOOLEAN',
+				],
+				'sqlite' => [
+					'int'     => 'INTEGER',
+					'float'   => 'REAL',
+					'string'  => 'TEXT',
+					'decimal' => 'NUMERIC',
+				],
+				default => [
+					'int'     => 'SIGNED',
+					'float'   => 'DOUBLE',
+					'string'  => 'CHAR',
+					'decimal' => 'DECIMAL',
+				],
+			};
+		}
 	}

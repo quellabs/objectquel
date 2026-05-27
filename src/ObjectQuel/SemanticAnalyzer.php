@@ -6,6 +6,9 @@
 	use Quellabs\ObjectQuel\EntityStore;
 	use Quellabs\ObjectQuel\Exception\EntityResolutionException;
 	use Quellabs\ObjectQuel\Exception\SemanticException;
+	use Quellabs\ObjectQuel\Capabilities\NullPlatformCapabilities;
+	use Quellabs\ObjectQuel\Capabilities\PlatformCapabilitiesInterface;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstCast;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstAggregate;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstIdentifier;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRangeDatabase;
@@ -38,11 +41,20 @@
 		private EntityStore $entityStore;
 		
 		/**
+		 * Platform capabilities used to validate cast types against
+		 * engine-specific supported sets.
+		 * @var PlatformCapabilitiesInterface
+		 */
+		private PlatformCapabilitiesInterface $platform;
+		
+		/**
 		 * Constructor - initializes the validator with entity schema information
 		 * @param EntityStore $entityStore The entity store containing schema definitions
+		 * @param PlatformCapabilitiesInterface $platform Platform capabilities for engine-specific cast validation
 		 */
-		public function __construct(EntityStore $entityStore) {
+		public function __construct(EntityStore $entityStore, PlatformCapabilitiesInterface $platform = new NullPlatformCapabilities()) {
 			$this->entityStore = $entityStore;
+			$this->platform = $platform;
 		}
 		
 		/**
@@ -892,6 +904,39 @@
 						$dbNames,
 						$extNames
 					));
+				}
+			}
+		}
+		
+		
+		/**
+		 * Validates that every AstCast node in the query uses a cast type that
+		 * the connected database engine supports.
+		 *
+		 * The set of valid types is engine-specific and is retrieved from
+		 * PlatformCapabilitiesInterface::getSupportedCastTypes(). An unsupported
+		 * type name (e.g. (blob)x.data on MySQL) is rejected here with a clear
+		 * message listing the valid alternatives.
+		 *
+		 * @param AstRetrieve $ast
+		 * @throws SemanticException
+		 */
+		private function validateCastTypes(AstRetrieve $ast): void {
+			$supportedTypes = $this->platform->getSupportedCastTypes();
+			
+			// Collect every AstCast node in the entire query tree
+			$collector = new CollectNodes(AstCast::class);
+			$ast->accept($collector);
+			
+			foreach ($collector->getCollectedNodes() as $castNode) {
+				/** @var AstCast $castNode */
+				$castType = $castNode->getCastType();
+				
+				if (!array_key_exists($castType, $supportedTypes)) {
+					$valid = implode(', ', array_keys($supportedTypes));
+					throw new SemanticException(
+						"Unknown cast type '{$castType}'. Supported cast types for this database engine are: {$valid}."
+					);
 				}
 			}
 		}

@@ -21,6 +21,7 @@
 	namespace Quellabs\ObjectQuel;
 	
 	use Quellabs\ObjectQuel\Annotations\Orm\Cascade;
+	use Quellabs\ObjectQuel\Exception\QuelException;
 	use Quellabs\ObjectQuel\Annotations\Orm\ManyToOne;
 	use Quellabs\ObjectQuel\Annotations\Orm\OneToOne;
 	use Quellabs\ObjectQuel\Collections\EntityCollection;
@@ -426,6 +427,7 @@
 		 * Detached entities are no longer managed, so their changes won't be persisted to the database.
 		 * @param object $entity The entity object to detach from management.
 		 * @return void
+		 * @throws EntityResolutionException
 		 */
 		public function detach(object $entity): void {
 			// Generate a unique identifier for the entity instance using PHP's built-in function
@@ -463,6 +465,7 @@
 		 * Adds an entity to the removal list and handles cascading delete operations
 		 * @param object $entity The entity to schedule for deletion
 		 * @return void
+		 * @throws EntityResolutionException
 		 */
 		public function scheduleForDelete(object $entity): void {
 			// Skip if already scheduled for deletion to prevent duplicate processing
@@ -628,12 +631,14 @@
 		 * indicating an unresolvable dependency between entities (e.g., A depends on B, B depends on A).
 		 */
 		private function scheduleEntitiesForPersistence(): array {
-			$graph = [];
-			$inDegree = [];
+			// Fetch the identity map as one linear list
 			$flattenedIdentityMap = $this->getFlattenedIdentityMap();
 			
 			// Prepare the graph and inDegree counters for each entity.
 			// This initializes every entity with an empty list of dependents and zero dependencies.
+			$graph = [];
+			$inDegree = [];
+			
 			foreach ($flattenedIdentityMap as $hash => $entity) {
 				$graph[$hash] = []; // Initialize an empty array of dependent entities (children)
 				$inDegree[$hash] = 0; // Initially, assume entity has no dependencies on other entities
@@ -901,6 +906,7 @@
 		 * @param object $entity The parent entity object instance being deleted
 		 * @return void
 		 * @throws EntityResolutionException
+		 * @throws QuelException
 		 */
 		private function handleDependentEntityClass(string $dependentEntityClass, string $normalizedClass, object $entity): void {
 			// Fetch metadata for this entity
@@ -1054,6 +1060,7 @@
 		 * that all entities connected via cascade-persist relationships are properly
 		 * handled during the persistence operation.
 		 * @return void
+		 * @throws EntityResolutionException
 		 */
 		private function executeCascadingPersists(): void {
 			// Get flattened identity map to process all managed entities

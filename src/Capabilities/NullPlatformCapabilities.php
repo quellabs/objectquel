@@ -68,4 +68,21 @@
 		public function getJsonExtractionStyle(): JsonExtractionStyle {
 			return JsonExtractionStyle::JsonUnquote ;
 		}
+		
+		/**
+		 * @inheritDoc
+		 *
+		 * Returns the baseline cast types supported by MySQL/MariaDB, which are the
+		 * most conservative valid set. Callers that need engine-specific types should
+		 * inject a real PlatformCapabilities instance instead of relying on this null
+		 * implementation.
+		 */
+		public function getSupportedCastTypes(): array {
+			return [
+				'int'     => 'SIGNED',
+				'float'   => 'DOUBLE',
+				'string'  => 'CHAR',
+				'decimal' => 'DECIMAL',
+			];
+		}
 	}
