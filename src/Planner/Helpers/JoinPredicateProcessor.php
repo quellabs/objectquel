@@ -440,7 +440,6 @@
 		private static function combinePredicatesWithOr(array $predicates): ?AstInterface {
 			// Filter out null predicates
 			$validPredicates = array_filter($predicates, function ($predicate) {
-				// @phpstan-ignore-next-line
 				return $predicate !== null;
 			});
 			
