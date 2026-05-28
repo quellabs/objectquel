@@ -5,6 +5,8 @@
 	use Quellabs\AnnotationReader\AnnotationInterface;
 	
 	/**
+	 * @Annotation
+	 *
 	 * Class Index
 	 *
 	 * Represents a database index annotation that can be applied to entity classes

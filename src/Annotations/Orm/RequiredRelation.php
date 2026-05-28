@@ -4,6 +4,9 @@
 	
 	use Quellabs\AnnotationReader\AnnotationInterface;
 	
+	/**
+	 * @Annotation
+	 */
 	class RequiredRelation implements AnnotationInterface {
 		
 		/** @var array<string, mixed> */

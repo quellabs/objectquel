@@ -5,6 +5,7 @@
 	use Quellabs\AnnotationReader\AnnotationInterface;
 	
 	/**
+	 * @Annotation
 	 * Class OneToMany
 	 * This class represents a OneToMany relationship in the ORM and contains various methods
 	 * to obtain information about the relationship.

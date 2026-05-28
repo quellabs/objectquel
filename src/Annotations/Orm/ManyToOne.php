@@ -5,6 +5,7 @@
 	use Quellabs\AnnotationReader\AnnotationInterface;
 	
 	/**
+	 * @Annotation
 	 * Defines the ManyToOne class that describes the relationship between entities
 	 */
 	class ManyToOne implements AnnotationInterface {

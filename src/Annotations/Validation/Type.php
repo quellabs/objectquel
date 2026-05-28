@@ -2,6 +2,9 @@
 	
 	namespace Quellabs\ObjectQuel\Annotations\Validation;
 	
+	/**
+	 * @Annotation
+	 */
 	class Type implements PropertyValidationInterface {
 		
 		/** @var array<string, mixed> */

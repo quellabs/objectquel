@@ -5,6 +5,8 @@
 	use Quellabs\AnnotationReader\AnnotationInterface;
 	
 	/**
+	 * @Annotation
+	 *
 	 * Class FullTextIndex
 	 *
 	 * Represents a database full-text index annotation that can be applied to entity classes.

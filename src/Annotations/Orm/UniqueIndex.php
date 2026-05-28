@@ -5,6 +5,8 @@
 	use Quellabs\AnnotationReader\AnnotationInterface;
 	
 	/**
+	 * @Annotation
+	 *
 	 * Class UniqueIndex
 	 *
 	 * Represents a database unique index annotation that can be applied to entity classes.

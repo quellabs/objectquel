@@ -5,6 +5,8 @@
 	use Quellabs\AnnotationReader\AnnotationInterface;
 	
 	/**
+	 * @Annotation
+	 *
 	 * Represents a validation annotation that targets a specific property.
 	 *
 	 * Validation annotations implementing this interface are applied to entity

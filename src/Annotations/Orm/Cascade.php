@@ -5,6 +5,7 @@
 	use Quellabs\AnnotationReader\AnnotationInterface;
 	
 	/**
+	 * @Annotation
 	 * Class Cascade
 	 */
 	class Cascade implements AnnotationInterface {

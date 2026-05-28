@@ -2,6 +2,9 @@
 	
 	namespace Quellabs\ObjectQuel\Annotations\Validation;
 	
+	/**
+	 * @Annotation
+	 */
 	class RegExp implements PropertyValidationInterface {
 		
 		/** @var array<string, mixed> */

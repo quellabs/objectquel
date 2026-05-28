@@ -4,6 +4,9 @@
     
     use Quellabs\AnnotationReader\AnnotationInterface;
     
+    /**
+     * @Annotation
+     */
     class PostUpdate implements AnnotationInterface {
         
         /** @var array<string, mixed> */

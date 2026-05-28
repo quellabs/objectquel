@@ -2,6 +2,9 @@
 	
 	namespace Quellabs\ObjectQuel\Annotations\Validation;
 	
+	/**
+	 * @Annotation
+	 */
 	class Date implements PropertyValidationInterface {
 		
 		/** @var array<string, mixed>  */

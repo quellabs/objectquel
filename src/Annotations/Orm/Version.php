@@ -5,6 +5,7 @@
 	use Quellabs\AnnotationReader\AnnotationInterface;
 	
 	/**
+	 * @Annotation
 	 * Class Version
 	 */
 	class Version implements AnnotationInterface {

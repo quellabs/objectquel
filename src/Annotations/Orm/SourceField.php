@@ -5,6 +5,8 @@
 	use Quellabs\AnnotationReader\AnnotationInterface;
 	
 	/**
+	 * @Annotation
+	 *
 	 * Marks a property as receiving its value from an external source range during hydration.
 	 *
 	 * When a query joins a database entity against an external source range (json_source(), etc.),

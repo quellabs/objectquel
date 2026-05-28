@@ -4,6 +4,9 @@
 	
 	use Quellabs\AnnotationReader\AnnotationInterface;
 	
+	/**
+	 * @Annotation
+	 */
 	class PrimaryKeyStrategy implements AnnotationInterface {
 		
 		/** @var array<string, mixed> */

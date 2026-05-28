@@ -5,6 +5,7 @@
 	use Quellabs\AnnotationReader\AnnotationInterface;
 	
 	/**
+	 * @Annotation
 	 * Class for handling serialization groups in object serialization
 	 * Implements the AnnotationInterface for the annotation reader system
 	 */

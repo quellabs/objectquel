@@ -7,8 +7,8 @@
 	use Quellabs\Support\Tools;
 	
 	/**
+	 * @Annotation
 	 * Column annotation class for ORM mapping
-	 * @package Quellabs\ObjectQuel\Annotations\Orm
 	 */
 	class Column implements AnnotationInterface {
 		

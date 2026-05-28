@@ -4,6 +4,9 @@
 	
 	use Quellabs\AnnotationReader\AnnotationInterface;
 	
+	/**
+	 * @Annotation
+	 */
 	class Table implements AnnotationInterface {
 		
 		/** @var array<string, mixed> */
