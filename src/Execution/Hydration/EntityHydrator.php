@@ -269,7 +269,7 @@
 		 * @param AstAlias $alias
 		 * @param RelationCache $relationCache
 		 * @return RelationCacheEntry
-		 * @throws \LogicException
+		 * @throws \RuntimeException
 		 */
 		private function resolveEntityCacheEntry(AstAlias $alias, array $relationCache): array {
 			/**
@@ -280,7 +280,7 @@
 			$rangeName = $node->getRange()?->getName();
 			
 			if ($rangeName === null || !isset($relationCache[$rangeName])) {
-				throw new \LogicException(
+				throw new \RuntimeException(
 					"No relation cache entry for entity alias '{$alias->getName()}' (range '{$rangeName}'). " .
 					"buildRelationCache() must build an entry for every entity range before processRow() is called."
 				);
@@ -326,7 +326,7 @@
 			$entityName = $expression->getEntityName();
 			
 			if ($entityName === null) {
-				throw new \LogicException("Entity alias '{$value->getName()}' has no entity name — this should have been caught by the semantic analyser.");
+				throw new \RuntimeException("Entity alias '{$value->getName()}' has no entity name — this should have been caught by the semantic analyser.");
 			}
 			
 			// Resolve entity to fully namespaced
@@ -336,7 +336,7 @@
 			$rangeName = $expression->getRange()?->getName();
 			
 			if ($rangeName === null) {
-				throw new \LogicException("Entity alias '{$value->getName()}' has no range name — this should have been caught by the semantic analyser.");
+				throw new \RuntimeException("Entity alias '{$value->getName()}' has no range name — this should have been caught by the semantic analyser.");
 			}
 			
 			// Remove the range prefix from column names so they match the entity's property map.
@@ -513,7 +513,7 @@
 			// Multiple JSON ranges present but no explicit range on the annotation.
 			// The semantic analyser enforces that @SourceField specifies a range when
 			// more than one JSON source is in scope, so this path should be unreachable.
-			throw new \LogicException(
+			throw new \RuntimeException(
 				"Ambiguous @SourceField on '{$annotation->getField()}': multiple JSON ranges are present " .
 				"(" . implode(', ', array_keys($presentJsonRanges)) . ") but no explicit range was declared on the annotation."
 			);
@@ -584,6 +584,14 @@
 					case 'interval' :
 						$rawValue = $row[$value->getName()] ?? null;
 						return $rawValue === null ? null : (int)$rawValue;
+						
+					default :
+						throw new \RuntimeException(
+							"Unexpected return type '{$resolvedType}' inferred from a date expression — " .
+							"only 'datetime' and 'interval' are valid. " .
+							"This indicates a bug in ValidateNoTemporalScalarMix, which should have " .
+							"rejected this expression at semantic analysis time."
+						);
 				}
 			}
 			

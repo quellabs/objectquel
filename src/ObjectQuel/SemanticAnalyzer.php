@@ -19,6 +19,7 @@
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstSearch;
 	use Quellabs\ObjectQuel\ObjectQuel\Visitors\CollectNodes;
 	use Quellabs\ObjectQuel\ObjectQuel\Visitors\DetectRestrictedNodeType;
+	use Quellabs\ObjectQuel\ObjectQuel\Visitors\ValidateNoTemporalScalarMix;
 	use Quellabs\ObjectQuel\ObjectQuel\Visitors\ValidateEntityPropertyExists;
 	use Quellabs\ObjectQuel\ObjectQuel\Visitors\ValidateJsonPropertyChain;
 	use Quellabs\ObjectQuel\ObjectQuel\Visitors\ValidateNoEntityExpressions;
@@ -160,6 +161,11 @@
 			//          connected engine. Enforced here rather than in the parser so
 			//          that the error message can name the supported alternatives.
 			$this->validateCastTypes($ast);
+			
+			// Step 12: Validate that temporal values (datetime, interval) are never
+			//          combined with plain scalars in arithmetic expressions.
+			//          date("6 days") + 1 has no defined meaning and is a type error.
+			$this->processWithVisitor($ast, ValidateNoTemporalScalarMix::class, $this->entityStore);
 		}
 		
 		/**
