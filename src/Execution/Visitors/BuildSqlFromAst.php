@@ -342,6 +342,13 @@
 		 * @param AstCast $ast The cast node to process
 		 */
 		protected function handleCast(AstCast $ast): void {
+			// PHP-only casts (e.g. datetime) instruct the hydrator to convert the
+			// raw value — no SQL CAST() is emitted; the inner expression passes through.
+			if ($ast->isPhpOnlyCast()) {
+				$this->result[] = $this->visitNodeAndReturnSQL($ast->getExpression());
+				return;
+			}
+
 			// Resolve the SQL type token for the target engine.
 			// The semantic analyser has already verified that this cast type is
 			// supported, so the key is guaranteed to exist here.

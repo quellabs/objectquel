@@ -13,6 +13,12 @@
 	 *   (int)x.id        → CAST(x.id AS SIGNED)   on MySQL/MariaDB
 	 *   (float)x.price   → CAST(x.price AS DOUBLE) on MySQL/MariaDB
 	 *   (string)x.code   → CAST(x.code AS CHAR)    on MySQL/MariaDB
+	 *   (datetime)x.ts   → no SQL CAST; hydrator converts raw value to \DateTime
+	 *
+	 * Most cast types map directly to a SQL CAST() expression. PHP-only cast types
+	 * (currently just 'datetime') are handled entirely in the hydration layer —
+	 * the SQL generator emits the inner expression unchanged, and the hydrator
+	 * performs the conversion. Use isPhpOnlyCast() to distinguish between the two.
 	 *
 	 * The exact SQL type token emitted depends on the connected engine and is
 	 * resolved by PlatformCapabilitiesInterface::getSupportedCastTypes() at
@@ -25,6 +31,14 @@
 	 */
 	class AstCast extends Ast {
 		
+		/**
+		 * Cast types that are handled entirely in PHP rather than emitting a SQL
+		 * CAST() expression. The SQL generator passes the inner expression through
+		 * unchanged; the hydrator performs the conversion.
+		 * @var string[]
+		 */
+		private const array PHP_ONLY_CAST_TYPES = ['datetime'];
+
 		/**
 		 * The canonical QUEL cast type keyword ('int', 'float', 'string', 'decimal', …).
 		 * @var string
@@ -76,6 +90,16 @@
 		 */
 		public function getCastType(): string {
 			return $this->castType;
+		}
+		
+		/**
+		 * Returns true when this cast is handled entirely in PHP and produces no
+		 * SQL CAST() expression. The SQL generator emits the inner expression as-is;
+		 * the hydrator performs the actual type conversion.
+		 * @return bool
+		 */
+		public function isPhpOnlyCast(): bool {
+			return in_array($this->castType, self::PHP_ONLY_CAST_TYPES, true);
 		}
 		
 		/**

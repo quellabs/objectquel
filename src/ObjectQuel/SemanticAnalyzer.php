@@ -943,6 +943,12 @@
 			foreach ($collector->getCollectedNodes() as $castNode) {
 				$castType = $castNode->getCastType();
 				
+				// PHP-only casts have no SQL equivalent and are always valid regardless
+				// of the connected engine — skip them here.
+				if ($castNode->isPhpOnlyCast()) {
+					continue;
+				}
+				
 				if (!array_key_exists($castType, $supportedTypes)) {
 					$valid = implode(', ', array_keys($supportedTypes));
 					throw new SemanticException("Unknown cast type '{$castType}'. Supported cast types for this database engine are: {$valid}.");

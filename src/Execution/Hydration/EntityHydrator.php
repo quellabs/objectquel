@@ -557,6 +557,7 @@
 					'string' => strval($rawValue),
 					'bool' => (bool)$rawValue,
 					'decimal' => floatval($rawValue),
+					'datetime' => $this->datetimeNormalizer->normalize($rawValue),
 					default => $rawValue,
 				};
 			}
