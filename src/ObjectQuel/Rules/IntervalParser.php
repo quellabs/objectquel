@@ -2,6 +2,8 @@
 	
 	namespace Quellabs\ObjectQuel\ObjectQuel\Rules;
 	
+	use Quellabs\ObjectQuel\ObjectQuel\ParserException;
+
 	/**
 	 * Parses QUEL interval strings into integer seconds.
 	 *
@@ -16,8 +18,8 @@
 	 * Both singular and plural unit names are accepted ("day" / "days", etc.).
 	 * Negative amounts are supported for internal use ("−30 days" → −2592000).
 	 *
-	 * "now" and unrecognised strings return null — the caller is responsible for
-	 * deciding how to treat a null result.
+	 * "now" and empty strings return null — they are not intervals and the caller
+	 * decides how to handle them. Any other unrecognised input throws ParserException.
 	 */
 	class IntervalParser {
 		
@@ -46,22 +48,25 @@
 		/**
 		 * Attempts to parse an interval string and return the total number of seconds.
 		 *
-		 * Returns null when:
-		 *   - The value is "now" (a timestamp keyword, not an interval)
-		 *   - The string contains no recognisable "N unit" pairs
-		 *   - Any pair uses an unrecognised unit name
+		 * Returns null for "now" and empty strings — these are not intervals and
+		 * the caller handles them separately.
+		 *
+		 * Throws ParserException when:
+		 *   - The string contains no recognisable "N unit" pairs (e.g. "yesterday")
+		 *   - Any pair uses an unrecognised unit name (e.g. "1 bananas")
 		 *   - The string contains leftover tokens beyond the recognised pairs
 		 *     (e.g. "6 days ago" — "ago" is not a unit)
-		 *   - The string is empty
 		 *
 		 * @param string $value  Raw interval string, e.g. "6 days" or "4 years 20 minutes"
-		 * @return int|null      Total seconds, or null when the string is not a valid interval
+		 * @return int|null      Total seconds, or null when the value is "now" or empty
+		 * @throws ParserException When the string is not a valid interval
 		 */
 		public function parse(string $value): ?int {
 			$value = trim($value);
 			
-			// "now" is a timestamp keyword, not an interval
-			if (strtolower($value) === 'now') {
+			// Empty string and "now" are not intervals — return null so the caller
+			// can handle them (e.g. emit the platform NOW() function).
+			if ($value === '' || strtolower($value) === 'now') {
 				return null;
 			}
 			
@@ -70,12 +75,11 @@
 			$count = preg_match_all('/(-?\d+(?:\.\d+)?)\s+([a-z]+)/i', $value, $matches, PREG_SET_ORDER);
 			
 			if (!$count) {
-				return null;
+				throw new ParserException("Invalid interval expression: \"{$value}\". Expected a format like \"6 days\" or \"4 years 20 minutes\".");
 			}
 			
 			// Verify the matched pairs reconstruct the full input so that leftover
-			// tokens like "ago" in "6 days ago" cause the parse to fail rather than
-			// silently producing a wrong value.
+			// tokens like "ago" in "6 days ago" are caught rather than silently ignored.
 			$reconstructed = '';
 			
 			foreach ($matches as $match) {
@@ -83,10 +87,10 @@
 			}
 			
 			if (strtolower($reconstructed) !== strtolower($value)) {
-				return null;
+				throw new ParserException("Invalid interval expression: \"{$value}\". Unrecognised tokens found after parsing known components.");
 			}
 			
-			// Sum the seconds for every pair.
+			// Sum the seconds for every pair, rejecting unknown unit names.
 			$total = 0;
 			
 			foreach ($matches as $match) {
@@ -94,7 +98,7 @@
 				$unit   = strtolower($match[2]);
 				
 				if (!isset(self::UNIT_SECONDS[$unit])) {
-					return null;
+					throw new ParserException("Unknown interval unit \"{$match[2]}\" in \"{$value}\". Supported units: second(s), minute(s), hour(s), day(s), week(s), month(s), year(s).");
 				}
 				
 				$total += (int) round($amount * self::UNIT_SECONDS[$unit]);
