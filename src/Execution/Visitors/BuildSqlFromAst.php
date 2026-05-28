@@ -266,20 +266,18 @@
 				return;
 			}
 			
-			// Only process if the expression is an identifier
-			if (!$expression instanceof AstIdentifier) {
-				return;
-			}
-			
-			// Check if this identifier represents an entity
-			if ($this->identifierIsEntity($expression)) {
+			// Entity identifier (bare range alias with no property chain): expand to
+			// all columns for that entity. All other expression types — identifiers
+			// with a property chain, arithmetic terms, function calls, casts, etc. —
+			// fall through to accept() so their own handler emits the correct SQL.
+			if ($expression instanceof AstIdentifier && $this->identifierIsEntity($expression)) {
 				$this->addToVisitedNodes($expression);
 				$this->handleEntity($expression);
 				return;
 			}
 			
-			// Otherwise, process as a regular expression
-			$ast->getExpression()->accept($this);
+			// For all other expressions, delegate to the node's own visitor handler.
+			$expression->accept($this);
 		}
 		
 		/**
@@ -395,20 +393,21 @@
 			// Emit as a bare integer literal; no SQL function needed.
 			if ($ast->getFoldedSeconds() !== null) {
 				$this->result[] = (string) $ast->getFoldedSeconds();
-				$this->addToVisitedNodes($ast->getExpression());
+				$this->addToVisitedNodes($ast);
 				return;
 			}
 
 			// date("now") — emit the platform's current-timestamp expression.
 			if ($ast->isNow()) {
 				$this->result[] = $this->platform->getCurrentUnixTimestamp();
-				$this->addToVisitedNodes($ast->getExpression());
+				$this->addToVisitedNodes($ast);
 				return;
 			}
 
 			// Column reference or parameter — wrap with the platform's timestamp function.
 			$innerSql = $this->visitNodeAndReturnSQL($ast->getExpression());
 			$this->result[] = sprintf($this->platform->getUnixTimestampFunction(), $innerSql);
+			$this->addToVisitedNodes($ast);
 		}
 
 		/**
