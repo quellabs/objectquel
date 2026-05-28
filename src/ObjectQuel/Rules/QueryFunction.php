@@ -7,6 +7,7 @@
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstAvg;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstAvgU;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstDate;
+	use Quellabs\ObjectQuel\ObjectQuel\Rules\IntervalParser;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstIfNull;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstMax;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstMin;
@@ -379,12 +380,12 @@
 			$this->lexer->match(Token::ParenthesesClose);
 
 			// Pre-compute seconds for plain interval string literals ("6 days", "2 hours", …).
-			// "now" and non-interval strings return null from tryParseInterval and are left
-			// for the SQL generator to handle at query time.
+			// "now" and non-interval strings return null and are left for the SQL generator
+			// to handle at query time.
 			$foldedSeconds = null;
 
 			if ($expression instanceof AstString) {
-				$foldedSeconds = AstDate::tryParseInterval($expression->getValue());
+				$foldedSeconds = (new IntervalParser())->parse($expression->getValue());
 			}
 
 			return new AstDate($expression, $foldedSeconds);

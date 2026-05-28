@@ -16,6 +16,12 @@
 	interface NodeBinary extends AstInterface {
 		
 		/**
+		 * Get the operator used in this expression.
+		 * @return string The operator.
+		 */
+		public function getOperator(): string;
+		
+		/**
 		 * Returns the left-hand child expression.
 		 * @return AstInterface
 		 */

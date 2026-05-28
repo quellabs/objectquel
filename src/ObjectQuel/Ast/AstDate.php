@@ -46,28 +46,6 @@
 		private ?int $foldedSeconds;
 		
 		/**
-		 * Supported interval unit names mapped to their duration in seconds.
-		 * Singular and plural forms are both accepted ("day" and "days").
-		 * @var array<string, int>
-		 */
-		private const array UNIT_SECONDS = [
-			'second'  => 1,
-			'seconds' => 1,
-			'minute'  => 60,
-			'minutes' => 60,
-			'hour'    => 3600,
-			'hours'   => 3600,
-			'day'     => 86400,
-			'days'    => 86400,
-			'week'    => 604800,
-			'weeks'   => 604800,
-			'month'   => 2592000,   // 30 days
-			'months'  => 2592000,
-			'year'    => 31536000,  // 365 days
-			'years'   => 31536000,
-		];
-		
-		/**
 		 * @param AstInterface $expression  The parsed argument to date()
 		 * @param int|null     $foldedSeconds  Pre-computed seconds for pure intervals; null otherwise
 		 */
@@ -132,60 +110,15 @@
 		 * @return string
 		 */
 		public function getReturnType(): string {
-			return 'datetime';
+			return $this->isInterval() ? 'interval' : 'datetime';
 		}
 		
 		/**
-		 * Attempts to parse an interval string of the form "N unit" and return
-		 * the equivalent number of seconds, or null if the string is not a
-		 * recognised interval (e.g. it is "now" or an unparseable value).
-		 *
-		 * @param string $value  The raw string argument, e.g. "6 days" or "2 hours"
-		 * @return int|null      Seconds, or null when not an interval
+		 * Returns true if this is an interval ("1 day", etc.)
+		 * Return false if it's a date
+		 * @return bool
 		 */
-		public static function tryParseInterval(string $value): ?int {
-			$value = trim($value);
-			
-			// "now" is not an interval
-			if (strtolower($value) === 'now') {
-				return null;
-			}
-			
-			// Match all "<number> <unit>" pairs in the string.
-			// QUEL supports composite intervals like "4 years 20 minutes".
-			$count = preg_match_all('/(-?\d+(?:\.\d+)?)\s+([a-z]+)/i', $value, $matches, PREG_SET_ORDER);
-			
-			// No pairs found, or the matched content doesn't cover the entire trimmed
-			// string — reject to avoid silently ignoring garbage like "6 bananas ago".
-			if (!$count) {
-				return null;
-			}
-			
-			// Verify the matched pairs reconstruct the full input (no leftover tokens).
-			$reconstructed = '';
-			
-			foreach ($matches as $match) {
-				$reconstructed .= ($reconstructed === '' ? '' : ' ') . $match[1] . ' ' . $match[2];
-			}
-			
-			if (strtolower($reconstructed) !== strtolower($value)) {
-				return null;
-			}
-			
-			// Sum the seconds for every pair.
-			$total = 0;
-			
-			foreach ($matches as $match) {
-				$amount = (float) $match[1];
-				$unit   = strtolower($match[2]);
-				
-				if (!isset(self::UNIT_SECONDS[$unit])) {
-					return null;
-				}
-				
-				$total += (int) round($amount * self::UNIT_SECONDS[$unit]);
-			}
-			
-			return $total;
+		public function isInterval(): bool {
+			return $this->foldedSeconds !== null;
 		}
 	}

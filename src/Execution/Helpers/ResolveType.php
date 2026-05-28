@@ -3,6 +3,7 @@
 	namespace Quellabs\ObjectQuel\Execution\Helpers;
 	
 	use Quellabs\ObjectQuel\Annotations\Orm\Column;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstDate;
 	use Quellabs\ObjectQuel\DatabaseAdapter\TypeMapper;
 	use Quellabs\ObjectQuel\EntityStore;
 	use Quellabs\ObjectQuel\Exception\EntityResolutionException;
@@ -18,12 +19,44 @@
 	 * It's primarily used in query processing to ensure type safety and proper casting.
 	 */
 	class ResolveType {
-
+		
 		/**
 		 * Entity store containing metadata and annotations for all entities
 		 * @var EntityStore
 		 */
 		private EntityStore $entityStore;
+		
+		/**
+		 * Temporal type promotion table.
+		 *
+		 * Format:
+		 *   [operator][leftType][rightType] => resultType
+		 *
+		 * @var array<string, array<string, array<string, string>>>
+		 */
+		private const array TEMPORAL_TYPE_TABLE = [
+			'+' => [
+				'datetime' => [
+					'datetime' => 'datetime',
+					'interval' => 'datetime',
+				],
+				'interval' => [
+					'datetime' => 'datetime',
+					'interval' => 'interval',
+				],
+			],
+			
+			'-' => [
+				'datetime' => [
+					'datetime' => 'interval',
+					'interval' => 'datetime',
+				],
+				'interval' => [
+					'datetime' => 'interval',
+					'interval' => 'interval',
+				],
+			],
+		];
 		
 		/**
 		 * Constructor - initializes the helper with an entity store
@@ -59,29 +92,38 @@
 			if ($ast instanceof AstAggregate) {
 				return $this->inferReturnType($ast->getIdentifier());
 			}
-
+			
 			// Unary sign operators (+x, -x) do not change the numeric type of the operand.
 			if ($ast instanceof AstUnaryOperation) {
 				return $this->inferReturnType($ast->getExpression());
 			}
-
+			
 			// Traverse down the parse tree for binary operations (terms/factors)
 			if ($ast instanceof NodeBinary) {
 				// Recursively get types of left and right operands
 				$left = $this->inferReturnType($ast->getLeft());
 				$right = $this->inferReturnType($ast->getRight());
 				
-				// Apply type precedence rules for binary operations:
-				// 1. If either operand is float, result is float (highest precision)
-				if (($left === "float") || ($right === "float")) {
-					return 'float';
-					// 2. If either operand is string, result is string (concatenation/coercion)
-				} elseif (($left === "string") || ($right === "string")) {
-					return 'string';
-					// 3. Otherwise, use the left operand's type as default
-				} else {
-					return $left;
+				// If either operand is float, result is float (highest precision)
+				if (
+					$left === 'datetime' || $left === 'interval' ||
+					$right === 'datetime' || $right === 'interval'
+				) {
+					return self::TEMPORAL_TYPE_TABLE[$ast->getOperator()][$left][$right] ?? null;
 				}
+				
+				// If either operand is float, result is float (highest precision)
+				if ($left === "float" || $right === "float") {
+					return 'float';
+				}
+				
+				// If either operand is string, result is string (concatenation/coercion)
+				if ($left === "string" || $right === "string") {
+					return 'string';
+				}
+				
+				// Otherwise, use the left operand's type as default
+				return $left;
 			}
 			
 			// Fallback: use the node's own declared return type if available.
