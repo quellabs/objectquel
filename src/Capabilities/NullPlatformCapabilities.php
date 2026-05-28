@@ -85,4 +85,23 @@
 				'decimal' => 'DECIMAL',
 			];
 		}
+
+		/**
+		 * @inheritDoc
+		 *
+		 * Defaults to MySQL/MariaDB syntax, the most widely deployed engine in the
+		 * Canvas/ObjectQuel target stack.
+		 */
+		public function getUnixTimestampFunction(): string {
+			return 'UNIX_TIMESTAMP(%s)';
+		}
+
+		/**
+		 * @inheritDoc
+		 *
+		 * Defaults to MySQL/MariaDB syntax.
+		 */
+		public function getCurrentUnixTimestamp(): string {
+			return 'UNIX_TIMESTAMP()';
+		}
 	}

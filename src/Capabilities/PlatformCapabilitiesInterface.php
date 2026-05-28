@@ -95,4 +95,33 @@
 		 * @return array<string, string>  e.g. ['int' => 'SIGNED', 'float' => 'DOUBLE', ...]
 		 */
 		public function getSupportedCastTypes(): array;
+
+		/**
+		 * Returns a SQL expression that converts a datetime column or value to a
+		 * Unix timestamp (integer seconds since 1970-01-01 00:00:00 UTC).
+		 *
+		 * The placeholder %s must appear exactly once and will be replaced with the
+		 * already-generated SQL for the inner expression.
+		 *
+		 * Examples by engine:
+		 *   MySQL/MariaDB  → 'UNIX_TIMESTAMP(%s)'
+		 *   PostgreSQL     → 'EXTRACT(EPOCH FROM %s)::BIGINT'
+		 *   SQLite         → "strftime('%%s', %s)"
+		 *
+		 * @return string  A sprintf-compatible template with one %s placeholder.
+		 */
+		public function getUnixTimestampFunction(): string;
+
+		/**
+		 * Returns the SQL expression that yields the current time as a Unix
+		 * timestamp (integer seconds since the epoch).
+		 *
+		 * Examples by engine:
+		 *   MySQL/MariaDB  → 'UNIX_TIMESTAMP()'
+		 *   PostgreSQL     → 'EXTRACT(EPOCH FROM NOW())::BIGINT'
+		 *   SQLite         → "strftime('%s','now')"
+		 *
+		 * @return string  A complete SQL expression, no placeholders.
+		 */
+		public function getCurrentUnixTimestamp(): string;
 	}

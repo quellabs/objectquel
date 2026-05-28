@@ -12,10 +12,12 @@
 	use Quellabs\ObjectQuel\UnitOfWork;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstAlias;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstCast;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstDate;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstIdentifier;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRangeJsonSource;
 	use Quellabs\ObjectQuel\ProxyGenerator\ProxyInterface;
 	use Quellabs\ObjectQuel\ReflectionManagement\PropertyHandler;
+	use Quellabs\ObjectQuel\Serialization\Normalizer\DatetimeNormalizer;
 	use Quellabs\ObjectQuel\Serialization\Serializers\Serializer;
 	
 	/**
@@ -548,6 +550,15 @@
 					'decimal' => floatval($rawValue),
 					default   => $rawValue,
 				};
+			}
+
+			// date() expression in the SELECT list: the database returns an integer
+			// Unix timestamp. Convert it to \DateTime unless the date() call is
+			// wrapped in an explicit cast, which is handled by the AstCast branch above.
+			if ($node instanceof AstDate) {
+				$rawValue = $row[$value->getName()] ?? null;
+				$normalizer = new DatetimeNormalizer([]);
+				return $normalizer->normalize($rawValue);
 			}
 
 			// Top-level identifier with no chained property — either a JSON source

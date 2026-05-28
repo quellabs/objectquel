@@ -202,4 +202,36 @@
 				],
 			};
 		}
+
+		/**
+		 * @inheritDoc
+		 *
+		 * Unix timestamp conversion function per engine:
+		 * - MySQL / MariaDB: UNIX_TIMESTAMP(col)
+		 * - PostgreSQL:      EXTRACT(EPOCH FROM col)::BIGINT
+		 * - SQLite:          strftime('%s', col)
+		 */
+		public function getUnixTimestampFunction(): string {
+			return match ($this->adapter->getDatabaseType()) {
+				'postgres', 'postgresql' => 'EXTRACT(EPOCH FROM %s)::BIGINT',
+				'sqlite'                 => "strftime('%%s', %s)",
+				default                  => 'UNIX_TIMESTAMP(%s)',
+			};
+		}
+
+		/**
+		 * @inheritDoc
+		 *
+		 * Current time as Unix timestamp per engine:
+		 * - MySQL / MariaDB: UNIX_TIMESTAMP()
+		 * - PostgreSQL:      EXTRACT(EPOCH FROM NOW())::BIGINT
+		 * - SQLite:          strftime('%s','now')
+		 */
+		public function getCurrentUnixTimestamp(): string {
+			return match ($this->adapter->getDatabaseType()) {
+				'postgres', 'postgresql' => 'EXTRACT(EPOCH FROM NOW())::BIGINT',
+				'sqlite'                 => "strftime('%s','now')",
+				default                  => 'UNIX_TIMESTAMP()',
+			};
+		}
 	}

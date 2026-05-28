@@ -6,6 +6,7 @@
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstAny;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstAvg;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstAvgU;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstDate;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstIfNull;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstMax;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstMin;
@@ -60,6 +61,7 @@
 		 * - Aggregate: count, countu, avg, avgu
 		 * - String: concat, search
 		 * - Type checking: is_empty, is_numeric, is_integer, is_float
+		 * - Temporal: date
 		 * - Utility: exists
 		 *
 		 * @param string $command The function name to parse (case-insensitive)
@@ -86,6 +88,7 @@
 				'is_float' => $this->parseIsFloat(),
 				'ifnull' => $this->parseIfNull(),
 				'exists' => $this->parseExists(),
+				'date' => $this->parseDate(),
 				default => throw new ParserException("Command {$command} is not valid."),
 			};
 		}
@@ -351,6 +354,40 @@
 			$this->lexer->match(Token::ParenthesesClose);
 			
 			return new AstConcat($parameters);
+		}
+		
+		/**
+		 * Parse date() function — converts a datetime expression to a Unix timestamp
+		 * so that temporal arithmetic is expressed as plain integer math.
+		 *
+		 * Accepted argument forms:
+		 *   date("now")        — current time as Unix timestamp
+		 *   date("6 days")     — interval folded to integer literal at parse time
+		 *   date(o.orderDate)  — datetime column converted to Unix timestamp in SQL
+		 *   date(:param)       — runtime parameter treated as datetime column
+		 *
+		 * Pure interval strings are pre-computed here so the SQL generator can
+		 * emit a bare integer without any function call.
+		 *
+		 * @return AstDate The date AST node
+		 * @throws LexerException When token matching fails
+		 * @throws ParserException When the argument type is not supported
+		 */
+		protected function parseDate(): AstDate {
+			$this->lexer->match(Token::ParenthesesOpen);
+			$expression = $this->expressionRule->parse();
+			$this->lexer->match(Token::ParenthesesClose);
+
+			// Pre-compute seconds for plain interval string literals ("6 days", "2 hours", …).
+			// "now" and non-interval strings return null from tryParseInterval and are left
+			// for the SQL generator to handle at query time.
+			$foldedSeconds = null;
+
+			if ($expression instanceof AstString) {
+				$foldedSeconds = AstDate::tryParseInterval($expression->getValue());
+			}
+
+			return new AstDate($expression, $foldedSeconds);
 		}
 		
 		/**
