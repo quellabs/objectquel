@@ -148,13 +148,6 @@
 				throw new ParserException('Failed to extract source slice for alias generation');
 			}
 			
-			// Strip any leading cast prefix from the source slice so that expressions
-			// like "(datetime)date('2 days') - date('1 day')" produce the alias
-			// "date('2 days') - date('1 day')" rather than including the cast syntax.
-			if (preg_match('/^\s*\([a-z]+\)/i', $sourceSlice, $m)) {
-				$sourceSlice = ltrim(substr($sourceSlice, strlen($m[0])));
-			}
-			
 			// For temporary tables, strip range prefix from property access (x.id -> id)
 			// But NOT for entity retrievals (x) which will be expanded
 			return $this->isTemporaryTable && str_contains($sourceSlice, '.') ? $this->stripRangePrefixFromAlias($sourceSlice) : $sourceSlice;
