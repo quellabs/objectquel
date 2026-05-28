@@ -583,7 +583,7 @@
 					
 					case 'interval' :
 						$rawValue = $row[$value->getName()] ?? null;
-						return $rawValue === null ? null : (int)$rawValue;
+						return is_scalar($rawValue) ? (int)$rawValue : null;
 						
 					default :
 						throw new \RuntimeException(
