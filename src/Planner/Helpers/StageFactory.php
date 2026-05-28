@@ -78,7 +78,15 @@
 		}
 		
 		/**
-		 * Returns only the database projections
+		 * Returns only the database projections.
+		 *
+		 * A projection is included when:
+		 *   - It references at least one database range (the normal case), OR
+		 *   - It references no range at all — i.e. it is a constant expression
+		 *     such as date("30 days") - date("10 days") or 1 + 1. These carry
+		 *     no data-source dependency and can be evaluated by any database
+		 *     query they are attached to.
+		 *
 		 * @return AstAlias[]
 		 */
 		public function extractDatabaseCompatibleProjections(AstRetrieve $query): array {
@@ -87,8 +95,12 @@
 			
 			foreach ($query->getValues() as $value) {
 				foreach ($databaseRanges as $range) {
-					if ($this->analyzer->doesConditionInvolveRangeCached($value, $range)) {
+					if (
+						$this->analyzer->isConstantExpression($value) ||
+						$this->analyzer->doesConditionInvolveRangeCached($value, $range)
+					) {
 						$result[] = $value;
+						break;
 					}
 				}
 			}

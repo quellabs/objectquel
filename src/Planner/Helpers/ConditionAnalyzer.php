@@ -78,19 +78,17 @@
 		// =========================================================================
 		// Range-reference analysis
 		// =========================================================================
-		
+
 		/**
-		 * Returns true if any node in the given AST subtree references any data range
-		 * (database table or other data source). Used to distinguish conditions that
-		 * require database or in-memory execution from those that can be evaluated
-		 * entirely in PHP without touching any range data.
-		 * @param AstInterface $condition The root of the AST subtree to inspect
-		 * @return bool True if the subtree contains at least one range reference
+		 * Returns true if the given AST subtree is constant, meaning it contains
+		 * no references to any range whatsoever.
+		 * @param AstInterface $expression The AST subtree to inspect
+		 * @return bool True when the subtree contains no range references
 		 */
-		public function containsAnyRangeReference(AstInterface $condition): bool {
+		public function isConstantExpression(AstInterface $expression): bool {
 			$visitor = new CheckAnyRangeReference();
-			$condition->accept($visitor);
-			return $visitor->isFound();
+			$expression->accept($visitor);
+			return !$visitor->isFound();
 		}
 		
 		/**

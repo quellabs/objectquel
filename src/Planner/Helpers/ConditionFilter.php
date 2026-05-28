@@ -86,7 +86,7 @@
 				}
 				
 				// Pure literals with no range references can be pushed to the DB.
-				return !$this->analyzer->containsAnyRangeReference($node) ? clone $node : null;
+				return $this->analyzer->isConstantExpression($node) ? clone $node : null;
 			});
 		}
 		
@@ -176,12 +176,12 @@
 			}
 			
 			// field op literal — scalar filter on a DB range
-			if ($leftDb && !$this->analyzer->containsAnyRangeReference($expr->getRight())) {
+			if ($leftDb && $this->analyzer->isConstantExpression($expr->getRight())) {
 				return true;
 			}
 			
 			// literal op field — same as above, operands reversed
-			if ($rightDb && !$this->analyzer->containsAnyRangeReference($expr->getLeft())) {
+			if ($rightDb && $this->analyzer->isConstantExpression($expr->getLeft())) {
 				return true;
 			}
 			
@@ -203,12 +203,12 @@
 			$rightInvolvesRange = $this->analyzer->doesConditionInvolveRangeCached($expr->getRight(), $range);
 			
 			// range op literal
-			if ($leftInvolvesRange && !$this->analyzer->containsAnyRangeReference($expr->getRight())) {
+			if ($leftInvolvesRange && $this->analyzer->isConstantExpression($expr->getRight())) {
 				return true;
 			}
 			
 			// literal op range
-			if ($rightInvolvesRange && !$this->analyzer->containsAnyRangeReference($expr->getLeft())) {
+			if ($rightInvolvesRange && $this->analyzer->isConstantExpression($expr->getLeft())) {
 				return true;
 			}
 			
@@ -230,12 +230,12 @@
 			$rightInvolvesRange = $this->analyzer->doesConditionInvolveRangeCached($expr->getRight(), $range);
 			
 			// range op other-range
-			if ($leftInvolvesRange && $this->analyzer->containsAnyRangeReference($expr->getRight()) && !$rightInvolvesRange) {
+			if ($leftInvolvesRange && !$this->analyzer->isConstantExpression($expr->getRight()) && !$rightInvolvesRange) {
 				return true;
 			}
 			
 			// other-range op range
-			if ($rightInvolvesRange && $this->analyzer->containsAnyRangeReference($expr->getLeft()) && !$leftInvolvesRange) {
+			if ($rightInvolvesRange && !$this->analyzer->isConstantExpression($expr->getLeft()) && !$leftInvolvesRange) {
 				return true;
 			}
 			
