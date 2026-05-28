@@ -20,6 +20,7 @@
 	
 	namespace Quellabs\ObjectQuel;
 	
+	use Quellabs\AnnotationReader\AnnotationInterface;
 	use Quellabs\AnnotationReader\Exception\ParserException;
 	use Quellabs\ObjectQuel\Annotations\Orm\LifecycleAware;
 	use Quellabs\ObjectQuel\Annotations\Orm\PrePersist;
@@ -123,7 +124,7 @@
 		/**
 		 * Execute all lifecycle methods of a specific annotation type on an entity
 		 * @param object $entity The entity to execute methods on
-		 * @param class-string $annotationClass The annotation class to look for
+		 * @param class-string<AnnotationInterface> $annotationClass The annotation class to look for
 		 */
 		private function executeLifecycleMethods(object $entity, string $annotationClass): void {
 			// Skip if entity class doesn't have lifecycle callbacks
@@ -166,7 +167,7 @@
 		/**
 		 * Get all methods with a specific lifecycle annotation for an entity class
 		 * @param class-string $entityClass The entity class name
-		 * @param class-string $annotationClass The annotation class to look for
+		 * @param class-string<AnnotationInterface> $annotationClass The annotation class to look for
 		 * @return string[] List of method names
 		 */
 		private function getLifecycleMethods(string $entityClass, string $annotationClass): array {
@@ -183,7 +184,13 @@
 			$reflectionClass = new \ReflectionClass($entityClass);
 			
 			foreach ($reflectionClass->getMethods() as $method) {
-				if ($this->entityStore->getAnnotationReader()->methodHasAnnotation($entityClass, $method->getName(), $annotationClass)) {
+				if (
+					$this->entityStore->getAnnotationReader()->methodHasAnnotation(
+						$entityClass,
+						$method->getName(),
+						$annotationClass
+					)
+				) {
 					$methods[] = $method->getName();
 				}
 			}
