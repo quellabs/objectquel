@@ -21,6 +21,7 @@
 	use Quellabs\ObjectQuel\ProxyGenerator\ProxyInterface;
 	use Quellabs\ObjectQuel\ReflectionManagement\PropertyHandler;
 	use Quellabs\ObjectQuel\Serialization\Normalizer\DatetimeNormalizer;
+	use Quellabs\ObjectQuel\Serialization\Normalizer\IntervalNormalizer;
 	use Quellabs\ObjectQuel\Serialization\Serializers\Serializer;
 	
 	/**
@@ -46,6 +47,7 @@
 		private PropertyHandler $propertyHandler;
 		private ResolveType $resolveType;
 		private DatetimeNormalizer $datetimeNormalizer;
+		private IntervalNormalizer $intervalNormalizer;
 		
 		/**
 		 * EntityHydrator constructor
@@ -58,6 +60,7 @@
 			$this->propertyHandler = $entityManager->getPropertyHandler();
 			$this->resolveType = new ResolveType($this->entityStore);
 			$this->datetimeNormalizer = new DatetimeNormalizer([]);
+			$this->intervalNormalizer = new IntervalNormalizer([]);
 		}
 		
 		/**
@@ -554,7 +557,7 @@
 				return match ($node->getCastType()) {
 					'int' => intval($rawValue),
 					'float' => floatval($rawValue),
-					'string' => strval($rawValue),
+					'string'   => $this->castToString($node, $rawValue),
 					'bool' => (bool)$rawValue,
 					'decimal' => floatval($rawValue),
 					'datetime' => $this->datetimeNormalizer->normalize($rawValue),
@@ -690,6 +693,45 @@
 		// Utilities
 		// =========================================================================
 		
+		/**
+		 * Converts a raw value to string for a (string) cast.
+		 *
+		 * When the inner expression of the cast resolves to an interval (a duration
+		 * in seconds), the integer is formatted as a human-readable string via
+		 * IntervalNormalizer — e.g. 158400 → "1 day 20 hours". All other expressions
+		 * are converted with strval() as usual.
+		 *
+		 * @param AstCast $cast
+		 * @param mixed $rawValue
+		 * @return string|null
+		 * @throws EntityResolutionException
+		 * @throws \DateInvalidTimeZoneException
+		 * @throws \DateMalformedStringException
+		 */
+		private function castToString(AstCast $cast, mixed $rawValue): ?string {
+			// No value
+			if ($rawValue === null) {
+				return null;
+			}
+
+			// If the inner expression is a duration, format it as a human-readable
+			// interval string rather than returning the raw integer as a string.
+			$innerType = $this->resolveType->inferReturnType($cast->getExpression());
+
+			// Duration — format seconds as a human-readable interval string.
+			if ($innerType === 'interval' && is_numeric($rawValue)) {
+				return $this->intervalNormalizer->normalize($rawValue);
+			}
+
+			// Point in time — convert to \DateTime then format as "Y-m-d H:i:s".
+			if ($innerType === 'datetime') {
+				$dt = $this->datetimeNormalizer->normalize($rawValue);
+				return $dt?->format('Y-m-d H:i:s');
+			}
+
+			return is_scalar($rawValue) ? strval($rawValue) : null;
+		}
+
 		/**
 		 * Returns true if the AST subtree contains at least one AstDate node.
 		 * Used as a fast-path guard before running full type inference in processValue,
