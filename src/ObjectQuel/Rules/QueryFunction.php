@@ -7,7 +7,6 @@
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstAvg;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstAvgU;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstDate;
-	use Quellabs\ObjectQuel\ObjectQuel\Rules\IntervalParser;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstIfNull;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstMax;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstMin;
@@ -385,7 +384,8 @@
 			$foldedSeconds = null;
 
 			if ($expression instanceof AstString) {
-				$foldedSeconds = (new IntervalParser())->parse($expression->getValue());
+				$intervalParser = new IntervalParser();
+				$foldedSeconds = $intervalParser->parse($expression->getValue());
 			}
 
 			return new AstDate($expression, $foldedSeconds);
@@ -430,7 +430,6 @@
 			
 			return new AstSearchScore($identifiers, $searchString);
 		}
-		
 		
 		/**
 		 * Helper method that parses a sequence of identifiers separated by commas,
