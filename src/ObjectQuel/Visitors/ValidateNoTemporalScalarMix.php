@@ -11,19 +11,24 @@
 	use Quellabs\ObjectQuel\ObjectQuel\AstVisitorInterface;
 	
 	/**
-	 * Validates that temporal values (datetime, interval) are never mixed with
-	 * plain scalars in arithmetic expressions.
+	 * Validates arithmetic type rules for date() values.
 	 *
-	 * QUEL treats date() as a first-class type. The only valid operand combinations
-	 * for + and - involving a temporal value are those in the type table:
+	 * Two rules are enforced:
+	 *
+	 * 1. Mixing with scalars is forbidden on + and -.
+	 *    QUEL treats date() as a first-class type. The only valid operand
+	 *    combinations for + and - involving a temporal value are:
 	 *
 	 *   datetime ± interval  → datetime
 	 *   interval ± interval  → interval
 	 *   datetime - datetime  → interval
 	 *
-	 * Mixing a temporal value with a plain scalar (e.g. date("6 days") + 1) is a
-	 * type error. It has no defined meaning and must be caught here rather than
-	 * silently producing a wrong result or a confusing SQL error.
+	 *    Mixing a temporal value with a plain scalar (e.g. date("6 days") + 1)
+	 *    has no defined meaning and is rejected here.
+	 *
+	 * 2. Multiplication and division of temporal values are forbidden entirely.
+	 *    date("6 days") * 2 and date("now") / 3 have no defined meaning and
+	 *    are rejected regardless of what the other operand is.
 	 */
 	class ValidateNoTemporalScalarMix implements AstVisitorInterface {
 		
@@ -43,20 +48,13 @@
 		 * @throws EntityResolutionException
 		 */
 		public function visitNode(AstInterface $node): void {
-			// Only binary nodes can produce a type mismatch — skip everything else.
+			// Only binary nodes can produce a type error — skip everything else.
 			if (!$node instanceof NodeBinary) {
 				return;
 			}
 			
+			// Fetch the operator
 			$operator = $node->getOperator();
-			
-			// Only + and - are temporal arithmetic operators. Comparison operators
-			// (=, <, >, etc.) legitimately accept a date() value on one side and a
-			// plain integer on the other — e.g. date(p.createdAt) > :cutoff where
-			// :cutoff is a raw Unix timestamp. Those are not our concern here.
-			if ($operator !== '+' && $operator !== '-') {
-				return;
-			}
 			
 			// Infer the return type of each operand by walking its subtree.
 			// AstDate nodes declare 'datetime' or 'interval'; everything else
@@ -69,6 +67,24 @@
 			
 			// Neither operand is temporal — plain scalar arithmetic, nothing to validate.
 			if (!$leftIsTemporal && !$rightIsTemporal) {
+				return;
+			}
+
+			// Multiplication and division of temporal values are never valid,
+			// regardless of what the other operand is.
+			if ($operator === '*' || $operator === '/') {
+				throw new SemanticException(sprintf(
+					"Type error: cannot use '%s' with a date() value. " .
+					"Multiplication and division are not defined for date() values.",
+					$operator
+				));
+			}
+
+			// For + and -, both operands must be temporal — comparison operators
+			// (=, <, >, etc.) legitimately accept a date() value on one side and a
+			// plain integer on the other (e.g. date(p.createdAt) > :cutoff) and
+			// are not checked here.
+			if ($operator !== '+' && $operator !== '-') {
 				return;
 			}
 			
