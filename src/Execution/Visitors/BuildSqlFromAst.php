@@ -120,30 +120,10 @@
 			$this->platform = $platform;
 			
 			// Initialize helper classes with proper dependencies and references
-			$this->sqlFragmentBuilder = new BuildSqlFragments(
-				$this->entityStore,
-				$this,
-				$subqueryAliasRangeName
-			);
-			
-			$this->typeInference = new ResolveType(
-				$this->entityStore
-			);
-			
-			$this->aggregateHandler = new ProcessAggregate(
-				$this->entityStore,
-				$this->partOfQuery,
-				$this->sqlFragmentBuilder,
-				$this
-			);
-			
-			$this->expressionHandler = new ProcessExpression(
-				$this->entityStore,
-				$this->typeInference,
-				$this->parameters,
-				$this,
-				$this->platform
-			);
+			$this->sqlFragmentBuilder = new BuildSqlFragments($this->entityStore, $this, $subqueryAliasRangeName);
+			$this->typeInference = new ResolveType($this->entityStore);
+			$this->aggregateHandler = new ProcessAggregate($this->entityStore, $this->partOfQuery, $this->sqlFragmentBuilder, $this);
+			$this->expressionHandler = new ProcessExpression($this->entityStore, $this->typeInference, $this->parameters, $this, $this->platform);
 		}
 		
 		/**
