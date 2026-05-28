@@ -103,6 +103,23 @@
 		}
 		
 		/**
+		 * Returns the PHP type this cast produces, so that ResolveType can
+		 * propagate the correct type through expressions containing a cast node.
+		 * Maps canonical QUEL cast keywords to the type strings used by ResolveType.
+		 * @return string|null
+		 */
+		public function getReturnType(): ?string {
+			return match ($this->castType) {
+				'int', 'decimal' => 'int',
+				'float'          => 'float',
+				'string'         => 'string',
+				'bool'           => 'bool',
+				'datetime'       => 'datetime',
+				default          => null,
+			};
+		}
+		
+		/**
 		 * Returns the property expression being cast.
 		 * @return AstInterface
 		 */
