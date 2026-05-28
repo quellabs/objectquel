@@ -2,6 +2,8 @@
 	
 	namespace Quellabs\ObjectQuel\Serialization\Normalizer;
 	
+	use DateTime;
+	
 	/**
 	 * DatetimeNormalizer handles conversion between database datetime strings and PHP DateTime objects.
 	 *
@@ -35,28 +37,31 @@
 		 *     date() expression appears in the SELECT list
 		 *
 		 * @param mixed $value
-		 * @return \DateTime|null Returns a DateTime object or null if:
+		 * @return DateTime|null Returns a DateTime object or null if:
 		 *                        - Input value is null
 		 *                        - Input is an empty/zero datetime ("0000-00-00 00:00:00")
 		 *                        - Input cannot be parsed
+		 * @throws \DateInvalidTimeZoneException|\DateMalformedStringException
 		 */
-		public function normalize(mixed $value): ?\DateTime {
+		public function normalize(mixed $value): ?DateTime {
+			// Fetch timezone
+			$timezone = new \DateTimeZone(date_default_timezone_get());
+			
 			// Unix timestamp integer returned by UNIX_TIMESTAMP() / strftime('%s') /
 			// EXTRACT(EPOCH FROM …) when a date() expression is in the SELECT list.
 			if (is_int($value) || (is_string($value) && ctype_digit(ltrim($value, '-')))) {
+				// If value is 0, return null
 				if ((int)$value === 0) {
 					return null;
 				}
 				
-				$date = new \DateTime('@' . (int)$value);
-				
-				// '@timestamp' always sets the timezone to UTC. Restore the default
-				// timezone so the caller gets a DateTime in the expected local timezone.
-				$date->setTimezone(new \DateTimeZone(date_default_timezone_get()));
+				// Convert to datetime
+				$date = new DateTime('@' . (int)$value);
+				$date->setTimezone($timezone);
 				return $date;
 			}
 			
-			// Value has to be string for the standard "Y-m-d H:i:s" path
+			// Value has to be a string for the standard "Y-m-d H:i:s" path
 			if (!is_string($value)) {
 				return null;
 			}
@@ -67,7 +72,7 @@
 			}
 			
 			// Convert string datetime to \DateTime object using the format "Y-m-d H:i:s"
-			$date = \DateTime::createFromFormat("Y-m-d H:i:s", $value);
+			$date = DateTime::createFromFormat("Y-m-d H:i:s", $value, $timezone);
 			return $date !== false ? $date : null;
 		}
 		
@@ -84,6 +89,6 @@
 			}
 			
 			// Format the DateTime object to a string using the format "Y-m-d H:i:s"
-			return ($value instanceof \DateTime) ? $value->format("Y-m-d H:i:s") : null;
+			return ($value instanceof DateTime) ? $value->format("Y-m-d H:i:s") : null;
 		}
 	}

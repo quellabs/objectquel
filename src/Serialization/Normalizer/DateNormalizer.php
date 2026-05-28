@@ -37,6 +37,7 @@
 		 * @return \DateTime|null Returns a DateTime object or null if:
 		 *                        - Input value is null
 		 *                        - Input is an empty/zero date ("0000-00-00")
+		 * @throws \DateInvalidTimeZoneException
 		 */
 		public function normalize(mixed $value): ?\DateTime {
 			// Value has to be string
@@ -44,13 +45,14 @@
 				return null;
 			}
 			
-			// Return null for empty/zero datetimes
+			// Return null for empty/zero datetime
 			if ($value === "0000-00-00") {
 				return null;
 			}
 			
 			// Convert string date to \DateTime object using the format "Y-m-d"
-			$date = \DateTime::createFromFormat("Y-m-d", $value);
+			$timezone = new \DateTimeZone(date_default_timezone_get());
+			$date = \DateTime::createFromFormat("Y-m-d", $value, $timezone);
 			return $date !== false ? $date : null;
 		}
 		
