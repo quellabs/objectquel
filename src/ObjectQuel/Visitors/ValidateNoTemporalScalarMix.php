@@ -43,47 +43,50 @@
 		 * @throws EntityResolutionException
 		 */
 		public function visitNode(AstInterface $node): void {
-			// Only arithmetic operators can mix temporal and scalar values.
-			// Comparison operators (=, <, >, etc.) are handled separately and
-			// legitimately allow comparing a timestamp column to an integer.
+			// Only binary nodes can produce a type mismatch — skip everything else.
 			if (!$node instanceof NodeBinary) {
 				return;
 			}
 			
 			$operator = $node->getOperator();
 			
+			// Only + and - are temporal arithmetic operators. Comparison operators
+			// (=, <, >, etc.) legitimately accept a date() value on one side and a
+			// plain integer on the other — e.g. date(p.createdAt) > :cutoff where
+			// :cutoff is a raw Unix timestamp. Those are not our concern here.
 			if ($operator !== '+' && $operator !== '-') {
 				return;
 			}
 			
-			$leftType  = $this->resolveType->inferReturnType($node->getLeft());
+			// Infer the return type of each operand by walking its subtree.
+			// AstDate nodes declare 'datetime' or 'interval'; everything else
+			// declares 'int', 'float', 'string', etc.
+			$leftType = $this->resolveType->inferReturnType($node->getLeft());
 			$rightType = $this->resolveType->inferReturnType($node->getRight());
 			
-			$leftIsTemporal  = $leftType  === 'datetime' || $leftType  === 'interval';
+			$leftIsTemporal = $leftType === 'datetime' || $leftType === 'interval';
 			$rightIsTemporal = $rightType === 'datetime' || $rightType === 'interval';
 			
-			// If neither side is temporal, this is plain scalar arithmetic — fine.
+			// Neither operand is temporal — plain scalar arithmetic, nothing to validate.
 			if (!$leftIsTemporal && !$rightIsTemporal) {
 				return;
 			}
 			
-			// If one side is temporal and the other is not, that is a type error.
-			if ($leftIsTemporal !== $rightIsTemporal) {
-				$temporalSide = $leftIsTemporal  ? 'left'  : 'right';
-				$scalarSide   = $rightIsTemporal ? 'left'  : 'right';
-				$temporalType = $leftIsTemporal  ? $leftType : $rightType;
-				$scalarType   = $leftIsTemporal  ? ($rightType ?? 'scalar') : ($leftType ?? 'scalar');
+			// Both operands are temporal — valid combination, type table handles the rest.
+			if ($leftIsTemporal && $rightIsTemporal) {
+				return;
+			}
+
+			// One temporal, one scalar — tell the user which side needs wrapping.
+				$scalarSide = $rightIsTemporal ? 'left' : 'right';
 				
 				throw new SemanticException(sprintf(
-					"Type error: cannot use '%s' between a %s value and a plain %s. " .
-					"Both operands of '%s' must be temporal (datetime or interval) when either one is. " .
+					"Type error: cannot use '%s' between a date() value and a plain scalar. " .
+					"Both operands of '%s' must be date() values when either one is. " .
 					"Did you mean to wrap the %s side in date()?",
 					$operator,
-					$temporalType,
-					$scalarType,
 					$operator,
 					$scalarSide
 				));
 			}
 		}
-	}
