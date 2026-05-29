@@ -79,7 +79,7 @@
 			// temporal values are expressed uniformly before semantic validation and
 			// SQL generation. Must run after Step 6 so that entity names and column
 			// types are fully resolved on every identifier.
-			$this->processWithVisitor($ast, NormalizeDateTime::class, $this->entityStore);
+			//$this->processWithVisitor($ast, NormalizeDateTime::class, $this->entityStore);
 		}
 		
 		/**
