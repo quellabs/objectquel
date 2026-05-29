@@ -33,20 +33,11 @@
 		 * and annotation reader. If no annotation reader is provided,
 		 * a new one is created with settings derived from the configuration.
 		 * @param Configuration $configuration
-		 * @param AnnotationReader|null $annotationReader
+		 * @param AnnotationReader $annotationReader
 		 */
-		public function __construct(Configuration $configuration, ?AnnotationReader $annotationReader = null) {
-			// Store the configuration for later use when discovering entities
+		public function __construct(Configuration $configuration, AnnotationReader $annotationReader) {
 			$this->configuration = $configuration;
-			
-			// Create a new configuration for the annotation reader
-			$annotationReaderConfiguration = new \Quellabs\AnnotationReader\Configuration();
-			$annotationReaderConfiguration->setUseAnnotationCache($configuration->useMetadataCache());
-			$annotationReaderConfiguration->setAnnotationCachePath($configuration->getMetadataCachePath());
-			
-			// If no annotation reader was provided, create one with our configuration
-			// Otherwise, use the provided reader instance
-			$this->annotationReader = $annotationReader ?? new AnnotationReader($annotationReaderConfiguration);
+			$this->annotationReader = $annotationReader;
 		}
 		
 		/**
