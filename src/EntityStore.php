@@ -20,6 +20,7 @@
 	
 	namespace Quellabs\ObjectQuel;
 	
+	use Quellabs\AnnotationReader\AnnotationReaderLocator;
 	use Quellabs\AnnotationReader\AnnotationReader;
 	use Quellabs\AnnotationReader\Exception\AnnotationReaderException;
 	use Quellabs\ObjectQuel\Annotations\Orm\ManyToOne;
@@ -95,12 +96,24 @@
 		 * @throws AnnotationReaderException
 		 */
 		public function __construct(Configuration $configuration) {
-			$annotationReaderConfiguration = new \Quellabs\AnnotationReader\Configuration();
-			$annotationReaderConfiguration->setUseAnnotationCache($configuration->useMetadataCache());
-			$annotationReaderConfiguration->setAnnotationCachePath($configuration->getMetadataCachePath());
-			
 			$this->configuration = $configuration;
-			$this->annotationReader = new AnnotationReader($annotationReaderConfiguration);
+			
+			// Use the application-wide shared reader if one has been registered (e.g. by Canvas).
+			// Sharing one instance means all packages contribute to and benefit from the same
+			// in-memory cache, so each class is deserialized from disk at most once per request.
+			// Fall back to constructing a local reader when running ObjectQuel standalone.
+			$sharedReader = AnnotationReaderLocator::getInstance();
+			
+			if ($sharedReader !== null) {
+				$this->annotationReader = $sharedReader;
+			} else {
+				$annotationReaderConfiguration = new \Quellabs\AnnotationReader\Configuration();
+				$annotationReaderConfiguration->setUseAnnotationCache($configuration->useMetadataCache());
+				$annotationReaderConfiguration->setAnnotationCachePath($configuration->getMetadataCachePath());
+				$this->annotationReader = new AnnotationReader($annotationReaderConfiguration);
+				AnnotationReaderLocator::setInstance($this->annotationReader);
+			}
+			
 			$this->reflectionHandler = new ReflectionHandler();
 			$this->proxyNamespace = 'Quellabs\\ObjectQuel\\Proxy\\Runtime';
 			$this->entityNamespace = $configuration->getEntityNameSpace();
@@ -394,7 +407,7 @@
 					// These represent foreign key relationships where this entity depends on another
 					$dependencies = [];
 					foreach ($metadata->manyToOneRelations as $relation) {
-						$dependencies[] = $this->resolveProxyClass ($relation->getTargetEntity());
+						$dependencies[] = $this->resolveProxyClass($relation->getTargetEntity());
 					}
 					
 					// Add OneToOne dependencies (owning side only)
@@ -402,7 +415,7 @@
 					// (indicated by the inversedBy property being set)
 					foreach ($metadata->oneToOneRelations as $relation) {
 						if (!empty($relation->getInversedBy())) {
-							$dependencies[] = $this->resolveProxyClass ($relation->getTargetEntity());
+							$dependencies[] = $this->resolveProxyClass($relation->getTargetEntity());
 						}
 					}
 					
