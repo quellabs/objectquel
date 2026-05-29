@@ -62,7 +62,6 @@
 			// Walk up to the root of the chain — that's the node to wrap.
 			// For "p.createdAt": terminal is "createdAt", root is "p".
 			$root = $node;
-				
 			while ($root->hasParentIdentifier()) {
 				$root = $root->getParent();
 			}

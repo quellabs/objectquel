@@ -159,14 +159,12 @@
 			
 			// Check if this specific identifier has any annotations
 			if (!isset($annotationList[$identifier->getName()])) {
-				return null; // No annotations found for this identifier
+				return null;
 			}
 			
 			// Search through all annotations on this identifier
 			foreach ($annotationList[$identifier->getName()] as $annotation) {
-				// Look specifically for Column annotations which contain type information
 				if ($annotation instanceof Column) {
-					// Convert the database column type (Phinx format) to PHP type
 					return TypeMapper::phinxTypeToPhpType($annotation->getType());
 				}
 			}
