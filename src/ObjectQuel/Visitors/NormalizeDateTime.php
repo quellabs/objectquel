@@ -62,34 +62,42 @@
 			// Walk up to the root of the chain — that's the node to wrap.
 			// For "p.createdAt": terminal is "createdAt", root is "p".
 			$root = $node;
+
 			while ($root->hasParentIdentifier()) {
-				$root = $root->getParent();
+				$parent = $root->getParent();
+
+				if (!$parent instanceof AstIdentifier) {
+					break;
+				}
+
+				$root = $parent;
 			}
 			
 			// Only wrap when the root appears directly inside a binary expression.
 			// Projections and aliases are left untouched — the hydrator handles
 			// those correctly via @Column annotations.
-			if (!$root->getParent() instanceof NodeBinary) {
-				return;
-			}
+			$binaryParent = $root->getParent();
 			
 			// Already wrapped — skip to prevent double-wrapping.
-			if ($root->getParent() instanceof AstDate) {
+			if ($binaryParent instanceof AstDate) {
 				return;
 			}
 			
-			// Capture the binary parent before constructing AstDate — the
-			// constructor calls $root->setParent($this) which would overwrite it.
-			$parent = $root->getParent();
+			// Do nothing if identifier is not part of expression
+			if (!$binaryParent instanceof NodeBinary) {
+				return;
+			}
 			
 			// Wrap the root with AstDate. handleDate will emit UNIX_TIMESTAMP(col).
+			// Capture the parent before constructing AstDate — the constructor calls
+			// $root->setParent($this) which would overwrite the original parent reference.
 			$wrapped = new AstDate($root, null);
 
 			// Wire the wrapped node into the binary expression.
-			if ($parent->getLeft() === $root) {
-				$parent->setLeft($wrapped);
+			if ($binaryParent->getLeft() === $root) {
+				$binaryParent->setLeft($wrapped);
 			} else {
-				$parent->setRight($wrapped);
+				$binaryParent->setRight($wrapped);
 			}
 		}
 	}
