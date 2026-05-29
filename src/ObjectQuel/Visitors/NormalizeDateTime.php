@@ -14,23 +14,14 @@
 	/**
 	 * Normalizes bare datetime column references into AstDate nodes.
 	 *
-	 * ObjectQuel has a native datetime column type (via @Column(type="datetime")).
-	 * When a datetime column is used in temporal arithmetic without an explicit
-	 * date() wrapper, the SQL generator would emit the raw column name, producing
-	 * a "Y-m-d H:i:s" string on the left side of an integer comparison — silently
-	 * wrong.
+	 * Visits terminal AstIdentifier nodes (those with no next in the chain —
+	 * i.e. the actual column node, e.g. "createdAt" in "p.createdAt"). When
+	 * the column resolves to \DateTime and appears inside a binary expression,
+	 * the root of the chain is wrapped with AstDate so that handleDate emits
+	 * the correct UNIX_TIMESTAMP() SQL.
 	 *
-	 * This visitor wraps any AstIdentifier whose resolved column type is \DateTime
-	 * with an AstDate node, producing a canonical form where all temporal values
-	 * are expressed as AstDate nodes regardless of whether the user wrote
-	 * date(x.createdAt) or just x.createdAt.
-	 *
-	 * Double-wrapping is prevented by checking whether the parent of an identifier
-	 * is already an AstDate — in that case the node is left unchanged.
-	 *
-	 * Replacement is performed via the parent node's setter (setLeft/setRight for
-	 * NodeBinary, setExpression for NodeSingleExpression) using the parent reference
-	 * that the AST maintains on every node.
+	 * Double-wrapping is prevented by checking whether the chain root's parent
+	 * is already an AstDate.
 	 */
 	class NormalizeDateTime implements AstVisitorInterface {
 		
@@ -57,53 +48,46 @@
 				return;
 			}
 			
-			// Only wrap the root of a property chain, not a chained property node.
-			// p.createdAt is AstIdentifier("p") → AstIdentifier("createdAt").
-			// Wrapping "createdAt" would break the chain since its parent must
-			// remain an AstIdentifier. Wrapping the root "p" correctly produces
-			// AstDate(AstIdentifier("p") → AstIdentifier("createdAt")), which
-			// handleDate already handles for column references.
-			if ($node->hasParentIdentifier()) {
+			// Only act on terminal nodes — the actual column at the end of the chain.
+			// "createdAt" in "p.createdAt" has no next; "p" does. Skip non-terminals.
+			if ($node->hasNext()) {
 				return;
 			}
 			
-			// Only wrap datetime identifiers that appear inside arithmetic or
-			// comparison expressions — i.e. when the parent is a NodeBinary.
-			// Plain retrieve projections and top-level aliases are left untouched
-			// since the hydrator already handles datetime columns correctly via
-			// @Column annotations without any AstDate wrapping.
-			if (!$node->getParent() instanceof NodeBinary) {
+			// Only act on datetime columns.
+			if ($this->resolveType->inferReturnTypeOfIdentifier($node) !== '\DateTime') {
 				return;
 			}
 			
-			// Only act on datetime columns. The type lives on the last node in
-			// the chain (e.g. "createdAt" in "p.createdAt"), not on the root
-			// entity reference. Walk to the end of the chain to check.
-			$last = $node;
-			
-			while ($last->hasNext()) {
-				$next = $last->getNext();
+			// Walk up to the root of the chain — that's the node to wrap.
+			// For "p.createdAt": terminal is "createdAt", root is "p".
+			$root = $node;
 				
-				if ($next === null) {
-					break;
-				}
+			while ($root->hasParentIdentifier()) {
+				$root = $root->getParent();
 			}
 			
-			// Now check the return type
-			if ($this->resolveType->inferReturnTypeOfIdentifier($last) !== '\DateTime') {
+			// Only wrap when the root appears directly inside a binary expression.
+			// Projections and aliases are left untouched — the hydrator handles
+			// those correctly via @Column annotations.
+			if (!$root->getParent() instanceof NodeBinary) {
 				return;
 			}
 			
-			// Capture the parent before constructing AstDate — the constructor calls
-			// $node->setParent($this) which would overwrite the original parent reference.
-			$parent = $node->getParent();
+			// Already wrapped — skip to prevent double-wrapping.
+			if ($root->getParent() instanceof AstDate) {
+				return;
+			}
 			
-			// Wrap the identifier with AstDate. foldedSeconds is null because this
-			// is a column reference, not a pre-computed interval string.
-			$wrapped = new AstDate($node, null);
+			// Capture the binary parent before constructing AstDate — the
+			// constructor calls $root->setParent($this) which would overwrite it.
+			$parent = $root->getParent();
 			
-			// Replace the identifier in its parent using the appropriate setter.
-			if ($parent->getLeft() === $node) {
+			// Wrap the root with AstDate. handleDate will emit UNIX_TIMESTAMP(col).
+			$wrapped = new AstDate($root, null);
+
+			// Wire the wrapped node into the binary expression.
+			if ($parent->getLeft() === $root) {
 				$parent->setLeft($wrapped);
 			} else {
 				$parent->setRight($wrapped);
