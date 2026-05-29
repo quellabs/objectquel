@@ -13,6 +13,7 @@
 	use Quellabs\ObjectQuel\ObjectQuel\Visitors\ResolvePropertyType;
 	use Quellabs\ObjectQuel\ObjectQuel\Visitors\ResolveRootIdentifierType;
 	use Quellabs\ObjectQuel\ObjectQuel\Visitors\RewriteViaRelationToJoinCondition;
+	use Quellabs\ObjectQuel\ObjectQuel\Visitors\NormalizeDateTime;
 	use Quellabs\ObjectQuel\ObjectQuel\Helpers\ResolveUnqualifiedProperty;
 	
 	/**
@@ -73,6 +74,12 @@
 			// This must run after all structural rewrites (macros, namespace resolution,
 			// via-relation expansion) so that range attachments are final.
 			$this->resolveIdentifierTypes($ast);
+
+			// Step 7: Wrap bare datetime column references with AstDate so that all
+			// temporal values are expressed uniformly before semantic validation and
+			// SQL generation. Must run after Step 6 so that entity names and column
+			// types are fully resolved on every identifier.
+			$this->processWithVisitor($ast, NormalizeDateTime::class, $this->entityStore);
 		}
 		
 		/**
