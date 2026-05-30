@@ -379,13 +379,19 @@
 			$this->lexer->match(Token::ParenthesesClose);
 
 			// Pre-compute seconds for plain interval string literals ("6 days", "2 hours", …).
-			// "now" and non-interval strings return null and are left for the SQL generator
-			// to handle at query time.
+			// "now" returns null and is left for the SQL generator to emit NOW().
+			// Datetime strings ("2024-01-15", "2024-01-15 10:30:00") are passed through
+			// unchanged so the SQL generator can wrap them in UNIX_TIMESTAMP().
+			// Anything else that is not a recognised interval is a parse error.
 			$foldedSeconds = null;
 
 			if ($expression instanceof AstString) {
-				$intervalParser = new IntervalParser();
-				$foldedSeconds = $intervalParser->parse($expression->getValue());
+				$value = trim($expression->getValue());
+				
+				if (!$this->isDatetimeString($value) && strtolower($value) !== 'now') {
+					$intervalParser = new IntervalParser();
+					$foldedSeconds = $intervalParser->parse($value);
+				}
 			}
 
 			return new AstDate($expression, $foldedSeconds);
@@ -463,5 +469,21 @@
 			} while ($this->lexer->optionalMatch(Token::Comma));
 			
 			return $identifiers;
+		}
+		
+		/**
+		 * Returns true when the string is a date or datetime literal that can be
+		 * passed directly to UNIX_TIMESTAMP(). Accepted formats:
+		 *   YYYY-MM-DD
+		 *   YYYY-MM-DD HH:MM:SS
+		 *   YYYY-MM-DD HH:MM:SS.ffffff   (fractional seconds)
+		 * @param string $value
+		 * @return bool
+		 */
+		private function isDatetimeString(string $value): bool {
+			return (bool) preg_match(
+				'/^\d{4}-\d{2}-\d{2}(?:\s\d{2}:\d{2}:\d{2}(?:\.\d+)?)?$/',
+				$value
+			);
 		}
 	}
