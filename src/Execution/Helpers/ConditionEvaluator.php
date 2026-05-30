@@ -224,11 +224,12 @@
 						return null;
 					}
 					
-					if (!self::isDatetimeString($dateValue)) {
-						return null;
+					// Pad a bare date string to a full datetime so DatetimeNormalizer
+					// can parse it with createFromFormat("Y-m-d H:i:s", ...).
+					if (preg_match('/^\d{4}-\d{2}-\d{2}$/', $dateValue)) {
+						$dateValue .= ' 00:00:00';
 					}
 					
-					// Return date
 					return $dateValue;
 				
 				// Handle min() / max() - scan all rows and return the smallest or largest non-null value.
