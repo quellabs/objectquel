@@ -686,7 +686,7 @@
 					};
 				
 				case 'string':
-					return function (array $row) use ($name, $innerType, $datetimeNormalizer, $intervalNormalizer): ?string {
+					return static function(array $row) use ($name, $innerType, $datetimeNormalizer, $intervalNormalizer): ?string {
 						$raw = $row[$name] ?? null;
 						
 						if ($raw === null) {
