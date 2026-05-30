@@ -576,20 +576,4 @@
 			
 			return (string)$value;
 		}
-		
-		/**
-		 * Returns true when the string is a date or datetime literal that can be
-		 * passed directly to UNIX_TIMESTAMP(). Accepted formats:
-		 *   YYYY-MM-DD
-		 *   YYYY-MM-DD HH:MM:SS
-		 *   YYYY-MM-DD HH:MM:SS.ffffff   (fractional seconds)
-		 * @param string $value
-		 * @return bool
-		 */
-		private static function isDatetimeString(string $value): bool {
-			return (bool) preg_match(
-				'/^\d{4}-\d{2}-\d{2}(?:\s\d{2}:\d{2}:\d{2}(?:\.\d+)?)?$/',
-				$value
-			);
-		}
 	}

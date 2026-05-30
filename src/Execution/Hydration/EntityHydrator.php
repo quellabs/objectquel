@@ -219,6 +219,7 @@
 		 * @param RelationCache $relationCache
 		 * @param array<string, object> $entities Accumulator for unique hydrated entities, passed by reference.
 		 * @param array<string, true> $jsonRangeNames
+		 * @param array<string, ValueHydrator> $valueHydrators
 		 * @return array<string, mixed>
 		 * @throws EntityResolutionException
 		 * @throws HydrationException
@@ -538,16 +539,6 @@
 				"Ambiguous @SourceField on '{$annotation->getField()}': multiple JSON ranges are present " .
 				"(" . implode(', ', array_keys($presentJsonRanges)) . ") but no explicit range was declared on the annotation."
 			);
-		}
-		
-		/**
-		 * Returns all values from a JSON source range as an unprefixed key-value array.
-		 * @param AstAlias $value
-		 * @param array<string, mixed> $row
-		 * @return array<string, mixed>
-		 */
-		private function processJsonAllValue(AstAlias $value, array $row): array {
-			return $this->removeRangeFromRow($value->getName(), $row);
 		}
 		
 		/**
