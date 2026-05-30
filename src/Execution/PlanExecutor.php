@@ -4,9 +4,9 @@
 	
 	use Quellabs\ObjectQuel\EntityStore;
 	use Quellabs\ObjectQuel\Exception\EntityResolutionException;
+	use Quellabs\ObjectQuel\Execution\Executors\ConstantQueryExecutor;
 	use Quellabs\ObjectQuel\Execution\Executors\DatabaseQueryExecutor;
 	use Quellabs\ObjectQuel\Execution\Executors\JsonQueryExecutor;
-	use Quellabs\ObjectQuel\Execution\Helpers\ConditionEvaluator;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRangeJsonSource;
 	use Quellabs\ObjectQuel\ObjectQuel\AstInterface;
 	use Quellabs\ObjectQuel\Exception\QuelException;
@@ -53,16 +53,21 @@
 		
 		/**
 		 * Executor responsible for materializing external-source subqueries as temp tables.
-		 * Created lazily on first use and reused for the lifetime of this PlanExecutor.
-		 * @var TempTableExecutor|null
+		 * @var TempTableExecutor
 		 */
-		private ?TempTableExecutor $tempTableExecutor = null;
+		private TempTableExecutor $tempTableExecutor;
 		
 		/**
 		 * Executor responsible for executing and materializing JSON data
 		 * @var JsonQueryExecutor
 		 */
 		private JsonQueryExecutor $jsonExecutor;
+		
+		/**
+		 * Executor responsible for evaluating constant-only (rangeless) queries
+		 * @var ConstantQueryExecutor
+		 */
+		private ConstantQueryExecutor $constantExecutor;
 		
 		/**
 		 * Create a new plan executor
@@ -72,6 +77,8 @@
 			$this->queryExecutor = $queryExecutor;
 			$this->databaseExecutor = $queryExecutor->getDatabaseExecutor();
 			$this->jsonExecutor = $queryExecutor->getJsonExecutor();
+			$this->constantExecutor = new ConstantQueryExecutor();
+			$this->tempTableExecutor = new TempTableExecutor($queryExecutor->getConnection());
 		}
 		
 		/**
@@ -104,26 +111,14 @@
 						// database stage runs. This mutates the stage's AstRangeDatabase
 						// so QuelToSQL emits a plain table reference in subsequent stages.
 						// TempTableStages contribute no rows to intermediate results.
-						$this->getTempTableExecutor()->execute(
+						$this->tempTableExecutor->execute(
 							$stage,
 							fn(ExecutionPlan $innerPlan) => $this->execute($innerPlan)
 						);
 					} elseif ($stage instanceof ConstantStage) {
-						// Evaluate each projection against an empty row — there are no
-						// ranges and no data source, so field lookups are meaningless;
-						// only literals, parameters, and arithmetic are expected here.
-						$row = [];
-						
-						foreach ($stage->getProjections() as $alias) {
-							$row[$alias->getName()] = ConditionEvaluator::evaluate(
-								$alias->getExpression(),
-								[],   // no dataset (no rows to aggregate over)
-								[],   // no field values (no ranges)
-								$stage->getStaticParams()
-							);
-						}
-						
-						$intermediateResults[$stage->getName()] = [$row];
+						// Delegate to the dedicated executor, consistent with how
+						// TempTableStage and JSON stages are handled above.
+						$intermediateResults[$stage->getName()] = $this->constantExecutor->execute($stage);
 					} else {
 						try {
 							if ($stage->getRange() instanceof AstRangeJsonSource) {
@@ -149,22 +144,8 @@
 				return $this->combineResults($plan, $intermediateResults);
 			} finally {
 				// Always clean up temp tables, whether execution succeeded or failed.
-				$this->tempTableExecutor?->cleanup();
+				$this->tempTableExecutor->cleanup();
 			}
-		}
-		
-		/**
-		 * Returns the TempTableExecutor instance, creating it lazily on first use.
-		 * @return TempTableExecutor
-		 */
-		private function getTempTableExecutor(): TempTableExecutor {
-			if ($this->tempTableExecutor === null) {
-				$this->tempTableExecutor = new TempTableExecutor(
-					$this->queryExecutor->getConnection()
-				);
-			}
-			
-			return $this->tempTableExecutor;
 		}
 		
 		/**
