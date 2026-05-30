@@ -5,6 +5,7 @@
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstBinaryOperator;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstBool;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstConcat;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstDate;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstExists;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstExpression;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstIdentifier;
@@ -200,6 +201,24 @@
 					$left = self::evaluate($ast->getExpression(), $contents, $row, $initialParams);
 					$right = self::evaluate($ast->getAltValue(), $contents, $row, $initialParams);
 					return $left ?? $right;
+				
+				// Handle date() — returns a Unix timestamp, mirroring the SQL generator's logic.
+				// Four cases, in the same order as BuildSqlFromAst::handleDate():
+				//   1. Pre-folded interval ("6 days") — already computed to int at parse time.
+				//   2. "now"                          — PHP time().
+				//   3. Datetime string literal        — strtotime() on the raw string.
+				//   4. Column / parameter value       — evaluate the inner expression, then strtotime().
+				case AstDate::class:
+					if ($ast->getFoldedSeconds() !== null) {
+						return $ast->getFoldedSeconds();
+					}
+					
+					if ($ast->isNow()) {
+						return time();
+					}
+					
+					$dateValue = self::evaluate($ast->getExpression(), $contents, $row, $initialParams);
+					return is_string($dateValue) ? strtotime($dateValue) : null;
 				
 				// Handle min() / max() - scan all rows and return the smallest or largest non-null value.
 				// Mirrors SQL MIN()/MAX() semantics: NULLs excluded, empty/all-NULL set returns NULL.
