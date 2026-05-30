@@ -121,6 +121,10 @@
 						'string'  => strval($castValue),
 						'bool'    => (bool) $castValue,
 						'decimal' => floatval($castValue),
+						
+						// 'datetime' is intentionally absent — it is a PHP-only cast handled
+						// exclusively by the hydrator for database results. It cannot appear in
+						// a purely in-memory context, so the default passthrough covers it.
 						default   => $castValue,
 					};
 				
