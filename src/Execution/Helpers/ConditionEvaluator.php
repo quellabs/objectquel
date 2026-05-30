@@ -202,23 +202,26 @@
 					$right = self::evaluate($ast->getAltValue(), $contents, $row, $initialParams);
 					return $left ?? $right;
 				
-				// Handle date() — returns a Unix timestamp, mirroring the SQL generator's logic.
-				// Four cases, in the same order as BuildSqlFromAst::handleDate():
-				//   1. Pre-folded interval ("6 days") — already computed to int at parse time.
-				//   2. "now"                          — PHP time().
-				//   3. Datetime string literal        — strtotime() on the raw string.
-				//   4. Column / parameter value       — evaluate the inner expression, then strtotime().
+				// Handle date() — mimics what the database returns so the hydrator can
+				// promote the value to \DateTime exactly as it does for database results.
+				//
+				// Three cases:
+				//   1. Pre-folded interval ("6 days") — return int seconds directly.
+				//   2. "now"                          — return current datetime as "Y-m-d H:i:s" string.
+				//   3. Everything else (datetime string, column value, parameter) — evaluate
+				//      the inner expression and return the string as-is; DatetimeNormalizer
+				//      accepts both "Y-m-d H:i:s" and "Y-m-d" formats.
 				case AstDate::class:
 					if ($ast->getFoldedSeconds() !== null) {
 						return $ast->getFoldedSeconds();
 					}
 					
 					if ($ast->isNow()) {
-						return time();
+						return (new \DateTime())->format('Y-m-d H:i:s');
 					}
 					
 					$dateValue = self::evaluate($ast->getExpression(), $contents, $row, $initialParams);
-					return is_string($dateValue) ? strtotime($dateValue) : null;
+					return is_string($dateValue) ? $dateValue : null;
 				
 				// Handle min() / max() - scan all rows and return the smallest or largest non-null value.
 				// Mirrors SQL MIN()/MAX() semantics: NULLs excluded, empty/all-NULL set returns NULL.

@@ -67,12 +67,21 @@
 			}
 			
 			// Return null for empty/zero datetimes
-			if ($value === "0000-00-00 00:00:00") {
+			if (
+				$value === "0000-00-00" ||
+				$value === "0000-00-00 00:00:00"
+			) {
 				return null;
 			}
 			
-			// Convert string datetime to \DateTime object using the format "Y-m-d H:i:s"
-			$date = DateTime::createFromFormat("Y-m-d H:i:s", $value, $timezone);
+			// Accept both "Y-m-d H:i:s" (standard database datetime) and "Y-m-d"
+			// (date-only strings from MySQL DATE columns and date() string arguments).
+			if (DateTime::createFromFormat("Y-m-d H:i:s", $value, $timezone)) {
+				$date = DateTime::createFromFormat("Y-m-d H:i:s", $value, $timezone);
+			} else {
+				$date = DateTime::createFromFormat("Y-m-d", $value, $timezone);
+			}
+			
 			return $date !== false ? $date : null;
 		}
 		
