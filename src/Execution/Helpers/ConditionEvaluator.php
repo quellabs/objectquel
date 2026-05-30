@@ -206,26 +206,29 @@
 				// the row so DatetimeNormalizer can promote it to \DateTime, exactly as it
 				// would for a database result. Date-only strings are padded to midnight.
 				case AstDate::class:
+					// Return interval date as seconds
 					if ($ast->getFoldedSeconds() !== null) {
 						return $ast->getFoldedSeconds();
 					}
 					
+					// If date is "now" return the current date
 					if ($ast->isNow()) {
 						return (new \DateTime())->format('Y-m-d H:i:s');
 					}
 					
+					// Evaluate the date expression
 					$dateValue = self::evaluate($ast->getExpression(), $contents, $row, $initialParams);
 					
+					// Validate the date expression
 					if (!is_string($dateValue)) {
 						return null;
 					}
 					
-					// Pad a bare date string to a full datetime so DatetimeNormalizer
-					// can parse it with createFromFormat("Y-m-d H:i:s", ...).
-					if (preg_match('/^\d{4}-\d{2}-\d{2}$/', $dateValue)) {
-						$dateValue .= ' 00:00:00';
+					if (!self::isDatetimeString($dateValue)) {
+						return null;
 					}
 					
+					// Return date
 					return $dateValue;
 				
 				// Handle min() / max() - scan all rows and return the smallest or largest non-null value.
@@ -571,5 +574,21 @@
 			}
 			
 			return (string)$value;
+		}
+		
+		/**
+		 * Returns true when the string is a date or datetime literal that can be
+		 * passed directly to UNIX_TIMESTAMP(). Accepted formats:
+		 *   YYYY-MM-DD
+		 *   YYYY-MM-DD HH:MM:SS
+		 *   YYYY-MM-DD HH:MM:SS.ffffff   (fractional seconds)
+		 * @param string $value
+		 * @return bool
+		 */
+		private static function isDatetimeString(string $value): bool {
+			return (bool) preg_match(
+				'/^\d{4}-\d{2}-\d{2}(?:\s\d{2}:\d{2}:\d{2}(?:\.\d+)?)?$/',
+				$value
+			);
 		}
 	}

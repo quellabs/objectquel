@@ -20,6 +20,7 @@
 	use Quellabs\ObjectQuel\Execution\Helpers\ResolveType;
 	use Quellabs\ObjectQuel\ProxyGenerator\ProxyInterface;
 	use Quellabs\ObjectQuel\ReflectionManagement\PropertyHandler;
+	use Quellabs\ObjectQuel\Serialization\Normalizer\DateNormalizer;
 	use Quellabs\ObjectQuel\Serialization\Normalizer\DatetimeNormalizer;
 	use Quellabs\ObjectQuel\Serialization\Normalizer\IntervalNormalizer;
 	use Quellabs\ObjectQuel\Serialization\Serializers\Serializer;
@@ -38,6 +39,8 @@
 	 *     result: array<int, array<string, mixed>>,
 	 *     entities: array<string, object>
 	 * }
+	 *
+	 * @phpstan-type ValueHydrator \Closure(array<string, mixed>): mixed
 	 */
 	class EntityHydrator {
 		
@@ -46,6 +49,7 @@
 		private Serializer $serializer;
 		private PropertyHandler $propertyHandler;
 		private ResolveType $resolveType;
+		private DateNormalizer $dateNormalizer;
 		private DatetimeNormalizer $datetimeNormalizer;
 		private IntervalNormalizer $intervalNormalizer;
 		
@@ -59,6 +63,7 @@
 			$this->serializer = new Serializer($this->entityStore);
 			$this->propertyHandler = $entityManager->getPropertyHandler();
 			$this->resolveType = new ResolveType($this->entityStore);
+			$this->dateNormalizer = new DateNormalizer([]);
 			$this->datetimeNormalizer = new DatetimeNormalizer([]);
 			$this->intervalNormalizer = new IntervalNormalizer([]);
 		}
@@ -71,11 +76,18 @@
 		 * @throws EntityResolutionException
 		 * @throws HydrationException
 		 * @throws QuelException
+		 * @throws \DateInvalidTimeZoneException
+		 * @throws \DateMalformedStringException
 		 */
 		public function hydrateEntities(array $ast, array $data): array {
 			// Collect JSON range names once up front so every row and entity can
 			// identify JSON-prefixed keys without re-scanning the AST each time.
 			$jsonRangeNames = $this->collectJsonRangeNames($ast);
+			
+			// Pre-compute the normalizer for every date() projection once. The result
+			// depends only on the AST (column annotation type), never on row data, so
+			// computing it per-row would be wasteful.
+			$valueHydrators = $this->buildValueHydrators($ast);
 			
 			// Process each row from the database result
 			$entities = [];
@@ -91,7 +103,10 @@
 				}
 				
 				// Process row
-				$resultRows[] = $this->processRow($ast, $row, $relationCache, $entities, $jsonRangeNames);
+				$resultRows[] = $this->processRow(
+					$ast, $row, $relationCache, $entities,
+					$jsonRangeNames, $valueHydrators
+				);
 			}
 			
 			// Return both the processed result rows and the collection of unique entities.
@@ -208,13 +223,16 @@
 		 * @throws EntityResolutionException
 		 * @throws HydrationException
 		 * @throws QuelException
+		 * @throws \DateInvalidTimeZoneException
+		 * @throws \DateMalformedStringException
 		 */
 		private function processRow(
 			array $ast,
 			array $row,
 			array $relationCache,
 			array &$entities,
-			array $jsonRangeNames
+			array $jsonRangeNames,
+			array $valueHydrators
 		): array {
 			$resultRow = [];
 			
@@ -233,7 +251,7 @@
 						$entities[spl_object_hash($processedValue)] ??= $processedValue;
 					}
 				} else {
-					$processedValue = $this->processValue($value, $row, $row, $jsonRangeNames);
+					$processedValue = ($valueHydrators[$value->getName()] ?? static fn(array $r) => $r[$value->getName()] ?? null)($row);
 				}
 				
 				$resultRow[$value->getName()] = $processedValue;
@@ -523,109 +541,6 @@
 		}
 		
 		/**
-		 * Processes a non-entity value from the query result.
-		 *
-		 * Handles JSON source ranges, scalar property paths, and raw scalars.
-		 * Mapped entity aliases are dispatched directly from processRow() and never
-		 * reach this method.
-		 *
-		 * @param AstAlias $value
-		 * @param array<string, mixed> $row
-		 * @param array<string, mixed> $fullRow
-		 * @param array<string, true> $jsonRangeNames
-		 * @return mixed
-		 * @throws EntityResolutionException
-		 * @throws HydrationException
-		 * @throws \DateInvalidTimeZoneException
-		 * @throws \DateMalformedStringException
-		 */
-		private function processValue(AstAlias $value, array $row, array $fullRow, array $jsonRangeNames): mixed {
-			$node = $value->getExpression();
-			
-			// Cast expression: coerce the raw PDO value to the PHP type the user
-			// requested. PDO type mapping is driver-dependent and does not reliably
-			// match the cast keyword (e.g. DECIMAL returns a string). The cast
-			// keyword is the explicit type intent; honour it unconditionally.
-			if ($node instanceof AstCast) {
-				$rawValue = $row[$value->getName()] ?? null;
-				
-				if (!is_scalar($rawValue)) {
-					return $rawValue;
-				}
-				
-				/** @noinspection PhpDuplicateMatchArmBodyInspection */
-				return match ($node->getCastType()) {
-					'int' => intval($rawValue),
-					'float' => floatval($rawValue),
-					'string'   => $this->castToString($node, $rawValue),
-					'bool' => (bool)$rawValue,
-					'decimal' => floatval($rawValue),
-					'datetime' => $this->datetimeNormalizer->normalize($rawValue),
-					default => $rawValue,
-				};
-			}
-			
-			// date() expression or date arithmetic in the SELECT list. Infer the
-			// result type from the AST to decide whether to hydrate as \DateTime
-			// (datetime result) or return a raw integer (interval result).
-			//
-			// Type rules (from ResolveType::TEMPORAL_TYPE_TABLE):
-			//   datetime ± interval → datetime   → DatetimeNormalizer
-			//   interval ± interval → interval   → raw int
-			//   datetime - datetime → interval   → raw int
-			//   bare date("now") or date(col)    → datetime → DatetimeNormalizer
-			//
-			// Fast-path: only run type inference when the expression tree contains
-			// at least one AstDate node, since those are the only nodes that produce
-			// 'datetime' or 'interval' return types.
-			if ($this->expressionContainsDate($node)) {
-				$resolvedType = $this->resolveType->inferReturnType($node);
-				
-				switch($resolvedType) {
-					case 'datetime' :
-						return $this->datetimeNormalizer->normalize($row[$value->getName()] ?? null);
-					
-					case 'interval' :
-						$rawValue = $row[$value->getName()] ?? null;
-						return is_scalar($rawValue) ? (int)$rawValue : null;
-						
-					default :
-						throw new \RuntimeException(
-							"Unexpected return type '{$resolvedType}' inferred from a date expression — " .
-							"only 'datetime' and 'interval' are valid. " .
-							"This indicates a bug in ValidateNoTemporalScalarMix, which should have " .
-							"rejected this expression at semantic analysis time."
-						);
-				}
-			}
-			
-			// Top-level identifier with no chained property — either a JSON source
-			// range or a subquery (derived-table) range. Mapped entity aliases are
-			// handled before this call, so neither reaches here.
-			if ($node instanceof AstIdentifier && !$node->hasNext() && !$node->hasParentIdentifier()) {
-				if ($node->getRange() instanceof AstRangeJsonSource) {
-					return $this->processJsonAllValue($value, $row);
-				}
-				
-				// Subquery range — no entity metadata, return the scalar directly.
-				return $row[$value->getName()] ?? null;
-			}
-			
-			// Chained property (e.g. p.name). Subquery range properties have no
-			// entity metadata and are returned as raw scalars.
-			if ($node instanceof AstIdentifier && $node->hasNext()) {
-				if ($node->getRange()?->getEntityName() === null) {
-					return $row[$value->getName()] ?? null;
-				}
-				
-				return $this->processPropertyValue($row[$value->getName()] ?? null, $node);
-			}
-			
-			// Any other expression (aggregate, function call, etc.) is a scalar.
-			return $row[$value->getName()] ?? null;
-		}
-		
-		/**
 		 * Returns all values from a JSON source range as an unprefixed key-value array.
 		 * @param AstAlias $value
 		 * @param array<string, mixed> $row
@@ -694,44 +609,204 @@
 		// =========================================================================
 		
 		/**
-		 * Converts a raw value to string for a (string) cast.
+		 * Pre-computes a hydration closure for every non-entity alias in the projection.
+		 * Called once before the row loop; the result is reused for every row.
 		 *
-		 * When the inner expression of the cast resolves to an interval (a duration
-		 * in seconds), the integer is formatted as a human-readable string via
-		 * IntervalNormalizer — e.g. 158400 → "1 day 20 hours". All other expressions
-		 * are converted with strval() as usual.
+		 * Each closure captures everything that is knowable from the AST alone —
+		 * cast type, normalizer choice, property chain, resolved temporal type — so
+		 * the per-row hot path is a single map lookup and call with no repeated
+		 * type inference or annotation traversal.
 		 *
-		 * @param AstCast $cast
-		 * @param mixed $rawValue
-		 * @return string|null
+		 * @param AstAlias[] $ast
+		 * @return array<string, ValueHydrator>
 		 * @throws EntityResolutionException
-		 * @throws \DateInvalidTimeZoneException
-		 * @throws \DateMalformedStringException
 		 */
-		private function castToString(AstCast $cast, mixed $rawValue): ?string {
-			// No value
-			if ($rawValue === null) {
-				return null;
+		private function buildValueHydrators(array $ast): array {
+			$hydrators = [];
+			
+			foreach ($ast as $alias) {
+				if (!$alias->showInResult() || $this->isEntityAlias($alias)) {
+					continue;
+				}
+				
+				$name = $alias->getName();
+				$node = $alias->getExpression();
+				
+				if ($node instanceof AstCast) {
+					$hydrators[$name] = $this->hydratorForCast($name, $node);
+				} elseif ($this->expressionContainsDate($node)) {
+					$hydrators[$name] = $this->hydratorForDate($name, $node);
+				} elseif ($node instanceof AstIdentifier) {
+					$hydrators[$name] = $this->hydratorForIdentifier($name, $node);
+				} else {
+					$hydrators[$name] = static fn(array $row) => $row[$name] ?? null;
+				}
 			}
-
-			// If the inner expression is a duration, format it as a human-readable
-			// interval string rather than returning the raw integer as a string.
-			$innerType = $this->resolveType->inferReturnType($cast->getExpression());
-
-			// Duration — format seconds as a human-readable interval string.
-			if ($innerType === 'interval' && is_numeric($rawValue)) {
-				return $this->intervalNormalizer->normalize($rawValue);
-			}
-
-			// Point in time — convert to \DateTime then format as "Y-m-d H:i:s".
-			if ($innerType === 'datetime') {
-				$dt = $this->datetimeNormalizer->normalize($rawValue);
-				return $dt?->format('Y-m-d H:i:s');
-			}
-
-			return is_scalar($rawValue) ? strval($rawValue) : null;
+			
+			return $hydrators;
 		}
-
+		
+		/**
+		 * Builds a hydration closure for a cast expression.
+		 * The inner type is resolved once here so the closure pays no inference cost per row.
+		 * @return ValueHydrator
+		 * @throws EntityResolutionException
+		 */
+		private function hydratorForCast(string $name, AstCast $node): \Closure {
+			$castType = $node->getCastType();
+			$innerType = $this->resolveType->inferReturnType($node->getExpression());
+			$datetimeNormalizer = $this->datetimeNormalizer;
+			$intervalNormalizer = $this->intervalNormalizer;
+			
+			/** @noinspection PhpSwitchCanBeReplacedWithMatchExpressionInspection */
+			switch ($castType) {
+				case 'int':
+					return static function (array $row) use ($name): mixed {
+						$raw = $row[$name] ?? null;
+						return is_scalar($raw) ? intval($raw) : $raw;
+					};
+				
+				case 'float':
+				case 'decimal':
+					return static function (array $row) use ($name): mixed {
+						$raw = $row[$name] ?? null;
+						return is_scalar($raw) ? floatval($raw) : $raw;
+					};
+				
+				case 'bool':
+					return static function (array $row) use ($name): mixed {
+						$raw = $row[$name] ?? null;
+						return is_scalar($raw) ? (bool)$raw : $raw;
+					};
+				
+				case 'datetime':
+					return static function (array $row) use ($name, $datetimeNormalizer): mixed {
+						$raw = $row[$name] ?? null;
+						return is_scalar($raw) ? $datetimeNormalizer->normalize($raw) : $raw;
+					};
+				
+				case 'string':
+					return function (array $row) use ($name, $innerType, $datetimeNormalizer, $intervalNormalizer): ?string {
+						$raw = $row[$name] ?? null;
+						
+						if ($raw === null) {
+							return null;
+						}
+						
+						if ($innerType === 'interval' && is_numeric($raw)) {
+							return $intervalNormalizer->normalize($raw);
+						}
+						
+						if ($innerType === 'datetime') {
+							return $datetimeNormalizer->normalize($raw)?->format('Y-m-d H:i:s');
+						}
+						
+						return is_scalar($raw) ? strval($raw) : null;
+					};
+				
+				default:
+					return static fn(array $row) => $row[$name] ?? null;
+			}
+		}
+		
+		/**
+		 * Builds a hydration closure for a date() expression or date arithmetic.
+		 * The resolved type and normalizer are determined once so the closure is allocation-free per row.
+		 * @return ValueHydrator
+		 * @throws EntityResolutionException
+		 */
+		private function hydratorForDate(string $name, AstInterface $node): \Closure {
+			$resolvedType = $this->resolveType->inferReturnType($node);
+			
+			switch ($resolvedType) {
+				case 'interval' :
+					return static fn(array $row) => is_scalar($row[$name] ?? null) ? (int)$row[$name] : null;
+				
+				case 'datetime' :
+					$normalizer = $this->resolveDateNormalizer($node);
+					return static fn(array $row) => $normalizer->normalize($row[$name] ?? null);
+				
+				default:
+					throw new \RuntimeException(
+						"Unexpected return type '{$resolvedType}' inferred from a date expression — " .
+						"only 'datetime' and 'interval' are valid. " .
+						"This indicates a bug in ValidateNoTemporalScalarMix, which should have " .
+						"rejected this expression at semantic analysis time."
+					);
+			}
+		}
+		
+		/**
+		 * Returns DateNormalizer for a bare date(dateColumn) and DatetimeNormalizer for everything else.
+		 * @param AstInterface $node
+		 * @return DateNormalizer|DatetimeNormalizer
+		 * @throws EntityResolutionException
+		 */
+		private function resolveDateNormalizer(AstInterface $node): DateNormalizer|DatetimeNormalizer {
+			// date() arithmetic (AstTerm/AstFactor) always produces a full datetime string
+			// or Unix timestamp — only a bare AstDate can wrap a DATE column.
+			if (!$node instanceof AstDate) {
+				return $this->datetimeNormalizer;
+			}
+			
+			// date("now"), date("interval"), date(:param) have no column annotation to inspect.
+			// Their values are always "Y-m-d H:i:s" strings or Unix timestamps.
+			$inner = $node->getExpression();
+			
+			if (!$inner instanceof AstIdentifier) {
+				return $this->datetimeNormalizer;
+			}
+			
+			// JSON source identifiers and subquery columns carry no entity metadata.
+			$entityName = $inner->getEntityName();
+			
+			if ($entityName === null) {
+				return $this->datetimeNormalizer;
+			}
+			
+			// Both 'date' and 'datetime' map to \DateTime in PHP, so phinxTypeToPhpType()
+			// cannot distinguish them. Inspect the raw annotation type instead.
+			$annotations = $this->entityStore->getMetadata($entityName)->getAnnotations();
+			
+			foreach ($annotations[$inner->getName()] ?? [] as $annotation) {
+				// DATE columns produce bare "Y-m-d" strings; DateNormalizer handles that format.
+				// DATETIME and TIMESTAMP produce "Y-m-d H:i:s"; DatetimeNormalizer handles those.
+				if ($annotation instanceof Column && $annotation->getType() === 'date') {
+					return $this->dateNormalizer;
+				}
+			}
+			
+			return $this->datetimeNormalizer;
+		}
+		
+		/**
+		 * Builds a hydration closure for an identifier — either a top-level range reference
+		 * (JSON source, subquery) or a chained property path (entity column, subquery column).
+		 * @param string $name
+		 * @param AstIdentifier $node
+		 * @return ValueHydrator
+		 */
+		private function hydratorForIdentifier(string $name, AstIdentifier $node): \Closure {
+			// Top-level identifier with no chained property.
+			if (!$node->hasNext() && !$node->hasParentIdentifier()) {
+				if ($node->getRange() instanceof AstRangeJsonSource) {
+					return fn(array $row) => $this->removeRangeFromRow($name, $row);
+				}
+				
+				// Subquery range — return the scalar directly.
+				return static fn(array $row) => $row[$name] ?? null;
+			}
+			
+			// Chained property (e.g. p.name).
+			if ($node->getRange()?->getEntityName() === null) {
+				// Subquery range property — no entity metadata, raw scalar.
+				return static fn(array $row) => $row[$name] ?? null;
+			}
+			
+			// Entity property — apply column-type normalisation.
+			return fn(array $row) => $this->processPropertyValue($row[$name] ?? null, $node);
+		}
+		
 		/**
 		 * Returns true if the AST subtree contains at least one AstDate node.
 		 * Used as a fast-path guard before running full type inference in processValue,
