@@ -202,15 +202,9 @@
 					$right = self::evaluate($ast->getAltValue(), $contents, $row, $initialParams);
 					return $left ?? $right;
 				
-				// Handle date() — mimics what the database returns so the hydrator can
-				// promote the value to \DateTime exactly as it does for database results.
-				//
-				// Three cases:
-				//   1. Pre-folded interval ("6 days") — return int seconds directly.
-				//   2. "now"                          — return current datetime as "Y-m-d H:i:s" string.
-				//   3. Everything else (datetime string, column value, parameter) — evaluate
-				//      the inner expression and return the string as-is; DatetimeNormalizer
-				//      accepts both "Y-m-d H:i:s" and "Y-m-d" formats.
+				// Handle date() — puts a "Y-m-d H:i:s" string (or int for intervals) into
+				// the row so DatetimeNormalizer can promote it to \DateTime, exactly as it
+				// would for a database result. Date-only strings are padded to midnight.
 				case AstDate::class:
 					if ($ast->getFoldedSeconds() !== null) {
 						return $ast->getFoldedSeconds();
@@ -221,7 +215,18 @@
 					}
 					
 					$dateValue = self::evaluate($ast->getExpression(), $contents, $row, $initialParams);
-					return is_string($dateValue) ? $dateValue : null;
+					
+					if (!is_string($dateValue)) {
+						return null;
+					}
+					
+					// Pad a bare date string to a full datetime so DatetimeNormalizer
+					// can parse it with createFromFormat("Y-m-d H:i:s", ...).
+					if (preg_match('/^\d{4}-\d{2}-\d{2}$/', $dateValue)) {
+						$dateValue .= ' 00:00:00';
+					}
+					
+					return $dateValue;
 				
 				// Handle min() / max() - scan all rows and return the smallest or largest non-null value.
 				// Mirrors SQL MIN()/MAX() semantics: NULLs excluded, empty/all-NULL set returns NULL.

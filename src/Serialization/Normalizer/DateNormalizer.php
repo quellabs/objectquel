@@ -5,13 +5,10 @@
 	/**
 	 * DateNormalizer handles conversion between database date strings and PHP DateTime objects.
 	 *
-	 * This class implements NormalizerInterface and provides functionality specifically for date
-	 * values (without time components), converting between:
-	 * - Database date strings in "Y-m-d" format
-	 * - PHP \DateTime objects
-	 *
-	 * Note: Unlike DatetimeNormalizer which handles full datetime values, this class only deals
-	 * with date values in the format "Y-m-d".
+	 * Accepts two input forms:
+	 *   - A string in "Y-m-d" format (normal DATE column hydration)
+	 *   - An integer or numeric string Unix timestamp, produced when a
+	 *     date() expression appears in the SELECT list
 	 */
 	class DateNormalizer implements NormalizerInterface {
 
@@ -31,43 +28,55 @@
 		}
 		
 		/**
-		 * Normalize converts a value in the database into something that can be inserted into the entity.
-		 * Specifically converts a date string to a \DateTime object.
+		 * Converts a database date value to a PHP \DateTime object.
 		 *
+		 * @param mixed $value
 		 * @return \DateTime|null Returns a DateTime object or null if:
 		 *                        - Input value is null
 		 *                        - Input is an empty/zero date ("0000-00-00")
+		 *                        - Input cannot be parsed
 		 * @throws \DateInvalidTimeZoneException
 		 */
 		public function normalize(mixed $value): ?\DateTime {
-			// Value has to be string
+			$timezone = new \DateTimeZone(date_default_timezone_get());
+
+			// Unix timestamp integer — produced when a date() expression appears
+			// in the SELECT list. Mirrors the same path in DatetimeNormalizer.
+			if (is_int($value) || (is_string($value) && ctype_digit(ltrim($value, '-')))) {
+				if ((int)$value === 0) {
+					return null;
+				}
+
+				$date = new \DateTime('@' . (int)$value);
+				$date->setTimezone($timezone);
+				return $date;
+			}
+
+			// Value must be a string for the "Y-m-d" path
 			if (!is_string($value)) {
 				return null;
 			}
 			
-			// Return null for empty/zero datetime
+			// Return null for empty/zero dates
 			if ($value === "0000-00-00") {
 				return null;
 			}
 			
-			// Convert string date to \DateTime object using the format "Y-m-d"
-			$timezone = new \DateTimeZone(date_default_timezone_get());
+			// Convert string date to \DateTime using the "Y-m-d" format
 			$date = \DateTime::createFromFormat("Y-m-d", $value, $timezone);
 			return $date !== false ? $date : null;
 		}
 		
 		/**
-		 * Denormalize converts a value in an entity into something that can be inserted into the DB.
-		 * Specifically converts a \DateTime object to a date string.
-		 * @return string|null A formatted date string in "Y-m-d" format, or null if the input is null
+		 * Converts a PHP \DateTime object to a "Y-m-d" date string for database storage.
+		 * @param mixed $value
+		 * @return string|null
 		 */
 		public function denormalize(mixed $value): ?string {
-			// Return null if the DateTime object is null
 			if ($value === null) {
 				return null;
 			}
 			
-			// Format the DateTime object to a string using only the date part in "Y-m-d" format
 			return ($value instanceof \DateTime) ? $value->format("Y-m-d") : null;
 		}
 	}
