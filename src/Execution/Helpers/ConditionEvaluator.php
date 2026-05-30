@@ -35,7 +35,6 @@
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstCast;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstFactor;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstTerm;
-	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstTernary;
 	use Quellabs\ObjectQuel\ObjectQuel\AstInterface;
 	use Quellabs\ObjectQuel\Exception\QuelException;
 	
@@ -294,13 +293,6 @@
 				case AstIsEmpty::class:
 					$value = self::evaluate($ast->getValue(), $contents, $row, $initialParams);
 					return $value === null || $value === '' || $value === 0 || $value === 0.0 || $value === false;
-				
-				// Ternary — condition ? trueValue : falseValue
-				case AstTernary::class:
-					$condition = self::evaluate($ast->getCondition(), $contents, $row, $initialParams);
-					return $condition
-						? self::evaluate($ast->getTrue(), $contents, $row, $initialParams)
-						: self::evaluate($ast->getFalse(), $contents, $row, $initialParams);
 				
 				// ANY(identifier where conditions) — returns 1 if at least one row
 				// satisfies the conditions and has a non-null identifier value, 0 otherwise.

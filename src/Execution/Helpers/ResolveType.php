@@ -128,7 +128,7 @@
 			
 			// Fallback: use the node's own declared return type if available.
 			// Covers AstCount, AstCountU, AstBool, AstNull, AstString, AstNumber, etc.
-			// Nodes without getReturnType() (AstCase, AstTernary, AstIfNull) return null
+			// Nodes without getReturnType() (AstCase, AstIfNull) return null
 			// here, which causes the caller to fall back to a safe runtime REGEXP.
 			return $ast->getReturnType();
 		}
