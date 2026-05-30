@@ -3,6 +3,7 @@
 	namespace Quellabs\ObjectQuel\Execution;
 	
 	use Quellabs\ObjectQuel\EntityStore;
+	use Quellabs\ObjectQuel\Planner\ExecutionStageInterface;
 	use Quellabs\ObjectQuel\Exception\EntityResolutionException;
 	use Quellabs\ObjectQuel\Execution\Executors\ConstantQueryExecutor;
 	use Quellabs\ObjectQuel\Execution\Executors\DatabaseQueryExecutor;
@@ -116,22 +117,9 @@
 							fn(ExecutionPlan $innerPlan) => $this->execute($innerPlan)
 						);
 					} elseif ($stage instanceof ConstantStage) {
-						// Delegate to the dedicated executor, consistent with how
-						// TempTableStage and JSON stages are handled above.
 						$intermediateResults[$stage->getName()] = $this->constantExecutor->execute($stage);
 					} else {
-						try {
-							if ($stage->getRange() instanceof AstRangeJsonSource) {
-								$result = $this->jsonExecutor->execute($stage, $stage->getStaticParams());
-							} else {
-								$result = $this->databaseExecutor->execute($stage, $stage->getStaticParams());
-							}
-							
-							$intermediateResults[$stage->getName()] = $result;
-						} catch (QuelException $e) {
-							// Wrap any execution errors with stage context information
-							throw new QuelException("Stage '{$stage->getName()}' failed: {$e->getMessage()}", 'stage_error', 0, $e);
-						}
+						$intermediateResults[$stage->getName()] = $this->executeStage($stage);
 					}
 				}
 				
@@ -145,6 +133,25 @@
 			} finally {
 				// Always clean up temp tables, whether execution succeeded or failed.
 				$this->tempTableExecutor->cleanup();
+			}
+		}
+		
+		/**
+		 * Dispatches a single result-producing stage to the appropriate executor.
+		 * JSON source ranges are handled in-memory; everything else goes to the database.
+		 * @param ExecutionStageInterface $stage
+		 * @return list<array<string, mixed>>
+		 * @throws QuelException|EntityResolutionException
+		 */
+		private function executeStage(ExecutionStageInterface $stage): array {
+			try {
+				if ($stage->getRange() instanceof AstRangeJsonSource) {
+					return $this->jsonExecutor->execute($stage, $stage->getStaticParams());
+				} else {
+					return $this->databaseExecutor->execute($stage, $stage->getStaticParams());
+				}
+			} catch (QuelException $e) {
+				throw new QuelException("Stage '{$stage->getName()}' failed: {$e->getMessage()}", 'stage_error', 0, $e);
 			}
 		}
 		
