@@ -33,6 +33,8 @@
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstIsEmpty;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstAny;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstCast;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstFactor;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstTerm;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstTernary;
 	use Quellabs\ObjectQuel\ObjectQuel\AstInterface;
 	use Quellabs\ObjectQuel\Exception\QuelException;
@@ -65,10 +67,39 @@
 			// Determine the type of AST node and process accordingly
 			switch (get_class($ast)) {
 				// Handle literal value nodes - simply return their stored value
-				case AstNumber::class:  // Numeric literal (e.g., 42, 3.14)
+				case AstNumber::class:
+					// AstNumber stores its value as a string; coerce to int or float
+					// based on the node's own return-type declaration so that callers
+					// receive a properly typed PHP value rather than a raw string.
+					return $ast->getReturnType() === 'float'
+						? (float) $ast->getValue()
+						: (int) $ast->getValue();
+				
 				case AstString::class:  // String literal (e.g., "hello")
 				case AstBool::class:    // Boolean literal (true/false)
 					return $ast->getValue();
+				
+				// Handle arithmetic +/- nodes
+				case AstTerm::class:
+					$left = self::evaluate($ast->getLeft(), $contents, $row, $initialParams);
+					$right = self::evaluate($ast->getRight(), $contents, $row, $initialParams);
+					
+					return match ($ast->getOperator()) {
+						'+' => $left + $right,
+						'-' => $left - $right,
+						default => throw new QuelException("Unknown operator {$ast->getOperator()}"),
+					};
+				
+				// Handle arithmetic */÷ nodes
+				case AstFactor::class:
+					$left = self::evaluate($ast->getLeft(), $contents, $row, $initialParams);
+					$right = self::evaluate($ast->getRight(), $contents, $row, $initialParams);
+					
+					return match ($ast->getOperator()) {
+						'*' => $left * $right,
+						'/' => $left / $right,
+						default => throw new QuelException("Unknown operator {$ast->getOperator()}"),
+					};
 				
 				// Handle identifier node - fetch corresponding value from data row
 				// (Identifiers represent column/field names in the data)

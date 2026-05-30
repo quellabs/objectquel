@@ -47,7 +47,7 @@
 			switch ($tokenType) {
 				case Token::Number :
 					$this->lexer->match($tokenType);
-					return new AstNumber((string)$token->getNumericValue());
+					return new AstNumber(var_export($token->getNumericValue(), true));
 				
 				case Token::String :
 					$this->lexer->match($tokenType);
@@ -87,7 +87,7 @@
 			switch ($tokenType) {
 				case Token::Number :
 					$this->lexer->match($tokenType);
-					return new AstNumber((string)$token->getNumericValue());
+					return new AstNumber(var_export($token->getNumericValue(), true));
 				
 				case Token::String :
 					$this->lexer->match($tokenType);
