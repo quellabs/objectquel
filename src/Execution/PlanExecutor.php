@@ -6,6 +6,7 @@
 	use Quellabs\ObjectQuel\Exception\EntityResolutionException;
 	use Quellabs\ObjectQuel\Execution\Executors\DatabaseQueryExecutor;
 	use Quellabs\ObjectQuel\Execution\Executors\JsonQueryExecutor;
+	use Quellabs\ObjectQuel\Execution\Helpers\ConditionEvaluator;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRangeJsonSource;
 	use Quellabs\ObjectQuel\ObjectQuel\AstInterface;
 	use Quellabs\ObjectQuel\Exception\QuelException;
@@ -14,6 +15,7 @@
 	use Quellabs\ObjectQuel\Execution\Joins\LeftJoinStrategy;
 	use Quellabs\ObjectQuel\Execution\Joins\InnerJoinStrategy;
 	use Quellabs\ObjectQuel\Execution\Executors\TempTableExecutor;
+	use Quellabs\ObjectQuel\Planner\ConstantStage;
 	use Quellabs\ObjectQuel\Planner\ExecutionPlan;
 	use Quellabs\ObjectQuel\Planner\ExecutionStage;
 	use Quellabs\ObjectQuel\Planner\TempTableStage;
@@ -106,6 +108,22 @@
 							$stage,
 							fn(ExecutionPlan $innerPlan) => $this->execute($innerPlan)
 						);
+					} elseif ($stage instanceof ConstantStage) {
+						// Evaluate each projection against an empty row — there are no
+						// ranges and no data source, so field lookups are meaningless;
+						// only literals, parameters, and arithmetic are expected here.
+						$row = [];
+						
+						foreach ($stage->getProjections() as $alias) {
+							$row[$alias->getName()] = ConditionEvaluator::evaluate(
+								$alias->getExpression(),
+								[],   // no dataset (no rows to aggregate over)
+								[],   // no field values (no ranges)
+								$stage->getStaticParams()
+							);
+						}
+						
+						$intermediateResults[$stage->getName()] = [$row];
 					} else {
 						try {
 							if ($stage->getRange() instanceof AstRangeJsonSource) {

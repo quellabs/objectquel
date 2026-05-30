@@ -71,6 +71,15 @@
 			// Create a new plan to populate
 			$plan = new ExecutionPlan();
 			
+			// Shortcut: no ranges means the projection contains only constant expressions
+			// (literals, parameters, arithmetic). There is no data source to query, so
+			// emit a single ConstantStage and return immediately. PlanExecutor will evaluate
+			// the projections directly via ConditionEvaluator and return one synthetic row.
+			if (empty($query->getRanges())) {
+				$plan->addStage(new ConstantStage(uniqid('const_'), $query->getValues(), $staticParams));
+				return $plan;
+			}
+			
 			// Detect which temporary ranges need materialization as real temp tables.
 			// We must process these BEFORE creating the main database stage so that
 			// dependency edges can be registered correctly.

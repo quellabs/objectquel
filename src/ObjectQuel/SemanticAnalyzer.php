@@ -479,6 +479,12 @@
 		 * @throws SemanticException If no range without 'via' clause exists
 		 */
 		private function validateAtLeastOneRangeWithoutVia(AstRetrieve $ast): void {
+			// A rangeless query is valid — it contains only constant expressions in its
+			// projection and needs no FROM clause. Nothing to validate here.
+			if (empty($ast->getRanges())) {
+				return;
+			}
+			
 			// Search through all ranges to find at least one that can serve as the main FROM table
 			foreach ($ast->getRanges() as $range) {
 				// Check if this is a database range (actual table) without a join property

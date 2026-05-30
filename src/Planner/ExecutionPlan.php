@@ -50,13 +50,16 @@
 		 */
 		public function getMainStageName(): string {
 			foreach ($this->stages as $stage) {
-				// Skip everything that's not an ExecutionStage.
-				// TempTableStages are pre-execution side effects, not result producers.
-				if (!($stage instanceof ExecutionStage)) {
+				// Skip side-effect stages that produce no result rows.
+				// TempTableStages materialize data into temp tables before the outer
+				// query runs; they are not result producers.
+				if ($stage instanceof TempTableStage) {
 					continue;
 				}
 				
-				// Find the stage without a join property (the main FROM table)
+				// A ConstantStage has no range (getRange() always returns null), so the
+				// "null join property" check below naturally selects it as the main stage.
+				// An ExecutionStage whose primary range has no via clause is the FROM anchor.
 				$range = $stage->getRange();
 				
 				// If found, return the name
@@ -65,9 +68,9 @@
 				}
 			}
 			
-			// If no main stage found, fall back to the first ExecutionStage
+			// If no primary stage found, fall back to the first non-TempTable stage
 			foreach ($this->stages as $stage) {
-				if ($stage instanceof ExecutionStage) {
+				if (!($stage instanceof TempTableStage)) {
 					return $stage->getName();
 				}
 			}
