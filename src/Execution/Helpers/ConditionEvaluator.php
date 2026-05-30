@@ -80,8 +80,8 @@
 				
 				// Handle arithmetic +/- nodes
 				case AstTerm::class:
-					$left = self::evaluate($ast->getLeft(), $contents, $row, $initialParams);
-					$right = self::evaluate($ast->getRight(), $contents, $row, $initialParams);
+					$left  = self::toNumber(self::evaluate($ast->getLeft(),  $contents, $row, $initialParams));
+					$right = self::toNumber(self::evaluate($ast->getRight(), $contents, $row, $initialParams));
 					
 					return match ($ast->getOperator()) {
 						'+' => $left + $right,
@@ -91,8 +91,8 @@
 				
 				// Handle arithmetic */÷ nodes
 				case AstFactor::class:
-					$left = self::evaluate($ast->getLeft(), $contents, $row, $initialParams);
-					$right = self::evaluate($ast->getRight(), $contents, $row, $initialParams);
+					$left  = self::toNumber(self::evaluate($ast->getLeft(),  $contents, $row, $initialParams));
+					$right = self::toNumber(self::evaluate($ast->getRight(), $contents, $row, $initialParams));
 					
 					return match ($ast->getOperator()) {
 						'*' => $left * $right,
@@ -498,6 +498,26 @@
 			}
 			
 			return $values;
+		}
+		
+		/**
+		 * Coerces a mixed evaluation result to int|float for arithmetic operations.
+		 * Integers are returned as-is to preserve PHP's native int arithmetic.
+		 * Numeric strings and floats are cast to float.
+		 * Non-numeric values (null, bool, object) are treated as zero.
+		 * @param mixed $value
+		 * @return int|float
+		 */
+		private static function toNumber(mixed $value): int|float {
+			if (is_int($value)) {
+				return $value;
+			}
+			
+			if (is_numeric($value)) {
+				return (float)$value;
+			}
+			
+			return 0;
 		}
 		
 		/**
