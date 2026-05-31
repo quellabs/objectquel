@@ -213,7 +213,7 @@
 					
 					// If date is "now" return the current date
 					if ($ast->isNow()) {
-						return (new \DateTime())->format('Y-m-d H:i:s');
+						return time();
 					}
 					
 					// Evaluate the date expression
