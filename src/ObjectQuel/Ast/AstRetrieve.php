@@ -509,7 +509,22 @@
 			// Clone all child arrays with their AST nodes
 			$clonedRanges = $this->cloneArray($this->ranges);
 			$clonedValues = $this->cloneArray($this->values);
-			$clonedMacros = $this->cloneArray($this->macros);
+			
+			// Rebuild macros from the already-cloned values rather than cloning the raw
+			// expressions independently. Macros are aliases for expressions that already
+			// live inside $values, so cloning them separately produces orphaned duplicates
+			// and breaks ChildAstInterface contracts (e.g. AstAny rejects setParent(null)).
+			$clonedMacros = [];
+			
+			foreach ($this->macros as $name => $macro) {
+				foreach ($clonedValues as $clonedAlias) {
+					if ($clonedAlias->getName() === $name) {
+						$clonedMacros[$name] = $clonedAlias->getExpression();
+						break;
+					}
+				}
+			}
+
 			$clonedSort = $this->cloneSortArray($this->sort);
 			
 			// Clone the conditions node if it exists
@@ -537,10 +552,6 @@
 			
 			foreach ($clonedValues as $value) {
 				$value->setParent($clone);
-			}
-			
-			foreach ($clonedMacros as $macro) {
-				$macro->setParent($clone);
 			}
 			
 			$clonedConditions?->setParent($clone);

@@ -3,7 +3,7 @@
 	namespace Quellabs\ObjectQuel\Planner\Helpers;
 	
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\NodeBinary;
-	use Quellabs\ObjectQuel\ObjectQuel\Ast\NodeConditionWrapper;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\NodeSingleExpression;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\NodeWithAggregation;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\NodeWithConditions;
 	use Quellabs\ObjectQuel\ObjectQuel\AstInterface;
@@ -36,9 +36,10 @@
 			}
 			
 			// Replace expression child (e.g., in NOT operations, NULL checks, aliases).
-			// NodeConditionWrapper guarantees both getExpression() and setExpression(),
+			// NodeSingleExpression guarantees both getExpression() and setExpression(),
 			// so we can replace unconditionally once the identity check passes.
-			if ($parent instanceof NodeConditionWrapper && $parent->getExpression() === $oldChild) {
+			// This covers AstAlias, AstNot, AstCheckNull, AstCheckNotNull, AstIfNull, etc.
+			if ($parent instanceof NodeSingleExpression && $parent->getExpression() === $oldChild) {
 				$parent->setExpression($newChild);
 				return;
 			}
