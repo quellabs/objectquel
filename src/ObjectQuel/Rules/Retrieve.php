@@ -92,6 +92,7 @@
 		/**
 		 * Parse a single field expression with its optional alias definition.
 		 * @param AstRetrieve $retrieve The AST node for macro management
+		 * @param array<string, true> $seenAliases Alias names seen so far in this field list; passed by reference for duplicate detection
 		 * @return AstAlias The parsed field alias containing name and expression
 		 * @throws LexerException|ParserException
 		 */
@@ -156,9 +157,8 @@
 		
 		/**
 		 * Process alias macros and validate for duplicates within the retrieve statement.
-		 * @param AstRetrieve $retrieve The retrieve AST node managing macros
-		 * @param Token|null $aliasToken The alias token if an explicit alias was provided
-		 * @param AstInterface $expression The expression associated with this alias
+		 * @param Token|null $aliasToken The alias token if an explicit alias was provided; no-op when null
+		 * @param array<string, true> $seenAliases Alias names seen so far; updated in place when a new alias is registered
 		 * @throws ParserException if duplicate alias name is detected
 		 */
 		private function processAliasMacro(?Token $aliasToken, array &$seenAliases): void {

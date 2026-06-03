@@ -18,30 +18,21 @@
 	use Quellabs\ObjectQuel\Planner\QueryPlan\NullPlanLog;
 	
 	/**
-	 * Class AggregateOptimizer
-	 *
 	 * Optimizes aggregate expressions in an ObjectQuel retrieve AST by choosing one of
-	 * three strategies per aggregate:
+	 * four strategies per aggregate:
 	 *  - DIRECT   : keep in the outer query (add GROUP BY if needed)
 	 *  - SUBQUERY : compute in a correlated scalar subquery over the minimal ranges
 	 *  - WINDOW   : compute via window function (when DB + query shape permit)
+	 *  - MEMORY   : evaluate in-memory via ConditionEvaluator (non-database ranges)
 	 *
 	 * Primary goal is to reduce join width and isolate heavy work without changing semantics.
 	 */
 	class AggregateOptimizer {
 		
-		/** Strategy label: keep aggregate in the main query. */
-		private const string STRATEGY_DIRECT = 'DIRECT';
-		
-		/** Strategy label: compute aggregate in a correlated subquery. */
+		private const string STRATEGY_DIRECT   = 'DIRECT';
 		private const string STRATEGY_SUBQUERY = 'SUBQUERY';
-		
-		/** Strategy label: compute aggregate as a window function. */
-		private const string STRATEGY_WINDOW = 'WINDOW';
-		
-		// Aggregate is over a non-database range (e.g. JSON source) — evaluated
-		// in memory by ConditionEvaluator; no SQL rewrite of any kind applies.
-		private const string STRATEGY_MEMORY = 'MEMORY';
+		private const string STRATEGY_WINDOW   = 'WINDOW';
+		private const string STRATEGY_MEMORY   = 'MEMORY';
 		
 		/** @var PlatformCapabilitiesInterface Database engine capability descriptor */
 		private PlatformCapabilitiesInterface $platform;
@@ -61,50 +52,45 @@
 		/**
 		 * Optimize the provided retrieve AST in-place.
 		 *
-		 * The pipeline runs in a fixed order that ensures each step sees a
-		 * consistent AST:
+		 * Pipeline order:
 		 *   1. Pre-compute query shape (aggregate-only vs mixed) once.
 		 *   2. Apply join/range simplifications.
 		 *   3. Snapshot the aggregate list before any rewrites.
 		 *   4. Choose and apply a strategy for each aggregate.
 		 *
 		 * @param AstRetrieve $root Root query node to mutate
-		 * @return void
+		 * @param PlanLogInterface $log Collects planning decisions; use NullPlanLog to disable
 		 */
 		public function optimize(AstRetrieve $root, PlanLogInterface $log = new NullPlanLog()): void {
-			// Compute once; passed into helpers to avoid repeated AST walks.
+			// Compute once and pass into helpers to avoid repeated AST walks.
 			$isAggregateOnly = AstUtilities::areAllSelectFieldsAggregates($root);
 			
-			// Structural simplifications — must happen before strategy selection
+			// Structural simplifications must happen before strategy selection
 			// so that strategies see the final range layout.
 			$this->simplifyJoins($root, $isAggregateOnly);
 			
-			// Snapshot the aggregate list BEFORE any rewrite mutates the AST.
-			// Collecting inside the loop is unsafe: rewriteAggregateAsCorrelatedSubquery
-			// can restructure the tree, invalidating a live traversal.
+			// Snapshot BEFORE any rewrite mutates the AST — collecting inside the
+			// loop is unsafe because rewriteAggregateAsCorrelatedSubquery can
+			// restructure the tree and invalidate a live traversal.
 			$aggregates = AstUtilities::collectAggregateNodes($root);
 			
-			// Apply per-aggregate strategies.
+			// Apply the strategies
 			$this->applyAggregateStrategies($root, $aggregates, $isAggregateOnly, $log);
 		}
 		
 		/**
-		 * Structural join/range simplifications that are independent of strategy selection.
+		 * Structural join/range simplifications, independent of strategy selection.
+		 *
+		 * Range removal and filter-join rewriting are gated on $isAggregateOnly because
+		 * removing a range from a mixed query would silently drop the non-aggregate
+		 * columns that reference it.
 		 * @param AstRetrieve $root
-		 * @param bool $isAggregateOnly
-		 * @return void
+		 * @param bool $isAggregateOnly True when every SELECT projection is aggregate-equivalent
 		 */
 		private function simplifyJoins(AstRetrieve $root, bool $isAggregateOnly): void {
 			if ($isAggregateOnly) {
-				// These two passes are only safe/meaningful when no non-aggregate
-				// columns are selected — removing a range would drop those columns.
 				RangeRemover::removeUnusedRangesInAggregateOnlyQueries($root);
-				
-				// Compute the map only when it will actually be used.
-				$aggregateRangeMap = $this->buildAggregateRangeMap($root);
-				
-				// Rewrite
-				ExistsRewriter::rewriteFilterOnlyJoinsAsExists($root, $aggregateRangeMap);
+				ExistsRewriter::rewriteFilterOnlyJoinsAsExists($root, $this->buildAggregateRangeMap($root));
 			}
 			
 			// Self-join → EXISTS simplification applies to any query shape.
@@ -113,19 +99,18 @@
 		
 		/**
 		 * Choose and apply a rewrite strategy for each aggregate node.
+		 *
 		 * @param AstRetrieve $root
 		 * @param AstAggregate[] $aggregates Stable snapshot collected before any mutation
-		 * @param bool $isAggregateOnly
-		 * @return void
+		 * @param bool $isAggregateOnly Pre-computed query shape flag
+		 * @param PlanLogInterface $log
 		 */
 		private function applyAggregateStrategies(AstRetrieve $root, array $aggregates, bool $isAggregateOnly, PlanLogInterface $log): void {
-			// Invariant per query, not per aggregate — compute once outside the loop.
+			// Non-aggregate items are invariant per query — compute once outside the loop.
 			$nonAggItems = AstUtilities::collectNonAggregateSelectItems($root);
 			
-			// Guard against subtle divergence between the two helper methods.
-			// $nonAggItems is already computed, so this assert is free — no extra AST walk.
-			// If this fires, areAllSelectFieldsAggregates() and collectNonAggregateSelectItems()
-			// have drifted out of sync and will produce contradictory strategy decisions.
+			// Guard against areAllSelectFieldsAggregates() and collectNonAggregateSelectItems()
+			// drifting out of sync — if this fires, their definitions have diverged.
 			assert(
 				$isAggregateOnly === empty($nonAggItems),
 				'areAllSelectFieldsAggregates() and collectNonAggregateSelectItems() disagree on query shape'
@@ -133,119 +118,122 @@
 			
 			foreach ($aggregates as $agg) {
 				$strategy = $this->chooseStrategy($root, $agg, $isAggregateOnly, $nonAggItems);
-				$aggLabel = $agg->getType();
-				
-				switch ($strategy) {
-					case self::STRATEGY_DIRECT:
-						// Ensure proper GROUP BY when mixing aggregates with non-aggregates.
-						if (!$isAggregateOnly) {
-							$root->setGroupBy($nonAggItems);
-						}
-						
-						$log->note('optimizer', 'aggregate', 'DIRECT',
-							"Aggregate {$aggLabel} evaluated inline with GROUP BY",
-							$aggLabel
-						);
-						break;
-					
-					case self::STRATEGY_SUBQUERY:
-						AggregateRewriter::rewriteAggregateAsCorrelatedSubquery($root, $agg);
-						
-						$log->note('optimizer', 'aggregate', 'SUBQUERY',
-							"Aggregate {$aggLabel} rewritten as correlated subquery",
-							$aggLabel
-						);
-						break;
-					
-					case self::STRATEGY_WINDOW:
-						AggregateRewriter::rewriteAggregateAsWindowFunction($agg);
-						
-						$log->note('optimizer', 'aggregate', 'WINDOW',
-							"Aggregate {$aggLabel} rewritten as window function",
-							$aggLabel
-						);
-						break;
-
-					case self::STRATEGY_MEMORY:
-						// Non-database aggregate — evaluated in memory by ConditionEvaluator.
-						// No SQL rewrite applies; leave the AST node untouched.
-						$log->note('optimizer', 'aggregate', 'MEMORY',
-							"Aggregate {$aggLabel} evaluated in memory (non-database range)",
-							$aggLabel
-						);
-						
-						break;
-				}
+				$this->applyStrategy($root, $agg, $strategy, $isAggregateOnly, $nonAggItems, $log);
 			}
 		}
 		
 		/**
+		 * Apply a chosen strategy to a single aggregate node and emit a plan log entry.
+		 *
+		 * @param AstRetrieve $root
+		 * @param AstAggregate $agg The aggregate node to rewrite
+		 * @param string $strategy One of self::STRATEGY_*
+		 * @param bool $isAggregateOnly Pre-computed query shape flag
+		 * @param AstAlias[] $nonAggItems Non-aggregate SELECT items (used for GROUP BY)
+		 * @param PlanLogInterface $log
+		 */
+		private function applyStrategy(AstRetrieve $root, AstAggregate $agg, string $strategy, bool $isAggregateOnly, array $nonAggItems, PlanLogInterface $log): void {
+			$label = $agg->getType();
+			
+			switch ($strategy) {
+				case self::STRATEGY_DIRECT:
+					// GROUP BY is only needed when mixing aggregates with non-aggregates.
+					// Aggregate-only queries collapse to one row without it.
+					if (!$isAggregateOnly) {
+						$root->setGroupBy($nonAggItems);
+					}
+					break;
+				
+				case self::STRATEGY_SUBQUERY:
+					AggregateRewriter::rewriteAggregateAsCorrelatedSubquery($root, $agg);
+					break;
+				
+				case self::STRATEGY_WINDOW:
+					AggregateRewriter::rewriteAggregateAsWindowFunction($agg);
+					break;
+				
+				case self::STRATEGY_MEMORY:
+					// Non-database aggregate — evaluated in memory by ConditionEvaluator.
+					// No SQL rewrite applies; leave the AST node untouched.
+					break;
+			}
+			
+			$log->note('optimizer', 'aggregate', $strategy, "Aggregate {$label} → {$strategy}", $label);
+		}
+		
+		// ---------------------------------------------------------------------
+		// STRATEGY SELECTION
+		// ---------------------------------------------------------------------
+		
+		/**
 		 * Pick the best evaluation strategy for a given aggregate within the query.
 		 *
-		 * Priority order (highest to lowest):
-		 *  1. Correctness constraints     → SUBQUERY (filtered aggregates)
-		 *  2. Aggregate-only query        → DIRECT
-		 *  3. Window function eligibility → WINDOW   (single-table, uniform refs)
-		 *  4. Mixed query, related ranges → DIRECT + GROUP BY
-		 *  5. Mixed query, disjoint ranges→ SUBQUERY
-		 *  6. Fallback                    → SUBQUERY
+		 * Priority order:
+		 *  1. Non-database source     → MEMORY   (JSON ranges, evaluated in PHP)
+		 *  2. Filtered aggregate      → SUBQUERY (WHERE must run inside the aggregate)
+		 *  3. Aggregate-only query    → DIRECT   (no GROUP BY needed)
+		 *  4. Window-eligible         → WINDOW   (single-table mixed query, avoids GROUP BY)
+		 *  5. Ranges overlap          → DIRECT + GROUP BY
+		 *  6. Fallback                → SUBQUERY
 		 *
-		 * Note: WINDOW is evaluated before the mixed-query range check because
-		 * a single-table mixed query (e.g. SELECT id, SUM(amount) FROM t) is a
-		 * valid window function candidate and is more efficient than GROUP BY.
+		 * WINDOW is checked before the range-overlap test (step 5) because a
+		 * single-table mixed query is a valid window candidate and avoids the
+		 * GROUP BY entirely — more efficient than DIRECT for that shape.
 		 *
 		 * @param AstRetrieve $root
 		 * @param AstAggregate $aggregate Aggregate node to analyze
 		 * @param bool $isAggregateOnly Pre-computed query shape flag
-		 * @param array<int, AstAlias> $nonAggItems Pre-computed non-aggregate SELECT items (invariant per query)
-		 * @return string One of self::STRATEGY_* constants
+		 * @param AstAlias[] $nonAggItems Pre-computed non-aggregate SELECT items
+		 * @return string One of self::STRATEGY_*
 		 */
 		private function chooseStrategy(AstRetrieve $root, AstAggregate $aggregate, bool $isAggregateOnly, array $nonAggItems): string {
-			// 1. Non-database ranges (JSON sources, etc.) are evaluated entirely in memory
 			$aggRanges = RangeUtilities::collectRangesFromNode($aggregate);
-
-			$allNonDatabase = !empty($aggRanges) && array_reduce(
-				$aggRanges,
-				fn(bool $carry, $range) => $carry && $range instanceof AstRangeJsonSource,
-				true
-			);
-
-			if ($allNonDatabase) {
+			
+			// 1. All ranges are non-database (e.g. JSON) — evaluate in memory.
+			if ($this->allRangesAreNonDatabase($aggRanges)) {
 				return self::STRATEGY_MEMORY;
 			}
-
-			// 2. Filtered aggregates must use a subquery to apply WHERE before aggregation.
+			
+			// 2. Filtered aggregate — subquery applies WHERE before aggregation.
 			if ($aggregate->getConditions() !== null) {
 				return self::STRATEGY_SUBQUERY;
 			}
 			
-			// 3. Pure aggregate query: no GROUP BY needed, execute directly.
+			// 3. Aggregate-only query — execute directly, no GROUP BY required.
 			if ($isAggregateOnly) {
 				return self::STRATEGY_DIRECT;
 			}
 			
-			// 4. Window function check comes before the range-overlap check.
-			//    A single-table mixed query (SELECT id, SUM(x) FROM t) can avoid
-			//    GROUP BY entirely by using a window function — more efficient.
+			// 4. Window function — avoids GROUP BY for single-table mixed queries.
 			if ($this->canRewriteAsWindowFunction($root, $aggregate)) {
 				return self::STRATEGY_WINDOW;
 			}
 			
-			// 5. Mixed query: determine whether aggregate and non-aggregate fields
-			//    share enough range overlap to be grouped in a single query.
-			if (!empty($nonAggItems)) {
-				$aggRanges = RangeUtilities::collectRangesFromNode($aggregate);
-				$nonAggRanges = RangeUtilities::collectRangesFromNodes($nonAggItems);
-				
-				if (RangeUtilities::rangesOverlapOrAreRelated($aggRanges, $nonAggRanges)) {
-					return self::STRATEGY_DIRECT;
-				}
-				
-				return self::STRATEGY_SUBQUERY;
-			}
+			// 5. Mixed query — use GROUP BY if ranges overlap, otherwise isolate
+			//    the aggregate in a subquery to avoid a cross-product.
+			$nonAggRanges = RangeUtilities::collectRangesFromNodes($nonAggItems);
 			
-			// 6. Fallback: safer to isolate than to guess.
-			return self::STRATEGY_SUBQUERY;
+			return RangeUtilities::rangesOverlapOrAreRelated($aggRanges, $nonAggRanges)
+				? self::STRATEGY_DIRECT
+				: self::STRATEGY_SUBQUERY;
+		}
+		
+		/**
+		 * Returns true when every range in $aggRanges is a non-database source.
+		 *
+		 * An empty range list returns false — an aggregate over no ranges at all
+		 * is not a valid non-database aggregate; it indicates a malformed node
+		 * and should fall through to the normal strategy checks.
+		 *
+		 * @param array<int, mixed> $aggRanges
+		 * @return bool
+		 */
+		private function allRangesAreNonDatabase(array $aggRanges): bool {
+			return !empty($aggRanges) && array_reduce(
+					$aggRanges,
+					fn(bool $carry, $range) => $carry && $range instanceof AstRangeJsonSource,
+					true
+				);
 		}
 		
 		// ---------------------------------------------------------------------
@@ -253,11 +241,11 @@
 		// ---------------------------------------------------------------------
 		
 		/**
-		 * Build a hash-set of ranges that are referenced by at least one aggregate.
+		 * Build a hash-set of ranges referenced by at least one aggregate.
 		 * Used to distinguish filter-only joins from data-producing joins.
 		 *
 		 * @param AstRetrieve $root
-		 * @return array<string,true> map: spl_object_hash(AstRange) => true
+		 * @return array<string, true> spl_object_hash(AstRange) => true
 		 */
 		private function buildAggregateRangeMap(AstRetrieve $root): array {
 			$map = [];
@@ -272,52 +260,28 @@
 		}
 		
 		// ---------------------------------------------------------------------
-		// WINDOW FUNCTION VALIDATION
+		// WINDOW FUNCTION ELIGIBILITY
 		// ---------------------------------------------------------------------
 		
 		/**
-		 * Check if we can safely rewrite the aggregate to a window function.
+		 * Returns true if the aggregate can be safely rewritten as a window function.
 		 *
-		 * Window functions operate over a set of rows related to the current row, making them
-		 * suitable replacements for aggregates in certain scenarios. However, this transformation
-		 * is only valid under specific conditions to maintain query correctness.
-		 *
-		 * Rewriting requirements:
-		 * 1. Basic compatibility - The aggregate function itself must support window syntax
-		 * 2. Single table query - Window functions work on row sets from a single source
-		 * 3. Consistent references - The aggregate must reference the same table as the query
-		 * 4. Uniform select items - All selected expressions must reference the same table
-		 *
-		 * Why these restrictions matter:
-		 * - Multi-table queries would require complex partitioning logic
-		 * - Cross-table references in aggregates would break window semantics
-		 * - Mixed table references in select items would produce inconsistent row counts
-		 *
-		 * @param AstRetrieve $root Query root containing the complete SELECT statement
-		 * @param AstAggregate $aggregate Specific aggregate function being analyzed for rewriting
-		 * @return bool True if the aggregate can be safely rewritten as a window function
+		 * All four conditions must hold:
+		 *  - The aggregate type supports window syntax and the platform allows it.
+		 *  - The query has exactly one range — multi-table partitioning is not supported.
+		 *  - The aggregate references that same single range — cross-range window
+		 *    semantics would produce incorrect results.
+		 *  - Every other SELECT item references the same single range — mixed
+		 *    references would create inconsistent row counts after the rewrite.
+		 * @param AstRetrieve $root
+		 * @param AstAggregate $aggregate
+		 * @return bool
 		 */
 		private function canRewriteAsWindowFunction(AstRetrieve $root, AstAggregate $aggregate): bool {
-			// VALIDATION 1: Basic Window Function Compatibility
-			// ================================================
-			// Check if this aggregate function type (SUM, COUNT, etc.) can be expressed
-			// as a window function. Some aggregates have no window equivalent or require
-			// special handling that makes them unsuitable for automatic rewriting.
 			if (!$this->passesWindowFunctionBasics($aggregate)) {
 				return false;
 			}
 			
-			// VALIDATION 2: Single Table Requirement
-			// ======================================
-			// Window functions work best with single-table queries. Multi-table queries
-			// introduce complexity around partitioning, ordering, and result set boundaries
-			// that can lead to incorrect results after rewriting.
-			//
-			// Example of why this matters:
-			//   SELECT a.id, SUM(b.amount) FROM users a JOIN orders b ON a.id = b.user_id
-			//
-			// Rewriting SUM(b.amount) as a window function would change the semantics
-			// because window functions don't respect JOIN boundaries the same way.
 			$queryRanges = $root->getRanges();
 			
 			if (count($queryRanges) !== 1) {
@@ -326,76 +290,42 @@
 			
 			$singleRange = $queryRanges[0];
 			
-			// VALIDATION 3: Aggregate Table Reference Consistency
-			// ===================================================
-			// The aggregate function must reference exactly the same table as the main query.
-			// This prevents scenarios where the aggregate operates on a different data source
-			// than the rest of the query, which would break window function semantics.
-			//
-			// Example of invalid case:
-			//   SELECT users.name, (SELECT COUNT(*) FROM orders) FROM users
-			//
-			// The COUNT(*) references 'orders' while the main query uses 'users'.
-			// This can't be rewritten as a window function because window functions
-			// operate on the same row set as their containing query.
-			if (!$this->aggregateMatchesQueryRange($aggregate, $singleRange)) {
-				return false;
-			}
-			
-			// VALIDATION 4: Uniform Select Item References
-			// ============================================
-			// All expressions in the SELECT clause must reference the same single table.
-			// Mixed references would create inconsistent row counts after window function
-			// rewriting, since window functions operate row-by-row on a consistent dataset.
-			//
-			// Example of invalid case:
-			//   SELECT users.name, departments.budget, SUM(users.salary)
-			//   FROM users, departments
-			//
-			// After rewriting SUM(users.salary) to a window function, each row would
-			// show the total salary, but departments.budget would create a Cartesian
-			// product that doesn't match the intended aggregation scope.
-			if (!$this->selectItemsAreUniform($root, $aggregate, $singleRange)) {
-				return false;
-			}
-			
-			// All validations passed - the aggregate can be safely rewritten as a window function
-			// The rewrite will preserve query semantics while potentially improving performance
-			// by eliminating grouping operations in favor of analytical window processing.
-			return true;
+			return $this->aggregateMatchesQueryRange($aggregate, $singleRange)
+				&& $this->selectItemsAreUniform($root, $aggregate, $singleRange);
 		}
 		
 		/**
 		 * Returns true if the aggregate references exactly the given range and no other.
+		 */
+		/**
 		 * @param AstAggregate $aggregate
-		 * @param object $singleRange Expected range (identity comparison)
+		 * @param object $singleRange The single range the query is expected to use
 		 * @return bool
 		 */
 		private function aggregateMatchesQueryRange(AstAggregate $aggregate, object $singleRange): bool {
-			$aggregateRanges = RangeUtilities::collectRangesFromNode($aggregate);
-			return count($aggregateRanges) === 1 && $aggregateRanges[0] === $singleRange;
+			$ranges = RangeUtilities::collectRangesFromNode($aggregate);
+			return count($ranges) === 1 && $ranges[0] === $singleRange;
 		}
 		
 		/**
-		 * Returns true if every non-target SELECT item references exactly $singleRange.
+		 * Returns true if every SELECT item other than $aggregate references exactly $singleRange.
+		 */
+		/**
 		 * @param AstRetrieve $root
-		 * @param AstAggregate $aggregate The aggregate being evaluated (already validated above)
-		 * @param object $singleRange Expected range for all select items
+		 * @param AstAggregate $aggregate The aggregate being evaluated (excluded from the check)
+		 * @param object $singleRange Expected range for all other select items
 		 * @return bool
 		 */
 		private function selectItemsAreUniform(AstRetrieve $root, AstAggregate $aggregate, object $singleRange): bool {
 			foreach ($root->getValues() as $selectItem) {
-				// Skip the aggregate we're analyzing - we already validated it above
 				if ($selectItem->getExpression() === $aggregate) {
-					continue; // This is our target aggregate, already checked
+					continue;
 				}
 				
-				// Check what tables/views this select item references
 				$itemRanges = RangeUtilities::collectRangesFromNode($selectItem->getExpression());
 				
-				// Each select item must reference exactly the same single table
 				if (count($itemRanges) !== 1 || $itemRanges[0] !== $singleRange) {
-					return false; // Select item references different/multiple tables
+					return false;
 				}
 			}
 			
@@ -403,28 +333,30 @@
 		}
 		
 		/**
-		 * Basic window support checks: no conditions, not DISTINCT variant, DB supports,
-		 * and the aggregate type is in the supported list.
-		 * @param AstAggregate $aggregate Aggregate to test
-		 * @return bool True if basic constraints are satisfied
+		 * Returns true if the aggregate passes basic window function prerequisites:
+		 * no filter conditions, not a DISTINCT variant, and the platform supports windows.
+		 *
+		 * Conditions are checked cheapest-first: filter check is a simple null test,
+		 * DISTINCT check is an array lookup, platform capability is last since it may
+		 * involve a capability query.
+		 * @param AstAggregate $aggregate
+		 * @return bool
 		 */
 		private function passesWindowFunctionBasics(AstAggregate $aggregate): bool {
-			// Window functions can't have their own filters
+			// Window functions cannot have their own filter conditions.
 			if ($aggregate->getConditions() !== null) {
 				return false;
 			}
 			
-			// DISTINCT variants commonly unsupported for window context
+			// DISTINCT variants are commonly unsupported in window context.
 			if (in_array(get_class($aggregate), AggregateConstants::DISTINCT_AGGREGATE_TYPES, true)) {
 				return false;
 			}
 			
-			// Database capability
 			if (!$this->platform->supportsWindowFunctions()) {
 				return false;
 			}
 			
-			// One of the supported aggregates (no distinct)
 			return in_array(get_class($aggregate), AggregateConstants::NOT_DISTINCT_AGGREGATE_TYPES, true);
 		}
 	}
