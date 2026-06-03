@@ -114,13 +114,6 @@
 			// Non-aggregate items are invariant per query — compute once outside the loop.
 			$nonAggItems = AstUtilities::collectNonAggregateSelectItems($root);
 			
-			// Guard against areAllSelectFieldsAggregates() and collectNonAggregateSelectItems()
-			// drifting out of sync — if this fires, their definitions have diverged.
-			assert(
-				$isAggregateOnly === empty($nonAggItems),
-				'areAllSelectFieldsAggregates() and collectNonAggregateSelectItems() disagree on query shape'
-			);
-			
 			foreach ($aggregates as $agg) {
 				$strategy = $this->chooseStrategy($root, $agg, $isAggregateOnly, $nonAggItems);
 				$this->applyStrategy($root, $agg, $strategy, $isAggregateOnly, $nonAggItems, $log);

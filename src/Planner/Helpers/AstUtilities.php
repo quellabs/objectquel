@@ -139,18 +139,36 @@
 		}
 		
 		/**
-		 * Returns true if all projections are aggregates (or ANY-derived subqueries), false if not.
+		 * Returns true if all projections are aggregates (or ANY-derived subqueries),
+		 * AND at least one true aggregate is present.
+		 *
+		 * The "at least one true aggregate" guard prevents a query containing only
+		 * any() expressions from being classified as aggregate-only. AstSubquery nodes
+		 * with origin "ANY" count as aggregate-equivalent to avoid misclassifying a
+		 * query that has real aggregates alongside them, but they cannot be the sole
+		 * basis for the classification — any() is a per-row boolean check, not an
+		 * aggregation, and routing an any()-only query to the aggregate path would
+		 * send it to ConstantQueryExecutor rather than the database executor.
 		 * @param AstRetrieve $root
 		 * @return bool
 		 */
 		public static function areAllSelectFieldsAggregates(AstRetrieve $root): bool {
+			$hasTrueAggregate = false;
+			
 			foreach ($root->getValues() as $value) {
-				if (!self::isAggregateEquivalent($value->getExpression())) {
+				$expression = $value->getExpression();
+				
+				if (!self::isAggregateEquivalent($expression)) {
 					return false;
+				}
+				
+				// Track whether at least one true aggregate (not an ANY-derived subquery) is present
+				if ($expression instanceof AstAggregate && !($expression instanceof AstAny)) {
+					$hasTrueAggregate = true;
 				}
 			}
 			
-			return true;
+			return $hasTrueAggregate;
 		}
 		
 		/**
@@ -162,7 +180,14 @@
 			$result = [];
 			
 			foreach ($root->getValues() as $selectItem) {
-				if (!self::isAggregateEquivalent($selectItem->getExpression())) {
+				$expression = $selectItem->getExpression();
+				
+				// Only true aggregates are excluded here. AstSubquery(origin=ANY) nodes
+				// are intentionally kept in the non-aggregate list — any() is a per-row
+				// boolean check, not an aggregation. areAllSelectFieldsAggregates() uses
+				// broader isAggregateEquivalent() logic for its own classification needs,
+				// so these two methods intentionally diverge for the ANY-subquery case.
+				if (!($expression instanceof AstAggregate) || $expression instanceof AstAny) {
 					$result[] = $selectItem;
 				}
 			}
