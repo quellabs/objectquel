@@ -3,6 +3,7 @@
 	namespace Quellabs\ObjectQuel\Sculpt;
 	
 	use Cake\Database\Connection;
+	use Quellabs\Support\ComposerUtils;
 	use Quellabs\ObjectQuel\DatabaseAdapter\DatabaseAdapter;
 	use Quellabs\Sculpt\Application;
 	use Quellabs\ObjectQuel\Configuration;
@@ -35,6 +36,7 @@
 					\Quellabs\ObjectQuel\Sculpt\Commands\PacGenerateEntityCommand::class,
 					\Quellabs\ObjectQuel\Sculpt\Commands\QuelIndexHideCommand::class,
 					\Quellabs\ObjectQuel\Sculpt\Commands\QuelIndexShowCommand::class,
+					\Quellabs\ObjectQuel\Sculpt\Commands\ClearCacheCommand::class,
 				]);
 			}
 		}
@@ -73,7 +75,7 @@
 				'entity_path'         => '',
 				'proxy_namespace'     => 'Quellabs\\ObjectQuel\\Proxy\\Runtime',
 				'proxy_path'          => '',
-				'metadata_cache_path' => ''
+				'metadata_cache_path' => ComposerUtils::getProjectRoot() . "/storage/annotations"
 			];
 		}
 		
@@ -88,6 +90,8 @@
 			$configuration->setEntityPath($this->getConfigValueAsString('entity_path', $defaults['entity_path']));
 			$configuration->setEntityNameSpace($this->getConfigValueAsString('entity_namespace', $defaults['entity_namespace']));
 			$configuration->setMigrationsPath($this->getConfigValueAsString('migrations_path', $defaults['migrations_path']));
+			$configuration->setMetadataCachePath($this->getConfigValueAsString('metadata_cache_path', $defaults['metadata_cache_path']));
+			$configuration->setUseMetadataCache(!empty($this->getConfigValueAsString('metadata_cache_path', $defaults['metadata_cache_path'])));
 			return $configuration;
 		}
 		
