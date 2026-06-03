@@ -33,11 +33,11 @@
 		
 		// Strategy constants — each encodes both the rewrite action and the reason
 		// for the decision, so plan log messages are self-explanatory.
-		private const string STRATEGY_MEMORY            = 'MEMORY:non-database range, evaluated in memory';
+		private const string STRATEGY_MEMORY = 'MEMORY:non-database range, evaluated in memory';
 		private const string STRATEGY_SUBQUERY_FILTERED = 'SUBQUERY:has WHERE condition, isolated in subquery';
-		private const string STRATEGY_DIRECT_AGG_ONLY   = 'DIRECT:aggregate-only query, no GROUP BY needed';
-		private const string STRATEGY_WINDOW            = 'WINDOW:single-table mixed query, rewritten as window function';
-		private const string STRATEGY_DIRECT_OVERLAP    = 'DIRECT:ranges overlap, kept inline with GROUP BY';
+		private const string STRATEGY_DIRECT_AGG_ONLY = 'DIRECT:aggregate-only query, no GROUP BY needed';
+		private const string STRATEGY_WINDOW = 'WINDOW:single-table mixed query, rewritten as window function';
+		private const string STRATEGY_DIRECT_OVERLAP = 'DIRECT:ranges overlap, kept inline with GROUP BY';
 		private const string STRATEGY_SUBQUERY_DISJOINT = 'SUBQUERY:disjoint ranges, isolated in correlated subquery';
 		
 		/** @var PlatformCapabilitiesInterface Database engine capability descriptor */
@@ -217,7 +217,7 @@
 			$aggRanges = RangeUtilities::collectRangesFromNode($aggregate);
 			
 			// 1. All ranges are non-database (e.g. JSON) — evaluate in memory.
-			if ($this->allRangesAreNonDatabase($aggRanges)) {
+			if ($this->isNonDatabaseAggregate($aggRanges)) {
 				return self::STRATEGY_MEMORY;
 			}
 			
@@ -232,7 +232,7 @@
 			}
 			
 			// 4. Window function — avoids GROUP BY for single-table mixed queries.
-			if ($this->canRewriteAsWindowFunction($root, $aggregate)) {
+			if ($this->canUseWindowFunction($root, $aggregate)) {
 				return self::STRATEGY_WINDOW;
 			}
 			
@@ -255,7 +255,7 @@
 		 * @param array<int, mixed> $aggRanges
 		 * @return bool
 		 */
-		private function allRangesAreNonDatabase(array $aggRanges): bool {
+		private function isNonDatabaseAggregate(array $aggRanges): bool {
 			if (empty($aggRanges)) {
 				return false;
 			}
@@ -310,8 +310,8 @@
 		 * @param AstAggregate $aggregate
 		 * @return bool
 		 */
-		private function canRewriteAsWindowFunction(AstRetrieve $root, AstAggregate $aggregate): bool {
-			if (!$this->passesWindowFunctionBasics($aggregate)) {
+		private function canUseWindowFunction(AstRetrieve $root, AstAggregate $aggregate): bool {
+			if (!$this->isWindowFunctionEligible($aggregate)) {
 				return false;
 			}
 			
@@ -324,8 +324,8 @@
 			$singleRange = $queryRanges[0];
 			
 			return
-				$this->aggregateMatchesQueryRange($aggregate, $singleRange) &&
-				$this->selectItemsAreUniform($root, $aggregate, $singleRange);
+				$this->aggregateUsesRange($aggregate, $singleRange) &&
+				$this->allSelectItemsUseRange($root, $aggregate, $singleRange);
 		}
 		
 		/**
@@ -334,7 +334,7 @@
 		 * @param object $singleRange The single range the query is expected to use
 		 * @return bool
 		 */
-		private function aggregateMatchesQueryRange(AstAggregate $aggregate, object $singleRange): bool {
+		private function aggregateUsesRange(AstAggregate $aggregate, object $singleRange): bool {
 			$ranges = RangeUtilities::collectRangesFromNode($aggregate);
 			return count($ranges) === 1 && $ranges[0] === $singleRange;
 		}
@@ -346,7 +346,7 @@
 		 * @param object $singleRange Expected range for all other select items
 		 * @return bool
 		 */
-		private function selectItemsAreUniform(AstRetrieve $root, AstAggregate $aggregate, object $singleRange): bool {
+		private function allSelectItemsUseRange(AstRetrieve $root, AstAggregate $aggregate, object $singleRange): bool {
 			foreach ($root->getValues() as $selectItem) {
 				if ($selectItem->getExpression() === $aggregate) {
 					continue;
@@ -372,7 +372,7 @@
 		 * @param AstAggregate $aggregate
 		 * @return bool
 		 */
-		private function passesWindowFunctionBasics(AstAggregate $aggregate): bool {
+		private function isWindowFunctionEligible(AstAggregate $aggregate): bool {
 			// Window functions cannot have their own filter conditions.
 			if ($aggregate->getConditions() !== null) {
 				return false;
