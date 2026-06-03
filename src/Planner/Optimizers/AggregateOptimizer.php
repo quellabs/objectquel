@@ -6,6 +6,8 @@
 	use Quellabs\ObjectQuel\Capabilities\NullPlatformCapabilities;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstAggregate;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstAlias;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstIdentifier;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstNumber;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRangeJsonSource;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRetrieve;
 	use Quellabs\ObjectQuel\Planner\Helpers\AggregateConstants;
@@ -29,10 +31,14 @@
 	 */
 	class AggregateOptimizer {
 		
-		private const string STRATEGY_DIRECT   = 'DIRECT';
-		private const string STRATEGY_SUBQUERY = 'SUBQUERY';
-		private const string STRATEGY_WINDOW   = 'WINDOW';
-		private const string STRATEGY_MEMORY   = 'MEMORY';
+		// Strategy constants — each encodes both the rewrite action and the reason
+		// for the decision, so plan log messages are self-explanatory.
+		private const string STRATEGY_MEMORY            = 'MEMORY:non-database range, evaluated in memory';
+		private const string STRATEGY_SUBQUERY_FILTERED = 'SUBQUERY:has WHERE condition, isolated in subquery';
+		private const string STRATEGY_DIRECT_AGG_ONLY   = 'DIRECT:aggregate-only query, no GROUP BY needed';
+		private const string STRATEGY_WINDOW            = 'WINDOW:single-table mixed query, rewritten as window function';
+		private const string STRATEGY_DIRECT_OVERLAP    = 'DIRECT:ranges overlap, kept inline with GROUP BY';
+		private const string STRATEGY_SUBQUERY_DISJOINT = 'SUBQUERY:disjoint ranges, isolated in correlated subquery';
 		
 		/** @var PlatformCapabilitiesInterface Database engine capability descriptor */
 		private PlatformCapabilitiesInterface $platform;
@@ -99,7 +105,6 @@
 		
 		/**
 		 * Choose and apply a rewrite strategy for each aggregate node.
-		 *
 		 * @param AstRetrieve $root
 		 * @param AstAggregate[] $aggregates Stable snapshot collected before any mutation
 		 * @param bool $isAggregateOnly Pre-computed query shape flag
@@ -124,7 +129,6 @@
 		
 		/**
 		 * Apply a chosen strategy to a single aggregate node and emit a plan log entry.
-		 *
 		 * @param AstRetrieve $root
 		 * @param AstAggregate $agg The aggregate node to rewrite
 		 * @param string $strategy One of self::STRATEGY_*
@@ -136,7 +140,8 @@
 			$label = $agg->getType();
 			
 			switch ($strategy) {
-				case self::STRATEGY_DIRECT:
+				case self::STRATEGY_DIRECT_AGG_ONLY:
+				case self::STRATEGY_DIRECT_OVERLAP:
 					// GROUP BY is only needed when mixing aggregates with non-aggregates.
 					// Aggregate-only queries collapse to one row without it.
 					if (!$isAggregateOnly) {
@@ -144,7 +149,8 @@
 					}
 					break;
 				
-				case self::STRATEGY_SUBQUERY:
+				case self::STRATEGY_SUBQUERY_FILTERED:
+				case self::STRATEGY_SUBQUERY_DISJOINT:
 					AggregateRewriter::rewriteAggregateAsCorrelatedSubquery($root, $agg);
 					break;
 				
@@ -158,7 +164,28 @@
 					break;
 			}
 			
-			$log->note('optimizer', 'aggregate', $strategy, "Aggregate {$label} → {$strategy}", $label);
+			$strategyExploded = explode(':', $strategy, 2);
+			$log->note('optimizer', 'aggregate', $strategyExploded[0], $this->describeAggregate($agg) . ': ' . $strategyExploded[1], $label);
+		}
+		
+		/**
+		 * Returns a short human-readable description of an aggregate for plan log messages.
+		 * Examples: "SUM(o.id)", "COUNT(1)", "ANY(o.title)"
+		 * @param AstAggregate $aggregate
+		 * @return string
+		 */
+		private function describeAggregate(AstAggregate $aggregate): string {
+			$identifier = $aggregate->getIdentifier();
+			
+			if ($identifier instanceof AstIdentifier) {
+				$arg = $identifier->getCompleteName();
+			} elseif ($identifier instanceof AstNumber) {
+				$arg = $identifier->getValue();
+			} else {
+				$arg = '*';
+			}
+			
+			return $aggregate->getType() . '(' . $arg . ')';
 		}
 		
 		// ---------------------------------------------------------------------
@@ -196,12 +223,12 @@
 			
 			// 2. Filtered aggregate — subquery applies WHERE before aggregation.
 			if ($aggregate->getConditions() !== null) {
-				return self::STRATEGY_SUBQUERY;
+				return self::STRATEGY_SUBQUERY_FILTERED;
 			}
 			
 			// 3. Aggregate-only query — execute directly, no GROUP BY required.
 			if ($isAggregateOnly) {
-				return self::STRATEGY_DIRECT;
+				return self::STRATEGY_DIRECT_AGG_ONLY;
 			}
 			
 			// 4. Window function — avoids GROUP BY for single-table mixed queries.
@@ -214,8 +241,8 @@
 			$nonAggRanges = RangeUtilities::collectRangesFromNodes($nonAggItems);
 			
 			return RangeUtilities::rangesOverlapOrAreRelated($aggRanges, $nonAggRanges)
-				? self::STRATEGY_DIRECT
-				: self::STRATEGY_SUBQUERY;
+				? self::STRATEGY_DIRECT_OVERLAP
+				: self::STRATEGY_SUBQUERY_DISJOINT;
 		}
 		
 		/**
@@ -229,11 +256,17 @@
 		 * @return bool
 		 */
 		private function allRangesAreNonDatabase(array $aggRanges): bool {
-			return !empty($aggRanges) && array_reduce(
-					$aggRanges,
-					fn(bool $carry, $range) => $carry && $range instanceof AstRangeJsonSource,
-					true
-				);
+			if (empty($aggRanges)) {
+				return false;
+			}
+			
+			foreach ($aggRanges as $range) {
+				if (!$range instanceof AstRangeJsonSource) {
+					return false;
+				}
+			}
+			
+			return true;
 		}
 		
 		// ---------------------------------------------------------------------
@@ -290,14 +323,13 @@
 			
 			$singleRange = $queryRanges[0];
 			
-			return $this->aggregateMatchesQueryRange($aggregate, $singleRange)
-				&& $this->selectItemsAreUniform($root, $aggregate, $singleRange);
+			return
+				$this->aggregateMatchesQueryRange($aggregate, $singleRange) &&
+				$this->selectItemsAreUniform($root, $aggregate, $singleRange);
 		}
 		
 		/**
 		 * Returns true if the aggregate references exactly the given range and no other.
-		 */
-		/**
 		 * @param AstAggregate $aggregate
 		 * @param object $singleRange The single range the query is expected to use
 		 * @return bool
@@ -309,8 +341,6 @@
 		
 		/**
 		 * Returns true if every SELECT item other than $aggregate references exactly $singleRange.
-		 */
-		/**
 		 * @param AstRetrieve $root
 		 * @param AstAggregate $aggregate The aggregate being evaluated (excluded from the check)
 		 * @param object $singleRange Expected range for all other select items
