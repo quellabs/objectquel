@@ -5,6 +5,7 @@
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstAggregate;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstAlias;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstAny;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstSubquery;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstBinaryOperator;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstExpression;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstIdentifier;
@@ -116,16 +117,35 @@
 		}
 		
 		/**
-		 * Returns true if all projections are aggregates, false if not
+		 * Returns true if an expression counts as aggregate-equivalent for query-shape
+		 * analysis. An AstSubquery with origin "ANY" is treated as aggregate-equivalent
+		 * because AnyOptimizer rewrites AstAny into AstSubquery before AggregateOptimizer
+		 * runs. Without this, a query that was aggregate-only before AnyOptimizer would
+		 * be misclassified as mixed, causing AstSum to be lifted into a correlated
+		 * subquery and the outer FROM to return one row per source row instead of one.
+		 * @param AstInterface $expression
+		 * @return bool
+		 */
+		public static function isAggregateEquivalent(AstInterface $expression): bool {
+			if ($expression instanceof AstAggregate && !($expression instanceof AstAny)) {
+				return true;
+			}
+			
+			if ($expression instanceof AstSubquery && $expression->getOrigin() === 'ANY') {
+				return true;
+			}
+			
+			return false;
+		}
+		
+		/**
+		 * Returns true if all projections are aggregates (or ANY-derived subqueries), false if not.
 		 * @param AstRetrieve $root
 		 * @return bool
 		 */
 		public static function areAllSelectFieldsAggregates(AstRetrieve $root): bool {
 			foreach ($root->getValues() as $value) {
-				if (
-					!$value->getExpression() instanceof AstAggregate ||
-					$value->getExpression() instanceof AstAny
-				) {
+				if (!self::isAggregateEquivalent($value->getExpression())) {
 					return false;
 				}
 			}
@@ -142,10 +162,7 @@
 			$result = [];
 			
 			foreach ($root->getValues() as $selectItem) {
-				if (
-					!$selectItem->getExpression() instanceof AstAggregate ||
-					$selectItem->getExpression() instanceof AstAny
-				) {
+				if (!self::isAggregateEquivalent($selectItem->getExpression())) {
 					$result[] = $selectItem;
 				}
 			}

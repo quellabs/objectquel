@@ -80,9 +80,10 @@
 		 */
 		private function parseValues(AstRetrieve $retrieve): array {
 			$values = [];
+			$seenAliases = [];
 			
 			do {
-				$values[] = $this->parseFieldExpression($retrieve);
+				$values[] = $this->parseFieldExpression($retrieve, $seenAliases);
 			} while ($this->lexer->optionalMatch(Token::Comma));
 			
 			return $values;
@@ -94,7 +95,7 @@
 		 * @return AstAlias The parsed field alias containing name and expression
 		 * @throws LexerException|ParserException
 		 */
-		private function parseFieldExpression(AstRetrieve $retrieve): AstAlias {
+		private function parseFieldExpression(AstRetrieve $retrieve, array &$seenAliases = []): AstAlias {
 			// Store the current lexer position for potential alias name generation
 			$startPos = $this->lexer->getPos();
 			
@@ -114,7 +115,7 @@
 			$aliasName = $this->determineAliasName($aliasToken, $startPos, $expression);
 			
 			// Handle any macro processing related to this alias definition
-			$this->processAliasMacro($retrieve, $aliasToken, $expression);
+			$this->processAliasMacro($aliasToken, $seenAliases);
 			
 			// Create and return the AST node representing this field alias
 			// Trim whitespace from alias name to ensure clean identifiers
@@ -160,20 +161,23 @@
 		 * @param AstInterface $expression The expression associated with this alias
 		 * @throws ParserException if duplicate alias name is detected
 		 */
-		private function processAliasMacro(AstRetrieve $retrieve, ?Token $aliasToken, AstInterface $expression): void {
+		private function processAliasMacro(?Token $aliasToken, array &$seenAliases): void {
 			if (!$aliasToken) {
 				return;
 			}
 			
 			$aliasName = $aliasToken->getStringValue();
 			
-			// Duplicate alias detection — check directly against the projection list.
-			// No separate macro index is needed; hasValueAlias() scans $values by name.
-			if ($retrieve->hasValueAlias($aliasName)) {
+			// Duplicate alias detection using a local set accumulated during this
+			// parseValues pass. We cannot check AstRetrieve::$values directly because
+			// addValue() is only called after all fields are parsed.
+			if (isset($seenAliases[$aliasName])) {
 				throw new ParserException(
 					"Duplicate variable name detected: '{$aliasName}'. Please use unique names."
 				);
 			}
+			
+			$seenAliases[$aliasName] = true;
 		}
 		
 		/**

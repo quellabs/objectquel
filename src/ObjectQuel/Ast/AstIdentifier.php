@@ -68,9 +68,12 @@
 			$clone->setType($this->getType());
 			$clone->setRange($this->getRange());
 			
-			// Clone the next identifier in the chain if it exists
+			// Clone the next identifier in the chain if it exists, and wire its
+			// parent back to the cloned root so that validators traversing the chain
+			// (e.g. ValidateEntityPropertyExists) see a consistent parent pointer.
 			if ($this->next !== null) {
 				$clone->next = $this->next->deepClone();
+				$clone->next->setParent($clone);
 			}
 			
 			return $clone;
