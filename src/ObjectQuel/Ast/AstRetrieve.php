@@ -20,7 +20,7 @@
 	 * - Grouping specifications (GROUP BY clause)
 	 * - Pagination controls (LIMIT/OFFSET)
 	 * - Uniqueness constraints (DISTINCT)
-	 * - Compiler directives and macros
+	 * - Compiler directives
 	 */
 	class AstRetrieve extends Ast implements NodeWithConditions {
 		
@@ -29,9 +29,6 @@
 		
 		/** @var AstAlias[] Values/expressions to be retrieved (SELECT clause) */
 		protected array $values;
-		
-		/** @var array<string, AstInterface> Named macros that can be referenced in the query */
-		protected array $macros;
 		
 		/** @var AstRange[] Data source ranges (FROM and JOIN clauses) */
 		protected array $ranges;
@@ -69,7 +66,6 @@
 		public function __construct(array $directives, array $ranges, bool $unique) {
 			$this->directives = $directives;
 			$this->values = [];
-			$this->macros = [];
 			$this->conditions = null;
 			$this->ranges = $ranges;
 			$this->unique = $unique;
@@ -80,7 +76,7 @@
 			$this->group_by = [];
 			
 			// Establish parent-child relationships for all ranges
-			foreach($this->ranges as $range) {
+			foreach ($this->ranges as $range) {
 				$range->setParent($this);
 			}
 		}
@@ -92,7 +88,7 @@
 		 */
 		public function accept(AstVisitorInterface $visitor): void {
 			// Process all ranges first (FROM and JOIN clauses)
-			foreach($this->ranges as $value) {
+			foreach ($this->ranges as $value) {
 				$value->accept($visitor);
 			}
 			
@@ -110,7 +106,7 @@
 			parent::accept($visitor);
 			
 			// Process all values in the SELECT clause
-			foreach($this->values as $value) {
+			foreach ($this->values as $value) {
 				$value->accept($visitor);
 			}
 			
@@ -118,14 +114,10 @@
 			$this->conditions?->accept($visitor);
 			
 			// Process sorting specifications (ORDER BY clause)
-			foreach($this->sort as $s) {
+			foreach ($this->sort as $s) {
 				$s['ast']->accept($visitor);
 			}
 			
-			// Process all defined macros
-			foreach($this->macros as $macro) {
-				$macro->accept($visitor);
-			}
 		}
 		
 		/**
@@ -146,13 +138,40 @@
 		}
 		
 		/**
+		 * Looks up a projection alias by name and returns its expression, or null if not found.
+		 * Used by ExpandMacros to substitute alias references in WHERE/ORDER BY with the
+		 * actual expression from the SELECT list, without a separate macro index.
+		 * @param string $name The alias name to look up
+		 * @return AstInterface|null The expression for that alias, or null if not found
+		 */
+		public function getValueExpression(string $name): ?AstInterface {
+			foreach ($this->values as $alias) {
+				if ($alias->getName() === $name) {
+					return $alias->getExpression();
+				}
+			}
+			
+			return null;
+		}
+		
+		/**
+		 * Checks if a projection alias with the given name exists in the SELECT list.
+		 * Used during parsing for duplicate alias detection.
+		 * @param string $name The alias name to check
+		 * @return bool True if the alias exists, false otherwise
+		 */
+		public function hasValueAlias(string $name): bool {
+			return $this->getValueExpression($name) !== null;
+		}
+		
+		/**
 		 * Replace all current values with a new set of values.
 		 * @param AstAlias[] $values New array of values to retrieve
 		 * @return void
 		 */
 		public function setValues(array $values): void {
 			// Establish parent relationships for all new values
-			foreach($values as $value) {
+			foreach ($values as $value) {
 				$value->setParent($this);
 			}
 			
@@ -181,7 +200,7 @@
 		 * @return AstRange[] Array of ranges that are not database tables
 		 */
 		public function getOtherRanges(): array {
-			return array_filter($this->ranges, function($range) {
+			return array_filter($this->ranges, function ($range) {
 				return
 					!$range instanceof AstRangeDatabase &&
 					!$range instanceof AstRangeDatabaseSubquery;
@@ -206,7 +225,7 @@
 			$this->ranges = $ranges;
 			
 			// Establish parent relationships for all new ranges
-			foreach($this->ranges as $range) {
+			foreach ($this->ranges as $range) {
 				$range->setParent($this);
 			}
 		}
@@ -227,7 +246,7 @@
 		 * @return bool True if the range exists, false otherwise
 		 */
 		public function hasRange(AstRange $rangeToCheck): bool {
-			foreach($this->ranges as $range) {
+			foreach ($this->ranges as $range) {
 				if ($range->getName() === $rangeToCheck->getName()) {
 					return true;
 				}
@@ -245,7 +264,7 @@
 			$result = [];
 			
 			// Filter out the range to remove
-			foreach($this->ranges as $range) {
+			foreach ($this->ranges as $range) {
 				if ($range->getName() !== $rangeToRemove->getName()) {
 					$result[] = $range;
 				}
@@ -277,33 +296,7 @@
 		}
 		
 		/**
-		 * Returns all defined macros in this query.
-		 * @return array<string, AstInterface> Associative array of macro names to AST nodes
-		 */
-		public function getMacros(): array {
-			return $this->macros;
-		}
-		
-		/**
-		 * Adds a new macro definition.
-		 * @param string $name The macro name
-		 * @param AstInterface $ast The AST node representing the macro value
-		 * @return void
-		 */
-		public function addMacro(string $name, AstInterface $ast): void {
-			$this->macros[$name] = $ast;
-		}
-		
-		/**
-		 * Checks if a macro with the given name exists.
-		 * @param string $name The macro name to check
-		 * @return bool True if the macro exists, false otherwise
-		 */
-		public function macroExists(string $name): bool {
-			return isset($this->macros[$name]);
-		}
-		
-		/**
+		 * /**
 		 * Sets the sorting specifications for the ORDER BY clause.
 		 * @param array<int, array{ast: AstInterface, direction?: string}> $sortArray
 		 * @return void
@@ -439,20 +432,20 @@
 		 * @param bool $useIncludedTag If true, only count ranges marked for inclusion in JOINs
 		 * @return bool True if only one range is involved, false for multi-table queries
 		 */
-		public function isSingleRangeQuery(bool $useIncludedTag=false): bool {
+		public function isSingleRangeQuery(bool $useIncludedTag = false): bool {
 			if ($useIncludedTag) {
 				// Count only ranges that should be included as joins
-				$filter = array_filter($this->ranges, function($range) {
+				$filter = array_filter($this->ranges, function ($range) {
 					return $range instanceof AstRangeDatabase && $range->includeAsJoin();
 				});
-
+				
 				return count($filter) === 1;
 			}
 			
 			// Count all ranges
 			return count($this->ranges) === 1;
 		}
-
+		
 		/**
 		 * Determines which part of the query contains a specific AST node.
 		 * This is useful for error reporting and optimization decisions.
@@ -461,7 +454,7 @@
 		 */
 		public function getLocationOfChild(AstInterface $ast): ?string {
 			// Check if it's in the SELECT clause
-			foreach($this->values as $value) {
+			foreach ($this->values as $value) {
 				if ($ast->isAncestorOf($value)) {
 					return "select";
 				}
@@ -475,7 +468,7 @@
 			}
 			
 			// Check if it's in the ORDER BY clause
-			foreach($this->sort as $value) {
+			foreach ($this->sort as $value) {
 				if ($ast->isAncestorOf($value['ast'])) {
 					return "order_by";
 				}
@@ -494,7 +487,7 @@
 		
 		/**
 		 * Sets the GROUP BY specifications.
-		 *@param AstInterface[] $groups Array of grouping expressions
+		 * @param AstInterface[] $groups Array of grouping expressions
 		 * @return void
 		 */
 		public function setGroupBy(array $groups): void {
@@ -510,21 +503,7 @@
 			$clonedRanges = $this->cloneArray($this->ranges);
 			$clonedValues = $this->cloneArray($this->values);
 			
-			// Rebuild macros from the already-cloned values rather than cloning the raw
-			// expressions independently. Macros are aliases for expressions that already
-			// live inside $values, so cloning them separately produces orphaned duplicates
-			// and breaks ChildAstInterface contracts (e.g. AstAny rejects setParent(null)).
-			$clonedMacros = [];
 			
-			foreach ($this->macros as $name => $macro) {
-				foreach ($clonedValues as $clonedAlias) {
-					if ($clonedAlias->getName() === $name) {
-						$clonedMacros[$name] = $clonedAlias->getExpression();
-						break;
-					}
-				}
-			}
-
 			$clonedSort = $this->cloneSortArray($this->sort);
 			
 			// Clone the conditions node if it exists
@@ -536,7 +515,6 @@
 			
 			// Set all the cloned properties
 			$clone->values = $clonedValues;
-			$clone->macros = $clonedMacros;
 			$clone->conditions = $clonedConditions;
 			$clone->sort = $clonedSort;
 			
@@ -553,6 +531,9 @@
 			foreach ($clonedValues as $value) {
 				$value->setParent($clone);
 			}
+			
+			// Macro expressions are already owned by their cloned AstAlias nodes in
+			// $clonedValues — no separate setParent call needed here.
 			
 			$clonedConditions?->setParent($clone);
 			

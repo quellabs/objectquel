@@ -19,13 +19,6 @@
 		private array $collectedNodes;
 		
 		/**
-		 * @var array<int, bool> Tracks object IDs of already-collected nodes to prevent
-		 * duplicates when the same node is reachable via multiple traversal paths
-		 * (e.g. once through AstAlias::$expression and once through AstRetrieve::$macros).
-		 */
-		private array $seen;
-		
-		/**
 		 * @var bool Should we traverse into subqueries to collect aggregate nodes
 		 */
 		private bool $traverseSubqueries;
@@ -36,7 +29,6 @@
 		 */
 		public function __construct(bool $traverseSubqueries = true) {
 			$this->collectedNodes = [];
-			$this->seen = [];
 			$this->traverseSubqueries = $traverseSubqueries;
 		}
 		
@@ -50,28 +42,17 @@
 				return;
 			}
 			
-			/**
-			 * Skip Any aggregate. This one gets special handling
-			 */
+			// Skip Any aggregate. This one gets special handling
 			if ($node instanceof AstAny) {
 				return;
 			}
-
+			
 			// If we're not traversing subqueries, check if this node is inside a subquery
 			if (!$this->traverseSubqueries && $node->parentIsOneOf([AstSubquery::class])) {
 				return;
 			}
 			
-			// Skip nodes already collected — the same object can be visited more than once
-			// when it is reachable via multiple paths (e.g. AstAlias::$expression and
-			// AstRetrieve::$macros both reference the same aggregate instance).
-			$id = spl_object_id($node);
-			
-			if (isset($this->seen[$id])) {
-				return;
-			}
-			
-			$this->seen[$id] = true;
+			// This is an aggregate function node and should be collected
 			$this->collectedNodes[] = $node;
 		}
 		

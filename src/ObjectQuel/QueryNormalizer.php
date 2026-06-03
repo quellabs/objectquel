@@ -51,31 +51,28 @@
 			// This ensures inner queries are fully resolved before outer query processing
 			$this->transformNestedQueries($ast);
 			
-			// Step 1: Plug macro placeholders into the AST structure
-			// This visitor finds macro references and creates placeholder nodes for later expansion
-			$this->processWithVisitor($ast, ExpandMacros::class, $ast->getMacros());
-			
-			// Step 2: Add proper namespaces to all ranges
+			// Step 1: Add proper namespaces to all ranges
 			// Resolves entity names to their fully qualified forms using the entity store
 			$this->processWithVisitor($ast, ResolveRangeDatabaseProxy::class, $this->entityStore);
 			
-			// Step 3: Resolve unqualified property names to range-prefixed identifiers
+			// Step 2: Resolve unqualified property names to range-prefixed identifiers
 			// Allows bare names like 'name' to be written instead of 'p.name' when unambiguous
 			$this->processWithVisitor($ast, ResolveUnqualifiedProperty::class, $this->entityStore, $ast->getRanges());
 			
-			// Step 4: Expand macro definitions with their actual implementations
-			// Replaces macro placeholder nodes with the full macro body/logic
-			$this->processWithVisitor($ast, ExpandMacros::class, $ast->getMacros());
+			// Step 3: Expand alias references from the SELECT list into WHERE / ORDER BY.
+			// Runs after namespace resolution and unqualified-property expansion so that
+			// the cloned expressions land in a fully-resolved context.
+			$this->processWithVisitor($ast, ExpandMacros::class, $ast);
 			
-			// Step 5: Converts indirect relationships through intermediate entities into direct joins
+			// Step 4: Converts indirect relationships through intermediate entities into direct joins
 			$this->transformViaRelations($ast);
 			
-			// Step 6: Assign IdentifierType to every root identifier node in the chain.
-			// This must run after all structural rewrites (macros, namespace resolution,
+			// Step 5: Assign IdentifierType to every root identifier node in the chain.
+			// This must run after all structural rewrites (alias expansion, namespace resolution,
 			// via-relation expansion) so that range attachments are final.
 			$this->resolveIdentifierTypes($ast);
 
-			// Step 7: Wrap bare datetime column references with AstDate so that all
+			// Step 6: Wrap bare datetime column references with AstDate so that all
 			// temporal values are expressed uniformly before semantic validation and
 			// SQL generation. Must run after Step 6 so that entity names and column
 			// types are fully resolved on every identifier.

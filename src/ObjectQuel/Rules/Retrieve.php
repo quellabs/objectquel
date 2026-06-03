@@ -165,15 +165,15 @@
 				return;
 			}
 			
-			$aliasName = $aliasToken->getStringValue();;
+			$aliasName = $aliasToken->getStringValue();
 			
-			if ($retrieve->macroExists($aliasName)) {
+			// Duplicate alias detection — check directly against the projection list.
+			// No separate macro index is needed; hasValueAlias() scans $values by name.
+			if ($retrieve->hasValueAlias($aliasName)) {
 				throw new ParserException(
 					"Duplicate variable name detected: '{$aliasName}'. Please use unique names."
 				);
 			}
-			
-			$retrieve->addMacro($aliasName, $expression);
 		}
 		
 		/**
