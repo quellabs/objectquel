@@ -126,7 +126,7 @@
 			);
 			
 			$result = [];
-			$entityName = $this->resolveProxyClass(get_class($entity));
+			$entityName = $this->normalizeEntityClass(get_class($entity));
 			
 			// Create composite ID string for URL generation
 			$entityId = implode("_", array_map('strval', $this->getIdentifierValues($entity)));
@@ -142,7 +142,7 @@
 				}
 				
 				// Get the target entity's resource type name
-				$relationshipEntityName = $this->resolveProxyClass($targetEntity);
+				$relationshipEntityName = $this->normalizeEntityClass($targetEntity);
 				
 				// Resolve the FK property name: InverseOf uses via(), OneToOne uses inversedBy()
 				if ($relationship instanceof InverseOf) {
@@ -212,7 +212,7 @@
 		 * @throws QuelException
 		 */
 		public function serialize(object $entity): array {
-			$entityName = $this->resolveProxyClass(get_class($entity));
+			$entityName = $this->normalizeEntityClass(get_class($entity));
 			$metadata = $this->entityStore->getMetadata($entityName);
 			
 			// Validate that entity has proper identification

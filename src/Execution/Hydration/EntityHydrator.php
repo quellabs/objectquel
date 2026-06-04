@@ -352,7 +352,7 @@
 			}
 			
 			// Resolve entity to fully namespaced
-			$entity = $this->entityStore->resolveProxyClass($entityName);
+			$entity = $this->entityStore->normalizeEntityClass($entityName);
 			
 			// Extract and validate range
 			$rangeName = $expression->getRange()?->getName();

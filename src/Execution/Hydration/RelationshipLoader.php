@@ -94,7 +94,7 @@
 			$inversedPropertyName = $this->entityStore->resolveTargetProperty($dependency) ?? '';
 			
 			// Add the namespace to the target entity name and find the related entity.
-			$targetEntity = $this->entityStore->resolveProxyClass($targetEntityName);
+			$targetEntity = $this->entityStore->normalizeEntityClass($targetEntityName);
 			
 			// Check the UnitOfWork if it has the entity
 			$relationEntity = $this->unitOfWork->findEntity($targetEntity, [$inversedPropertyName => $relationColumnValue]);
@@ -137,7 +137,7 @@
 			
 			// Gather information needed to create the proxy.
 			// resolveProxyClass ensures we have the fully-qualified class name.
-			$targetEntityName = $this->entityStore->resolveProxyClass($dependency->getTargetEntity());
+			$targetEntityName = $this->entityStore->normalizeEntityClass($dependency->getTargetEntity());
 			
 			// resolveTargetProperty returns null only when the target entity has no
 			// primary key — a configuration error that should have been caught earlier.
@@ -252,7 +252,7 @@
 		 */
 		private function setupToOneRelations(array $entities): void {
 			foreach ($entities as $entity) {
-				$entityClass = $this->entityStore->resolveProxyClass($entity);
+				$entityClass = $this->entityStore->normalizeEntityClass($entity);
 				
 				foreach ($this->getRelationAnnotations($entityClass) as $property => $dependencies) {
 					foreach ($dependencies as $dependency) {
@@ -283,7 +283,7 @@
 		private function createAndSetScalarInverseOfProxy(object $entity, string $entityClass, string $property, InverseOf $dependency): void {
 			// The via property name on the dependent entity — the FK that points back to this entity
 			$relation = $dependency->getRelation();
-			$targetEntity = $this->entityStore->resolveProxyClass($dependency->getTargetEntity());
+			$targetEntity = $this->entityStore->normalizeEntityClass($dependency->getTargetEntity());
 			
 			// Look up the relation annotation on the dependent entity's via property so we can
 			// determine which property on *this* entity the FK references (usually the PK,
@@ -344,7 +344,7 @@
 			// Loop through all filtered rows
 			foreach ($filteredRows as $entity) {
 				// Get the normalized name of the entity class
-				$objectClass = $this->entityStore->resolveProxyClass($entity);
+				$objectClass = $this->entityStore->normalizeEntityClass($entity);
 				
 				// Get all dependencies of the entity class
 				$entityDependencies = $this->getRelationAnnotations($objectClass);
@@ -366,7 +366,7 @@
 						}
 						
 						// Complete short entity names to their full namespace form
-						$targetEntity = $this->entityStore->resolveProxyClass($dependency->getTargetEntity());
+						$targetEntity = $this->entityStore->normalizeEntityClass($dependency->getTargetEntity());
 						
 						// Check if InverseOf has via. If not error out
 						$relation = $dependency->getRelation();
@@ -409,7 +409,7 @@
 		 */
 		private function populateEntityJoinedRelations(object $entity, array $entities): void {
 			// Resolve the real class name in case this is a proxy object
-			$objectClass = $this->entityStore->resolveProxyClass($entity);
+			$objectClass = $this->entityStore->normalizeEntityClass($entity);
 			
 			foreach ($this->getRelationAnnotations($objectClass) as $property => $dependencies) {
 				foreach ($dependencies as $dependency) {
@@ -450,7 +450,7 @@
 			$relation = $dependency->getRelation();
 			
 			// Resolve the full class name of the related entity
-			$targetEntity = $this->entityStore->resolveProxyClass($dependency->getTargetEntity());
+			$targetEntity = $this->entityStore->normalizeEntityClass($dependency->getTargetEntity());
 			
 			// Only handle relations where the related entity was explicitly
 			// joined in the query. If it wasn't requested, setupToManyRelations
@@ -525,7 +525,7 @@
 			$relation = $dependency->getRelation();
 			
 			// Fetch the target entity and resolve to normal entity if it's a proxy
-			$targetEntity = $this->entityStore->resolveProxyClass($dependency->getTargetEntity());
+			$targetEntity = $this->entityStore->normalizeEntityClass($dependency->getTargetEntity());
 			
 			// Only handle if the related entity was explicitly joined in the query
 			if (!$this->wasEntityRequested($objectClass, $targetEntity, $relation)) {
@@ -572,14 +572,14 @@
 		 * @throws EntityResolutionException
 		 */
 		private function candidateMapsToParent(object $candidate, string $relation, string $parentClass): bool {
-			$candidateClass = $this->entityStore->resolveProxyClass($candidate);
+			$candidateClass = $this->entityStore->normalizeEntityClass($candidate);
 			$deps = $this->getRelationAnnotations($candidateClass);
 			
 			foreach ($deps as $property => $propertyDeps) {
 				foreach ($propertyDeps as $dep) {
 					if (
 						($dep instanceof ManyToOne || $dep instanceof OneToOne) &&
-						$this->entityStore->resolveProxyClass($dep->getTargetEntity()) === $parentClass
+						$this->entityStore->normalizeEntityClass($dep->getTargetEntity()) === $parentClass
 					) {
 						return true;
 					}
@@ -614,7 +614,7 @@
 			}
 			
 			// The relation must point back at the declaring entity
-			$resolvedEntity = $this->entityStore->resolveProxyClass($viaRelation->getTargetEntity());
+			$resolvedEntity = $this->entityStore->normalizeEntityClass($viaRelation->getTargetEntity());
 			
 			if ($resolvedEntity !== $ownerClass) {
 				throw new \RuntimeException(
@@ -640,7 +640,7 @@
 		 */
 		private function getCandidateFkValue(object $candidate, string $relation): mixed {
 			// If the candidate is a proxy, convert it to regular class
-			$candidateClass = $this->entityStore->resolveProxyClass($candidate);
+			$candidateClass = $this->entityStore->normalizeEntityClass($candidate);
 			
 			// Fetch the metadata of the candidate entity
 			$candidateMeta = $this->entityStore->getMetadata($candidateClass);

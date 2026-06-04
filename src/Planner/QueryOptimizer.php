@@ -171,7 +171,7 @@
 				}
 				
 				$entityName = $range->getEntityName();
-				$resolvedEntityName = $this->entityStore->resolveProxyClass($entityName);
+				$resolvedEntityName = $this->entityStore->normalizeEntityClass($entityName);
 				$range->setEntityName($resolvedEntityName);
 			}
 		}

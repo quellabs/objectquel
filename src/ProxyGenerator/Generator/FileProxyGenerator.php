@@ -61,7 +61,7 @@
 		 * @throws EntityResolutionException
 		 */
 		public function getProxyFilePath(string $targetEntity): string {
-			$normalizedEntity = $this->entityStore->resolveProxyClass($targetEntity);
+			$normalizedEntity = $this->entityStore->normalizeEntityClass($targetEntity);
 			$shortClassName = $this->codeGenerator->getClassNameWithoutNamespace($normalizedEntity);
 			return $this->proxyPath . DIRECTORY_SEPARATOR . $shortClassName . '.php';
 		}
@@ -119,7 +119,7 @@
 					$entityName = $this->constructEntityName($entityFilePath);
 					
 					// resolveEntityClass throws an exception when the entity does not lead to an actual object
-					$entityName = $this->entityStore->resolveProxyClass($entityName);
+					$entityName = $this->entityStore->normalizeEntityClass($entityName);
 					
 					// Only generate proxies for classes the entity store actually knows about.
 					// Plain PHP files in the entity directory that aren't mapped entities are skipped.

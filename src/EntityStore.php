@@ -186,7 +186,7 @@
 		 */
 		public function getMetadata(string|object $entity): EntityMetadataRecord {
 			// Resolve entity name to a
-			$className = $this->resolveProxyClass($entity);
+			$className = $this->normalizeEntityClass($entity);
 			
 			// Return cached metadata if available
 			// Otherwise build and cache the metadata
@@ -211,7 +211,7 @@
 		public function exists(string|object $entity): bool {
 			try {
 				// Determine the class name of the entity
-				$normalizedClass = $this->resolveProxyClass($entity);
+				$normalizedClass = $this->normalizeEntityClass($entity);
 				
 				// Check that the class exists
 				if (!class_exists($normalizedClass)) {
@@ -240,7 +240,7 @@
 		 * @return class-string Normalized, fully qualified class name
 		 * @throws EntityResolutionException
 		 */
-		public function resolveProxyClass(string|object $entity): string {
+		public function normalizeEntityClass(string|object $entity): string {
 			// Determine the class name of the entity
 			if ($entity instanceof \ReflectionClass) {
 				$className = $entity->getName();
@@ -313,7 +313,7 @@
 		 */
 		public function getDependentEntities(string|object $entity): array {
 			// Resolve proxy classes to their parent entity class
-			$normalizedClass = $this->resolveProxyClass($entity);
+			$normalizedClass = $this->normalizeEntityClass($entity);
 			
 			// Filter the dependency graph to entities that list $normalizedClass as a dependency,
 			// then return their class names. array_keys on array<class-string, ...> yields array<int, class-string>.
@@ -401,14 +401,14 @@
 					// These represent foreign key relationships where this entity depends on another
 					$dependencies = [];
 					foreach ($metadata->manyToOneRelations as $relation) {
-						$dependencies[] = $this->resolveProxyClass($relation->getTargetEntity());
+						$dependencies[] = $this->normalizeEntityClass($relation->getTargetEntity());
 					}
 					
 					// Add OneToOne dependencies (owning side only)
 					// All stored OneToOne relations are owning-side by definition — the non-owning
 					// side is declared with @InverseOf and not stored in oneToOneRelations.
 					foreach ($metadata->oneToOneRelations as $relation) {
-						$dependencies[] = $this->resolveProxyClass($relation->getTargetEntity());
+						$dependencies[] = $this->normalizeEntityClass($relation->getTargetEntity());
 					}
 					
 					// Remove duplicates and store in the dependency graph

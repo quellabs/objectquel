@@ -66,7 +66,7 @@
 			$className = $this->codeGenerator->getClassNameWithoutNamespace($entityClass);
 			
 			// resolveEntityClass throws an exception when the entity does not lead to an actual object
-			$entityName = $this->entityStore->resolveProxyClass($entityClass);
+			$entityName = $this->entityStore->normalizeEntityClass($entityClass);
 			
 			// Build the proxy
 			$uniqueId = bin2hex(random_bytes(8));
