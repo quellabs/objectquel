@@ -64,9 +64,9 @@
 	 *     readonly?: bool,
 	 *     relationshipType: OrmRelationshipType,
 	 *     targetEntity: string,
-	 *     via?: string|null,
+	 *     relation?: string,
 	 *     inversedBy?: string|null,
-	 *     relationColumn?: string|null
+	 *     localColumn?: string|null
 	 * }
 	 *
 	 * @phpstan-type PropertyDefinition BaseProperty|EnumProperty|RelationProperty

@@ -711,8 +711,8 @@
 			
 			// If via is set this is the inverse side — sync the owning side's reference
 			// so both ends of the relationship stay consistent after the add
-			if (!empty($property['via'])) {
-				$setterMethod = 'set' . ucfirst($property['via']);
+			if (!empty($property['relation'])) {
+				$setterMethod = 'set' . ucfirst($property['relation']);
 				$inverseSetter = "\n                // Sync bidirectional relationship\n";
 				$inverseSetter .= "                \${$singularName}->{$setterMethod}(\$this);";
 			}
@@ -746,8 +746,8 @@
 			
 			// Only null out the inverse side when it still points at this entity —
 			// avoids clobbering a reference that was already reassigned elsewhere
-			if (!empty($property['via'])) {
-				$viaField = $property['via'];
+			if (!empty($property['relation'])) {
+				$viaField = $property['relation'];
 				$getterMethod = 'get' . ucfirst($viaField);
 				$setterMethod = 'set' . ucfirst($viaField);
 				
