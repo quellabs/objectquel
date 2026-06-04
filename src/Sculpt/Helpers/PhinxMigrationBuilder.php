@@ -89,8 +89,9 @@
 				return ['success' => false, 'message' => 'No changes detected. Migration file not created.'];
 			}
 			
-			$className = 'EntitySchemaMigration';
-			$filename = $this->migrationsPath . '/' . date('YmdHis') . '_' . $className . '.php';
+			$date = date('YmdHis');
+			$className = "EntitySchemaMigration{$date}";
+			$filename = $this->migrationsPath . '/' .$date . '_' . $className . '.php';
 			
 			// Create the migrations directory if it doesn't exist yet.
 			// The double is_dir() check guards against a race condition where another
