@@ -120,10 +120,9 @@
 			
 			// Fetch builder
 			$this->metadataBuilder = new EntityMetadataBuilder(
+				$this,
 				$this->annotationReader,
 				$this->reflectionHandler,
-				$this->proxyNamespace,
-				$this->entityNamespace
 			);
 			
 			// Discover and register all entities

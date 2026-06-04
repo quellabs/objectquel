@@ -2,6 +2,7 @@
 	
 	namespace Quellabs\ObjectQuel\Serialization\Serializers;
 	
+	use Quellabs\ObjectQuel\EntityStore;
 	use Quellabs\ObjectQuel\EntityManager;
 	use Quellabs\ObjectQuel\Annotations\Orm\InverseOf;
 	use Quellabs\ObjectQuel\Exception\EntityResolutionException;
@@ -15,7 +16,7 @@
 	 */
 	class JsonApiSerializer extends Serializer {
 		
-		/** @var EntityManager Entity manager for database operations and entity metadata */
+		/** @var EntityManager Entity manager for database operations */
 		private EntityManager $entityManager;
 		
 		/** @var UrlBuilderInterface URL builder for generating JSON:API compliant URLs */
@@ -126,7 +127,7 @@
 			);
 			
 			$result = [];
-			$entityName = $this->normalizeEntityClass(get_class($entity));
+			$entityName = $this->entityStore->normalizeEntityClass(get_class($entity));
 			
 			// Create composite ID string for URL generation
 			$entityId = implode("_", array_map('strval', $this->getIdentifierValues($entity)));
@@ -142,7 +143,7 @@
 				}
 				
 				// Get the target entity's resource type name
-				$relationshipEntityName = $this->normalizeEntityClass($targetEntity);
+				$relationshipEntityName = $this->entityStore->normalizeEntityClass($targetEntity);
 				
 				// Resolve the FK property name: InverseOf uses via(), OneToOne uses inversedBy()
 				if ($relationship instanceof InverseOf) {
@@ -212,7 +213,7 @@
 		 * @throws QuelException
 		 */
 		public function serialize(object $entity): array {
-			$entityName = $this->normalizeEntityClass(get_class($entity));
+			$entityName = $this->entityStore->normalizeEntityClass(get_class($entity));
 			$metadata = $this->entityStore->getMetadata($entityName);
 			
 			// Validate that entity has proper identification

@@ -6,6 +6,7 @@
 	use Quellabs\ObjectQuel\Annotations\Orm\InverseOf;
 	use Quellabs\ObjectQuel\Annotations\Orm\OneToOne;
 	use Quellabs\ObjectQuel\Collections\Collection;
+	use Quellabs\ObjectQuel\Exception\HydrationException;
 	use Quellabs\ObjectQuel\Collections\CollectionInterface;
 	use Quellabs\ObjectQuel\Collections\EntityCollection;
 	use Quellabs\ObjectQuel\EntityStore;
@@ -122,6 +123,7 @@
 		 * @param string $property The name of the property where the proxy will be set
 		 * @param ManyToOne|OneToOne $dependency
 		 * @throws EntityResolutionException
+		 * @throws HydrationException
 		 */
 		private function createAndSetProxy(object $entity, string $property, ManyToOne|OneToOne $dependency): void {
 			// Determine the relation column (the column containing the foreign key)
@@ -130,9 +132,14 @@
 			// Get the primary key value. If it's empty, clear the relationship
 			$relationColumnValue = $this->propertyHandler->get($entity, $relationColumn);
 			
-			if (empty($relationColumnValue)) {
+			if ($relationColumnValue === null) {
 				$this->propertyHandler->set($entity, $property, null);
 				return;
+			}
+			
+			// Validate relationColumnValue
+			if (!is_integer($relationColumnValue) && !is_string($relationColumnValue)) {
+				throw new HydrationException("Cannot load proxy when lookup key is not int or string");
 			}
 			
 			// Gather information needed to create the proxy.
@@ -162,14 +169,14 @@
 		 * Returns an existing entity from the UnitOfWork, or instantiates and persists a new proxy.
 		 * @param class-string $targetEntityName
 		 * @param string $relationPropertyName The property on the target that holds the PK
-		 * @param mixed $relationColumnValue
+		 * @param int|string $relationColumnValue
 		 * @return object
 		 * @throws EntityResolutionException
 		 */
 		private function findOrCreateProxy(
 			string $targetEntityName,
 			string $relationPropertyName,
-			mixed $relationColumnValue
+			int|string $relationColumnValue
 		): object {
 			// Check if the entity already exists in the UnitOfWork
 			$existing = $this->unitOfWork->findEntity($targetEntityName, [

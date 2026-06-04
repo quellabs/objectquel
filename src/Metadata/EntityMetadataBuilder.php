@@ -2,7 +2,9 @@
 	
 	namespace Quellabs\ObjectQuel\Metadata;
 	
+	use Quellabs\ObjectQuel\EntityStore;
 	use Quellabs\AnnotationReader\AnnotationReader;
+	use Quellabs\ObjectQuel\Exception\EntityResolutionException;
 	use Quellabs\AnnotationReader\Collection\AnnotationCollection;
 	use Quellabs\AnnotationReader\Exception\AnnotationReaderException;
 	use Quellabs\AnnotationReader\Exception\ParserException;
@@ -45,27 +47,19 @@
 		
 		private readonly AnnotationReader $annotationReader;
 		private readonly ReflectionHandler $reflectionHandler;
-		private readonly string $proxyNamespace;
-		private readonly string $entityNamespace;
-		
-		/** @var array<string, string> */
-		private array $normalizedNameCache = [];
+		private EntityStore $entityStore;
 		
 		/**
 		 * EntityMetadataBuilder constructor
 		 * @param AnnotationReader $annotationReader
 		 * @param ReflectionHandler $reflectionHandler
-		 * @param string $proxyNamespace
-		 * @param string $entityNamespace
 		 */
 		public function __construct(
-			AnnotationReader  $annotationReader,
-			ReflectionHandler $reflectionHandler,
-			string            $proxyNamespace,
-			string            $entityNamespace,
+			EntityStore $entityStore,
+			AnnotationReader $annotationReader,
+			ReflectionHandler $reflectionHandler
 		) {
-			$this->entityNamespace = $entityNamespace;
-			$this->proxyNamespace = $proxyNamespace;
+			$this->entityStore = $entityStore;
 			$this->reflectionHandler = $reflectionHandler;
 			$this->annotationReader = $annotationReader;
 		}
@@ -133,78 +127,7 @@
 			}
 		}
 		
-		/**
-		 * Normalizes the entity name by resolving proxies and namespaces.
-		 * Exposed publicly so EntityStore can delegate its own resolveProxyClass() here.
-		 * @param string|object $entity Fully qualified class name, short name, object, or ReflectionClass
-		 * @return string Normalized, fully qualified class name
-		 */
-		public function normalizeEntityClass(string|object $entity): string {
-			$className = $this->extractClassName($entity);
-			
-			// Return early if we've resolved this name before
-			if (isset($this->normalizedNameCache[$className])) {
-				return $this->normalizedNameCache[$className];
-			}
-			
-			// Proxy classes are anonymous subclasses generated at runtime.
-			// Their real identity is the parent class, so unwrap one level.
-			if (str_contains($className, $this->proxyNamespace)) {
-				// Fail if the proxy does not exist
-				if (!class_exists($className)) {
-					throw new \RuntimeException("Invalid entity class: {$className}");
-				}
-				
-				// Get the proxy's parent. This is the actual class.
-				$parent = $this->reflectionHandler->getParent($className);
-				
-				// If no parent exists, the proxy is badly configured.
-				if ($parent === null) {
-					throw new \RuntimeException("Proxy class {$className} has no parent class.");
-				}
-				
-				// Add the actual class to the cache
-				return $this->normalizedNameCache[$className] = $parent;
-			}
-			
-			// A backslash means the caller already passed a fully qualified name
-			if (str_contains($className, "\\")) {
-				return $this->normalizedNameCache[$className] = $className;
-			}
-			
-			// Short name (e.g. "User") — try the namespace resolver first,
-			// then fall back to prepending the configured entity namespace
-			$resolved = NamespaceResolver::resolveClassName($className);
-			
-			if (($resolved === $className)) {
-				$fullyQualifiedClassName = "{$this->entityNamespace}\\{$className}";
-			} else {
-				$fullyQualifiedClassName = $resolved;
-			}
-			
-			return $this->normalizedNameCache[$className] = $fullyQualifiedClassName;
-		}
-		
 		// ==================== Private Helpers ====================
-		
-		/**
-		 * Extract class name from various entity representations.
-		 * @param string|object $entity
-		 * @return string
-		 */
-		private function extractClassName(string|object $entity): string {
-			if ($entity instanceof \ReflectionClass) {
-				// ReflectionClass already knows its own name
-				return $entity->getName();
-			} elseif (is_object($entity)) {
-				// Entity instance — get the class name at runtime
-				return get_class($entity);
-			} else {
-				// String class name — strip any leading backslash so all paths
-				// produce a consistent format before hitting the cache
-				return ltrim($entity, "\\");
-			}
-		}
 		
 		/**
 		 * Single pass over property annotations to extract all column-related metadata.
@@ -291,6 +214,7 @@
 		 * @param array<string, AnnotationCollection> $annotations
 		 * @param class-string<T> $annotationType
 		 * @return array<string, T>
+		 * @throws EntityResolutionException
 		 */
 		private function extractRelations(array $annotations, string $annotationType): array {
 			$relations = [];
@@ -304,7 +228,7 @@
 						 * expanding to the full namespace before they can be used elsewhere.
 						 */
 						$annotation->setTargetEntity(
-							$this->normalizeEntityClass($annotation->getTargetEntity())
+							$this->entityStore->normalizeEntityClass($annotation->getTargetEntity())
 						);
 						
 						// One relation annotation per property — the first match wins
