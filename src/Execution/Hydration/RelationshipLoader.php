@@ -321,7 +321,9 @@
 			$parentProperty = $resolvedTarget ?? $ownerPrimaryKey;
 			
 			if ($parentProperty === null) {
-				return;
+				throw new \RuntimeException(
+					"Cannot resolve parent property for InverseOf on {$entityClass}::{$property}: entity has no primary key."
+				);
 			}
 			
 			// Read the value of the referenced property from this entity instance
@@ -400,13 +402,6 @@
 						
 						// Resolve which property on the current entity the candidate's via FK points to
 						$parentProperty = $this->resolveInverseOfParentProperty($targetEntity, $relation, $objectClass);
-						
-						if ($parentProperty === null) {
-							throw new QuelException(
-								"Cannot determine referenced property for InverseOf on {$objectClass}::{$property}"
-							);
-						}
-						
 						$primaryKeyValue = $this->propertyHandler->get($entity, $parentProperty);
 						
 						// Create an Entity Collection
@@ -620,7 +615,7 @@
 		 * @throws EntityResolutionException
 		 * @throws \RuntimeException When via does not reference a valid back-pointing relation
 		 */
-		private function resolveInverseOfParentProperty(string $targetEntity, string $relation, string $ownerClass): ?string {
+		private function resolveInverseOfParentProperty(string $targetEntity, string $relation, string $ownerClass): string {
 			$dependentMetadata = $this->entityStore->getMetadata($targetEntity);
 			$viaRelation = $this->getRelationAnnotation($dependentMetadata, $relation);
 			
@@ -641,10 +636,19 @@
 				);
 			}
 			
-			// Resolve the referenced property on the owner; fall back to its primary key
+			// Resolve the referenced property on the owner; fall back to its primary key.
+			// Both being null means the target entity has no primary key — a configuration error.
 			$ownerPrimaryKey = $this->entityStore->getMetadata($ownerClass)->getPrimaryKey();
 			$resolvedTarget = $this->entityStore->resolveTargetProperty($viaRelation);
-			return $resolvedTarget ?? $ownerPrimaryKey;
+			$parentProperty = $resolvedTarget ?? $ownerPrimaryKey;
+			
+			if ($parentProperty === null) {
+				throw new \RuntimeException(
+					"Cannot resolve parent property for InverseOf on {$ownerClass}: owner entity '{$ownerClass}' has no primary key."
+				);
+			}
+			
+			return $parentProperty;
 		}
 		
 		/**
