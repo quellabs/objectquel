@@ -72,56 +72,6 @@
 		}
 		
 		/**
-		 * Extract body using regex
-		 * @param string $range
-		 * @return string
-		 */
-		private function extractRangeBody(string $range): string {
-			return preg_replace('/^range of \S+ /', '', $range) ?? $range;
-		}
-		
-		/**
-		 * Builds the range definition string for a dependent entity joined via a relation column.
-		 * @param string $alias The alias to use for the dependent entity range.
-		 * @param string $dependentEntityType The fully-qualified class name of the dependent entity.
-		 * @param string $entityType The main entity type (used to resolve the foreign/primary key).
-		 * @param string $property The property name on the dependent entity that holds the relation.
-		 * @param ManyToOne|OneToOne $relation The relation annotation/metadata object.
-		 * @return string
-		 * @throws EntityResolutionException
-		 */
-		private function buildRangeString(
-			string $alias,
-			string $dependentEntityType,
-			string $entityType,
-			string $property,
-			ManyToOne|OneToOne $relation
-		): string {
-			// Fetch entity metadata
-			$metadata = $this->entityStore->getMetadata($entityType);
-			
-			// The relation column is the foreign-key column on the *dependent* side.
-			// The annotation may declare it explicitly; if not, we fall back to the
-			// conventional "{propertyName}Id" naming (e.g. property "order" → "orderId").
-			$relationColumn = $relation->getRelationColumn() ?? "{$property}Id";
-			
-			// The foreign column is the referenced column on the *main* entity side —
-			// typically the primary key. Preference order:
-			//   1. Explicitly declared on the annotation (getForeignColumn).
-			//   2. The entity's primary key as reported by EntityStore.
-			//   3. Neither available → programming error; throw immediately rather than
-			//      silently producing a broken join clause.
-			$foreignColumn = $relation->getForeignColumn()
-				?? $metadata->getPrimaryKey()
-				?? throw new \RuntimeException("Entity '{$entityType}' has no primary key defined.");
-			
-			// Produces a clause like:
-			//   range of r0 is App\Entity\OrderLine via r0.orderId=main.id
-			// The "via" predicate is what the query executor uses to perform the join.
-			return "range of {$alias} is {$dependentEntityType} via {$alias}.{$relationColumn}=main.{$foreignColumn}";
-		}
-		
-		/**
 		 * Iterates a set of relation metadata objects, filters out ineligible entries,
 		 * and appends range definitions to $ranges for each qualifying relation.
 		 *
@@ -131,37 +81,23 @@
 		 *  - If $requireNoInversedBy is true, getInversedBy() must return null
 		 *    (used for OneToOne owned-side filtering).
 		 *
-		 * Duplicate detection: if the exact same range body has already been registered,
-		 * it is skipped. This guards against multiple dependencies resolving to identical
-		 * join clauses.
-		 *
-		 * @param string $entityType The main entity type.
+		 * @param string $entityType The main entity type being loaded.
 		 * @param string $dependentEntityType The entity type on the dependent side.
 		 * @param iterable<string, ManyToOne|OneToOne> $relations Keyed by property name, values are relation metadata.
-		 * @param array<string,string> $ranges Accumulator array (modified in place).
+		 * @param array<string, string> $ranges Accumulator array (modified in place).
 		 * @param int $rangeCounter Alias counter (modified in place).
 		 * @param bool $requireNoInversedBy When true, relations with a non-null inversedBy are skipped.
 		 * @return void
+		 * @throws EntityResolutionException
 		 */
 		private function addRanges(
-			string   $entityType,
-			string   $dependentEntityType,
+			string $entityType,
+			string $dependentEntityType,
 			iterable $relations,
-			array    &$ranges,
-			int      &$rangeCounter,
-			bool     $requireNoInversedBy = false
+			array &$ranges,
+			int &$rangeCounter,
+			bool $requireNoInversedBy = false
 		): void {
-			// Build a lookup of range "bodies" that are already registered.
-			// A body is the range string with its alias-specific prefix stripped, i.e.
-			// everything from "is <Type> via ..." onward. Two ranges with different
-			// aliases but identical bodies represent the same join and must not both
-			// be emitted — the query executor would treat them as duplicate joins.
-			$existingRangeBodies = [];
-			
-			foreach ($ranges as $r) {
-				$existingRangeBodies[$this->extractRangeBody($r)] = true;
-			}
-			
 			foreach ($relations as $property => $relation) {
 				// LAZY relations are intentionally excluded: they are resolved at
 				// property-access time by the ORM proxy, not via an eager join here.
@@ -183,38 +119,16 @@
 					continue;
 				}
 				
-				// Create alias
-				$alias = $this->createAlias($rangeCounter);
+				$alias = $this->createAlias($rangeCounter++);
 				
-				// Create range string
-				$rangeString = $this->buildRangeString($alias, $dependentEntityType, $entityType, $property, $relation);
-				
-				// Strip the alias token from the new range string so we can compare its
-				// body against the pre-built lookup. The alias itself is irrelevant for
-				// determining whether the join clause is a duplicate.
-				$rangeBody = $this->extractRangeBody($rangeString);
-				
-				// Skip if an identical join clause is already in $ranges. This can happen
-				// when two different dependent entities both declare a relation to $entityType
-				// through the same column pair.
-				if (isset($existingRangeBodies[$rangeBody])) {
-					continue;
-				}
-				
-				// Register the new range and keep the body lookup in sync so subsequent
-				// iterations within this call can also detect duplicates against it.
-				$ranges[$alias] = $rangeString;
-				$existingRangeBodies[$rangeBody] = true;
-				
-				// Advance the counter only when a range is actually added so that
-				// alias numbers remain gapless (r0, r1, r2, ...) regardless of how
-				// many relations were filtered out.
-				++$rangeCounter;
+				// Emit 'via alias.propertyName' — the relation property on the dependent
+				// entity is the authoritative join path; no FK column reconstruction needed.
+				$ranges[$alias] = "range of {$alias} is {$dependentEntityType} via {$alias}.{$property}";
 			}
 		}
 		
 		/**
-		 * Generates an array of range definitions for the main entity and its relationships.
+		 * Generates an array of range definitions for the main entity and its eager relations.
 		 *
 		 * The first entry is always 'main'. Subsequent entries are derived from OneToOne
 		 * (owned-side only) and ManyToOne relationships on each entity that declares a
@@ -228,14 +142,12 @@
 			// 'main' is always the first and anchor range — the entity being retrieved.
 			// All other ranges are joins relative to it.
 			$ranges = ['main' => "range of main is {$entityType}"];
+			$rangeCounter = 0;
 			
 			// getDependentEntities returns every entity type that declares a relationship
 			// pointing at $entityType. We inspect each one for eagerly-fetchable relations
 			// and add a range for each qualifying join.
-			$rangeCounter = 0;
-
 			foreach ($this->entityStore->getDependentEntities($entityType) as $dependentEntityType) {
-				// Fetch entity data
 				$metadata = $this->entityStore->getMetadata($dependentEntityType);
 				
 				// OneToOne: pass requireNoInversedBy=true so only the owning side
