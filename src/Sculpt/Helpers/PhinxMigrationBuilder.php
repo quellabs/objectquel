@@ -79,7 +79,7 @@
 		 * Generate a Phinx migration file from a set of schema changes.
 		 *
 		 * The file is written to $migrationsPath with the format:
-		 *   20250603145623_EntitySchemaMigration.php
+		 *   20250603145623_QuelSchemaMigration.php
 		 *
 		 * @param AllChanges $allChanges Table-keyed change descriptors (see class docblock)
 		 * @return array{success: bool, message: string, path?: string}
@@ -90,7 +90,7 @@
 			}
 			
 			$date = date('YmdHis');
-			$className = "EntitySchemaMigration{$date}";
+			$className = "QuelSchemaMigration{$date}";
 			$filename = $this->migrationsPath . '/' .$date . '_' . $className . '.php';
 			
 			// Create the migrations directory if it doesn't exist yet.

@@ -54,7 +54,15 @@
 		 * @return int Exit code (0 for success, 1 for failure)
 		 */
 		public function execute(ConfigurationManager $config): int {
-			$this->output->writeLn("Generating database migrations based on entity changes...");
+			// Show
+			$this->output->writeLn(" ██████╗ ██╗   ██╗███████╗██╗");
+			$this->output->writeLn("██╔═══██╗██║   ██║██╔════╝██║");
+			$this->output->writeLn("██║   ██║██║   ██║█████╗  ██║");
+			$this->output->writeLn("██║▄▄ ██║██║   ██║██╔══╝  ██║");
+			$this->output->writeLn("╚██████╔╝╚██████╔╝███████╗███████╗");
+			$this->output->writeLn(" ╚══▀▀═╝  ╚═════╝ ╚══════╝╚══════╝");
+			$this->output->writeLn("");
+			$this->output->writeLn("Generating migrations...");
 			
 			// Fetch the database adapter
 			$databaseAdapter = $this->provider->getDatabaseAdapter();
@@ -84,6 +92,7 @@
 				return 0;
 			}
 			
+			// Show the changes
 			$this->output->writeLn("\n Changes detected:");
 			
 			foreach ($allChanges as $tableName => $changes) {
@@ -129,7 +138,7 @@
 			}
 			
 			$path = $result['path'] ?? '';
-			$this->output->writeLn(" Success! Created: " . $path);
+			$this->output->writeLn("Success! Created file: " . $path);
 			return 0;
 		}
 		
