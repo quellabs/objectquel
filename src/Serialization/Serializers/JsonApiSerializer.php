@@ -145,9 +145,11 @@
 				$relationshipEntityName = $this->resolveProxyClass($targetEntity);
 				
 				// Resolve the FK property name: InverseOf uses via(), OneToOne uses inversedBy()
-				$fkProperty = $relationship instanceof InverseOf
-					? $relationship->getVia()
-					: $relationship->getInversedBy();
+				if ($relationship instanceof InverseOf) {
+					$fkProperty = $relationship->getRelation();
+				} else {
+					$fkProperty = $relationship->getInversedBy();
+				}
 				
 				// Query for all related entities using the FK property
 				$relationshipEntities = $this->entityManager->findBy(

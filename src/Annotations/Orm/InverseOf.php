@@ -50,7 +50,7 @@
 		 * Used by the hydrator to match joined rows to this collection.
 		 * @var string
 		 */
-		private string $via;
+		private string $relation;
 		
 		/**
 		 * InverseOf constructor.
@@ -59,7 +59,7 @@
 		 */
 		public function __construct(array $parameters) {
 			$targetEntity = $parameters['targetEntity'] ?? null;
-			$via = $parameters['via'] ?? null;
+			$relation = $parameters['relation'] ?? null;
 			
 			if (!is_string($targetEntity) || $targetEntity === '') {
 				throw new \InvalidArgumentException(
@@ -67,15 +67,15 @@
 				);
 			}
 			
-			if (!is_string($via) || $via === '') {
+			if (!is_string($relation) || $relation === '') {
 				throw new \InvalidArgumentException(
-					'InverseOf annotation requires a "via" parameter'
+					'InverseOf annotation requires a "relation" parameter'
 				);
 			}
 			
 			$this->parameters = $parameters;
 			$this->targetEntity = $targetEntity;
-			$this->via = $via;
+			$this->relation = $relation;
 		}
 		
 		/**
@@ -109,7 +109,7 @@
 		 * The hydrator uses this to match joined rows to this collection property.
 		 * @return string
 		 */
-		public function getVia(): string {
-			return $this->via;
+		public function getRelation(): string {
+			return $this->relation;
 		}
 	}

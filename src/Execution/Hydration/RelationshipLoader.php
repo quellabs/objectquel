@@ -282,7 +282,7 @@
 		 */
 		private function createAndSetScalarInverseOfProxy(object $entity, string $entityClass, string $property, InverseOf $dependency): void {
 			// The via property name on the dependent entity — the FK that points back to this entity
-			$via = $dependency->getVia();
+			$via = $dependency->getRelation();
 			$targetEntity = $this->entityStore->resolveProxyClass($dependency->getTargetEntity());
 			
 			// Look up the relation annotation on the dependent entity's via property so we can
@@ -369,7 +369,7 @@
 						$targetEntity = $this->entityStore->resolveProxyClass($dependency->getTargetEntity());
 						
 						// Check if InverseOf has via. If not error out
-						$via = $dependency->getVia();
+						$via = $dependency->getRelation();
 						
 						if ($via === '') {
 							throw new QuelException(
@@ -453,7 +453,7 @@
 			array $entities
 		): void {
 			// Fetch via
-			$via = $dependency->getVia();
+			$via = $dependency->getRelation();
 			
 			// If not given, skip the dependency
 			if ($via === '') {
@@ -531,7 +531,7 @@
 			InverseOf $dependency,
 			array $entities
 		): void {
-			$via = $dependency->getVia();
+			$via = $dependency->getRelation();
 			
 			if ($via === '') {
 				return;
@@ -672,7 +672,7 @@
 		/**
 		 * Returns true if the declared PHP type of $property on $objectClass implements CollectionInterface.
 		 * Used to determine whether an InverseOf annotation targets a collection or a scalar entity.
-		 * @param string $objectClass Fully qualified class name
+		 * @param class-string $objectClass Fully qualified class name
 		 * @param string $property Property name
 		 * @return bool
 		 */
