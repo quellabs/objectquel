@@ -282,15 +282,15 @@
 		 */
 		private function createAndSetScalarInverseOfProxy(object $entity, string $entityClass, string $property, InverseOf $dependency): void {
 			// The via property name on the dependent entity — the FK that points back to this entity
-			$via = $dependency->getRelation();
+			$relation = $dependency->getRelation();
 			$targetEntity = $this->entityStore->resolveProxyClass($dependency->getTargetEntity());
 			
 			// Look up the relation annotation on the dependent entity's via property so we can
 			// determine which property on *this* entity the FK references (usually the PK,
 			// but may be a unique non-PK column if inversedBy says otherwise)
 			$dependentMetadata = $this->entityStore->getMetadata($targetEntity);
-			$manyToOne = $dependentMetadata->getManyToOneDependencies()[$via] ?? null;
-			$oneToOne = $dependentMetadata->getOneToOneDependencies()[$via] ?? null;
+			$manyToOne = $dependentMetadata->getManyToOneDependencies()[$relation] ?? null;
+			$oneToOne = $dependentMetadata->getOneToOneDependencies()[$relation] ?? null;
 			$viaRelation = $manyToOne ?? $oneToOne;
 			
 			// Resolve the referenced property on this entity; fall back to primary key when
@@ -320,9 +320,9 @@
 			
 			$proxy = new $proxyClassName(
 				$this->entityManager,
-				function () use ($entityManager, $propertyHandler, $entity, $property, $targetEntity, $via, $parentKeyValue): void {
+				function () use ($entityManager, $propertyHandler, $entity, $property, $targetEntity, $relation, $parentKeyValue): void {
 					// findOneBy returns a fully hydrated entity registered in the UnitOfWork.
-					$result = $entityManager->findOneBy($targetEntity, [$via => $parentKeyValue]);
+					$result = $entityManager->findOneBy($targetEntity, [$relation => $parentKeyValue]);
 					
 					// Set it directly on the parent property — no proxy seeding needed.
 					$propertyHandler->set($entity, $property, $result);
@@ -369,22 +369,16 @@
 						$targetEntity = $this->entityStore->resolveProxyClass($dependency->getTargetEntity());
 						
 						// Check if InverseOf has via. If not error out
-						$via = $dependency->getRelation();
-						
-						if ($via === '') {
-							throw new QuelException(
-								"InverseOf on {$objectClass}::{$property} requires via"
-							);
-						}
+						$relation = $dependency->getRelation();
 						
 						// Do nothing if the data for this query was requested. There is simply no data,
 						// so there's no point in lazy loading this data. We keep the empty collection.
-						if ($this->wasEntityRequested($objectClass, $targetEntity, $via)) {
+						if ($this->wasEntityRequested($objectClass, $targetEntity, $relation)) {
 							continue;
 						}
 						
 						// Resolve which property on the current entity the candidate's via FK points to
-						$parentProperty = $this->resolveInverseOfParentProperty($targetEntity, $via, $objectClass);
+						$parentProperty = $this->resolveInverseOfParentProperty($targetEntity, $relation, $objectClass);
 						
 						if ($parentProperty === null) {
 							throw new QuelException(
@@ -396,7 +390,7 @@
 						
 						// Create an Entity Collection
 						$proxy = new EntityCollection(
-							$this->entityManager, $targetEntity, $via,
+							$this->entityManager, $targetEntity, $relation,
 							$primaryKeyValue
 						);
 						
@@ -453,12 +447,7 @@
 			array $entities
 		): void {
 			// Fetch via
-			$via = $dependency->getRelation();
-			
-			// If not given, skip the dependency
-			if ($via === '') {
-				return;
-			}
+			$relation = $dependency->getRelation();
 			
 			// Resolve the full class name of the related entity
 			$targetEntity = $this->entityStore->resolveProxyClass($dependency->getTargetEntity());
@@ -466,12 +455,12 @@
 			// Only handle relations where the related entity was explicitly
 			// joined in the query. If it wasn't requested, setupToManyRelations
 			// already set up an EntityCollection for lazy loading instead.
-			if (!$this->wasEntityRequested($objectClass, $targetEntity, $via)) {
+			if (!$this->wasEntityRequested($objectClass, $targetEntity, $relation)) {
 				return;
 			}
 			
 			// Resolve which property on the current entity the candidate's via FK points to
-			$parentProperty = $this->resolveInverseOfParentProperty($targetEntity, $via, $objectClass);
+			$parentProperty = $this->resolveInverseOfParentProperty($targetEntity, $relation, $objectClass);
 			
 			if ($parentProperty === null) {
 				return;
@@ -493,14 +482,14 @@
 				// annotated as a relation pointing back to this parent entity type.
 				// This prevents false matches in schemas where two unrelated entity
 				// types share the same FK property name and overlapping ID values.
-				if (!$this->candidateMapsToParent($candidate, $via, $objectClass)) {
+				if (!$this->candidateMapsToParent($candidate, $relation, $objectClass)) {
 					continue;
 				}
 				
 				// Compare the candidate's FK column value against the parent's referenced property value.
-				// $via is the relation property (e.g. "user"), but we need the underlying FK column
+				// $relation is the relation property (e.g. "user"), but we need the underlying FK column
 				// value (e.g. "userId") since the relation property holds an object, not a scalar.
-				if ($this->getCandidateFkValue($candidate, $via) !== $parentKeyValue) {
+				if ($this->getCandidateFkValue($candidate, $relation) !== $parentKeyValue) {
 					continue;
 				}
 				
@@ -523,6 +512,7 @@
 		 * @param InverseOf $dependency The relation annotation
 		 * @param array<int, object> $entities All hydrated entities from the result set
 		 * @throws EntityResolutionException
+		 * @throws QuelException
 		 */
 		private function populateScalarInverseOfRelation(
 			object $entity,
@@ -531,21 +521,19 @@
 			InverseOf $dependency,
 			array $entities
 		): void {
-			$via = $dependency->getRelation();
+			// Fetch the relation
+			$relation = $dependency->getRelation();
 			
-			if ($via === '') {
-				return;
-			}
-			
+			// Fetch the target entity and resolve to normal entity if it's a proxy
 			$targetEntity = $this->entityStore->resolveProxyClass($dependency->getTargetEntity());
 			
 			// Only handle if the related entity was explicitly joined in the query
-			if (!$this->wasEntityRequested($objectClass, $targetEntity, $via)) {
+			if (!$this->wasEntityRequested($objectClass, $targetEntity, $relation)) {
 				return;
 			}
 			
 			// Resolve which property on the current entity the candidate's via FK points to
-			$parentProperty = $this->resolveInverseOfParentProperty($targetEntity, $via, $objectClass);
+			$parentProperty = $this->resolveInverseOfParentProperty($targetEntity, $relation, $objectClass);
 			
 			if ($parentProperty === null) {
 				return;
@@ -560,11 +548,11 @@
 					continue;
 				}
 				
-				if (!$this->candidateMapsToParent($candidate, $via, $objectClass)) {
+				if (!$this->candidateMapsToParent($candidate, $relation, $objectClass)) {
 					continue;
 				}
 				
-				if ($this->getCandidateFkValue($candidate, $via) !== $parentKeyValue) {
+				if ($this->getCandidateFkValue($candidate, $relation) !== $parentKeyValue) {
 					continue;
 				}
 				
@@ -578,12 +566,12 @@
 		 * explicitly pointing back to $parentClass. Prevents false matches when two
 		 * unrelated entity types share the same FK property name and overlapping ID values.
 		 * @param object $candidate
-		 * @param string $via
+		 * @param string $relation
 		 * @param string $parentClass
 		 * @return bool
 		 * @throws EntityResolutionException
 		 */
-		private function candidateMapsToParent(object $candidate, string $via, string $parentClass): bool {
+		private function candidateMapsToParent(object $candidate, string $relation, string $parentClass): bool {
 			$candidateClass = $this->entityStore->resolveProxyClass($candidate);
 			$deps = $this->getRelationAnnotations($candidateClass);
 			
@@ -606,22 +594,22 @@
 		 * Looks up the ManyToOne or OneToOne annotation on the dependent entity's via property,
 		 * validates that it points back to the owner, and returns the referenced property name.
 		 * @param string $targetEntity Fully qualified dependent entity class name
-		 * @param string $via Property name on the dependent entity that holds the FK
+		 * @param string $relation Property name on the dependent entity that holds the FK
 		 * @param string $ownerClass Fully qualified owner entity class name
 		 * @return string|null The referenced property name on the owner, or null if unresolvable
 		 * @throws EntityResolutionException
 		 * @throws \RuntimeException When via does not reference a valid back-pointing relation
 		 */
-		private function resolveInverseOfParentProperty(string $targetEntity, string $via, string $ownerClass): ?string {
+		private function resolveInverseOfParentProperty(string $targetEntity, string $relation, string $ownerClass): ?string {
 			$dependentMetadata = $this->entityStore->getMetadata($targetEntity);
-			$manyToOne = $dependentMetadata->getManyToOneDependencies()[$via] ?? null;
-			$oneToOne = $dependentMetadata->getOneToOneDependencies()[$via] ?? null;
+			$manyToOne = $dependentMetadata->getManyToOneDependencies()[$relation] ?? null;
+			$oneToOne = $dependentMetadata->getOneToOneDependencies()[$relation] ?? null;
 			$viaRelation = $manyToOne ?? $oneToOne;
 			
 			// via must reference a ManyToOne or OneToOne on the dependent entity
 			if ($viaRelation === null) {
 				throw new \RuntimeException(
-					"InverseOf via='{$via}' on {$ownerClass} does not match any ManyToOne or OneToOne on {$targetEntity}."
+					"InverseOf via='{$relation}' on {$ownerClass} does not match any ManyToOne or OneToOne on {$targetEntity}."
 				);
 			}
 			
@@ -630,7 +618,7 @@
 			
 			if ($resolvedEntity !== $ownerClass) {
 				throw new \RuntimeException(
-					"InverseOf via='{$via}' on {$ownerClass} points to {$resolvedEntity}, not {$ownerClass}. " .
+					"InverseOf via='{$relation}' on {$ownerClass} points to {$resolvedEntity}, not {$ownerClass}. " .
 					"The via property must reference a relation that points back to the declaring entity."
 				);
 			}
@@ -646,11 +634,11 @@
 		 * The via property is a relation object (e.g. UserEntity), not a scalar, so we
 		 * read the underlying FK column (e.g. userId) instead.
 		 * @param object $candidate
-		 * @param string $via The relation property name on the candidate
+		 * @param string $relation The relation property name on the candidate
 		 * @return mixed The scalar FK value
 		 * @throws EntityResolutionException
 		 */
-		private function getCandidateFkValue(object $candidate, string $via): mixed {
+		private function getCandidateFkValue(object $candidate, string $relation): mixed {
 			// If the candidate is a proxy, convert it to regular class
 			$candidateClass = $this->entityStore->resolveProxyClass($candidate);
 			
@@ -658,12 +646,12 @@
 			$candidateMeta = $this->entityStore->getMetadata($candidateClass);
 			
 			// Fetch annotations
-			$manyToOne = $candidateMeta->getManyToOneDependencies()[$via] ?? null;
-			$oneToOne = $candidateMeta->getOneToOneDependencies()[$via] ?? null;
+			$manyToOne = $candidateMeta->getManyToOneDependencies()[$relation] ?? null;
+			$oneToOne = $candidateMeta->getOneToOneDependencies()[$relation] ?? null;
 			$viaAnnotation = $manyToOne ?? $oneToOne;
 			
 			// Fetch the relation column name
-			$fkProperty = $viaAnnotation?->getLocalColumn() ?? $via . 'Id';
+			$fkProperty = $viaAnnotation?->getLocalColumn() ?? $relation . 'Id';
 			
 			// Return the value of the relation column
 			return $this->propertyHandler->get($candidate, $fkProperty);
