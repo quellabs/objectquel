@@ -139,7 +139,7 @@
 		 * @param string|object $entity Fully qualified class name, short name, object, or ReflectionClass
 		 * @return string Normalized, fully qualified class name
 		 */
-		public function resolveProxyClass(string|object $entity): string {
+		public function normalizeEntityClass(string|object $entity): string {
 			$className = $this->extractClassName($entity);
 			
 			// Return early if we've resolved this name before
