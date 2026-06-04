@@ -66,8 +66,7 @@
 	 *     targetEntity: string,
 	 *     via?: string|null,
 	 *     inversedBy?: string|null,
-	 *     relationColumn?: string|null,
-	 *     foreignColumn?: string
+	 *     relationColumn?: string|null
 	 * }
 	 *
 	 * @phpstan-type PropertyDefinition BaseProperty|EnumProperty|RelationProperty

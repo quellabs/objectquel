@@ -629,7 +629,7 @@
 			// via must reference a ManyToOne or OneToOne on the dependent entity
 			if ($viaRelation === null) {
 				throw new \RuntimeException(
-					"InverseOf via='{$relation}' on {$ownerClass} does not match any ManyToOne or OneToOne on {$targetEntity}."
+					"InverseOf relation='{$relation}' on {$ownerClass} does not match any ManyToOne or OneToOne on {$targetEntity}."
 				);
 			}
 			

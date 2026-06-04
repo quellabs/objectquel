@@ -17,7 +17,6 @@
 		private string $targetEntity;
 		private ?string $referencedColumn;
 		private ?string $localColumn;
-		private ?string $foreignColumn;
 		private string $fetch;
 		
 		/**
@@ -29,7 +28,6 @@
 			$targetEntity = $parameters['targetEntity'] ?? null;
 			$referencedColumn = $parameters['referencedColumn'] ?? null;
 			$localColumn = $parameters['localColumn'] ?? null;
-			$foreignColumn = $parameters['foreignColumn'] ?? null;
 			$fetch = $parameters['fetch'] ?? 'EAGER';
 			
 			if (!is_string($targetEntity)) {
@@ -44,10 +42,6 @@
 				throw new \InvalidArgumentException("ManyToOne: 'localColumn' must be a string or null");
 			}
 			
-			if ($foreignColumn !== null && !is_string($foreignColumn)) {
-				throw new \InvalidArgumentException("ManyToOne: 'foreignColumn' must be a string or null");
-			}
-			
 			if (!is_string($fetch)) {
 				throw new \InvalidArgumentException("ManyToOne: 'fetch' must be a string");
 			}
@@ -56,7 +50,6 @@
 			$this->targetEntity = $targetEntity;
 			$this->referencedColumn = $referencedColumn;
 			$this->localColumn = $localColumn;
-			$this->foreignColumn = $foreignColumn;
 			$this->fetch = strtoupper($fetch);
 		}
 		
@@ -102,14 +95,6 @@
 		 */
 		public function getLocalColumn(): ?string {
 			return $this->localColumn;
-		}
-		
-		/**
-		 * Retrieve the name of the relationship column in the target entity.
-		 * @return string|null The name of the join column or null if it is not set.
-		 */
-		public function getForeignColumn(): ?string {
-			return $this->foreignColumn;
 		}
 		
 		/**

@@ -477,8 +477,8 @@
 			$options = [];
 			
 			// via identifies the property on the owning entity that points to this entity
-			if (!empty($property['via'])) {
-				$options[] = "via=\"{$property['via']}\"";
+			if (!empty($property['relation'])) {
+				$options[] = "relation=\"{$property['relation']}\"";
 			}
 			
 			// inversedBy identifies the owning side property in a bidirectional relationship
@@ -492,7 +492,7 @@
 			}
 			
 			// The owning side is the one without via — it holds the foreign key column
-			$isOwningSide = empty($property['via']);
+			$isOwningSide = empty($property['relation']);
 			
 			if ($isOwningSide) {
 				if ($property['nullable'] ?? false) {
@@ -500,13 +500,8 @@
 				}
 				
 				// The column in the current table that stores the foreign key value
-				if (!empty($property['relationColumn'])) {
-					$options[] = "relationColumn=\"{$property['relationColumn']}\"";
-				}
-				
-				// Only emit foreignColumn when it deviates from the default 'id'
-				if (isset($property['foreignColumn']) && $property['foreignColumn'] !== 'id') {
-					$options[] = "foreignColumn=\"{$property['foreignColumn']}\"";
+				if (!empty($property['localColumn'])) {
+					$options[] = "localColumn=\"{$property['localColumn']}\"";
 				}
 			}
 			

@@ -221,7 +221,6 @@
 		 * @param string|null $via Property name on the owning side that points to this entity (inverse side only)
 		 * @param string|null $inversedBy Property name on the inverse side (owning side only)
 		 * @param string|null $relationColumn FK column name on this entity's table, or null for inverse sides
-		 * @param string $foreignColumn Referenced column name on the target entity's table
 		 * @param bool $nullable Whether the relationship allows null
 		 * @return RelationProperty
 		 */
@@ -233,7 +232,6 @@
 			?string $via,
 			?string $inversedBy,
 			?string $relationColumn,
-			string $foreignColumn,
 			bool $nullable
 		): array {
 			return [
@@ -244,7 +242,6 @@
 				"via"              => $via,
 				"inversedBy"       => $inversedBy,
 				"relationColumn"   => $relationColumn,
-				"foreignColumn"    => $foreignColumn,
 				"nullable"         => $nullable,
 				"readonly"         => false
 			];
@@ -313,7 +310,6 @@
 					$mappingConfig['via'],
 					$mappingConfig['inversedBy'],
 					$relationColumn,
-					$targetInfo['foreignColumn'],
 					$nullable
 				)
 			];
@@ -332,8 +328,7 @@
 					$entityName,
 					$mappingConfig['targetPropertyName'],
 					$mappingConfig['targetRelationType'],
-					$propertyName,
-					$targetInfo['foreignColumn']
+					$propertyName
 				);
 			}
 			
@@ -468,7 +463,6 @@
 		 * @param string $propertyName Name of the property to create
 		 * @param OrmRelationshipType $relationshipType Type of relationship
 		 * @param string|null $inversedBy Property name for the inverse side (if bidirectional)
-		 * @param string $foreignColumn Database column name being referenced
 		 * @throws EntityResolutionException
 		 */
 		private function createRelationshipInTargetEntity(
@@ -476,8 +470,7 @@
 			string $currentEntity,
 			string $propertyName,
 			string $relationshipType,
-			?string $inversedBy,
-			string $foreignColumn
+			?string $inversedBy
 		): void {
 			if (!$this->getEntityModifier()->entityExists($targetEntity . "Entity")) {
 				$this->output->warning(
@@ -505,7 +498,6 @@
 					$via,
 					null,  // Inverse side doesn't have inversedBy
 					$isOwningSide ? $propertyName . "Id" : null,
-					$foreignColumn,
 					true
 				)
 			];
@@ -674,8 +666,7 @@
 		 * @param string[] $availableEntities List of available entity names
 		 * @return array{
 		 *     targetEntity: string,
-		 *     referencedField: string,
-		 *     foreignColumn: string
+		 *     referencedField: string
 		 * }
 		 * @throws EntityResolutionException
 		 */
@@ -686,8 +677,7 @@
 			if (!in_array($targetEntity, $availableEntities)) {
 				return [
 					'targetEntity'    => $targetEntity,
-					'referencedField' => 'id',
-					'foreignColumn'   => 'id'
+					'referencedField' => 'id'
 				];
 			}
 			
@@ -695,13 +685,9 @@
 			$primaryKeys = $this->getEntityPrimaryKeys($targetEntity);
 			$primaryKeyField = $primaryKeys[0] ?? 'id';
 			
-			$fullEntityName = $this->configuration->getEntityNameSpace() . '\\' . $targetEntity . 'Entity';
-			$metadata = $this->getEntityStore()->getMetadata($fullEntityName);
-			
 			return [
 				'targetEntity'    => $targetEntity,
-				'referencedField' => $primaryKeyField,
-				'foreignColumn'   => $metadata->columnMap[$primaryKeyField] ?? $primaryKeyField
+				'referencedField' => $primaryKeyField
 			];
 		}
 		
