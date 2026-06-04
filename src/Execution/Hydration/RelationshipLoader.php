@@ -618,7 +618,7 @@
 		 * @param string $targetEntity Fully qualified dependent entity class name
 		 * @param string $relation Property name on the dependent entity that holds the FK
 		 * @param string $ownerClass Fully qualified owner entity class name
-		 * @return string|null The referenced property name on the owner, or null if unresolvable
+		 * @return string The referenced property name on the owner
 		 * @throws EntityResolutionException
 		 * @throws \RuntimeException When via does not reference a valid back-pointing relation
 		 */
