@@ -93,7 +93,14 @@
 			
 			// Determine the name and property of the target entity based on the dependency.
 			$targetEntityName = $dependency->getTargetEntity();
-			$inversedPropertyName = $this->entityStore->resolveTargetProperty($dependency) ?? '';
+			$inversedPropertyName = $this->entityStore->resolveTargetProperty($dependency);
+			
+			if ($inversedPropertyName === null) {
+				throw new \LogicException(
+					"Cannot resolve target property for '{$property}': target entity '{$targetEntityName}' " .
+					"has no primary key. Ensure the entity is correctly annotated."
+				);
+			}
 			
 			// Add the namespace to the target entity name and find the related entity.
 			$targetEntity = $this->entityStore->normalizeEntityClass($targetEntityName);
@@ -231,20 +238,22 @@
 				return false;
 			}
 			
-			foreach ($this->retrieve->getValues() as $value) {
-				// Fetch the expression (value of AstAlias)
-				$expression = $value->getExpression();
-				
-				// Skip non-entity expressions (scalars, dot-access, subqueries)
-				if (!($expression instanceof AstIdentifier) ||
-					!($expression->getRange() instanceof AstRangeDatabase) ||
-					$expression->hasNext()) {
+			// Check whether $targetEntity appears in the projection AND was joined
+			// via the specific $joinProperty on $currentEntity. Checking only the
+			// entity name would accept a join via a different property (e.g. "editor"
+			// when we are looking for "author") as a false positive.
+			foreach ($this->retrieve->getRanges() as $range) {
+				if (!($range instanceof AstRangeDatabase)) {
 					continue;
 				}
 				
-				// If the target entity appears in the projection, it was explicitly
-				// fetched as part of this query — no lazy loading needed
-				if ($expression->getEntityName() === $targetEntity) {
+				// Range must resolve to the target entity
+				if ($this->entityStore->normalizeEntityClass($range->getEntityName()) !== $targetEntity) {
+					continue;
+				}
+				
+				// The join condition must reference $joinProperty on $currentEntity
+				if ($range->hasJoinProperty($currentEntity, $joinProperty)) {
 					return true;
 				}
 			}
@@ -257,6 +266,7 @@
 		 * resolves directly from the UnitOfWork where possible, otherwise creates a proxy.
 		 * @param array<int, object> $entities
 		 * @throws EntityResolutionException
+		 * @throws HydrationException
 		 */
 		private function setupToOneRelations(array $entities): void {
 			foreach ($entities as $entity) {
@@ -264,9 +274,14 @@
 				
 				foreach ($this->getRelationAnnotations($entityClass) as $property => $dependencies) {
 					foreach ($dependencies as $dependency) {
+						// InverseOf needs a scalar inverse proxy to load the entity
 						if ($dependency instanceof InverseOf && !$this->isCollectionProperty($entityClass, $property)) {
 							$this->createAndSetScalarInverseOfProxy($entity, $entityClass, $property, $dependency);
-						} elseif ($dependency instanceof OneToOne || $dependency instanceof ManyToOne) {
+							continue;
+						}
+						
+						// Other dependencies load by primary key
+						if ($dependency instanceof OneToOne || $dependency instanceof ManyToOne) {
 							$this->processEntityDependency($entity, $property, $dependency);
 							
 							if ($this->propertyHandler->get($entity, $property) === null) {
@@ -367,7 +382,7 @@
 						$propertyValue = $this->propertyHandler->get($entity, $property);
 						
 						// Only process properties that currently hold an empty collection
-						if (!($propertyValue instanceof Collection) || !$propertyValue->isEmpty()) {
+						if (!($propertyValue instanceof CollectionInterface) || !$propertyValue->isEmpty()) {
 							continue;
 						}
 						
@@ -467,12 +482,6 @@
 			
 			// Resolve which property on the current entity the candidate's via FK points to
 			$parentProperty = $this->resolveInverseOfParentProperty($targetEntity, $relation, $objectClass);
-			
-			if ($parentProperty === null) {
-				return;
-			}
-			
-			// Read the referenced property value from this entity instance
 			$parentKeyValue = $this->propertyHandler->get($entity, $parentProperty);
 			$collection = $this->propertyHandler->get($entity, $property);
 			
@@ -540,12 +549,6 @@
 			
 			// Resolve which property on the current entity the candidate's via FK points to
 			$parentProperty = $this->resolveInverseOfParentProperty($targetEntity, $relation, $objectClass);
-			
-			if ($parentProperty === null) {
-				return;
-			}
-			
-			// Read the referenced property value from this entity instance
 			$parentKeyValue = $this->propertyHandler->get($entity, $parentProperty);
 			
 			// Find the first matching candidate and set it directly on the property
