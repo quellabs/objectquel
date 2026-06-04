@@ -316,25 +316,19 @@
 			
 			// Capture references for the initializer closure
 			$entityManager = $this->entityManager;
-			$entityStore = $this->entityStore;
 			$propertyHandler = $this->propertyHandler;
 			
 			$proxy = new $proxyClassName(
 				$this->entityManager,
-				function () use ($entityManager, $entityStore, $propertyHandler, $targetEntity, $via, $parentKeyValue): void {
-					// Resolve the FK to a concrete entity via findOneBy, then seed the proxy's
-					// PK and let find() hydrate this proxy instance through the UnitOfWork
+				function () use ($entityManager, $propertyHandler, $entity, $property, $targetEntity, $via, $parentKeyValue): void {
+					// findOneBy returns a fully hydrated entity registered in the UnitOfWork.
+					// Set it directly on the parent property — no proxy seeding needed.
 					$result = $entityManager->findOneBy($targetEntity, [$via => $parentKeyValue]);
-					
-					if ($result !== null) {
-						$pk = $entityStore->getMetadata($targetEntity)->getPrimaryKey();
-						$pkValue = $propertyHandler->get($result, $pk);
-						$propertyHandler->set($this, $pk, $pkValue);
-						$entityManager->find($targetEntity, $pkValue);
-					}
+					$propertyHandler->set($entity, $property, $result);
 				}
 			);
 			
+			// Set proxy on the entity
 			$this->propertyHandler->set($entity, $property, $proxy);
 		}
 		
