@@ -41,7 +41,7 @@
 	 *
 	 * The ORM relationship types supported by ObjectQuel.
 	 *
-	 * @phpstan-type OrmRelationshipType 'OneToOne'|'OneToMany'|'ManyToOne'
+	 * @phpstan-type OrmRelationshipType 'OneToOne'|'InverseOf'|'ManyToOne'
 	 *
 	 * Return type for relationship mapping configuration methods.
 	 * The extended shape is returned when a reciprocal property should also be

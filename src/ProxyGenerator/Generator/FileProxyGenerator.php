@@ -3,6 +3,7 @@
 	namespace Quellabs\ObjectQuel\ProxyGenerator\Generator;
 	
 	use Quellabs\ObjectQuel\EntityStore;
+	use Quellabs\ObjectQuel\Exception\EntityResolutionException;
 	
 	/**
 	 * Generates and maintains proxy files on disk.
@@ -57,6 +58,7 @@
 		 * Returns the filesystem path of the proxy file for the given entity.
 		 * @param string $targetEntity Fully-qualified entity class name
 		 * @return string Absolute path to the proxy file
+		 * @throws EntityResolutionException
 		 */
 		public function getProxyFilePath(string $targetEntity): string {
 			$normalizedEntity = $this->entityStore->resolveProxyClass($targetEntity);
@@ -92,6 +94,7 @@
 		 * Scans all entity paths, generates or refreshes proxy files for any entity
 		 * whose proxy is missing or older than the source file.
 		 * @return void
+		 * @throws EntityResolutionException
 		 */
 		private function initializeProxies(): void {
 			foreach ($this->servicesPaths as $servicesPath) {

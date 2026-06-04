@@ -71,6 +71,17 @@
 		}
 		
 		/**
+		 * Returns the declared PHP type of a property, or null if untyped or not found.
+		 * @param object|class-string $objectOrClass
+		 * @param string $propertyName
+		 * @return \ReflectionType|null
+		 */
+		public function getType(object|string $objectOrClass, string $propertyName): ?\ReflectionType {
+			$property = $this->getCorrectPropertyClass($objectOrClass, $propertyName);
+			return $property?->getType();
+		}
+		
+		/**
 		 * Sets a property value
 		 * @param object $object
 		 * @param string $propertyName
@@ -86,7 +97,7 @@
 				return false;
 			}
 		}
-
+		
 		/**
 		 * @param object|class-string $class
 		 * @return class-string

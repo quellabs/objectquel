@@ -191,8 +191,14 @@
 				require_once $generator->getProxyFilePath($targetEntityName);
 			}
 			
-			// Instantiate the proxy
-			$proxy = new $proxyClassName($this->entityManager);
+			// Build the PK-based initializer: seeds this proxy's PK then lets find() hydrate it
+			$entityManager = $this->entityManager;
+			$initializer = function() use ($entityManager, $targetEntityName, $relationColumnValue): void {
+				$entityManager->find($targetEntityName, $relationColumnValue);
+			};
+			
+			// Instantiate the proxy with the explicit initializer
+			$proxy = new $proxyClassName($this->entityManager, $initializer);
 			
 			// Set the primary key on the proxy using the target entity's primary key property name
 			$metadata = $this->entityStore->getMetadata($targetEntityName);
@@ -254,8 +260,70 @@
 				foreach ($this->getRelationAnnotations($entityClass) as $property => $dependencies) {
 					// Iterate through each dependency of the property
 					foreach ($dependencies as $dependency) {
-						// Check if the dependency is a OneToOne or ManyToOne relationship
-						if (!($dependency instanceof OneToOne) && !($dependency instanceof ManyToOne)) {
+						// Handle ManyToOne and OneToOne directly; also handle scalar InverseOf
+						// (non-owning OneToOne) which needs the same proxy/resolve treatment
+						$isScalarInverseOf = $dependency instanceof InverseOf
+							&& !$this->isCollectionProperty($entityClass, $property);
+
+						// Must be any of the gives
+						if (!($dependency instanceof OneToOne) && !($dependency instanceof ManyToOne) && !$isScalarInverseOf) {
+							continue;
+						}
+						
+						// Scalar InverseOf lazy loading: the FK lives on the dependent entity,
+						// so we can't seed the proxy by PK directly. Instead we inject a custom
+						// initializer that resolves the FK to a PK via findOneBy, then lets the
+						// normal find() hydrate the proxy instance.
+						if ($isScalarInverseOf) {
+							/** @var InverseOf $dependency */
+							$via = $dependency->getVia();
+							$targetEntity = $this->entityStore->resolveProxyClass($dependency->getTargetEntity());
+							
+							// Resolve which property on this entity the via FK points to
+							$dependentMetadata = $this->entityStore->getMetadata($targetEntity);
+							$viaRelation = $dependentMetadata->getManyToOneDependencies()[$via]
+								?? $dependentMetadata->getOneToOneDependencies()[$via]
+								?? null;
+							
+							$parentProperty = $viaRelation !== null
+								? ($this->entityStore->resolveTargetProperty($viaRelation) ?? $this->entityStore->getMetadata($entityClass)->getPrimaryKey())
+								: $this->entityStore->getMetadata($entityClass)->getPrimaryKey();
+							
+							if ($parentProperty === null) {
+								continue;
+							}
+							
+							$parentKeyValue = $this->propertyHandler->get($entity, $parentProperty);
+							
+							// Generate the proxy class and load its file if needed
+							$generator = $this->entityStore->getProxyGenerator();
+							$proxyClassName = $generator->getProxyClass($targetEntity);
+							
+							if (!class_exists($proxyClassName, false)) {
+								require_once $generator->getProxyFilePath($targetEntity);
+							}
+							
+							// Capture values needed by the initializer closure
+							$entityManager = $this->entityManager;
+							$entityStore = $this->entityStore;
+							$propertyHandler = $this->propertyHandler;
+							
+							$proxy = new $proxyClassName(
+								$this->entityManager,
+								function() use ($entityManager, $entityStore, $propertyHandler, $targetEntity, $via, $parentKeyValue): void {
+									// Resolve FK to PK via findOneBy, then hydrate the proxy via find()
+									$result = $entityManager->findOneBy($targetEntity, [$via => $parentKeyValue]);
+									
+									if ($result !== null) {
+										$pk = $entityStore->getMetadata($targetEntity)->getPrimaryKey();
+										$pkValue = $propertyHandler->get($result, $pk);
+										$propertyHandler->set($this, $pk, $pkValue);
+										$entityManager->find($targetEntity, $pkValue);
+									}
+								}
+							);
+							
+							$this->propertyHandler->set($entity, $property, $proxy);
 							continue;
 						}
 						
@@ -307,18 +375,6 @@
 						// Complete short entity names to their full namespace form
 						$targetEntity = $this->entityStore->resolveProxyClass($dependency->getTargetEntity());
 						
-						// Fetch metadata for this entity
-						$metadata = $this->entityStore->getMetadata($targetEntity);
-						
-						// Fetch the relation column. If absent use the primary key
-						$relationColumn = $dependency->getRelationColumn() ?? $metadata->getPrimaryKey();
-						
-						if ($relationColumn === null) {
-							throw new QuelException(
-								"Cannot determine relation column for InverseOf on {$objectClass}::{$property}"
-							);
-						}
-						
 						// Check if InverseOf has via. If not error out
 						$via = $dependency->getVia();
 						
@@ -334,13 +390,28 @@
 							continue;
 						}
 						
-						// Fetch relation column value
-						$primaryKeyValue = $this->propertyHandler->get($entity, $relationColumn);
+						// Resolve which property on the current entity the candidate's via FK points to
+						$dependentMetadata = $this->entityStore->getMetadata($targetEntity);
+						$viaRelation = $dependentMetadata->getManyToOneDependencies()[$via]
+							?? $dependentMetadata->getOneToOneDependencies()[$via]
+							?? null;
+						
+						$parentProperty = $viaRelation !== null
+							? ($this->entityStore->resolveTargetProperty($viaRelation) ?? $this->entityStore->getMetadata($objectClass)->getPrimaryKey())
+							: $this->entityStore->getMetadata($objectClass)->getPrimaryKey();
+						
+						if ($parentProperty === null) {
+							throw new QuelException(
+								"Cannot determine referenced property for InverseOf on {$objectClass}::{$property}"
+							);
+						}
+						
+						$primaryKeyValue = $this->propertyHandler->get($entity, $parentProperty);
 						
 						// Create an Entity Collection
 						$proxy = new EntityCollection(
 							$this->entityManager, $targetEntity, $via,
-							$primaryKeyValue, $dependency->getOrderBy()
+							$primaryKeyValue
 						);
 						
 						$this->propertyHandler->set($entity, $property, $proxy);
@@ -368,7 +439,11 @@
 						continue;
 					}
 					
-					$this->populateInverseOfRelation($entity, $objectClass, $property, $dependency, $entities);
+					if ($this->isCollectionProperty($objectClass, $property)) {
+						$this->populateInverseOfRelation($entity, $objectClass, $property, $dependency, $entities);
+					} else {
+						$this->populateScalarInverseOfRelation($entity, $objectClass, $property, $dependency, $entities);
+					}
 				}
 			}
 		}
@@ -409,18 +484,24 @@
 				return;
 			}
 			
-			// Determine which property on this entity holds its primary key value.
-			// The InverseOf annotation may specify a relationColumn explicitly;
-			// if not, fall back to the entity's primary key.
-			$metadata = $this->entityStore->getMetadata($targetEntity);
-			$relationColumn = $dependency->getRelationColumn() ?? $metadata->getPrimaryKey();
+			// Resolve which property on the current entity the candidate's via FK points to.
+			// Normally this is the primary key, but it may be a unique non-PK column if the
+			// ManyToOne/OneToOne on the dependent side declares inversedBy pointing elsewhere.
+			$dependentMetadata = $this->entityStore->getMetadata($targetEntity);
+			$viaRelation = $dependentMetadata->getManyToOneDependencies()[$via]
+				?? $dependentMetadata->getOneToOneDependencies()[$via]
+				?? null;
 			
-			if ($relationColumn === null) {
+			$parentProperty = $viaRelation !== null
+				? ($this->entityStore->resolveTargetProperty($viaRelation) ?? $this->entityStore->getMetadata($objectClass)->getPrimaryKey())
+				: $this->entityStore->getMetadata($objectClass)->getPrimaryKey();
+			
+			if ($parentProperty === null) {
 				return;
 			}
 			
-			// Read the actual primary key value from this entity instance
-			$parentKeyValue = $this->propertyHandler->get($entity, $relationColumn);
+			// Read the referenced property value from this entity instance
+			$parentKeyValue = $this->propertyHandler->get($entity, $parentProperty);
 			$collection = $this->propertyHandler->get($entity, $property);
 			
 			// Scan all hydrated entities in the result for candidates that
@@ -454,6 +535,76 @@
 			}
 		}
 		
+		
+		/**
+		 * Populates a scalar (single entity) InverseOf property from the hydrated entity set.
+		 * Used for non-owning OneToOne style relations where the property holds a single entity
+		 * rather than a collection.
+		 * @param object $entity The parent entity
+		 * @param string $objectClass The resolved class name of the parent entity
+		 * @param string $property The scalar property name
+		 * @param InverseOf $dependency The relation annotation
+		 * @param array<int, object> $entities All hydrated entities from the result set
+		 * @throws EntityResolutionException
+		 */
+		private function populateScalarInverseOfRelation(
+			object $entity,
+			string $objectClass,
+			string $property,
+			InverseOf $dependency,
+			array $entities
+		): void {
+			$via = $dependency->getVia();
+			
+			if ($via === null || $via === '') {
+				return;
+			}
+			
+			$targetEntity = $this->entityStore->resolveProxyClass($dependency->getTargetEntity());
+			
+			// Only handle if the related entity was explicitly joined in the query
+			if (!$this->wasEntityRequested($objectClass, $targetEntity, $via)) {
+				return;
+			}
+			
+			// Resolve which property on the current entity the candidate's via FK points to.
+			// Normally this is the primary key, but it may be a unique non-PK column if the
+			// ManyToOne/OneToOne on the dependent side declares inversedBy pointing elsewhere.
+			$dependentMetadata = $this->entityStore->getMetadata($targetEntity);
+			$viaRelation = $dependentMetadata->getManyToOneDependencies()[$via]
+				?? $dependentMetadata->getOneToOneDependencies()[$via]
+				?? null;
+			
+			$parentProperty = $viaRelation !== null
+				? ($this->entityStore->resolveTargetProperty($viaRelation) ?? $this->entityStore->getMetadata($objectClass)->getPrimaryKey())
+				: $this->entityStore->getMetadata($objectClass)->getPrimaryKey();
+			
+			if ($parentProperty === null) {
+				return;
+			}
+			
+			// Read the referenced property value from this entity instance
+			$parentKeyValue = $this->propertyHandler->get($entity, $parentProperty);
+			
+			// Find the first matching candidate and set it directly on the property
+			foreach ($entities as $candidate) {
+				if (!($candidate instanceof $targetEntity)) {
+					continue;
+				}
+				
+				if (!$this->candidateMapsToParent($candidate, $via, $objectClass)) {
+					continue;
+				}
+				
+				if ($this->propertyHandler->get($candidate, $via) !== $parentKeyValue) {
+					continue;
+				}
+				
+				$this->propertyHandler->set($entity, $property, $candidate);
+				return;
+			}
+		}
+		
 		/**
 		 * Returns true if the candidate's via property is annotated as a relation
 		 * explicitly pointing back to $parentClass. Prevents false matches when two
@@ -482,6 +633,28 @@
 			return false;
 		}
 		
+		/**
+		 * Returns true if the declared PHP type of $property on $objectClass implements CollectionInterface.
+		 * Used to determine whether an InverseOf annotation targets a collection or a scalar entity.
+		 * @param string $objectClass Fully qualified class name
+		 * @param string $property Property name
+		 * @return bool
+		 */
+		private function isCollectionProperty(string $objectClass, string $property): bool {
+			// Fetch property type
+			$type = $this->propertyHandler->getType($objectClass, $property);
+			
+			// Has to be a named type
+			if (!$type instanceof \ReflectionNamedType) {
+				return false;
+			}
+			
+			// Fetch the type name
+			$typeName = $type->getName();
+			
+			// Treat array and any CollectionInterface implementation as a collection
+			return $typeName === 'array' || is_a($typeName, CollectionInterface::class, true);
+		}
 		
 		/**
 		 * Internal helper function for retrieving properties with a specific annotation.

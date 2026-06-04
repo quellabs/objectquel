@@ -19,7 +19,7 @@
 	 * CLI command for creating or updating entity classes with properties and relationships.
 	 *
 	 * Supports standard data types (string, integer, decimal, etc.) and ORM relationships
-	 * (OneToOne, OneToMany, ManyToOne) with automatic foreign key generation.
+	 * (OneToOne, InverseOf, ManyToOne) with automatic foreign key generation.
 	 *
 	 * @phpstan-import-type PhinxColumnType from SculptTypes
 	 * @phpstan-import-type BaseProperty from SculptTypes
@@ -74,7 +74,7 @@
 		 */
 		public function getHelp(): string {
 			return "Creates or updates an entity class with standard properties and ORM relationship mappings.\n" .
-				"Supported relationship types: OneToOne, OneToMany, ManyToOne.";
+				"Supported relationship types: OneToOne, InverseOf, ManyToOne.";
 		}
 		
 		/**
@@ -218,7 +218,7 @@
 		 * @param string $phpType PHP type for the property (e.g. "OrderEntity" or "CollectionInterface")
 		 * @param OrmRelationshipType $relationshipType ORM relationship type
 		 * @param string $targetEntity Name of the related entity (without "Entity" suffix)
-		 * @param string|null $mappedBy Property name on the owning side (inverse side only)
+		 * @param string|null $via Property name on the owning side that points to this entity (inverse side only)
 		 * @param string|null $inversedBy Property name on the inverse side (owning side only)
 		 * @param string|null $relationColumn FK column name on this entity's table, or null for inverse sides
 		 * @param string $foreignColumn Referenced column name on the target entity's table
@@ -230,7 +230,7 @@
 			string  $phpType,
 			string  $relationshipType,
 			string  $targetEntity,
-			?string $mappedBy,
+			?string $via,
 			?string $inversedBy,
 			?string $relationColumn,
 			string  $foreignColumn,
@@ -241,7 +241,7 @@
 				"type"             => $phpType,
 				"relationshipType" => $relationshipType,
 				"targetEntity"     => $targetEntity,
-				"mappedBy"         => $mappedBy,
+				"via"              => $via,
 				"inversedBy"       => $inversedBy,
 				"relationColumn"   => $relationColumn,
 				"foreignColumn"    => $foreignColumn,
@@ -284,7 +284,7 @@
 		 */
 		private function collectRelationshipProperties(string $propertyName, array $availableEntities, string $entityName): array {
 			/** @var OrmRelationshipType $relationshipType */
-			$relationshipType = $this->input->choice("\nRelationship type", ['OneToOne', 'OneToMany', 'ManyToOne']);
+			$relationshipType = $this->input->choice("\nRelationship type", ['OneToOne', 'InverseOf', 'ManyToOne']);
 			
 			$targetInfo = $this->getTargetEntityInfo($availableEntities);
 			
@@ -300,7 +300,7 @@
 				$targetInfo['targetEntity']
 			);
 			
-			$propertyPhpType = ($relationshipType === 'OneToMany') ? "CollectionInterface" : $targetInfo['targetEntity'] . "Entity";
+			$propertyPhpType = ($relationshipType === 'InverseOf') ? "CollectionInterface" : $targetInfo['targetEntity'] . "Entity";
 			$nullable = $this->input->confirm("\nAllow this relationship to be null?", $relationshipType === 'ManyToOne');
 			
 			// Start with the relationship property itself
@@ -310,7 +310,7 @@
 					$propertyPhpType,
 					$relationshipType,
 					$targetInfo['targetEntity'],
-					$mappingConfig['mappedBy'],
+					$mappingConfig['via'],
 					$mappingConfig['inversedBy'],
 					$relationColumn,
 					$targetInfo['foreignColumn'],
@@ -321,7 +321,7 @@
 			// Add FK column for owning side, but only when this is not the inverse side of a
 			// bidirectional relationship (mappedBy !== null means we're the inverse/non-owning side,
 			// so the FK lives in the other table and we must not generate a column here)
-			if ($isOwningSide && $relationColumn !== null && $mappingConfig['mappedBy'] === null && $fkInfo !== null) {
+			if ($isOwningSide && $relationColumn !== null && $mappingConfig['via'] === null && $fkInfo !== null) {
 				$properties[] = $this->buildForeignKeyProperty($relationColumn, $fkInfo['type'], $fkInfo['unsigned'], $nullable);
 			}
 			
@@ -346,14 +346,14 @@
 		 * The return type is a union: when createInTarget is absent/false the optional keys are
 		 * absent; when createInTarget is true they are always present, so PHPStan won't flag
 		 * offsetAccess.notFound at the call site.
-		 * @param string $relationshipType Type of relationship (OneToOne, OneToMany, ManyToOne)
+		 * @param string $relationshipType Type of relationship (OneToOne, InverseOf, ManyToOne)
 		 * @param string $entityName Name of the current entity
 		 * @param string $targetEntity Name of the target entity
 		 * @return RelationshipMappingConfig
 		 */
 		private function collectRelationshipMapping(string $relationshipType, string $entityName, string $targetEntity): array {
-			// OneToMany: always inverse side
-			if ($relationshipType === 'OneToMany') {
+			// InverseOf: always inverse side
+			if ($relationshipType === 'InverseOf') {
 				return $this->handleInverseSideMapping($targetEntity, $entityName, 'ManyToOne');
 			}
 			
@@ -379,7 +379,7 @@
 			
 			if ($mappedBy !== null) {
 				$this->output->writeLn("\nFound existing property '{$mappedBy}' in {$targetEntity}Entity");
-				return ['mappedBy' => $mappedBy, 'inversedBy' => null];
+				return ['via' => $mappedBy, 'inversedBy' => null];
 			}
 			
 			// Offer to create owning side property
@@ -393,7 +393,7 @@
 					"\nProperty name in {$targetEntity}Entity (you'll need to create it manually)",
 					lcfirst($currentEntity)
 				);
-				return ['mappedBy' => $mappedBy, 'inversedBy' => null];
+				return ['via' => $mappedBy, 'inversedBy' => null];
 			}
 			
 			$targetPropertyName = $this->input->ask("\nNew property name inside {$targetEntity}Entity", lcfirst($currentEntity));
@@ -407,7 +407,7 @@
 			}
 			
 			return [
-				'mappedBy'           => $targetPropertyName,
+				'via'                => $targetPropertyName,
 				'inversedBy'         => null,
 				'createInTarget'     => true,
 				'targetPropertyName' => $targetPropertyName,
@@ -427,7 +427,7 @@
 			$bidirectional = $this->input->confirm("\nIs this a bidirectional relationship?", false);
 			
 			if (!$bidirectional) {
-				return ['mappedBy' => null, 'inversedBy' => null];
+				return ['via' => null, 'inversedBy' => null];
 			}
 			
 			// inversedBy on the owning side names the property on the inverse entity:
@@ -445,11 +445,11 @@
 			);
 			
 			if ($createTarget) {
-				// ManyToOne owning side → OneToMany inverse side; OneToOne stays OneToOne
-				$targetRelationType = ($relationshipType === 'ManyToOne') ? 'OneToMany' : 'OneToOne';
+				// ManyToOne owning side → InverseOf inverse side; OneToOne stays OneToOne
+				$targetRelationType = ($relationshipType === 'ManyToOne') ? 'InverseOf' : 'OneToOne';
 				
 				return [
-					'mappedBy'           => null,
+					'via'           => null,
 					'inversedBy'         => $inversedBy,
 					'createInTarget'     => true,
 					'targetPropertyName' => $inversedBy,
@@ -458,7 +458,7 @@
 				];
 			}
 			
-			return ['mappedBy' => null, 'inversedBy' => $inversedBy];
+			return ['via' => null, 'inversedBy' => $inversedBy];
 		}
 		
 		/**
@@ -488,12 +488,12 @@
 			}
 			
 			$isOwningSide = in_array($relationshipType, ['ManyToOne', 'OneToOne']);
-			$phpType = ($relationshipType === 'OneToMany') ? "CollectionInterface" : $currentEntity . "Entity";
+			$phpType = ($relationshipType === 'InverseOf') ? "CollectionInterface" : $currentEntity . "Entity";
 			
-			// FIX: For OneToMany (inverse side), mappedBy should reference the property name
+			// For InverseOf (inverse side), via should reference the property name
 			// in the owning entity that we're creating the inverse for.
 			// The $inversedBy parameter contains the ManyToOne property name (e.g., "post")
-			$mappedBy = $isOwningSide ? null : $inversedBy;
+			$via = $isOwningSide ? null : $inversedBy;
 			
 			// Start with the relationship property
 			$properties = [

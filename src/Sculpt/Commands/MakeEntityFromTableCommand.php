@@ -139,7 +139,7 @@
 			$output .= "    use Quellabs\\ObjectQuel\\Annotations\Orm\Column;\n";
 			$output .= "    use Quellabs\\ObjectQuel\\Annotations\Orm\PrimaryKeyStrategy;\n";
 			$output .= "    use Quellabs\\ObjectQuel\\Annotations\Orm\OneToOne;\n";
-			$output .= "    use Quellabs\\ObjectQuel\\Annotations\Orm\OneToMany;\n";
+			$output .= "    use Quellabs\\ObjectQuel\\Annotations\Orm\InverseOf;\n";
 			$output .= "    use Quellabs\\ObjectQuel\\Annotations\Orm\ManyToOne;\n";
 			$output .= "    use Quellabs\\ObjectQuel\\Annotations\Orm\Index;\n";
 			$output .= "    use Quellabs\\ObjectQuel\\Annotations\Orm\UniqueIndex;\n";

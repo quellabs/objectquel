@@ -280,21 +280,31 @@ PHP
     protected bool \$initialized;
 
     /**
+     * Callable invoked by doInitialize() to load entity data.
+     * Defaults to a PK-based find(); can be replaced for non-PK lazy loading
+     * (e.g. scalar InverseOf relations that load by FK on the dependent side).
+     * @var \Closure
+     */
+    protected \Closure \$initializer;
+
+    /**
      * Creates an uninitialised proxy. Entity data is loaded on first access.
      * @param \Quellabs\ObjectQuel\EntityManager \$entityManager
+     * @param \Closure \$initializer Called by doInitialize() to load entity data into this proxy.
      */
-    public function __construct(\Quellabs\ObjectQuel\EntityManager \$entityManager{$ctorExtraArgs}) {
+    public function __construct(\Quellabs\ObjectQuel\EntityManager \$entityManager, \Closure \$initializer{$ctorExtraArgs}) {
         \$this->entityManager = \$entityManager;
         \$this->initialized   = false;
+        \$this->initializer   = \$initializer;
         {$parentCtorCall}
     }
 
     /**
-     * Loads the full entity from the database on first access.
+     * Loads the full entity from the database on first access by invoking the initializer.
      * @return void
      */
     protected function doInitialize(): void {
-        \$this->entityManager->find({$entityClass}::class, \$this->{$identifierKeysGetterMethod}());
+        (\$this->initializer)(\$this);
         \$this->setInitialized();
     }
 

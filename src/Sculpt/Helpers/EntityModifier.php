@@ -131,12 +131,12 @@
 				return false;
 			}
 			
-			// OneToMany properties need collection initialization in the constructor
-			$oneToManyProperties = array_filter($properties, fn($p) => ($p['relationshipType'] ?? null) === 'OneToMany');
+			// InverseOf properties need collection initialization in the constructor
+			$inverseOfProperties = array_filter($properties, fn($p) => ($p['relationshipType'] ?? null) === 'InverseOf');
 			
 			$updatedContent = $content;
-			if (!empty($oneToManyProperties)) {
-				$updatedContent = $this->updateConstructor($updatedContent, $oneToManyProperties);
+			if (!empty($inverseOfProperties)) {
+				$updatedContent = $this->updateConstructor($updatedContent, $inverseOfProperties);
 			}
 			
 			// Reparse after constructor changes, as insertion points may have shifted
@@ -263,8 +263,8 @@
 				$getterName = 'get' . ucfirst($property['name']);
 				$setterName = 'set' . ucfirst($property['name']);
 				
-				// OneToMany collections don't use get/set — they use add/remove instead
-				if (isset($property['relationshipType']) && $property['relationshipType'] === 'OneToMany') {
+				// InverseOf collections don't use get/set — they use add/remove instead
+				if (isset($property['relationshipType']) && $property['relationshipType'] === 'InverseOf') {
 					$singularName = StringInflector::singularize($property['name']);
 					$addMethodName = 'add' . ucfirst($singularName);
 					$removeMethodName = 'remove' . ucfirst($singularName);
@@ -316,7 +316,7 @@
 			$content .= "    use Quellabs\\ObjectQuel\\Annotations\\Orm\\FullTextIndex;\n";
 			$content .= "    use Quellabs\\ObjectQuel\\Annotations\\Orm\\PrimaryKeyStrategy;\n";
 			$content .= "    use Quellabs\\ObjectQuel\\Annotations\\Orm\\OneToOne;\n";
-			$content .= "    use Quellabs\\ObjectQuel\\Annotations\\Orm\\OneToMany;\n";
+			$content .= "    use Quellabs\\ObjectQuel\\Annotations\\Orm\\InverseOf;\n";
 			$content .= "    use Quellabs\\ObjectQuel\\Annotations\\Orm\\ManyToOne;\n";
 			$content .= "    use Quellabs\\ObjectQuel\\Collections\\Collection;\n";
 			$content .= "    use Quellabs\\ObjectQuel\\Collections\\CollectionInterface;\n";
@@ -356,22 +356,22 @@
 			$content .= "        protected ?int \$id = null;\n";
 			
 			// Check whether any property requires a constructor for collection initialization
-			$hasOneToMany = false;
+			$hasInverseOf = false;
 			foreach ($properties as $property) {
-				if (isset($property['relationshipType']) && $property['relationshipType'] === 'OneToMany') {
-					$hasOneToMany = true;
+				if (isset($property['relationshipType']) && $property['relationshipType'] === 'InverseOf') {
+					$hasInverseOf = true;
 					break;
 				}
 			}
 			
-			// OneToMany properties must be initialized to an empty Collection in the constructor,
+			// InverseOf properties must be initialized to an empty Collection in the constructor,
 			// otherwise accessing the collection before it's set would cause a null-dereference
-			if ($hasOneToMany) {
+			if ($hasInverseOf) {
 				$content .= "\n        /**\n         * Constructor to initialize collections\n         */\n";
 				$content .= "        public function __construct() {\n";
 				
 				foreach ($properties as $property) {
-					if (isset($property['relationshipType']) && $property['relationshipType'] === 'OneToMany') {
+					if (isset($property['relationshipType']) && $property['relationshipType'] === 'InverseOf') {
 						$content .= "            \$this->{$property['name']} = new Collection();\n";
 					}
 				}
@@ -398,8 +398,8 @@
 			foreach ($properties as $property) {
 				$readOnly = $property['readonly'] ?? false;
 				
-				// OneToMany collections expose add/remove methods rather than a single setter
-				if (isset($property['relationshipType']) && $property['relationshipType'] === 'OneToMany') {
+				// InverseOf collections expose add/remove methods rather than a single setter
+				if (isset($property['relationshipType']) && $property['relationshipType'] === 'InverseOf') {
 					$content .= $this->generateCollectionAdder($property, $entityName);
 					$content .= $this->generateCollectionRemover($property, $entityName);
 					continue;
@@ -467,7 +467,7 @@
 		
 		/**
 		 * Generates ORM relationship annotation docblock
-		 * @param RelationProperty $property Relationship metadata (targetEntity, mappedBy, inversedBy, etc.)
+		 * @param RelationProperty $property Relationship metadata (targetEntity, via, inversedBy, etc.)
 		 * @return string PHPDoc comment with relationship annotation
 		 */
 		protected function generateRelationshipDocComment(array $property): string {
@@ -476,9 +476,9 @@
 			
 			$options = [];
 			
-			// mappedBy identifies the inverse side property in a bidirectional relationship
-			if (!empty($property['mappedBy'])) {
-				$options[] = "mappedBy=\"{$property['mappedBy']}\"";
+			// via identifies the property on the owning entity that points to this entity
+			if (!empty($property['via'])) {
+				$options[] = "via=\"{$property['via']}\"";
 			}
 			
 			// inversedBy identifies the owning side property in a bidirectional relationship
@@ -487,12 +487,12 @@
 			}
 			
 			// Collections are fetched lazily to avoid loading the entire related set on access
-			if ($relationshipType === 'OneToMany') {
+			if ($relationshipType === 'InverseOf') {
 				$options[] = "fetch=\"LAZY\"";
 			}
 			
-			// The owning side is the one without mappedBy — it holds the foreign key column
-			$isOwningSide = empty($property['mappedBy']);
+			// The owning side is the one without via — it holds the foreign key column
+			$isOwningSide = empty($property['via']);
 			
 			if ($isOwningSide) {
 				if ($property['nullable'] ?? false) {
@@ -513,8 +513,8 @@
 			$optionsStr = !empty($options) ? ', ' . implode(', ', $options) : '';
 			$comment = "/**\n         * @Orm\\{$relationshipType}(targetEntity=\"{$targetEntity}Entity\"{$optionsStr})";
 			
-			// OneToMany gets an additional @var hint so IDEs know the collection's generic type
-			if ($relationshipType === 'OneToMany') {
+			// InverseOf gets an additional @var hint so IDEs know the collection's generic type
+			if ($relationshipType === 'InverseOf') {
 				$comment .= "\n         * @var CollectionInterface<{$targetEntity}Entity>";
 			}
 			
@@ -575,8 +575,8 @@
 				$nullable = $property['nullable'] ?? false;
 				$nullableIndicator = $nullable ? '?' : '';
 				
-				// OneToMany returns a typed collection interface instead of a single entity
-				if ($property['relationshipType'] === 'OneToMany') {
+				// InverseOf returns a typed collection interface instead of a single entity
+				if ($property['relationshipType'] === 'InverseOf') {
 					$targetEntity = $property['targetEntity'] . 'Entity';
 					
 					return "\n        /**\n" .
@@ -698,7 +698,7 @@
 		}
 		
 		/**
-		 * Generates method to add item to OneToMany collection
+		 * Generates method to add item to InverseOf collection
 		 *
 		 * Checks for duplicates and syncs the inverse side of bidirectional relationships.
 		 *
@@ -714,10 +714,10 @@
 			
 			$inverseSetter = '';
 			
-			// If mappedBy is set this is the inverse side — sync the owning side's reference
+			// If via is set this is the inverse side — sync the owning side's reference
 			// so both ends of the relationship stay consistent after the add
-			if (!empty($property['mappedBy'])) {
-				$setterMethod = 'set' . ucfirst($property['mappedBy']);
+			if (!empty($property['via'])) {
+				$setterMethod = 'set' . ucfirst($property['via']);
 				$inverseSetter = "\n                // Sync bidirectional relationship\n";
 				$inverseSetter .= "                \${$singularName}->{$setterMethod}(\$this);";
 			}
@@ -736,7 +736,7 @@
 		}
 		
 		/**
-		 * Generates method to remove item from OneToMany collection
+		 * Generates method to remove item from InverseOf collection
 		 * @param RelationProperty $property Collection property metadata
 		 * @param string $entityName Current entity name
 		 * @return string Complete remover method
@@ -751,10 +751,10 @@
 			
 			// Only null out the inverse side when it still points at this entity —
 			// avoids clobbering a reference that was already reassigned elsewhere
-			if (!empty($property['mappedBy'])) {
-				$mappedByField = $property['mappedBy'];
-				$getterMethod = 'get' . ucfirst($mappedByField);
-				$setterMethod = 'set' . ucfirst($mappedByField);
+			if (!empty($property['via'])) {
+				$viaField = $property['via'];
+				$getterMethod = 'get' . ucfirst($viaField);
+				$setterMethod = 'set' . ucfirst($viaField);
 				
 				$inverseRemover = "                // Unset inverse side if it still references this entity\n";
 				$inverseRemover .= "                if (\${$singularName}->{$getterMethod}() === \$this) {\n";
@@ -777,16 +777,16 @@
 		}
 		
 		/**
-		 * Updates constructor to initialize OneToMany collections
+		 * Updates constructor to initialize InverseOf collections
 		 * @param string $content Entity file content
-		 * @param array<int, PropertyDefinition> $oneToManyProperties OneToMany properties needing initialization
+		 * @param array<int, PropertyDefinition> $inverseOfProperties InverseOf properties needing initialization
 		 * @return string Updated content with constructor modifications
 		 */
-		protected function updateConstructor(string $content, array $oneToManyProperties): string {
+		protected function updateConstructor(string $content, array $inverseOfProperties): string {
 			if ($this->constructorExists($content)) {
-				return $this->updateExistingConstructor($content, $oneToManyProperties);
+				return $this->updateExistingConstructor($content, $inverseOfProperties);
 			} else {
-				return $this->addNewConstructor($content, $oneToManyProperties);
+				return $this->addNewConstructor($content, $inverseOfProperties);
 			}
 		}
 		
@@ -815,10 +815,10 @@
 		/**
 		 * Modifies existing constructor to add collection initialization statements
 		 * @param string $content Entity file content
-		 * @param array<int, PropertyDefinition> $oneToManyProperties Collections to initialize
+		 * @param array<int, PropertyDefinition> $inverseOfProperties Collections to initialize
 		 * @return string Updated content with modified constructor
 		 */
-		protected function updateExistingConstructor(string $content, array $oneToManyProperties): string {
+		protected function updateExistingConstructor(string $content, array $inverseOfProperties): string {
 			// Find the start of the constructor
 			$constructorStart = $this->getConstructorStartPos($content);
 			
@@ -848,7 +848,7 @@
 			}
 			
 			// Build initialization statements for any collections not already initialized
-			$initCode = $this->generateCollectionInitializations($content, $oneToManyProperties);
+			$initCode = $this->generateCollectionInitializations($content, $inverseOfProperties);
 			
 			// Insert the new statements immediately before the closing brace
 			if (!empty($initCode)) {
@@ -893,13 +893,13 @@
 		/**
 		 * Generates collection initialization code for constructor body
 		 * @param string $content Entity file content
-		 * @param array<int, PropertyDefinition> $oneToManyProperties Collections needing initialization
+		 * @param array<int, PropertyDefinition> $inverseOfProperties Collections needing initialization
 		 * @return string Initialization code statements
 		 */
-		protected function generateCollectionInitializations(string $content, array $oneToManyProperties): string {
+		protected function generateCollectionInitializations(string $content, array $inverseOfProperties): string {
 			$initCode = '';
 			
-			foreach ($oneToManyProperties as $property) {
+			foreach ($inverseOfProperties as $property) {
 				$propertyName = $property['name'];
 				
 				// Skip properties already assigned a Collection instance — avoids duplicating the line
@@ -914,13 +914,13 @@
 		/**
 		 * Creates a new constructor with collection initializations
 		 * @param string $content Entity file content
-		 * @param array<int, PropertyDefinition> $oneToManyProperties Collections to initialize
+		 * @param array<int, PropertyDefinition> $inverseOfProperties Collections to initialize
 		 * @return string Updated content with new constructor
 		 */
-		protected function addNewConstructor(string $content, array $oneToManyProperties): string {
+		protected function addNewConstructor(string $content, array $inverseOfProperties): string {
 			$constructorCode = "\n\t/**\n\t * Constructor to initialize collections\n\t */\n\tpublic function __construct() {";
 			
-			foreach ($oneToManyProperties as $property) {
+			foreach ($inverseOfProperties as $property) {
 				$propertyName = $property['name'];
 				$constructorCode .= "\n\t\t\$this->{$propertyName} = new Collection();";
 			}
@@ -959,7 +959,7 @@
 			
 			if (!empty($propertyMatches[0])) {
 				// Take the offset of the last matched property declaration
-				$lastPropertyPos = (int) $propertyMatches[0][count($propertyMatches[0]) - 1][1];
+				$lastPropertyPos = (int)$propertyMatches[0][count($propertyMatches[0]) - 1][1];
 				
 				// Find the semicolon that terminates that property declaration
 				$semicolonPos = strpos($content, ';', $lastPropertyPos);
