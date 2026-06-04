@@ -36,8 +36,7 @@
 		/**
 		 * Parse a simple value (number, string, true, false)
 		 * @return AstInterface
-		 * @throws LexerException
-		 * @throws ParserException
+		 * @throws LexerException|ParserException|\ReflectionException
 		 */
 		public function parseSimpleValue(): AstInterface {
 			$token = $this->lexer->peek();

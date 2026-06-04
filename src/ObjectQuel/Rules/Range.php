@@ -58,16 +58,16 @@
 			
 			// Check if the next token is an opening parenthesis; if so it's a subquery specification
 			if ($this->lexer->lookahead() == Token::ParenthesesOpen) {
-				return $this->parseQuery($alias->getStringValue());
+				return $this->parseSubqueryRange($alias->getStringValue());
 			}
 			
 			// Check if the next token is 'JSON' to determine the type of data source
 			if ($this->lexer->optionalMatch(Token::JsonSource)) {
-				return $this->parseJson($alias->getStringValue());
+				return $this->parseJsonRange($alias->getStringValue());
 			}
 			
 			// Otherwise, treat it as a database entity source
-			return $this->parseEntity($alias);
+			return $this->parseEntityRange($alias);
 		}
 		
 		/**
@@ -95,7 +95,7 @@
 		 * @throws LexerException If lexer encounters invalid tokens
 		 * @throws ParserException If syntax structure is invalid
 		 */
-		private function parseQuery(string $alias): AstRangeDatabaseSubquery {
+		private function parseSubqueryRange(string $alias): AstRangeDatabaseSubquery {
 			// Match opening parenthesis - start of query expression
 			$this->lexer->match(Token::ParenthesesOpen);
 			
@@ -120,7 +120,7 @@
 		 * @return AstRangeDatabase AST node representing a database entity source
 		 * @throws LexerException|ParserException If parsing fails
 		 */
-		private function parseEntity(Token $alias): AstRangeDatabase {
+		private function parseEntityRange(Token $alias): AstRangeDatabase {
 			// Match and consume an 'Identifier' token for the entity name
 			$entityName = $this->lexer->match(Token::Identifier)->getStringValue();
 			
@@ -134,10 +134,9 @@
 			
 			if ($this->lexer->lookahead() == Token::Via) {
 				$this->lexer->match(Token::Via);
-				
-				// Use the LogicalExpression rule to parse the condition after VIA
-				$logicalExpressionRule = new LogicalExpression($this->lexer);
-				$viaIdentifier = $logicalExpressionRule->parse();
+
+				$logicalExpressionRule = new ArithmeticExpression($this->lexer);
+				$viaIdentifier = $logicalExpressionRule->parsePropertyChain();
 			}
 			
 			// Match an optional semicolon at the end of the statement
@@ -170,7 +169,7 @@
 		 * @throws LexerException If token matching fails
 		 * @throws ParserException If a named argument is unrecognised or duplicated
 		 */
-		private function parseJson(string $alias): AstRangeJsonSource {
+		private function parseJsonRange(string $alias): AstRangeJsonSource {
 			// Consume the opening parenthesis
 			$this->lexer->match(Token::ParenthesesOpen);
 			
