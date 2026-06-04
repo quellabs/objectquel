@@ -413,10 +413,10 @@
 						
 						// Create an Entity Collection
 						$proxy = new EntityCollection(
-							$this->entityManager, $targetEntity, $fkColumn,
-							$primaryKeyValue
+							$this->entityManager, $targetEntity, $fkColumn, $primaryKeyValue
 						);
 						
+						// Assign it to entity
 						$this->propertyHandler->set($entity, $property, $proxy);
 					}
 				}
