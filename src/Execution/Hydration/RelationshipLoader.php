@@ -322,8 +322,9 @@
 				$this->entityManager,
 				function () use ($entityManager, $propertyHandler, $entity, $property, $targetEntity, $via, $parentKeyValue): void {
 					// findOneBy returns a fully hydrated entity registered in the UnitOfWork.
-					// Set it directly on the parent property — no proxy seeding needed.
 					$result = $entityManager->findOneBy($targetEntity, [$via => $parentKeyValue]);
+					
+					// Set it directly on the parent property — no proxy seeding needed.
 					$propertyHandler->set($entity, $property, $result);
 				}
 			);
@@ -496,9 +497,10 @@
 					continue;
 				}
 				
-				// Compare the candidate's FK value against the parent's primary key.
-				// Only candidates where these match belong in this collection.
-				if ($this->propertyHandler->get($candidate, $via) !== $parentKeyValue) {
+				// Compare the candidate's FK column value against the parent's referenced property value.
+				// $via is the relation property (e.g. "user"), but we need the underlying FK column
+				// value (e.g. "userId") since the relation property holds an object, not a scalar.
+				if ($this->getCandidateFkValue($candidate, $via) !== $parentKeyValue) {
 					continue;
 				}
 				
@@ -562,7 +564,7 @@
 					continue;
 				}
 				
-				if ($this->propertyHandler->get($candidate, $via) !== $parentKeyValue) {
+				if ($this->getCandidateFkValue($candidate, $via) !== $parentKeyValue) {
 					continue;
 				}
 				
@@ -637,6 +639,25 @@
 			$ownerPrimaryKey = $this->entityStore->getMetadata($ownerClass)->getPrimaryKey();
 			$resolvedTarget = $this->entityStore->resolveTargetProperty($viaRelation);
 			return $resolvedTarget ?? $ownerPrimaryKey;
+		}
+		
+		/**
+		 * Resolves the FK column value on a candidate entity for a given via property.
+		 * The via property is a relation object (e.g. UserEntity), not a scalar, so we
+		 * read the underlying FK column (e.g. userId) instead.
+		 * @param object $candidate
+		 * @param string $via The relation property name on the candidate
+		 * @return mixed The scalar FK value
+		 * @throws EntityResolutionException
+		 */
+		private function getCandidateFkValue(object $candidate, string $via): mixed {
+			$candidateClass = $this->entityStore->resolveProxyClass($candidate);
+			$candidateMeta = $this->entityStore->getMetadata($candidateClass);
+			$manyToOne = $candidateMeta->getManyToOneDependencies()[$via] ?? null;
+			$oneToOne = $candidateMeta->getOneToOneDependencies()[$via] ?? null;
+			$viaAnnotation = $manyToOne ?? $oneToOne;
+			$fkProperty = $viaAnnotation?->getRelationColumn() ?? $via . 'Id';
+			return $this->propertyHandler->get($candidate, $fkProperty);
 		}
 		
 		/**
