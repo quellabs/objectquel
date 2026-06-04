@@ -10,7 +10,7 @@
 	use Quellabs\ObjectQuel\Annotations\Orm\FullTextIndex;
 	use Quellabs\ObjectQuel\Annotations\Orm\Index;
 	use Quellabs\ObjectQuel\Annotations\Orm\ManyToOne;
-	use Quellabs\ObjectQuel\Annotations\Orm\OneToMany;
+	use Quellabs\ObjectQuel\Annotations\Orm\InverseOf;
 	use Quellabs\ObjectQuel\Annotations\Orm\OneToOne;
 	use Quellabs\ObjectQuel\Annotations\Orm\PrimaryKeyStrategy;
 	use Quellabs\ObjectQuel\Annotations\Orm\UniqueIndex;
@@ -122,7 +122,7 @@
 					identifierColumns: $identifierColumns,
 					versionColumns: $versionColumns,
 					manyToOneRelations: $this->extractRelations($annotations, ManyToOne::class),
-					oneToManyRelations: $this->extractRelations($annotations, OneToMany::class),
+					inverseOfRelations: $this->extractRelations($annotations, InverseOf::class),
 					oneToOneRelations: $this->extractRelations($annotations, OneToOne::class),
 					indexes: $this->extractIndexes($className),
 					autoIncrementColumn: $autoIncrementColumn,
@@ -287,7 +287,7 @@
 		
 		/**
 		 * Extract relationship annotations of a specific type from property annotations.
-		 * @template T of ManyToOne|OneToMany|OneToOne
+		 * @template T of ManyToOne|InverseOf|OneToOne
 		 * @param array<string, AnnotationCollection> $annotations
 		 * @param class-string<T> $annotationType
 		 * @return array<string, T>

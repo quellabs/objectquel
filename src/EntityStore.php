@@ -326,8 +326,8 @@
 		/**
 		 * Resolves the back-reference property name on the target entity for a ManyToOne or OneToOne relation.
 		 *
-		 * For OneToOne, inversedBy and mappedBy are direct property names on the target entity,
-		 * returned as-is. If neither is set, the target entity's primary key is used as a fallback.
+		 * For OneToOne, inversedBy is the primary key property on the target entity that the
+		 * foreign key column points to. If not set, the target entity's primary key is used as a fallback.
 		 *
 		 * For ManyToOne, inversedBy is a direct property name on the target entity. If absent,
 		 * the target entity's primary key is used as a fallback.
@@ -342,13 +342,7 @@
 			// Fetch metadata for entity
 			$metadata = $this->getMetadata($relation->getTargetEntity());
 			
-			// OneToOne: return inversedBy or mappedBy as-is, falling back to the primary key
-			if ($relation instanceof OneToOne) {
-				return $relation->getInversedBy()
-					?? $relation->getMappedBy()
-					?? $metadata->getPrimaryKey();
-			}
-			
+			// OneToOne: return inversedBy, falling back to the primary key
 			// ManyToOne: inversedBy is a direct property name on the target entity.
 			// If absent, fall back to the target entity's primary key.
 			return $relation->getInversedBy() ?? $metadata->getPrimaryKey();
@@ -411,12 +405,10 @@
 					}
 					
 					// Add OneToOne dependencies (owning side only)
-					// Only include OneToOne relations where this entity owns the relationship
-					// (indicated by the inversedBy property being set)
+					// All stored OneToOne relations are owning-side by definition — the non-owning
+					// side is declared with @InverseOf and not stored in oneToOneRelations.
 					foreach ($metadata->oneToOneRelations as $relation) {
-						if (!empty($relation->getInversedBy())) {
-							$dependencies[] = $this->resolveProxyClass($relation->getTargetEntity());
-						}
+						$dependencies[] = $this->resolveProxyClass($relation->getTargetEntity());
 					}
 					
 					// Remove duplicates and store in the dependency graph

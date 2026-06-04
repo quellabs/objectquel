@@ -6,7 +6,11 @@
 	
 	/**
 	 * @Annotation
-	 * Defines the OneToOne class that describes the relationship between entities
+	 * Defines an owning-side OneToOne relationship between entities.
+	 *
+	 * This annotation is used exclusively on the owning side — the entity that holds
+	 * the foreign key column. The non-owning side is declared with @InverseOf, which
+	 * is a hydration instruction only and does not participate in join generation.
 	 */
 	class OneToOne implements AnnotationInterface {
 		
@@ -15,7 +19,6 @@
 		protected array $parameters;
 		
 		private string $targetEntity;
-		private ?string $mappedBy;
 		private ?string $inversedBy;
 		private ?string $relationColumn;
 		private ?string $foreignColumn;
@@ -28,7 +31,6 @@
 		 */
 		public function __construct(array $parameters) {
 			$targetEntity = $parameters['targetEntity'] ?? null;
-			$mappedBy = $parameters['mappedBy'] ?? null;
 			$inversedBy = $parameters['inversedBy'] ?? null;
 			$relationColumn = $parameters['relationColumn'] ?? null;
 			$foreignColumn = $parameters['foreignColumn'] ?? null;
@@ -36,10 +38,6 @@
 			
 			if (!is_string($targetEntity)) {
 				throw new \InvalidArgumentException("OneToOne: 'targetEntity' must be a string");
-			}
-			
-			if ($mappedBy !== null && !is_string($mappedBy)) {
-				throw new \InvalidArgumentException("OneToOne: 'mappedBy' must be a string or null");
 			}
 			
 			if ($inversedBy !== null && !is_string($inversedBy)) {
@@ -60,7 +58,6 @@
 			
 			$this->parameters = $parameters;
 			$this->targetEntity = $targetEntity;
-			$this->mappedBy = $mappedBy;
 			$this->inversedBy = $inversedBy;
 			$this->relationColumn = $relationColumn;
 			$this->foreignColumn = $foreignColumn;
@@ -84,9 +81,9 @@
 		}
 		
 		/**
-		 * Retrieve the target entity.
-		 * @param string $targetEntity
-		 * @return void The full namespace of the target entity.
+		 * Sets the target entity.
+		 * @param string $targetEntity The full namespace of the target entity.
+		 * @return void
 		 */
 		public function setTargetEntity(string $targetEntity): void {
 			$this->targetEntity = $targetEntity;
@@ -94,16 +91,10 @@
 		}
 		
 		/**
-		 * Retrieves the 'mappedBy' parameter.
-		 * @return string|null The value of the 'mappedBy' parameter or an empty string if it is not set.
-		 */
-		public function getMappedBy(): ?string {
-			return $this->mappedBy;
-		}
-		
-		/**
-		 * Retrieves the 'inversedBy' parameter, if present.
-		 * @return string|null The name of the field in the target entity that refers to the current entity, or null if it is not set.
+		 * Retrieves the 'inversedBy' parameter.
+		 * This is the primary key property on the target entity that the foreign key
+		 * column points to — used by the normalizer to resolve the join condition.
+		 * @return string|null The primary key property name on the target entity, or null if not set.
 		 */
 		public function getInversedBy(): ?string {
 			return $this->inversedBy;
@@ -111,23 +102,23 @@
 		
 		/**
 		 * Retrieves the name of the relationship column.
-		 * This method retrieves the name of the column that represents the ManyToOne relationship in the database.
-		 * @return string|null The name of the join column or null if it is not set.
+		 * This is the foreign key column on the owning entity side.
+		 * @return string|null The name of the join column or null if not set.
 		 */
 		public function getRelationColumn(): ?string {
 			return $this->relationColumn;
 		}
 		
 		/**
-		 * Retrieve the name of the relationship column in the target entity.
-		 * @return string|null The name of the join column or null if it is not set.
+		 * Retrieves the name of the referenced column on the target entity.
+		 * @return string|null The name of the referenced column or null if not set.
 		 */
 		public function getForeignColumn(): ?string {
 			return $this->foreignColumn;
 		}
 		
 		/**
-		 * Returns fetch method (default LAZY)
+		 * Returns the fetch mode (EAGER or LAZY, default LAZY).
 		 * @return string
 		 */
 		public function getFetch(): string {

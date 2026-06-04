@@ -26,7 +26,7 @@
 	use Quellabs\ObjectQuel\Annotations\Orm\FullTextIndex;
 	use Quellabs\ObjectQuel\Annotations\Orm\Immutable;
 	use Quellabs\ObjectQuel\Annotations\Orm\Index;
-	use Quellabs\ObjectQuel\Annotations\Orm\OneToMany;
+	use Quellabs\ObjectQuel\Annotations\Orm\InverseOf;
 	use Quellabs\ObjectQuel\Annotations\Orm\OneToOne;
 	use Quellabs\ObjectQuel\Annotations\Orm\ManyToOne;
 	use Quellabs\ObjectQuel\Annotations\Orm\UniqueIndex;
@@ -61,7 +61,7 @@
 		 * @param array<string> $identifierColumns Column names that serve as primary keys
 		 * @param array<string, array{name: string, column: Column, version: Version}> $versionColumns Properties with version tracking
 		 * @param array<string, ManyToOne> $manyToOneRelations Property => ManyToOne annotation mapping
-		 * @param array<string, OneToMany> $oneToManyRelations Property => OneToMany annotation mapping
+		 * @param array<string, InverseOf> $inverseOfRelations Property => InverseOf annotation mapping
 		 * @param array<string, OneToOne> $oneToOneRelations Property => OneToOne annotation mapping
 		 * @param array<Index|UniqueIndex|FullTextIndex> $indexes Index annotations from class level
 		 * @param string|null $autoIncrementColumn Property name of auto-increment primary key (if any)
@@ -77,7 +77,7 @@
 			public array   $identifierColumns,
 			public array   $versionColumns,
 			public array   $manyToOneRelations,
-			public array   $oneToManyRelations,
+			public array   $inverseOfRelations,
 			public array   $oneToOneRelations,
 			public array   $indexes,
 			public ?string $autoIncrementColumn,
@@ -113,21 +113,25 @@
 		}
 		
 		/**
-		 * Retrieve the OneToMany dependencies for this entity.
-		 * @return array<string, OneToMany>
+		 * Retrieve the InverseOf declarations for this entity.
+		 * These are hydration targets — properties that should receive collections of
+		 * dependent entity objects when this entity is loaded. They do not define
+		 * relationships; the relationship is always owned by the dependent entity
+		 * via its ManyToOne or OneToOne annotation.
+		 * @return array<string, InverseOf> Property name => InverseOf annotation mapping
 		 */
-		public function getOneToManyDependencies(): array {
-			return $this->oneToManyRelations;
+		public function getInverseOfRelations(): array {
+			return $this->inverseOfRelations;
 		}
 		
 		/**
-		 * Retrieve the OneToOne dependencies where this entity is the owning side.
-		 * Only returns OneToOne relations that have an inversedBy property set,
-		 * indicating this entity owns the relationship.
-		 * @return array<string, OneToOne> Array of OneToOne annotations for owned relationships
+		 * Retrieve the OneToOne dependencies for this entity.
+		 * All stored OneToOne relations are owning-side by definition — non-owning
+		 * OneToOne declarations are represented as InverseOf annotations instead.
+		 * @return array<string, OneToOne> Array of OneToOne annotations
 		 */
 		public function getOneToOneDependencies(): array {
-			return array_filter($this->oneToOneRelations, fn($relation) => !empty($relation->getInversedBy()));
+			return $this->oneToOneRelations;
 		}
 		
 		/**
