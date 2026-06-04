@@ -120,7 +120,7 @@
 			// Get all relationship mappings from entity metadata
 			// Merge one-to-many and one-to-one dependencies
 			$relationships = array_merge(
-				$metadata->getOneToManyDependencies(),
+				$metadata->getInverseOfRelations(),
 				$metadata->getOneToOneDependencies()
 			);
 			

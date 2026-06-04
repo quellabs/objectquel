@@ -38,7 +38,7 @@
 		 * Visit a node in the AST and validate any via-clause relationship it represents.
 		 * Only root AstIdentifier nodes with a chained property that originate from a
 		 * database range are subject to validation. For those nodes, every declared
-		 * relationship (OneToOne, ManyToOne, OneToMany) is checked to ensure the target
+		 * relationship (OneToOne, ManyToOne, InverseOf) is checked to ensure the target
 		 * entity matches the entity this validator was constructed for.
 		 * @param AstInterface $node The node to visit.
 		 * @return void
@@ -96,7 +96,7 @@
 			$dependencies = [
 				'oneToOne'  => $metadata->getOneToOneDependencies(),
 				'manyToOne' => $metadata->getManyToOneDependencies(),
-				'oneToMany' => $metadata->getOneToManyDependencies(),
+				'inverseOf' => $metadata->getInverseOfRelations(),
 			];
 			
 			// For each relationship type, check whether the accessed property is declared

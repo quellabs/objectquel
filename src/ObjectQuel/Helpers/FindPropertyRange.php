@@ -31,7 +31,7 @@
 		/**
 		 * Returns all concrete entity ranges that expose the given property,
 		 * either as a scalar column (@Column) or as a relation (@OneToOne,
-		 * @ManyToOne, @OneToMany). Subquery and JSON ranges are skipped because
+		 * @ManyToOne, @InverseOf). Subquery and JSON ranges are skipped because
 		 * they have no EntityStore metadata to inspect.
 		 *
 		 * @param string $propertyName The bare property name to look up
@@ -59,11 +59,11 @@
 					continue;
 				}
 				
-				// Check all relation types (@OneToOne, @ManyToOne, @OneToMany)
+				// Check all relation types (@OneToOne, @ManyToOne, @InverseOf)
 				$relations = array_merge(
 					$metadata->getOneToOneDependencies(),
 					$metadata->getManyToOneDependencies(),
-					$metadata->getOneToManyDependencies(),
+					$metadata->getInverseOfRelations(),
 				);
 				
 				if (isset($relations[$propertyName])) {

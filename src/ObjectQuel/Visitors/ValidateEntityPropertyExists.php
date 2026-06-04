@@ -72,7 +72,7 @@
 			// Fetch column map and relations
 			$propertyName = $node->getName();
 			$metadata = $this->entityStore->getMetadata($entityName);
-			$relations = $metadata->getOneToManyDependencies();
+			$relations = $metadata->getInverseOfRelations();
 			
 			// Check if the property exists in the entity.
 			if (!isset($metadata->columnMap[$propertyName]) && !isset($relations[$propertyName])) {

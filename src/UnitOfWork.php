@@ -1091,27 +1091,27 @@
 		 * @throws EntityResolutionException
 		 */
 		private function executeCascadingPersistsForEntity(object $entity): void {
-			// Process OneToMany relationships
-			$this->processCascadingOneToManyPersists($entity);
+			// Process InverseOf relationships
+			$this->processCascadingInverseOfPersists($entity);
 			
 			// Process OneToOne relationships
 			$this->processCascadingOneToOnePersists($entity);
 		}
 		
 		/**
-		 * Process cascading persists for OneToMany relationships of an entity.
+		 * Process cascading persists for InverseOf relationships of an entity.
 		 * This handles collections of related entities that should be persisted
 		 * when the parent entity is persisted.
-		 * @param object $entity The entity whose OneToMany relationships should be processed
+		 * @param object $entity The entity whose InverseOf relationships should be processed
 		 * @return void
 		 * @throws EntityResolutionException
 		 */
-		private function processCascadingOneToManyPersists(object $entity): void {
+		private function processCascadingInverseOfPersists(object $entity): void {
 			// Fetch metadata for this entity
 			$metadata = $this->getEntityStore()->getMetadata($entity);
 			
-			// Check each OneToMany relationship defined in this entity
-			foreach ($metadata->getOneToManyDependencies() as $property => $annotation) {
+			// Check each InverseOf relationship defined in this entity
+			foreach ($metadata->getInverseOfRelations() as $property => $annotation) {
 				// Retrieve cascade configuration from metadata for this property
 				$cascadeInfo = $this->getCascadeInfo(get_class($entity), $property);
 				

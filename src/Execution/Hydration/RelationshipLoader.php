@@ -3,7 +3,7 @@
 	namespace Quellabs\ObjectQuel\Execution\Hydration;
 	
 	use Quellabs\ObjectQuel\Annotations\Orm\ManyToOne;
-	use Quellabs\ObjectQuel\Annotations\Orm\OneToMany;
+	use Quellabs\ObjectQuel\Annotations\Orm\InverseOf;
 	use Quellabs\ObjectQuel\Annotations\Orm\OneToOne;
 	use Quellabs\ObjectQuel\Collections\Collection;
 	use Quellabs\ObjectQuel\Collections\CollectionInterface;
@@ -51,11 +51,11 @@
 			// Set ToOne relations directly where data is present; create proxies for the rest
 			$this->setupToOneRelations($entities);
 			
-			// Set up collections for empty OneToMany relations
+			// Set up collections for empty InverseOf relations
 			$this->setupToManyRelations($entities);
 			
 			// Wire hydrated related entities back into parent collections
-			// for OneToMany relations that were explicitly joined in the query
+			// for InverseOf relations that were explicitly joined in the query
 			foreach ($entities as $entity) {
 				$this->populateEntityJoinedRelations($entity, $entities);
 			}
@@ -170,7 +170,7 @@
 		private function findOrCreateProxy(
 			string $targetEntityName,
 			string $relationPropertyName,
-			mixed  $relationColumnValue
+			mixed $relationColumnValue
 		): object {
 			// Check if the entity already exists in the UnitOfWork
 			$existing = $this->unitOfWork->findEntity($targetEntityName, [
@@ -273,7 +273,7 @@
 		}
 		
 		/**
-		 * Promotes empty OneToMany relationships to lazy-loaded collections for the given filtered rows.
+		 * Promotes empty InverseOf relationships to lazy-loaded collections for the given filtered rows.
 		 * @param array<int, object> $filteredRows The rows that need to be processed
 		 * @return void
 		 * @throws QuelException
@@ -291,8 +291,8 @@
 				// Loop through all properties and their dependencies
 				foreach ($entityDependencies as $property => $dependencies) {
 					foreach ($dependencies as $dependency) {
-						// We only care about OneToMany here
-						if (!($dependency instanceof OneToMany)) {
+						// We only care about InverseOf here
+						if (!($dependency instanceof InverseOf)) {
 							continue;
 						}
 						
@@ -315,22 +315,22 @@
 						
 						if ($relationColumn === null) {
 							throw new QuelException(
-								"Cannot determine relation column for OneToMany on {$objectClass}::{$property}"
+								"Cannot determine relation column for InverseOf on {$objectClass}::{$property}"
 							);
 						}
 						
-						// Check if OneToMany has mappedBy. If not error out
-						$mappedBy = $dependency->getMappedBy();
+						// Check if InverseOf has via. If not error out
+						$via = $dependency->getVia();
 						
-						if ($mappedBy === null || $mappedBy === '') {
+						if ($via === null || $via === '') {
 							throw new QuelException(
-								"OneToMany on {$objectClass}::{$property} requires mappedBy"
+								"InverseOf on {$objectClass}::{$property} requires via"
 							);
 						}
 						
 						// Do nothing if the data for this query was requested. There is simply no data,
 						// so there's no point in lazy loading this data. We keep the empty collection.
-						if ($this->wasEntityRequested($objectClass, $targetEntity, $mappedBy)) {
+						if ($this->wasEntityRequested($objectClass, $targetEntity, $via)) {
 							continue;
 						}
 						
@@ -339,7 +339,7 @@
 						
 						// Create an Entity Collection
 						$proxy = new EntityCollection(
-							$this->entityManager, $targetEntity, $mappedBy,
+							$this->entityManager, $targetEntity, $via,
 							$primaryKeyValue, $dependency->getOrderBy()
 						);
 						
@@ -350,7 +350,7 @@
 		}
 		
 		/**
-		 * Populates all joined OneToMany collections on a single entity.
+		 * Populates all joined InverseOf collections on a single entity.
 		 * @param object $entity The parent entity whose collections need populating
 		 * @param array<int, object> $entities All hydrated entities from the result set
 		 * @throws EntityResolutionException
@@ -362,40 +362,40 @@
 			
 			foreach ($this->getRelationAnnotations($objectClass) as $property => $dependencies) {
 				foreach ($dependencies as $dependency) {
-					// We only care about OneToMany here; OneToOne and ManyToOne
+					// We only care about InverseOf here; OneToOne and ManyToOne
 					// are handled by setupToOneRelations
-					if (!($dependency instanceof OneToMany)) {
+					if (!($dependency instanceof InverseOf)) {
 						continue;
 					}
 					
-					$this->populateOneToManyRelation($entity, $objectClass, $property, $dependency, $entities);
+					$this->populateInverseOfRelation($entity, $objectClass, $property, $dependency, $entities);
 				}
 			}
 		}
 		
 		/**
-		 * Populates a single joined OneToMany collection on an entity from the hydrated entity set.
+		 * Populates a single joined InverseOf collection on an entity from the hydrated entity set.
 		 * Skips the relation if it was not explicitly joined in the query or has no valid relation column.
 		 * @param object $entity The parent entity
 		 * @param string $objectClass The resolved class name of the parent entity
 		 * @param string $property The collection property name
-		 * @param OneToMany $dependency The relation annotation
+		 * @param InverseOf $dependency The relation annotation
 		 * @param array<int, object> $entities All hydrated entities from the result set
 		 * @throws EntityResolutionException
 		 * @throws QuelException
 		 */
-		private function populateOneToManyRelation(
-			object    $entity,
-			string    $objectClass,
-			string    $property,
-			OneToMany $dependency,
-			array     $entities
+		private function populateInverseOfRelation(
+			object $entity,
+			string $objectClass,
+			string $property,
+			InverseOf $dependency,
+			array $entities
 		): void {
-			// Fetch mappedBy
-			$mappedBy = $dependency->getMappedBy();
+			// Fetch via
+			$via = $dependency->getVia();
 			
 			// If not given, skip the dependency
-			if ($mappedBy === null || $mappedBy === '') {
+			if ($via === null || $via === '') {
 				return;
 			}
 			
@@ -405,12 +405,12 @@
 			// Only handle relations where the related entity was explicitly
 			// joined in the query. If it wasn't requested, setupToManyRelations
 			// already set up an EntityCollection for lazy loading instead.
-			if (!$this->wasEntityRequested($objectClass, $targetEntity, $mappedBy)) {
+			if (!$this->wasEntityRequested($objectClass, $targetEntity, $via)) {
 				return;
 			}
 			
 			// Determine which property on this entity holds its primary key value.
-			// The OneToMany annotation may specify a relationColumn explicitly;
+			// The InverseOf annotation may specify a relationColumn explicitly;
 			// if not, fall back to the entity's primary key.
 			$metadata = $this->entityStore->getMetadata($targetEntity);
 			$relationColumn = $dependency->getRelationColumn() ?? $metadata->getPrimaryKey();
@@ -424,24 +424,24 @@
 			$collection = $this->propertyHandler->get($entity, $property);
 			
 			// Scan all hydrated entities in the result for candidates that
-			// belong to this parent via the foreign key (mappedBy property)
+			// belong to this parent via the foreign key (via property)
 			foreach ($entities as $candidate) {
 				// Skip entities that are not of the expected related type
 				if (!($candidate instanceof $targetEntity)) {
 					continue;
 				}
 				
-				// Verify that the candidate's mappedBy property is actually
+				// Verify that the candidate's via property is actually
 				// annotated as a relation pointing back to this parent entity type.
 				// This prevents false matches in schemas where two unrelated entity
 				// types share the same FK property name and overlapping ID values.
-				if (!$this->candidateMapsToParent($candidate, $mappedBy, $objectClass)) {
+				if (!$this->candidateMapsToParent($candidate, $via, $objectClass)) {
 					continue;
 				}
 				
 				// Compare the candidate's FK value against the parent's primary key.
 				// Only candidates where these match belong in this collection.
-				if ($this->propertyHandler->get($candidate, $mappedBy) !== $parentKeyValue) {
+				if ($this->propertyHandler->get($candidate, $via) !== $parentKeyValue) {
 					continue;
 				}
 				
@@ -455,16 +455,16 @@
 		}
 		
 		/**
-		 * Returns true if the candidate's mappedBy property is annotated as a relation
+		 * Returns true if the candidate's via property is annotated as a relation
 		 * explicitly pointing back to $parentClass. Prevents false matches when two
 		 * unrelated entity types share the same FK property name and overlapping ID values.
 		 * @param object $candidate
-		 * @param string $mappedBy
+		 * @param string $via
 		 * @param string $parentClass
 		 * @return bool
 		 * @throws EntityResolutionException
 		 */
-		private function candidateMapsToParent(object $candidate, string $mappedBy, string $parentClass): bool {
+		private function candidateMapsToParent(object $candidate, string $via, string $parentClass): bool {
 			$candidateClass = $this->entityStore->resolveProxyClass($candidate);
 			$deps = $this->getRelationAnnotations($candidateClass);
 			
@@ -485,9 +485,9 @@
 		
 		/**
 		 * Internal helper function for retrieving properties with a specific annotation.
-		 * Returns all relationship annotations (ManyToOne, OneToMany, OneToOne) for the entity.
+		 * Returns all relationship annotations (ManyToOne, InverseOf, OneToOne) for the entity.
 		 * @param string|object $entity The name of the entity for which you want to get dependencies
-		 * @return array<string, array<int, ManyToOne|OneToOne|OneToMany>> Property name => array of relationship annotations
+		 * @return array<string, array<int, ManyToOne|OneToOne|InverseOf>> Property name => array of relationship annotations
 		 * @throws EntityResolutionException
 		 */
 		public function getRelationAnnotations(string|object $entity): array {
@@ -501,7 +501,7 @@
 			
 			foreach (array_keys($annotationList) as $property) {
 				foreach ($annotationList[$property] as $annotation) {
-					if ($annotation instanceof OneToMany || $annotation instanceof OneToOne || $annotation instanceof ManyToOne) {
+					if ($annotation instanceof InverseOf || $annotation instanceof OneToOne || $annotation instanceof ManyToOne) {
 						$result[$property][] = $annotation;
 						continue 2;
 					}

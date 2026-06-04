@@ -4,7 +4,7 @@
 	namespace Quellabs\ObjectQuel\ObjectQuel\Visitors;
 	
 	use Quellabs\ObjectQuel\Annotations\Orm\ManyToOne;
-	use Quellabs\ObjectQuel\Annotations\Orm\OneToMany;
+	use Quellabs\ObjectQuel\Annotations\Orm\InverseOf;
 	use Quellabs\ObjectQuel\Annotations\Orm\OneToOne;
 	use Quellabs\ObjectQuel\EntityStore;
 	use Quellabs\ObjectQuel\Exception\EntityResolutionException;
@@ -73,7 +73,7 @@
 				return $side;
 			}
 			
-			// Check if the property refers to a relation (OneToOne, ManyToOne, OneToMany)
+			// Check if the property refers to a relation (OneToOne, ManyToOne)
 			// rather than a regular column — only relations need to be transformed
 			if (!$this->isRelationProperty($propertyNode, $entityName)) {
 				return $side;
@@ -90,7 +90,6 @@
 			$relations = array_merge(
 				$metadata->getOneToOneDependencies(),
 				$metadata->getManyToOneDependencies(),
-				$metadata->getOneToManyDependencies(),
 			);
 			
 			// Safeguard: isRelationProperty confirmed it exists, but verify before using
@@ -124,12 +123,12 @@
 		 * Resolves the correct FK/PK columns based on the relation type by dispatching
 		 * to a dedicated handler for each relation type.
 		 * @param AstIdentifier $joinProperty The property node (e.g. 'addresses') whose parent is the range identifier
-		 * @param ManyToOne|OneToMany|OneToOne $relation The relation annotation
+		 * @param ManyToOne|OneToOne $relation The relation annotation
 		 * @return AstInterface
 		 * @throws TransformationException
 		 * @throws EntityResolutionException
 		 */
-		private function createPropertyLookupAstUsingRelation(AstIdentifier $joinProperty, ManyToOne|OneToMany|OneToOne $relation): AstInterface {
+		private function createPropertyLookupAstUsingRelation(AstIdentifier $joinProperty, ManyToOne|OneToOne $relation): AstInterface {
 			// The parent of the property node is the range identifier (e.g. 'c')
 			$entity = $joinProperty->getParent();
 			
@@ -160,12 +159,9 @@
 				case $relation instanceof ManyToOne:
 					return $this->createManyToOneJoinCondition($joinProperty, $relation, $range);
 				
-				case $relation instanceof OneToMany:
-					return $this->createOneToManyJoinCondition($relation, $range, $entityName);
-				
 				/** @phpstan-ignore instanceof.alwaysTrue */
 				case $relation instanceof OneToOne:
-					return $this->createOneToOneJoinCondition($joinProperty, $relation, $range, $entityName);
+					return $this->createOneToOneJoinCondition($joinProperty, $relation, $range);
 				
 				default:
 					return throw new TransformationException('Unknown relation. Should never happen');
@@ -199,7 +195,6 @@
 			return array_key_exists($propertyName, array_merge(
 				$metadata->getOneToOneDependencies(),
 				$metadata->getManyToOneDependencies(),
-				$metadata->getOneToManyDependencies(),
 			));
 		}
 		
@@ -238,7 +233,6 @@
 		 * @param AstRange|AstRangeDatabase|AstRangeJsonSource $range The parent (target) range
 		 * @return AstInterface
 		 * @throws TransformationException When inversedBy is missing
-		 * @throws EntityResolutionException When target entity metadata cannot be loaded
 		 */
 		private function createManyToOneJoinCondition(AstIdentifier $joinProperty, ManyToOne $relation, AstRange|AstRangeDatabase|AstRangeJsonSource $range): AstInterface {
 			// Fetch inversedBy
@@ -258,62 +252,24 @@
 		}
 		
 		/**
-		 * Builds a JOIN condition AST for a OneToMany relation.
-		 * The FK is on $this->range (the child entity); the PK is on $range (the parent entity).
-		 * @param OneToMany $relation The OneToMany annotation
-		 * @param AstRange|AstRangeDatabase|AstRangeJsonSource $range The parent (target) range
-		 * @param string $entityName Fully qualified class name of the parent entity, used for PK fallback
-		 * @return AstInterface
-		 * @throws TransformationException When mappedBy is missing, or relationColumn and PK are both unresolvable
-		 * @throws EntityResolutionException When entity metadata cannot be loaded
-		 */
-		private function createOneToManyJoinCondition(OneToMany $relation, AstRange|AstRangeDatabase|AstRangeJsonSource $range, string $entityName): AstInterface {
-			// Fetch mappedBy
-			$mappedBy = $relation->getMappedBy();
-			
-			// MappedBy is mandatory
-			if ($mappedBy === null) {
-				throw new TransformationException('OneToMany relation is missing mappedBy');
-			}
-			
-			// Fetch metadata of entity
-			$metadata = $this->entityStore->getMetadata($entityName);
-			
-			// For OneToMany, relationColumn is the PK on the parent side
-			// Default to the entity's primary key
-			$relationColumn = $relation->getRelationColumn() ?? $metadata->getPrimaryKey() ?? throw new TransformationException('OneToMany relation is missing relationColumn and PK');
-			
-			// Return the new property lookup
-			return $this->createPropertyLookupAst($mappedBy, $range, $relationColumn);
-		}
-		
-		/**
 		 * Builds a JOIN condition AST for a OneToOne relation.
-		 * The FK can be on either side depending on whether inversedBy or mappedBy is set.
+		 * The owning side always holds the FK column; inversedBy is always set.
 		 * @param AstIdentifier $joinProperty The property node used in the via-clause (e.g. 'profile')
 		 * @param OneToOne $relation The OneToOne annotation
 		 * @param AstRange|AstRangeDatabase|AstRangeJsonSource $range The related range
-		 * @param string $entityName Fully qualified class name of the parent entity, used for PK fallback
 		 * @return AstInterface
-		 * @throws TransformationException When neither inversedBy nor mappedBy is set, or PK is unresolvable
-		 * @throws EntityResolutionException When entity metadata cannot be loaded
+		 * @throws TransformationException When inversedBy is missing
 		 */
-		private function createOneToOneJoinCondition(AstIdentifier $joinProperty, OneToOne $relation, AstRange|AstRangeDatabase|AstRangeJsonSource $range, string $entityName): AstInterface {
-			// OneToOne with inversedBy
+		private function createOneToOneJoinCondition(AstIdentifier $joinProperty, OneToOne $relation, AstRange|AstRangeDatabase|AstRangeJsonSource $range): AstInterface {
+			// All stored OneToOne relations are owning-side — inversedBy is always set.
+			// The non-owning side is declared with @InverseOf and never reaches this method.
 			$inversedBy = $relation->getInversedBy();
-			$mappedBy = $relation->getMappedBy();
 			
-			if (!empty($inversedBy)) {
+			if (empty($inversedBy)) {
+				throw new TransformationException('OneToOne relation is missing inversedBy');
+			}
+			
 				$relationColumn = $relation->getRelationColumn() ?? $joinProperty->getName() . 'Id';
 				return $this->createPropertyLookupAst($relationColumn, $range, $inversedBy);
 			}
-			
-			if (!empty($mappedBy)) {
-				$metadata = $this->entityStore->getMetadata($entityName);
-				$relationColumn = $relation->getRelationColumn() ?? $metadata->getPrimaryKey() ?? throw new TransformationException('OneToOne relation is missing relationColumn and PK');
-				return $this->createPropertyLookupAst($relationColumn, $range, $mappedBy);
-			}
-			
-			throw new TransformationException('OneToOne relation has neither inversedBy nor mappedBy');
-		}
 	}
