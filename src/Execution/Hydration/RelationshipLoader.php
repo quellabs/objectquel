@@ -404,9 +404,16 @@
 						$parentProperty = $this->resolveInverseOfParentProperty($targetEntity, $relation, $objectClass);
 						$primaryKeyValue = $this->propertyHandler->get($entity, $parentProperty);
 						
+						// Resolve the FK column name on the dependent entity — EntityCollection queries
+						// by column property (e.g. userId), not by the relation property (e.g. user),
+						// since relation properties are rejected by the semantic analyser.
+						$dependentMetadata = $this->entityStore->getMetadata($targetEntity);
+						$viaAnnotation = $this->getRelationAnnotation($dependentMetadata, $relation);
+						$fkColumn = $viaAnnotation?->getLocalColumn() ?? $relation . 'Id';
+						
 						// Create an Entity Collection
 						$proxy = new EntityCollection(
-							$this->entityManager, $targetEntity, $relation,
+							$this->entityManager, $targetEntity, $fkColumn,
 							$primaryKeyValue
 						);
 						
