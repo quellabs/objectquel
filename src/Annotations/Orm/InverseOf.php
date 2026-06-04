@@ -95,6 +95,16 @@
 		}
 		
 		/**
+		 * Sets the fully qualified class name of the entity that owns the relationship.
+		 * Called by EntityMetadataBuilder to normalize short class names to fully qualified ones.
+		 * @param string $targetEntity
+		 * @return void
+		 */
+		public function setTargetEntity(string $targetEntity): void {
+			$this->targetEntity = $targetEntity;
+		}
+		
+		/**
 		 * Returns the property name on the target entity that points back to this entity.
 		 * The hydrator uses this to match joined rows to this collection property.
 		 * @return string

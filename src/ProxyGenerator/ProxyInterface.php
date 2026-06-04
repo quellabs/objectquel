@@ -12,8 +12,9 @@
 		/**
 		 * Constructor
 		 * @param EntityManager $entityManager Used to load the entity's data on first access.
+		 * @param \Closure $initializer Called by doInitialize() to load entity data into this proxy.
 		 */
-		public function __construct(EntityManager $entityManager);
+		public function __construct(EntityManager $entityManager, \Closure $initializer);
 		
 		/**
 		 * Returns whether the proxy has been hydrated with entity data.
