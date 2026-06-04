@@ -651,12 +651,21 @@
 		 * @throws EntityResolutionException
 		 */
 		private function getCandidateFkValue(object $candidate, string $via): mixed {
+			// If the candidate is a proxy, convert it to regular class
 			$candidateClass = $this->entityStore->resolveProxyClass($candidate);
+			
+			// Fetch the metadata of the candidate entity
 			$candidateMeta = $this->entityStore->getMetadata($candidateClass);
+			
+			// Fetch annotations
 			$manyToOne = $candidateMeta->getManyToOneDependencies()[$via] ?? null;
 			$oneToOne = $candidateMeta->getOneToOneDependencies()[$via] ?? null;
 			$viaAnnotation = $manyToOne ?? $oneToOne;
+			
+			// Fetch the relation column name
 			$fkProperty = $viaAnnotation?->getRelationColumn() ?? $via . 'Id';
+			
+			// Return the value of the relation column
 			return $this->propertyHandler->get($candidate, $fkProperty);
 		}
 		
