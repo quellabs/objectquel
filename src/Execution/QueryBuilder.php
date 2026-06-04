@@ -105,7 +105,7 @@
 					continue;
 				}
 				
-				// resolveProxyClass strips namespace aliases and other decoration so
+				// normalizeEntityClass strips namespace aliases and other decoration so
 				// we can do a reliable string comparison against $entityType.
 				// If this relation points somewhere else entirely, it is irrelevant here.
 				if ($this->entityStore->normalizeEntityClass($relation->getTargetEntity()) !== $entityType) {

@@ -47,31 +47,6 @@
 		}
 		
 		/**
-		 * Convert entity class name to JSON:API resource type format.
-		 *
-		 * Transforms a fully-qualified entity class name to camelCase and removes
-		 * the "Entity" suffix if present. This creates consistent resource type
-		 * names for the JSON:API specification.
-		 *
-		 * Examples:
-		 * - App\Entity\UserEntity -> user
-		 * - App\Model\BlogPost -> blogPost
-		 *
-		 * @param string $entityName Fully qualified entity class name
-		 * @return string Normalized resource type name in camelCase
-		 */
-		protected function resolveProxyClass(string $entityName): string {
-			// Remove namespace from class name
-			$removedNamespace = $this->class_basename($entityName);
-			
-			// Remove "Entity" suffix if present (common naming convention)
-			$withoutEntitySuffix = preg_replace('/Entity$/', '', $removedNamespace) ?? $removedNamespace;
-			
-			// Convert to camelCase (first letter lowercase)
-			return lcfirst($withoutEntitySuffix);
-		}
-		
-		/**
 		 * Collect all identifier values for the given entity.
 		 * @param object $entity The entity to extract identifiers from
 		 * @return array<int, string> Array of identifier values in the order they're defined

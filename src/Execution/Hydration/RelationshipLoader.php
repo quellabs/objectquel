@@ -151,7 +151,7 @@
 			}
 			
 			// Gather information needed to create the proxy.
-			// resolveProxyClass ensures we have the fully-qualified class name.
+			// normalizeEntityClass ensures we have the fully-qualified class name.
 			$targetEntityName = $this->entityStore->normalizeEntityClass($dependency->getTargetEntity());
 			
 			// resolveTargetProperty returns null only when the target entity has no
