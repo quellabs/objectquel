@@ -55,7 +55,7 @@
 					$valueB = $b[$range] ?? null;
 					
 					// Equal values (including both null) fall through to the next
-					// sort criterion, implementing stable multi-level sorting
+					// sort criterion, implementing multi-level sorting
 					if ($valueA === $valueB) {
 						continue;
 					}
