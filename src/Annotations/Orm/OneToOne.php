@@ -19,8 +19,8 @@
 		protected array $parameters;
 		
 		private string $targetEntity;
-		private ?string $inversedBy;
-		private ?string $relationColumn;
+		private ?string $referencedColumn;
+		private ?string $localColumn;
 		private ?string $foreignColumn;
 		private string $fetch;
 		
@@ -31,35 +31,35 @@
 		 */
 		public function __construct(array $parameters) {
 			$targetEntity = $parameters['targetEntity'] ?? null;
-			$inversedBy = $parameters['inversedBy'] ?? null;
-			$relationColumn = $parameters['relationColumn'] ?? null;
+			$referencedColumn = $parameters['referencedColumn'] ?? null;
+			$localColumn = $parameters['localColumn'] ?? null;
 			$foreignColumn = $parameters['foreignColumn'] ?? null;
-			$fetch = $parameters['fetch'] ?? 'LAZY';
+			$fetch = $parameters['fetch'] ?? 'EAGER';
 			
 			if (!is_string($targetEntity)) {
-				throw new \InvalidArgumentException("OneToOne: 'targetEntity' must be a string");
+				throw new \InvalidArgumentException("ManyToOne: 'targetEntity' must be a string");
 			}
 			
-			if ($inversedBy !== null && !is_string($inversedBy)) {
-				throw new \InvalidArgumentException("OneToOne: 'inversedBy' must be a string or null");
+			if ($referencedColumn !== null && !is_string($referencedColumn)) {
+				throw new \InvalidArgumentException("ManyToOne: 'referencedColumn' must be a string or null");
 			}
 			
-			if ($relationColumn !== null && !is_string($relationColumn)) {
-				throw new \InvalidArgumentException("OneToOne: 'relationColumn' must be a string or null");
+			if ($localColumn !== null && !is_string($localColumn)) {
+				throw new \InvalidArgumentException("ManyToOne: 'localColumn' must be a string or null");
 			}
 			
 			if ($foreignColumn !== null && !is_string($foreignColumn)) {
-				throw new \InvalidArgumentException("OneToOne: 'foreignColumn' must be a string or null");
+				throw new \InvalidArgumentException("ManyToOne: 'foreignColumn' must be a string or null");
 			}
 			
 			if (!is_string($fetch)) {
-				throw new \InvalidArgumentException("OneToOne: 'fetch' must be a string");
+				throw new \InvalidArgumentException("ManyToOne: 'fetch' must be a string");
 			}
 			
 			$this->parameters = $parameters;
 			$this->targetEntity = $targetEntity;
-			$this->inversedBy = $inversedBy;
-			$this->relationColumn = $relationColumn;
+			$this->referencedColumn = $referencedColumn;
+			$this->localColumn = $localColumn;
 			$this->foreignColumn = $foreignColumn;
 			$this->fetch = strtoupper($fetch);
 		}
@@ -79,10 +79,10 @@
 		public function getTargetEntity(): string {
 			return $this->targetEntity;
 		}
-		
+	
 		/**
-		 * Sets the target entity.
-		 * @param string $targetEntity The full namespace of the target entity.
+		 * Retrieve the target entity.
+		 * @param string $targetEntity
 		 * @return void
 		 */
 		public function setTargetEntity(string $targetEntity): void {
@@ -91,22 +91,21 @@
 		}
 		
 		/**
-		 * Retrieves the 'inversedBy' parameter.
-		 * This is the primary key property on the target entity that the foreign key
-		 * column points to — used by the normalizer to resolve the join condition.
-		 * @return string|null The primary key property name on the target entity, or null if not set.
+		 * Retrieves the 'referencedColumn' parameter, if present.
+		 * @return string|null The property in the target entity that refers to the current
+		 *                     entity, or null if it is not set.
 		 */
-		public function getInversedBy(): ?string {
-			return $this->inversedBy;
+		public function getReferencedColumn(): ?string {
+			return $this->referencedColumn;
 		}
 		
 		/**
-		 * Retrieves the name of the relationship column.
-		 * This is the foreign key column on the owning entity side.
-		 * @return string|null The name of the join column or null if not set.
+		 * Retrieve the name of the relationship column in the current entity.
+		 * This method retrieves the name of the column that represents the ManyToOne relationship in the database.
+		 * @return string|null The name of the join column or null if it is not set.
 		 */
-		public function getRelationColumn(): ?string {
-			return $this->relationColumn;
+		public function getLocalColumn(): ?string {
+			return $this->localColumn;
 		}
 		
 		/**

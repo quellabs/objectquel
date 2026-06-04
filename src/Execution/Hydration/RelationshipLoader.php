@@ -81,7 +81,7 @@
 			}
 			
 			// Determine the column and value for the relation based on the dependency.
-			$relationColumn = $dependency->getRelationColumn() ?? "{$property}Id";
+			$relationColumn = $dependency->getLocalColumn() ?? "{$property}Id";
 			$relationColumnValue = $this->propertyHandler->get($entity, $relationColumn);
 			
 			// If the value of the relation column is 0 or null, the operation does not continue.
@@ -125,7 +125,7 @@
 		 */
 		private function createAndSetProxy(object $entity, string $property, ManyToOne|OneToOne $dependency): void {
 			// Determine the relation column (the column containing the foreign key)
-			$relationColumn = $dependency->getRelationColumn() ?? "{$property}Id";
+			$relationColumn = $dependency->getLocalColumn() ?? "{$property}Id";
 			
 			// Get the primary key value. If it's empty, clear the relationship
 			$relationColumnValue = $this->propertyHandler->get($entity, $relationColumn);
@@ -663,7 +663,7 @@
 			$viaAnnotation = $manyToOne ?? $oneToOne;
 			
 			// Fetch the relation column name
-			$fkProperty = $viaAnnotation?->getRelationColumn() ?? $via . 'Id';
+			$fkProperty = $viaAnnotation?->getLocalColumn() ?? $via . 'Id';
 			
 			// Return the value of the relation column
 			return $this->propertyHandler->get($candidate, $fkProperty);

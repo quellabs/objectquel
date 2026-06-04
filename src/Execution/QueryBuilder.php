@@ -103,7 +103,7 @@
 			// The relation column is the foreign-key column on the *dependent* side.
 			// The annotation may declare it explicitly; if not, we fall back to the
 			// conventional "{propertyName}Id" naming (e.g. property "order" → "orderId").
-			$relationColumn = $relation->getRelationColumn() ?? "{$property}Id";
+			$relationColumn = $relation->getLocalColumn() ?? "{$property}Id";
 			
 			// The foreign column is the referenced column on the *main* entity side —
 			// typically the primary key. Preference order:
@@ -179,7 +179,7 @@
 				// For OneToOne relations we only want the *owning* side — the entity that
 				// holds the foreign-key column. The inverse side (annotated with inversedBy)
 				// does not own the column and must not generate a redundant range.
-				if ($requireNoInversedBy && $relation->getInversedBy() !== null) {
+				if ($requireNoInversedBy && $relation->getReferencedColumn() !== null) {
 					continue;
 				}
 				

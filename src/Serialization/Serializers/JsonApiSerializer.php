@@ -148,7 +148,7 @@
 				if ($relationship instanceof InverseOf) {
 					$fkProperty = $relationship->getRelation();
 				} else {
-					$fkProperty = $relationship->getInversedBy();
+					$fkProperty = $relationship->getReferencedColumn();
 				}
 				
 				// Query for all related entities using the FK property

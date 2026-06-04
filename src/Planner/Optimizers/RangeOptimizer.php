@@ -523,7 +523,7 @@
 					if (
 						($annotation instanceof ManyToOne || $annotation instanceof OneToOne) &&
 						$annotation->getTargetEntity() === $relatedEntityName &&
-						$annotation->getRelationColumn() === $ownPropertyName
+						$annotation->getLocalColumn() === $ownPropertyName
 					) {
 						// resolveTargetProperty handles both ManyToOne (inversedBy or PK fallback)
 						// and OneToOne (inversedBy or PK fallback) transparently.

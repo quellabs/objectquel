@@ -236,7 +236,7 @@
 		 */
 		private function createManyToOneJoinCondition(AstIdentifier $joinProperty, ManyToOne $relation, AstRange|AstRangeDatabase|AstRangeJsonSource $range): AstInterface {
 			// Fetch inversedBy
-			$inversedBy = $relation->getInversedBy();
+			$inversedBy = $relation->getReferencedColumn();
 			
 			// InversedBy is mandatory
 			if ($inversedBy === null) {
@@ -245,7 +245,7 @@
 			
 			// inversedBy is the FK property name on the owning entity; relationColumn is the
 			// referenced column on the target entity, defaulting to the join property name + 'Id'.
-			$relationColumn = $relation->getRelationColumn() ?? $joinProperty->getName() . 'Id';
+			$relationColumn = $relation->getLocalColumn() ?? $joinProperty->getName() . 'Id';
 			
 			// Return new property lookup
 			return $this->createPropertyLookupAst($inversedBy, $range, $relationColumn);
@@ -263,13 +263,13 @@
 		private function createOneToOneJoinCondition(AstIdentifier $joinProperty, OneToOne $relation, AstRange|AstRangeDatabase|AstRangeJsonSource $range): AstInterface {
 			// All stored OneToOne relations are owning-side — inversedBy is always set.
 			// The non-owning side is declared with @InverseOf and never reaches this method.
-			$inversedBy = $relation->getInversedBy();
+			$inversedBy = $relation->getReferencedColumn();
 			
 			if (empty($inversedBy)) {
 				throw new TransformationException('OneToOne relation is missing inversedBy');
 			}
 			
-				$relationColumn = $relation->getRelationColumn() ?? $joinProperty->getName() . 'Id';
+				$relationColumn = $relation->getLocalColumn() ?? $joinProperty->getName() . 'Id';
 				return $this->createPropertyLookupAst($relationColumn, $range, $inversedBy);
 			}
 	}

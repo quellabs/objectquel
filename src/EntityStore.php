@@ -345,7 +345,7 @@
 			// OneToOne: return inversedBy, falling back to the primary key
 			// ManyToOne: inversedBy is a direct property name on the target entity.
 			// If absent, fall back to the target entity's primary key.
-			return $relation->getInversedBy() ?? $metadata->getPrimaryKey();
+			return $relation->getReferencedColumn() ?? $metadata->getPrimaryKey();
 		}
 		
 		// ==================== Private Helper Methods ====================

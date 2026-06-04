@@ -659,7 +659,7 @@
 				// Filter OneToOne relationships to only include those that are bidirectional
 				// This is determined by checking if inversedBy is not empty
 				$oneToOneParents = array_filter($oneToOneParents, function ($e) {
-					return !empty($e->getInversedBy());
+					return !empty($e->getReferencedColumn());
 				});
 				
 				// Process all parent dependencies (both ManyToOne and qualifying OneToOne)
@@ -804,7 +804,7 @@
 					// These types indicate a dependency on a parent entity
 					if (
 						!($annotation instanceof ManyToOne) &&
-						(!($annotation instanceof OneToOne) || is_null($annotation->getInversedBy()))
+						(!($annotation instanceof OneToOne) || is_null($annotation->getReferencedColumn()))
 					) {
 						continue; // Skip this annotation if it's not a relationship to a parent
 					}
@@ -816,7 +816,7 @@
 					// If the parent entity exists, add it to the result with its relationship details.
 					if (!empty($parentEntity) && is_object($parentEntity)) {
 						// Get the relation column name, or fall back to a convention
-						$relationColumn = $annotation->getRelationColumn() ?? "{$property}Id";
+						$relationColumn = $annotation->getLocalColumn() ?? "{$property}Id";
 						
 						// Get the parent entity's primary key value(s)
 						$parentPrimaryKeys = $this->getIdentifiers($parentEntity);
@@ -924,7 +924,7 @@
 			// We only want relationships where both sides reference each other
 			// This is determined by checking if the inversedBy property is set
 			$oneToOneDependencies = array_filter($oneToOneDependencies, function ($e) {
-				return !empty($e->getInversedBy());
+				return !empty($e->getReferencedColumn());
 			});
 			
 			// Process both ManyToOne and filtered OneToOne relationships together
@@ -936,7 +936,7 @@
 				}
 				
 				// Fetch relation column
-				$relationColumn = $annotation->getRelationColumn() ?? "{$property}Id";
+				$relationColumn = $annotation->getLocalColumn() ?? "{$property}Id";
 				
 				// Get cascade configuration information for this relationship
 				// This tells us how changes to the parent should propagate to dependents
