@@ -19,6 +19,7 @@
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRetrieve;
 	use Quellabs\ObjectQuel\ProxyGenerator\ProxyInterface;
 	use Quellabs\ObjectQuel\ReflectionManagement\PropertyHandler;
+	use Quellabs\ObjectQuel\Metadata\EntityMetadataRecord;
 	
 	class RelationshipLoader {
 		
@@ -296,9 +297,7 @@
 			// determine which property on *this* entity the FK references (usually the PK,
 			// but may be a unique non-PK column if inversedBy says otherwise)
 			$dependentMetadata = $this->entityStore->getMetadata($targetEntity);
-			$manyToOne = $dependentMetadata->getManyToOneDependencies()[$relation] ?? null;
-			$oneToOne = $dependentMetadata->getOneToOneDependencies()[$relation] ?? null;
-			$viaRelation = $manyToOne ?? $oneToOne;
+			$viaRelation = $this->getRelationAnnotation($dependentMetadata, $relation);
 			
 			// Resolve the referenced property on this entity; fall back to primary key when
 			// inversedBy is absent or the relation annotation cannot be found
@@ -569,9 +568,22 @@
 		}
 		
 		/**
-		 * Returns true if the candidate's via property is annotated as a relation
-		 * explicitly pointing back to $parentClass. Prevents false matches when two
-		 * unrelated entity types share the same FK property name and overlapping ID values.
+		 * Returns the ManyToOne or owning-side OneToOne annotation for a given property
+		 * on an entity, or null if no such relation exists.
+		 * Centralises the repeated pattern of checking both relation types.
+		 * @param EntityMetadataRecord $metadata
+		 * @param string $property
+		 * @return ManyToOne|OneToOne|null
+		 */
+		private function getRelationAnnotation(EntityMetadataRecord $metadata, string $property): ManyToOne|OneToOne|null {
+			return $metadata->getManyToOneDependencies()[$property]
+				?? $metadata->getOneToOneDependencies()[$property]
+				?? null;
+		}
+		
+		/**
+		 * Returns true if the candidate's specific $relation property is a ManyToOne or OneToOne
+		 * that points to $parentClass.
 		 * @param object $candidate
 		 * @param string $relation
 		 * @param string $parentClass
@@ -580,20 +592,18 @@
 		 */
 		private function candidateMapsToParent(object $candidate, string $relation, string $parentClass): bool {
 			$candidateClass = $this->entityStore->normalizeEntityClass($candidate);
-			$deps = $this->getRelationAnnotations($candidateClass);
+			$metadata = $this->entityStore->getMetadata($candidateClass);
 			
-			foreach ($deps as $property => $propertyDeps) {
-				foreach ($propertyDeps as $dep) {
-					if (
-						($dep instanceof ManyToOne || $dep instanceof OneToOne) &&
-						$this->entityStore->normalizeEntityClass($dep->getTargetEntity()) === $parentClass
-					) {
-						return true;
-					}
-				}
+			// Look up the exact relation property — not just any relation pointing to $parentClass
+			$dep = $this->getRelationAnnotation($metadata, $relation);
+			
+			// Bail if the relation does not exist
+			if ($dep === null) {
+				return false;
 			}
 			
-			return false;
+			// Validate the relation points back to this entity
+			return $this->entityStore->normalizeEntityClass($dep->getTargetEntity()) === $parentClass;
 		}
 		
 		/**
@@ -609,9 +619,7 @@
 		 */
 		private function resolveInverseOfParentProperty(string $targetEntity, string $relation, string $ownerClass): ?string {
 			$dependentMetadata = $this->entityStore->getMetadata($targetEntity);
-			$manyToOne = $dependentMetadata->getManyToOneDependencies()[$relation] ?? null;
-			$oneToOne = $dependentMetadata->getOneToOneDependencies()[$relation] ?? null;
-			$viaRelation = $manyToOne ?? $oneToOne;
+			$viaRelation = $this->getRelationAnnotation($dependentMetadata, $relation);
 			
 			// via must reference a ManyToOne or OneToOne on the dependent entity
 			if ($viaRelation === null) {
@@ -652,12 +660,8 @@
 			// Fetch the metadata of the candidate entity
 			$candidateMeta = $this->entityStore->getMetadata($candidateClass);
 			
-			// Fetch annotations
-			$manyToOne = $candidateMeta->getManyToOneDependencies()[$relation] ?? null;
-			$oneToOne = $candidateMeta->getOneToOneDependencies()[$relation] ?? null;
-			$viaAnnotation = $manyToOne ?? $oneToOne;
-			
-			// Fetch the relation column name
+			// Look up the relation annotation to find the FK column name
+			$viaAnnotation = $this->getRelationAnnotation($candidateMeta, $relation);
 			$fkProperty = $viaAnnotation?->getLocalColumn() ?? $relation . 'Id';
 			
 			// Return the value of the relation column
