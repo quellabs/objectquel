@@ -31,6 +31,28 @@ intent; ObjectQuel handles the mechanics.
 composer require quellabs/objectquel
 ```
 
+## Upgrading to 2.0
+
+Version 2.0 introduces breaking changes to the relationship annotation model:
+
+- **`@OneToMany` is removed.** Replace it with `@InverseOf(targetEntity=..., relation="...")` on the owning entity's inverse collection property. `InverseOf` is a hydration instruction only — it does not define a relationship or generate a join.
+- **Non-owning `@OneToOne` is removed.** The non-owning side of a OneToOne relationship should now be declared with `@InverseOf` instead.
+- **`@OneToOne` is owning-side only.** Every `@OneToOne` annotation must hold the foreign key column.
+
+Before:
+```php
+// UserEntity
+/** @Orm\OneToMany(targetEntity=PostEntity::class, mappedBy="user") */
+public Collection $posts;
+```
+
+After:
+```php
+// UserEntity
+/** @Orm\InverseOf(targetEntity=PostEntity::class, relation="user") */
+public CollectionInterface $posts;
+```
+
 ## Quick start
 
 ```php
@@ -129,7 +151,7 @@ A multi-entity query with filtering and relationship traversal:
 ```php
 $results = $entityManager->executeQuery("
     range of o is App\\Entity\\Order
-    range of c is App\\Entity\\Customer via o.customerId
+    range of c is App\\Entity\\Customer via o.customer
     retrieve (o, c.name) where o.createdAt > :since
     sort by o.createdAt desc
     window 0 using window_size 20
@@ -167,7 +189,7 @@ traversals — operations that require raw SQL or post-processing in other ORMs.
 ObjectQuel is a full Data Mapper ORM, not just a query language:
 
 - **Entity mapping** — annotation-based with `@Orm\Table`, `@Orm\Column`, and relationship annotations
-- **Relationships** — OneToOne, ManyToOne, OneToMany, ManyToMany (via bridge entities)
+- **Relationships** — OneToOne, ManyToOne, InverseOf (hydration target for inverse collections), ManyToMany (via bridge entities)
 - **Unit of Work** — change tracking with persist and flush
 - **Lazy loading** — configurable proxy generation with caching
 - **Immutable entities** — for database views and read-only tables
