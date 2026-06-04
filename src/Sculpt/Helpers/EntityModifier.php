@@ -482,8 +482,8 @@
 			}
 			
 			// inversedBy identifies the owning side property in a bidirectional relationship
-			if (!empty($property['inversedBy'])) {
-				$options[] = "inversedBy=\"{$property['inversedBy']}\"";
+			if (!empty($property['referencedColumn'])) {
+				$options[] = "referencedColumn=\"{$property['referencedColumn']}\"";
 			}
 			
 			// Collections are fetched lazily to avoid loading the entire related set on access
@@ -631,8 +631,8 @@
 				
 				// Before reassigning, remove this entity from the previous parent's collection
 				// so the old parent's inverse side stays consistent
-				if ($property['relationshipType'] === 'ManyToOne' && !empty($property['inversedBy'])) {
-					$singularName = StringInflector::singularize($property['inversedBy']);
+				if ($property['relationshipType'] === 'ManyToOne' && !empty($property['referencedColumn'])) {
+					$singularName = StringInflector::singularize($property['referencedColumn']);
 					$removerMethod = 'remove' . ucfirst($singularName);
 					
 					$setterBody .= "\n";
@@ -645,8 +645,8 @@
 				$setterBody .= "            \$this->{$propertyName} = \${$propertyName};\n";
 				
 				// Add this entity to the new parent's collection to keep the inverse side in sync
-				if ($property['relationshipType'] === 'ManyToOne' && !empty($property['inversedBy'])) {
-					$singularName = StringInflector::singularize($property['inversedBy']);
+				if ($property['relationshipType'] === 'ManyToOne' && !empty($property['referencedColumn'])) {
+					$singularName = StringInflector::singularize($property['referencedColumn']);
 					$adderMethod = 'add' . ucfirst($singularName);
 					
 					$setterBody .= "            \${$propertyName}?->{$adderMethod}(\$this);";

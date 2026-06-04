@@ -65,7 +65,7 @@
 	 *     relationshipType: OrmRelationshipType,
 	 *     targetEntity: string,
 	 *     relation?: string,
-	 *     inversedBy?: string|null,
+	 *     referencedColumn?: string|null,
 	 *     localColumn?: string|null
 	 * }
 	 *
