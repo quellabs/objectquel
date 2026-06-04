@@ -129,7 +129,7 @@ A multi-entity query with filtering and relationship traversal:
 ```php
 $results = $entityManager->executeQuery("
     range of o is App\\Entity\\Order
-    range of c is App\\Entity\\Customer via o.customerId
+    range of c is App\\Entity\\Customer via o.customer
     retrieve (o, c.name) where o.createdAt > :since
     sort by o.createdAt desc
     window 0 using window_size 20
