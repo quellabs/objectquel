@@ -3,6 +3,7 @@
 	namespace Quellabs\ObjectQuel\Serialization\Serializers;
 	
 	use Quellabs\ObjectQuel\EntityManager;
+	use Quellabs\ObjectQuel\Annotations\Orm\InverseOf;
 	use Quellabs\ObjectQuel\Exception\EntityResolutionException;
 	use Quellabs\ObjectQuel\Exception\QuelException;
 	use Quellabs\ObjectQuel\Serialization\UrlBuilders\UrlBuilderInterface;
@@ -118,7 +119,7 @@
 			$metadata = $this->entityStore->getMetadata($entity);
 			
 			// Get all relationship mappings from entity metadata
-			// Merge one-to-many and one-to-one dependencies
+			// Merge InverseOf and owning-side OneToOne dependencies
 			$relationships = array_merge(
 				$metadata->getInverseOfRelations(),
 				$metadata->getOneToOneDependencies()
@@ -143,11 +144,15 @@
 				// Get the target entity's resource type name
 				$relationshipEntityName = $this->resolveProxyClass($targetEntity);
 				
-				// Query for all related entities using the mapped relationship
-				// Uses the inverse side property (mappedBy) to find related records
+				// Resolve the FK property name: InverseOf uses via(), OneToOne uses inversedBy()
+				$fkProperty = $relationship instanceof InverseOf
+					? $relationship->getVia()
+					: $relationship->getInversedBy();
+				
+				// Query for all related entities using the FK property
 				$relationshipEntities = $this->entityManager->findBy(
 					$targetEntity,
-					[$relationship->getMappedBy() => $identifierValue]
+					[$fkProperty => $identifierValue]
 				);
 				
 				// Skip empty relationships to keep response clean

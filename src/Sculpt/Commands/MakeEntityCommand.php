@@ -226,15 +226,15 @@
 		 * @return RelationProperty
 		 */
 		private function buildRelationshipProperty(
-			string  $propertyName,
-			string  $phpType,
-			string  $relationshipType,
-			string  $targetEntity,
+			string $propertyName,
+			string $phpType,
+			string $relationshipType,
+			string $targetEntity,
 			?string $via,
 			?string $inversedBy,
 			?string $relationColumn,
-			string  $foreignColumn,
-			bool    $nullable
+			string $foreignColumn,
+			bool $nullable
 		): array {
 			return [
 				"name"             => $propertyName,
@@ -263,8 +263,8 @@
 		private function buildForeignKeyProperty(
 			string $columnName,
 			string $type,
-			bool   $unsigned,
-			bool   $nullable
+			bool $unsigned,
+			bool $nullable
 		): array {
 			return [
 				"name"     => $columnName,
@@ -319,7 +319,7 @@
 			];
 			
 			// Add FK column for owning side, but only when this is not the inverse side of a
-			// bidirectional relationship (mappedBy !== null means we're the inverse/non-owning side,
+			// bidirectional relationship (via !== null means we're the inverse/non-owning side,
 			// so the FK lives in the other table and we must not generate a column here)
 			if ($isOwningSide && $relationColumn !== null && $mappingConfig['via'] === null && $fkInfo !== null) {
 				$properties[] = $this->buildForeignKeyProperty($relationColumn, $fkInfo['type'], $fkInfo['unsigned'], $nullable);
@@ -342,7 +342,7 @@
 		
 		/**
 		 * Collect bidirectional mapping configuration for a relationship.
-		 * Returns mappedBy/inversedBy values and whether to create property in target entity.
+		 * Returns via/inversedBy values and whether to create property in target entity.
 		 * The return type is a union: when createInTarget is absent/false the optional keys are
 		 * absent; when createInTarget is true they are always present, so PHPStan won't flag
 		 * offsetAccess.notFound at the call site.
@@ -375,11 +375,11 @@
 		 */
 		private function handleInverseSideMapping(string $targetEntity, string $currentEntity, string $targetRelationType): array {
 			// Try to find existing owning side property
-			$mappedBy = $this->findRelationshipProperty($targetEntity, $currentEntity);
+			$via = $this->findRelationshipProperty($targetEntity, $currentEntity);
 			
-			if ($mappedBy !== null) {
-				$this->output->writeLn("\nFound existing property '{$mappedBy}' in {$targetEntity}Entity");
-				return ['via' => $mappedBy, 'inversedBy' => null];
+			if ($via !== null) {
+				$this->output->writeLn("\nFound existing property '{$via}' in {$targetEntity}Entity");
+				return ['via' => $via, 'inversedBy' => null];
 			}
 			
 			// Offer to create owning side property
@@ -389,11 +389,11 @@
 			);
 			
 			if (!$createTarget) {
-				$mappedBy = $this->input->ask(
+				$via = $this->input->ask(
 					"\nProperty name in {$targetEntity}Entity (you'll need to create it manually)",
 					lcfirst($currentEntity)
 				);
-				return ['via' => $mappedBy, 'inversedBy' => null];
+				return ['via' => $via, 'inversedBy' => null];
 			}
 			
 			$targetPropertyName = $this->input->ask("\nNew property name inside {$targetEntity}Entity", lcfirst($currentEntity));
@@ -449,7 +449,7 @@
 				$targetRelationType = ($relationshipType === 'ManyToOne') ? 'InverseOf' : 'OneToOne';
 				
 				return [
-					'via'           => null,
+					'via'                => null,
 					'inversedBy'         => $inversedBy,
 					'createInTarget'     => true,
 					'targetPropertyName' => $inversedBy,
@@ -472,12 +472,12 @@
 		 * @throws EntityResolutionException
 		 */
 		private function createRelationshipInTargetEntity(
-			string  $targetEntity,
-			string  $currentEntity,
-			string  $propertyName,
-			string  $relationshipType,
+			string $targetEntity,
+			string $currentEntity,
+			string $propertyName,
+			string $relationshipType,
 			?string $inversedBy,
-			string  $foreignColumn
+			string $foreignColumn
 		): void {
 			if (!$this->getEntityModifier()->entityExists($targetEntity . "Entity")) {
 				$this->output->warning(
@@ -502,7 +502,7 @@
 					$phpType,
 					$relationshipType,
 					$currentEntity,
-					$mappedBy,
+					$via,
 					null,  // Inverse side doesn't have inversedBy
 					$isOwningSide ? $propertyName . "Id" : null,
 					$foreignColumn,
@@ -769,7 +769,7 @@
 				if (!$this->getEntityStore()->exists($fullEntityName)) {
 					return $result;
 				}
-
+				
 				// Fetch the entity's metadata
 				$metadata = $this->getEntityStore()->getMetadata($fullEntityName);
 				

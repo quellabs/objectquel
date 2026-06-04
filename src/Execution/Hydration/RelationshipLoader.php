@@ -601,14 +601,14 @@
 		
 		/**
 		 * Resolves the property on the owner entity that an InverseOf's via FK references.
-		 * Looks up the ManyToOne or OneToOne annotation on the dependent entity's via property
-		 * and calls resolveTargetProperty() on it. Falls back to the owner's primary key when
-		 * no annotation is found or inversedBy is not set.
+		 * Looks up the ManyToOne or OneToOne annotation on the dependent entity's via property,
+		 * validates that it points back to the owner, and returns the referenced property name.
 		 * @param string $targetEntity Fully qualified dependent entity class name
 		 * @param string $via Property name on the dependent entity that holds the FK
 		 * @param string $ownerClass Fully qualified owner entity class name
 		 * @return string|null The referenced property name on the owner, or null if unresolvable
 		 * @throws EntityResolutionException
+		 * @throws \RuntimeException When via does not reference a valid back-pointing relation
 		 */
 		private function resolveInverseOfParentProperty(string $targetEntity, string $via, string $ownerClass): ?string {
 			$dependentMetadata = $this->entityStore->getMetadata($targetEntity);
@@ -616,8 +616,26 @@
 			$oneToOne = $dependentMetadata->getOneToOneDependencies()[$via] ?? null;
 			$viaRelation = $manyToOne ?? $oneToOne;
 			
+			// via must reference a ManyToOne or OneToOne on the dependent entity
+			if ($viaRelation === null) {
+				throw new \RuntimeException(
+					"InverseOf via='{$via}' on {$ownerClass} does not match any ManyToOne or OneToOne on {$targetEntity}."
+				);
+			}
+			
+			// The relation must point back at the declaring entity
+			$resolvedEntity = $this->entityStore->resolveProxyClass($viaRelation->getTargetEntity());
+			
+			if ($resolvedEntity !== $ownerClass) {
+				throw new \RuntimeException(
+					"InverseOf via='{$via}' on {$ownerClass} points to {$resolvedEntity}, not {$ownerClass}. " .
+					"The via property must reference a relation that points back to the declaring entity."
+				);
+			}
+			
+			// Resolve the referenced property on the owner; fall back to its primary key
 			$ownerPrimaryKey = $this->entityStore->getMetadata($ownerClass)->getPrimaryKey();
-			$resolvedTarget = $viaRelation !== null ? $this->entityStore->resolveTargetProperty($viaRelation) : null;
+			$resolvedTarget = $this->entityStore->resolveTargetProperty($viaRelation);
 			return $resolvedTarget ?? $ownerPrimaryKey;
 		}
 		

@@ -1173,13 +1173,9 @@
 			// Fetch metadata of this entity
 			$metadata = $this->getEntityStore()->getMetadata($entity);
 			
-			// Check each OneToOne relationship defined in this entity
+			// Check each OneToOne relationship defined in this entity.
+			// All entries are owning-side by definition — non-owning sides are declared with @InverseOf.
 			foreach ($metadata->getOneToOneDependencies() as $property => $annotation) {
-				// Skip if this is the owning side of the relationship - we only want to process non-owning sides
-				if (empty($annotation->getMappedBy())) {
-					continue;
-				}
-				
 				// Retrieve cascade configuration from metadata for this property
 				$cascadeInfo = $this->getCascadeInfo(get_class($entity), $property);
 				
