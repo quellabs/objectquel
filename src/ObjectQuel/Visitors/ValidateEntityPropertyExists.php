@@ -49,7 +49,7 @@
 			}
 			
 			// Fetch the parent. This will always be an entity right now
-			// We still have to check for AstIdentifier to please phpstan
+			// We still have to check for AstIdentifier to please PhpStan
 			$parentNode = $node->getParent();
 			
 			if (!$parentNode instanceof AstIdentifier) {
@@ -64,18 +64,18 @@
 			// Fetch the entity name
 			$entityName = $parentNode->getEntityName();
 			
-			// Throw if none was attached. Never happens, but again, to please phpstan
+			// Throw if none was attached. Never happens, but again, to please PhpStan
 			if ($entityName === null) {
 				throw new SemanticException("Missing entity name in AstIdentifier property");
 			}
 			
 			// Fetch column map and relations
 			$propertyName = $node->getName();
-			$metadata = $this->entityStore->getMetadata($entityName);
-			$relations = $metadata->getInverseOfRelations();
 			
 			// Check if the property exists in the entity.
-			if (!isset($metadata->columnMap[$propertyName]) && !isset($relations[$propertyName])) {
+			$metadata = $this->entityStore->getMetadata($entityName);
+			
+			if (!isset($metadata->columnMap[$propertyName])) {
 				throw new SemanticException("The property {$propertyName} does not exist in entity {$entityName}. Please check for typos or verify that the correct entity is being referenced in the query.");
 			}
 		}

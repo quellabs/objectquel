@@ -86,17 +86,20 @@
 			// Step 1: Validate that all ranges have a unique name
 			$this->validateNoDuplicateRanges($ast);
 			
-			// Step 2: Validate that every database range exists in the entity store
+			// Step 2: Validate that all range 'via' clauses have been transformed to expressions
+			$this->validateViaClauseNormalisationPassed($ast);
+			
+			// Step 3: Validate that every database range exists in the entity store
 			$this->validateEntityInRangeExists($ast);
 			
-			// Step 3: Validate that there is at least one range without a VIA clause.
+			// Step 4: Validate that there is at least one range without a VIA clause.
 			//         This range will act as the FROM clause of the SELECT query.
 			$this->validateAtLeastOneRangeWithoutVia($ast);
 			
-			// Step 3: Validate that each root identifier links to a range that exists
+			// Step 5: Validate that each root identifier links to a range that exists
 			$this->processWithVisitor($ast, ValidateRangesDeclared::class, $this->entityStore);
 			
-			// Step 4: Validate that via clauses do not form circular dependencies
+			// Step 6: Validate that via clauses do not form circular dependencies
 			$this->validateNoCircularViaDependencies($ast);
 			
 			// ==============================================================================
@@ -250,6 +253,33 @@
 					"Duplicate range name(s) detected: " . implode(', ', $duplicateNames) .
 					". Each range name must be unique within a query."
 				);
+			}
+		}
+		
+		/**
+		 * Validates that all 'via' clauses were successfully resolved during normalisation.
+		 *
+		 * After normalisation, a valid 'via' clause referencing a relation is transformed
+		 * into an AstExpression containing the resolved join condition. If a 'via' clause
+		 * still holds a raw AstIdentifier at this point, normalisation could not resolve it,
+		 * meaning the property is a column rather than a relation.
+		 *
+		 * @param AstRetrieve $ast The AST to validate
+		 * @throws SemanticException When a 'via' clause references a column instead of a relation
+		 */
+		private function validateViaClauseNormalisationPassed(AstRetrieve $ast): void {
+			foreach ($ast->getRanges() as $range) {
+				// Ranges without a via clause are always valid
+				if ($range->getJoinProperty() === null) {
+					continue;
+				}
+				
+				// A successful normalisation transforms the via AstIdentifier into an AstExpression.
+				// If the join property is still an AstIdentifier, normalisation could not resolve
+				// it as a relation — meaning the property is a plain column, which is not allowed.
+				if ($range->getJoinProperty() instanceof AstIdentifier) {
+					throw new SemanticException("The 'via' property in range '{$range->getName()}' must be a relation, not a column.");
+				}
 			}
 		}
 		

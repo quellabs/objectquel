@@ -364,6 +364,7 @@
 		 * Schedules an entity for removal
 		 * @param object $entity
 		 * @return void
+		 * @throws EntityResolutionException
 		 */
 		public function remove(object $entity): void {
 			$this->unitOfWork->scheduleForDelete($entity);
