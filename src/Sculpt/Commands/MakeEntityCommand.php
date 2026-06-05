@@ -364,7 +364,7 @@
 				// Target entity exists but has no property pointing back — proceeding without
 				// creating one would produce a broken @InverseOf annotation at runtime.
 				$this->output->warning(
-					"\nNo ManyToOne or OneToOne property pointing to {$currentEntity} was found in {$targetEntity}Entity. " .
+					"\nNo ManyToOne or OneToOne property pointing to {$currentEntity} was found in {$targetEntity}Entity.\n" .
 					"Add one to {$targetEntity}Entity first, then come back to create the InverseOf."
 				);
 				
