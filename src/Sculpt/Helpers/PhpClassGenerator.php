@@ -34,7 +34,8 @@
 		
 		/**
 		 * Generates getter method with proper type hints and docblock
-		 * @param PropertyDefinition $property Property metadata
+		 * @param array $property Property metadata
+		 * @phpstan-param PropertyDefinition $property Property metadata
 		 * @return string Complete getter method
 		 */
 		public function generateGetter(array $property): string {

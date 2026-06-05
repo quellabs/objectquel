@@ -115,7 +115,7 @@
 			
 			// Strip the class-level prefix to get the single-level indent unit
 			$indented = self::indentSnippet($snippet, $classIndent);
-			return substr($content, 0, $closingBrace) . rtrim($indented, "\n") . "\n\n" . substr($content, $closingBrace);
+			return substr($content, 0, $closingBrace) . rtrim($indented, "\n") . "\n" . substr($content, $closingBrace);
 		}
 		
 		/**

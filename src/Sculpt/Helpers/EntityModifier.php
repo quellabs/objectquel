@@ -261,7 +261,7 @@
 			// Build the file skeleton: header, class docblock, and an empty class shell.
 			// All subsequent insertions go through PhpClassEditor, which detects the
 			// tab indentation from the class line and applies it uniformly.
-			$content  = $this->generateFileHeader($entityName);
+			$content = $this->generateFileHeader($entityName);
 			$content .= $this->generateClassDocBlock($entityName, $indexes);
 			$content .= "\tclass {$entityName}Entity {\n";
 			$content .= "\t}\n";
@@ -280,9 +280,7 @@
 			}
 			
 			$content = $this->insertProperties($content, $properties);
-			$content = $this->insertGettersAndSetters($content, $properties, $entityName);
-			
-			return $content;
+			return $this->insertGettersAndSetters($content, $properties, $entityName);
 		}
 		
 		// -------------------------------------------------------------------------
@@ -301,7 +299,7 @@
 		 */
 		private function insertCollectionMethods(string $content, array $property, string $entityName, PhpClassAnalyser $analyser, PhpClassGenerator $generator): string {
 			$singularName = StringInflector::singularize($property['name']);
-			$addMethodName    = 'add'    . ucfirst($singularName);
+			$addMethodName = 'add' . ucfirst($singularName);
 			$removeMethodName = 'remove' . ucfirst($singularName);
 			
 			// Only generate each method if it doesn't already exist
@@ -324,7 +322,12 @@
 		 * @param PhpClassGenerator $generator Code generator instance
 		 * @return string Updated class content
 		 */
-		private function insertGetterAndSetter(string $content, array $property, PhpClassAnalyser $analyser, PhpClassGenerator $generator): string {
+		private function insertGetterAndSetter(
+			string $content,
+			array $property,
+			PhpClassAnalyser $analyser,
+			PhpClassGenerator $generator
+		): string {
 			$getterName = 'get' . ucfirst($property['name']);
 			$setterName = 'set' . ucfirst($property['name']);
 			
@@ -333,7 +336,7 @@
 				$content = PhpClassEditor::addMethod($content, $generator->generateGetter($property));
 			}
 			
-			// Readonly properties get no setter
+			// Generate setter if not already present. Readonly properties get no setter
 			if (!($property['readonly'] ?? false) && !$analyser->hasMethod($setterName)) {
 				$content = PhpClassEditor::addMethod($content, $generator->generateSetter($property));
 			}
@@ -349,7 +352,7 @@
 		private function generateFileHeader(string $entityName): string {
 			$namespace = $this->configuration->getEntityNameSpace();
 			
-			$content  = "<?php\n\n\tnamespace {$namespace};\n";
+			$content = "<?php\n\n\tnamespace {$namespace};\n";
 			$content .= "\n";
 			$content .= "\tuse Quellabs\\ObjectQuel\\Annotations\\Orm\\Table;\n";
 			$content .= "\tuse Quellabs\\ObjectQuel\\Annotations\\Orm\\Column;\n";
@@ -378,19 +381,19 @@
 			$tableNamePlural = StringInflector::pluralize($entityName);
 			$tableName = StringInflector::snakeCase($tableNamePlural);
 			
-			$content  = "\n\t/**\n";
+			$content = "\n\t/**\n";
 			$content .= "\t * @Orm\\Table(name=\"{$tableName}\")\n";
 			
 			foreach ($indexes as $index) {
-				$indexName    = $index['name'];
-				$indexColumns = '{"'  . implode('", "', $index['columns']) . '"}';
-				$indexType    = strtoupper($index['type'] ?? 'INDEX');
+				$indexName = $index['name'];
+				$indexColumns = '{"' . implode('", "', $index['columns']) . '"}';
+				$indexType = strtoupper($index['type'] ?? 'INDEX');
 				
 				// Map the index type string to its annotation class name
 				$annotationClass = match ($indexType) {
-					'UNIQUE'   => 'UniqueIndex',
+					'UNIQUE' => 'UniqueIndex',
 					'FULLTEXT' => 'FullTextIndex',
-					default    => 'Index',
+					default => 'Index',
 				};
 				
 				$content .= "\t * @Orm\\{$annotationClass}(name=\"{$indexName}\", columns={$indexColumns})\n";
