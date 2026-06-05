@@ -193,7 +193,7 @@
 		 */
 		public static function addNewConstructor(string $content, array $inverseOfProperties): string {
 			// Detect indentation from existing content
-			$analyser = new PHpClassAnalyser($content);
+			$analyser = new PhpClassAnalyser($content);
 			$indent = $analyser->getIndentation();
 			$indent2 = $indent . "\t";
 			
