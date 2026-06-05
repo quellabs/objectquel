@@ -64,6 +64,28 @@
 		}
 		
 		/**
+		 * Splices a property snippet into the class source.
+		 * Inserts after the last existing property declaration, or after the class opening
+		 * brace when no properties exist yet.
+		 * @param string $content Class file content
+		 * @param string $snippet Fully-formed property snippet to insert (docblock + declaration)
+		 * @return string Updated content with the property spliced in
+		 */
+		public static function addProperty(string $content, string $snippet): string {
+			$analyser = new PhpClassAnalyser($content);
+			
+			// Prefer inserting after the last property so new properties group together;
+			// fall back to the class opening brace for an empty class body
+			$insertPos = $analyser->getLastPropertyEndPos() ?? $analyser->getClassOpeningBracePosition();
+			
+			if ($insertPos === null) {
+				return $content;
+			}
+			
+			return substr($content, 0, $insertPos + 1) . $snippet . substr($content, $insertPos + 1);
+		}
+		
+		/**
 		 * Modifies existing constructor to add collection initialization statements
 		 * @param string $content Entity file content
 		 * @param array<int, PropertyDefinition> $inverseOfProperties Collections to initialize

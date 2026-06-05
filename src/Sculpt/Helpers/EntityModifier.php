@@ -187,17 +187,18 @@
 		 * @return string Updated content with new property declarations spliced in
 		 */
 		protected function insertProperties(string $content, array $properties): string {
-			$analyser = new PhpClassAnalyser($content);
 			$generator = new PhpClassGenerator();
-			$indent = $analyser->getIndentation();
 			
-			$newProperties = '';
+			// Indentation is stable across the whole file — read it once up front
+			$indent = (new PhpClassAnalyser($content))->getIndentation();
 			
 			foreach ($properties as $property) {
-				$propertyName = $property['name'];
+				// Re-create the analyser each iteration: addProperty mutates $content,
+				// so positions and existence checks must come from the current version
+				$analyser = new PhpClassAnalyser($content);
 				
 				// Skip if a declaration for this property already exists in the class body
-				if ($analyser->hasProperty($propertyName)) {
+				if ($analyser->hasProperty($property['name'])) {
 					continue;
 				}
 				
@@ -208,36 +209,20 @@
 					$docComment = $generator->generatePropertyDocComment($property);
 				}
 				
-				// Make property
 				$propertyDefinition = $generator->generatePropertyDefinition($property);
 				
-				// Strip all but the last character of the prefix (keeps the space before *)
-				$newProperties .=
+				$snippet =
 					"\n\n"
 					. $indent
-					. str_replace(
-						"\n",
-						"\n{$indent}",
-						$docComment
-					)
+					. str_replace("\n", "\n{$indent}", $docComment)
 					. "\n"
 					. $indent
 					. $propertyDefinition;
+				
+				$content = PhpClassEditor::addProperty($content, $snippet);
 			}
 			
-			if (empty($newProperties)) {
-				return $content;
-			}
-			
-			// Find the splice point: after the last existing property declaration,
-			// or after the class opening brace when no properties exist yet
-			$insertPos = $analyser->getLastPropertyEndPos() ?? $analyser->getClassOpeningBracePosition();
-			
-			if ($insertPos === null) {
-				return $content;
-			}
-			
-			return substr($content, 0, $insertPos + 1) . $newProperties . substr($content, $insertPos + 1);
+			return $content;
 		}
 		
 		/**
