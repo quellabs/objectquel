@@ -84,6 +84,18 @@
 		 * @return int Exit code (0 for success)
 		 */
 		public function execute(ConfigurationManager $config): int {
+			// Output banner
+			$this->output->writeLn("");
+			$this->output->writeLn(" ██████╗ ██╗   ██╗███████╗██╗");
+			$this->output->writeLn("██╔═══██╗██║   ██║██╔════╝██║");
+			$this->output->writeLn("██║   ██║██║   ██║█████╗  ██║");
+			$this->output->writeLn("██║▄▄ ██║██║   ██║██╔══╝  ██║");
+			$this->output->writeLn("╚██████╔╝╚██████╔╝███████╗███████╗");
+			$this->output->writeLn(" ╚══▀▀═╝  ╚═════╝ ╚══════╝╚══════╝");
+			$this->output->writeLn("");
+			$this->output->writeLn("Creating entity...");
+			$this->output->writeLn("");
+			
 			// Allow passing the entity name directly on the command line (e.g. `sculpt make:entity Elephant`),
 			// falling back to an interactive prompt if omitted
 			$entityName = $config->getPositional(0);
