@@ -290,7 +290,7 @@
 			$relationColumn = $isOwningSide ? $propertyName . "Id" : null;
 			$fkInfo = $isOwningSide ? $this->determineForeignKeyType($targetInfo['targetEntity'], $targetInfo['referencedField']) : null;
 			
-			// Get bidirectional mapping configuration — null means abort this property
+			// Get relationship mapping configuration — null means abort this property
 			$mappingConfig = $this->collectRelationshipMapping(
 				$relationshipType,
 				$entityName,
@@ -319,7 +319,7 @@
 			];
 			
 			// Add FK column for owning side, but only when this is not the inverse side of a
-			// bidirectional relationship (via !== null means we're the inverse/non-owning side,
+			// inverse relationship (relation !== null means we're the non-owning side,
 			// so the FK lives in the other table and we must not generate a column here)
 			if ($isOwningSide && $relationColumn !== null && $fkInfo !== null) {
 				$properties[] = $this->buildForeignKeyProperty($relationColumn, $fkInfo['type'], $fkInfo['unsigned'], $nullable);
@@ -340,7 +340,7 @@
 		}
 		
 		/**
-		 * Collect bidirectional mapping configuration for a relationship.
+		 * Collect relationship mapping configuration, including whether to create an @InverseOf on the target entity.
 		 * Returns via/inversedBy values and whether to create property in target entity.
 		 * The return type is a union: when createInTarget is absent/false the optional keys are
 		 * absent; when createInTarget is true they are always present, so PHPStan won't flag
@@ -398,29 +398,9 @@
 				$detected ?? lcfirst($currentEntity)
 			);
 			
-			// Offer to also create the owning side property if it doesn't exist yet
-			$createTarget = $this->input->confirm(
-				"\nDo you want to add a new property to {$targetEntity}Entity to map the inverse of the relationship?",
-				false
-			);
-			
-			if (!$createTarget) {
-				return ['relation' => $relation, 'referencedColumn' => null];
-			}
-			
-			$inverseProperty = ($targetRelationType === 'ManyToOne')
-				? StringInflector::pluralize(lcfirst($currentEntity))
-				: lcfirst($currentEntity);
-			
-			return [
-				'relation'           => $relation,
-				'referencedColumn'   => null,
-				'createInTarget'     => true,
-				'targetPropertyName' => $relation,
-				'targetRelationType' => $targetRelationType,
-				'targetInversedBy'   => $inverseProperty
-			];
+			return ['relation' => $relation, 'referencedColumn' => null];
 		}
+		
 		
 		/**
 		 * Handle mapping for the owning side of a relationship.
@@ -430,42 +410,31 @@
 		 * @return RelationshipMappingConfig
 		 */
 		private function handleOwningSideMapping(string $relationshipType, string $entityName, string $targetEntity): array {
-			$bidirectional = $this->input->confirm("\nIs this a bidirectional relationship?", false);
+			$bidirectional = $this->input->confirm("\nAdd an @InverseOf collection to {$targetEntity}Entity for reverse access?", false);
 			
 			if (!$bidirectional) {
 				return ['relation' => null, 'referencedColumn' => null];
 			}
 			
-			// inversedBy on the owning side names the property on the inverse entity:
-			// ManyToOne → inverse holds a collection, so pluralize; OneToOne → inverse holds a scalar
-			if (($relationshipType === 'ManyToOne')) {
-				$inversedBy = StringInflector::pluralize(lcfirst($entityName));
-			} else {
-				$inversedBy = lcfirst($entityName);
-			}
+			// The property name on the inverse entity that will hold the back-reference:
+			// ManyToOne → inverse holds a collection (pluralize); OneToOne → inverse holds a scalar
+			$inversePropertyName = ($relationshipType === 'ManyToOne')
+				? StringInflector::pluralize(lcfirst($entityName))
+				: lcfirst($entityName);
 			
-			// Offer to create inverse side in target entity
-			$createTarget = $this->input->confirm(
-				"\nDo you want to add a new property to {$targetEntity}Entity to map the inverse of the relationship?",
-				true
-			);
+			// User confirmed they want an @InverseOf — always create it
+			$targetRelationType = ($relationshipType === 'ManyToOne') ? 'InverseOf' : 'OneToOne';
 			
-			if ($createTarget) {
-				// ManyToOne owning side → InverseOf inverse side; OneToOne stays OneToOne
-				$targetRelationType = ($relationshipType === 'ManyToOne') ? 'InverseOf' : 'OneToOne';
-				
-				return [
-					'relation'           => null,
-					'referencedColumn'   => $inversedBy,
-					'createInTarget'     => true,
-					'targetPropertyName' => $inversedBy,
-					'targetRelationType' => $targetRelationType,
-					'targetInversedBy'   => null
-				];
-			}
-			
-			return ['relation' => null, 'referencedColumn' => $inversedBy];
+			return [
+				'relation'           => null,
+				'referencedColumn'   => null, // default to target PK
+				'createInTarget'     => true,
+				'targetPropertyName' => $inversePropertyName,
+				'targetRelationType' => $targetRelationType,
+				'targetInversedBy'   => null
+			];
 		}
+		
 		
 		/**
 		 * Create a relationship property in the target entity.
@@ -473,7 +442,7 @@
 		 * @param string $currentEntity Name of the current entity
 		 * @param string $propertyName Name of the property to create
 		 * @param OrmRelationshipType $relationshipType Type of relationship
-		 * @param string|null $referencedColumn Property name for the inverse side (if bidirectional)
+		 * @param string|null $referencedColumn Property name for the inverse side
 		 * @throws EntityResolutionException
 		 */
 		private function createRelationshipInTargetEntity(
@@ -522,8 +491,12 @@
 			}
 			
 			$this->validateProperties($properties);
-			$this->getEntityModifier()->createOrUpdateEntity($targetEntity, $properties);
-			$this->output->writeLn("\nAdded property '{$propertyName}' to {$targetEntity}Entity");
+			
+			if ($this->getEntityModifier()->createOrUpdateEntity($targetEntity, $properties)) {
+				$this->output->writeLn("\nAdded property '{$propertyName}' to {$targetEntity}Entity");
+			} else {
+				$this->output->warning("\nFailed to update {$targetEntity}Entity. Check file permissions and try again.");
+			}
 		}
 		
 		/**

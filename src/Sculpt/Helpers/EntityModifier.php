@@ -25,6 +25,7 @@
 	 * @phpstan-type ParsedClassContent array{
 	 *     header: string,
 	 *     properties: string,
+	 *     propertiesRaw: string,
 	 *     methods: string,
 	 *     footer: string
 	 * }
@@ -135,6 +136,10 @@
 			$inverseOfProperties = array_filter($properties, fn($p) => ($p['relationshipType'] ?? null) === 'InverseOf');
 			
 			$updatedContent = $content;
+			
+			// Inject any missing use statements required by the new properties
+			$updatedContent = $this->ensureRequiredImports($updatedContent, $properties);
+			
 			if (!empty($inverseOfProperties)) {
 				$updatedContent = $this->updateConstructor($updatedContent, $inverseOfProperties);
 			}
@@ -159,6 +164,64 @@
 		 * @param string $content Complete entity file content
 		 * @return ParsedClassContent|false Array with keys: header, properties, methods, footer; or false on parse error
 		 */
+		/**
+		 * Ensures all use statements required by the given properties exist in the file.
+		 * Injects any missing imports before the class declaration.
+		 * @param string $content Entity file content
+		 * @param array<int, PropertyDefinition> $properties Properties being added
+		 * @return string Updated content with required imports
+		 */
+		protected function ensureRequiredImports(string $content, array $properties): string {
+			$hasInverseOf = false;
+			$hasRelationship = false;
+			
+			foreach ($properties as $property) {
+				if (!isset($property['relationshipType'])) {
+					continue;
+				}
+				
+				$hasRelationship = true;
+				
+				if ($property['relationshipType'] === 'InverseOf') {
+					$hasInverseOf = true;
+				}
+			}
+			
+			if (!$hasRelationship) {
+				return $content;
+			}
+			
+			// Required imports for InverseOf properties
+			$needed = [];
+			
+			if ($hasInverseOf) {
+				$needed[] = 'use Quellabs\\ObjectQuel\\Annotations\\Orm\\InverseOf;';
+				$needed[] = 'use Quellabs\\ObjectQuel\\Collections\\Collection;';
+				$needed[] = 'use Quellabs\\ObjectQuel\\Collections\\CollectionInterface;';
+			}
+			
+			foreach ($needed as $import) {
+				// Only inject if not already present
+				if (str_contains($content, $import)) {
+					continue;
+				}
+				
+				// Insert after the last existing use statement, matching its indentation
+				if (preg_match_all('/^(\\s*)use\\s+[^;\\r\\n]+;/m', $content, $useMatches, PREG_OFFSET_CAPTURE)) {
+					$lastUseMatch = end($useMatches[0]);
+					$lastUseIndent = end($useMatches[1])[0]; // capture group 1 = leading whitespace
+					$insertPos = $lastUseMatch[1] + strlen($lastUseMatch[0]);
+					$content = substr($content, 0, $insertPos) . "\n" . $lastUseIndent . $import . substr($content, $insertPos);
+				} elseif (preg_match('/^namespace\\s+[^;\\r\\n]+;/m', $content, $nsMatch, PREG_OFFSET_CAPTURE)) {
+					// No use statements yet — insert after namespace declaration
+					$insertPos = $nsMatch[0][1] + strlen($nsMatch[0][0]);
+					$content = substr($content, 0, $insertPos) . "\n" . $import . substr($content, $insertPos);
+				}
+			}
+			
+			return $content;
+		}
+		
 		protected function parseClassContent(string $content): false|array {
 			// Locate class declaration with optional extends/implements
 			if (!preg_match('/class\s+(\w+)(?:\s+extends\s+\w+)?(?:\s+implements\s+[\w\s,]+)?\s*\{/s', $content, $classMatch, PREG_OFFSET_CAPTURE)) {
@@ -193,16 +256,19 @@
 				}
 				
 				$propertiesSection = trim(substr($classBody, 0, $firstMethodPos));
+				$propertiesRaw = substr($classBody, 0, $firstMethodPos);
 				$methodsSection = trim(substr($classBody, $firstMethodPos));
 			} else {
 				// No methods found — entire body is properties
 				$propertiesSection = trim($classBody);
+				$propertiesRaw = $classBody;
 				$methodsSection = '';
 			}
 			
 			return [
 				'header'     => substr($content, 0, $classStartPos),
 				'properties' => $propertiesSection,
+				'propertiesRaw' => $propertiesRaw,
 				'methods'    => $methodsSection,
 				'footer'     => substr($content, $lastBracePos)
 			];
@@ -218,11 +284,17 @@
 			$propertyCode = $classContent['properties'];
 			$newProperties = '';
 			
+			// Detect indentation from first property declaration in the existing code
+			$indent = '\t';
+			if (preg_match('/^([ \t]+)(?:\/\*\*|(protected|private|public))/m', $propertyCode, $indentMatch)) {
+				$indent = $indentMatch[1];
+			}
+			
 			foreach ($properties as $property) {
 				$propertyName = $property['name'];
 				
 				// Skip if a declaration for this property already exists in the class body
-				if (preg_match('/\s*(protected|private|public)\s+.*\$' . $propertyName . '\s*;/i', $propertyCode)) {
+				if (preg_match('/\s*(protected|private|public)\s+.*\$' . $propertyName . '\s*;/is', $propertyCode)) {
 					continue;
 				}
 				
@@ -235,13 +307,34 @@
 				
 				$propertyDefinition = $this->generatePropertyDefinition($property);
 				
-				$newProperties .= "\n\n\t" . $docComment . "\n\t" . $propertyDefinition;
+				// Detect and strip the consistent indentation prefix from the docComment,
+				// preserving internal spacing (e.g. " * " on annotation lines).
+				// Find the leading whitespace of the second line (first " * " line) as the prefix.
+				$docLines = explode("\n", $docComment);
+				$docPrefix = '';
+				foreach ($docLines as $docLine) {
+					if (preg_match('/^([ \t]+)\*/', $docLine, $prefixMatch)) {
+						$docPrefix = $prefixMatch[1];
+						break;
+					}
+				}
+				// Strip all but the last character of the prefix (keeps the space before *)
+				$strippedPrefix = strlen($docPrefix) > 1 ? substr($docPrefix, 1) : $docPrefix;
+				$cleanDoc = $strippedPrefix !== '' ? preg_replace('/^' . preg_quote($strippedPrefix, '/') . '/m', '', $docComment) : $docComment;
+				$newProperties .= "\n\n{$indent}" . str_replace("\n", "\n{$indent}", $cleanDoc) . "\n{$indent}" . $propertyDefinition;
 			}
 			
 			$updatedPropertyCode = $propertyCode . $newProperties;
 			
 			// Reassemble: header + updated properties + methods + closing brace
-			return $classContent['header'] . $updatedPropertyCode . "\n\n\t" . $classContent['methods'] . $classContent['footer'];
+			// Use the raw (untrimmed) properties to preserve the original whitespace
+			// between the class opening brace and the first property
+			$headerRaw = rtrim($classContent['header']);
+			$leadingWhitespace = $classContent['propertiesRaw'];
+			preg_match('/^[\r\n]+/', $leadingWhitespace, $leadingMatch);
+			$leading = $leadingMatch[0] ?? "\n";
+			$methods = ltrim($classContent['methods'], "\r\n");
+			return $headerRaw . $leading . $updatedPropertyCode . "\n\n{$indent}" . $methods . $classContent['footer'];
 		}
 		
 		/**
@@ -496,10 +589,6 @@
 			$isOwningSide = empty($property['relation']);
 			
 			if ($isOwningSide) {
-				if ($property['nullable'] ?? false) {
-					$options[] = "nullable=true";
-				}
-				
 				// The column in the current table that stores the foreign key value
 				if (!empty($property['localColumn'])) {
 					$options[] = "localColumn=\"{$property['localColumn']}\"";
@@ -548,6 +637,13 @@
 			// Relationship properties use the entity class name as their type hint
 			if (isset($property['relationshipType'])) {
 				$type = $property['type'];
+				
+				// InverseOf collection properties must be public and non-nullable —
+				// they are always initialized in the constructor to an empty Collection
+				if ($property['relationshipType'] === 'InverseOf') {
+					return "public {$type} \${$property['name']};";
+				}
+				
 				return "protected {$nullableIndicator}{$type} \${$property['name']};";
 			}
 			
@@ -794,7 +890,7 @@
 		 * @return bool True if __construct method found
 		 */
 		protected function constructorExists(string $content): bool {
-			return preg_match('/\s+((?:public|private|protected)\s+)?function\s+__construct\s*\(/i', $content) === 1;
+			return preg_match('/[\r\n\s]+((?:public|private|protected)\s+)?function\s+__construct\s*\(/i', $content) === 1;
 		}
 		
 		/**
@@ -803,7 +899,7 @@
 		 * @return int|null Character position of constructor start, or null if not found
 		 */
 		protected function getConstructorStartPos(string $content): ?int {
-			if (!preg_match('/\s+((?:public|private|protected)\s+)?function\s+__construct\s*\(/i', $content, $constructorMatch, PREG_OFFSET_CAPTURE)) {
+			if (!preg_match('/[\r\n\s]+((?:public|private|protected)\s+)?function\s+__construct\s*\(/i', $content, $constructorMatch, PREG_OFFSET_CAPTURE)) {
 				return null;
 			}
 			
@@ -901,7 +997,7 @@
 				$propertyName = $property['name'];
 				
 				// Skip properties already assigned a Collection instance — avoids duplicating the line
-				if (!preg_match('/\$this->' . preg_quote($propertyName, '/') . '\s*=\s*new\s+Collection\(\)/', $content)) {
+				if (!preg_match('/\$this->' . preg_quote($propertyName, '/') . '\s*=\s*new\s+Collection\(\)/s', $content)) {
 					$initCode .= "\n\t\t\$this->{$propertyName} = new Collection();";
 				}
 			}
@@ -916,14 +1012,21 @@
 		 * @return string Updated content with new constructor
 		 */
 		protected function addNewConstructor(string $content, array $inverseOfProperties): string {
-			$constructorCode = "\n\t/**\n\t * Constructor to initialize collections\n\t */\n\tpublic function __construct() {";
+			// Detect indentation from existing content
+			$indent = '\t';
+			if (preg_match('/^([ \t]+)(?:protected|private|public|function)/m', $content, $indentMatch)) {
+				$indent = $indentMatch[1];
+			}
+			$indent2 = $indent . "\t";
+			
+			$constructorCode = "\n{$indent}/**\n{$indent} * Constructor to initialize collections\n{$indent} */\n{$indent}public function __construct() {";
 			
 			foreach ($inverseOfProperties as $property) {
 				$propertyName = $property['name'];
-				$constructorCode .= "\n\t\t\$this->{$propertyName} = new Collection();";
+				$constructorCode .= "\n{$indent2}\$this->{$propertyName} = new Collection();";
 			}
 			
-			$constructorCode .= "\n\t}\n";
+			$constructorCode .= "\n{$indent}}\n";
 			
 			// Find the best insertion point — after the last property, or after the class opening brace
 			$insertPosition = $this->findConstructorInsertPosition($content);
@@ -941,37 +1044,32 @@
 		 * @return int|null Character position for insertion, or null if not found
 		 */
 		protected function findConstructorInsertPosition(string $content): ?int {
-			if (!preg_match('/class\s+[^{]+\{/i', $content, $classMatch, PREG_OFFSET_CAPTURE)) {
+			// Use parseClassContent to isolate the properties section — this prevents the
+			// property regex from matching $variable assignments inside method bodies
+			$parsed = $this->parseClassContent($content);
+			
+			if ($parsed === false) {
 				return null;
 			}
 			
-			// Locate the opening brace of the class body
-			$classOpenBracePos = strpos($content, '{', $classMatch[0][1]);
+			// Use propertiesRaw (untrimmed) so offsets map directly to full-content positions
+			$propertiesRaw = $parsed['propertiesRaw'];
+			$headerLength = strlen($parsed['header']);
 			
-			if ($classOpenBracePos === false) {
-				return null;
-			}
+			// Find the last semicolon in the raw properties section — insert after it
+			$lastSemicolon = strrpos($propertiesRaw, ';');
 			
-			// Find all property declarations (with or without access modifier)
-			preg_match_all('/(?:(protected|private|public)\s+|^\s*)\$[^;]+;/im', $content, $propertyMatches, PREG_OFFSET_CAPTURE);
-			
-			if (!empty($propertyMatches[0])) {
-				// Take the offset of the last matched property declaration
-				$lastPropertyPos = (int)$propertyMatches[0][count($propertyMatches[0]) - 1][1];
-				
-				// Find the semicolon that terminates that property declaration
-				$semicolonPos = strpos($content, ';', $lastPropertyPos);
-				
-				// Malformed source: property matched but no closing semicolon found
-				if ($semicolonPos === false) {
-					return null;
-				}
-				
-				// Insert after the semicolon
-				return $semicolonPos + 1;
+			if ($lastSemicolon !== false) {
+				// Convert properties-section offset to full-content offset
+				return $headerLength + $lastSemicolon + 1;
 			}
 			
 			// No properties found — insert immediately after the class opening brace
-			return $classOpenBracePos + 1;
+			if (!preg_match('/class[\s\r\n]+[^{]+\{/i', $content, $classMatch, PREG_OFFSET_CAPTURE)) {
+				return null;
+			}
+			
+			$classOpenBracePos = strpos($content, '{', $classMatch[0][1]);
+			return $classOpenBracePos !== false ? $classOpenBracePos + 1 : null;
 		}
 	}

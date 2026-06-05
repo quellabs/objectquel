@@ -47,10 +47,10 @@
 	 * The extended shape is returned when a reciprocal property should also be
 	 * created in the target entity (createInTarget: true).
 	 *
-	 * @phpstan-type RelationshipMappingConfig array{via: string|null, inversedBy: string|null}
+	 * @phpstan-type RelationshipMappingConfig array{relation: string|null, referencedColumn: string|null}
 	 *                                        |array{
-	 *                                            via: string|null,
-	 *                                            inversedBy: string|null,
+	 *                                            relation: string|null,
+	 *                                            referencedColumn: string|null,
 	 *                                            createInTarget: true,
 	 *                                            targetPropertyName: string,
 	 *                                            targetRelationType: OrmRelationshipType,
@@ -64,7 +64,7 @@
 	 *     readonly?: bool,
 	 *     relationshipType: OrmRelationshipType,
 	 *     targetEntity: string,
-	 *     relation?: string,
+	 *     relation?: string|null,
 	 *     referencedColumn?: string|null,
 	 *     localColumn?: string|null
 	 * }
