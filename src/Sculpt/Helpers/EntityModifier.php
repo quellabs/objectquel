@@ -287,7 +287,8 @@
 		/**
 		 * Inserts add/remove methods for a collection InverseOf property
 		 * @param string $content Current class content
-		 * @param PropertyDefinition $property The collection property
+		 * @param array $property The collection property
+		 * @phpstan-param RelationProperty $property
 		 * @param string $entityName Entity name for method bodies
 		 * @param PhpClassAnalyser $analyser Analyser for the current content state
 		 * @param PhpClassGenerator $generator Code generator instance

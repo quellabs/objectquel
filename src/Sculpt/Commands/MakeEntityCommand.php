@@ -492,6 +492,7 @@
 			
 			// Collect type-specific attributes (length, unsigned, precision/scale)
 			/** @var PhinxColumnType $propertyType */
+			/** @var BaseProperty $property */
 			$property = array_merge($property, $this->collectTypeSpecificAttributes($propertyType));
 			
 			$property['nullable'] = $this->input->confirm("\nAllow this field to be empty/null in the database?", false);

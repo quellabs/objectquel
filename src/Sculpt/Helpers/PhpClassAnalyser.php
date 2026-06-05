@@ -75,7 +75,13 @@
 			}
 			
 			$lastMatch = end($matches[0]);
-			
+
+			// end() returns false on an empty array; guard defensively even though
+			// preg_match_all above already ensures at least one match exists.
+			if ($lastMatch === false) {
+				return null;
+			}
+
 			// Offset + length - 1 lands on the semicolon itself
 			return $lastMatch[1] + strlen($lastMatch[0]) - 1;
 		}

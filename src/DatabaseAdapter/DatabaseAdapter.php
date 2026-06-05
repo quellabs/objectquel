@@ -30,7 +30,7 @@
 	 * }
 	 *
 	 * @phpstan-type IndexDefinition array{
-	 *     type: 'primary'|'unique'|'index',
+	 *     type: 'primary'|'unique'|'index'|'fulltext',
 	 *     columns: string[],
 	 *     length: array<int, int>|null,
 	 *     name?: string

@@ -68,7 +68,9 @@
 			}
 			
 			// Detect differences between entity definitions and the live database schema
-			$databaseAdapter = $this->provider->getDatabaseAdapter();
+			/** @var ServiceProvider $serviceProvider */
+			$serviceProvider = $this->provider;
+			$databaseAdapter = $serviceProvider->getDatabaseAdapter();
 			$platform = new PlatformCapabilities($databaseAdapter);
 			$analyzer = new EntitySchemaAnalyzer($databaseAdapter, $this->getEntityStore(), $platform);
 			$allChanges = $analyzer->analyzeEntityChanges($entityMap);
