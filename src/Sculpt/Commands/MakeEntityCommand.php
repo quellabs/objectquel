@@ -218,8 +218,8 @@
 		 * @param string $phpType PHP type for the property (e.g. "OrderEntity" or "CollectionInterface")
 		 * @param OrmRelationshipType $relationshipType ORM relationship type
 		 * @param string $targetEntity Name of the related entity (without "Entity" suffix)
-		 * @param string|null $via Property name on the owning side that points to this entity (inverse side only)
-		 * @param string|null $inversedBy Property name on the inverse side (owning side only)
+		 * @param string|null $relation Property name on the owning side that points to this entity (inverse side only)
+		 * @param string|null $referencedColumn Property name on the inverse side (owning side only)
 		 * @param string|null $relationColumn FK column name on this entity's table, or null for inverse sides
 		 * @param bool $nullable Whether the relationship allows null
 		 * @return RelationProperty
@@ -229,8 +229,8 @@
 			string $phpType,
 			string $relationshipType,
 			string $targetEntity,
-			?string $via,
-			?string $inversedBy,
+			?string $relation,
+			?string $referencedColumn,
 			?string $relationColumn,
 			bool $nullable
 		): array {
@@ -239,8 +239,8 @@
 				"type"             => $phpType,
 				"relationshipType" => $relationshipType,
 				"targetEntity"     => $targetEntity,
-				"via"              => $via,
-				"inversedBy"       => $inversedBy,
+				"via"              => $relation,
+				"inversedBy"       => $referencedColumn,
 				"relationColumn"   => $relationColumn,
 				"nullable"         => $nullable,
 				"readonly"         => false
@@ -462,7 +462,7 @@
 		 * @param string $currentEntity Name of the current entity
 		 * @param string $propertyName Name of the property to create
 		 * @param OrmRelationshipType $relationshipType Type of relationship
-		 * @param string|null $inversedBy Property name for the inverse side (if bidirectional)
+		 * @param string|null $referencedColumn Property name for the inverse side (if bidirectional)
 		 * @throws EntityResolutionException
 		 */
 		private function createRelationshipInTargetEntity(
@@ -470,7 +470,7 @@
 			string $currentEntity,
 			string $propertyName,
 			string $relationshipType,
-			?string $inversedBy
+			?string $referencedColumn
 		): void {
 			if (!$this->getEntityModifier()->entityExists($targetEntity . "Entity")) {
 				$this->output->warning(
@@ -486,7 +486,7 @@
 			// For InverseOf (inverse side), via should reference the property name
 			// in the owning entity that we're creating the inverse for.
 			// The $inversedBy parameter contains the ManyToOne property name (e.g., "post")
-			$via = $isOwningSide ? null : $inversedBy;
+			$relation = $isOwningSide ? null : $referencedColumn;
 			
 			// Start with the relationship property
 			$properties = [
@@ -495,7 +495,7 @@
 					$phpType,
 					$relationshipType,
 					$currentEntity,
-					$via,
+					$relation,
 					null,  // Inverse side doesn't have inversedBy
 					$isOwningSide ? $propertyName . "Id" : null,
 					true
