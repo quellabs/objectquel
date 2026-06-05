@@ -52,23 +52,29 @@
 				if ($property['collection'] ?? false) {
 					$targetEntity = $property['targetEntity'] . 'Entity';
 					
-					return "\n/**\n" .
-						" * Gets the {$propertyName} collection\n" .
-						" * @return CollectionInterface<{$targetEntity}>\n" .
-						" */\n" .
-						"public function {$methodName}(): CollectionInterface {\n" .
-						"\treturn \$this->{$propertyName};\n" .
-						"}\n";
+					$code = "\n";
+					$code .= "/**\n";
+					$code .= " * Gets the {$propertyName} collection\n";
+					$code .= " * @return CollectionInterface<{$targetEntity}>\n";
+					$code .= " */\n";
+					$code .= "public function {$methodName}(): CollectionInterface {\n";
+					$code .= "\treturn \$this->{$propertyName};\n";
+					$code .= "}\n";
+					
+					return $code;
 				}
 				
 				// OneToOne / ManyToOne return a nullable entity reference
-				return "\n/**\n" .
-					" * Gets the {$propertyName} relationship\n" .
-					" * @return {$nullableIndicator}{$type}\n" .
-					" */\n" .
-					"public function {$methodName}(): {$nullableIndicator}{$type} {\n" .
-					"\treturn \$this->{$propertyName};\n" .
-					"}\n";
+				$code = "\n";
+				$code .= "/**\n";
+				$code .= " * Gets the {$propertyName} relationship\n";
+				$code .= " * @return {$nullableIndicator}{$type}\n";
+				$code .= " */\n";
+				$code .= "public function {$methodName}(): {$nullableIndicator}{$type} {\n";
+				$code .= "\treturn \$this->{$propertyName};\n";
+				$code .= "}\n";
+				
+				return $code;
 			}
 			
 			// Plain column getter
@@ -76,18 +82,22 @@
 			$nullableIndicator = $nullable ? '?' : '';
 			$phpType = $this->resolvePhpType($property);
 			
-			return "\n/**\n" .
-				" * Gets the {$propertyName} value\n" .
-				" * @return {$nullableIndicator}{$phpType}\n" .
-				" */\n" .
-				"public function {$methodName}(): {$nullableIndicator}{$phpType} {\n" .
-				"\treturn \$this->{$propertyName};\n" .
-				"}\n";
+			$code = "\n";
+			$code .= "/**\n";
+			$code .= " * Gets the {$propertyName} value\n";
+			$code .= " * @return {$nullableIndicator}{$phpType}\n";
+			$code .= " */\n";
+			$code .= "public function {$methodName}(): {$nullableIndicator}{$phpType} {\n";
+			$code .= "\treturn \$this->{$propertyName};\n";
+			$code .= "}\n";
+			
+			return $code;
 		}
 		
 		/**
 		 * Generates setter method with fluent interface and bidirectional sync
-		 * @param PropertyDefinition $property Property metadata
+		 * @param array $property Property metadata
+		 * @phpstan-param PropertyDefinition $property Property metadata
 		 * @return string Complete setter method
 		 */
 		public function generateSetter(array $property): string {
@@ -130,25 +140,19 @@
 					$setterBody .= "\t\${$propertyName}?->{$adderMethod}(\$this);";
 				}
 				
-				return sprintf(
-					"\n/**\n" .
-					" * Sets the {$propertyName} relationship\n" .
-					" * @param %s%s $%s The related entity\n" .
-					" * @return \$this\n" .
-					" */\n" .
-					"public function %s(%s%s $%s): self {\n" .
-					"%s\n" .
-					"\treturn \$this;\n" .
-					"}\n",
-					$nullableIndicator,
-					$type,
-					$propertyName,
-					$methodName,
-					$nullableIndicator,
-					$type,
-					$propertyName,
-					$setterBody
-				);
+				$code = "\n";
+				$code .= "/**\n";
+				$code .= " * Sets the {$propertyName} relationship\n";
+				$code .= " * @param {$nullableIndicator}{$type} \${$propertyName} The related entity\n";
+				$code .= " * @return \$this\n";
+				$code .= " */\n";
+				$code .= "public function {$methodName}({$nullableIndicator}{$type} \${$propertyName}): self {\n";
+				$code .= $setterBody;
+				$code .= "\n";
+				$code .= "\treturn \$this;\n";
+				$code .= "}\n";
+				
+				return $code;
 			}
 			
 			// Plain column setter — no sync logic needed
@@ -156,23 +160,23 @@
 			$nullableIndicator = $nullable ? '?' : '';
 			$phpType = $this->resolvePhpType($property);
 			
-			return "\n" .
-				"/**\n" .
-				" * Sets the {$propertyName} value\n" .
-				" * @param {$nullableIndicator}{$phpType} \${$propertyName} New value to set\n" .
-				" * @return \$this\n" .
-				" */\n" .
-				"public function {$methodName}({$nullableIndicator}{$phpType} \${$propertyName}): self {\n" .
-				"\t\$this->{$propertyName} = \${$propertyName};\n" .
-				"\treturn \$this;\n" .
-				"}\n";
+			$code = "\n";
+			$code .= "/**\n";
+			$code .= " * Sets the {$propertyName} value\n";
+			$code .= " * @param {$nullableIndicator}{$phpType} \${$propertyName} New value to set\n";
+			$code .= " * @return \$this\n";
+			$code .= " */\n";
+			$code .= "public function {$methodName}({$nullableIndicator}{$phpType} \${$propertyName}): self {\n";
+			$code .= "\t\$this->{$propertyName} = \${$propertyName};\n";
+			$code .= "\treturn \$this;\n";
+			$code .= "}\n";
+			
+			return $code;
 		}
 		
 		/**
 		 * Generates method to add item to InverseOf collection
-		 *
 		 * Checks for duplicates and syncs the inverse side of bidirectional relationships.
-		 *
 		 * @phpstan-param RelationProperty $property
 		 * @param array $property Collection property metadata
 		 * @param string $entityName Current entity name
@@ -194,17 +198,20 @@
 				$inverseSetter .= "\t\t\${$singularName}->{$setterMethod}(\$this);";
 			}
 			
-			return "\n/**\n" .
-				" * Adds an entity to the {$collectionName} collection\n" .
-				" * @param {$targetEntity} \${$singularName} Entity to add\n" .
-				" * @return \$this\n" .
-				" */\n" .
-				"public function {$methodName}({$targetEntity} \${$singularName}): self {\n" .
-				"\tif (!\$this->{$collectionName}->contains(\${$singularName})) {\n" .
-				"\t\t\$this->{$collectionName}[] = \${$singularName};{$inverseSetter}\n" .
-				"\t}\n" .
-				"\treturn \$this;\n" .
-				"}\n";
+			$code = "\n";
+			$code .= "/**\n";
+			$code .= " * Adds an entity to the {$collectionName} collection\n";
+			$code .= " * @param {$targetEntity} \${$singularName} Entity to add\n";
+			$code .= " * @return \$this\n";
+			$code .= " */\n";
+			$code .= "public function {$methodName}({$targetEntity} \${$singularName}): self {\n";
+			$code .= "\tif (!\$this->{$collectionName}->contains(\${$singularName})) {\n";
+			$code .= "\t\t\$this->{$collectionName}[] = \${$singularName};{$inverseSetter}\n";
+			$code .= "\t}\n";
+			$code .= "\treturn \$this;\n";
+			$code .= "}\n";
+			
+			return $code;
 		}
 		
 		/**
@@ -220,10 +227,10 @@
 			$methodName = 'remove' . ucfirst($singularName);
 			$targetEntity = $property['targetEntity'] . 'Entity';
 			
-			$inverseRemover = '';
-			
 			// Only null out the inverse side when it still points at this entity —
 			// avoids clobbering a reference that was already reassigned elsewhere
+			$inverseRemover = '';
+			
 			if (!empty($property['relation'])) {
 				$viaField = $property['relation'];
 				$getterMethod = 'get' . ucfirst($viaField);
@@ -235,18 +242,21 @@
 				$inverseRemover .= "\t\t}";
 			}
 			
-			return "\n/**\n" .
-				" * Removes an entity from the {$collectionName} collection\n" .
-				" * @param {$targetEntity} \${$singularName} Entity to remove\n" .
-				" * @return \$this\n" .
-				" */\n" .
-				"public function {$methodName}({$targetEntity} \${$singularName}): self {\n" .
-				"\tif (\$this->{$collectionName}->remove(\${$singularName})) {\n" .
-				"\t\t{$inverseRemover}\n" .
-				"\t}\n" .
-				"\t\n" .
-				"\treturn \$this;\n" .
-				"}\n";
+			$code = "\n";
+			$code .= "/**\n";
+			$code .= " * Removes an entity from the {$collectionName} collection\n";
+			$code .= " * @param {$targetEntity} \${$singularName} Entity to remove\n";
+			$code .= " * @return \$this\n";
+			$code .= " */\n";
+			$code .= "public function {$methodName}({$targetEntity} \${$singularName}): self {\n";
+			$code .= "\tif (\$this->{$collectionName}->remove(\${$singularName})) {\n";
+			$code .= "\t\t{$inverseRemover}\n";
+			$code .= "\t}\n";
+			$code .= "\n";
+			$code .= "\treturn \$this;\n";
+			$code .= "}\n";
+			
+			return $code;
 		}
 		
 		/**
@@ -306,16 +316,20 @@
 		 * @return string Snippet: docblock + property declaration
 		 */
 		public function generateIdProperty(): string {
-			return "\n/**\n"
-				. " * @Orm\\Column(name=\"id\", type=\"integer\", unsigned=true, primary_key=true)\n"
-				. " * @Orm\\PrimaryKeyStrategy(strategy=\"identity\")\n"
-				. " */\n"
-				. "protected ?int \$id = null;";
+			$code = "\n";
+			$code .= "/**\n";
+			$code .= " * @Orm\\Column(name=\"id\", type=\"integer\", unsigned=true, primary_key=true)\n";
+			$code .= " * @Orm\\PrimaryKeyStrategy(strategy=\"identity\")\n";
+			$code .= " */\n";
+			$code .= "protected ?int \$id = null;";
+			
+			return $code;
 		}
 		
 		/**
 		 * Generates ORM Column annotation docblock for regular properties
-		 * @param PropertyDefinition $property Property metadata (name, type, nullable, limit, precision, etc.)
+		 * @param array $property Property metadata (name, type, nullable, limit, precision, etc.)
+		 * @phpstan-param PropertyDefinition $property Property metadata (name, type, nullable, limit, precision, etc.)
 		 * @return string PHPDoc comment with @Orm\Column annotation
 		 */
 		public function generatePropertyDocComment(array $property): string {
@@ -365,7 +379,8 @@
 		
 		/**
 		 * Generates typed property declaration
-		 * @param PropertyDefinition $property Property metadata
+		 * @param array $property Property metadata
+		 * @phpstan-param PropertyDefinition $property Property metadata
 		 * @return string Property declaration with type hint
 		 */
 		public function generatePropertyDefinition(array $property): string {
