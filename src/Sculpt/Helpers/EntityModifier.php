@@ -117,8 +117,8 @@
 				return false;
 			}
 			
-			// InverseOf properties need collection initialization in the constructor
-			$inverseOfProperties = array_filter($properties, fn($p) => ($p['relationshipType'] ?? null) === 'InverseOf');
+			// Collection InverseOf properties need initialization in the constructor
+			$inverseOfProperties = array_filter($properties, fn($p) => ($p['collection'] ?? false) === true);
 			
 			$updatedContent = $content;
 			
@@ -161,7 +161,7 @@
 				
 				$hasRelationship = true;
 				
-				if ($property['relationshipType'] === 'InverseOf') {
+				if ($property['collection'] ?? false) {
 					$hasInverseOf = true;
 				}
 			}
@@ -249,8 +249,8 @@
 				$getterName = 'get' . ucfirst($property['name']);
 				$setterName = 'set' . ucfirst($property['name']);
 				
-				// InverseOf collections don't use get/set — they use add/remove instead
-				if (isset($property['relationshipType']) && $property['relationshipType'] === 'InverseOf') {
+				// Collection InverseOf properties use add/remove instead of get/set
+				if (isset($property['relationshipType']) && ($property['collection'] ?? false)) {
 					$singularName = StringInflector::singularize($property['name']);
 					$addMethodName = 'add' . ucfirst($singularName);
 					$removeMethodName = 'remove' . ucfirst($singularName);
@@ -344,20 +344,20 @@
 			// Check whether any property requires a constructor for collection initialization
 			$hasInverseOf = false;
 			foreach ($properties as $property) {
-				if (isset($property['relationshipType']) && $property['relationshipType'] === 'InverseOf') {
+				if ($property['collection'] ?? false) {
 					$hasInverseOf = true;
 					break;
 				}
 			}
 			
-			// InverseOf properties must be initialized to an empty Collection in the constructor,
-			// otherwise accessing the collection before it's set would cause a null-dereference
+			// Collection InverseOf properties must be initialized to an empty Collection in the
+			// constructor, otherwise accessing the collection before it's set would cause a null-dereference
 			if ($hasInverseOf) {
 				$content .= "\n        /**\n         * Constructor to initialize collections\n         */\n";
 				$content .= "        public function __construct() {\n";
 				
 				foreach ($properties as $property) {
-					if (isset($property['relationshipType']) && $property['relationshipType'] === 'InverseOf') {
+					if ($property['collection'] ?? false) {
 						$content .= "            \$this->{$property['name']} = new Collection();\n";
 					}
 				}
@@ -386,8 +386,8 @@
 			foreach ($properties as $property) {
 				$readOnly = $property['readonly'] ?? false;
 				
-				// InverseOf collections expose add/remove methods rather than a single setter
-				if (isset($property['relationshipType']) && $property['relationshipType'] === 'InverseOf') {
+				// Collection InverseOf properties expose add/remove methods rather than a single setter
+				if (isset($property['relationshipType']) && ($property['collection'] ?? false)) {
 					$content .= $generator->generateCollectionAdder($property, $entityName);
 					$content .= $generator->generateCollectionRemover($property, $entityName);
 					continue;

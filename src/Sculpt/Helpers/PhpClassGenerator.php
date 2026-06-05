@@ -47,8 +47,8 @@
 				$nullable = $property['nullable'] ?? false;
 				$nullableIndicator = $nullable ? '?' : '';
 				
-				// InverseOf returns a typed collection interface instead of a single entity
-				if ($property['relationshipType'] === 'InverseOf') {
+				// InverseOf collection returns a typed CollectionInterface instead of a single entity
+				if ($property['collection'] ?? false) {
 					$targetEntity = $property['targetEntity'] . 'Entity';
 					
 					return "\n/**\n" .
@@ -288,8 +288,8 @@
 			$optionsStr = !empty($options) ? ', ' . implode(', ', $options) : '';
 			$comment = "/**\n* @Orm\\{$relationshipType}(targetEntity=\"{$targetEntity}Entity\"{$optionsStr})";
 			
-			// InverseOf gets an additional @var hint so IDEs know the collection's generic type
-			if ($relationshipType === 'InverseOf') {
+			// InverseOf collections get an additional @var hint so IDEs know the collection's generic type
+			if ($relationshipType === 'InverseOf' && ($property['collection'] ?? false)) {
 				$comment .= "\n* @var CollectionInterface<{$targetEntity}Entity>";
 			}
 			
@@ -363,7 +363,7 @@
 				
 				// InverseOf collection properties must be public and non-nullable —
 				// they are always initialized in the constructor to an empty Collection
-				if ($property['relationshipType'] === 'InverseOf') {
+				if ($property['collection'] ?? false) {
 					return "public {$type} \${$property['name']};";
 				}
 				

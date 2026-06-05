@@ -66,7 +66,8 @@
 	 *     targetEntity: string,
 	 *     relation?: string|null,
 	 *     referencedColumn?: string|null,
-	 *     localColumn?: string|null
+	 *     localColumn?: string|null,
+	 *     collection?: bool
 	 * }
 	 *
 	 * @phpstan-type PropertyDefinition BaseProperty|EnumProperty|RelationProperty

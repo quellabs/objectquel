@@ -243,7 +243,8 @@
 				"referencedColumn" => $referencedColumn,
 				"localColumn"      => $relationColumn,
 				"nullable"         => $nullable,
-				"readonly"         => false
+				"readonly"         => false,
+				"collection"       => $phpType === 'CollectionInterface',
 			];
 		}
 		
@@ -332,7 +333,8 @@
 					$entityName,
 					$mappingConfig['targetPropertyName'],
 					$mappingConfig['targetRelationType'],
-					$propertyName
+					$propertyName,
+					$relationshipType
 				);
 			}
 			
@@ -356,12 +358,7 @@
 				return $this->handleInverseSideMapping($targetEntity, $entityName, 'ManyToOne');
 			}
 			
-			// OneToOne: ask which side is owning
-			if ($relationshipType === 'OneToOne' && !$this->input->confirm("\nIs this the owning side?", true)) {
-				return $this->handleInverseSideMapping($targetEntity, $entityName, 'OneToOne');
-			}
-			
-			// ManyToOne or OneToOne (owning side)
+			// ManyToOne or OneToOne: always owning side, optionally add @InverseOf on target
 			return $this->handleOwningSideMapping($relationshipType, $entityName, $targetEntity);
 		}
 		
@@ -410,7 +407,11 @@
 		 * @return RelationshipMappingConfig
 		 */
 		private function handleOwningSideMapping(string $relationshipType, string $entityName, string $targetEntity): array {
-			$bidirectional = $this->input->confirm("\nAdd an @InverseOf collection to {$targetEntity}Entity for reverse access?", false);
+			$confirmMessage = ($relationshipType === 'ManyToOne')
+				? "\nAdd an @InverseOf collection to {$targetEntity}Entity for reverse access?"
+				: "\nAdd an @InverseOf back-reference to {$targetEntity}Entity for reverse access?";
+			
+			$bidirectional = $this->input->confirm($confirmMessage, false);
 			
 			if (!$bidirectional) {
 				return ['relation' => null, 'referencedColumn' => null];
@@ -422,8 +423,10 @@
 				? StringInflector::pluralize(lcfirst($entityName))
 				: lcfirst($entityName);
 			
-			// User confirmed they want an @InverseOf — always create it
-			$targetRelationType = ($relationshipType === 'ManyToOne') ? 'InverseOf' : 'OneToOne';
+			// The back-reference is always @InverseOf regardless of relationship type.
+			// For ManyToOne this is a collection; for OneToOne it is a scalar. Either way
+			// it carries no FK — the FK lives on the owning side only.
+			$targetRelationType = 'InverseOf';
 			
 			return [
 				'relation'           => null,
@@ -443,6 +446,7 @@
 		 * @param string $propertyName Name of the property to create
 		 * @param OrmRelationshipType $relationshipType Type of relationship
 		 * @param string|null $referencedColumn Property name for the inverse side
+		 * @param string|null $originatingRelationshipType The relationship type on the owning side (ManyToOne or OneToOne)
 		 * @throws EntityResolutionException
 		 */
 		private function createRelationshipInTargetEntity(
@@ -450,7 +454,8 @@
 			string $currentEntity,
 			string $propertyName,
 			string $relationshipType,
-			?string $referencedColumn
+			?string $referencedColumn,
+			?string $originatingRelationshipType = null
 		): void {
 			if (!$this->getEntityModifier()->entityExists($targetEntity . "Entity")) {
 				$this->output->warning(
@@ -461,7 +466,13 @@
 			}
 			
 			$isOwningSide = in_array($relationshipType, ['ManyToOne', 'OneToOne']);
-			$phpType = ($relationshipType === 'InverseOf') ? "CollectionInterface" : $currentEntity . "Entity";
+			
+			// InverseOf on a ManyToOne owning side → collection; on a OneToOne owning side → scalar
+			if ($relationshipType === 'InverseOf') {
+				$phpType = ($originatingRelationshipType === 'OneToOne') ? $currentEntity . "Entity" : "CollectionInterface";
+			} else {
+				$phpType = $currentEntity . "Entity";
+			}
 			
 			// For InverseOf (inverse side), via should reference the property name
 			// in the owning entity that we're creating the inverse for.
