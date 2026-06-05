@@ -174,30 +174,7 @@
 			}
 			
 			foreach ($needed as $import) {
-				// Only inject if not already present
-				if (str_contains($content, $import)) {
-					continue;
-				}
-				
-				// Re-create the analyser each iteration: each inserted import shifts offsets,
-				// so positions from a prior pass are no longer valid
-				$analyser = new PhpClassAnalyser($content);
-				$lastUseEnd = $analyser->getLastUseClauseEndPos();
-				
-				if ($lastUseEnd !== null) {
-					// Reproduce the indentation of the last use statement for the new line
-					$lineStart = strrpos($content, "\n", $lastUseEnd - strlen($content)) + 1;
-					$indent = strspn($content, " \t", $lineStart);
-					$useIndent = substr($content, $lineStart, $indent);
-					$content = substr($content, 0, $lastUseEnd + 1) . "\n" . $useIndent . $import . substr($content, $lastUseEnd + 1);
-				} else {
-					// No use statements yet — insert after namespace declaration
-					$namespaceEnd = $analyser->getNamespaceEndPos();
-					
-					if ($namespaceEnd !== null) {
-						$content = substr($content, 0, $namespaceEnd + 1) . "\n" . $import . substr($content, $namespaceEnd + 1);
-					}
-				}
+				$content = PhpClassEditor::addUseStatement($content, $import);
 			}
 			
 			return $content;

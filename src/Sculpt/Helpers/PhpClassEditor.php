@@ -29,6 +29,41 @@
 	class PhpClassEditor {
 		
 		/**
+		 * Inserts a use statement into the class source if not already present.
+		 * Inserts after the last existing use statement, preserving its indentation.
+		 * Falls back to inserting after the namespace declaration when no use statements exist yet.
+		 * Has no effect if the import is already present.
+		 * @param string $content Class file content
+		 * @param string $import Fully-qualified import string, e.g. "use Foo\Bar;"
+		 * @return string Updated content with the import spliced in
+		 */
+		public static function addUseStatement(string $content, string $import): string {
+			if (str_contains($content, $import)) {
+				return $content;
+			}
+			
+			$analyser = new PhpClassAnalyser($content);
+			$lastUseEnd = $analyser->getLastUseClauseEndPos();
+			
+			if ($lastUseEnd !== null) {
+				// Reproduce the indentation of the last use statement for the new line
+				$lineStart = strrpos($content, "\n", $lastUseEnd - strlen($content)) + 1;
+				$useIndent = substr($content, $lineStart, strspn($content, " \t", $lineStart));
+				return substr($content, 0, $lastUseEnd + 1) . "\n" . $useIndent . $import . substr($content, $lastUseEnd + 1);
+			}
+			
+			// No use statements yet — insert after the namespace declaration
+			$namespaceEnd = $analyser->getNamespaceEndPos();
+			
+			if ($namespaceEnd !== null) {
+				return substr($content, 0, $namespaceEnd + 1) . "\n" . $import . substr($content, $namespaceEnd + 1);
+			}
+			
+			// No namespace either — return unchanged rather than corrupting the file
+			return $content;
+		}
+		
+		/**
 		 * Modifies existing constructor to add collection initialization statements
 		 * @param string $content Entity file content
 		 * @param array<int, PropertyDefinition> $inverseOfProperties Collections to initialize
