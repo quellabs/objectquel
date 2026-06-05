@@ -126,7 +126,7 @@
 			}
 			
 			// Split the file into header, properties section, methods section, and footer
-			$classContent = $this->parseClassContent($content);
+			$classContent = PhpClassEditor::parseClassContent($content);
 			
 			if (!$classContent) {
 				return false;
@@ -145,7 +145,7 @@
 			}
 			
 			// Reparse after constructor changes, as insertion points may have shifted
-			$reparsed = $this->parseClassContent($updatedContent);
+			$reparsed = PhpClassEditor::parseClassContent($updatedContent);
 			
 			if ($reparsed === false) {
 				return false;
@@ -220,58 +220,6 @@
 			}
 			
 			return $content;
-		}
-		
-		protected function parseClassContent(string $content): false|array {
-			// Locate class declaration with optional extends/implements
-			if (!preg_match('/class\s+(\w+)(?:\s+extends\s+\w+)?(?:\s+implements\s+[\w\s,]+)?\s*\{/s', $content, $classMatch, PREG_OFFSET_CAPTURE)) {
-				return false;
-			}
-			
-			// $classStartPos points to the first character inside the class body (after the opening brace)
-			$classStartPos = (int)$classMatch[0][1] + strlen($classMatch[0][0]);
-			
-			// Use the last closing brace in the file as the class end — assumes no code after the class
-			$lastBracePos = strrpos($content, '}');
-			
-			if ($lastBracePos === false) {
-				return false;
-			}
-			
-			// Extract everything between the class opening brace and its closing brace
-			$classBody = substr($content, $classStartPos, $lastBracePos - $classStartPos);
-			
-			// Find where methods begin — properties occupy everything before the first method declaration
-			$methodPattern = '/\s*(public|protected|private)?\s+function\s+\w+/';
-			
-			if (preg_match($methodPattern, $classBody, $methodMatch, PREG_OFFSET_CAPTURE)) {
-				$firstMethodPos = $methodMatch[0][1];
-				
-				// If there's a docblock immediately before the method, include it in the methods section
-				// rather than the properties section to keep the split clean
-				$potentialDocBlockStart = strrpos(substr($classBody, 0, $firstMethodPos), '/**');
-				
-				if ($potentialDocBlockStart !== false && ($firstMethodPos - $potentialDocBlockStart) < 100) {
-					$firstMethodPos = $potentialDocBlockStart;
-				}
-				
-				$propertiesSection = trim(substr($classBody, 0, $firstMethodPos));
-				$propertiesRaw = substr($classBody, 0, $firstMethodPos);
-				$methodsSection = trim(substr($classBody, $firstMethodPos));
-			} else {
-				// No methods found — entire body is properties
-				$propertiesSection = trim($classBody);
-				$propertiesRaw = $classBody;
-				$methodsSection = '';
-			}
-			
-			return [
-				'header'     => substr($content, 0, $classStartPos),
-				'properties' => $propertiesSection,
-				'propertiesRaw' => $propertiesRaw,
-				'methods'    => $methodsSection,
-				'footer'     => substr($content, $lastBracePos)
-			];
 		}
 		
 		/**
@@ -877,199 +825,10 @@
 		 * @return string Updated content with constructor modifications
 		 */
 		protected function updateConstructor(string $content, array $inverseOfProperties): string {
-			if ($this->constructorExists($content)) {
-				return $this->updateExistingConstructor($content, $inverseOfProperties);
+			if (PhpClassEditor::constructorExists($content)) {
+				return PhpClassEditor::updateExistingConstructor($content, $inverseOfProperties);
 			} else {
-				return $this->addNewConstructor($content, $inverseOfProperties);
+				return PhpClassEditor::addNewConstructor($content, $inverseOfProperties);
 			}
-		}
-		
-		/**
-		 * Checks if a constructor method exists in the class
-		 * @param string $content Entity file content
-		 * @return bool True if __construct method found
-		 */
-		protected function constructorExists(string $content): bool {
-			return preg_match('/[\r\n\s]+((?:public|private|protected)\s+)?function\s+__construct\s*\(/i', $content) === 1;
-		}
-		
-		/**
-		 * Locates the character position where constructor declaration begins
-		 * @param string $content Complete PHP file content
-		 * @return int|null Character position of constructor start, or null if not found
-		 */
-		protected function getConstructorStartPos(string $content): ?int {
-			if (!preg_match('/[\r\n\s]+((?:public|private|protected)\s+)?function\s+__construct\s*\(/i', $content, $constructorMatch, PREG_OFFSET_CAPTURE)) {
-				return null;
-			}
-			
-			return $constructorMatch[0][1];
-		}
-		
-		/**
-		 * Modifies existing constructor to add collection initialization statements
-		 * @param string $content Entity file content
-		 * @param array<int, PropertyDefinition> $inverseOfProperties Collections to initialize
-		 * @return string Updated content with modified constructor
-		 */
-		protected function updateExistingConstructor(string $content, array $inverseOfProperties): string {
-			// Find the start of the constructor
-			$constructorStart = $this->getConstructorStartPos($content);
-			
-			// getConstructorStartPos() returns null when no constructor exists — should not happen
-			// here since updateExistingConstructor() is only called after constructorExists() returns
-			// true, but the guard satisfies PHPStan's type narrowing
-			if ($constructorStart === null) {
-				return $content;
-			}
-			
-			// Find the opening brace of the constructor body
-			$openBracePos = strpos($content, '{', $constructorStart);
-			
-			// strpos can in theory return null, but in practice will never do that because
-			// every constructor has an opening brace. Still the test is present for PHPStan.
-			if ($openBracePos === false) {
-				return $content;
-			}
-			
-			// Walk forward from the opening brace to find the matching closing brace
-			$constructorEnd = $this->findClosingBrace($content, $openBracePos);
-			
-			// Every constructor has a closing brace, but findClosingBrace can in theory
-			// return null, so this test is here. For PHPStan.
-			if ($constructorEnd === null) {
-				return $content;
-			}
-			
-			// Build initialization statements for any collections not already initialized
-			$initCode = $this->generateCollectionInitializations($content, $inverseOfProperties);
-			
-			// Insert the new statements immediately before the closing brace
-			if (!empty($initCode)) {
-				return substr($content, 0, $constructorEnd) . $initCode . "\n\t" . substr($content, $constructorEnd);
-			}
-			
-			// Return content
-			return $content;
-		}
-		
-		/**
-		 * Finds matching closing brace for an opening brace at given position
-		 * @param string $content Source code to search
-		 * @param int $openBracePos Character index of opening brace
-		 * @return int|null Character index of matching closing brace, or null if not found
-		 */
-		protected function findClosingBrace(string $content, int $openBracePos): ?int {
-			$offset = $openBracePos + 1;
-			$braceLevel = 1;
-			$length = strlen($content);
-			
-			while ($offset < $length) {
-				if ($content[$offset] === '{') {
-					// Nested block opens — go one level deeper
-					$braceLevel++;
-				} elseif ($content[$offset] === '}') {
-					$braceLevel--;
-					
-					// Back to zero means we found the brace that matches $openBracePos
-					if ($braceLevel === 0) {
-						return $offset;
-					}
-				}
-				
-				$offset++;
-			}
-			
-			// Reached end of string without finding a match — malformed source
-			return null;
-		}
-		
-		/**
-		 * Generates collection initialization code for constructor body
-		 * @param string $content Entity file content
-		 * @param array<int, PropertyDefinition> $inverseOfProperties Collections needing initialization
-		 * @return string Initialization code statements
-		 */
-		protected function generateCollectionInitializations(string $content, array $inverseOfProperties): string {
-			$initCode = '';
-			
-			foreach ($inverseOfProperties as $property) {
-				$propertyName = $property['name'];
-				
-				// Skip properties already assigned a Collection instance — avoids duplicating the line
-				if (!preg_match('/\$this->' . preg_quote($propertyName, '/') . '\s*=\s*new\s+Collection\(\)/s', $content)) {
-					$initCode .= "\n\t\t\$this->{$propertyName} = new Collection();";
-				}
-			}
-			
-			return $initCode;
-		}
-		
-		/**
-		 * Creates a new constructor with collection initializations
-		 * @param string $content Entity file content
-		 * @param array<int, PropertyDefinition> $inverseOfProperties Collections to initialize
-		 * @return string Updated content with new constructor
-		 */
-		protected function addNewConstructor(string $content, array $inverseOfProperties): string {
-			// Detect indentation from existing content
-			$indent = '\t';
-			if (preg_match('/^([ \t]+)(?:protected|private|public|function)/m', $content, $indentMatch)) {
-				$indent = $indentMatch[1];
-			}
-			$indent2 = $indent . "\t";
-			
-			$constructorCode = "\n{$indent}/**\n{$indent} * Constructor to initialize collections\n{$indent} */\n{$indent}public function __construct() {";
-			
-			foreach ($inverseOfProperties as $property) {
-				$propertyName = $property['name'];
-				$constructorCode .= "\n{$indent2}\$this->{$propertyName} = new Collection();";
-			}
-			
-			$constructorCode .= "\n{$indent}}\n";
-			
-			// Find the best insertion point — after the last property, or after the class opening brace
-			$insertPosition = $this->findConstructorInsertPosition($content);
-			
-			if ($insertPosition !== null) {
-				return substr($content, 0, $insertPosition) . "\n" . $constructorCode . substr($content, $insertPosition);
-			}
-			
-			return $content;
-		}
-		
-		/**
-		 * Determines optimal position to insert a new constructor
-		 * @param string $content Complete PHP file content
-		 * @return int|null Character position for insertion, or null if not found
-		 */
-		protected function findConstructorInsertPosition(string $content): ?int {
-			// Use parseClassContent to isolate the properties section — this prevents the
-			// property regex from matching $variable assignments inside method bodies
-			$parsed = $this->parseClassContent($content);
-			
-			if ($parsed === false) {
-				return null;
-			}
-			
-			// Use propertiesRaw (untrimmed) so offsets map directly to full-content positions
-			$propertiesRaw = $parsed['propertiesRaw'];
-			$headerLength = strlen($parsed['header']);
-			
-			// Find the last semicolon in the raw properties section — insert after it
-			$lastSemicolon = strrpos($propertiesRaw, ';');
-			
-			if ($lastSemicolon !== false) {
-				// Convert properties-section offset to full-content offset
-				return $headerLength + $lastSemicolon + 1;
-			}
-			
-			// No properties found — insert immediately after the class opening brace
-			if (!preg_match('/class[\s\r\n]+[^{]+\{/i', $content, $classMatch, PREG_OFFSET_CAPTURE)) {
-				return null;
-			}
-			
-			$classOpenBracePos = strpos($content, '{', $classMatch[0][1]);
-			return $classOpenBracePos !== false ? $classOpenBracePos + 1 : null;
 		}
 	}
