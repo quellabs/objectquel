@@ -30,6 +30,8 @@
 	 */
 	class PhpClassEditor {
 		
+		public const string INDENT = "\t";
+		
 		/**
 		 * Inserts a use statement into the class source if not already present.
 		 * Inserts after the last existing use statement, preserving its indentation.
@@ -84,8 +86,11 @@
 				return $content;
 			}
 			
-			$indent = $analyser->getIndentation();
-			$indented = self::indentSnippet($snippet, $indent);
+			// Determine indentation
+			$classIndent = $analyser->getClassIndentation();
+			
+			// Strip the class-level prefix to get the single-level indent unit
+			$indented = self::indentSnippet($snippet, $classIndent);
 			return substr($content, 0, $insertPos + 1) . $indented . substr($content, $insertPos + 1);
 		}
 		
@@ -105,21 +110,25 @@
 				return $content;
 			}
 			
-			$indent = $analyser->getIndentation();
-			$indented = self::indentSnippet($snippet, $indent);
-			return substr($content, 0, $closingBrace) . $indented . "\n" . substr($content, $closingBrace);
+			// Determine indentation
+			$classIndent = $analyser->getClassIndentation();
+			
+			// Strip the class-level prefix to get the single-level indent unit
+			$indented = self::indentSnippet($snippet, $classIndent);
+			return substr($content, 0, $closingBrace) . rtrim($indented, "\n") . "\n\n" . substr($content, $closingBrace);
 		}
 		
 		/**
-		 * Re-indents a snippet from canonical single-\t-per-level to the given indent string.
-		 * Each leading \t on a line is replaced by one unit of $indent.
-		 * Lines with no leading \t are prefixed with one $indent (member level).
-		 * Blank lines and the leading \n are left untouched.
-		 * @param string $snippet Snippet using \t as the indent unit
-		 * @param string $indent Detected indent string (e.g. "\t", "    ")
+		 * Re-indents a snippet from canonical single-\t-per-level to the target indentation.
+		 * Each leading \t on a line is replaced by one $unit. The $classIndent prefix is
+		 * prepended to every line so members land at the correct depth even when the class
+		 * itself is indented (e.g. a tab-indented namespace convention).
+		 * Blank lines are preserved as-is.
+		 * @param string $snippet   Snippet using \t as the indent unit
+		 * @param string $classIndent Whitespace prefix of the class declaration line
 		 * @return string Re-indented snippet
 		 */
-		private static function indentSnippet(string $snippet, string $indent): string {
+		private static function indentSnippet(string $snippet, string $classIndent = ''): string {
 			$lines = explode("\n", $snippet);
 			$result = [];
 			
@@ -134,8 +143,8 @@
 				$tabCount = strlen($line) - strlen(ltrim($line, "\t"));
 				$rest = substr($line, $tabCount);
 				
-				// Member level = one $indent; each extra \t adds another
-				$result[] = str_repeat($indent, $tabCount + 1) . $rest;
+				// Member level = classIndent + one unit; each extra \t adds another unit
+				$result[] = $classIndent . str_repeat(self::INDENT, $tabCount + 1) . $rest;
 			}
 			
 			return implode("\n", $result);
@@ -149,7 +158,7 @@
 		 */
 		public static function updateExistingConstructor(string $content, array $inverseOfProperties): string {
 			$analyser = new PhpClassAnalyser($content);
-			$indent = $analyser->getIndentation();
+			$indent = $analyser->getMemberIndentation();
 			
 			// Find the start of the constructor
 			$openBracePos = $analyser->getMethodBodyStartPos("__construct");
@@ -176,7 +185,7 @@
 			);
 			
 			// Build initialization statements for any collections not already initialized
-			$initCode = self::generateCollectionInitializations($constructorBody, $inverseOfProperties, $analyser->getIndentation());
+			$initCode = self::generateCollectionInitializations($constructorBody, $inverseOfProperties, $analyser->getMemberIndentation());
 			
 			// Insert the new statements immediately before the closing brace
 			if (!empty($initCode)) {
@@ -194,29 +203,27 @@
 		 * @return string Updated content with new constructor
 		 */
 		public static function addNewConstructor(string $content, array $inverseOfProperties): string {
-			// Detect indentation from existing content
 			$analyser = new PhpClassAnalyser($content);
-			$indent = $analyser->getIndentation();
-			$indent2 = $indent . "\t";
+			$generator = new PhpClassGenerator();
 			
-			// Create constructor code
-			$constructorCode = "\n{$indent}/**\n{$indent} * Constructor to initialize collections\n{$indent} */\n{$indent}public function __construct() {";
+			// Determine input position
+			$insertPos = $analyser->getLastPropertyEndPos() ?? $analyser->getClassOpeningBracePosition();
 			
-			foreach ($inverseOfProperties as $property) {
-				$propertyName = $property['name'];
-				$constructorCode .= "\n{$indent2}\$this->{$propertyName} = new Collection();";
+			if ($insertPos === null) {
+				return $content;
 			}
 			
-			$constructorCode .= "\n{$indent}}\n\n";
+			// Constructor
+			$indented = self::indentSnippet(
+				$generator->generateConstructor($inverseOfProperties),
+				$analyser->getClassIndentation()
+			);
 			
-			// Find the best insertion point — after the last property, or after the class opening brace
-			$insertPosition = $analyser->getLastPropertyEndPos();
-			
-			if ($insertPosition === null) {
-				$insertPosition = $analyser->getClassOpeningBracePosition();
-			}
-			
-			return substr($content, 0, $insertPosition + 1) . "\n" . $constructorCode . substr($content, $insertPosition + 1);
+			return
+				substr($content, 0, $insertPos + 1)
+				. "\n"
+				. $indented
+				. substr($content, $insertPos + 1);
 		}
 		
 		/**

@@ -390,6 +390,29 @@
 		}
 		
 		/**
+		 * Generate a new constructor and populate it with collections
+		 * @param array<int, PropertyDefinition> $inverseOfProperties Collections to initialize
+		 * @return string
+		 */
+		public function generateConstructor(array $inverseOfProperties): string {
+			$indent = PhpClassEditor::INDENT;
+			
+			$snippet = "\n";
+			$snippet .= "/**\n";
+			$snippet .= " * Constructor to initialize collections\n";
+			$snippet .= "*/\n";
+			$snippet .= "public function __construct() {\n";
+			
+			foreach ($inverseOfProperties as $property) {
+				$snippet .= "{$indent}\$this->{$property['name']} = new Collection();\n";
+			}
+			
+			$snippet .= "}\n";
+			$snippet .= "\n";
+			return $snippet;
+		}
+		
+		/**
 		 * Resolves the PHP type string for a non-relationship property.
 		 * Accepts only BaseProperty|EnumProperty so PHPStan can verify that
 		 * enumType is present whenever type === 'enum'.

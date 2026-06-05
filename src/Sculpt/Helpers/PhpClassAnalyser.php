@@ -269,20 +269,35 @@
 			
 			return null;
 		}
-		
+	
 		/**
 		 * Detects the indentation string used by the first property or method declaration
 		 * found in the source. Falls back to a single tab when the file contains no
 		 * recognisable declarations, which covers the edge case of an empty class body.
 		 * @return string Indentation string, e.g. "\t" or "    " (four spaces)
 		 */
-		public function getIndentation(): string {
+		public function getMemberIndentation(): string {
 			if (preg_match('/^([ \t]+)(?:protected|private|public|function)/m', $this->content, $indentMatch) !== 1) {
 				// No indented declaration found — default to a single tab
 				return "\t";
 			}
 			
 			return $indentMatch[1];
+		}
+		
+		/**
+		 * Returns the whitespace (spaces or tabs) that precedes the class keyword.
+		 * Used by PhpClassEditor to correctly indent inserted snippets when the class
+		 * itself is indented (e.g. a tab-indented namespace convention).
+		 * Returns an empty string when the class is declared at column zero.
+		 * @return string Indentation prefix of the class declaration line
+		 */
+		public function getClassIndentation(): string {
+			if (preg_match('/^([ \t]*)class\s+\w/m', $this->content, $match) !== 1) {
+				return '';
+			}
+			
+			return $match[1];
 		}
 		
 		/**
