@@ -144,7 +144,7 @@
 		
 		public function getPropertyStartPos(string $name): ?int {
 			$nameQuoted = preg_quote($name, '/');
-			$pattern = '/^\s*(?:protected|private|public)\s+[^;]*\$' . $nameQuoted . '\b[^;]*;/m';
+			$pattern = '/^\s*(?:protected|private|public)\s+[^;\r\n]*\$' . $nameQuoted . '\b[^;\r\n]*;/m';
 
 			$classOpen = $this->getClassOpeningBracePosition();
 
@@ -195,7 +195,7 @@
 			// Search only within the class body
 			$classBody = substr($this->content, $classOpen);
 
-			if (!preg_match_all('/^\s*(?:protected|private|public)\s+[^;]*;/m', $classBody, $matches, PREG_OFFSET_CAPTURE)) {
+			if (!preg_match_all('/^\s*(?:protected|private|public)\s+[^;\r\n]*;/m', $classBody, $matches, PREG_OFFSET_CAPTURE)) {
 				return null;
 			}
 
