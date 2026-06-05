@@ -286,16 +286,30 @@
 			}
 			
 			$optionsStr = !empty($options) ? ', ' . implode(', ', $options) : '';
-			$comment = "/**\n* @Orm\\{$relationshipType}(targetEntity=\"{$targetEntity}Entity\"{$optionsStr})";
+			$comment = "/**\n * @Orm\\{$relationshipType}(targetEntity=\"{$targetEntity}Entity\"{$optionsStr})";
 			
 			// InverseOf collections get an additional @var hint so IDEs know the collection's generic type
 			if ($relationshipType === 'InverseOf' && ($property['collection'] ?? false)) {
-				$comment .= "\n* @var CollectionInterface<{$targetEntity}Entity>";
+				$comment .= "\n * @var CollectionInterface<{$targetEntity}Entity>";
 			}
 			
-			$comment .= "\n*/";
+			$comment .= "\n */";
 			
 			return $comment;
+		}
+		
+		/**
+		 * Generates the $id property snippet for the auto-increment primary key.
+		 * Returns a canonical tab-indented snippet; PhpClassEditor applies the
+		 * file-level indentation when inserting.
+		 * @return string Snippet: docblock + property declaration
+		 */
+		public function generateIdProperty(): string {
+			return "\n/**\n"
+				. " * @Orm\\Column(name=\"id\", type=\"integer\", unsigned=true, primary_key=true)\n"
+				. " * @Orm\\PrimaryKeyStrategy(strategy=\"identity\")\n"
+				. " */\n"
+				. "protected ?int \$id = null;";
 		}
 		
 		/**

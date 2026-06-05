@@ -195,9 +195,6 @@
 		protected function insertProperties(string $content, array $properties): string {
 			$generator = new PhpClassGenerator();
 			
-			// Indentation is stable across the whole file — read it once up front
-			$indent = (new PhpClassAnalyser($content))->getIndentation();
-			
 			foreach ($properties as $property) {
 				// Re-create the analyser each iteration: addProperty mutates $content,
 				// so positions and existence checks must come from the current version
@@ -217,13 +214,8 @@
 				
 				$propertyDefinition = $generator->generatePropertyDefinition($property);
 				
-				$snippet =
-					"\n\n"
-					. $indent
-					. str_replace("\n", "\n{$indent}", $docComment)
-					. "\n"
-					. $indent
-					. $propertyDefinition;
+				// Pass zero-indented snippet; PhpClassEditor::addProperty() applies indentation
+				$snippet = "\n\n" . $docComment . "\n" . $propertyDefinition;
 				
 				$content = PhpClassEditor::addProperty($content, $snippet);
 			}
@@ -266,16 +258,29 @@
 		 * @return string Complete PHP class file content
 		 */
 		protected function generateEntityContent(string $entityName, array $properties, array $indexes = []): string {
-			$generator = new PhpClassGenerator();
-			
+			// Build the file skeleton: header, class docblock, and an empty class shell.
+			// All subsequent insertions go through PhpClassEditor, which detects the
+			// tab indentation from the class line and applies it uniformly.
 			$content  = $this->generateFileHeader($entityName);
 			$content .= $this->generateClassDocBlock($entityName, $indexes);
-			$content .= "    class {$entityName}Entity {\n";
-			$content .= $this->generateIdProperty();
-			$content .= $this->generateConstructor($properties);
-			$content .= $this->generatePropertyBlock($properties, $generator);
-			$content .= $this->generateAccessors($properties, $entityName, $generator);
-			$content .= "    }\n";
+			$content .= "\tclass {$entityName}Entity {\n";
+			$content .= "\t}\n";
+			
+			// Insert $id through PhpClassGenerator + PhpClassEditor, identical to
+			// how every other property is inserted in updateEntity().
+			$generator = new PhpClassGenerator();
+			$content = PhpClassEditor::addProperty($content, $generator->generateIdProperty());
+			
+			// Constructor, additional properties, and accessors all go through the same
+			// PhpClassEditor methods used by updateEntity().
+			$inverseOfProperties = array_filter($properties, fn($p) => ($p['collection'] ?? false) === true);
+			
+			if (!empty($inverseOfProperties)) {
+				$content = PhpClassEditor::addNewConstructor($content, $inverseOfProperties);
+			}
+			
+			$content = $this->insertProperties($content, $properties);
+			$content = $this->insertGettersAndSetters($content, $properties, $entityName);
 			
 			return $content;
 		}
@@ -344,19 +349,19 @@
 		private function generateFileHeader(string $entityName): string {
 			$namespace = $this->configuration->getEntityNameSpace();
 			
-			$content  = "<?php\n\n    namespace {$namespace};\n";
+			$content  = "<?php\n\n\tnamespace {$namespace};\n";
 			$content .= "\n";
-			$content .= "    use Quellabs\\ObjectQuel\\Annotations\\Orm\\Table;\n";
-			$content .= "    use Quellabs\\ObjectQuel\\Annotations\\Orm\\Column;\n";
-			$content .= "    use Quellabs\\ObjectQuel\\Annotations\\Orm\\Index;\n";
-			$content .= "    use Quellabs\\ObjectQuel\\Annotations\\Orm\\UniqueIndex;\n";
-			$content .= "    use Quellabs\\ObjectQuel\\Annotations\\Orm\\FullTextIndex;\n";
-			$content .= "    use Quellabs\\ObjectQuel\\Annotations\\Orm\\PrimaryKeyStrategy;\n";
-			$content .= "    use Quellabs\\ObjectQuel\\Annotations\\Orm\\OneToOne;\n";
-			$content .= "    use Quellabs\\ObjectQuel\\Annotations\\Orm\\InverseOf;\n";
-			$content .= "    use Quellabs\\ObjectQuel\\Annotations\\Orm\\ManyToOne;\n";
-			$content .= "    use Quellabs\\ObjectQuel\\Collections\\Collection;\n";
-			$content .= "    use Quellabs\\ObjectQuel\\Collections\\CollectionInterface;\n";
+			$content .= "\tuse Quellabs\\ObjectQuel\\Annotations\\Orm\\Table;\n";
+			$content .= "\tuse Quellabs\\ObjectQuel\\Annotations\\Orm\\Column;\n";
+			$content .= "\tuse Quellabs\\ObjectQuel\\Annotations\\Orm\\Index;\n";
+			$content .= "\tuse Quellabs\\ObjectQuel\\Annotations\\Orm\\UniqueIndex;\n";
+			$content .= "\tuse Quellabs\\ObjectQuel\\Annotations\\Orm\\FullTextIndex;\n";
+			$content .= "\tuse Quellabs\\ObjectQuel\\Annotations\\Orm\\PrimaryKeyStrategy;\n";
+			$content .= "\tuse Quellabs\\ObjectQuel\\Annotations\\Orm\\OneToOne;\n";
+			$content .= "\tuse Quellabs\\ObjectQuel\\Annotations\\Orm\\InverseOf;\n";
+			$content .= "\tuse Quellabs\\ObjectQuel\\Annotations\\Orm\\ManyToOne;\n";
+			$content .= "\tuse Quellabs\\ObjectQuel\\Collections\\Collection;\n";
+			$content .= "\tuse Quellabs\\ObjectQuel\\Collections\\CollectionInterface;\n";
 			
 			return $content;
 		}
@@ -373,12 +378,12 @@
 			$tableNamePlural = StringInflector::pluralize($entityName);
 			$tableName = StringInflector::snakeCase($tableNamePlural);
 			
-			$content  = "\n    /**\n";
-			$content .= "     * @Orm\\Table(name=\"{$tableName}\")\n";
+			$content  = "\n\t/**\n";
+			$content .= "\t * @Orm\\Table(name=\"{$tableName}\")\n";
 			
 			foreach ($indexes as $index) {
 				$indexName    = $index['name'];
-				$indexColumns = '{"' . implode('", "', $index['columns']) . '"}';
+				$indexColumns = '{"'  . implode('", "', $index['columns']) . '"}';
 				$indexType    = strtoupper($index['type'] ?? 'INDEX');
 				
 				// Map the index type string to its annotation class name
@@ -388,112 +393,10 @@
 					default    => 'Index',
 				};
 				
-				$content .= "     * @Orm\\{$annotationClass}(name=\"{$indexName}\", columns={$indexColumns})\n";
+				$content .= "\t * @Orm\\{$annotationClass}(name=\"{$indexName}\", columns={$indexColumns})\n";
 			}
 			
-			$content .= "     */\n";
-			
-			return $content;
-		}
-		
-		/**
-		 * Generates the hardcoded auto-increment primary key property declaration
-		 * @return string The $id property block, ending with a newline
-		 */
-		private function generateIdProperty(): string {
-			$content  = "\n        /**\n";
-			$content .= "         * @Orm\\Column(name=\"id\", type=\"integer\", unsigned=true, primary_key=true)\n";
-			$content .= "         * @Orm\\PrimaryKeyStrategy(strategy=\"identity\")\n";
-			$content .= "         */\n";
-			$content .= "        protected ?int \$id = null;\n";
-			
-			return $content;
-		}
-		
-		/**
-		 * Generates the constructor block if any property requires collection initialization,
-		 * or returns an empty string when no constructor is needed
-		 * @param array<int, PropertyDefinition> $properties All entity properties
-		 * @return string Constructor block (with trailing newline) or empty string
-		 */
-		private function generateConstructor(array $properties): string {
-			// Check whether any property requires a constructor for collection initialization
-			$collectionProperties = array_filter($properties, fn($p) => $p['collection'] ?? false);
-			
-			if (empty($collectionProperties)) {
-				return '';
-			}
-			
-			// Collection InverseOf properties must be initialized to an empty Collection in the
-			// constructor, otherwise accessing the collection before it's set would cause a null-dereference
-			$content  = "\n        /**\n         * Constructor to initialize collections\n         */\n";
-			$content .= "        public function __construct() {\n";
-			
-			foreach ($collectionProperties as $property) {
-				$content .= "            \$this->{$property['name']} = new Collection();\n";
-			}
-			
-			$content .= "        }\n";
-			
-			return $content;
-		}
-		
-		/**
-		 * Generates all annotated property declarations for the given properties
-		 * @param array<int, PropertyDefinition> $properties Properties to emit
-		 * @param PhpClassGenerator $generator Code generator instance
-		 * @return string All property declaration blocks concatenated
-		 */
-		private function generatePropertyBlock(array $properties, PhpClassGenerator $generator): string {
-			$content = '';
-			
-			// Emit all property declarations with their ORM annotation docblocks
-			foreach ($properties as $property) {
-				if (isset($property['relationshipType'])) {
-					$docComment = $generator->generateRelationshipDocComment($property);
-				} else {
-					$docComment = $generator->generatePropertyDocComment($property);
-				}
-				
-				$propertyDefinition = $generator->generatePropertyDefinition($property);
-				
-				$content .= "\n        " . str_replace("\n       ", "\n        ", $docComment) . "\n";
-				$content .= "        " . $propertyDefinition . "\n";
-			}
-			
-			return $content;
-		}
-		
-		/**
-		 * Generates all accessor methods: the $id getter, then getters/setters or
-		 * add/remove pairs for every declared property
-		 * @param array<int, PropertyDefinition> $properties Properties to generate accessors for
-		 * @param string $entityName Entity name without "Entity" suffix (used in collection method bodies)
-		 * @param PhpClassGenerator $generator Code generator instance
-		 * @return string All accessor method blocks concatenated
-		 */
-		private function generateAccessors(array $properties, string $entityName, PhpClassGenerator $generator): string {
-			// Primary key getter — always present regardless of property list
-			$content = $generator->generateGetter(['name' => 'id', 'type' => 'integer']);
-			
-			// Generate accessors for every declared property
-			foreach ($properties as $property) {
-				$readOnly = $property['readonly'] ?? false;
-				
-				// Collection InverseOf properties expose add/remove methods rather than a single setter
-				if (isset($property['relationshipType']) && ($property['collection'] ?? false)) {
-					$content .= $generator->generateCollectionAdder($property, $entityName);
-					$content .= $generator->generateCollectionRemover($property, $entityName);
-					continue;
-				}
-				
-				$content .= $generator->generateGetter($property);
-				
-				// Readonly properties intentionally have no setter
-				if (!$readOnly) {
-					$content .= $generator->generateSetter($property);
-				}
-			}
+			$content .= "\t */\n";
 			
 			return $content;
 		}

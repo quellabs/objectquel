@@ -84,7 +84,9 @@
 				return $content;
 			}
 			
-			return substr($content, 0, $insertPos + 1) . $snippet . substr($content, $insertPos + 1);
+			$indent = $analyser->getIndentation();
+			$indented = self::indentSnippet($snippet, $indent);
+			return substr($content, 0, $insertPos + 1) . $indented . substr($content, $insertPos + 1);
 		}
 		
 		/**
