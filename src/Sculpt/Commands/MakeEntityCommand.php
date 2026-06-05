@@ -96,13 +96,8 @@
 			$this->output->writeLn("Creating entity...");
 			$this->output->writeLn("");
 			
-			// Allow passing the entity name directly on the command line (e.g. `sculpt make:entity Elephant`),
-			// falling back to an interactive prompt if omitted
-			$entityName = $config->getPositional(0);
-			
-			if (!is_string($entityName) || $entityName === "") {
-				$entityName = $this->input->ask("Class name of the entity to create or update (e.g. AgreeableElephant)") ?? '';
-			}
+			// Ask for the entity name
+			$entityName = $this->collectEntityName("Class name of the entity to create or update (e.g. AgreeableElephant)");
 			
 			// Show message that we are making a new or modifying an existing entity
 			$this->displayEntityOperationMessage($entityName);
@@ -592,15 +587,16 @@
 		 * @return string Selected entity name
 		 */
 		private function selectTargetEntity(array $availableEntities): string {
+			// No entities on disk yet — skip the choice menu and go straight to manual entry
 			if (empty($availableEntities)) {
-				return $this->askForEntityName();
+				return $this->collectEntityName("\nTarget entity name (without 'Entity' suffix)");
 			}
 			
 			$options = array_merge($availableEntities, ['[Enter manually]']);
 			$choice = $this->input->choice("\nSelect target entity", $options);
 			
 			if ($choice === '[Enter manually]') {
-				return $this->askForEntityName();
+				return $this->collectEntityName("\nTarget entity name (without 'Entity' suffix)");
 			}
 			
 			return $choice;
@@ -653,6 +649,8 @@
 					$result['unsigned'] = $metadata->columnDefinitions[$referencedDbColumn]['unsigned'] ?? true;
 				}
 			} catch (\Exception $e) {
+				// Metadata may not be available for entities not yet loaded by the autoloader;
+				// fall back to the safe default rather than aborting the command
 				$this->output->writeLn("\nCouldn't determine FK type, defaulting to integer");
 			}
 			
@@ -852,6 +850,60 @@
 		}
 		
 		/**
+		 * Prompts for an entity name, re-prompting until a valid identifier is entered.
+		 * Never returns an empty string or a PHP reserved keyword.
+		 * @return string Validated entity name
+		 */
+		private function collectEntityName(string $prompt): string {
+			while (true) {
+				// Ask for entity name
+				$name = $this->input->ask($prompt) ?? '';
+				
+				// Reject empty response
+				if ($name === null || trim($name) === '') {
+					$this->output->warning("Entity name cannot be empty.");
+					continue;
+				}
+				
+				// Reject invalid names
+				if (!$this->isValidEntityName($name)) {
+					$this->output->warning("Invalid entity name. Use letters, numbers and underscores only.");
+					continue;
+				}
+				
+				// Return the name
+				return $name;
+			}
+		}
+		
+		/**
+		 * Returns true when $name is a valid PHP class name identifier and not a reserved keyword.
+		 * Entity names follow the same identifier rules as property names.
+		 * @param string $name Candidate entity name
+		 * @return bool
+		 */
+		private function isValidEntityName(string $name): bool {
+			if (!preg_match('/^[a-zA-Z_][a-zA-Z0-9_]*$/', $name)) {
+				return false;
+			}
+			
+			$reserved = [
+				'abstract', 'and', 'array', 'as', 'break', 'callable', 'case', 'catch',
+				'class', 'clone', 'const', 'continue', 'declare', 'default', 'die',
+				'do', 'echo', 'else', 'elseif', 'empty', 'enddeclare', 'endfor',
+				'endforeach', 'endif', 'endswitch', 'endwhile', 'enum', 'eval', 'exit',
+				'extends', 'final', 'finally', 'fn', 'for', 'foreach', 'function',
+				'global', 'goto', 'if', 'implements', 'include', 'include_once',
+				'instanceof', 'insteadof', 'interface', 'isset', 'list', 'match',
+				'namespace', 'new', 'or', 'print', 'private', 'protected', 'public',
+				'readonly', 'require', 'require_once', 'return', 'static', 'switch',
+				'throw', 'trait', 'try', 'unset', 'use', 'var', 'while', 'xor', 'yield',
+			];
+			
+			return !in_array(strtolower($name), $reserved, true);
+		}
+		
+		/**
 		 * Prompts for a property name, re-prompting until the user enters a valid,
 		 * non-duplicate name or presses Enter to stop.
 		 * Returns null when the user presses Enter on an empty input.
@@ -1003,18 +1055,5 @@
 			}
 			
 			return $attributes;
-		}
-		
-		/**
-		 * Prompt the user to type an entity name manually.
-		 * Loops until a non-empty string is entered.
-		 * @return string Entity name without 'Entity' suffix
-		 */
-		private function askForEntityName(): string {
-			do {
-				$answer = $this->input->ask("\nTarget entity name (without 'Entity' suffix)");
-			} while ($answer === null || $answer === '');
-			
-			return $answer;
 		}
 	}
