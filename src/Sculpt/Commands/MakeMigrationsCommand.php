@@ -15,13 +15,13 @@
 	use Quellabs\Sculpt\ConfigurationManager;
 	use Quellabs\Sculpt\Console\ConsoleInput;
 	use Quellabs\Sculpt\Console\ConsoleOutput;
+	use Quellabs\AnnotationReader\Exception\AnnotationReaderException;
 	
 	/**
-	 * MakeMigration - CLI command for generating database migrations
+	 * MakeMigrationsCommand - CLI command for generating database migrations
 	 *
-	 * This command uses the EntitySchemaAnalyzer to detect differences between entity definitions
-	 * and the database schema, then uses PhinxMigrationBuilder to create migration files that
-	 * synchronize the database with entity changes.
+	 * Detects differences between entity definitions and the current database schema,
+	 * then produces a Phinx migration file to synchronize the two.
 	 *
 	 * @phpstan-import-type ColumnDefinition from DatabaseAdapter
 	 * @phpstan-import-type ColumnModification from SculptTypes
@@ -29,15 +29,16 @@
 	 */
 	class MakeMigrationsCommand extends CommandBase {
 		
-		private ?EntityStore $entityStore = null;
+		/** @var string Path to the migrations folder */
 		private string $migrationsPath;
+		
+		/** @var Configuration Service provider configuration */
 		private Configuration $configuration;
 		
-		/** @var ServiceProvider */
-		protected ProviderInterface $provider;
+		/** @var EntityStore|null Lazy init entityStore */
+		private ?EntityStore $entityStore = null;
 		
 		/**
-		 * MakeEntityCommand constructor
 		 * @param ConsoleInput $input
 		 * @param ConsoleOutput $output
 		 * @param ServiceProvider $provider
@@ -49,25 +50,16 @@
 		}
 		
 		/**
-		 * Execute the database migration generation command
+		 * Execute the migration generation command.
+		 * Analyzes entity/schema differences and writes a migration file.
 		 * @param ConfigurationManager $config Parameters passed to the command
 		 * @return int Exit code (0 for success, 1 for failure)
+		 * @throws AnnotationReaderException
 		 */
 		public function execute(ConfigurationManager $config): int {
-			// Show
-			$this->output->writeLn(" ██████╗ ██╗   ██╗███████╗██╗");
-			$this->output->writeLn("██╔═══██╗██║   ██║██╔════╝██║");
-			$this->output->writeLn("██║   ██║██║   ██║█████╗  ██║");
-			$this->output->writeLn("██║▄▄ ██║██║   ██║██╔══╝  ██║");
-			$this->output->writeLn("╚██████╔╝╚██████╔╝███████╗███████╗");
-			$this->output->writeLn(" ╚══▀▀═╝  ╚═════╝ ╚══════╝╚══════╝");
-			$this->output->writeLn("");
-			$this->output->writeLn("Generating migrations...");
+			$this->printBanner();
 			
-			// Fetch the database adapter
-			$databaseAdapter = $this->provider->getDatabaseAdapter();
-			
-			// Step 1: Fetch the entity map from the Entity Store
+			// Fetch entity map; abort if no entities are registered
 			$entityMap = $this->getEntityStore()->getEntityMap();
 			
 			if (empty($entityMap)) {
@@ -75,60 +67,21 @@
 				return 1;
 			}
 			
-			// Step 2: Analyze changes between entities and database
-			// Build a platform descriptor so both the analyzer and migration builder
-			// can make engine-specific decisions (e.g. json vs jsonb, enum support).
+			// Detect differences between entity definitions and the live database schema
+			$databaseAdapter = $this->provider->getDatabaseAdapter();
 			$platform = new PlatformCapabilities($databaseAdapter);
+			$analyzer = new EntitySchemaAnalyzer($databaseAdapter, $this->getEntityStore(), $platform);
+			$allChanges = $analyzer->analyzeEntityChanges($entityMap);
 			
-			// Instantiate the schema analyzer
-			$entitySchemaAnalyzer = new EntitySchemaAnalyzer($databaseAdapter, $this->getEntityStore(), $platform);
-			
-			// And perform the analysis
-			$allChanges = $entitySchemaAnalyzer->analyzeEntityChanges($entityMap);
-			
-			// Step 3: Report detected changes to the user
 			if (empty($allChanges)) {
 				$this->output->writeLn("No changes detected. Migration file not created.");
 				return 0;
 			}
 			
-			// Show the changes
-			$this->output->writeLn("\n Changes detected:");
+			// Report every detected change to the user before writing anything
+			$this->printChangeSummary($allChanges);
 			
-			foreach ($allChanges as $tableName => $changes) {
-				if (!empty($changes['table_not_exists'])) {
-					$this->output->writeLn(" ✓ New table: {$tableName}");
-				}
-				
-				foreach ($changes['added'] as $columnName => $definition) {
-					$this->output->writeLn(" ✓ New column: {$tableName}.{$columnName}");
-				}
-				
-				foreach ($changes['modified'] as $columnName => $diff) {
-					$description = $this->describeColumnChange($diff);
-					$this->output->writeLn(" ✓ Modified column: {$tableName}.{$columnName}{$description}");
-				}
-				
-				foreach ($changes['deleted'] as $columnName => $definition) {
-					$this->output->writeLn(" ✓ Dropped column: {$tableName}.{$columnName}");
-				}
-				
-				foreach ($changes['indexes']['added'] as $indexName => $indexConfig) {
-					$this->output->writeLn(" ✓ New index: {$tableName}.{$indexName}");
-				}
-				
-				foreach ($changes['indexes']['modified'] as $indexName => $indexConfig) {
-					$this->output->writeLn(" ✓ Modified index: {$tableName}.{$indexName}");
-				}
-				
-				foreach ($changes['indexes']['deleted'] as $indexName => $indexConfig) {
-					$this->output->writeLn(" ✓ Dropped index: {$tableName}.{$indexName}");
-				}
-			}
-			
-			$this->output->writeLn("");
-			
-			// Step 4: Generate a migration file based on changes.
+			// Generate the migration file and report the result
 			$migrationBuilder = new PhinxMigrationBuilder($databaseAdapter, $this->migrationsPath, $platform);
 			$result = $migrationBuilder->generateMigrationFile($allChanges);
 			
@@ -137,39 +90,103 @@
 				return 1;
 			}
 			
-			$path = $result['path'] ?? '';
-			$this->output->writeLn("Success! Created file: " . $path);
+			$this->output->writeLn("Success! Created file: " . ($result['path'] ?? ''));
 			return 0;
 		}
 		
 		/**
-		 * Get the command signature/name for registration in the CLI
-		 * @return string Command signature
+		 * Get the command signature used to invoke it from the CLI
+		 * @return string
 		 */
 		public function getSignature(): string {
 			return "make:migrations";
 		}
 		
 		/**
-		 * Get a short description of what the command does
-		 * @return string Command description
+		 * One-line description shown in the command list
+		 * @return string
 		 */
 		public function getDescription(): string {
 			return "Generate database migrations based on entity changes";
 		}
 		
 		/**
-		 * Get detailed help information for the command
-		 * @return string Command help text
+		 * Extended help text shown when the user passes --help
+		 * @return string
 		 */
 		public function getHelp(): string {
 			return "Creates a new database migration file by comparing entity definitions with current database schema to synchronize changes.";
 		}
 		
+		// -------------------------------------------------------------------------
+		// Private helpers
+		// -------------------------------------------------------------------------
+		
 		/**
-		 * Produce a human-readable summary of what changed in a modified column
+		 * Print the ASCII art banner and opening message
+		 * @return void
+		 */
+		private function printBanner(): void {
+			$this->output->writeLn(" ██████╗ ██╗   ██╗███████╗██╗");
+			$this->output->writeLn("██╔═══██╗██║   ██║██╔════╝██║");
+			$this->output->writeLn("██║   ██║██║   ██║█████╗  ██║");
+			$this->output->writeLn("██║▄▄ ██║██║   ██║██╔══╝  ██║");
+			$this->output->writeLn("╚██████╔╝╚██████╔╝███████╗███████╗");
+			$this->output->writeLn(" ╚══▀▀═╝  ╚═════╝ ╚══════╝╚══════╝");
+			$this->output->writeLn("");
+			$this->output->writeLn("Generating migrations...");
+		}
+		
+		/**
+		 * Print a human-readable summary of all detected schema changes
+		 * @param array<string, EntityChangeSet> $allChanges Keyed by table name
+		 * @return void
+		 */
+		private function printChangeSummary(array $allChanges): void {
+			$this->output->writeLn("\n Changes detected:");
+			
+			foreach ($allChanges as $tableName => $changes) {
+				// New table
+				if (!empty($changes['table_not_exists'])) {
+					$this->output->writeLn(" ✓ New table: {$tableName}");
+				}
+				
+				// Column-level changes
+				foreach ($changes['added'] as $col => $def) {
+					$this->output->writeLn(" ✓ New column: {$tableName}.{$col}");
+				}
+				
+				foreach ($changes['modified'] as $col => $diff) {
+					$this->output->writeLn(" ✓ Modified column: {$tableName}.{$col}" . $this->describeColumnChange($diff));
+				}
+				
+				foreach ($changes['deleted'] as $col => $def) {
+					$this->output->writeLn(" ✓ Dropped column: {$tableName}.{$col}");
+				}
+				
+				// Index-level changes
+				foreach ($changes['indexes']['added'] as $idx => $cfg) {
+					$this->output->writeLn(" ✓ New index: {$tableName}.{$idx}");
+				}
+				
+				foreach ($changes['indexes']['modified'] as $idx => $cfg) {
+					$this->output->writeLn(" ✓ Modified index: {$tableName}.{$idx}");
+				}
+				
+				foreach ($changes['indexes']['deleted'] as $idx => $cfg) {
+					$this->output->writeLn(" ✓ Dropped index: {$tableName}.{$idx}");
+				}
+			}
+			
+			$this->output->writeLn("");
+		}
+		
+		/**
+		 * Produce a parenthesised description of what changed in a modified column,
+		 * e.g. " (type changed to varchar, now nullable)".
+		 * Returns an empty string when nothing describable changed.
 		 * @param ColumnModification $diff
-		 * @return string Parenthesised description, or empty string if no description can be inferred
+		 * @return string
 		 */
 		private function describeColumnChange(array $diff): string {
 			$from = $diff['from'];
@@ -182,8 +199,7 @@
 			
 			if (($from['limit'] ?? null) !== ($to['limit'] ?? null)) {
 				$toLimit = $to['limit'] ?? null;
-				$limitStr = is_array($toLimit) ? json_encode($toLimit) : (string)($toLimit ?? 'default');
-				$parts[] = "length changed to " . $limitStr;
+				$parts[] = "length changed to " . (is_array($toLimit) ? json_encode($toLimit) : (string)($toLimit ?? 'default'));
 			}
 			
 			if (($from['nullable'] ?? null) !== ($to['nullable'] ?? null)) {
@@ -194,16 +210,15 @@
 		}
 		
 		/**
-		 * Returns the EntityStore object
+		 * Return the EntityStore, creating it on first access (lazy init)
 		 * @return EntityStore
+		 * @throws AnnotationReaderException
 		 */
 		private function getEntityStore(): EntityStore {
-			// Check if the EntityStore instance has already been created (lazy loading)
 			if ($this->entityStore === null) {
 				$this->entityStore = new EntityStore($this->configuration);
 			}
 			
-			// Return the EntityStore instance (either newly created or existing)
 			return $this->entityStore;
 		}
 	}
