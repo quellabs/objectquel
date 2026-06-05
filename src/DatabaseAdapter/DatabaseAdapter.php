@@ -359,7 +359,7 @@
 				$index = $tableSchema->getIndex($indexName);
 				
 				$result[$indexName] = [
-					'type'    => in_array($index['type'], ['primary', 'unique', 'index'], true) ? $index['type'] : 'index',
+					'type'    => in_array($index['type'], ['primary', 'unique', 'index', 'fulltext'], true) ? $index['type'] : 'index',
 					'columns' => $index['columns'],
 					'length'  => $index['length'],
 				];
