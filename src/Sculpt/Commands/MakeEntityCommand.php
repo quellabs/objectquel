@@ -14,6 +14,7 @@
 	use Quellabs\Sculpt\Console\ConsoleInput;
 	use Quellabs\Sculpt\Console\ConsoleOutput;
 	use Quellabs\Support\StringInflector;
+	use Quellabs\AnnotationReader\Exception\AnnotationReaderException;
 	
 	/**
 	 * CLI command for creating or updating entity classes with properties and relationships.
@@ -91,7 +92,7 @@
 				$entityName = $this->input->ask("Class name of the entity to create or update (e.g. AgreeableElephant)") ?? '';
 			}
 			
-			// Show message that we are making a new or modifying an exising entiy
+			// Show message that we are making a new or modifying an existing entity
 			$this->displayEntityOperationMessage($entityName);
 			
 			// Scan the entity directory so relationship prompts can offer existing entities as choices
@@ -110,6 +111,7 @@
 		/**
 		 * Lazy-load EntityStore instance.
 		 * @return EntityStore Entity store instance
+		 * @throws AnnotationReaderException
 		 */
 		private function getEntityStore(): EntityStore {
 			return $this->entityStore ??= new EntityStore($this->configuration);
@@ -157,6 +159,7 @@
 			}
 			
 			$entities = [];
+			
 			foreach (scandir($entityPath) as $file) {
 				if (pathinfo($file, PATHINFO_EXTENSION) !== 'php') {
 					continue;
@@ -276,9 +279,11 @@
 		/**
 		 * Collect configuration for a relationship property.
 		 * Returns array of properties (relationship + FK column if applicable).
+		 * @param string $propertyName Property name on the current entity
 		 * @param string[] $availableEntities List of available entity names
 		 * @param string $entityName Name of the current entity being created
 		 * @return array<int, PropertyDefinition> Array of property definitions for the relationship
+		 * @throws EntityResolutionException
 		 */
 		private function collectRelationshipProperties(string $propertyName, array $availableEntities, string $entityName): array {
 			/** @var OrmRelationshipType $relationshipType */
@@ -286,47 +291,21 @@
 			
 			$targetInfo = $this->getTargetEntityInfo($availableEntities);
 			
-			// Determine FK details for owning side
-			$isOwningSide = in_array($relationshipType, ['ManyToOne', 'OneToOne']);
-			$relationColumn = $isOwningSide ? $propertyName . "Id" : null;
-			$fkInfo = $isOwningSide ? $this->determineForeignKeyType($targetInfo['targetEntity'], $targetInfo['referencedField']) : null;
-			
 			// Get relationship mapping configuration — null means abort this property
-			$mappingConfig = $this->collectRelationshipMapping(
-				$relationshipType,
-				$entityName,
-				$targetInfo['targetEntity']
-			);
+			$mappingConfig = $this->collectRelationshipMapping($relationshipType, $entityName, $targetInfo['targetEntity']);
 			
 			if ($mappingConfig === null) {
 				return [];
 			}
 			
-			$propertyPhpType = ($relationshipType === 'InverseOf') ? "CollectionInterface" : $targetInfo['targetEntity'] . "Entity";
 			$nullable = $this->input->confirm("\nAllow this relationship to be null?", $relationshipType === 'ManyToOne');
 			
-			// Start with the relationship property itself
-			$properties = [
-				$this->buildRelationshipProperty(
-					$propertyName,
-					$propertyPhpType,
-					$relationshipType,
-					$targetInfo['targetEntity'],
-					$mappingConfig['relation'],
-					$mappingConfig['referencedColumn'],
-					$relationColumn,
-					$nullable
-				)
-			];
+			// Build the owning side: relationship property + FK column (for ManyToOne and OneToOne)
+			$properties = $this->buildOwningSideProperties(
+				$propertyName, $relationshipType, $targetInfo, $mappingConfig, $nullable
+			);
 			
-			// Add FK column for owning side, but only when this is not the inverse side of a
-			// inverse relationship (relation !== null means we're the non-owning side,
-			// so the FK lives in the other table and we must not generate a column here)
-			if ($isOwningSide && $relationColumn !== null && $fkInfo !== null) {
-				$properties[] = $this->buildForeignKeyProperty($relationColumn, $fkInfo['type'], $fkInfo['unsigned'], $nullable);
-			}
-			
-			// Create inverse/owning side in target entity if requested
+			// Optionally mirror the relationship on the target entity
 			if (($mappingConfig['createInTarget'] ?? false) === true) {
 				$this->createRelationshipInTargetEntity(
 					$targetInfo['targetEntity'],
@@ -353,13 +332,11 @@
 		 * @return RelationshipMappingConfig
 		 */
 		private function collectRelationshipMapping(string $relationshipType, string $entityName, string $targetEntity): ?array {
-			// InverseOf: always inverse side
 			if ($relationshipType === 'InverseOf') {
 				return $this->handleInverseSideMapping($targetEntity, $entityName, 'ManyToOne');
+			} else {
+				return $this->handleOwningSideMapping($relationshipType, $entityName, $targetEntity);
 			}
-			
-			// ManyToOne or OneToOne: always owning side, optionally add @InverseOf on target
-			return $this->handleOwningSideMapping($relationshipType, $entityName, $targetEntity);
 		}
 		
 		/**
@@ -398,7 +375,6 @@
 			return ['relation' => $relation, 'referencedColumn' => null];
 		}
 		
-		
 		/**
 		 * Handle mapping for the owning side of a relationship.
 		 * @param string $relationshipType Type of relationship (ManyToOne or OneToOne)
@@ -417,27 +393,8 @@
 				return ['relation' => null, 'referencedColumn' => null];
 			}
 			
-			// The property name on the inverse entity that will hold the back-reference:
-			// ManyToOne → inverse holds a collection (pluralize); OneToOne → inverse holds a scalar
-			$inversePropertyName = ($relationshipType === 'ManyToOne')
-				? StringInflector::pluralize(lcfirst($entityName))
-				: lcfirst($entityName);
-			
-			// The back-reference is always @InverseOf regardless of relationship type.
-			// For ManyToOne this is a collection; for OneToOne it is a scalar. Either way
-			// it carries no FK — the FK lives on the owning side only.
-			$targetRelationType = 'InverseOf';
-			
-			return [
-				'relation'           => null,
-				'referencedColumn'   => null, // default to target PK
-				'createInTarget'     => true,
-				'targetPropertyName' => $inversePropertyName,
-				'targetRelationType' => $targetRelationType,
-				'targetInversedBy'   => null
-			];
+			return $this->buildBidirectionalConfig($relationshipType, $entityName);
 		}
-		
 		
 		/**
 		 * Create a relationship property in the target entity.
@@ -465,41 +422,9 @@
 				return;
 			}
 			
-			$isOwningSide = in_array($relationshipType, ['ManyToOne', 'OneToOne']);
-			
-			// InverseOf on a ManyToOne owning side → collection; on a OneToOne owning side → scalar
-			if ($relationshipType === 'InverseOf') {
-				$phpType = ($originatingRelationshipType === 'OneToOne') ? $currentEntity . "Entity" : "CollectionInterface";
-			} else {
-				$phpType = $currentEntity . "Entity";
-			}
-			
-			// For InverseOf (inverse side), via should reference the property name
-			// in the owning entity that we're creating the inverse for.
-			// The $inversedBy parameter contains the ManyToOne property name (e.g., "post")
-			$relation = $isOwningSide ? null : $referencedColumn;
-			
-			// Start with the relationship property
-			$properties = [
-				$this->buildRelationshipProperty(
-					$propertyName,
-					$phpType,
-					$relationshipType,
-					$currentEntity,
-					$relation,
-					null,  // Inverse side doesn't have inversedBy
-					$isOwningSide ? $propertyName . "Id" : null,
-					true
-				)
-			];
-			
-			// Add FK column when this side owns the relationship (holds the FK in its table).
-			// If $currentEntity does not exist on disk yet, getEntityPrimaryKeys and
-			// determineForeignKeyType both fall back to 'id' / integer unsigned safely.
-			if ($isOwningSide) {
-				$fkInfo = $this->determineForeignKeyType($currentEntity, $this->getEntityPrimaryKeys($currentEntity)[0]);
-				$properties[] = $this->buildForeignKeyProperty($propertyName . "Id", $fkInfo['type'], $fkInfo['unsigned'], true);
-			}
+			$properties = $this->buildTargetRelationshipProperties(
+				$propertyName, $relationshipType, $currentEntity, $referencedColumn, $originatingRelationshipType
+			);
 			
 			$this->validateProperties($properties);
 			
@@ -520,33 +445,11 @@
 		private function findRelationshipProperty(string $targetEntity, string $currentEntity): ?string {
 			$fullTargetEntity = $this->configuration->getEntityNameSpace() . '\\' . $targetEntity . 'Entity';
 			
-			if (!class_exists($fullTargetEntity)) {
+			if (!class_exists($fullTargetEntity) || !$this->getEntityStore()->exists($fullTargetEntity)) {
 				return null;
 			}
 			
-			if (!$this->getEntityStore()->exists($fullTargetEntity)) {
-				return null;
-			}
-			
-			$reflectionClass = new \ReflectionClass($fullTargetEntity);
-			
-			$currentEntityFullName = $this->configuration->getEntityNameSpace() . '\\' . $currentEntity . 'Entity';
-			$matchingProperties = [];
-			
-			foreach ($reflectionClass->getProperties() as $property) {
-				$propertyType = $property->getType();
-				
-				if (!$propertyType instanceof \ReflectionNamedType) {
-					continue;
-				}
-				
-				$typeName = $propertyType->getName();
-				
-				// Match both fully qualified (from autoloader) and short form (not yet loaded)
-				if ($typeName === $currentEntityFullName || $typeName === $currentEntity . 'Entity') {
-					$matchingProperties[] = $property->getName();
-				}
-			}
+			$matchingProperties = $this->findMatchingReflectionProperties($fullTargetEntity, $currentEntity);
 			
 			if (count($matchingProperties) === 1) {
 				return $matchingProperties[0];
@@ -587,25 +490,9 @@
 				"readonly" => false
 			];
 			
-			// String length limit
-			if ($propertyType === 'string') {
-				$property['limit'] = (int)($this->input->ask("\nCharacter limit for this string field", "255") ?? "255");
-			}
-			
-			// Integer unsigned flag
-			if (in_array($propertyType, ['tinyinteger', 'smallinteger', 'integer', 'biginteger'])) {
-				$property['unsigned'] = $this->input->confirm(
-					"\nShould this number field store positive values only (unsigned)?",
-					false
-				);
-			}
-			
-			// Decimal precision/scale
-			if ($propertyType === 'decimal') {
-				$decimalConfig = $this->collectDecimalConfiguration();
-				$property['precision'] = $decimalConfig['precision'];
-				$property['scale'] = $decimalConfig['scale'];
-			}
+			// Collect type-specific attributes (length, unsigned, precision/scale)
+			/** @var PhinxColumnType $propertyType */
+			$property = array_merge($property, $this->collectTypeSpecificAttributes($propertyType));
 			
 			$property['nullable'] = $this->input->confirm("\nAllow this field to be empty/null in the database?", false);
 			
@@ -648,7 +535,7 @@
 		 */
 		private function collectEnumType(): string {
 			while (true) {
-				$enumType = $this->input->ask("Enter fully qualified enum class name (e.g. App\Enum\OrderStatus)");
+				$enumType = $this->input->ask("Enter fully qualified enum class name (e.g. App\\Enum\\OrderStatus)");
 				
 				if ($enumType !== null && enum_exists($enumType)) {
 					return $enumType;
@@ -695,25 +582,17 @@
 		 */
 		private function selectTargetEntity(array $availableEntities): string {
 			if (empty($availableEntities)) {
-				do {
-					$answer = $this->input->ask("\nTarget entity name (without 'Entity' suffix)");
-				} while ($answer === null || $answer === '');
-				
-				return $answer;
+				return $this->askForEntityName();
 			}
 			
 			$options = array_merge($availableEntities, ['[Enter manually]']);
 			$choice = $this->input->choice("\nSelect target entity", $options);
 			
 			if ($choice === '[Enter manually]') {
-				do {
-					$answer = $this->input->ask("\nTarget entity name (without 'Entity' suffix)");
-				} while ($answer === null || $answer === '');
-				
-				return $answer;
-			} else {
-				return $choice;
+				return $this->askForEntityName();
 			}
+			
+			return $choice;
 		}
 		
 		/**
@@ -745,15 +624,12 @@
 			$result = ['type' => 'integer', 'unsigned' => true];
 			
 			try {
-				// Assemble the full entity name
 				$fullEntityName = $this->configuration->getEntityNameSpace() . '\\' . $targetEntity . 'Entity';
 				
-				// Validate the entity's existence
 				if (!$this->getEntityStore()->exists($fullEntityName)) {
 					return $result;
 				}
 				
-				// Fetch the entity's metadata
 				$metadata = $this->getEntityStore()->getMetadata($fullEntityName);
 				
 				// Map the PHP field name to its database column name, then look up the column definition
@@ -762,7 +638,7 @@
 				if ($referencedDbColumn && isset($metadata->columnDefinitions[$referencedDbColumn])) {
 					/** @var PhinxColumnType $colType */
 					$colType = $metadata->columnDefinitions[$referencedDbColumn]['type'];
-					$result['type'] = $colType;
+					$result['type']     = $colType;
 					$result['unsigned'] = $metadata->columnDefinitions[$referencedDbColumn]['unsigned'] ?? true;
 				}
 			} catch (\Exception $e) {
@@ -799,5 +675,213 @@
 					);
 				}
 			}
+		}
+		
+		// -------------------------------------------------------------------------
+		// Private helpers
+		// -------------------------------------------------------------------------
+		
+		/**
+		 * Build the relationship property and optional FK column for the owning side (ManyToOne, OneToOne).
+		 * For InverseOf (inverse side), only the relationship property is returned — the FK lives
+		 * in the other entity's table and must not be generated here.
+		 * @param string $propertyName Property name on the current entity
+		 * @param OrmRelationshipType $relationshipType ManyToOne, OneToOne, or InverseOf
+		 * @param array{targetEntity: string, referencedField: string} $targetInfo Target entity and its PK field
+		 * @param RelationshipMappingConfig $mappingConfig Collected mapping config from handleOwningSideMapping/handleInverseSideMapping
+		 * @param bool $nullable Whether the relationship allows null
+		 * @return array<int, PropertyDefinition>
+		 */
+		private function buildOwningSideProperties(
+			string $propertyName,
+			string $relationshipType,
+			array $targetInfo,
+			array $mappingConfig,
+			bool $nullable
+		): array {
+			// InverseOf properties carry CollectionInterface; all owning side properties carry the entity type
+			$phpType = ($relationshipType === 'InverseOf') ? "CollectionInterface" : $targetInfo['targetEntity'] . "Entity";
+			
+			// Owning side (ManyToOne, OneToOne) holds the FK column; inverse side does not
+			$isOwningSide  = in_array($relationshipType, ['ManyToOne', 'OneToOne']);
+			$relationColumn = $isOwningSide ? $propertyName . "Id" : null;
+			
+			$properties = [
+				$this->buildRelationshipProperty(
+					$propertyName,
+					$phpType,
+					$relationshipType,
+					$targetInfo['targetEntity'],
+					$mappingConfig['relation'],
+					$mappingConfig['referencedColumn'],
+					$relationColumn,
+					$nullable
+				)
+			];
+			
+			// Add the FK column alongside the relationship property for owning sides
+			if ($isOwningSide && $relationColumn !== null) {
+				$fkInfo = $this->determineForeignKeyType($targetInfo['targetEntity'], $targetInfo['referencedField']);
+				$properties[] = $this->buildForeignKeyProperty($relationColumn, $fkInfo['type'], $fkInfo['unsigned'], $nullable);
+			}
+			
+			return $properties;
+		}
+		
+		/**
+		 * Build the relationship property (and FK column if applicable) to inject into the target entity.
+		 * Called when the user opts in to bidirectional mapping while creating the owning side.
+		 * @param string $propertyName Property name to create on the target entity
+		 * @param OrmRelationshipType $relationshipType Relationship type for the new property
+		 * @param string $currentEntity Name of the current (owning) entity
+		 * @param string|null $referencedColumn Property name pointing back to the owning side
+		 * @param string|null $originatingRelationshipType OneToOne or ManyToOne — determines whether InverseOf holds a scalar or collection
+		 * @return array<int, PropertyDefinition>
+		 */
+		private function buildTargetRelationshipProperties(
+			string $propertyName,
+			string $relationshipType,
+			string $currentEntity,
+			?string $referencedColumn,
+			?string $originatingRelationshipType
+		): array {
+			$isOwningSide = in_array($relationshipType, ['ManyToOne', 'OneToOne']);
+			
+			// InverseOf on a ManyToOne owning side → collection; on a OneToOne owning side → scalar
+			if ($relationshipType === 'InverseOf') {
+				$phpType = ($originatingRelationshipType === 'OneToOne') ? $currentEntity . "Entity" : "CollectionInterface";
+			} else {
+				$phpType = $currentEntity . "Entity";
+			}
+			
+			// For InverseOf (inverse side), via should reference the property name
+			// in the owning entity that we're creating the inverse for.
+			// The $referencedColumn parameter contains the ManyToOne property name (e.g., "post")
+			$relation = $isOwningSide ? null : $referencedColumn;
+			
+			$properties = [
+				$this->buildRelationshipProperty(
+					$propertyName,
+					$phpType,
+					$relationshipType,
+					$currentEntity,
+					$relation,
+					null,  // Inverse side doesn't have inversedBy
+					$isOwningSide ? $propertyName . "Id" : null,
+					true
+				)
+			];
+			
+			// Add FK column when this side owns the relationship (holds the FK in its table).
+			// If $currentEntity does not exist on disk yet, getEntityPrimaryKeys and
+			// determineForeignKeyType both fall back to 'id' / integer unsigned safely.
+			if ($isOwningSide) {
+				$fkInfo = $this->determineForeignKeyType($currentEntity, $this->getEntityPrimaryKeys($currentEntity)[0]);
+				$properties[] = $this->buildForeignKeyProperty($propertyName . "Id", $fkInfo['type'], $fkInfo['unsigned'], true);
+			}
+			
+			return $properties;
+		}
+		
+		/**
+		 * Build the RelationshipMappingConfig for a bidirectional owning side.
+		 * Extracted from handleOwningSideMapping to keep that method within one screen.
+		 * @param string $relationshipType ManyToOne or OneToOne
+		 * @param string $entityName The current (owning) entity name
+		 * @return RelationshipMappingConfig
+		 */
+		private function buildBidirectionalConfig(string $relationshipType, string $entityName): array {
+			// The property name on the inverse entity that will hold the back-reference:
+			// ManyToOne → inverse holds a collection (pluralize); OneToOne → inverse holds a scalar
+			$inversePropertyName = ($relationshipType === 'ManyToOne')
+				? StringInflector::pluralize(lcfirst($entityName))
+				: lcfirst($entityName);
+			
+			// The back-reference is always @InverseOf regardless of relationship type.
+			// For ManyToOne this is a collection; for OneToOne it is a scalar. Either way
+			// it carries no FK — the FK lives on the owning side only.
+			return [
+				'relation'           => null,
+				'referencedColumn'   => null, // default to target PK
+				'createInTarget'     => true,
+				'targetPropertyName' => $inversePropertyName,
+				'targetRelationType' => 'InverseOf',
+				'targetInversedBy'   => null
+			];
+		}
+		
+		/**
+		 * Use reflection to find all properties on $fullTargetEntity whose declared type
+		 * matches $currentEntity (both fully qualified and short form are checked).
+		 * @param string $fullTargetEntity Fully qualified class name of the target entity
+		 * @param string $currentEntity Short entity name without namespace or "Entity" suffix
+		 * @return string[] Property names whose type matches the current entity
+		 */
+		private function findMatchingReflectionProperties(string $fullTargetEntity, string $currentEntity): array {
+			$reflectionClass = new \ReflectionClass($fullTargetEntity);
+			$currentEntityFullName = $this->configuration->getEntityNameSpace() . '\\' . $currentEntity . 'Entity';
+			$matchingProperties = [];
+			
+			foreach ($reflectionClass->getProperties() as $property) {
+				$propertyType = $property->getType();
+				
+				if (!$propertyType instanceof \ReflectionNamedType) {
+					continue;
+				}
+				
+				$typeName = $propertyType->getName();
+				
+				// Match both fully qualified (from autoloader) and short form (not yet loaded)
+				if ($typeName === $currentEntityFullName || $typeName === $currentEntity . 'Entity') {
+					$matchingProperties[] = $property->getName();
+				}
+			}
+			
+			return $matchingProperties;
+		}
+		
+		/**
+		 * Collect type-specific attributes for a standard property (length, unsigned, precision/scale).
+		 * Returns a partial array to be merged into the base property definition.
+		 * @param PhinxColumnType $propertyType The column type
+		 * @return array<string, mixed> Partial property attributes
+		 */
+		private function collectTypeSpecificAttributes(string $propertyType): array {
+			$attributes = [];
+			
+			// String length limit
+			if ($propertyType === 'string') {
+				$attributes['limit'] = (int)($this->input->ask("\nCharacter limit for this string field", "255") ?? "255");
+			}
+			
+			// Integer unsigned flag
+			if (in_array($propertyType, ['tinyinteger', 'smallinteger', 'integer', 'biginteger'])) {
+				$attributes['unsigned'] = $this->input->confirm(
+					"\nShould this number field store positive values only (unsigned)?",
+					false
+				);
+			}
+			
+			// Decimal precision/scale
+			if ($propertyType === 'decimal') {
+				$decimalConfig = $this->collectDecimalConfiguration();
+				$attributes['precision'] = $decimalConfig['precision'];
+				$attributes['scale']     = $decimalConfig['scale'];
+			}
+			
+			return $attributes;
+		}
+		
+		/**
+		 * Prompt the user to type an entity name manually.
+		 * Loops until a non-empty string is entered.
+		 * @return string Entity name without 'Entity' suffix
+		 */
+		private function askForEntityName(): string {
+			do {
+				$answer = $this->input->ask("\nTarget entity name (without 'Entity' suffix)");
+			} while ($answer === null || $answer === '');
+			
+			return $answer;
 		}
 	}
