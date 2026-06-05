@@ -857,7 +857,7 @@
 		private function collectEntityName(string $prompt): string {
 			while (true) {
 				// Ask for entity name
-				$name = $this->input->ask($prompt) ?? '';
+				$name = $this->input->ask($prompt);
 				
 				// Reject empty response
 				if ($name === null || trim($name) === '') {
@@ -866,7 +866,7 @@
 				}
 				
 				// Reject invalid names
-				if (!$this->isValidEntityName($name)) {
+				if (!$this->isValidPhpIdentifier($name)) {
 					$this->output->warning("Invalid entity name. Use letters, numbers and underscores only.");
 					continue;
 				}
@@ -874,33 +874,6 @@
 				// Return the name
 				return $name;
 			}
-		}
-		
-		/**
-		 * Returns true when $name is a valid PHP class name identifier and not a reserved keyword.
-		 * Entity names follow the same identifier rules as property names.
-		 * @param string $name Candidate entity name
-		 * @return bool
-		 */
-		private function isValidEntityName(string $name): bool {
-			if (!preg_match('/^[a-zA-Z_][a-zA-Z0-9_]*$/', $name)) {
-				return false;
-			}
-			
-			$reserved = [
-				'abstract', 'and', 'array', 'as', 'break', 'callable', 'case', 'catch',
-				'class', 'clone', 'const', 'continue', 'declare', 'default', 'die',
-				'do', 'echo', 'else', 'elseif', 'empty', 'enddeclare', 'endfor',
-				'endforeach', 'endif', 'endswitch', 'endwhile', 'enum', 'eval', 'exit',
-				'extends', 'final', 'finally', 'fn', 'for', 'foreach', 'function',
-				'global', 'goto', 'if', 'implements', 'include', 'include_once',
-				'instanceof', 'insteadof', 'interface', 'isset', 'list', 'match',
-				'namespace', 'new', 'or', 'print', 'private', 'protected', 'public',
-				'readonly', 'require', 'require_once', 'return', 'static', 'switch',
-				'throw', 'trait', 'try', 'unset', 'use', 'var', 'while', 'xor', 'yield',
-			];
-			
-			return !in_array(strtolower($name), $reserved, true);
 		}
 		
 		/**
@@ -925,7 +898,7 @@
 				}
 				
 				// Reject numbers, php keywords, etc
-				if (!$this->isValidPropertyName($name)) {
+				if (!$this->isValidPhpIdentifier($name)) {
 					$this->output->warning("Invalid property name. Use letters, numbers and underscores only.");
 					continue;
 				}
@@ -947,13 +920,13 @@
 		}
 		
 		/**
-		 * Returns true when $name is a valid PHP property name and not a reserved keyword.
-		 * Valid names start with a letter or underscore and contain only letters, digits,
-		 * and underscores — matching the subset of identifiers usable as property names.
-		 * @param string $name Candidate property name
+		 * Returns true when $name is a valid PHP identifier and not a reserved keyword.
+		 * Covers both entity class names and property names: start with a letter or
+		 * underscore, followed by letters, digits, and underscores only.
+		 * @param string $name Candidate identifier
 		 * @return bool
 		 */
-		private function isValidPropertyName(string $name): bool {
+		private function isValidPhpIdentifier(string $name): bool {
 			// Must start with letter or underscore, followed by letters/digits/underscores only
 			if (!preg_match('/^[a-zA-Z_][a-zA-Z0-9_]*$/', $name)) {
 				return false;
@@ -1021,7 +994,7 @@
 					return $resolved;
 				}
 				
-				$this->output->writeLn("Unknown type \"{$answer}\". Enter ? to see available types.");
+				$this->output->warning("Unknown type \"{$answer}\". Enter ? to see available types.");
 			}
 		}
 		
