@@ -21,14 +21,6 @@
 	 *     name: string,
 	 *     columns: array<int, string>
 	 * }
-	 *
-	 * @phpstan-type ParsedClassContent array{
-	 *     header: string,
-	 *     properties: string,
-	 *     propertiesRaw: string,
-	 *     methods: string,
-	 *     footer: string
-	 * }
 	 */
 	class EntityModifier {
 		
@@ -137,7 +129,7 @@
 				$updatedContent = $this->updateConstructor($updatedContent, $inverseOfProperties);
 			}
 			
-			$updatedContent = $this->insertProperties($reparsed, $properties);
+			$updatedContent = $this->insertProperties($updatedContent, $properties);
 			
 			// Strip suffix before passing to insertGettersAndSetters, which uses the name for method bodies
 			$bareName = str_ends_with($entityName, 'Entity') ? substr($entityName, 0, -6) : $entityName;
@@ -187,16 +179,24 @@
 					continue;
 				}
 				
-				// Insert after the last existing use statement, matching its indentation
-				if (preg_match_all('/^(\\s*)use\\s+[^;\\r\\n]+;/m', $content, $useMatches, PREG_OFFSET_CAPTURE)) {
-					$lastUseMatch = end($useMatches[0]);
-					$lastUseIndent = end($useMatches[1])[0]; // capture group 1 = leading whitespace
-					$insertPos = $lastUseMatch[1] + strlen($lastUseMatch[0]);
-					$content = substr($content, 0, $insertPos) . "\n" . $lastUseIndent . $import . substr($content, $insertPos);
-				} elseif (preg_match('/^namespace\\s+[^;\\r\\n]+;/m', $content, $nsMatch, PREG_OFFSET_CAPTURE)) {
+				// Re-create the analyser each iteration: each inserted import shifts offsets,
+				// so positions from a prior pass are no longer valid
+				$analyser = new PhpClassAnalyser($content);
+				$lastUseEnd = $analyser->getLastUseClauseEndPos();
+				
+				if ($lastUseEnd !== null) {
+					// Reproduce the indentation of the last use statement for the new line
+					$lineStart = strrpos($content, "\n", $lastUseEnd - strlen($content)) + 1;
+					$indent = strspn($content, " \t", $lineStart);
+					$useIndent = substr($content, $lineStart, $indent);
+					$content = substr($content, 0, $lastUseEnd + 1) . "\n" . $useIndent . $import . substr($content, $lastUseEnd + 1);
+				} else {
 					// No use statements yet — insert after namespace declaration
-					$insertPos = $nsMatch[0][1] + strlen($nsMatch[0][0]);
-					$content = substr($content, 0, $insertPos) . "\n" . $import . substr($content, $insertPos);
+					$namespaceEnd = $analyser->getNamespaceEndPos();
+					
+					if ($namespaceEnd !== null) {
+						$content = substr($content, 0, $namespaceEnd + 1) . "\n" . $import . substr($content, $namespaceEnd + 1);
+					}
 				}
 			}
 			
@@ -205,13 +205,13 @@
 		
 		/**
 		 * Inserts new property declarations into the class
-		 * @param string $content Parsed class sections from parseClassContent()
+		 * @param string $content Entity file content
 		 * @param array<int, PropertyDefinition> $properties Properties to add
-		 * @return string Updated class content with new properties
+		 * @return string Updated content with new property declarations spliced in
 		 */
 		protected function insertProperties(string $content, array $properties): string {
 			$analyser = new PhpClassAnalyser($content);
-			$generator = new PHPClassGenerator();
+			$generator = new PhpClassGenerator();
 			$indent = $analyser->getIndentation();
 			
 			$newProperties = '';
@@ -248,17 +248,19 @@
 					. $propertyDefinition;
 			}
 			
-			$updatedPropertyCode = $propertyCode . $newProperties;
+			if (empty($newProperties)) {
+				return $content;
+			}
 			
-			// Reassemble: header + updated properties + methods + closing brace
-			// Use the raw (untrimmed) properties to preserve the original whitespace
-			// between the class opening brace and the first property
-			$headerRaw = rtrim($classContent->header);
-			$leadingWhitespace = $classContent->propertiesRaw;
-			preg_match('/^[\r\n]+/', $leadingWhitespace, $leadingMatch);
-			$leading = $leadingMatch[0] ?? "\n";
-			$methods = ltrim($classContent->methods, "\r\n");
-			return $headerRaw . $leading . $updatedPropertyCode . "\n\n{$indent}" . $methods . $classContent->footer;
+			// Find the splice point: after the last existing property declaration,
+			// or after the class opening brace when no properties exist yet
+			$insertPos = $analyser->getLastPropertyEndPos() ?? $analyser->getClassOpeningBracePosition();
+			
+			if ($insertPos === null) {
+				return $content;
+			}
+			
+			return substr($content, 0, $insertPos + 1) . $newProperties . substr($content, $insertPos + 1);
 		}
 		
 		/**
@@ -276,6 +278,7 @@
 			}
 			
 			$generator = new PhpClassGenerator();
+			$analyser = new PhpClassAnalyser($content);
 			$methodsToAdd = '';
 			
 			foreach ($properties as $property) {
@@ -289,11 +292,11 @@
 					$removeMethodName = 'remove' . ucfirst($singularName);
 					
 					// Only generate each method if it doesn't already exist
-					if (!preg_match('/function\s+' . $addMethodName . '\s*\(/i', $content)) {
+					if (!$analyser->hasMethod($addMethodName)) {
 						$methodsToAdd .= $generator->generateCollectionAdder($property, $entityName);
 					}
 					
-					if (!preg_match('/function\s+' . $removeMethodName . '\s*\(/i', $content)) {
+					if (!$analyser->hasMethod($removeMethodName)) {
 						$methodsToAdd .= $generator->generateCollectionRemover($property, $entityName);
 					}
 					
@@ -301,12 +304,12 @@
 				}
 				
 				// Generate getter if not already present
-				if (!preg_match('/function\s+' . $getterName . '\s*\(/i', $content)) {
+				if (!$analyser->hasMethod($getterName)) {
 					$methodsToAdd .= $generator->generateGetter($property);
 				}
 				
 				// Readonly properties get no setter
-				if (!($property['readonly'] ?? false) && !preg_match('/function\s+' . $setterName . '\s*\(/i', $content)) {
+				if (!($property['readonly'] ?? false) && !$analyser->hasMethod($setterName)) {
 					$methodsToAdd .= $generator->generateSetter($property);
 				}
 			}
@@ -324,6 +327,7 @@
 		 */
 		protected function generateEntityContent(string $entityName, array $properties, array $indexes = []): string {
 			$generator = new PhpClassGenerator();
+			$analyser = new PhpClassAnalyser($content);
 			
 			$namespace = $this->configuration->getEntityNameSpace();
 			$content = "<?php\n\n    namespace {$namespace};\n";

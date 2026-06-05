@@ -57,6 +57,36 @@
 		}
 		
 		/**
+		 * Returns the character position of the last character of the last use statement,
+		 * i.e. the position of its closing semicolon. Returns null when no use statements exist.
+		 * @return int|null Character position of the semicolon ending the last use statement
+		 */
+		public function getLastUseClauseEndPos(): ?int {
+			if (!preg_match_all('/^\s*use\s+[^;\r\n]+;/m', $this->content, $matches, PREG_OFFSET_CAPTURE)) {
+				return null;
+			}
+			
+			$lastMatch = end($matches[0]);
+			
+			// Offset + length - 1 lands on the semicolon itself
+			return $lastMatch[1] + strlen($lastMatch[0]) - 1;
+		}
+		
+		/**
+		 * Returns the character position of the semicolon ending the namespace declaration.
+		 * Returns null when no namespace statement exists.
+		 * @return int|null Character position of the semicolon ending the namespace declaration
+		 */
+		public function getNamespaceEndPos(): ?int {
+			if (!preg_match('/^namespace\s+[^;\r\n]+;/m', $this->content, $match, PREG_OFFSET_CAPTURE)) {
+				return null;
+			}
+			
+			// Offset + length - 1 lands on the semicolon itself
+			return $match[0][1] + strlen($match[0][0]) - 1;
+		}
+		
+		/**
 		 * Locates the character position where constructor declaration begins
 		 * @return int|null Character position of constructor start, or null if not found
 		 */
