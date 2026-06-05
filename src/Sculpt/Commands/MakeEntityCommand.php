@@ -207,10 +207,7 @@
 					break;
 				}
 				
-				$propertyType = $this->input->choice("\nField type", [
-					'tinyinteger', 'smallinteger', 'integer', 'biginteger', 'string', 'char', 'text', 'float',
-					'decimal', 'boolean', 'date', 'datetime', 'time', 'timestamp', 'enum', 'relationship',
-				]);
+				$propertyType = $this->collectFieldType();
 				
 				if ($propertyType === 'relationship') {
 					$properties = array_merge($properties, $this->collectRelationshipProperties(
@@ -851,6 +848,55 @@
 			}
 			
 			return $matchingProperties;
+		}
+		
+		/**
+		 * Prompt the user to enter a field type by name.
+		 * Displays a compact help screen when the user enters "?" and re-prompts until
+		 * a valid type (or alias) is entered. Input is trimmed and lowercased before
+		 * validation so "String", " int ", etc. are all accepted.
+		 * @return string Canonical field type name
+		 */
+		private function collectFieldType(): string {
+			$types = [
+				'string', 'integer', 'boolean', 'date', 'enum', 'text', 'decimal',
+				'datetime', 'time', 'relationship', 'char', 'float', 'biginteger',
+				'timestamp', 'smallinteger', 'tinyinteger',
+			];
+			
+			$aliases = [
+				'int'      => 'integer',
+				'bool'     => 'boolean',
+				'relation' => 'relationship',
+			];
+			
+			while (true) {
+				$answer = trim((string)$this->input->ask("Field type (? for help)"));
+				
+				if ($answer === '?') {
+					$colWidth = max(array_map('strlen', $types)) + 2;
+					$this->output->writeLn("");
+					$this->output->writeLn("Available field types:");
+					
+					foreach (array_chunk($types, 3) as $row) {
+						$this->output->writeLn("  " . implode('', array_map(fn(string $t) => str_pad($t, $colWidth), $row)));
+					}
+					
+					$this->output->writeLn("");
+					continue;
+				}
+				
+				$normalized = strtolower($answer);
+				
+				// Resolve alias first, then validate against the canonical type list
+				$resolved = $aliases[$normalized] ?? $normalized;
+				
+				if (in_array($resolved, $types, true)) {
+					return $resolved;
+				}
+				
+				$this->output->writeLn("Unknown type \"{$answer}\". Enter ? to see available types.");
+			}
 		}
 		
 		/**
