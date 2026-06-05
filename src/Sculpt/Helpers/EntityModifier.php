@@ -126,7 +126,13 @@
 			$updatedContent = $this->ensureRequiredImports($updatedContent, $properties);
 			
 			if (!empty($inverseOfProperties)) {
-				$updatedContent = $this->updateConstructor($updatedContent, $inverseOfProperties);
+				$analyser = new PhpClassAnalyser($updatedContent);
+				
+				if ($analyser->hasMethod("__construct")) {
+					$updatedContent = PhpClassEditor::updateExistingConstructor($updatedContent, $inverseOfProperties);
+				} else {
+					$updatedContent = PhpClassEditor::addNewConstructor($updatedContent, $inverseOfProperties);
+				}
 			}
 			
 			$updatedContent = $this->insertProperties($updatedContent, $properties);
@@ -402,19 +408,4 @@
 			return $content;
 		}
 		
-		/**
-		 * Updates constructor to initialize InverseOf collections
-		 * @param string $content Entity file content
-		 * @param array<int, PropertyDefinition> $inverseOfProperties InverseOf properties needing initialization
-		 * @return string Updated content with constructor modifications
-		 */
-		protected function updateConstructor(string $content, array $inverseOfProperties): string {
-			$analyser = new PHpClassAnalyser($content);
-			
-			if ($analyser->hasMethod("__construct")) {
-				return PhpClassEditor::updateExistingConstructor($content, $inverseOfProperties);
-			} else {
-				return PhpClassEditor::addNewConstructor($content, $inverseOfProperties);
-			}
-		}
 	}
