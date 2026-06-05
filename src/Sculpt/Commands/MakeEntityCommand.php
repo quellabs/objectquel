@@ -201,9 +201,10 @@
 			$properties = [];
 			
 			while (true) {
-				$propertyName = $this->input->ask("New property name (press enter to stop adding fields)");
+				// Collect a valid, unique property name; null means the user pressed Enter to stop.
+				$propertyName = $this->collectPropertyName($properties);
 				
-				if (empty($propertyName)) {
+				if ($propertyName === null) {
 					break;
 				}
 				
@@ -848,6 +849,79 @@
 			}
 			
 			return $matchingProperties;
+		}
+		
+		/**
+		 * Prompts for a property name, re-prompting until the user enters a valid,
+		 * non-duplicate name or presses Enter to stop.
+		 * Returns null when the user presses Enter on an empty input.
+		 * @param array<int, PropertyDefinition> $existingProperties Already-collected properties
+		 * @return string|null Validated property name, or null to stop
+		 */
+		private function collectPropertyName(array $existingProperties): ?string {
+			// Build a set of names already defined in this session for duplicate detection.
+			// "id" is always reserved — ObjectQuel generates it automatically.
+			$defined = array_column($existingProperties, 'name');
+			
+			while (true) {
+				// Ask for property name
+				$name = $this->input->ask("New property name (press enter to stop adding fields)");
+				
+				// Empty input signals the user is done adding properties
+				if ($name === null || trim($name) === '') {
+					return null;
+				}
+				
+				// Reject numbers, php keywords, etc
+				if (!$this->isValidPropertyName($name)) {
+					$this->output->warning("Invalid property name. Use letters, numbers and underscores only.");
+					continue;
+				}
+				
+				// "id" is generated automatically by ObjectQuel; reject it explicitly
+				if (strtolower($name) === 'id') {
+					$this->output->warning("The \"id\" property is reserved. ObjectQuel generates it automatically.");
+					continue;
+				}
+				
+				// Reject duplicate properties
+				if (in_array($name, $defined, true)) {
+					$this->output->warning("Property \"{$name}\" has already been defined.");
+					continue;
+				}
+				
+				return $name;
+			}
+		}
+		
+		/**
+		 * Returns true when $name is a valid PHP property name and not a reserved keyword.
+		 * Valid names start with a letter or underscore and contain only letters, digits,
+		 * and underscores — matching the subset of identifiers usable as property names.
+		 * @param string $name Candidate property name
+		 * @return bool
+		 */
+		private function isValidPropertyName(string $name): bool {
+			// Must start with letter or underscore, followed by letters/digits/underscores only
+			if (!preg_match('/^[a-zA-Z_][a-zA-Z0-9_]*$/', $name)) {
+				return false;
+			}
+			
+			// Reject PHP reserved keywords that are illegal as property names
+			$reserved = [
+				'abstract', 'and', 'array', 'as', 'break', 'callable', 'case', 'catch',
+				'class', 'clone', 'const', 'continue', 'declare', 'default', 'die',
+				'do', 'echo', 'else', 'elseif', 'empty', 'enddeclare', 'endfor',
+				'endforeach', 'endif', 'endswitch', 'endwhile', 'enum', 'eval', 'exit',
+				'extends', 'final', 'finally', 'fn', 'for', 'foreach', 'function',
+				'global', 'goto', 'if', 'implements', 'include', 'include_once',
+				'instanceof', 'insteadof', 'interface', 'isset', 'list', 'match',
+				'namespace', 'new', 'or', 'print', 'private', 'protected', 'public',
+				'readonly', 'require', 'require_once', 'return', 'static', 'switch',
+				'throw', 'trait', 'try', 'unset', 'use', 'var', 'while', 'xor', 'yield',
+			];
+			
+			return !in_array(strtolower($name), $reserved, true);
 		}
 		
 		/**
