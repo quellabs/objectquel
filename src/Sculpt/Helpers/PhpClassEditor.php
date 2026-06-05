@@ -2,7 +2,9 @@
 	
 	namespace Quellabs\ObjectQuel\Sculpt\Helpers;
 	
-	use Quellabs\ObjectQuel\Sculpt\SculptTypes;/**
+	use Quellabs\ObjectQuel\Sculpt\SculptTypes;
+	
+	/**
 	 * Generic PHP class source editor.
 	 *
 	 * This class provides structural operations for modifying an existing PHP class
