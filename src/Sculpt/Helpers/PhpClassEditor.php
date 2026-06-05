@@ -87,18 +87,54 @@
 		
 		/**
 		 * Splices a method snippet into the class source before the class closing brace.
+		 * The snippet is expected to use \t per indent level; addMethod re-indents it
+		 * to match the indentation style detected in the file.
 		 * @param string $content Class file content
-		 * @param string $snippet Fully-formed method snippet to insert
+		 * @param string $snippet Fully-formed method snippet to insert (zero-based \t indentation)
 		 * @return string Updated content with the method spliced in
 		 */
 		public static function addMethod(string $content, string $snippet): string {
-			$closingBrace = (new PhpClassAnalyser($content))->getClassClosingBracePosition();
+			$analyser = new PhpClassAnalyser($content);
+			$closingBrace = $analyser->getClassClosingBracePosition();
 			
 			if ($closingBrace === null) {
 				return $content;
 			}
 			
-			return substr($content, 0, $closingBrace) . $snippet . "\n" . substr($content, $closingBrace);
+			$indent = $analyser->getIndentation();
+			$indented = self::indentSnippet($snippet, $indent);
+			return substr($content, 0, $closingBrace) . $indented . "\n" . substr($content, $closingBrace);
+		}
+		
+		/**
+		 * Re-indents a snippet from canonical single-\t-per-level to the given indent string.
+		 * Each leading \t on a line is replaced by one unit of $indent.
+		 * Lines with no leading \t are prefixed with one $indent (member level).
+		 * Blank lines and the leading \n are left untouched.
+		 * @param string $snippet Snippet using \t as the indent unit
+		 * @param string $indent Detected indent string (e.g. "\t", "    ")
+		 * @return string Re-indented snippet
+		 */
+		private static function indentSnippet(string $snippet, string $indent): string {
+			$lines = explode("\n", $snippet);
+			$result = [];
+			
+			foreach ($lines as $line) {
+				// Preserve blank lines as-is
+				if ($line === '') {
+					$result[] = $line;
+					continue;
+				}
+				
+				// Count and strip leading tabs
+				$tabCount = strlen($line) - strlen(ltrim($line, "\t"));
+				$rest = substr($line, $tabCount);
+				
+				// Member level = one $indent; each extra \t adds another
+				$result[] = str_repeat($indent, $tabCount + 1) . $rest;
+			}
+			
+			return implode("\n", $result);
 		}
 		
 		/**

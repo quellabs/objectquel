@@ -51,23 +51,23 @@
 				if ($property['relationshipType'] === 'InverseOf') {
 					$targetEntity = $property['targetEntity'] . 'Entity';
 					
-					return "\n        /**\n" .
-						"         * Gets the {$propertyName} collection\n" .
-						"         * @return CollectionInterface<{$targetEntity}>\n" .
-						"         */\n" .
-						"        public function {$methodName}(): CollectionInterface {\n" .
-						"            return \$this->{$propertyName};\n" .
-						"        }\n";
+					return "\n/**\n" .
+						" * Gets the {$propertyName} collection\n" .
+						" * @return CollectionInterface<{$targetEntity}>\n" .
+						" */\n" .
+						"public function {$methodName}(): CollectionInterface {\n" .
+						"\treturn \$this->{$propertyName};\n" .
+						"}\n";
 				}
 				
 				// OneToOne / ManyToOne return a nullable entity reference
-				return "\n        /**\n" .
-					"         * Gets the {$propertyName} relationship\n" .
-					"         * @return {$nullableIndicator}{$type}\n" .
-					"         */\n" .
-					"        public function {$methodName}(): {$nullableIndicator}{$type} {\n" .
-					"            return \$this->{$propertyName};\n" .
-					"        }\n";
+				return "\n/**\n" .
+					" * Gets the {$propertyName} relationship\n" .
+					" * @return {$nullableIndicator}{$type}\n" .
+					" */\n" .
+					"public function {$methodName}(): {$nullableIndicator}{$type} {\n" .
+					"\treturn \$this->{$propertyName};\n" .
+					"}\n";
 			}
 			
 			// Plain column getter
@@ -75,13 +75,13 @@
 			$nullableIndicator = $nullable ? '?' : '';
 			$phpType = $this->resolvePhpType($property);
 			
-			return "\n        /**\n" .
-				"         * Gets the {$propertyName} value\n" .
-				"         * @return {$nullableIndicator}{$phpType}\n" .
-				"         */\n" .
-				"        public function {$methodName}(): {$nullableIndicator}{$phpType} {\n" .
-				"            return \$this->{$propertyName};\n" .
-				"        }\n";
+			return "\n/**\n" .
+				" * Gets the {$propertyName} value\n" .
+				" * @return {$nullableIndicator}{$phpType}\n" .
+				" */\n" .
+				"public function {$methodName}(): {$nullableIndicator}{$phpType} {\n" .
+				"\treturn \$this->{$propertyName};\n" .
+				"}\n";
 		}
 		
 		/**
@@ -101,10 +101,10 @@
 				
 				// Identity check short-circuits the setter when the value hasn't actually changed,
 				// which prevents infinite loops in bidirectional sync chains
-				$setterBody = "            // Prevent redundant updates\n";
-				$setterBody .= "            if (\$this->{$propertyName} === \${$propertyName}) {\n";
-				$setterBody .= "                return \$this;\n";
-				$setterBody .= "            }\n";
+				$setterBody = "\t// Prevent redundant updates\n";
+				$setterBody .= "\tif (\$this->{$propertyName} === \${$propertyName}) {\n";
+				$setterBody .= "\t\treturn \$this;\n";
+				$setterBody .= "\t}\n";
 				
 				// Before reassigning, remove this entity from the previous parent's collection
 				// so the old parent's inverse side stays consistent
@@ -113,34 +113,32 @@
 					$removerMethod = 'remove' . ucfirst($singularName);
 					
 					$setterBody .= "\n";
-					$setterBody .= "            // Remove from previous parent's collection\n";
-					$setterBody .= "            \$this->{$propertyName}?->{$removerMethod}(\$this);\n";
+					$setterBody .= "\t// Remove from previous parent's collection\n";
+					$setterBody .= "\t\$this->{$propertyName}?->{$removerMethod}(\$this);\n";
 				}
 				
 				$setterBody .= "\n";
-				$setterBody .= "            // Set new property\n";
-				$setterBody .= "            \$this->{$propertyName} = \${$propertyName};\n";
+				$setterBody .= "\t// Set new property\n";
+				$setterBody .= "\t\$this->{$propertyName} = \${$propertyName};\n";
 				
 				// Add this entity to the new parent's collection to keep the inverse side in sync
 				if ($property['relationshipType'] === 'ManyToOne' && !empty($property['referencedColumn'])) {
 					$singularName = StringInflector::singularize($property['referencedColumn']);
 					$adderMethod = 'add' . ucfirst($singularName);
 					
-					$setterBody .= "            \${$propertyName}?->{$adderMethod}(\$this);";
+					$setterBody .= "\t\${$propertyName}?->{$adderMethod}(\$this);";
 				}
 				
 				return sprintf(
-					"
-        /**
-         * Sets the {$propertyName} relationship
-         * @param %s%s $%s The related entity
-         * @return \$this
-         */
-        public function %s(%s%s $%s): self {
-%s
-            return \$this;
-        }
-",
+					"\n/**\n" .
+					" * Sets the {$propertyName} relationship\n" .
+					" * @param %s%s $%s The related entity\n" .
+					" * @return \$this\n" .
+					" */\n" .
+					"public function %s(%s%s $%s): self {\n" .
+					"%s\n" .
+					"\treturn \$this;\n" .
+					"}\n",
 					$nullableIndicator,
 					$type,
 					$propertyName,
@@ -158,15 +156,15 @@
 			$phpType = $this->resolvePhpType($property);
 			
 			return "\n" .
-				"        /**\n" .
-				"         * Sets the {$propertyName} value\n" .
-				"         * @param {$nullableIndicator}{$phpType} \${$propertyName} New value to set\n" .
-				"         * @return \$this\n" .
-				"         */\n" .
-				"        public function {$methodName}({$nullableIndicator}{$phpType} \${$propertyName}): self {\n" .
-				"            \$this->{$propertyName} = \${$propertyName};\n" .
-				"            return \$this;\n" .
-				"        }\n";
+				"/**\n" .
+				" * Sets the {$propertyName} value\n" .
+				" * @param {$nullableIndicator}{$phpType} \${$propertyName} New value to set\n" .
+				" * @return \$this\n" .
+				" */\n" .
+				"public function {$methodName}({$nullableIndicator}{$phpType} \${$propertyName}): self {\n" .
+				"\t\$this->{$propertyName} = \${$propertyName};\n" .
+				"\treturn \$this;\n" .
+				"}\n";
 		}
 		
 		/**
@@ -191,21 +189,21 @@
 			// so both ends of the relationship stay consistent after the add
 			if (!empty($property['relation'])) {
 				$setterMethod = 'set' . ucfirst($property['relation']);
-				$inverseSetter = "\n                // Assign this entity on the owning side so the FK is set correctly\n";
-				$inverseSetter .= "                \${$singularName}->{$setterMethod}(\$this);";
+				$inverseSetter = "\n\t\t// Assign this entity on the owning side so the FK is set correctly\n";
+				$inverseSetter .= "\t\t\${$singularName}->{$setterMethod}(\$this);";
 			}
 			
-			return "\n        /**\n" .
-				"         * Adds an entity to the {$collectionName} collection\n" .
-				"         * @param {$targetEntity} \${$singularName} Entity to add\n" .
-				"         * @return \$this\n" .
-				"         */\n" .
-				"        public function {$methodName}({$targetEntity} \${$singularName}): self {\n" .
-				"            if (!\$this->{$collectionName}->contains(\${$singularName})) {\n" .
-				"                \$this->{$collectionName}[] = \${$singularName};{$inverseSetter}\n" .
-				"            }\n" .
-				"            return \$this;\n" .
-				"        }\n";
+			return "\n/**\n" .
+				" * Adds an entity to the {$collectionName} collection\n" .
+				" * @param {$targetEntity} \${$singularName} Entity to add\n" .
+				" * @return \$this\n" .
+				" */\n" .
+				"public function {$methodName}({$targetEntity} \${$singularName}): self {\n" .
+				"\tif (!\$this->{$collectionName}->contains(\${$singularName})) {\n" .
+				"\t\t\$this->{$collectionName}[] = \${$singularName};{$inverseSetter}\n" .
+				"\t}\n" .
+				"\treturn \$this;\n" .
+				"}\n";
 		}
 		
 		/**
@@ -230,24 +228,24 @@
 				$getterMethod = 'get' . ucfirst($viaField);
 				$setterMethod = 'set' . ucfirst($viaField);
 				
-				$inverseRemover = "                // Unset inverse side if it still references this entity\n";
-				$inverseRemover .= "                if (\${$singularName}->{$getterMethod}() === \$this) {\n";
-				$inverseRemover .= "                    \${$singularName}->{$setterMethod}(null);\n";
-				$inverseRemover .= "                }";
+				$inverseRemover = "\t\t// Unset inverse side if it still references this entity\n";
+				$inverseRemover .= "\t\tif (\${$singularName}->{$getterMethod}() === \$this) {\n";
+				$inverseRemover .= "\t\t\t\${$singularName}->{$setterMethod}(null);\n";
+				$inverseRemover .= "\t\t}";
 			}
 			
-			return "\n        /**\n" .
-				"         * Removes an entity from the {$collectionName} collection\n" .
-				"         * @param {$targetEntity} \${$singularName} Entity to remove\n" .
-				"         * @return \$this\n" .
-				"         */\n" .
-				"        public function {$methodName}({$targetEntity} \${$singularName}): self {\n" .
-				"            if (\$this->{$collectionName}->remove(\${$singularName})) {\n" .
-				"                {$inverseRemover}\n" .
-				"            }\n" .
-				"            \n" .
-				"            return \$this;\n" .
-				"        }\n";
+			return "\n/**\n" .
+				" * Removes an entity from the {$collectionName} collection\n" .
+				" * @param {$targetEntity} \${$singularName} Entity to remove\n" .
+				" * @return \$this\n" .
+				" */\n" .
+				"public function {$methodName}({$targetEntity} \${$singularName}): self {\n" .
+				"\tif (\$this->{$collectionName}->remove(\${$singularName})) {\n" .
+				"\t\t{$inverseRemover}\n" .
+				"\t}\n" .
+				"\t\n" .
+				"\treturn \$this;\n" .
+				"}\n";
 		}
 		
 		/**
