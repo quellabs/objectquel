@@ -246,36 +246,13 @@
 				// so hasMethod must check the current version
 				$analyser = new PhpClassAnalyser($content);
 				
-				$getterName = 'get' . ucfirst($property['name']);
-				$setterName = 'set' . ucfirst($property['name']);
-				
 				// Collection InverseOf properties use add/remove instead of get/set
 				if (isset($property['relationshipType']) && ($property['collection'] ?? false)) {
-					$singularName = StringInflector::singularize($property['name']);
-					$addMethodName = 'add' . ucfirst($singularName);
-					$removeMethodName = 'remove' . ucfirst($singularName);
-					
-					// Only generate each method if it doesn't already exist
-					if (!$analyser->hasMethod($addMethodName)) {
-						$content = PhpClassEditor::addMethod($content, $generator->generateCollectionAdder($property, $entityName));
-					}
-					
-					if (!$analyser->hasMethod($removeMethodName)) {
-						$content = PhpClassEditor::addMethod($content, $generator->generateCollectionRemover($property, $entityName));
-					}
-					
+					$content = $this->insertCollectionMethods($content, $property, $entityName, $analyser, $generator);
 					continue;
 				}
 				
-				// Generate getter if not already present
-				if (!$analyser->hasMethod($getterName)) {
-					$content = PhpClassEditor::addMethod($content, $generator->generateGetter($property));
-				}
-				
-				// Readonly properties get no setter
-				if (!($property['readonly'] ?? false) && !$analyser->hasMethod($setterName)) {
-					$content = PhpClassEditor::addMethod($content, $generator->generateSetter($property));
-				}
+				$content = $this->insertGetterAndSetter($content, $property, $analyser, $generator);
 			}
 			
 			return $content;
@@ -290,10 +267,83 @@
 		 */
 		protected function generateEntityContent(string $entityName, array $properties, array $indexes = []): string {
 			$generator = new PhpClassGenerator();
-			$namespace = $this->configuration->getEntityNameSpace();
-			$content = "<?php\n\n    namespace {$namespace};\n";
 			
-			// Use statements for ORM annotations and collections
+			$content  = $this->generateFileHeader($entityName);
+			$content .= $this->generateClassDocBlock($entityName, $indexes);
+			$content .= "    class {$entityName}Entity {\n";
+			$content .= $this->generateIdProperty();
+			$content .= $this->generateConstructor($properties);
+			$content .= $this->generatePropertyBlock($properties, $generator);
+			$content .= $this->generateAccessors($properties, $entityName, $generator);
+			$content .= "    }\n";
+			
+			return $content;
+		}
+		
+		// -------------------------------------------------------------------------
+		// Private helpers
+		// -------------------------------------------------------------------------
+		
+		/**
+		 * Inserts add/remove methods for a collection InverseOf property
+		 * @param string $content Current class content
+		 * @param PropertyDefinition $property The collection property
+		 * @param string $entityName Entity name for method bodies
+		 * @param PhpClassAnalyser $analyser Analyser for the current content state
+		 * @param PhpClassGenerator $generator Code generator instance
+		 * @return string Updated class content
+		 */
+		private function insertCollectionMethods(string $content, array $property, string $entityName, PhpClassAnalyser $analyser, PhpClassGenerator $generator): string {
+			$singularName = StringInflector::singularize($property['name']);
+			$addMethodName    = 'add'    . ucfirst($singularName);
+			$removeMethodName = 'remove' . ucfirst($singularName);
+			
+			// Only generate each method if it doesn't already exist
+			if (!$analyser->hasMethod($addMethodName)) {
+				$content = PhpClassEditor::addMethod($content, $generator->generateCollectionAdder($property, $entityName));
+			}
+			
+			if (!$analyser->hasMethod($removeMethodName)) {
+				$content = PhpClassEditor::addMethod($content, $generator->generateCollectionRemover($property, $entityName));
+			}
+			
+			return $content;
+		}
+		
+		/**
+		 * Inserts getter and (unless readonly) setter for a scalar/relation property
+		 * @param string $content Current class content
+		 * @param PropertyDefinition $property The property to generate accessors for
+		 * @param PhpClassAnalyser $analyser Analyser for the current content state
+		 * @param PhpClassGenerator $generator Code generator instance
+		 * @return string Updated class content
+		 */
+		private function insertGetterAndSetter(string $content, array $property, PhpClassAnalyser $analyser, PhpClassGenerator $generator): string {
+			$getterName = 'get' . ucfirst($property['name']);
+			$setterName = 'set' . ucfirst($property['name']);
+			
+			// Generate getter if not already present
+			if (!$analyser->hasMethod($getterName)) {
+				$content = PhpClassEditor::addMethod($content, $generator->generateGetter($property));
+			}
+			
+			// Readonly properties get no setter
+			if (!($property['readonly'] ?? false) && !$analyser->hasMethod($setterName)) {
+				$content = PhpClassEditor::addMethod($content, $generator->generateSetter($property));
+			}
+			
+			return $content;
+		}
+		
+		/**
+		 * Generates the <?php header, namespace declaration, and all use statements
+		 * @param string $entityName Entity name (used only to determine the namespace)
+		 * @return string PHP file opening through last use statement, ending with a newline
+		 */
+		private function generateFileHeader(string $entityName): string {
+			$namespace = $this->configuration->getEntityNameSpace();
+			
+			$content  = "<?php\n\n    namespace {$namespace};\n";
 			$content .= "\n";
 			$content .= "    use Quellabs\\ObjectQuel\\Annotations\\Orm\\Table;\n";
 			$content .= "    use Quellabs\\ObjectQuel\\Annotations\\Orm\\Column;\n";
@@ -307,63 +357,94 @@
 			$content .= "    use Quellabs\\ObjectQuel\\Collections\\Collection;\n";
 			$content .= "    use Quellabs\\ObjectQuel\\Collections\\CollectionInterface;\n";
 			
+			return $content;
+		}
+		
+		/**
+		 * Generates the class-level docblock containing @Table and all index annotations
+		 * @param string $entityName Entity name without "Entity" suffix
+		 * @param array<int, IndexDefinition> $indexes Index definitions to emit as annotations
+		 * @return string The docblock string, ending with a newline
+		 */
+		private function generateClassDocBlock(string $entityName, array $indexes): string {
 			// Derive the table name: pluralize the entity name, then convert to snake_case
 			// e.g. "ProductCategory" → "product_categories"
 			$tableNamePlural = StringInflector::pluralize($entityName);
 			$tableName = StringInflector::snakeCase($tableNamePlural);
 			
-			// Build class docblock — @Table first, then all index annotations
-			$content .= "\n    /**\n";
+			$content  = "\n    /**\n";
 			$content .= "     * @Orm\\Table(name=\"{$tableName}\")\n";
 			
 			foreach ($indexes as $index) {
-				$indexName = $index['name'];
+				$indexName    = $index['name'];
 				$indexColumns = '{"' . implode('", "', $index['columns']) . '"}';
-				$indexType = strtoupper($index['type'] ?? 'INDEX');
+				$indexType    = strtoupper($index['type'] ?? 'INDEX');
 				
 				// Map the index type string to its annotation class name
 				$annotationClass = match ($indexType) {
-					'UNIQUE' => 'UniqueIndex',
+					'UNIQUE'   => 'UniqueIndex',
 					'FULLTEXT' => 'FullTextIndex',
-					default => 'Index',
+					default    => 'Index',
 				};
 				
 				$content .= "     * @Orm\\{$annotationClass}(name=\"{$indexName}\", columns={$indexColumns})\n";
 			}
 			
 			$content .= "     */\n";
-			$content .= "    class {$entityName}Entity {\n";
 			
-			// Every entity gets an auto-increment primary key
-			$content .= "\n        /**\n";
+			return $content;
+		}
+		
+		/**
+		 * Generates the hardcoded auto-increment primary key property declaration
+		 * @return string The $id property block, ending with a newline
+		 */
+		private function generateIdProperty(): string {
+			$content  = "\n        /**\n";
 			$content .= "         * @Orm\\Column(name=\"id\", type=\"integer\", unsigned=true, primary_key=true)\n";
 			$content .= "         * @Orm\\PrimaryKeyStrategy(strategy=\"identity\")\n";
 			$content .= "         */\n";
 			$content .= "        protected ?int \$id = null;\n";
 			
+			return $content;
+		}
+		
+		/**
+		 * Generates the constructor block if any property requires collection initialization,
+		 * or returns an empty string when no constructor is needed
+		 * @param array<int, PropertyDefinition> $properties All entity properties
+		 * @return string Constructor block (with trailing newline) or empty string
+		 */
+		private function generateConstructor(array $properties): string {
 			// Check whether any property requires a constructor for collection initialization
-			$hasInverseOf = false;
-			foreach ($properties as $property) {
-				if ($property['collection'] ?? false) {
-					$hasInverseOf = true;
-					break;
-				}
+			$collectionProperties = array_filter($properties, fn($p) => $p['collection'] ?? false);
+			
+			if (empty($collectionProperties)) {
+				return '';
 			}
 			
 			// Collection InverseOf properties must be initialized to an empty Collection in the
 			// constructor, otherwise accessing the collection before it's set would cause a null-dereference
-			if ($hasInverseOf) {
-				$content .= "\n        /**\n         * Constructor to initialize collections\n         */\n";
-				$content .= "        public function __construct() {\n";
-				
-				foreach ($properties as $property) {
-					if ($property['collection'] ?? false) {
-						$content .= "            \$this->{$property['name']} = new Collection();\n";
-					}
-				}
-				
-				$content .= "        }\n";
+			$content  = "\n        /**\n         * Constructor to initialize collections\n         */\n";
+			$content .= "        public function __construct() {\n";
+			
+			foreach ($collectionProperties as $property) {
+				$content .= "            \$this->{$property['name']} = new Collection();\n";
 			}
+			
+			$content .= "        }\n";
+			
+			return $content;
+		}
+		
+		/**
+		 * Generates all annotated property declarations for the given properties
+		 * @param array<int, PropertyDefinition> $properties Properties to emit
+		 * @param PhpClassGenerator $generator Code generator instance
+		 * @return string All property declaration blocks concatenated
+		 */
+		private function generatePropertyBlock(array $properties, PhpClassGenerator $generator): string {
+			$content = '';
 			
 			// Emit all property declarations with their ORM annotation docblocks
 			foreach ($properties as $property) {
@@ -379,8 +460,20 @@
 				$content .= "        " . $propertyDefinition . "\n";
 			}
 			
+			return $content;
+		}
+		
+		/**
+		 * Generates all accessor methods: the $id getter, then getters/setters or
+		 * add/remove pairs for every declared property
+		 * @param array<int, PropertyDefinition> $properties Properties to generate accessors for
+		 * @param string $entityName Entity name without "Entity" suffix (used in collection method bodies)
+		 * @param PhpClassGenerator $generator Code generator instance
+		 * @return string All accessor method blocks concatenated
+		 */
+		private function generateAccessors(array $properties, string $entityName, PhpClassGenerator $generator): string {
 			// Primary key getter — always present regardless of property list
-			$content .= $generator->generateGetter(['name' => 'id', 'type' => 'integer']);
+			$content = $generator->generateGetter(['name' => 'id', 'type' => 'integer']);
 			
 			// Generate accessors for every declared property
 			foreach ($properties as $property) {
@@ -400,8 +493,6 @@
 					$content .= $generator->generateSetter($property);
 				}
 			}
-			
-			$content .= "    }\n";
 			
 			return $content;
 		}
