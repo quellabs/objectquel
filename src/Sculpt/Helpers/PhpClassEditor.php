@@ -104,9 +104,9 @@
 		 */
 		public static function addMethod(string $content, string $snippet): string {
 			$analyser = new PhpClassAnalyser($content);
-			$closingBrace = $analyser->getClassClosingBracePosition();
+			$insertPos = $analyser->getClassClosingBraceLineStartPosition();
 			
-			if ($closingBrace === null) {
+			if ($insertPos === null) {
 				return $content;
 			}
 			
@@ -115,7 +115,7 @@
 			
 			// Strip the class-level prefix to get the single-level indent unit
 			$indented = self::indentSnippet($snippet, $classIndent);
-			return substr($content, 0, $closingBrace) . rtrim($indented, "\n") . "\n" . substr($content, $closingBrace);
+			return substr($content, 0, $insertPos) . rtrim($indented, "\n") . "\n" . substr($content, $insertPos);
 		}
 		
 		/**

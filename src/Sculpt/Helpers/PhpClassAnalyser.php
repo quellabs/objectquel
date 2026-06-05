@@ -339,6 +339,24 @@
 			return $this->findClosingBrace($openingBrace);
 		}
 		
+		/**
+		 * Returns the character position of the first character on the line that
+		 * contains the class closing brace.
+		 * @return int|null Zero-based character index of the start of the class
+		 *                  closing-brace line, or null when the class closing brace
+		 *                  cannot be located.
+		 */
+		public function getClassClosingBraceLineStartPosition(): ?int {
+			$closingBrace = $this->getClassClosingBracePosition();
+			
+			if ($closingBrace === null) {
+				return null;
+			}
+			
+			$lineStart = strrpos(substr($this->content, 0, $closingBrace), "\n");
+			return $lineStart !== false ? $lineStart + 1 : 0;
+		}
+		
 		// =====================================================================================
 		// Helpers
 		// =====================================================================================
