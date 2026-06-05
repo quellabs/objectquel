@@ -290,8 +290,6 @@
 		 */
 		protected function generateEntityContent(string $entityName, array $properties, array $indexes = []): string {
 			$generator = new PhpClassGenerator();
-			$analyser = new PhpClassAnalyser($content);
-			
 			$namespace = $this->configuration->getEntityNameSpace();
 			$content = "<?php\n\n    namespace {$namespace};\n";
 			
