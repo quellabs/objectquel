@@ -42,13 +42,11 @@
 		}
 		
 		/**
-		 * Checks if the property exists in the class
+		 * Checks if the property exists as a direct class member (not inside a method body)
 		 * @return bool True if property found
 		 */
 		public function hasProperty(string $name): bool {
-			$nameQuoted = preg_quote($name, '/');
-			$pattern = '/^\s*(?:protected|private|public)\s+[^;]*\$' . $nameQuoted . '\b[^;]*;/m';
-			return preg_match($pattern, $this->content) === 1;
+			return $this->getPropertyStartPos($name) !== null;
 		}
 		
 		public function getUseClauses(): array {
@@ -146,21 +144,29 @@
 		
 		public function getPropertyStartPos(string $name): ?int {
 			$nameQuoted = preg_quote($name, '/');
-			
-			if (
-				!preg_match(
-					'/^\s*(?:protected|private|public)\s+[^;]*\$'
-					. $nameQuoted
-					. '\b[^;]*;/m',
-					$this->content,
-					$propertyMatch,
-					PREG_OFFSET_CAPTURE
-				)
-			) {
+			$pattern = '/^\s*(?:protected|private|public)\s+[^;]*\$' . $nameQuoted . '\b[^;]*;/m';
+
+			$classOpen = $this->getClassOpeningBracePosition();
+
+			if ($classOpen === null) {
 				return null;
 			}
-			
-			return $propertyMatch[0][1];
+
+			// Search only within the class body
+			$classBody = substr($this->content, $classOpen);
+
+			if (!preg_match_all($pattern, $classBody, $matches, PREG_OFFSET_CAPTURE)) {
+				return null;
+			}
+
+			// Return the first match that sits at direct class member depth (depth 1)
+			foreach ($matches[0] as $match) {
+				if ($this->getDepthAt($classOpen + $match[1]) === 1) {
+					return $classOpen + $match[1];
+				}
+			}
+
+			return null;
 		}
 		
 		public function getPropertyEndPos(string $name): ?int {
@@ -180,20 +186,27 @@
 		}
 		
 		public function getLastPropertyEndPos(): ?int {
-			preg_match_all(
-				'/^\s*(?:protected|private|public)\s+[^;]*;/m',
-				$this->content,
-				$matches,
-				PREG_OFFSET_CAPTURE
-			);
-			
-			if (empty($matches[0])) {
+			$classOpen = $this->getClassOpeningBracePosition();
+
+			if ($classOpen === null) {
 				return null;
 			}
-			
-			$lastMatch = end($matches[0]);
-			
-			return $lastMatch[1] + strlen($lastMatch[0]) - 1;
+
+			// Search only within the class body
+			$classBody = substr($this->content, $classOpen);
+
+			if (!preg_match_all('/^\s*(?:protected|private|public)\s+[^;]*;/m', $classBody, $matches, PREG_OFFSET_CAPTURE)) {
+				return null;
+			}
+
+			// Walk matches in reverse to find the last one at direct class member depth (depth 1)
+			foreach (array_reverse($matches[0]) as $match) {
+				if ($this->getDepthAt($classOpen + $match[1]) === 1) {
+					return $classOpen + $match[1] + strlen($match[0]) - 1;
+				}
+			}
+
+			return null;
 		}
 		
 		public function getIndentation(): string {
@@ -232,6 +245,28 @@
 		// =====================================================================================
 		// Helpers
 		// =====================================================================================
+		
+		/**
+		 * Returns the brace nesting depth at a given character position in the file.
+		 * Depth 0 = outside all braces, depth 1 = directly inside the class body, etc.
+		 * Only counts literal { and } characters; does not account for braces inside
+		 * strings or comments, which is acceptable for well-formed entity source files.
+		 * @param int $pos Character position to measure depth at
+		 * @return int Brace depth at $pos
+		 */
+		private function getDepthAt(int $pos): int {
+			$depth = 0;
+
+			for ($i = 0; $i < $pos; $i++) {
+				if ($this->content[$i] === '{') {
+					$depth++;
+				} elseif ($this->content[$i] === '}') {
+					$depth--;
+				}
+			}
+
+			return $depth;
+		}
 		
 		/**
 		 * Finds matching closing brace for an opening brace at given position
