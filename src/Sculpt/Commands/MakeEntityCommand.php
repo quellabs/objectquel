@@ -814,7 +814,7 @@
 		/**
 		 * Use reflection to find all properties on $fullTargetEntity whose declared type
 		 * matches $currentEntity (both fully qualified and short form are checked).
-		 * @param string $fullTargetEntity Fully qualified class name of the target entity
+		 * @param class-string $fullTargetEntity Fully qualified class name of the target entity
 		 * @param string $currentEntity Short entity name without namespace or "Entity" suffix
 		 * @return string[] Property names whose type matches the current entity
 		 */
