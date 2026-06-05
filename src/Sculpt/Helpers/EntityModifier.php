@@ -233,17 +233,13 @@
 		 * @return string Updated class content with new methods
 		 */
 		protected function insertGettersAndSetters(string $content, array $properties, string $entityName): string {
-			$lastBracePos = strrpos($content, '}');
-			
-			if ($lastBracePos === false) {
-				return $content;
-			}
-			
 			$generator = new PhpClassGenerator();
-			$analyser = new PhpClassAnalyser($content);
-			$methodsToAdd = '';
 			
 			foreach ($properties as $property) {
+				// Re-create the analyser each iteration: addMethod mutates $content,
+				// so hasMethod must check the current version
+				$analyser = new PhpClassAnalyser($content);
+				
 				$getterName = 'get' . ucfirst($property['name']);
 				$setterName = 'set' . ucfirst($property['name']);
 				
@@ -255,11 +251,11 @@
 					
 					// Only generate each method if it doesn't already exist
 					if (!$analyser->hasMethod($addMethodName)) {
-						$methodsToAdd .= $generator->generateCollectionAdder($property, $entityName);
+						$content = PhpClassEditor::addMethod($content, $generator->generateCollectionAdder($property, $entityName));
 					}
 					
 					if (!$analyser->hasMethod($removeMethodName)) {
-						$methodsToAdd .= $generator->generateCollectionRemover($property, $entityName);
+						$content = PhpClassEditor::addMethod($content, $generator->generateCollectionRemover($property, $entityName));
 					}
 					
 					continue;
@@ -267,17 +263,16 @@
 				
 				// Generate getter if not already present
 				if (!$analyser->hasMethod($getterName)) {
-					$methodsToAdd .= $generator->generateGetter($property);
+					$content = PhpClassEditor::addMethod($content, $generator->generateGetter($property));
 				}
 				
 				// Readonly properties get no setter
 				if (!($property['readonly'] ?? false) && !$analyser->hasMethod($setterName)) {
-					$methodsToAdd .= $generator->generateSetter($property);
+					$content = PhpClassEditor::addMethod($content, $generator->generateSetter($property));
 				}
 			}
 			
-			// Splice new methods in before the final closing brace of the class
-			return substr($content, 0, $lastBracePos) . $methodsToAdd . "\n}" . substr($content, $lastBracePos + 1);
+			return $content;
 		}
 		
 		/**

@@ -86,6 +86,22 @@
 		}
 		
 		/**
+		 * Splices a method snippet into the class source before the class closing brace.
+		 * @param string $content Class file content
+		 * @param string $snippet Fully-formed method snippet to insert
+		 * @return string Updated content with the method spliced in
+		 */
+		public static function addMethod(string $content, string $snippet): string {
+			$closingBrace = (new PhpClassAnalyser($content))->getClassClosingBracePosition();
+			
+			if ($closingBrace === null) {
+				return $content;
+			}
+			
+			return substr($content, 0, $closingBrace) . $snippet . "\n" . substr($content, $closingBrace);
+		}
+		
+		/**
 		 * Modifies existing constructor to add collection initialization statements
 		 * @param string $content Entity file content
 		 * @param array<int, PropertyDefinition> $inverseOfProperties Collections to initialize
