@@ -467,7 +467,8 @@
 		
 		/**
 		 * Generates ORM relationship annotation docblock
-		 * @param RelationProperty $property Relationship metadata (targetEntity, via, inversedBy, etc.)
+		 * @phpstan-param RelationProperty $property
+		 * @param array $property Relationship metadata (targetEntity, relation, referencedColumn, etc.)
 		 * @return string PHPDoc comment with relationship annotation
 		 */
 		protected function generateRelationshipDocComment(array $property): string {
@@ -476,12 +477,12 @@
 			
 			$options = [];
 			
-			// via identifies the property on the owning entity that points to this entity
+			// relation identifies the property on the owning entity that points to this entity
 			if (!empty($property['relation'])) {
 				$options[] = "relation=\"{$property['relation']}\"";
 			}
 			
-			// inversedBy identifies the owning side property in a bidirectional relationship
+			// referencedColumn identifies the target property the FK points to
 			if (!empty($property['referencedColumn'])) {
 				$options[] = "referencedColumn=\"{$property['referencedColumn']}\"";
 			}
@@ -491,7 +492,7 @@
 				$options[] = "fetch=\"LAZY\"";
 			}
 			
-			// The owning side is the one without via — it holds the foreign key column
+			// The owning side is the one without relation — it holds the foreign key column
 			$isOwningSide = empty($property['relation']);
 			
 			if ($isOwningSide) {
@@ -697,7 +698,8 @@
 		 *
 		 * Checks for duplicates and syncs the inverse side of bidirectional relationships.
 		 *
-		 * @param RelationProperty $property Collection property metadata
+		 * @phpstan-param RelationProperty $property
+		 * @param array $property Collection property metadata
 		 * @param string $entityName Current entity name
 		 * @return string Complete adder method
 		 */
@@ -709,11 +711,11 @@
 			
 			$inverseSetter = '';
 			
-			// If via is set this is the inverse side — sync the owning side's reference
+			// If relation is set this is the inverse side — sync the owning side's reference
 			// so both ends of the relationship stay consistent after the add
 			if (!empty($property['relation'])) {
 				$setterMethod = 'set' . ucfirst($property['relation']);
-				$inverseSetter = "\n                // Sync bidirectional relationship\n";
+				$inverseSetter = "\n                // Assign this entity on the owning side so the FK is set correctly\n";
 				$inverseSetter .= "                \${$singularName}->{$setterMethod}(\$this);";
 			}
 			
@@ -732,7 +734,8 @@
 		
 		/**
 		 * Generates method to remove item from InverseOf collection
-		 * @param RelationProperty $property Collection property metadata
+		 * @phpstan-param RelationProperty $property
+		 * @param array $property Collection property metadata
 		 * @param string $entityName Current entity name
 		 * @return string Complete remover method
 		 */

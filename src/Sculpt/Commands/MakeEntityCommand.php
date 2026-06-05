@@ -307,8 +307,8 @@
 					$propertyPhpType,
 					$relationshipType,
 					$targetInfo['targetEntity'],
-					$mappingConfig['via'],
-					$mappingConfig['inversedBy'],
+					$mappingConfig['relation'],
+					$mappingConfig['referencedColumn'],
 					$relationColumn,
 					$nullable
 				)
@@ -317,7 +317,7 @@
 			// Add FK column for owning side, but only when this is not the inverse side of a
 			// bidirectional relationship (via !== null means we're the inverse/non-owning side,
 			// so the FK lives in the other table and we must not generate a column here)
-			if ($isOwningSide && $relationColumn !== null && $mappingConfig['via'] === null && $fkInfo !== null) {
+			if ($isOwningSide && $relationColumn !== null && $fkInfo !== null) {
 				$properties[] = $this->buildForeignKeyProperty($relationColumn, $fkInfo['type'], $fkInfo['unsigned'], $nullable);
 			}
 			
@@ -369,45 +369,41 @@
 		 * @return RelationshipMappingConfig
 		 */
 		private function handleInverseSideMapping(string $targetEntity, string $currentEntity, string $targetRelationType): array {
-			// Try to find existing owning side property
-			$via = $this->findRelationshipProperty($targetEntity, $currentEntity);
+			// Try to auto-detect an existing owning side property via reflection
+			$detected = $this->findRelationshipProperty($targetEntity, $currentEntity);
 			
-			if ($via !== null) {
-				$this->output->writeLn("\nFound existing property '{$via}' in {$targetEntity}Entity");
-				return ['via' => $via, 'inversedBy' => null];
+			if ($detected !== null) {
+				$this->output->writeLn("\nFound existing property '{$detected}' in {$targetEntity}Entity");
 			}
 			
-			// Offer to create owning side property
+			// Always ask — relation= must be explicit and correct
+			$relation = $this->input->ask(
+				"\nProperty name on {$targetEntity}Entity that holds the FK (relation=)",
+				$detected ?? lcfirst($currentEntity)
+			);
+			
+			// Offer to create the owning side property in the target entity if it doesn't exist
 			$createTarget = $this->input->confirm(
 				"\nDo you want to add a new property to {$targetEntity}Entity to map the inverse of the relationship?",
-				true
+				$detected === null
 			);
 			
 			if (!$createTarget) {
-				$via = $this->input->ask(
-					"\nProperty name in {$targetEntity}Entity (you'll need to create it manually)",
-					lcfirst($currentEntity)
-				);
-				return ['via' => $via, 'inversedBy' => null];
+				return ['relation' => $relation, 'referencedColumn' => null];
 			}
 			
-			$targetPropertyName = $this->input->ask("\nNew property name inside {$targetEntity}Entity", lcfirst($currentEntity));
-			
-			// For ManyToOne the inversedBy on the owning side points to the plural collection property;
-			// for OneToOne it points to the single scalar property on the inverse side
-			if (($targetRelationType === 'ManyToOne')) {
-				$inversedBy = StringInflector::pluralize(lcfirst($currentEntity));
-			} else {
-				$inversedBy = lcfirst($currentEntity);
-			}
+			// The inverse property name on the target entity side
+			$inverseProperty = ($targetRelationType === 'ManyToOne')
+				? StringInflector::pluralize(lcfirst($currentEntity))
+				: lcfirst($currentEntity);
 			
 			return [
-				'via'                => $targetPropertyName,
-				'inversedBy'         => null,
+				'relation'           => $relation,
+				'referencedColumn'   => null,
 				'createInTarget'     => true,
-				'targetPropertyName' => $targetPropertyName,
+				'targetPropertyName' => $relation,
 				'targetRelationType' => $targetRelationType,
-				'targetInversedBy'   => $inversedBy
+				'targetInversedBy'   => $inverseProperty
 			];
 		}
 		
@@ -422,7 +418,7 @@
 			$bidirectional = $this->input->confirm("\nIs this a bidirectional relationship?", false);
 			
 			if (!$bidirectional) {
-				return ['via' => null, 'inversedBy' => null];
+				return ['relation' => null, 'referencedColumn' => null];
 			}
 			
 			// inversedBy on the owning side names the property on the inverse entity:
@@ -444,8 +440,8 @@
 				$targetRelationType = ($relationshipType === 'ManyToOne') ? 'InverseOf' : 'OneToOne';
 				
 				return [
-					'via'                => null,
-					'inversedBy'         => $inversedBy,
+					'relation'           => null,
+					'referencedColumn'   => $inversedBy,
 					'createInTarget'     => true,
 					'targetPropertyName' => $inversedBy,
 					'targetRelationType' => $targetRelationType,
@@ -453,7 +449,7 @@
 				];
 			}
 			
-			return ['via' => null, 'inversedBy' => $inversedBy];
+			return ['relation' => null, 'referencedColumn' => $inversedBy];
 		}
 		
 		/**
