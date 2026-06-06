@@ -12,6 +12,13 @@
 	use Quellabs\Sculpt\Console\ConsoleInput;
 	use Quellabs\Sculpt\Console\ConsoleOutput;
 	
+	/**
+	 * ClearCacheCommand - Clear all ObjectQuel caches
+	 *
+	 * Removes cached entity annotation metadata so that the next request
+	 * picks up any changes to entity definitions without requiring a
+	 * manual cache invalidation.
+	 */
 	class ClearCacheCommand extends CommandBase {
 		
 		/** @var Configuration ORM configuration passed in via the service provider */
@@ -45,6 +52,30 @@
 		 */
 		public function getDescription(): string {
 			return "Clear all ObjectQuel caches";
+		}
+		
+		/**
+		 * Returns extended help text displayed when --help is passed.
+		 * @return string
+		 */
+		public function getHelp(): string {
+			return <<<HELP
+DESCRIPTION:
+    Clears the entity annotation cache used by ObjectQuel to speed up metadata
+    resolution. Run this after modifying entity annotations or column definitions
+    to ensure the ORM picks up the latest changes.
+
+USAGE:
+    php sculpt quel:clear-cache
+
+EXAMPLES:
+    php sculpt quel:clear-cache
+        Deletes all cached annotation files for entities annotated with @Table
+
+NOTES:
+    - Only clears entity annotation caches; does not affect query or result caches
+    - Safe to run in production; the cache is rebuilt automatically on next access
+HELP;
 		}
 		
 		/**

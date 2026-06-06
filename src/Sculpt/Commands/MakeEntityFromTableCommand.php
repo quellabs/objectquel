@@ -12,11 +12,11 @@
 	use Quellabs\Sculpt\Console\ConsoleOutput;
 	
 	/**
-	 * MakeEntityFromTableCommand - CLI command for creating or updating entity classes
+	 * MakeEntityFromTableCommand - Generate an entity class from an existing database table
 	 *
-	 * This command allows users to interactively create or update entity classes
-	 * through a command-line interface, collecting properties with their types
-	 * and constraints, including relationship definitions with primary key selection.
+	 * Introspects the live database schema for a selected table and generates a
+	 * fully annotated entity class with typed properties, ORM annotations, index
+	 * mappings, and getter/setter methods.
 	 *
 	 * @phpstan-import-type ColumnDefinition from DatabaseAdapter
 	 * @phpstan-import-type IndexDefinition from DatabaseAdapter
@@ -106,7 +106,27 @@
 		 * @return string Command help text
 		 */
 		public function getHelp(): string {
-			return "Generates entity classes by mapping database tables to object-oriented entities.";
+			return <<<HELP
+DESCRIPTION:
+    Introspects an existing database table and generates a fully annotated entity
+    class from its schema. The generated class includes typed properties, ORM
+    column annotations, index mappings, a constructor for default values, and
+    getter/setter methods for all columns.
+
+USAGE:
+    php sculpt make:entity-from-table
+
+EXAMPLES:
+    php sculpt make:entity-from-table
+        Displays a list of available tables and prompts you to select one
+
+NOTES:
+    - Requires an active database connection
+    - Auto-increment primary key columns receive a nullable PHP type and no setter
+    - Complex types (date, datetime, json, text, blob) without a default are made
+      nullable in PHP even when the database column is NOT NULL
+    - The generated file is written to the configured entity path
+HELP;
 		}
 		
 		/**

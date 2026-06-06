@@ -6,17 +6,15 @@
 	use Quellabs\ObjectQuel\Metadata\EntityMetadataRecord;
 	use Quellabs\ObjectQuel\Sculpt\Helpers\EntityModifier;
 	use Quellabs\ObjectQuel\Sculpt\SculptTypes;
-	use Quellabs\ObjectQuel\Sculpt\ServiceProvider;
 	use Quellabs\Sculpt\ConfigurationManager;
-	use Quellabs\Sculpt\Console\ConsoleInput;
-	use Quellabs\Sculpt\Console\ConsoleOutput;
 	use Quellabs\Support\StringInflector;
 	
 	/**
-	 * CLI command for creating or updating entity classes with properties and relationships.
+	 * MakeEntityCommand - Create or update entity classes interactively
 	 *
-	 * Supports standard data types (string, integer, decimal, etc.) and ORM relationships
-	 * (OneToOne, InverseOf, ManyToOne) with automatic foreign key generation.
+	 * Guides the user through defining entity properties and ORM relationships
+	 * via interactive prompts, then generates or updates the corresponding
+	 * entity class file on disk.
 	 *
 	 * @phpstan-import-type PhinxColumnType from SculptTypes
 	 * @phpstan-import-type BaseProperty from SculptTypes
@@ -54,19 +52,35 @@
 		 */
 		public function getHelp(): string {
 			return <<<HELP
-Usage: make:entity
+DESCRIPTION:
+    Interactively create or update an entity class with properties and ORM
+    relationship mappings. If the entity already exists, new properties are
+    appended without touching existing ones.
 
-Creates or updates an entity class with standard properties and ORM relationship mappings.
+USAGE:
+    php sculpt make:entity
 
-Relationship types:
-  OneToOne     Owning side of a one-to-one relationship
-  InverseOf    Inverse side of a one-to-one or one-to-many relationship
-  ManyToOne    Owning side of a many-to-one relationship
+ARGUMENTS:
+    None — all input is collected via interactive prompts
 
-Examples:
-  make:entity
+RELATIONSHIP TYPES:
+    OneToOne      Owning side of a one-to-one relationship (holds the FK)
+    ManyToOne     Owning side of a many-to-one relationship (holds the FK)
+    InverseOf     Inverse side of a one-to-one or one-to-many relationship
 
-You will be prompted to enter the entity name and define its properties interactively.
+FIELD TYPES:
+    string, integer, biginteger, smallinteger, tinyinteger,
+    boolean, decimal, float, char, text, date, datetime, time,
+    timestamp, enum, relationship
+
+EXAMPLES:
+    php sculpt make:entity
+        Prompts for entity name and properties interactively
+
+NOTES:
+    - The "id" property is reserved and generated automatically
+    - Foreign key columns are added automatically for owning-side relationships
+    - Enter ? at the field type prompt to see all available types
 HELP;
 		}
 		
@@ -275,7 +289,7 @@ HELP;
 		 */
 		private function collectRelationshipProperties(string $propertyName, array $availableEntities, string $entityName): array {
 			/** @var OrmRelationshipType $relationshipType */
-			$relationshipType = $this->input->choice("\nRelationship type", ['OneToOne', 'InverseOf', 'ManyToOne']);
+			$relationshipType = $this->input->choice("\nRelationship type", ['OneToOne', 'ManyToOne', 'InverseOf']);
 			
 			$targetInfo = $this->getTargetEntityInfo($availableEntities);
 			

@@ -149,22 +149,23 @@
 		 */
 		public function getHelp(): string {
 			return <<<HELP
-Makes a previously hidden database index visible to the query optimizer.
+DESCRIPTION:
+    Makes a previously hidden database index visible to the query optimizer again.
 
-Usage:
-  quel:index-show <entity> <index>
+USAGE:
+    php sculpt quel:index-show <entity> <index>
 
-Arguments:
-  entity   The entity class name (e.g. User, OrderLine)
-  index    The name of the index to make visible
+ARGUMENTS:
+    entity    The entity class name (e.g. User, OrderLine)
+    index     The name of the index to make visible
 
-Examples:
-  vendor/bin/sculpt quel:index-show User idx_email
-  vendor/bin/sculpt quel:index-show OrderLine idx_created_at
+EXAMPLES:
+    php sculpt quel:index-show User idx_email
+    php sculpt quel:index-show OrderLine idx_created_at
 
-Notes:
-  Only supported on MySQL 8.0+ and MariaDB.
-  PostgreSQL does not support invisible indexes.
+NOTES:
+    - Only supported on MySQL 8.0+ and MariaDB
+    - PostgreSQL does not support invisible indexes
 HELP;
 		}
 		

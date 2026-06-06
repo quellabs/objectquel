@@ -4,7 +4,6 @@
 	
 	use Quellabs\Sculpt\Contracts\CommandBase;
 	use Quellabs\Sculpt\ConfigurationManager;
-	use Quellabs\Sculpt\ServiceProvider;
 	use Quellabs\Support\ComposerUtils;
 	
 	/**

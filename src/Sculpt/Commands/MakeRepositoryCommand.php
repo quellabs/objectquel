@@ -7,9 +7,11 @@
 	use RuntimeException;
 
 	/**
-	 * This command creates repository classes that extend the base Repository class
-	 * and are associated with existing entity classes. It includes validation,
-	 * interactive prompts, and proper error handling.
+	 * MakeRepositoryCommand - Create a new repository class for an existing entity
+	 *
+	 * Generates a typed repository class in App\Repositories that extends the base
+	 * Repository class and is bound to an existing entity. The target entity must
+	 * exist before running this command.
 	 */
 	class MakeRepositoryCommand extends MakeCommandBase {
 
@@ -44,20 +46,28 @@
 		 */
 		public function getHelp(): string {
 			return <<<HELP
-Usage: make:repository [options]
+DESCRIPTION:
+    Creates a new repository class in the App\Repositories namespace that extends
+    the base Repository class and is bound to an existing entity. The entity must
+    exist before the repository can be generated.
 
-Creates a new repository class in the App\Repository namespace that extends
-the base Repository class and is associated with an existing entity.
+USAGE:
+    php sculpt make:repository [--force]
 
-Options:
-  --force        Overwrite the repository file if it already exists
+OPTIONS:
+    --force       Overwrite the repository file if it already exists
 
-Examples:
-  make:repository
-  make:repository --force
+EXAMPLES:
+    php sculpt make:repository
+        Prompts for an entity name and creates the corresponding repository
 
-You will be prompted to enter the entity name. The command will verify that
-the entity class exists before creating the repository.
+    php sculpt make:repository --force
+        Same as above, but overwrites any existing repository file
+
+NOTES:
+    - The entity class must already exist in the configured entity path
+    - "Entity" and "Repository" suffixes in the input are stripped automatically
+    - Generated file is placed in src/Repositories/
 HELP;
 		}
 

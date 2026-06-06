@@ -5,7 +5,6 @@
 	use Phinx\Config\Config;
 	use Phinx\Migration\Manager;
 	use Phinx\Migration\MigrationInterface;
-	use Quellabs\Contracts\Discovery\ProviderInterface;
 	use Quellabs\ObjectQuel\Sculpt\ServiceProvider;
 	use Quellabs\Sculpt\Contracts\CommandBase;
 	use Quellabs\Sculpt\ConfigurationManager;
@@ -15,7 +14,10 @@
 	use Symfony\Component\Console\Output\BufferedOutput;
 	
 	/**
-	 * ExecuteMigrationsCommand - CLI command for managing database migrations
+	 * QuelMigrateCommand - Run, roll back, or check the status of database migrations
+	 *
+	 * Wraps Phinx's migration manager to provide a unified migrate command with
+	 * interactive confirmation, dry-run support, and rollback control.
 	 */
 	class QuelMigrateCommand extends CommandBase {
 		
@@ -104,27 +106,43 @@
 		 */
 		public function getHelp(): string {
 			return <<<HELP
-Manages database migrations for your application. Makes use of Phinx under the hood.
+DESCRIPTION:
+    Manages database migrations using Phinx under the hood. Supports running
+    pending migrations, rolling back applied ones, and inspecting current status.
+    Prompts for confirmation before making any changes unless --force is passed.
 
-Usage:
-  quel:migrate [options]
+USAGE:
+    php sculpt quel:migrate [options]
 
-Options:
-  --rollback           Roll back migrations instead of running them
-  --status             Show migration status instead of running migrations
-  --target=<version>   Target a specific migration version
-  --steps=<number>     Number of migrations to roll back (default: 1)
-  --dry-run, -d        Run in dry-run mode without making actual database changes
-  --force, -f          Skip confirmation prompts (useful for CI/CD pipelines)
+OPTIONS:
+    --rollback            Roll back migrations instead of running them
+    --status              Show migration status without making any changes
+    --target=<version>    Target a specific migration version (run or rollback)
+    --steps=<number>      Number of migrations to roll back (default: 1)
+    --dry-run, -d         Preview what would happen without applying any changes
+    --force, -f           Skip confirmation prompts (useful for CI/CD pipelines)
 
-Examples:
-  vendor/bin/sculpt quel:migrate                          # Run all pending migrations (with confirmation)
-  vendor/bin/sculpt quel:migrate --force                  # Run all pending migrations without confirmation
-  vendor/bin/sculpt quel:migrate --rollback               # Roll back the most recent migration (with confirmation)
-  vendor/bin/sculpt quel:migrate --rollback --steps=3     # Roll back the last 3 migrations (with confirmation)
-  vendor/bin/sculpt quel:migrate --status                 # Show migration status
-  vendor/bin/sculpt quel:migrate --target=20230415000000  # Migrate to a specific version (with confirmation)
-  vendor/bin/sculpt quel:migrate --dry-run                # Preview migrations without applying them
+EXAMPLES:
+    php sculpt quel:migrate
+        Run all pending migrations with confirmation prompt
+
+    php sculpt quel:migrate --force
+        Run all pending migrations without confirmation
+
+    php sculpt quel:migrate --rollback
+        Roll back the most recent migration with confirmation
+
+    php sculpt quel:migrate --rollback --steps=3
+        Roll back the last 3 migrations with confirmation
+
+    php sculpt quel:migrate --target=20230415000000
+        Migrate up or down to a specific version with confirmation
+
+    php sculpt quel:migrate --status
+        Show which migrations have been applied and which are pending
+
+    php sculpt quel:migrate --dry-run
+        Preview pending migrations without applying them
 HELP;
 		}
 		
