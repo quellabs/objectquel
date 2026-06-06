@@ -137,7 +137,7 @@ HELP;
 			$args = [];
 			
 			// Add dry-run flag if specified
-			if ($config->hasFlag('dry-run') || $config->hasFlag('d')) {
+			if ($this->isDryRun($config)) {
 				$args['--dry-run'] = true;
 			}
 			
@@ -157,7 +157,9 @@ HELP;
 			$adapter = $manager->getEnvironment($this->environment)->getAdapter();
 			$versions = $adapter->getVersions();
 			
-			// Filter to get only pending migrations
+			// Filter to get only pending migrations.
+			// ARRAY_FILTER_USE_KEY means $version is the array key (the version timestamp integer),
+			// not the MigrationInterface value.
 			return array_filter($migrations, function ($version) use ($versions) {
 				return !in_array($version, $versions);
 			}, ARRAY_FILTER_USE_KEY);
@@ -188,7 +190,7 @@ HELP;
 			
 			// If in dry-run mode, we can proceed without confirmation
 			// Dry-run will only display what would happen without making actual changes
-			if ($config->hasFlag('dry-run') || $config->hasFlag('d')) {
+			if ($this->isDryRun($config)) {
 				return true;
 			}
 			
@@ -231,7 +233,7 @@ HELP;
 			
 			// Check if this is a dry run (simulation only)
 			// This is useful for previewing what changes will be made without actually applying them
-			if ($config->hasFlag('dry-run') || $config->hasFlag('d')) {
+			if ($this->isDryRun($config)) {
 				$this->output->writeLn("Dry run mode - no database changes will be made.");
 			}
 			
@@ -255,15 +257,15 @@ HELP;
 		
 		/**
 		 * Roll back migrations
-		 * @param Manager $manager
-		 * @param ConfigurationManager $config
-		 * @return int
+		 * @param Manager $manager Migration Manager responsible for executing rollbacks
+		 * @param ConfigurationManager $config Configuration with runtime options and flags
+		 * @return int Exit code (0 for success)
 		 */
 		private function performRollback(Manager $manager, ConfigurationManager $config): int {
 			$steps = $config->getAsInt('steps', 1);
 			$target = $config->getAsString('target');
 			$force = $config->hasFlag('force') || $config->hasFlag('f');
-			$isDryRun = $config->hasFlag('dry-run') || $config->hasFlag('d');
+			$isDryRun = $this->isDryRun($config);
 			
 			// If steps > 1 and no explicit target, resolve the target version ourselves.
 			// Phinx's Manager::rollback() has no steps parameter — it only accepts a target version.
@@ -319,8 +321,8 @@ HELP;
 		
 		/**
 		 * Show migration status
-		 * @param Manager $manager
-		 * @return int
+		 * @param Manager $manager Migration Manager used to retrieve and print status
+		 * @return int Exit code (0 for success)
 		 */
 		private function showStatus(Manager $manager): int {
 			// Show status
@@ -329,5 +331,14 @@ HELP;
 			// Instead of printing directly, capture the output from Phinx
 			$manager->printStatus($this->environment);
 			return 0;
+		}
+		
+		/**
+		 * Determine whether the command is running in dry-run mode
+		 * @param ConfigurationManager $config Configuration with runtime options and flags
+		 * @return bool True if --dry-run or -d flag is set
+		 */
+		private function isDryRun(ConfigurationManager $config): bool {
+			return $config->hasFlag('dry-run') || $config->hasFlag('d');
 		}
 	}
