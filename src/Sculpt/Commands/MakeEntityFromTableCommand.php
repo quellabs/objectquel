@@ -40,6 +40,49 @@
 		}
 		
 		/**
+		 * Get the command signature/name for registration in the CLI
+		 * @return string Command signature
+		 */
+		public function getSignature(): string {
+			return "make:entity-from-table";
+		}
+		
+		/**
+		 * Get a short description of what the command does
+		 * @return string Command description
+		 */
+		public function getDescription(): string {
+			return "Generate entity classes from existing database table structures";
+		}
+		
+		/**
+		 * Get detailed help information for the command
+		 * @return string Command help text
+		 */
+		public function getHelp(): string {
+			return <<<HELP
+DESCRIPTION:
+    Introspects an existing database table and generates a fully annotated entity
+    class from its schema. The generated class includes typed properties, ORM
+    column annotations, index mappings, a constructor for default values, and
+    getter/setter methods for all columns.
+
+USAGE:
+    php sculpt make:entity-from-table
+
+ARGUMENTS:
+    None — all input is collected via interactive prompts
+
+NOTES:
+    - Requires an active database connection
+    - Auto-increment primary key columns receive a nullable PHP type and no setter
+    - Complex types (date, datetime, json, text, blob) without a default are made
+      nullable in PHP even when the database column is NOT NULL
+    - The generated file is written to the configured entity path
+HELP;
+		}
+		
+		/**
 		 * Execute the command
 		 * @param ConfigurationManager $config Parameters passed to the command
 		 * @return int Exit code (0 for success)
@@ -84,51 +127,7 @@
 			$this->output->writeLn("Entity class {$tableCamelCase}Entity successfully created.");
 			return 0;
 		}
-		
-		/**
-		 * Get the command signature/name for registration in the CLI
-		 * @return string Command signature
-		 */
-		public function getSignature(): string {
-			return "make:entity-from-table";
-		}
-		
-		/**
-		 * Get a short description of what the command does
-		 * @return string Command description
-		 */
-		public function getDescription(): string {
-			return "Generate entity classes from existing database table structures";
-		}
-		
-		/**
-		 * Get detailed help information for the command
-		 * @return string Command help text
-		 */
-		public function getHelp(): string {
-			return <<<HELP
-DESCRIPTION:
-    Introspects an existing database table and generates a fully annotated entity
-    class from its schema. The generated class includes typed properties, ORM
-    column annotations, index mappings, a constructor for default values, and
-    getter/setter methods for all columns.
 
-USAGE:
-    php sculpt make:entity-from-table
-
-EXAMPLES:
-    php sculpt make:entity-from-table
-        Displays a list of available tables and prompts you to select one
-
-NOTES:
-    - Requires an active database connection
-    - Auto-increment primary key columns receive a nullable PHP type and no setter
-    - Complex types (date, datetime, json, text, blob) without a default are made
-      nullable in PHP even when the database column is NOT NULL
-    - The generated file is written to the configured entity path
-HELP;
-		}
-		
 		/**
 		 * Convert a string to camelcase
 		 * @param string $input

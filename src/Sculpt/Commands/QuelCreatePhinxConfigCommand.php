@@ -50,6 +50,9 @@ DESCRIPTION:
 USAGE:
     php sculpt quel:export-phinx
 
+ARGUMENTS:
+    None
+
 EXAMPLES:
     php sculpt quel:export-phinx
         Writes phinx.php to the project root using the current database configuration

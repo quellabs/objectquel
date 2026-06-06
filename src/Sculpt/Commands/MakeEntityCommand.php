@@ -73,10 +73,6 @@ FIELD TYPES:
     boolean, decimal, float, char, text, date, datetime, time,
     timestamp, enum, relationship
 
-EXAMPLES:
-    php sculpt make:entity
-        Prompts for entity name and properties interactively
-
 NOTES:
     - The "id" property is reserved and generated automatically
     - Foreign key columns are added automatically for owning-side relationships

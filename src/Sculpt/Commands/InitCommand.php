@@ -53,10 +53,8 @@ DESCRIPTION:
 USAGE:
     php sculpt quel:init
 
-EXAMPLES:
-    php sculpt quel:init
-        Creates config/database.php with a pre-filled template and prints
-        next-step instructions for configuring your database connection.
+ARGUMENTS:
+    None
 HELP;
 		}
 		

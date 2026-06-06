@@ -44,9 +44,8 @@ DESCRIPTION:
 USAGE:
     php sculpt list:entities
 
-EXAMPLES:
-    php sculpt list:entities
-        Prints a table of every entity class and its mapped database table.
+ARGUMENTS:
+    None
 HELP;
 		}
 		

@@ -126,6 +126,9 @@ DESCRIPTION:
 USAGE:
     php sculpt make:migrations
 
+ARGUMENTS:
+    None
+
 NOTES:
     - Requires a valid database connection and configured entity path
     - Only structural changes are detected (columns, types, indexes)
