@@ -64,7 +64,15 @@ DESCRIPTION:
     Makes a previously hidden database index visible to the query optimizer again.
 
 USAGE:
-    php sculpt quel:index-show
+    php sculpt quel:index-show <entity> <index>
+
+ARGUMENTS:
+    entity    The entity class name (e.g. User, OrderLine)
+    index     The name of the index to make visible
+
+EXAMPLES:
+    php sculpt quel:index-show User idx_email
+    php sculpt quel:index-show OrderLine idx_created_at
 
 NOTES:
     - Only supported on MySQL 8.0+ and MariaDB
@@ -88,7 +96,14 @@ HELP;
 		 */
 		public function execute(ConfigurationManager $config): int {
 			// Ask for entity name
-			$entityName = $this->collectIdentifier("Enter the entity name (e.g. User, UserEntity, Product)");
+			$entityName = $config->getPositional(0);
+			
+			if ($entityName === null) {
+				$entityName = $this->collectIdentifier("Entity name");
+			} elseif (!$this->isValidPhpIdentifier($entityName)) {
+				$this->output->error("Invalid identifier '{$entityName}'.");
+				return 1;
+			}
 			
 			// Resolve the actual registered entity class name — no suffix assumed
 			$fullEntityName = $this->resolveEntityClassName($entityName);
@@ -100,8 +115,15 @@ HELP;
 			}
 			
 			// Ask for index name
-			$indexName = $this->collectIdentifier("Index name");
+			$indexName = $config->getPositional(1);
 			
+			if ($indexName === null) {
+				$indexName = $this->collectIdentifier("Entity name");
+			} elseif (!$this->isValidPhpIdentifier($indexName)) {
+				$this->output->error("Invalid index name '{$indexName}'.");
+				return 1;
+			}
+
 			// Translate the entity class name to its underlying database table
 			/** @var ServiceProvider $provider */
 			$provider = $this->provider;
