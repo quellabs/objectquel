@@ -2,10 +2,9 @@
 	
 	namespace Quellabs\ObjectQuel\Sculpt\Commands;
 	
-	use Quellabs\ObjectQuel\EntityStore;
+	use Quellabs\ObjectQuel\Exception\EntityResolutionException;
 	use Quellabs\ObjectQuel\Sculpt\Helpers\PacCanvasControllerGenerator;
 	use Quellabs\ObjectQuel\Sculpt\Helpers\PacJSGenerator;
-	use Quellabs\Sculpt\Contracts\CommandBase;
 	use Quellabs\Sculpt\ConfigurationManager;
 	use Quellabs\Support\ComposerUtils;
 	use Quellabs\Support\FrameworkResolver;
@@ -17,10 +16,7 @@
 	 * for reactive data binding and component management. The generated files include property
 	 * mappings, utility methods, and factory functions based on the entity's column definitions.
 	 */
-	class PacGenerateEntityCommand extends CommandBase {
-		
-		/** @var EntityStore|null Cached entity store instance for metadata retrieval */
-		private ?EntityStore $entityStore = null;
+	class PacGenerateEntityCommand extends MakeCommandBase {
 		
 		/**
 		 * Get the command signature for CLI usage
@@ -97,36 +93,30 @@ HELP;
 					return 0;
 				}
 				
-				// Initialize the entity store for data access operations
-				$entityStore = $this->getEntityStore();
+				// Resolve the actual registered entity class name — no suffix assumed
+				$fullEntityName = $this->resolveEntityClassName($entityName);
 				
-				// Construct the full entity class name by appending "Entity" suffix
-				$fullEntityName = $entityName . "Entity";
+				if ($fullEntityName === null) {
+					$this->output->writeLn("Entity '{$entityName}' does not exist.");
+					$this->output->writeLn("Available entities can be listed with: php sculpt list:entities");
+					return 1;
+				}
 				
-				// Verify that the specified entity exists in the store before proceeding
-				$this->validateEntityExists($entityStore, $fullEntityName);
+				// Derive a clean base name from the resolved class name so that
+				// file and controller names are consistent regardless of user input
+				$baseName = $this->deriveBaseName($fullEntityName);
 				
 				// Determine the output path for the generated JavaScript abstraction files
-				$jsOutputPath = $this->getJavaScriptOutputPath($config, $entityName);
+				$jsOutputPath = $this->getJavaScriptOutputPath($config, $baseName);
+				$this->generateJavaScriptAbstraction($fullEntityName, $jsOutputPath);
+				$this->generateControllerIfFrameworkDetected($baseName, $fullEntityName);
 				
-				// Generate the JavaScript abstraction layer for the entity
-				// This creates client-side code to interact with the entity
-				$this->generateJavaScriptAbstraction($fullEntityName, $entityStore, $jsOutputPath);
-				
-				// Check if a web framework is detected and generate appropriate controller
-				// This creates server-side endpoints for the PAC (Presentation-Abstraction-Control) pattern
-				$this->generateControllerIfFrameworkDetected($entityName, $fullEntityName, $entityStore);
-				
-				// Return success exit code
 				return 0;
 				
 			} catch (\Exception $e) {
 				// Log any errors that occurred during execution
 				$this->output->error($e->getMessage());
-				
-				// Note: Returning 0 here might be intentional for graceful degradation,
-				// but typically you'd return 1 or another non-zero code to indicate failure
-				return 0;
+				return 1;
 			}
 		}
 		
@@ -148,18 +138,6 @@ HELP;
 			// Note: The prompt asks for just the class name without "Entity" suffix
 			// Example: User would enter "AgreeableElephant" not "AgreeableElephantEntity"
 			return $this->input->ask("Class name of the entity to create (e.g. AgreeableElephant)");
-		}
-		
-		/**
-		 * Validate that the entity exists in the store
-		 * @param EntityStore $entityStore
-		 * @param string $fullEntityName
-		 * @throws \Exception
-		 */
-		private function validateEntityExists(EntityStore $entityStore, string $fullEntityName): void {
-			if (!$entityStore->exists($fullEntityName)) {
-				throw new \Exception("Entity {$fullEntityName} does not exist");
-			}
 		}
 		
 		/**
@@ -191,10 +169,14 @@ HELP;
 		/**
 		 * Generate the JavaScript abstraction file
 		 * @param string $fullEntityName
-		 * @param EntityStore $entityStore
 		 * @param string $outputPath
+		 * @throws EntityResolutionException
+		 * @throws \Exception
 		 */
-		private function generateJavaScriptAbstraction(string $fullEntityName, EntityStore $entityStore, string $outputPath): void {
+		private function generateJavaScriptAbstraction(string $fullEntityName, string $outputPath): void {
+			// Initialize the entity store for data access operations
+			$entityStore = $this->getEntityStore();
+			
 			// Create the generator instance with the entity name and configuration
 			$jsGenerator = new PacJSGenerator($fullEntityName, $entityStore);
 			
@@ -212,9 +194,9 @@ HELP;
 		 * Generate controller if a supported framework is detected
 		 * @param string $entityName
 		 * @param string $fullEntityName
-		 * @param EntityStore $entityStore
+		 * @throws EntityResolutionException
 		 */
-		private function generateControllerIfFrameworkDetected(string $entityName, string $fullEntityName, EntityStore $entityStore): void {
+		private function generateControllerIfFrameworkDetected(string $entityName, string $fullEntityName): void {
 			$framework = FrameworkResolver::detect();
 			
 			if ($framework !== 'canvas') {
@@ -222,6 +204,8 @@ HELP;
 				return;
 			}
 			
+			// Initialize the entity store for data access operations
+			$entityStore = $this->getEntityStore();
 			$outputPath = ComposerUtils::getProjectRoot() . "/src/Controllers/Pac{$entityName}Controller.php";
 			$phpGenerator = new PacCanvasControllerGenerator($fullEntityName, $entityStore);
 			
@@ -231,35 +215,5 @@ HELP;
 			// Inform user of successful generation
 			$this->output->success("Generated PAC controller: {$outputPath}");
 		}
-		
-		/**
-		 * Ensure the output directory exists, creating it if necessary
-		 */
-		private function ensureDirectoryExists(string $directory): void {
-			if (!is_dir($directory)) {
-				mkdir($directory, 0755, true);
-			}
-		}
-		
-		/**
-		 * Returns the EntityStore instance, creating it if necessary
-		 * @return EntityStore The entity store instance
-		 */
-		private function getEntityStore(): EntityStore {
-			// Check if EntityStore has already been instantiated (lazy loading pattern)
-			if ($this->entityStore === null) {
-				// Verify that the provider supports configuration retrieval
-				// This prevents runtime errors if an incompatible provider is used
-				if (!method_exists($this->provider, "getConfiguration")) {
-					throw new \RuntimeException("No getConfiguration method available");
-				}
-				
-				// Initialize the EntityStore with the provider's configuration
-				// This creates the store only when first needed, improving performance
-				$this->entityStore = new EntityStore($this->provider->getConfiguration());
-			}
-			
-			// Return the cached instance (either existing or newly created)
-			return $this->entityStore;
-		}
+
 	}

@@ -80,18 +80,21 @@ HELP;
 			try {
 				// Ask for the entity name
 				$entityName = $this->collectEntityName('Enter the entity name (e.g. User, UserEntity, Product)');
-
-				// Store the original entity name for later use in file generation
-				$originalEntityName = trim($entityName);
-
-				// Clean and format the entity name for use in repository class naming
-				$repositoryBaseName = $this->sanitizeEntityName($originalEntityName);
-
-				// Check if the specified entity actually exists in the system
-				if (!$this->validateEntityExists($originalEntityName)) {
+				
+				// Resolve the actual entity class name as registered in the store.
+				// The user may have typed "User", "UserEntity", or "UserRepository" —
+				// derive the base name first, then probe the store for known conventions.
+				$entityClassName = $this->resolveEntityClassName($entityName);
+				
+				if ($entityClassName === null) {
+					$this->output->writeLn("Entity '{$entityName}' does not exist. Please ensure the entity class exists before creating a repository.");
+					$this->output->writeLn("Available entities can be listed with: php sculpt list:entities");
 					return 1;
 				}
 
+				// Clean and format the entity name for use in repository class naming
+				$repositoryBaseName = $this->deriveBaseName($entityClassName);
+				
 				// Construct the full file path where the repository will be created
 				$repositoryPath = $this->buildRepositoryPath($repositoryBaseName);
 
@@ -101,7 +104,7 @@ HELP;
 				}
 
 				// Generate and write the repository file to disk
-				$this->createRepositoryFile($originalEntityName, $repositoryBaseName, $repositoryPath);
+				$this->createRepositoryFile($entityClassName, $repositoryBaseName, $repositoryPath);
 
 				// Display success message with the created repository name and location
 				$this->output->writeLn("Repository '{$repositoryBaseName}" . self::REPOSITORY_SUFFIX . "' created successfully at: {$repositoryPath}");
@@ -119,28 +122,7 @@ HELP;
 				return 1;
 			}
 		}
-
-		/**
-		 * Clean and format the entity name for repository naming.
-		 * Removes both 'Repository' and 'Entity' suffixes.
-		 * @param string $entityName Raw entity name input
-		 * @return string Cleaned entity name for repository base name
-		 */
-		private function sanitizeEntityName(string $entityName): string {
-			// Remove 'Repository' suffix if provided
-			if (str_ends_with($entityName, self::REPOSITORY_SUFFIX)) {
-				$entityName = substr($entityName, 0, -strlen(self::REPOSITORY_SUFFIX));
-			}
-
-			// Remove 'Entity' suffix if provided
-			if (str_ends_with($entityName, 'Entity')) {
-				$entityName = substr($entityName, 0, -strlen('Entity'));
-			}
-
-			// Capitalize first letter
-			return ucfirst($entityName);
-		}
-
+		
 		/**
 		 * Build the complete file path for the repository.
 		 * @param string $repositoryBaseName Base name for repository (without suffix)
@@ -221,19 +203,5 @@ HELP;
         }
     }
 PHP;
-		}
-
-		/**
-		 * Ensure directory exists for file creation.
-		 * @param string $directory Directory path to create
-		 */
-		private function ensureDirectoryExists(string $directory): void {
-			if (is_dir($directory)) {
-				return;
-			}
-
-			if (!mkdir($directory, 0755, true) && !is_dir($directory)) {
-				throw new RuntimeException("Failed to create directory: {$directory}");
-			}
 		}
 	}

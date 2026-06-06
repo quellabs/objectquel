@@ -38,14 +38,6 @@
 		}
 		
 		/**
-		 * Lazy-load EntityStore instance.
-		 * @return EntityStore
-		 */
-		protected function getEntityStore(): EntityStore {
-			return $this->entityStore ??= new EntityStore($this->configuration);
-		}
-		
-		/**
 		 * Prompts for an entity name, re-prompting until a valid PHP identifier is entered.
 		 * Never returns an empty string or a PHP reserved keyword.
 		 * @param string $prompt Text shown to the user
@@ -74,19 +66,22 @@
 		}
 		
 		/**
-		 * Check whether the named entity class exists in the entity store.
-		 * Writes a descriptive error to output and returns false when it does not.
-		 * @param string $entityName Entity class name to validate
-		 * @return bool True if the entity exists, false otherwise
+		 * Probe the entity store for a matching entity class name.
+		 * Tries the bare name first, then with the "Entity" suffix.
+		 * Returns the registered class name, or null if neither exists.
 		 */
-		protected function validateEntityExists(string $entityName): bool {
-			if (!$this->getEntityStore()->exists($entityName)) {
-				$this->output->writeLn("Entity '{$entityName}' does not exist. Please ensure the entity class exists before creating a repository.");
-				$this->output->writeLn("Available entities can be listed with: php sculpt list:entities");
-				return false;
+		protected function resolveEntityClassName(string $rawInput): ?string {
+			$store = $this->getEntityStore();
+			
+			if ($store->exists($rawInput)) {
+				return $rawInput;
 			}
 			
-			return true;
+			if ($store->exists($rawInput . 'Entity')) {
+				return $rawInput . 'Entity';
+			}
+			
+			return null;
 		}
 		
 		/**
@@ -117,5 +112,43 @@
 			];
 			
 			return !in_array(strtolower($name), $reserved, true);
+		}
+		
+		/**
+		 * Lazy-load EntityStore instance.
+		 * @return EntityStore
+		 */
+		protected function getEntityStore(): EntityStore {
+			return $this->entityStore ??= new EntityStore($this->configuration);
+		}
+		
+		/**
+		 * Ensure directory exists for file creation.
+		 * @param string $directory Directory path to create
+		 */
+		protected function ensureDirectoryExists(string $directory): void {
+			if (is_dir($directory)) {
+				return;
+			}
+			
+			if (!mkdir($directory, 0755, true) && !is_dir($directory)) {
+				throw new \RuntimeException("Failed to create directory: {$directory}");
+			}
+		}
+		
+		/**
+		 * Derives a clean base name from a resolved entity class name.
+		 * Strips the 'Entity' suffix if present and capitalizes the first letter.
+		 * Used to produce consistent file and class names regardless of how
+		 * the entity was registered in the store.
+		 * @param string $entityClassName Resolved entity class name (e.g. "UserEntity" or "User")
+		 * @return string Base name (e.g. "User")
+		 */
+		protected function deriveBaseName(string $entityClassName): string {
+			if (str_ends_with($entityClassName, 'Entity')) {
+				$entityClassName = substr($entityClassName, 0, -strlen('Entity'));
+			}
+			
+			return ucfirst($entityClassName);
 		}
 	}

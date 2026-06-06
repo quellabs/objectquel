@@ -31,9 +31,6 @@
 		/** @var Configuration ORM configuration passed in via the service provider */
 		private Configuration $configuration;
 		
-		/** @var ServiceProvider */
-		protected ProviderInterface $provider;
-		
 		/**
 		 * Constructor
 		 * @param ConsoleInput $input Console input handler
