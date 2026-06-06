@@ -66,7 +66,7 @@ ARGUMENTS:
 RELATIONSHIP TYPES:
     OneToOne      Owning side of a one-to-one relationship (holds the FK)
     ManyToOne     Owning side of a many-to-one relationship (holds the FK)
-    InverseOf     Inverse side of a one-to-one or one-to-many relationship
+    InverseOf     Hydration hint telling the system which property on the related entity to populate
 
 FIELD TYPES:
     string, integer, biginteger, smallinteger, tinyinteger,

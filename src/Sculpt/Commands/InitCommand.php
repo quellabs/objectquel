@@ -38,6 +38,29 @@
 		}
 		
 		/**
+		 * Returns a help text
+		 * @return string
+		 */
+		public function getHelp(): string {
+			return <<<HELP
+DESCRIPTION:
+    Initialize ObjectQuel configuration files in your project.
+
+    Creates the config/ directory if it does not exist, then writes a
+    database.php template that you can edit to match your environment.
+    If database.php already exists it is left untouched.
+
+USAGE:
+    php sculpt quel:init
+
+EXAMPLES:
+    php sculpt quel:init
+        Creates config/database.php with a pre-filled template and prints
+        next-step instructions for configuring your database connection.
+HELP;
+		}
+		
+		/**
 		 * Execute the configuration initialization process
 		 *
 		 * This method:
