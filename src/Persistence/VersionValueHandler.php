@@ -65,7 +65,7 @@
 			}
 			
 			// Build the SELECT column list from the version column names
-			$selectColumns = array_map(fn($vc) => $this->escapeIdentifier($vc['name']), $versionColumns);
+			$selectColumns = array_map(fn($vc) => $this->connection->escapeIdentifier($vc['name']), $versionColumns);
 			
 			// Build the WHERE clause and parameter list from the primary keys
 			// Parameters are prefixed with "pk_" to avoid collisions with version column names
@@ -74,12 +74,12 @@
 			
 			foreach ($primaryKeyColumnNames as $columnName) {
 				$paramName = "pk_{$columnName}";
-				$whereClauseParts[] = $this->escapeIdentifier($columnName) . "=:{$paramName}";
+				$whereClauseParts[] = $this->connection->escapeIdentifier($columnName) . "=:{$paramName}";
 				$selectParams[$paramName] = $primaryKeyValues[$columnName];
 			}
 			
 			// Assemble query
-			$selectSql = "SELECT " . implode(", ", $selectColumns) . " FROM " . $this->escapeIdentifier($tableName) . " WHERE " . implode(" AND ", $whereClauseParts);
+			$selectSql = "SELECT " . implode(", ", $selectColumns) . " FROM " . $this->connection->escapeIdentifier($tableName) . " WHERE " . implode(" AND ", $whereClauseParts);
 			
 			// Execute query
 			$result = $this->connection->Execute($selectSql, $selectParams);
@@ -133,15 +133,5 @@
 				// Write it back
 				$this->propertyHandler->set($entity, $property, $normalizedValue);
 			}
-		}
-		
-		/**
-		 * Escapes a database identifier (table or column name)
-		 * @param string $identifier The identifier to escape
-		 * @return string The escaped identifier wrapped in backticks
-		 */
-		public function escapeIdentifier(string $identifier): string {
-			// Wrap in backticks and double any internal backticks to produce a valid MySQL identifier
-			return '`' . str_replace('`', '``', $identifier) . '`';
 		}
 	}

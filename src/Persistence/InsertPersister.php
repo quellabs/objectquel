@@ -97,7 +97,7 @@
 			// Get metadata
 			$metadata = $this->entityStore->getMetadata($entity);
 			$tableName = $metadata->tableName;
-			$tableNameEscaped = $this->valueHandler->escapeIdentifier($tableName);
+			$tableNameEscaped = $this->connection->escapeIdentifier($tableName);
 			$columnMap = array_flip($metadata->columnMap);
 			$primaryKeys = $metadata->identifierKeys;
 			$primaryKeyColumnNames = $metadata->identifierColumns;
@@ -158,7 +158,7 @@
 			
 			foreach ($serializedEntity as $key => $value) {
 				// Escape the identifier (add backticks)
-				$escapedKey = $this->valueHandler->escapeIdentifier($key);
+				$escapedKey = $this->connection->escapeIdentifier($key);
 				
 				// Check if the column name exists
 				if (isset($versionColumnNames[$key])) {

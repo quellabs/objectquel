@@ -80,7 +80,7 @@
 		public function persist(object $entity): void {
 			// Fetch metadata
 			$metadata = $this->entityStore->getMetadata($entity);
-			$tableName = $this->escapeIdentifier($metadata->tableName);
+			$tableName = $this->connection->escapeIdentifier($metadata->tableName);
 			
 			// Create a mapping of primary key column names to their values for this specific entity
 			$primaryKeyValues = $this->extractPrimaryKeyValueMap($entity, $metadata->identifierKeys, $metadata->identifierColumns);
@@ -94,7 +94,7 @@
 			
 			foreach ($primaryKeyValues as $columnName => $value) {
 				$paramName = "pk_{$columnName}";
-				$whereParts[] = $this->escapeIdentifier($columnName) . "=:{$paramName}";
+				$whereParts[] = $this->connection->escapeIdentifier($columnName) . "=:{$paramName}";
 				$params[$paramName] = $value;
 			}
 			
@@ -108,16 +108,5 @@
 				// from the database connection to help identify and resolve the issue
 				throw new OrmException("Error deleting entity: " . $this->connection->getLastErrorMessage(), $this->connection->getLastError());
 			}
-		}
-		
-		/**
-		 * Escapes a SQL identifier (table or column name) by wrapping it in backticks
-		 * and doubling any backticks that appear within the name.
-		 * Duplicated from VersionValueHandler until escapeIdentifier is moved to a shared utility.
-		 * @param string $identifier The raw identifier to escape
-		 * @return string The backtick-delimited identifier safe for use in SQL
-		 */
-		private function escapeIdentifier(string $identifier): string {
-			return '`' . str_replace('`', '``', $identifier) . '`';
 		}
 	}

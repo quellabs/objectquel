@@ -436,6 +436,16 @@
 			return $this->connection->getDriver()->lastInsertId();
 		}
 		
+		/**
+		 * Escapes a database identifier (table or column name)
+		 * @param string $identifier The identifier to escape
+		 * @return string The escaped identifier wrapped in backticks
+		 */
+		public function escapeIdentifier(string $identifier): string {
+			// Wrap in backticks and double any internal backticks to produce a valid MySQL identifier
+			return '`' . str_replace('`', '``', $identifier) . '`';
+		}
+		
 		// ==================== Error Handling ====================
 		
 		/**

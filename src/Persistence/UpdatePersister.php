@@ -63,7 +63,7 @@
 		public function persist(object $entity): void {
 			// Retrieve metadata
 			$metadata = $this->entityStore->getMetadata($entity);
-			$tableName = $this->valueHandler->escapeIdentifier($metadata->tableName);
+			$tableName = $this->connection->escapeIdentifier($metadata->tableName);
 			$serializedEntity = $this->unitOfWork->getSerializer()->serialize($entity);
 			$originalData = $this->unitOfWork->getEntitySnapshot($entity);
 
@@ -118,15 +118,19 @@
 			// 1. The record was deleted by another process, or
 			// 2. The version number changed (concurrent modification - race condition)
 			if ($rs->rowCount() === 0) {
-				throw new OrmException(
-					"Version mismatch detected: The entity was modified by another process. " .
-					"Expected version: " . json_encode(array_intersect_key($originalData, array_flip($versionColumnNames)))
-				);
+				if (empty($versionColumnNames)) {
+					$message = "Update failed: the row no longer exists (it may have been deleted by another process).";
+				} else {
+					$version = json_encode(array_intersect_key($originalData, array_flip($versionColumnNames)));
+					$message = "Optimistic lock conflict: the entity was modified concurrently. Expected version: {$version}";
+				}
+				
+				throw new OrmException($message);
 			}
 			
 			// Fetch version values from the database (if any)
 			$fetchedDatetimeValues = $this->valueHandler->fetchUpdatedVersionValues(
-				$tableName,
+				$metadata->tableName,
 				$versionColumns,
 				$primaryKeyColumnNames,
 				$primaryKeyValues,
@@ -156,7 +160,7 @@
 				}
 				
 				// Use primary keys and changed data. Skip the rest.
-				return in_array($key, $primaryKeyColumnNames) || ($value != $originalData[$key]);
+				return !in_array($key, $primaryKeyColumnNames) && ($value != $originalData[$key]);
 			}, ARRAY_FILTER_USE_BOTH);
 		}
 		
@@ -167,13 +171,14 @@
 		 * @param array<string, mixed> $params Reference to parameters array to add version parameters to
 		 * @return array<int, string> Array of SQL SET clause parts
 		 * @throws OrmException
+		 * @throws \Exception
 		 */
 		protected function buildVersionSetClause(array $versionColumns, array &$params): array {
 			$setClauseParts = [];
 			
 			// Process each version column according to its type
 			foreach ($versionColumns as $property => $versionColumn) {
-				$columnName = $this->valueHandler->escapeIdentifier($versionColumn['name']);
+				$columnName = $this->connection->escapeIdentifier($versionColumn['name']);
 				
 				switch ($versionColumn['column']->getType()) {
 					case 'integer':
@@ -215,7 +220,7 @@
 			
 			foreach ($changedFields as $columnName => $value) {
 				$paramName = "field_{$columnName}";
-				$setClauseParts[] = $this->valueHandler->escapeIdentifier($columnName) . "=:{$paramName}";
+				$setClauseParts[] = $this->connection->escapeIdentifier($columnName) . "=:{$paramName}";
 				$params[$paramName] = $value;
 			}
 			
@@ -239,7 +244,7 @@
 			// This includes primary key columns to identify the record
 			foreach ($primaryKeyColumnNames as $columnName) {
 				$paramName = "pk_{$columnName}";
-				$whereClauseParts[] = $this->valueHandler->escapeIdentifier($columnName) . "=:{$paramName}";
+				$whereClauseParts[] = $this->connection->escapeIdentifier($columnName) . "=:{$paramName}";
 				$params[$paramName] = $primaryKeyValues[$columnName];
 			}
 			
@@ -249,7 +254,7 @@
 			foreach ($versionColumns as $property => $versionColumn) {
 				$columnName = $versionColumn['name'];
 				$paramName = "where_version_{$columnName}";
-				$whereClauseParts[] = $this->valueHandler->escapeIdentifier($columnName) . "=:{$paramName}";
+				$whereClauseParts[] = $this->connection->escapeIdentifier($columnName) . "=:{$paramName}";
 				
 				// Use the original version value from our snapshot
 				$params[$paramName] = $originalData[$columnName];

@@ -416,9 +416,6 @@
 			$this->indexByClass = [];
 			$this->entitySnapshots = new \WeakMap();
 			$this->entityRemovalList = new \WeakMap();
-			
-			// Add garbage collection hint for large datasets
-			gc_collect_cycles();
 		}
 		
 		/**
