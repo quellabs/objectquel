@@ -188,7 +188,8 @@
 		 * Produce a parenthesised description of what changed in a modified column,
 		 * e.g. " (type changed to varchar, now nullable)".
 		 * Returns an empty string when nothing describable changed.
-		 * @param ColumnModification $diff
+		 * @param array $diff
+		 * @phpstan-param ColumnModification $diff
 		 * @return string
 		 */
 		private function describeColumnChange(array $diff): string {
