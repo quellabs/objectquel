@@ -79,7 +79,7 @@ HELP;
 		public function execute(ConfigurationManager $config): int {
 			try {
 				// Ask for the entity name
-				$entityName = $this->collectEntityName('Enter the entity name (e.g. User, UserEntity, Product)');
+				$entityName = $this->collectIdentifier('Enter the entity name (e.g. User, UserEntity, Product)');
 				
 				// Resolve the actual entity class name as registered in the store.
 				// The user may have typed "User", "UserEntity", or "UserRepository" —

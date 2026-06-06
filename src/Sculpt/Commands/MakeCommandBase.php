@@ -15,7 +15,7 @@
 	 * Provides shared infrastructure:
 	 *  - ORM configuration access
 	 *  - Lazy-loaded EntityStore
-	 *  - Validated entity name collection via collectEntityName()
+	 *  - Validated entity name collection via collectIdentifier()
 	 *  - Entity existence checks via validateEntityExists()
 	 *  - PHP identifier validation via isValidPhpIdentifier()
 	 */
@@ -38,25 +38,25 @@
 		}
 		
 		/**
-		 * Prompts for an entity name, re-prompting until a valid PHP identifier is entered.
+		 * Prompts for an identifier, re-prompting until a valid PHP identifier is entered.
 		 * Never returns an empty string or a PHP reserved keyword.
 		 * @param string $prompt Text shown to the user
 		 * @return string Validated entity name
 		 */
-		protected function collectEntityName(string $prompt): string {
+		protected function collectIdentifier(string $prompt): string {
 			while (true) {
 				// Ask for entity name
 				$name = $this->input->ask($prompt);
 				
 				// Reject empty response
 				if ($name === null || trim($name) === '') {
-					$this->output->warning("Entity name cannot be empty.");
+					$this->output->warning("Identifier cannot be empty.");
 					continue;
 				}
 				
 				// Reject invalid names
 				if (!$this->isValidPhpIdentifier($name)) {
-					$this->output->warning("Invalid entity name. Use letters, numbers and underscores only.");
+					$this->output->warning("Invalid identifier. Use letters, numbers and underscores only.");
 					continue;
 				}
 				

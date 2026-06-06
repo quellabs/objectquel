@@ -103,7 +103,7 @@ HELP;
 			$this->output->writeLn("");
 			
 			// Ask for the entity name
-			$entityName = $this->collectEntityName("Class name of the entity to create or update (e.g. AgreeableElephant)");
+			$entityName = $this->collectIdentifier("Class name of the entity to create or update (e.g. AgreeableElephant)");
 			
 			// Show message that we are making a new or modifying an existing entity
 			$this->displayEntityOperationMessage($entityName);
@@ -586,14 +586,14 @@ HELP;
 		private function selectTargetEntity(array $availableEntities): string {
 			// No entities on disk yet — skip the choice menu and go straight to manual entry
 			if (empty($availableEntities)) {
-				return $this->collectEntityName("\nTarget entity name (without 'Entity' suffix)");
+				return $this->collectIdentifier("\nTarget entity name (without 'Entity' suffix)");
 			}
 			
 			$options = array_merge($availableEntities, ['[Enter manually]']);
 			$choice = $this->input->choice("\nSelect target entity", $options);
 			
 			if ($choice === '[Enter manually]') {
-				return $this->collectEntityName("\nTarget entity name (without 'Entity' suffix)");
+				return $this->collectIdentifier("\nTarget entity name (without 'Entity' suffix)");
 			}
 			
 			return $choice;

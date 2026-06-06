@@ -2,13 +2,10 @@
 	
 	namespace Quellabs\ObjectQuel\Sculpt\Commands;
 	
-	use Quellabs\Contracts\Discovery\ProviderInterface;
 	use Quellabs\ObjectQuel\Capabilities\PlatformCapabilities;
-	use Quellabs\ObjectQuel\Configuration;
 	use Quellabs\ObjectQuel\EntityStore;
 	use Quellabs\ObjectQuel\Exception\EntityResolutionException;
 	use Quellabs\ObjectQuel\Sculpt\ServiceProvider;
-	use Quellabs\Sculpt\Contracts\CommandBase;
 	use Quellabs\Sculpt\ConfigurationManager;
 	use Quellabs\Sculpt\Console\ConsoleInput;
 	use Quellabs\Sculpt\Console\ConsoleOutput;
@@ -23,13 +20,10 @@
 	 *
 	 * Supported dialects: MySQL 8.0+, MariaDB.
 	 */
-	class QuelIndexHideCommand extends CommandBase {
+	class QuelIndexHideCommand extends MakeCommandBase {
 		
 		/** @var EntityStore|null Lazy-loaded entity store; populated on first access */
 		private ?EntityStore $entityStore = null;
-		
-		/** @var Configuration ORM configuration passed in via the service provider */
-		private Configuration $configuration;
 		
 		/**
 		 * Constructor
@@ -44,89 +38,6 @@
 			$this->configuration = $provider->getConfiguration();
 		}
 		
-		/**
-		 * Execute the hide-index command.
-		 *
-		 * Workflow:
-		 *   1. Resolve entity name and index name (from args or interactive prompt).
-		 *   2. Verify the entity exists in the store and resolve it to a table name.
-		 *   3. Confirm the target database dialect supports invisible indexes.
-		 *   4. Confirm the named index exists on that table.
-		 *   5. Issue the dialect-appropriate ALTER TABLE DDL.
-		 *
-		 * @param ConfigurationManager $config Provides access to CLI arguments
-		 * @return int 0 on success, 1 on any error
-		 */
-		public function execute(ConfigurationManager $config): int {
-			// Prefer positional CLI arguments; fall back to interactive prompts
-			$entityName = $config->getPositional(0);
-			$indexName  = $config->getPositional(1);
-			
-			if (!is_string($entityName) || $entityName === "") {
-				$entityName = $this->input->ask("Entity name") ?? '';
-			}
-			
-			if (!is_string($indexName) || $indexName === "") {
-				$indexName = $this->input->ask("Index name") ?? '';
-			}
-			
-			// Both values are required; exit cleanly if the user provides neither
-			if (empty($entityName) || empty($indexName)) {
-				return 0;
-			}
-			
-			// Ensure the entity is registered in the ORM metadata store
-			try {
-				$entityStore = $this->getEntityStore();
-				$metadata = $entityStore->getMetadata($entityName);
-				$tableName = $metadata->tableName;
-			} catch (EntityResolutionException $e) {
-				$this->output->error("Entity '{$entityName}' does not exist.");
-				return 1;
-			}
-			
-			// Translate the entity class name to its underlying database table
-			/** @var ServiceProvider $provider */
-			$provider = $this->provider;
-			$databaseAdapter = $provider->getDatabaseAdapter();
-			$capabilities = new PlatformCapabilities($databaseAdapter);
-			
-			// Invisible indexes are a MySQL/MariaDB-only feature
-			if (!$capabilities->supportsIndexHiding()) {
-				$this->output->error("Invisible indexes are not supported.");
-				return 1;
-			}
-			
-			// Guard against typos: confirm the index actually exists before issuing DDL
-			$indexes = $databaseAdapter->getIndexes($tableName);
-			
-			if (!array_key_exists($indexName, $indexes)) {
-				$this->output->error("Index '{$indexName}' does not exist on table '{$tableName}'.");
-				return 1;
-			}
-			
-			// Each dialect uses different syntax to hide an index from the optimizer:
-			//   MySQL   → INVISIBLE  (standard SQL extension)
-			//   MariaDB → IGNORED    (MariaDB-specific terminology)
-			if ($databaseAdapter->getDatabaseType() === 'mysql') {
-				$sql = "ALTER TABLE `{$tableName}` ALTER INDEX `{$indexName}` INVISIBLE";
-			} else {
-				$sql = "ALTER TABLE `{$tableName}` ALTER INDEX `{$indexName}` IGNORED";
-			}
-			
-			// Execute the query
-			$result = $databaseAdapter->execute($sql);
-			
-			// If the call failed, output an error
-			if ($result === null) {
-				$this->output->error("Failed to hide index: " . $databaseAdapter->getLastErrorMessage());
-				return 1;
-			}
-			
-			// Success!
-			$this->output->success("Index '{$indexName}' on table '{$tableName}' is now hidden from the optimizer.");
-			return 0;
-		}
 		
 		/**
 		 * Returns the Sculpt command signature used to invoke this command.
@@ -158,27 +69,86 @@ DESCRIPTION:
     removing an index before committing to a permanent DROP INDEX.
 
 USAGE:
-    php sculpt quel:index-hide <entity> <index>
-
-ARGUMENTS:
-    entity    The entity class name (e.g. User, OrderLine)
-    index     The name of the index to hide
-
-EXAMPLES:
-    php sculpt quel:index-hide User idx_email
-    php sculpt quel:index-hide OrderLine idx_created_at
+    php sculpt quel:index-hide
 
 NOTES:
     - Only supported on MySQL 8.0+ and MariaDB
     - PostgreSQL does not support invisible indexes
 HELP;
 		}
-		
+
 		/**
-		 * Lazy-loads and caches the EntityStore instance.
-		 * @return EntityStore
+		 * Execute the hide-index command.
+		 *
+		 * Workflow:
+		 *   1. Resolve entity name and index name (from args or interactive prompt).
+		 *   2. Verify the entity exists in the store and resolve it to a table name.
+		 *   3. Confirm the target database dialect supports invisible indexes.
+		 *   4. Confirm the named index exists on that table.
+		 *   5. Issue the dialect-appropriate ALTER TABLE DDL.
+		 *
+		 * @param ConfigurationManager $config Provides access to CLI arguments
+		 * @return int 0 on success, 1 on any error
+		 * @throws EntityResolutionException
 		 */
-		private function getEntityStore(): EntityStore {
-			return $this->entityStore ??= new EntityStore($this->configuration);
+		public function execute(ConfigurationManager $config): int {
+			// Ask for entity name
+			$entityName = $this->collectIdentifier("Enter the entity name (e.g. User, UserEntity, Product)");
+			
+			// Resolve the actual registered entity class name — no suffix assumed
+			$fullEntityName = $this->resolveEntityClassName($entityName);
+			
+			if ($fullEntityName === null) {
+				$this->output->writeLn("Entity '{$entityName}' does not exist.");
+				$this->output->writeLn("Available entities can be listed with: php sculpt list:entities");
+				return 1;
+			}
+			
+			// Ask for index name
+			$indexName = $this->collectIdentifier("Index name");
+			
+			// Translate the entity class name to its underlying database table
+			/** @var ServiceProvider $provider */
+			$provider = $this->provider;
+			$databaseAdapter = $provider->getDatabaseAdapter();
+			$capabilities = new PlatformCapabilities($databaseAdapter);
+			
+			// Invisible indexes are a MySQL/MariaDB-only feature
+			if (!$capabilities->supportsIndexHiding()) {
+				$this->output->error("Invisible indexes are not supported.");
+				return 1;
+			}
+			
+			// Guard against typos: confirm the index actually exists before issuing DDL
+			$entityStore = $this->getEntityStore();
+			$metadata = $entityStore->getMetadata($fullEntityName);
+			$indexes = $databaseAdapter->getIndexes($metadata->tableName);
+			
+			if (!array_key_exists($indexName, $indexes)) {
+				$this->output->error("Index '{$indexName}' does not exist on table '{$metadata->tableName}'.");
+				return 1;
+			}
+			
+			// Each dialect uses different syntax to hide an index from the optimizer:
+			//   MySQL   → INVISIBLE  (standard SQL extension)
+			//   MariaDB → IGNORED    (MariaDB-specific terminology)
+			if ($databaseAdapter->getDatabaseType() === 'mysql') {
+				$sql = "ALTER TABLE `{$metadata->tableName}` ALTER INDEX `{$indexName}` INVISIBLE";
+			} else {
+				$sql = "ALTER TABLE `{$metadata->tableName}` ALTER INDEX `{$indexName}` IGNORED";
+			}
+			
+			// Execute the query
+			$result = $databaseAdapter->execute($sql);
+			
+			// If the call failed, output an error
+			if ($result === null) {
+				$this->output->error("Failed to hide index: " . $databaseAdapter->getLastErrorMessage());
+				return 1;
+			}
+			
+			// Success!
+			$this->output->success("Index '{$indexName}' on table '{$metadata->tableName}' is now hidden from the optimizer.");
+			return 0;
 		}
 	}

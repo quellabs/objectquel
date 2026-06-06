@@ -26,16 +26,10 @@
 	 * @phpstan-import-type ColumnModification from SculptTypes
 	 * @phpstan-import-type EntityChangeSet from SculptTypes
 	 */
-	class MakeMigrationsCommand extends CommandBase {
+	class MakeMigrationsCommand extends MakeCommandBase {
 		
 		/** @var string Path to the migrations folder */
 		private string $migrationsPath;
-		
-		/** @var Configuration Service provider configuration */
-		private Configuration $configuration;
-		
-		/** @var EntityStore|null Lazy init entityStore */
-		private ?EntityStore $entityStore = null;
 		
 		/**
 		 * @param ConsoleInput $input
@@ -56,7 +50,15 @@
 		 * @throws AnnotationReaderException
 		 */
 		public function execute(ConfigurationManager $config): int {
-			$this->printBanner();
+			$this->output->writeLn("");
+			$this->output->writeLn(" ██████╗ ██╗   ██╗███████╗██╗");
+			$this->output->writeLn("██╔═══██╗██║   ██║██╔════╝██║");
+			$this->output->writeLn("██║   ██║██║   ██║█████╗  ██║");
+			$this->output->writeLn("██║▄▄ ██║██║   ██║██╔══╝  ██║");
+			$this->output->writeLn("╚██████╔╝╚██████╔╝███████╗███████╗");
+			$this->output->writeLn(" ╚══▀▀═╝  ╚═════╝ ╚══════╝╚══════╝");
+			$this->output->writeLn("");
+			$this->output->writeLn("Generating migrations...");
 			
 			// Fetch entity map; abort if no entities are registered
 			$entityMap = $this->getEntityStore()->getEntityMap();
@@ -136,22 +138,6 @@ HELP;
 		// -------------------------------------------------------------------------
 		
 		/**
-		 * Print the ASCII art banner and opening message
-		 * @return void
-		 */
-		private function printBanner(): void {
-			$this->output->writeLn("");
-			$this->output->writeLn(" ██████╗ ██╗   ██╗███████╗██╗");
-			$this->output->writeLn("██╔═══██╗██║   ██║██╔════╝██║");
-			$this->output->writeLn("██║   ██║██║   ██║█████╗  ██║");
-			$this->output->writeLn("██║▄▄ ██║██║   ██║██╔══╝  ██║");
-			$this->output->writeLn("╚██████╔╝╚██████╔╝███████╗███████╗");
-			$this->output->writeLn(" ╚══▀▀═╝  ╚═════╝ ╚══════╝╚══════╝");
-			$this->output->writeLn("");
-			$this->output->writeLn("Generating migrations...");
-		}
-		
-		/**
 		 * Print a human-readable summary of all detected schema changes
 		 * @param array<string, EntityChangeSet> $allChanges Keyed by table name
 		 * @return void
@@ -222,18 +208,5 @@ HELP;
 			}
 			
 			return empty($parts) ? "" : " (" . implode(", ", $parts) . ")";
-		}
-		
-		/**
-		 * Return the EntityStore, creating it on first access (lazy init)
-		 * @return EntityStore
-		 * @throws AnnotationReaderException
-		 */
-		private function getEntityStore(): EntityStore {
-			if ($this->entityStore === null) {
-				$this->entityStore = new EntityStore($this->configuration);
-			}
-			
-			return $this->entityStore;
 		}
 	}

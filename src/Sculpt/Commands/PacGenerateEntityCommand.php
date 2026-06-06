@@ -85,7 +85,7 @@ HELP;
 		public function execute(ConfigurationManager $config): int {
 			try {
 				// Get the entity name from configuration or user input
-				$entityName = $this->getEntityName($config);
+				$entityName = $this->collectIdentifier("Class name of the entity");
 				
 				// Check if entity name was provided - exit gracefully if not
 				if (empty($entityName)) {
@@ -118,26 +118,6 @@ HELP;
 				$this->output->error($e->getMessage());
 				return 1;
 			}
-		}
-		
-		/**
-		 * Get entity name from config or prompt user
-		 * @param ConfigurationManager $config
-		 * @return string|null
-		 */
-		private function getEntityName(ConfigurationManager $config): ?string {
-			// First, try to get the entity name from the first positional argument
-			$entityName = $config->getPositional(0);
-			
-			// If entity name was provided as a command line argument, return it
-			if (is_string($entityName) && $entityName !== "") {
-				return $entityName;
-			}
-			
-			// If no entity name was provided, prompt the user interactively
-			// Note: The prompt asks for just the class name without "Entity" suffix
-			// Example: User would enter "AgreeableElephant" not "AgreeableElephantEntity"
-			return $this->input->ask("Class name of the entity to create (e.g. AgreeableElephant)");
 		}
 		
 		/**
