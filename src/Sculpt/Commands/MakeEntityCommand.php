@@ -2,19 +2,15 @@
 	
 	namespace Quellabs\ObjectQuel\Sculpt\Commands;
 	
-	use Quellabs\ObjectQuel\Configuration;
-	use Quellabs\ObjectQuel\EntityStore;
 	use Quellabs\ObjectQuel\Exception\EntityResolutionException;
 	use Quellabs\ObjectQuel\Metadata\EntityMetadataRecord;
 	use Quellabs\ObjectQuel\Sculpt\Helpers\EntityModifier;
 	use Quellabs\ObjectQuel\Sculpt\SculptTypes;
 	use Quellabs\ObjectQuel\Sculpt\ServiceProvider;
-	use Quellabs\Sculpt\Contracts\CommandBase;
 	use Quellabs\Sculpt\ConfigurationManager;
 	use Quellabs\Sculpt\Console\ConsoleInput;
 	use Quellabs\Sculpt\Console\ConsoleOutput;
 	use Quellabs\Support\StringInflector;
-	use Quellabs\AnnotationReader\Exception\AnnotationReaderException;
 	
 	/**
 	 * CLI command for creating or updating entity classes with properties and relationships.
@@ -31,27 +27,10 @@
 	 * @phpstan-import-type PropertyDefinition from SculptTypes
 	 * @phpstan-import-type ColumnDefinitionRecord from EntityMetadataRecord
 	 */
-	class MakeEntityCommand extends CommandBase {
+	class MakeEntityCommand extends MakeCommandBase {
 		
 		/** @var EntityModifier|null Lazy-loaded entity modifier for creating/updating entity files */
 		private ?EntityModifier $entityModifier = null;
-		
-		/** @var EntityStore|null Lazy-loaded entity store for metadata access */
-		private ?EntityStore $entityStore = null;
-		
-		/** @var Configuration ORM configuration instance */
-		private Configuration $configuration;
-		
-		/**
-		 * Constructor
-		 * @param ConsoleInput $input Console input handler
-		 * @param ConsoleOutput $output Console output handler
-		 * @param ServiceProvider $provider Service provider containing configuration
-		 */
-		public function __construct(ConsoleInput $input, ConsoleOutput $output, ServiceProvider $provider) {
-			parent::__construct($input, $output, $provider);
-			$this->configuration = $provider->getConfiguration();
-		}
 		
 		/**
 		 * Get the command signature used to invoke this command.
@@ -74,8 +53,21 @@
 		 * @return string Help text
 		 */
 		public function getHelp(): string {
-			return "Creates or updates an entity class with standard properties and ORM relationship mappings.\n" .
-				"Supported relationship types: OneToOne, InverseOf, ManyToOne.";
+			return <<<HELP
+Usage: make:entity
+
+Creates or updates an entity class with standard properties and ORM relationship mappings.
+
+Relationship types:
+  OneToOne     Owning side of a one-to-one relationship
+  InverseOf    Inverse side of a one-to-one or one-to-many relationship
+  ManyToOne    Owning side of a many-to-one relationship
+
+Examples:
+  make:entity
+
+You will be prompted to enter the entity name and define its properties interactively.
+HELP;
 		}
 		
 		/**
@@ -113,15 +105,6 @@
 			}
 			
 			return 0;
-		}
-		
-		/**
-		 * Lazy-load EntityStore instance.
-		 * @return EntityStore Entity store instance
-		 * @throws AnnotationReaderException
-		 */
-		private function getEntityStore(): EntityStore {
-			return $this->entityStore ??= new EntityStore($this->configuration);
 		}
 		
 		/**
@@ -850,33 +833,6 @@
 		}
 		
 		/**
-		 * Prompts for an entity name, re-prompting until a valid identifier is entered.
-		 * Never returns an empty string or a PHP reserved keyword.
-		 * @return string Validated entity name
-		 */
-		private function collectEntityName(string $prompt): string {
-			while (true) {
-				// Ask for entity name
-				$name = $this->input->ask($prompt);
-				
-				// Reject empty response
-				if ($name === null || trim($name) === '') {
-					$this->output->warning("Entity name cannot be empty.");
-					continue;
-				}
-				
-				// Reject invalid names
-				if (!$this->isValidPhpIdentifier($name)) {
-					$this->output->warning("Invalid entity name. Use letters, numbers and underscores only.");
-					continue;
-				}
-				
-				// Return the name
-				return $name;
-			}
-		}
-		
-		/**
 		 * Prompts for a property name, re-prompting until the user enters a valid,
 		 * non-duplicate name or presses Enter to stop.
 		 * Returns null when the user presses Enter on an empty input.
@@ -917,36 +873,6 @@
 				
 				return $name;
 			}
-		}
-		
-		/**
-		 * Returns true when $name is a valid PHP identifier and not a reserved keyword.
-		 * Covers both entity class names and property names: start with a letter or
-		 * underscore, followed by letters, digits, and underscores only.
-		 * @param string $name Candidate identifier
-		 * @return bool
-		 */
-		private function isValidPhpIdentifier(string $name): bool {
-			// Must start with letter or underscore, followed by letters/digits/underscores only
-			if (!preg_match('/^[a-zA-Z_][a-zA-Z0-9_]*$/', $name)) {
-				return false;
-			}
-			
-			// Reject PHP reserved keywords that are illegal as property names
-			$reserved = [
-				'abstract', 'and', 'array', 'as', 'break', 'callable', 'case', 'catch',
-				'class', 'clone', 'const', 'continue', 'declare', 'default', 'die',
-				'do', 'echo', 'else', 'elseif', 'empty', 'enddeclare', 'endfor',
-				'endforeach', 'endif', 'endswitch', 'endwhile', 'enum', 'eval', 'exit',
-				'extends', 'final', 'finally', 'fn', 'for', 'foreach', 'function',
-				'global', 'goto', 'if', 'implements', 'include', 'include_once',
-				'instanceof', 'insteadof', 'interface', 'isset', 'list', 'match',
-				'namespace', 'new', 'or', 'print', 'private', 'protected', 'public',
-				'readonly', 'require', 'require_once', 'return', 'static', 'switch',
-				'throw', 'trait', 'try', 'unset', 'use', 'var', 'while', 'xor', 'yield',
-			];
-			
-			return !in_array(strtolower($name), $reserved, true);
 		}
 		
 		/**
