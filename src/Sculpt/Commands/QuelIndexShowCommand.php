@@ -21,9 +21,6 @@
 	 */
 	class QuelIndexShowCommand extends MakeCommandBase {
 		
-		/** @var EntityStore|null Lazy-loaded entity store; populated on first access */
-		private ?EntityStore $entityStore = null;
-		
 		/**
 		 * Constructor
 		 * @param ConsoleInput $input Console input handler
