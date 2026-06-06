@@ -117,7 +117,19 @@
 		 * @return string
 		 */
 		public function getHelp(): string {
-			return "Creates a new database migration file by comparing entity definitions with current database schema to synchronize changes.";
+			return <<<HELP
+DESCRIPTION:
+    Generate a database migration file by comparing entity definitions with the
+    current database schema and producing a Phinx migration to synchronize them.
+
+USAGE:
+    php sculpt make:migrations
+
+NOTES:
+    - Requires a valid database connection and configured entity path
+    - Only structural changes are detected (columns, types, indexes)
+    - No migration file is written when no differences are found
+HELP;
 		}
 		
 		// -------------------------------------------------------------------------
