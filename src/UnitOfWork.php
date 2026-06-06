@@ -548,6 +548,7 @@
 		 * Returns true if any of the entity columns changed, false if not.
 		 * @param object $entity
 		 * @return bool
+		 * @throws EntityResolutionException
 		 */
 		private function isEntityDirty(object $entity): bool {
 			// Retrieve the snapshot taken when the entity was loaded from the database
