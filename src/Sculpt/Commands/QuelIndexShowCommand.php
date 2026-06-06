@@ -84,7 +84,9 @@
 			}
 			
 			// Translate the entity class name to its underlying database table
-			$databaseAdapter = $this->provider->getDatabaseAdapter();
+			/** @var ServiceProvider $provider */
+			$provider = $this->provider;
+			$databaseAdapter = $provider->getDatabaseAdapter();
 			$capabilities = new PlatformCapabilities($databaseAdapter);
 			
 			// Invisible indexes are a MySQL/MariaDB-only feature
