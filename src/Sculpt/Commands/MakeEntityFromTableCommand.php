@@ -447,13 +447,13 @@
 			// For datetime properties with a default string value
 			// Convert the string to a DateTime object initialization
 			if ($columnType === 'datetime' && is_string($defaultValue)) {
-				return "new \DateTime('{$defaultValue}');";
+				return "new \DateTime('{$defaultValue}')";
 			}
 			
 			// For date properties with a default string value
 			// Convert the string to a DateTime object initialization
 			if ($columnType === 'date' && is_string($defaultValue)) {
-				return "new \DateTime('{$defaultValue} 00:00:00');";
+				return "new \DateTime('{$defaultValue} 00:00:00')";
 			}
 			
 			// For numeric values (integers, floats), return as-is without quotes
@@ -499,12 +499,7 @@
 		private function generateGetter(string $fieldCamelCase, string $variableCamelCase, string $acceptType): string {
 			$output = "\n";
 			
-			if ($acceptType !== '') {
-				$output .= "        public function get{$fieldCamelCase}() : {$acceptType} {\n";
-			} else {
-				$output .= "        public function get{$fieldCamelCase}() {\n";
-			}
-			
+			$output .= "        public function get{$fieldCamelCase}() : {$acceptType} {\n";
 			$output .= "            return \$this->{$variableCamelCase};\n";
 			$output .= "        }\n";
 			
@@ -523,7 +518,7 @@
 		private function generateSetter(array $column, string $fieldCamelCase, string $variableCamelCase, string $acceptType): string {
 			$output = "\n";
 			
-			// Only generate setters for non-autoincrement primary keys
+			// Only suppress setters for auto-increment primary keys (primary_key=true AND identity=true)
 			if (!$column["primary_key"] || !$column["identity"]) {
 				$output .= "        public function set{$fieldCamelCase}({$acceptType} \$value): self {\n";
 				$output .= "            \$this->{$variableCamelCase} = \$value;\n";
