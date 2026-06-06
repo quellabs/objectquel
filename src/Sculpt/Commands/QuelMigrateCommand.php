@@ -35,56 +35,6 @@
 		}
 		
 		/**
-		 * Execute the command
-		 * @param ConfigurationManager $config Optional parameters passed to the command
-		 * @return int Exit code (0 for success)
-		 */
-		public function execute(ConfigurationManager $config): int {
-			// Fetch service provider
-			$serviceProvider = $this->getProvider();
-
-			// Check if we can generate the phinx config
-			// This line exists to make PhpStan happy
-			if (!$serviceProvider instanceof \Quellabs\ObjectQuel\Sculpt\ServiceProvider) {
-				$this->output->error("Unable to fetch phinx configuration");
-				return 1;
-			}
-			
-			// Create a Phinx configuration
-			$phinxConfig = new Config($serviceProvider->createPhinxConfig());
-
-			// Create the manager with buffered output to capture all output
-			// Always use the 'development' environment since that's all our config supports
-			$inputArgs = $this->prepareInputArgs($config);
-			$input = new ArrayInput($inputArgs);
-			$bufferedOutput = new BufferedOutput();
-			$manager = new Manager($phinxConfig, $input, $bufferedOutput);
-			
-			try {
-				// Determine which operation to perform based on flags
-				if ($config->hasFlag('rollback')) {
-					$result = $this->performRollback($manager, $config);
-				} elseif ($config->hasFlag('status')) {
-					$result = $this->showStatus($manager);
-				} else {
-					$result = $this->runMigrations($manager, $config);
-				}
-				
-				// Get any output from the buffered output and display it
-				$outputContent = $bufferedOutput->fetch();
-				
-				if (!empty($outputContent)) {
-					$this->output->write($outputContent);
-				}
-				
-				return $result;
-			} catch (\Exception $e) {
-				$this->output->error("Migration error: " . $e->getMessage());
-				return 1;
-			}
-		}
-		
-		/**
 		 * Get the command signature/name for registration in the CLI
 		 * @return string Command signature
 		 */
@@ -144,6 +94,56 @@ EXAMPLES:
     php sculpt quel:migrate --dry-run
         Preview pending migrations without applying them
 HELP;
+		}
+		
+		/**
+		 * Execute the command
+		 * @param ConfigurationManager $config Optional parameters passed to the command
+		 * @return int Exit code (0 for success)
+		 */
+		public function execute(ConfigurationManager $config): int {
+			// Fetch service provider
+			$serviceProvider = $this->getProvider();
+
+			// Check if we can generate the phinx config
+			// This line exists to make PhpStan happy
+			if (!$serviceProvider instanceof \Quellabs\ObjectQuel\Sculpt\ServiceProvider) {
+				$this->output->error("Unable to fetch phinx configuration");
+				return 1;
+			}
+			
+			// Create a Phinx configuration
+			$phinxConfig = new Config($serviceProvider->createPhinxConfig());
+
+			// Create the manager with buffered output to capture all output
+			// Always use the 'development' environment since that's all our config supports
+			$inputArgs = $this->prepareInputArgs($config);
+			$input = new ArrayInput($inputArgs);
+			$bufferedOutput = new BufferedOutput();
+			$manager = new Manager($phinxConfig, $input, $bufferedOutput);
+			
+			try {
+				// Determine which operation to perform based on flags
+				if ($config->hasFlag('rollback')) {
+					$result = $this->performRollback($manager, $config);
+				} elseif ($config->hasFlag('status')) {
+					$result = $this->showStatus($manager);
+				} else {
+					$result = $this->runMigrations($manager, $config);
+				}
+				
+				// Get any output from the buffered output and display it
+				$outputContent = $bufferedOutput->fetch();
+				
+				if (!empty($outputContent)) {
+					$this->output->write($outputContent);
+				}
+				
+				return $result;
+			} catch (\Exception $e) {
+				$this->output->error("Migration error: " . $e->getMessage());
+				return 1;
+			}
 		}
 		
 		/**

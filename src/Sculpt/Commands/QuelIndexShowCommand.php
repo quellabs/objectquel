@@ -64,11 +64,11 @@ DESCRIPTION:
     Makes a previously hidden database index visible to the query optimizer again.
 
 USAGE:
-    php sculpt quel:index-show <entity> <index>
+    php sculpt quel:index-show  [entity] [index]
 
 ARGUMENTS:
-    entity    The entity class name (e.g. User, OrderLine)
-    index     The name of the index to make visible
+    entity    Optional entity class name. If omitted, you will be prompted.
+    index     Optional index name. If omitted, you will be prompted.
 
 EXAMPLES:
     php sculpt quel:index-show User idx_email
@@ -101,7 +101,7 @@ HELP;
 			if ($entityName === null) {
 				$entityName = $this->collectIdentifier("Entity name");
 			} elseif (!$this->isValidPhpIdentifier($entityName)) {
-				$this->output->error("Invalid identifier '{$entityName}'.");
+				$this->output->error("Invalid entity name '{$entityName}'.");
 				return 1;
 			}
 			

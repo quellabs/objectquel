@@ -85,7 +85,14 @@ HELP;
 		public function execute(ConfigurationManager $config): int {
 			try {
 				// Get the entity name from configuration or user input
-				$entityName = $this->collectIdentifier("Class name of the entity");
+				$entityName = $config->getPositional(0);
+				
+				if ($entityName === null) {
+					$entityName = $this->collectIdentifier("Entity name");
+				} elseif (!$this->isValidPhpIdentifier($entityName)) {
+					$this->output->error("Invalid entity name '{$entityName}'.");
+					return 1;
+				}
 				
 				// Check if entity name was provided - exit gracefully if not
 				if (empty($entityName)) {

@@ -69,11 +69,11 @@ DESCRIPTION:
     removing an index before committing to a permanent DROP INDEX.
 
 USAGE:
-    php sculpt quel:index-hide <entity> <index>
+    php sculpt quel:index-hide [entity] [index]
 
 ARGUMENTS:
-    entity    The entity class name (e.g. User, OrderLine)
-    index     The name of the index to hide
+    entity    Optional entity class name. If omitted, you will be prompted.
+    index     Optional index name. If omitted, you will be prompted.
 
 EXAMPLES:
     php sculpt quel:index-hide User idx_email
@@ -106,7 +106,7 @@ HELP;
 			if ($entityName === null) {
 				$entityName = $this->collectIdentifier("Entity name");
 			} elseif (!$this->isValidPhpIdentifier($entityName)) {
-				$this->output->error("Invalid identifier '{$entityName}'.");
+				$this->output->error("Invalid entity name '{$entityName}'.");
 				return 1;
 			}
 			
