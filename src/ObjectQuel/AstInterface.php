@@ -2,8 +2,6 @@
 	
 	namespace Quellabs\ObjectQuel\ObjectQuel;
 	
-	use Quellabs\ObjectQuel\ObjectQuel\Visitors\DetectSpecificNode;
-	
 	/**
 	 * Interface AstInterface
 	 * Defines the contract for Abstract Syntax Tree (AST) nodes.
