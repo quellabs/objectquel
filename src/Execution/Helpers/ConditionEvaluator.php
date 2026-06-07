@@ -71,7 +71,7 @@
 					// AstNumber stores its value as a string; coerce to int or float
 					// based on the node's own return-type declaration so that callers
 					// receive a properly typed PHP value rather than a raw string.
-					return $ast->getReturnType() === 'float' ? (float) $ast->getValue() : (int) $ast->getValue();
+					return $ast->getReturnType() === 'float' ? (float)$ast->getValue() : (int)$ast->getValue();
 				
 				case AstString::class:  // String literal (e.g., "hello")
 				case AstBool::class:    // Boolean literal (true/false)
