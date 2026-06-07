@@ -92,7 +92,9 @@
 			}
 			
 			// Select highest priority candidate (best optimization potential)
-			usort($candidates, fn($a, $b) => $b->getPriorityScore() <=> $a->getPriorityScore());
+			usort($candidates, function(AnchorCandidate $a, AnchorCandidate $b): int {
+				return $b->getPriorityScore() <=> $a->getPriorityScore();
+			});
 			
 			// Return the best match
 			return $candidates[0];
