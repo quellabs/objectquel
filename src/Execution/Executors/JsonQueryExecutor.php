@@ -25,8 +25,8 @@
 			// Fetch the range
 			$jsonRange = $stage->getRange();
 			
-			// It's guaranteed to be AstRangeJsonSource, but phpstan does not know that.
-			// That's why this check was added. To satisfy phpstan's static analysis.
+			// $jsonRange is guaranteed to be AstRangeJsonSource, but PhpStan does not know that.
+			// That's why this check was added. To satisfy PhpStan's static analysis.
 			assert($jsonRange instanceof AstRangeJsonSource);
 			
 			// Load the JSON file and perform initial filtering

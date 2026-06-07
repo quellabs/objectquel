@@ -61,10 +61,10 @@
 		 * @param BuildSqlFromAst $convertToString Converts AST expressions to SQL strings
 		 */
 		public function __construct(
-			EntityStore       $entityStore,
-			string            $partOfQuery,
+			EntityStore $entityStore,
+			string $partOfQuery,
 			BuildSqlFragments $sqlBuilder,
-			BuildSqlFromAst   $convertToString,
+			BuildSqlFromAst $convertToString,
 		) {
 			$this->entityStore = $entityStore;
 			$this->partOfQuery = $partOfQuery;
@@ -147,6 +147,7 @@
 		 *
 		 * @param AstSubquery $subquery Contains the aggregate function and related metadata
 		 * @return string Complete SQL scalar subquery wrapped in parentheses
+		 * @throws EntityResolutionException
 		 */
 		private function buildScalarSubquery(AstSubquery $subquery): string {
 			// Fetch the aggregation node
@@ -202,11 +203,7 @@
 			
 			// Assemble final scalar subquery with proper SQL formatting
 			// Parentheses ensure this can be used as a scalar expression in larger queries
-			return "(
-		        SELECT {$aggregateExpression}
-		        FROM {$fromClause}
-		        {$whereClause}
-		    )";
+			return "(SELECT {$aggregateExpression} FROM {$fromClause} {$whereClause})";
 		}
 		
 		/**
@@ -222,30 +219,30 @@
 		 * @param AstAggregate $aggregateNode
 		 * @return string SQL function name in uppercase
 		 */
-		private function aggregateToString(AstAggregate $aggregateNode) : string {
+		private function aggregateToString(AstAggregate $aggregateNode): string {
 			/** @noinspection PhpSwitchCanBeReplacedWithMatchExpressionInspection */
 			switch (get_class($aggregateNode)) {
 				case AstCount::class:
 				case AstCountU::class:
 					return "COUNT";
-					
+				
 				case AstAvg::class:
 				case AstAvgU::class:
 					return "AVG";
-					
+				
 				case AstSum::class:
 				case AstSumU::class:
 					return "SUM";
-					
+				
 				case AstMin::class:
 					return "MIN";
-					
+				
 				case AstMax::class:
 					return "MAX";
-					
+				
 				case AstAny::class:
 					return "ANY";
-					
+				
 				default:
 					return throw new \InvalidArgumentException(
 						'Unsupported aggregate type: ' . get_class($aggregateNode)
@@ -372,14 +369,14 @@
 		 * @throws EntityResolutionException
 		 */
 		private function buildCaseWhenExistsSubquery(AstSubquery $subquery): string {
-			$ranges     = $subquery->getCorrelatedRanges();
+			$ranges = $subquery->getCorrelatedRanges();
 			$fromClause = $this->buildFromClauseForRanges($ranges);
 			
 			$whereClause = '';
-
+			
 			if ($subquery->getConditions() !== null) {
 				$condSql = trim($this->convertExpressionToSql($subquery->getConditions()));
-
+				
 				if ($condSql !== '') {
 					$whereClause = "WHERE {$condSql}";
 				}
@@ -387,8 +384,7 @@
 				$whereClause = $this->buildWhereClauseForRanges($ranges);
 			}
 			
-			$existsQuery = "EXISTS (SELECT 1 FROM {$fromClause} {$whereClause})";
-			return "CASE WHEN {$existsQuery} THEN 1 ELSE 0 END";
+			return "CASE WHEN EXISTS (SELECT 1 FROM {$fromClause} {$whereClause}) THEN 1 ELSE 0 END";
 		}
 		
 		/**
@@ -443,15 +439,15 @@
 		 */
 		private function buildExistsSubquery(AstSubquery $subquery): string {
 			// FROM
-			$ranges     = $subquery->getCorrelatedRanges();
+			$ranges = $subquery->getCorrelatedRanges();
 			$fromClause = $this->buildFromClauseForRanges($ranges);
 			
 			// WHERE – prefer the subquery's own conditions (what the optimizer set)
 			$whereClause = '';
-
+			
 			if ($subquery->getConditions() !== null) {
 				$condSql = trim($this->convertExpressionToSql($subquery->getConditions()));
-
+				
 				if ($condSql !== '') {
 					$whereClause = "WHERE {$condSql}";
 				}
@@ -506,9 +502,9 @@
 			// Return format depends on SQL clause context
 			if ($this->partOfQuery !== "WHERE") {
 				return "CASE WHEN {$existsQuery} THEN 1 ELSE 0 END";
+			} else {
+				return $existsQuery;
 			}
-			
-			return $existsQuery;
 		}
 		
 		// ============================================================================
@@ -530,15 +526,15 @@
 		 * - DISTINCT support for unique operations
 		 * - Conditional aggregation via CASE WHEN transformation
 		 *
-		 * @param AstCount|AstCountU|AstAvg|AstAvgU|AstMax|AstMin|AstSum|AstSumU $ast The aggregate AST node
+		 * @param AstAggregate $ast The aggregate AST node
 		 * @param string $aggregateFunction SQL function name (COUNT, SUM, AVG, MIN, MAX)
 		 * @param bool $distinct Whether to include DISTINCT keyword for unique operations
 		 * @return string Complete SQL aggregate expression
 		 */
 		private function handleAggregateOperation(
-			AstCount|AstCountU|AstAvg|AstAvgU|AstMax|AstMin|AstSum|AstSumU $ast,
-			string                                                         $aggregateFunction,
-			bool                                                           $distinct = false
+			AstAggregate $ast,
+			string $aggregateFunction,
+			bool $distinct = false
 		): string {
 			// Handle conditional aggregation: aggregate WHERE condition → CASE WHEN condition
 			if ($ast->getConditions() !== null) {

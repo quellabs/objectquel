@@ -17,10 +17,18 @@
 	 * Handles database-specific query execution including SQL conversion and temp tables
 	 */
 	class DatabaseQueryExecutor {
+		
+		/** @var EntityManager Orchestrator for ObjectQuel queries and ORM */
 		protected EntityManager $entityManager;
+		
+		/** @var DatabaseAdapter Database connection */
 		protected DatabaseAdapter $connection;
-		protected PaginationTransformer $queryTransformer;
+		
+		/** @var PlatformCapabilities Shows capabilities and nuances of database system */
 		protected PlatformCapabilities $capabilities;
+		
+		/** @var PaginationTransformer Transformer adds pagination (LIMIT, OFFSET) */
+		protected PaginationTransformer $queryTransformer;
 		
 		/** @var list<string> */
 		protected array $lastExecutedSql = [];

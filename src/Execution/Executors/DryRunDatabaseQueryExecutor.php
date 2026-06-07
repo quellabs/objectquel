@@ -17,14 +17,11 @@
 	 */
 	class DryRunDatabaseQueryExecutor extends DatabaseQueryExecutor {
 		
-		/**
-		 * SQL statements captured across all executed stages
-		 * @var list<string>
-		 */
-		private array $capturedSql = [];
-		
 		/** @var QueryOptimizer Optimizing code */
 		private QueryOptimizer $queryOptimizer;
+		
+		/** @var list<string> SQL statements captured across all executed stages */
+		private array $capturedSql = [];
 		
 		/**
 		 * DryRunDatabaseQueryExecutor

@@ -62,7 +62,7 @@
 		private array $createdTables = [];
 		
 		/**
-		 * Constructor
+		 * TempTableExecutor constructor
 		 * @param DatabaseAdapter $connection
 		 */
 		public function __construct(DatabaseAdapter $connection) {
