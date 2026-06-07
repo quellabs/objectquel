@@ -876,7 +876,7 @@
 		 * that would otherwise become orphaned.
 		 * @param object $entity The parent entity being deleted
 		 * @return void
-		 * @throws EntityResolutionException
+		 * @throws EntityResolutionException|QuelException
 		 */
 		private function executeCascadingDeletions(object $entity): void {
 			// Normalize the entity class name to ensure consistent format
@@ -890,7 +890,6 @@
 			
 			// Process each dependent entity class to find and mark instances for deletion
 			foreach ($dependentEntityClasses as $dependentEntityClass) {
-				/** @var class-string $dependentEntityClass */
 				$this->handleDependentEntityClass($dependentEntityClass, $normalizedClass, $entity);
 			}
 		}
