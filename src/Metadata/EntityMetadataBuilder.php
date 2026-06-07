@@ -18,6 +18,7 @@
 	use Quellabs\ObjectQuel\Annotations\Orm\UniqueIndex;
 	use Quellabs\ObjectQuel\Annotations\Orm\Version;
 	use Quellabs\ObjectQuel\DatabaseAdapter\TypeMapper;
+	use Quellabs\ObjectQuel\Metadata\ColumnData;
 	use Quellabs\ObjectQuel\ReflectionManagement\ReflectionHandler;
 	use Quellabs\Support\NamespaceResolver;
 	
@@ -98,28 +99,32 @@
 				// Derive all column-related metadata in a single pass over $annotations.
 				// Splitting this into five separate loops would re-iterate the same data
 				// for each concern; one pass is both faster and easier to follow.
-				[
-					$columnMap,
-					$identifierKeys,
-					$identifierColumns,
-					$versionColumns,
-					$autoIncrementColumn,
-				] = $this->extractColumnData($annotations);
+				$columnData = $this->extractColumnData($annotations);
 				
+				// Extract the relations (ManyToOne and OneToOne)
+				$manyToOneRelations = $this->extractRelations($annotations, ManyToOne::class);
+				$oneToOneRelations = $this->extractRelations($annotations, OneToOne::class);
+				
+				// Validate that every localColumn declared on a ManyToOne or OneToOne
+				// has a corresponding @Orm\Column property on this entity. Catching this
+				// at metadata build time gives a clear error instead of a silent hydration failure.
+				$this->validateRelationColumns($className, $annotations, $manyToOneRelations, $oneToOneRelations);
+				
+				// Return  a new EntityMetadataRecord containing all relation data
 				return new EntityMetadataRecord(
 					className: $className,
 					tableName: $tableName,
 					properties: $properties,
 					annotations: $annotations,
-					columnMap: $columnMap,
-					identifierKeys: $identifierKeys,
-					identifierColumns: $identifierColumns,
-					versionColumns: $versionColumns,
-					manyToOneRelations: $this->extractRelations($annotations, ManyToOne::class),
+					columnMap: $columnData->columnMap,
+					identifierKeys: $columnData->identifierKeys,
+					identifierColumns: $columnData->identifierColumns,
+					versionColumns: $columnData->versionColumns,
+					manyToOneRelations: $manyToOneRelations,
 					inverseOfRelations: $this->extractRelations($annotations, InverseOf::class),
-					oneToOneRelations: $this->extractRelations($annotations, OneToOne::class),
+					oneToOneRelations: $oneToOneRelations,
 					indexes: $this->extractIndexes($className),
-					autoIncrementColumn: $autoIncrementColumn,
+					autoIncrementColumn: $columnData->autoIncrementColumn,
 					columnDefinitions: $this->extractColumnDefinitions($className, $annotations),
 				);
 			} catch (\Exception $e) {
@@ -131,21 +136,10 @@
 		
 		/**
 		 * Single pass over property annotations to extract all column-related metadata.
-		 * Returns [columnMap, identifierKeys, identifierColumns, versionColumns, autoIncrementColumn].
 		 * @param array<string, AnnotationCollection> $annotations
-		 * @return array{
-		 *     0: array<string, string>,
-		 *     1: list<string>,
-		 *     2: list<string>,
-		 *     3: array<string, array{
-		 *         name: string,
-		 *         column: Column,
-		 *         version: Version
-		 *     }>,
-		 *     4: string|null
-		 *  }
+		 * @return ColumnData
 		 */
-		private function extractColumnData(array $annotations): array {
+		private function extractColumnData(array $annotations): ColumnData {
 			$columnMap = [];
 			$identifierKeys = [];
 			$identifierColumns = [];
@@ -205,7 +199,13 @@
 				}
 			}
 			
-			return [$columnMap, $identifierKeys, $identifierColumns, $versionColumns, $autoIncrementColumn];
+			return new ColumnData(
+				columnMap: $columnMap,
+				identifierKeys: $identifierKeys,
+				identifierColumns: $identifierColumns,
+				versionColumns: $versionColumns,
+				autoIncrementColumn: $autoIncrementColumn,
+			);
 		}
 		
 		/**
@@ -366,5 +366,66 @@
 			// Must be a primary key, and either explicitly marked as identity
 			// or left without any strategy (which defaults to auto-increment)
 			return $isPrimaryKey && ($isIdentityStrategy || !$hasStrategy);
+		}
+		
+		/**
+		 * Validates that every localColumn declared on a ManyToOne or OneToOne relation
+		 * has a corresponding property with an @Orm\Column annotation on the entity.
+		 * A missing backing property would cause a silent hydration failure at runtime;
+		 * catching it here gives a clear error at the first point of use instead.
+		 * @param class-string $className
+		 * @param array<string, AnnotationCollection> $annotations
+		 * @param array<string, ManyToOne> $manyToOneRelations
+		 * @param array<string, OneToOne> $oneToOneRelations
+		 * @throws \RuntimeException When a declared localColumn has no backing @Orm\Column property
+		 */
+		private function validateRelationColumns(
+			string $className,
+			array $annotations,
+			array $manyToOneRelations,
+			array $oneToOneRelations
+		): void {
+			$relations = array_merge($manyToOneRelations, $oneToOneRelations);
+			
+			foreach ($relations as $property => $relation) {
+				// Use the explicit localColumn if declared, otherwise fall back to the
+				// convention used at runtime in RelationshipLoader ($property . 'Id')
+				$localColumn = $relation->getLocalColumn() ?? $property . 'Id';
+				
+				if (!$this->hasColumnProperty($annotations, $localColumn)) {
+					if ($relation->getLocalColumn() !== null) {
+						$source = "declares localColumn='{$localColumn}'";
+					} else {
+						$source = "uses the default localColumn convention '{$localColumn}'";
+					}
+					
+					throw new \RuntimeException(
+						"Relation '{$property}' on '{$className}' {$source} " .
+						"but no property with '@Orm\\Column' named '{$localColumn}' exists on the entity. " .
+						"Add an '@Orm\\Column' property for the foreign key."
+					);
+				}
+			}
+		}
+		
+		/**
+		 * Returns true if a property named $propertyName exists in the annotation map
+		 * and carries an @Orm\Column annotation.
+		 * @param array<string, AnnotationCollection> $annotations
+		 * @param string $propertyName
+		 * @return bool
+		 */
+		private function hasColumnProperty(array $annotations, string $propertyName): bool {
+			if (!isset($annotations[$propertyName])) {
+				return false;
+			}
+			
+			foreach ($annotations[$propertyName] as $annotation) {
+				if ($annotation instanceof Column) {
+					return true;
+				}
+			}
+			
+			return false;
 		}
 	}

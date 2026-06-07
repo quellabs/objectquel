@@ -188,18 +188,18 @@
 			$className = $this->normalizeEntityClass($entity);
 			
 			// Return cached metadata if available
-			// Otherwise build and cache the metadata
-			if (!isset($this->metadataCache[$className])) {
-				// Check that the given class actually exists
-				if (!class_exists($className)) {
-					throw new EntityResolutionException("Invalid entity class: {$className}");
-				}
-				
-				// Add metadata to cache
-				$this->metadataCache[$className] = $this->metadataBuilder->build($className);
+			if (isset($this->metadataCache[$className])) {
+				return $this->metadataCache[$className];
 			}
 			
-			return $this->metadataCache[$className];
+			// Otherwise build and cache the metadata
+			// Check that the given class actually exists
+			if (!class_exists($className)) {
+				throw new EntityResolutionException("Invalid entity class: {$className}");
+			}
+				
+			// Add metadata to cache and return
+			return $this->metadataCache[$className] = $this->metadataBuilder->build($className);
 		}
 		
 		/**
