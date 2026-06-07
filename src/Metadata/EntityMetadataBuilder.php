@@ -101,9 +101,12 @@
 				// for each concern; one pass is both faster and easier to follow.
 				$columnData = $this->extractColumnData($annotations);
 				
-				// Extract the relations (ManyToOne and OneToOne)
+				// Extract the relations and indexes
+				$indexes = $this->extractIndexes($className);
+				$columnDefinitions = $this->extractColumnDefinitions($className, $annotations);
 				$manyToOneRelations = $this->extractRelations($annotations, ManyToOne::class);
 				$oneToOneRelations = $this->extractRelations($annotations, OneToOne::class);
+				$inverseOfRelations = $this->extractRelations($annotations, InverseOf::class);
 				
 				// Validate that every localColumn declared on a ManyToOne or OneToOne
 				// has a corresponding @Orm\Column property on this entity. Catching this
@@ -121,12 +124,14 @@
 					identifierColumns: $columnData->identifierColumns,
 					versionColumns: $columnData->versionColumns,
 					manyToOneRelations: $manyToOneRelations,
-					inverseOfRelations: $this->extractRelations($annotations, InverseOf::class),
+					inverseOfRelations: $inverseOfRelations,
 					oneToOneRelations: $oneToOneRelations,
-					indexes: $this->extractIndexes($className),
+					indexes: $indexes,
 					autoIncrementColumn: $columnData->autoIncrementColumn,
-					columnDefinitions: $this->extractColumnDefinitions($className, $annotations),
+					columnDefinitions: $columnDefinitions,
 				);
+			} catch (\RuntimeException $e) {
+				throw $e;
 			} catch (\Exception $e) {
 				throw new \RuntimeException("Failed to build metadata for {$className}: " . $e->getMessage(), 0, $e);
 			}
