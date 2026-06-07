@@ -2,24 +2,22 @@
 	
 	namespace Quellabs\ObjectQuel\Execution\Hydration;
 	
-	use Quellabs\ObjectQuel\Annotations\Orm\ManyToOne;
-	use Quellabs\ObjectQuel\Annotations\Orm\InverseOf;
-	use Quellabs\ObjectQuel\Annotations\Orm\OneToOne;
-	use Quellabs\ObjectQuel\Collections\Collection;
-	use Quellabs\ObjectQuel\Exception\HydrationException;
-	use Quellabs\ObjectQuel\Collections\CollectionInterface;
-	use Quellabs\ObjectQuel\Collections\EntityCollection;
 	use Quellabs\ObjectQuel\EntityStore;
 	use Quellabs\ObjectQuel\EntityManager;
-	use Quellabs\ObjectQuel\Exception\EntityResolutionException;
-	use Quellabs\ObjectQuel\Exception\QuelException;
 	use Quellabs\ObjectQuel\UnitOfWork;
-	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstIdentifier;
-	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRangeDatabase;
+	use Quellabs\ObjectQuel\Exception\QuelException;
+	use Quellabs\ObjectQuel\Annotations\Orm\OneToOne;
+	use Quellabs\ObjectQuel\Annotations\Orm\ManyToOne;
+	use Quellabs\ObjectQuel\Annotations\Orm\InverseOf;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRetrieve;
-	use Quellabs\ObjectQuel\ProxyGenerator\ProxyInterface;
-	use Quellabs\ObjectQuel\ReflectionManagement\PropertyHandler;
+	use Quellabs\ObjectQuel\Exception\HydrationException;
+	use Quellabs\ObjectQuel\Collections\EntityCollection;
 	use Quellabs\ObjectQuel\Metadata\EntityMetadataRecord;
+	use Quellabs\ObjectQuel\ProxyGenerator\ProxyInterface;
+	use Quellabs\ObjectQuel\Collections\CollectionInterface;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRangeDatabase;
+	use Quellabs\ObjectQuel\Exception\EntityResolutionException;
+	use Quellabs\ObjectQuel\ReflectionManagement\PropertyHandler;
 	
 	class RelationshipLoader {
 		
@@ -47,6 +45,7 @@
 		 * @param array<int, object> $entities The entities to load relationships for
 		 * @throws QuelException
 		 * @throws EntityResolutionException
+		 * @throws HydrationException
 		 */
 		public function loadRelationships(array $entities): void {
 			// Set ToOne relations directly where data is present; create proxies for the rest
@@ -231,6 +230,7 @@
 		 * @param string $targetEntity The entity class name
 		 * @param string $joinProperty The specific join property we are looking for
 		 * @return bool
+		 * @throws EntityResolutionException
 		 */
 		private function wasEntityRequested(string $currentEntity, string $targetEntity, string $joinProperty): bool {
 			// Avoid false positives on self-referencing entities
@@ -412,9 +412,7 @@
 						$fkColumn = $viaAnnotation?->getLocalColumn() ?? $relation . 'Id';
 						
 						// Create an Entity Collection
-						$proxy = new EntityCollection(
-							$this->entityManager, $targetEntity, $fkColumn, $primaryKeyValue
-						);
+						$proxy = new EntityCollection($this->entityManager, $targetEntity, $fkColumn, $primaryKeyValue);
 						
 						// Assign it to entity
 						$this->propertyHandler->set($entity, $property, $proxy);
