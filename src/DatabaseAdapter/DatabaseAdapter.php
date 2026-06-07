@@ -38,6 +38,16 @@
 	 */
 	class DatabaseAdapter {
 		
+		/** @var array|string[] The index types ObjectQuel supports */
+		const array INDEX_TYPES = ['primary', 'unique', 'index', 'fulltext'];
+		
+		/**
+		 * Keep a list of decimal types for precision/scale inclusion
+		 * Phinx seems to sometimes return precision for integer fields which is incorrect
+         * @var array|string[] Decimal types in database
+		 */
+		const array DECIMAL_TYPES = ['decimal', 'numeric', 'float', 'double'];
+		
 		/** @var Configuration Configuration instance for ObjectQuel settings */
 		protected Configuration $configuration;
 		
@@ -150,7 +160,10 @@
 			// Use the existing connection instead of fetching 'default'
 			$connection = $this->connection;
 			
-			// Get the CakePHP connection config
+			/**
+			 * Get the CakePHP connection config
+			 * @var array<string, string> $config
+			 */
 			$config = $connection->config();
 			
 			// Map CakePHP driver to Phinx adapter name
@@ -162,8 +175,6 @@
 			];
 			
 			// Get the appropriate adapter name
-			/** @var array<string, string> $config */
-			$config = $connection->config();
 			$adapter = $driverMap[$config['driver']] ?? 'mysql';
 			
 			// Convert CakePHP connection config to Phinx format
@@ -214,16 +225,12 @@
 			// Get primary key columns first so we can mark them in column definitions
 			$primaryKey = $this->getPrimaryKeyColumns($tableName);
 			
-			// Keep a list of decimal types for precision/scale inclusion
-			// Phinx seems to sometimes return precision for integer fields which is incorrect
-			$decimalTypes = ['decimal', 'numeric', 'float', 'double'];
-			
 			// Fetch and process each column in the table
 			$result = [];
 			
 			foreach ($phinxAdapter->getColumns($tableName) as $column) {
 				$columnType = $column->getType();
-				$isOfDecimalType = in_array(strtolower($columnType), $decimalTypes);
+				$isOfDecimalType = in_array(strtolower($columnType), self::DECIMAL_TYPES);
 				
 				$columnData = [
 					// Basic column type (integer, string, decimal, etc.)
@@ -332,7 +339,6 @@
 		
 		/**
 		 * Retrieves index definitions for a database table.
-		 *
 		 * @param string $tableName
 		 * @return array<string, IndexDefinition>
 		 */
@@ -358,8 +364,14 @@
 				/** @var array{type: string, columns: array<string>, length: array<int,int>|null} $index */
 				$index = $tableSchema->getIndex($indexName);
 				
+				if (in_array($index['type'], self::INDEX_TYPES, true)) {
+					$type = $index['type'];
+				} else {
+					$type = 'index';
+				}
+				
 				$result[$indexName] = [
-					'type'    => in_array($index['type'], ['primary', 'unique', 'index', 'fulltext'], true) ? $index['type'] : 'index',
+					'type'    => $type,
 					'columns' => $index['columns'],
 					'length'  => $index['length'],
 				];
