@@ -9,7 +9,7 @@
 	 * Value object returned by EntityMetadataBuilder::extractColumnData().
 	 * Carries all column-derived metadata extracted in a single annotation pass.
 	 */
-	class ColumnData {
+	readonly class ColumnData {
 		
 		/**
 		 * @param array<string, string> $columnMap Property name => database column name
@@ -19,10 +19,10 @@
 		 * @param string|null $autoIncrementColumn Property name of the auto-increment column, or null
 		 */
 		public function __construct(
-			public readonly array $columnMap,
-			public readonly array $identifierKeys,
-			public readonly array $identifierColumns,
-			public readonly array $versionColumns,
-			public readonly ?string $autoIncrementColumn,
+			public array $columnMap,
+			public array $identifierKeys,
+			public array $identifierColumns,
+			public array $versionColumns,
+			public ?string $autoIncrementColumn,
 		) {}
 	}
