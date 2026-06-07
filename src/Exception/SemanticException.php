@@ -3,7 +3,7 @@
 	namespace Quellabs\ObjectQuel\Exception;
 	
 	/**
-	 * Thrown when an entity was not found
+	 * Semantic query error
 	 */
 	class SemanticException extends \Exception {
 	}

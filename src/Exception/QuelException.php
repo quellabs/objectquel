@@ -3,7 +3,9 @@
 	namespace Quellabs\ObjectQuel\Exception;
 	
 	/**
-	 * Thrown when an entity was not found
+	 * Thrown when a QuelException occurred.
+	 * This wraps SemanticException, ParserException, LexerException, etc.
+	 * to provide one overall exception to catch.
 	 */
 	class QuelException extends \Exception {
 		public function __construct(

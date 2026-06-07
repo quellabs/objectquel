@@ -1,10 +1,9 @@
 <?php
 	
-	
 	namespace Quellabs\ObjectQuel\Exception;
 	
 	/**
-	 * Thrown when an entity was not found
+	 * Error in transformation/optimization cycle
 	 */
 	class TransformationException extends \Exception {
 	}

@@ -3,7 +3,7 @@
 	namespace Quellabs\ObjectQuel\Exception;
 	
 	/**
-	 * Thrown when an entity was not found
+	 * Thrown when hydration failed
 	 */
 	class HydrationException extends \Exception {
 	}
