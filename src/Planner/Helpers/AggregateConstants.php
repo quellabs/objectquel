@@ -14,18 +14,6 @@
 	
 	class AggregateConstants {
 		
-		/** @var array<class-string<AstInterface>> Supported aggregate node classes. */
-		public const array AGGREGATE_NODE_TYPES = [
-			AstSum::class,
-			AstSumU::class,
-			AstCount::class,
-			AstCountU::class,
-			AstAvg::class,
-			AstAvgU::class,
-			AstMin::class,
-			AstMax::class,
-		];
-		
 		/** @var array<class-string<AstInterface>> NOT-DISTINCT-capable aggregate classes. */
 		public const array NOT_DISTINCT_AGGREGATE_TYPES = [
 			AstSum::class,
