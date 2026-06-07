@@ -25,7 +25,7 @@
 	    /**
 	     * Parse queries
 	     * @return AstInterface|null
-	     * @throws LexerException|ParserException
+	     * @throws LexerException|ParserException|\ReflectionException
 	     */
 	    public function parse(): ?AstInterface {
 		    // Compiler directives

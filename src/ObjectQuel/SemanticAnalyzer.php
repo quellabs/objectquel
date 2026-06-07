@@ -122,18 +122,17 @@
 			$this->validateNoSubqueryRangeInOuterProjection($ast);
 			
 			// Step 4b: Validates that a subquery's own projection does not select a bare entity.
-			//           A subquery defines a column-set contract; retrieve(y) erases that contract
-			//           and makes the derived table's schema implicit and unverifiable.
+			//          A subquery defines a column-set contract; retrieve(y) erases that contract
+			//          and makes the derived table's schema implicit and unverifiable.
 			$this->validateNoEntityInSubqueryProjection($ast);
 			
-			// Step 4b2: Validates that the outer projection does not select a bare json source range.
-			//            retrieve(y) where y is a json source produces empty arrays at runtime
-			//            because the engine has no schema to hydrate fields from.
+			// Step 4b2: Validates that the outer projection does not select a bare JSON source range.
+			//           retrieve(y) where y in a JSON source produces empty arrays at runtime
+			//           because the engine has no schema to hydrate fields from.
 			$this->validateNoBareJsonSourceInProjection($ast);
 			
 			// Step 4c: Validates that WHERE conditions only reference fields that subquery ranges
-			//          actually export. A subquery's projection is its contract; reaching into
-			//          unexported fields must be a compile-time error, not a silent patch.
+			//          actually export. A subquery's projection is its contract.
 			$this->validateSubqueryRangeWhereReferences($ast);
 			
 			// Step 4d: Validates that the outer retrieve list only references fields that subquery

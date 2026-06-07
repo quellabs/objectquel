@@ -57,8 +57,10 @@
 		 * @param AstRetrieve $retrieve AST object containing query information
 		 * @param array<int, array<string, mixed>> $data Raw data from the database query
 		 * @throws EntityResolutionException
-		 * @throws QuelException
 		 * @throws HydrationException
+		 * @throws QuelException
+		 * @throws \DateInvalidTimeZoneException
+		 * @throws \DateMalformedStringException
 		 */
 		public function __construct(EntityManager $entityManager, AstRetrieve $retrieve, array $data) {
 			// Initialize helper objects
