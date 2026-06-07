@@ -4,11 +4,10 @@
 [![PHPStan](https://img.shields.io/badge/PHPStan-level%209-brightgreen.svg)](https://phpstan.org)
 [![License](https://img.shields.io/badge/license-MIT-brightgreen.svg)](LICENSE)
 
-A domain-level query language and engine for PHP, with a full ORM attached.
-ObjectQuel's declarative syntax inspired by [QUEL](https://en.wikipedia.org/wiki/QUEL_query_languages)
-expresses entity queries above the table level — relationships, patterns,
-full-text search, and cross-source joins are first-class expressions, not raw SQL escapes.
-Supports MySQL, PostgreSQL, SQLite, and SQL Server.
+A domain-level query language and engine for PHP, with a full ORM attached. ObjectQuel's declarative syntax inspired
+by [QUEL](https://en.wikipedia.org/wiki/QUEL_query_languages) expresses entity queries above the table level — relationships, patterns, full-text search, and
+cross-source joins are first-class expressions, not raw SQL escapes.  Supports MySQL, PostgreSQL, SQLite, and SQL
+Server.
 
 ```php
 $results = $entityManager->executeQuery("
@@ -149,13 +148,17 @@ A multi-entity query with filtering and relationship traversal:
 **ObjectQuel:**
 
 ```php
-$results = $entityManager->executeQuery("
+$rs = $entityManager->executeQuery("
     range of o is App\\Entity\\Order
     range of c is App\\Entity\\Customer via o.customer
     retrieve (o, c.name) where o.createdAt > :since
     sort by o.createdAt desc
     window 0 using window_size 20
 ");
+
+foreach($rs as $row) { 
+    ...
+}
 ```
 
 **Doctrine DQL:**
