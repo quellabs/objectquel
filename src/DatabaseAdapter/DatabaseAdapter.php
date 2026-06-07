@@ -439,11 +439,10 @@
 		/**
 		 * Escapes a database identifier (table or column name)
 		 * @param string $identifier The identifier to escape
-		 * @return string The escaped identifier wrapped in backticks
+		 * @return string The escaped identifier wrapped in the driver's quote character
 		 */
 		public function escapeIdentifier(string $identifier): string {
-			// Wrap in backticks and double any internal backticks to produce a valid MySQL identifier
-			return '`' . str_replace('`', '``', $identifier) . '`';
+			return $this->connection->getDriver()->quoteIdentifier($identifier);
 		}
 		
 		// ==================== Error Handling ====================
