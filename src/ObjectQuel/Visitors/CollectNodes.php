@@ -32,7 +32,6 @@
 		public function visitNode(AstInterface $node): void {
 			foreach ($this->targetTypes as $type) {
 				if (is_a($node, $type)) {
-					/** @var T $node */
 					$this->nodes[] = $node;
 					return;
 				}
