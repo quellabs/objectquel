@@ -23,33 +23,6 @@
 		}
 		
 		/**
-		 * Parse an AND expression. This function handles chains of AND operations.
-		 * @return AstInterface The resulting AST node representing the parsed AND expression.
-		 * @throws LexerException
-		 * @throws ParserException
-		 */
-		protected function parseAndExpression(): AstInterface {
-			// Load parser for comparisons
-			$predicateExpression = new PredicateExpression($this->lexer);
-
-			// Parse the left-hand side of the AND expression
-			$left = $predicateExpression->parse();
-			
-			// Keep parsing as long as we encounter 'AND' tokens
-			while ($this->lexer->lookahead() == Token::And) {
-				// Consume the 'AND' token
-				$this->lexer->match($this->lexer->lookahead());
-				
-				// Parse the right-hand side of the AND expression and combine it
-				// with the left-hand side to form a new AND expression
-				$left = new AstBinaryOperator($left, $predicateExpression->parse(), 'AND');
-			}
-			
-			// Return the final AND expression
-			return $left;
-		}
-		
-		/**
 		 * Parse a logical expression. This function handles OR operations,
 		 * and delegates to `parseAndExpression` to handle AND expressions.
 		 * @return AstInterface The resulting AST node representing the parsed logical expression.
@@ -78,4 +51,32 @@
 			// Return the final OR expression
 			return $left;
 		}
+		
+		/**
+		 * Parse an AND expression. This function handles chains of AND operations.
+		 * @return AstInterface The resulting AST node representing the parsed AND expression.
+		 * @throws LexerException
+		 * @throws ParserException
+		 */
+		protected function parseAndExpression(): AstInterface {
+			// Load parser for comparisons
+			$predicateExpression = new PredicateExpression($this->lexer);
+
+			// Parse the left-hand side of the AND expression
+			$left = $predicateExpression->parse();
+			
+			// Keep parsing as long as we encounter 'AND' tokens
+			while ($this->lexer->lookahead() == Token::And) {
+				// Consume the 'AND' token
+				$this->lexer->match($this->lexer->lookahead());
+				
+				// Parse the right-hand side of the AND expression and combine it
+				// with the left-hand side to form a new AND expression
+				$left = new AstBinaryOperator($left, $predicateExpression->parse(), 'AND');
+			}
+			
+			// Return the final AND expression
+			return $left;
+		}
+
 	}

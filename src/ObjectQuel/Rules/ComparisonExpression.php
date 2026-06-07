@@ -35,6 +35,35 @@
 		}
 		
 		/**
+		 * Parse an expression, which can either be a simple term, a ternary
+		 * conditional expression, or a relational expression.
+		 * @return AstInterface The resulting AST node representing the parsed expression.
+		 * @throws LexerException|ParserException
+		 */
+		public function parse(): AstInterface {
+			// Load parser for arithmetic expressions
+			$arithmeticExpression = new ArithmeticExpression($this->lexer);
+			
+			// Parse the first term in the expression
+			$expression = $arithmeticExpression->parse();
+
+			// Check for ternary operator
+			/** @noinspection PhpSwitchCanBeReplacedWithMatchExpressionInspection */
+			switch($this->lexer->lookahead()) {
+				case Token::Equals:
+				case Token::Unequal:
+				case Token::LargerThan:
+				case Token::LargerThanOrEqualTo:
+				case Token::SmallerThan:
+				case Token::SmallerThanOrEqualTo:
+					return $this->parseRelationalOperator($this->lexer->lookahead(), $expression);
+					
+				default :
+					return $expression;
+			}
+		}
+		
+		/**
 		 * Parse a relational operator
 		 * @param int $lookahead
 		 * @param AstInterface $term
@@ -56,34 +85,6 @@
 			
 			// Create and return a new AstExpression node
 			return new AstExpression($term, $rightSide, $operatorToken->getStringValue());
-		}
-		
-		/**
-		 * Parse an expression, which can either be a simple term, a ternary
-		 * conditional expression, or a relational expression.
-		 * @return AstInterface The resulting AST node representing the parsed expression.
-		 * @throws LexerException|ParserException
-		 */
-		public function parse(): AstInterface {
-			// Load parser for arithmetic expressions
-			$arithmeticExpression = new ArithmeticExpression($this->lexer);
-			
-			// Parse the first term in the expression
-			$expression = $arithmeticExpression->parse();
-
-			// Check for ternary operator
-			switch($this->lexer->lookahead()) {
-				case Token::Equals:
-				case Token::Unequal:
-				case Token::LargerThan:
-				case Token::LargerThanOrEqualTo:
-				case Token::SmallerThan:
-				case Token::SmallerThanOrEqualTo:
-					return $this->parseRelationalOperator($this->lexer->lookahead(), $expression);
-					
-				default :
-					return $expression;
-			}
 		}
 		
 	}

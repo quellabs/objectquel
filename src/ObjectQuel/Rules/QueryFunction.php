@@ -98,8 +98,7 @@
 		 * @template T of AstInterface
 		 * @param class-string<T> $astClass The fully qualified AST class name to instantiate
 		 * @return T The instantiated AST node
-		 * @throws LexerException When token matching fails
-		 * @throws ParserException When parsing fails
+		 * @throws LexerException|ParserException|\ReflectionException
 		 */
 		private function parseSingleParameter(string $astClass): AstInterface {
 			// Match opening parenthesis
@@ -120,8 +119,7 @@
 		 * @template T of AstInterface
 		 * @param class-string<T> $astClass The fully qualified AST class name to instantiate
 		 * @return T The instantiated AST node
-		 * @throws LexerException When token matching fails
-		 * @throws ParserException When parsing fails
+		 * @throws LexerException|ParserException|\ReflectionException
 		 */
 		private function parseAggregateFunction(string $astClass): AstInterface {
 			// Match opening parenthesis
@@ -148,8 +146,7 @@
 		 * Parse COUNT() function - counts rows/elements in a collection
 		 * Returns the number of elements in the specified collection or entity.
 		 * @return AstCount The COUNT AST node
-		 * @throws LexerException When token matching fails
-		 * @throws ParserException When parsing fails
+		 * @throws LexerException|ParserException|\ReflectionException
 		 */
 		protected function parseCount(): AstCount {
 			return $this->parseAggregateFunction(AstCount::class);
@@ -159,8 +156,7 @@
 		 * Parse COUNTU() function - counts unique elements in a collection
 		 * Returns the number of unique elements in the specified collection.
 		 * @return AstCountU The COUNTU AST node
-		 * @throws LexerException When token matching fails
-		 * @throws ParserException When parsing fails
+		 * @throws LexerException|ParserException|\ReflectionException
 		 */
 		protected function parseCountU(): AstCountU {
 			return $this->parseAggregateFunction(AstCountU::class);
@@ -170,8 +166,7 @@
 		 * Parse AVG() function - calculates average of numeric values
 		 * Returns the arithmetic mean of all non-null numeric values in the collection.
 		 * @return AstAvg The AVG AST node
-		 * @throws LexerException When token matching fails
-		 * @throws ParserException When parsing fails
+		 * @throws LexerException|ParserException|\ReflectionException
 		 */
 		protected function parseAvg(): AstAvg {
 			return $this->parseAggregateFunction(AstAvg::class);
@@ -181,8 +176,7 @@
 		 * Parse AVGU() function - calculates average of unique numeric values
 		 * Returns the arithmetic mean of unique non-null numeric values.
 		 * @return AstAvgU The AVGU AST node
-		 * @throws LexerException When token matching fails
-		 * @throws ParserException When parsing fails
+		 * @throws LexerException|ParserException|\ReflectionException
 		 */
 		protected function parseAvgU(): AstAvgU {
 			return $this->parseAggregateFunction(AstAvgU::class);
@@ -192,8 +186,7 @@
 		 * Parse MAX() function - finds the maximum value among numeric values
 		 * Returns the largest non-null numeric value from the input.
 		 * @return AstMax The AstMax AST node
-		 * @throws LexerException When token matching fails
-		 * @throws ParserException When parsing fails
+		 * @throws LexerException|ParserException|\ReflectionException
 		 */
 		protected function parseMax(): AstMax {
 			return $this->parseAggregateFunction(AstMax::class);
@@ -203,8 +196,7 @@
 		 * Parse MIN() function - finds the minimum value among numeric values
 		 * Returns the smallest non-null numeric value from the input.
 		 * @return AstMin The AstMin AST node
-		 * @throws LexerException When token matching fails
-		 * @throws ParserException When parsing fails
+		 * @throws LexerException|ParserException|\ReflectionException
 		 */
 		protected function parseMin(): AstMin {
 			return $this->parseAggregateFunction(AstMin::class);
@@ -214,8 +206,7 @@
 		 * Parse SUM() function - calculates the sum of numeric values
 		 * Returns the total of all non-null numeric values from the input.
 		 * @return AstSum The AstSum AST node
-		 * @throws LexerException When token matching fails
-		 * @throws ParserException When parsing fails
+		 * @throws LexerException|ParserException|\ReflectionException
 		 */
 		protected function parseSum(): AstSum {
 			return $this->parseAggregateFunction(AstSum::class);
@@ -225,8 +216,7 @@
 		 * Parse SUMU() function - calculates the sum of unique numeric values
 		 * Returns the total of all non-null numeric values from the input.
 		 * @return AstSumU The AstSum AST node
-		 * @throws LexerException When token matching fails
-		 * @throws ParserException When parsing fails
+		 * @throws LexerException|ParserException|\ReflectionException
 		 */
 		protected function parseSumU(): AstSumU {
 			return $this->parseAggregateFunction(AstSumU::class);
@@ -238,8 +228,7 @@
 		 * or 0 if no records exist. Unlike COUNT, ANY is optimized to stop execution as soon
 		 * as the first matching record is found, making it more efficient for existence checks.
 		 * @return AstAny The parsed ANY function AST node containing the field reference
-		 * @throws LexerException When the lexer encounters invalid tokens during parsing
-		 * @throws ParserException When the parser encounters invalid syntax or missing parameters
+		 * @throws LexerException|ParserException|\ReflectionException
 		 */
 		protected function parseAny(): AstAny {
 			return $this->parseAggregateFunction(AstAny::class);
@@ -250,8 +239,7 @@
 		 * Returns true if the value is considered empty (null, empty string, or 0).
 		 * This is useful for filtering out records with missing or empty data.
 		 * @return AstIsEmpty The is_empty AST node
-		 * @throws LexerException When token matching fails
-		 * @throws ParserException When parsing fails
+		 * @throws LexerException|ParserException|\ReflectionException
 		 */
 		protected function parseIsEmpty(): AstIsEmpty {
 			return $this->parseSingleParameter(AstIsEmpty::class);
@@ -262,8 +250,7 @@
 		 * Returns true if the value is numeric (integer, float, or numeric string).
 		 * Useful for data validation and type checking in queries.
 		 * @return AstIsNumeric The is_numeric AST node
-		 * @throws LexerException When token matching fails
-		 * @throws ParserException When parsing logic fails
+		 * @throws LexerException|ParserException|\ReflectionException
 		 */
 		protected function parseIsNumeric(): AstIsNumeric {
 			return $this->parseSingleParameter(AstIsNumeric::class);
@@ -274,8 +261,7 @@
 		 * Returns true if the value is specifically an integer type.
 		 * More restrictive than is_numeric() as it excludes floats and numeric strings.
 		 * @return AstIsInteger The is_integer AST node
-		 * @throws LexerException When token matching fails
-		 * @throws ParserException When parsing fails
+		 * @throws LexerException|ParserException|\ReflectionException
 		 */
 		protected function parseIsInteger(): AstIsInteger {
 			return $this->parseSingleParameter(AstIsInteger::class);
@@ -286,8 +272,7 @@
 		 * Returns true if the value is specifically a float/double type.
 		 * Complements is_integer() for precise numeric type checking.
 		 * @return AstIsFloat The is_float AST node
-		 * @throws LexerException When token matching fails
-		 * @throws ParserException When parsing fails
+		 * @throws LexerException|ParserException|\ReflectionException
 		 */
 		protected function parseIsFloat(): AstIsFloat {
 			return $this->parseSingleParameter(AstIsFloat::class);
@@ -296,8 +281,7 @@
 		/**
 		 * Parse ifnull() function. This functions as a simple COALESCE in SQL
 		 * @return AstIfNull
-		 * @throws LexerException
-		 * @throws ParserException
+		 * @throws LexerException|ParserException|\ReflectionException
 		 */
 		protected function parseIfNull(): AstIfNull {
 			$this->lexer->match(Token::ParenthesesOpen);
@@ -316,8 +300,7 @@
 		/**
 		 * Parse exists() function - checks entity existence and affects joins
 		 * @return AstExists The exists AST node
-		 * @throws LexerException When token matching fails
-		 * @throws ParserException When entity has property chains or parsing fails
+		 * @throws LexerException|ParserException
 		 */
 		protected function parseExists(): AstExists {
 			// Parse entity reference
@@ -338,8 +321,7 @@
 		 * Accepts variable number of parameters and concatenates them into a single string.
 		 * Each parameter can be a string literal, field reference, or complex expression.
 		 * @return AstConcat The CONCAT AST node containing all parameters
-		 * @throws LexerException When token matching fails
-		 * @throws ParserException When parsing fails
+		 * @throws LexerException|ParserException|\ReflectionException
 		 */
 		protected function parseConcat(): AstConcat {
 			$this->lexer->match(Token::ParenthesesOpen);
@@ -370,8 +352,7 @@
 		 * emit a bare integer without any function call.
 		 *
 		 * @return AstDate The date AST node
-		 * @throws LexerException When token matching fails
-		 * @throws ParserException When the argument type is not supported
+		 * @throws LexerException|ParserException|\ReflectionException
 		 */
 		protected function parseDate(): AstDate {
 			$this->lexer->match(Token::ParenthesesOpen);
@@ -411,8 +392,7 @@
 		 *   sort by score desc
 		 *
 		 * @return AstSearchScore The SEARCH_SCORE AST node
-		 * @throws LexerException When token matching fails
-		 * @throws ParserException When identifier list is empty or search string is invalid
+		 * @throws LexerException|ParserException|\ReflectionException
 		 */
 		protected function parseSearchScore(): AstSearchScore {
 			$this->lexer->match(Token::ParenthesesOpen);
@@ -446,7 +426,7 @@
 		 * search string. A trailing comma with no following identifier is an error.
 		 *
 		 * @return AstIdentifier[] Array of parsed identifier AST nodes
-		 * @throws LexerException|ParserException When token matching fails or a trailing comma is found
+		 * @throws LexerException|ParserException
 		 */
 		private function parseIdentifierList(): array {
 			$identifiers = [];

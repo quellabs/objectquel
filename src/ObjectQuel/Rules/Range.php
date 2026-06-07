@@ -2,14 +2,14 @@
 	
 	namespace Quellabs\ObjectQuel\ObjectQuel\Rules;
 	
-	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRange;
-	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRangeDatabase;
-	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRangeDatabaseSubquery;
-	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRangeJsonSource;
 	use Quellabs\ObjectQuel\ObjectQuel\Lexer;
+	use Quellabs\ObjectQuel\ObjectQuel\Token;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRange;
 	use Quellabs\ObjectQuel\ObjectQuel\LexerException;
 	use Quellabs\ObjectQuel\ObjectQuel\ParserException;
-	use Quellabs\ObjectQuel\ObjectQuel\Token;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRangeDatabase;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRangeJsonSource;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRangeDatabaseSubquery;
 	
 	/**
 	 * Class Range
@@ -32,7 +32,6 @@
 		public function __construct(Lexer $lexer) {
 			$this->lexer = $lexer;
 		}
-		
 		
 		/**
 		 * Parse a complete 'RANGE' clause in the ObjectQuel query.
@@ -73,8 +72,7 @@
 		/**
 		 * Parse ranges
 		 * @return AstRange[]
-		 * @throws LexerException
-		 * @throws ParserException
+		 * @throws LexerException|ParserException
 		 */
 		protected function parseRanges(): array {
 			$ranges = [];
@@ -118,7 +116,7 @@
 		 * Format: RANGE OF alias IS Entity[\SubEntity] [VIA condition]
 		 * @param Token $alias The token containing the alias identifier
 		 * @return AstRangeDatabase AST node representing a database entity source
-		 * @throws LexerException|ParserException If parsing fails
+		 * @throws LexerException
 		 */
 		private function parseEntityRange(Token $alias): AstRangeDatabase {
 			// Match and consume an 'Identifier' token for the entity name
@@ -166,8 +164,7 @@
 		 *
 		 * @param string $alias The alias
 		 * @return AstRangeJsonSource AST node representing a JSON data source
-		 * @throws LexerException If token matching fails
-		 * @throws ParserException If a named argument is unrecognised or duplicated
+		 * @throws LexerException|ParserException
 		 */
 		private function parseJsonRange(string $alias): AstRangeJsonSource {
 			// Consume the opening parenthesis
@@ -206,8 +203,7 @@
 		 *
 		 * @param string $alias The range alias
 		 * @return AstRangeJsonSource
-		 * @throws LexerException
-		 * @throws ParserException
+		 * @throws LexerException|ParserException
 		 */
 		private function parseJsonNamedArguments(string $alias): AstRangeJsonSource {
 			$file = null;

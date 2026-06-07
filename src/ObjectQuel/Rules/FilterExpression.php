@@ -16,75 +16,10 @@
 	class FilterExpression extends LogicalExpression {
 		
 		/**
-		 * Parses the IN() expression
-		 * @param AstInterface $expression
-		 * @return AstIn
-		 * @throws LexerException
-		 * @throws ParserException
-		 */
-		protected function parseIn(AstInterface $expression): AstIn {
-			$this->lexer->match(Token::In);
-			$this->lexer->match(Token::ParenthesesOpen);
-			
-			$parameterList = [];
-			
-			do {
-				$parameter = parent::parse();
-				
-				if (!($parameter instanceof AstNumber) && !($parameter instanceof AstString)) {
-					throw new ParserException("Invalid datatype detected in IN() statement. Only numbers and strings are allowed.");
-				}
-				
-				$parameterList[] = $parameter;
-			} while ($this->lexer->optionalMatch(Token::Comma));
-			
-			$this->lexer->match(Token::ParenthesesClose);
-			return new AstIn($expression, $parameterList);
-		}
-		
-		/**
-		 * @param AstInterface $expression
-		 * @return AstInterface
-		 * @throws LexerException|ParserException
-		 */
-		protected function parseFilterExpression(AstInterface $expression): AstInterface {
-			switch($this->lexer->lookahead()) {
-				case Token::In:
-					return $this->parseIn($expression);
-				
-				default:
-					throw new ParserException("Expected a logical operator");
-			}
-		}
-		
-		/**
-		 * Analyzes 'is' expressions to determine if an expression is null or not-null.
-		 * @param AstInterface $expression The expression to analyze.
-		 * @return AstInterface An AstNotNull or AstNull object, depending on the presence of the 'not' token.
-		 * @throws LexerException
-		 */
-		protected function parseIs(AstInterface $expression): AstInterface {
-			// Check if there's a 'not' token, indicating a 'not-null' expression
-			if ($this->lexer->optionalMatch(Token::Not)) {
-				// Match the following 'null' token that is now required after 'not'
-				$this->lexer->match(Token::Null);
-				
-				// Return an AstNotNull object, indicating the expression is not null
-				return new AstCheckNotNull($expression);
-			}
-			
-			// Match the 'null' token for a regular 'null' expression
-			$this->lexer->match(Token::Null);
-			
-			// Return an AstNull object, indicating the expression is null
-			return new AstCheckNull($expression);
-		}
-		
-		/**
 		 * Parse an expression, which can either be a simple term, a ternary
 		 * conditional expression, a relational expression, or a filter expression.
 		 * @return AstInterface The resulting AST node representing the parsed expression.
-		 * @throws LexerException|ParserException
+		 * @throws LexerException|ParserException|\ReflectionException
 		 */
 		public function parse(): AstInterface {
 			// Handle NOT expressions specifically for FilterExpression operations
@@ -134,4 +69,71 @@
 				return $expression;
 			}
 		}
+
+		/**
+		 * Parses the IN() expression
+		 * @param AstInterface $expression
+		 * @return AstIn
+		 * @throws LexerException
+		 * @throws ParserException
+		 */
+		protected function parseIn(AstInterface $expression): AstIn {
+			$this->lexer->match(Token::In);
+			$this->lexer->match(Token::ParenthesesOpen);
+			
+			$parameterList = [];
+			
+			do {
+				$parameter = parent::parse();
+				
+				if (!($parameter instanceof AstNumber) && !($parameter instanceof AstString)) {
+					throw new ParserException("Invalid datatype detected in IN() statement. Only numbers and strings are allowed.");
+				}
+				
+				$parameterList[] = $parameter;
+			} while ($this->lexer->optionalMatch(Token::Comma));
+			
+			$this->lexer->match(Token::ParenthesesClose);
+			return new AstIn($expression, $parameterList);
+		}
+		
+		/**
+		 * @param AstInterface $expression
+		 * @return AstInterface
+		 * @throws LexerException|ParserException
+		 */
+		protected function parseFilterExpression(AstInterface $expression): AstInterface {
+			/** @noinspection PhpSwitchCanBeReplacedWithMatchExpressionInspection */
+			switch($this->lexer->lookahead()) {
+				case Token::In:
+					return $this->parseIn($expression);
+				
+				default:
+					throw new ParserException("Expected a logical operator");
+			}
+		}
+		
+		/**
+		 * Analyzes 'is' expressions to determine if an expression is null or not-null.
+		 * @param AstInterface $expression The expression to analyze.
+		 * @return AstInterface An AstNotNull or AstNull object, depending on the presence of the 'not' token.
+		 * @throws LexerException
+		 */
+		protected function parseIs(AstInterface $expression): AstInterface {
+			// Check if there's a 'not' token, indicating a 'not-null' expression
+			if ($this->lexer->optionalMatch(Token::Not)) {
+				// Match the following 'null' token that is now required after 'not'
+				$this->lexer->match(Token::Null);
+				
+				// Return an AstNotNull object, indicating the expression is not null
+				return new AstCheckNotNull($expression);
+			}
+			
+			// Match the 'null' token for a regular 'null' expression
+			$this->lexer->match(Token::Null);
+			
+			// Return an AstNull object, indicating the expression is null
+			return new AstCheckNull($expression);
+		}
+		
 	}

@@ -28,9 +28,24 @@
 		 * @return AstInterface The resulting AST node representing the parsed expression.
 		 * @throws LexerException
 		 * @throws ParserException
+		 * @throws \ReflectionException
 		 */
 		public function parse(): AstInterface {
-			return $this->parseTerm();
+			// Parse the first factor in the term
+			$factor = $this->parseFactor();
+			
+			switch ($this->lexer->lookahead()) {
+				case Token::Plus:
+					$this->lexer->match($this->lexer->lookahead());
+					return new AstTerm($factor, $this->parse(), "+");
+				
+				case Token::Minus:
+					$this->lexer->match($this->lexer->lookahead());
+					return new AstTerm($factor, $this->parse(), "-");
+				
+				default:
+					return $factor;
+			}
 		}
 		
 		/**
@@ -162,31 +177,6 @@
 				default :
 					$tokenTypeName = Token::toString($tokenType);
 					throw new ParserException("Unexpected token '{$tokenTypeName}' on line {$this->lexer->getLineNumber()}");
-			}
-		}
-		
-		/**
-		 * Parse a term in an arithmetic expression. A term can either be a single
-		 * factor or an addition (+) or subtraction (-) operation between factors.
-		 * @return AstInterface The resulting AST node representing the parsed term.
-		 * @throws LexerException|ParserException
-		 */
-		protected function parseTerm(): AstInterface {
-			// Parse the first factor in the term
-			$factor = $this->parseFactor();
-			
-			// Check if the next token is either '+' or '-'
-			switch($this->lexer->lookahead()) {
-				case Token::Plus :
-					$this->lexer->match($this->lexer->lookahead());
-					return new AstTerm($factor, $this->parseTerm(), "+");
-				
-				case Token::Minus :
-					$this->lexer->match($this->lexer->lookahead());
-					return new AstTerm($factor, $this->parseTerm(), "-");
-				
-				default:
-					return $factor;
 			}
 		}
 		
