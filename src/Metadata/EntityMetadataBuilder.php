@@ -137,8 +137,6 @@
 			}
 		}
 		
-		// ==================== Private Helpers ====================
-		
 		/**
 		 * Single pass over property annotations to extract all column-related metadata.
 		 * @param array<string, AnnotationCollection> $annotations
