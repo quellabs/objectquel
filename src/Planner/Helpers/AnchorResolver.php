@@ -197,13 +197,13 @@
 			bool $isExpressionReferenced,
 			bool $canOptimizeJoins
 		): string {
-			// Expression-referenced tables get priority treatment
 			if ($isExpressionReferenced) {
+				// Expression-referenced tables get priority treatment
 				return $canOptimizeJoins ? 'expression_with_optimization' : 'expression_preserve';
+			} else {
+				// Non-expression tables: attempt optimization if safe
+				return $canOptimizeJoins ? 'inner_with_optimization' : 'inner_preserve';
 			}
-			
-			// Non-expression tables: attempt optimization if safe
-			return $canOptimizeJoins ? 'inner_with_optimization' : 'inner_preserve';
 		}
 		
 		/**
