@@ -70,7 +70,7 @@
 				'columns'           => $this->metadata->columnMap,
 				'identifiers'       => $this->metadata->identifierKeys,
 				'columnAnnotations' => $this->metadata->getAnnotationsOfType(Column::class),
-				'relationships'     => array_keys($this->metadata->getInverseOfRelations())
+				'relationships'     => array_keys($this->metadata->getInverseOfDependencies())
 			];
 		}
 	}

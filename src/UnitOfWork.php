@@ -1108,7 +1108,7 @@
 			$metadata = $this->getEntityStore()->getMetadata($entity);
 			
 			// Check each InverseOf relationship defined in this entity
-			foreach ($metadata->getInverseOfRelations() as $property => $annotation) {
+			foreach ($metadata->getInverseOfDependencies() as $property => $annotation) {
 				// Retrieve cascade configuration from metadata for this property
 				$cascadeInfo = $this->getCascadeInfo(get_class($entity), $property);
 				

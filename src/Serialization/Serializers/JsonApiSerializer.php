@@ -97,7 +97,7 @@
 			// Get all relationship mappings from entity metadata
 			// Merge InverseOf and owning-side OneToOne dependencies
 			$relationships = array_merge(
-				$metadata->getInverseOfRelations(),
+				$metadata->getInverseOfDependencies(),
 				$metadata->getOneToOneDependencies()
 			);
 			

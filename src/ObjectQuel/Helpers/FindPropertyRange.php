@@ -63,7 +63,7 @@
 				$relations = array_merge(
 					$metadata->getOneToOneDependencies(),
 					$metadata->getManyToOneDependencies(),
-					$metadata->getInverseOfRelations(),
+					$metadata->getInverseOfDependencies(),
 				);
 				
 				if (isset($relations[$propertyName])) {

@@ -120,7 +120,7 @@
 		 * via its ManyToOne or OneToOne annotation.
 		 * @return array<string, InverseOf> Property name => InverseOf annotation mapping
 		 */
-		public function getInverseOfRelations(): array {
+		public function getInverseOfDependencies(): array {
 			return $this->inverseOfRelations;
 		}
 		

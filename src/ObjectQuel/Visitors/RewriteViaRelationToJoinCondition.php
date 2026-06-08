@@ -86,10 +86,12 @@
 			$metadata = $this->entityStore->getMetadata($entityName);
 			
 			// Collect all relation types for this entity into a single flat map
-			// keyed by property name so we can look up the annotation directly
+			// keyed by property name so we can look up the annotation directly.
+			// InverseOf is included so via can traverse from either side of a relation.
 			$relations = array_merge(
 				$metadata->getOneToOneDependencies(),
 				$metadata->getManyToOneDependencies(),
+				$metadata->getInverseOfDependencies(),
 			);
 			
 			// Safeguard: isRelationProperty confirmed it exists, but verify before using
@@ -97,9 +99,28 @@
 				return $side;
 			}
 			
+			// When the via property is an InverseOf, resolve it to the corresponding owning-side
+			// relation on the target entity. InverseOf carries no column mapping of its own —
+			// the owning side (ManyToOne or OneToOne) has all the information needed to build
+			// the JOIN condition. The resolved annotation is then handled identically to a
+			// directly declared owning-side relation.
+			$relation = $relations[$propertyName];
+			
+			if ($relation instanceof InverseOf) {
+				$relation = $this->resolveInverseOfToOwningSide($relation);
+				
+				if ($relation === null) {
+					throw new TransformationException(
+						"InverseOf property '{$propertyName}' on '{$entityName}' could not be resolved to " .
+						"a ManyToOne or OneToOne on the target entity. Ensure the 'relation' parameter points " .
+						"to a valid owning-side relation."
+					);
+				}
+			}
+			
 			// Replace the relation reference with a direct FK/PK property lookup
 			// that SQL can understand as a JOIN condition
-			return $this->createPropertyLookupAstUsingRelation($propertyNode, $relations[$propertyName]);
+			return $this->createPropertyLookupAstUsingRelation($propertyNode, $relation);
 		}
 		
 		/**
@@ -269,7 +290,32 @@
 				throw new TransformationException('OneToOne relation is missing inversedBy');
 			}
 			
-				$relationColumn = $relation->getLocalColumn() ?? $joinProperty->getName() . 'Id';
-				return $this->createPropertyLookupAst($relationColumn, $range, $inversedBy);
-			}
+			$relationColumn = $relation->getLocalColumn() ?? $joinProperty->getName() . 'Id';
+			return $this->createPropertyLookupAst($relationColumn, $range, $inversedBy);
+		}
+		
+		/**
+		 * Resolves an InverseOf annotation to the owning-side ManyToOne or OneToOne annotation
+		 * on the target entity. InverseOf carries no column mapping — the owning side has all
+		 * the information needed to build a JOIN condition.
+		 * Returns null if the named relation property does not exist or is not an owning-side relation.
+		 * @param InverseOf $inverseOf
+		 * @return ManyToOne|OneToOne|null
+		 * @throws EntityResolutionException
+		 */
+		private function resolveInverseOfToOwningSide(InverseOf $inverseOf): ManyToOne|OneToOne|null {
+			// Resolve the fully qualified target entity class
+			$targetEntity = $this->entityStore->normalizeEntityClass($inverseOf->getTargetEntity());
+			
+			// The relation parameter names the property on the target entity that owns the FK.
+			// getRelation() always returns a non-empty string — the constructor enforces this.
+			$relationProperty = $inverseOf->getRelation();
+			
+			// Look up the owning-side annotation on the target entity
+			$targetMetadata = $this->entityStore->getMetadata($targetEntity);
+			
+			return $targetMetadata->getManyToOneDependencies()[$relationProperty]
+				?? $targetMetadata->getOneToOneDependencies()[$relationProperty]
+				?? null;
+		}
 	}

@@ -96,7 +96,7 @@
 			$dependencies = [
 				'oneToOne'  => $metadata->getOneToOneDependencies(),
 				'manyToOne' => $metadata->getManyToOneDependencies(),
-				'inverseOf' => $metadata->getInverseOfRelations(),
+				'inverseOf' => $metadata->getInverseOfDependencies(),
 			];
 			
 			// For each relationship type, check whether the accessed property is declared
