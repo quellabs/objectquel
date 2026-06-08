@@ -211,10 +211,13 @@
 			// Fetch metadata
 			$metadata = $this->entityStore->getMetadata($entityName);
 			
-			// Check if the property is a key in any of the dependencies
+			// Check if the property is a key in any of the dependencies.
+			// InverseOf must be included here — processNodeSide handles it by resolving
+			// it to the owning-side annotation, but the gate check must agree with that map.
 			return array_key_exists($propertyName, array_merge(
 				$metadata->getOneToOneDependencies(),
 				$metadata->getManyToOneDependencies(),
+				$metadata->getInverseOfDependencies(),
 			));
 		}
 		
