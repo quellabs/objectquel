@@ -105,8 +105,13 @@
 			// the JOIN condition. The resolved annotation is then handled identically to a
 			// directly declared owning-side relation.
 			$relation = $relations[$propertyName];
+			$joinPropertyName = null;
 			
 			if ($relation instanceof InverseOf) {
+				// Capture the owning-side property name (e.g. 'customer') before resolving.
+				// This is the correct base for the localColumn default ('customerId').
+				// The InverseOf property name (e.g. 'addresses') must not be used for this.
+				$joinPropertyName = $relation->getRelation();
 				$relation = $this->resolveInverseOfToOwningSide($relation);
 				
 				if ($relation === null) {
@@ -120,7 +125,7 @@
 			
 			// Replace the relation reference with a direct FK/PK property lookup
 			// that SQL can understand as a JOIN condition
-			return $this->createPropertyLookupAstUsingRelation($propertyNode, $relation);
+			return $this->createPropertyLookupAstUsingRelation($propertyNode, $relation, $joinPropertyName ?? null);
 		}
 		
 		/**
@@ -148,7 +153,7 @@
 		 * @return AstInterface
 		 * @throws TransformationException
 		 */
-		private function createPropertyLookupAstUsingRelation(AstIdentifier $joinProperty, ManyToOne|OneToOne $relation): AstInterface {
+		private function createPropertyLookupAstUsingRelation(AstIdentifier $joinProperty, ManyToOne|OneToOne $relation, ?string $joinPropertyName = null): AstInterface {
 			// The parent of the property node is the range identifier (e.g. 'c')
 			$entity = $joinProperty->getParent();
 			
@@ -177,7 +182,7 @@
 			/** @noinspection PhpSwitchCanBeReplacedWithMatchExpressionInspection */
 			switch (true) {
 				case $relation instanceof ManyToOne:
-					return $this->createManyToOneJoinCondition($joinProperty, $relation, $range);
+					return $this->createManyToOneJoinCondition($joinProperty, $relation, $range, $joinPropertyName ?? $joinProperty->getName());
 				
 				/** @phpstan-ignore instanceof.alwaysTrue */
 				case $relation instanceof OneToOne:
@@ -256,15 +261,14 @@
 		 * @param AstRange|AstRangeDatabase|AstRangeJsonSource $range The parent (target) range
 		 * @return AstInterface
 		 * @throws TransformationException When referencedColumn is absent and the target entity has no primary key
-		 * @throws EntityResolutionException
 		 */
-		private function createManyToOneJoinCondition(AstIdentifier $joinProperty, ManyToOne $relation, AstRange|AstRangeDatabase|AstRangeJsonSource $range): AstInterface {
+		private function createManyToOneJoinCondition(AstIdentifier $joinProperty, ManyToOne $relation, AstRange|AstRangeDatabase|AstRangeJsonSource $range, string $joinPropertyName = ''): AstInterface {
 			// referencedColumn is the FK property on the owning (child) entity.
 			// When omitted, fall back to the primary key of the target entity.
-			$targetEntity = $relation->getTargetEntity();
 			$referencedColumn = $relation->getReferencedColumn();
 			
 			if ($referencedColumn === null) {
+				$targetEntity = $relation->getTargetEntity();
 				$referencedColumn = $this->entityStore->getMetadata($targetEntity)->getPrimaryKey();
 				
 				if ($referencedColumn === null) {
@@ -275,12 +279,14 @@
 				}
 			}
 			
-			// localColumn is the referenced column on the target entity,
-			// defaulting to the join property name + 'Id'.
-			$relationColumn = $relation->getLocalColumn() ?? $joinProperty->getName() . 'Id';
+			// localColumn is the FK property on the owning (child) entity, defaulting to the
+			// owning-side relation property name suffixed with 'Id' (e.g. 'customer' -> 'customerId').
+			$effectiveName = $joinPropertyName !== '' ? $joinPropertyName : $joinProperty->getName();
+			$relationColumn = $relation->getLocalColumn() ?? $effectiveName . 'Id';
 			
-			// Return new property lookup
-			return $this->createPropertyLookupAst($referencedColumn, $range, $relationColumn);
+			// fkProperty is on $this->range (the owning/child entity, e.g. a.customerId).
+			// pkProperty is on $range (the target/parent entity, e.g. c.id).
+			return $this->createPropertyLookupAst($relationColumn, $range, $referencedColumn);
 		}
 		
 		/**
