@@ -147,7 +147,6 @@
 		 * @param ManyToOne|OneToOne $relation The relation annotation
 		 * @return AstInterface
 		 * @throws TransformationException
-		 * @throws EntityResolutionException
 		 */
 		private function createPropertyLookupAstUsingRelation(AstIdentifier $joinProperty, ManyToOne|OneToOne $relation): AstInterface {
 			// The parent of the property node is the range identifier (e.g. 'c')
