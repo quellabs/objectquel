@@ -255,23 +255,32 @@
 		 * @param ManyToOne $relation The ManyToOne annotation
 		 * @param AstRange|AstRangeDatabase|AstRangeJsonSource $range The parent (target) range
 		 * @return AstInterface
-		 * @throws TransformationException When inversedBy is missing
+		 * @throws TransformationException When referencedColumn is absent and the target entity has no primary key
+		 * @throws EntityResolutionException
 		 */
 		private function createManyToOneJoinCondition(AstIdentifier $joinProperty, ManyToOne $relation, AstRange|AstRangeDatabase|AstRangeJsonSource $range): AstInterface {
-			// Fetch inversedBy
-			$inversedBy = $relation->getReferencedColumn();
+			// referencedColumn is the FK property on the owning (child) entity.
+			// When omitted, fall back to the primary key of the target entity.
+			$targetEntity = $relation->getTargetEntity();
+			$referencedColumn = $relation->getReferencedColumn();
 			
-			// InversedBy is mandatory
-			if ($inversedBy === null) {
-				throw new TransformationException('ManyToOne relation is missing inversedBy');
+			if ($referencedColumn === null) {
+				$referencedColumn = $this->entityStore->getMetadata($targetEntity)->getPrimaryKey();
+				
+				if ($referencedColumn === null) {
+					throw new TransformationException(
+						"ManyToOne relation on '{$joinProperty->getName()}' has no referencedColumn and " .
+						"target entity '{$targetEntity}' has no primary key to fall back on."
+					);
+				}
 			}
 			
-			// inversedBy is the FK property name on the owning entity; relationColumn is the
-			// referenced column on the target entity, defaulting to the join property name + 'Id'.
+			// localColumn is the referenced column on the target entity,
+			// defaulting to the join property name + 'Id'.
 			$relationColumn = $relation->getLocalColumn() ?? $joinProperty->getName() . 'Id';
 			
 			// Return new property lookup
-			return $this->createPropertyLookupAst($inversedBy, $range, $relationColumn);
+			return $this->createPropertyLookupAst($referencedColumn, $range, $relationColumn);
 		}
 		
 		/**
