@@ -47,7 +47,7 @@
 	 *
 	 * @phpstan-import-type ColumnDefinition from DatabaseAdapter
 	 * @phpstan-import-type ColumnDefinitionRecord from EntityMetadataBuilder
-     */
+	 */
 	readonly class EntityMetadataRecord {
 		
 		/**
@@ -68,20 +68,20 @@
 		 * @param array<string, ColumnDefinitionRecord> $columnDefinitions
 		 */
 		public function __construct(
-			public string  $className,
-			public string  $tableName,
-			public array   $properties,
-			public array   $annotations,
-			public array   $columnMap,
-			public array   $identifierKeys,
-			public array   $identifierColumns,
-			public array   $versionColumns,
-			public array   $manyToOneRelations,
-			public array   $inverseOfRelations,
-			public array   $oneToOneRelations,
-			public array   $indexes,
+			public string $className,
+			public string $tableName,
+			public array $properties,
+			public array $annotations,
+			public array $columnMap,
+			public array $identifierKeys,
+			public array $identifierColumns,
+			public array $versionColumns,
+			public array $manyToOneRelations,
+			public array $inverseOfRelations,
+			public array $oneToOneRelations,
+			public array $indexes,
 			public ?string $autoIncrementColumn,
-			public array   $columnDefinitions,
+			public array $columnDefinitions,
 		) {
 		}
 		
