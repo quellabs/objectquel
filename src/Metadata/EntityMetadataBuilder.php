@@ -15,6 +15,7 @@
 	use Quellabs\ObjectQuel\Annotations\Orm\InverseOf;
 	use Quellabs\ObjectQuel\Annotations\Orm\OneToOne;
 	use Quellabs\ObjectQuel\Annotations\Orm\PrimaryKeyStrategy;
+	use Quellabs\ObjectQuel\Annotations\Orm\SoftDelete;
 	use Quellabs\ObjectQuel\Annotations\Orm\UniqueIndex;
 	use Quellabs\ObjectQuel\Annotations\Orm\Version;
 	use Quellabs\ObjectQuel\DatabaseAdapter\TypeMapper;
@@ -129,6 +130,9 @@
 					indexes: $indexes,
 					autoIncrementColumn: $columnData->autoIncrementColumn,
 					columnDefinitions: $columnDefinitions,
+					softDeleteProperty: $columnData->softDeleteProperty,
+					softDeleteColumn: $columnData->softDeleteColumn,
+					softDeleteColumnType: $columnData->softDeleteColumnType,
 				);
 			} catch (\RuntimeException $e) {
 				throw $e;
@@ -148,13 +152,17 @@
 			$identifierColumns = [];
 			$versionColumns = [];
 			$autoIncrementColumn = null;
+			$softDeleteProperty = null;
+			$softDeleteColumn = null;
+			$softDeleteColumnType = null;
 			
 			foreach ($annotations as $property => $annotationCollection) {
-				// Collect the three annotation types we care about for this property.
+				// Collect the four annotation types we care about for this property.
 				// Using nulls means we can cheaply test presence below without array_filter.
 				$column = null;
 				$version = null;
 				$strategy = null;
+				$softDelete = null;
 				
 				foreach ($annotationCollection as $annotation) {
 					if ($annotation instanceof Column) {
@@ -163,6 +171,8 @@
 						$version = $annotation;
 					} elseif ($annotation instanceof PrimaryKeyStrategy) {
 						$strategy = $annotation;
+					} elseif ($annotation instanceof SoftDelete) {
+						$softDelete = $annotation;
 					}
 				}
 				
@@ -171,7 +181,7 @@
 					continue;
 				}
 				
-				// Map property name → database column name for query building
+				// Map property name — database column name for query building
 				$columnName = $column->getName();
 				$columnMap[$property] = $columnName;
 				
@@ -200,6 +210,15 @@
 						'version' => $version,
 					];
 				}
+				
+				// @SoftDelete requires both @Column and @SoftDelete to be present on the
+				// same property. Only the first occurrence is recorded; multiple @SoftDelete
+				// annotations on a single entity are not supported.
+				if ($softDelete !== null && $softDeleteProperty === null) {
+					$softDeleteProperty = $property;
+					$softDeleteColumn = $columnName;
+					$softDeleteColumnType = $column->getType();
+				}
 			}
 			
 			return new ColumnData(
@@ -208,6 +227,9 @@
 				identifierColumns: $identifierColumns,
 				versionColumns: $versionColumns,
 				autoIncrementColumn: $autoIncrementColumn,
+				softDeleteProperty: $softDeleteProperty,
+				softDeleteColumn: $softDeleteColumn,
+				softDeleteColumnType: $softDeleteColumnType,
 			);
 		}
 		

@@ -15,6 +15,7 @@
 	use Quellabs\ObjectQuel\ObjectQuel\Visitors\RewriteViaRelationToJoinCondition;
 	use Quellabs\ObjectQuel\ObjectQuel\Visitors\NormalizeDateTime;
 	use Quellabs\ObjectQuel\ObjectQuel\Helpers\ResolveUnqualifiedProperty;
+	use Quellabs\ObjectQuel\ObjectQuel\Visitors\InjectSoftDeleteCondition;
 	
 	/**
 	 * This class orchestrates a multistep transformation process that converts high-level
@@ -77,6 +78,12 @@
 			// SQL generation. Must run after Step 6 so that entity names and column
 			// types are fully resolved on every identifier.
 			$this->processWithVisitor($ast, NormalizeDateTime::class, $this->entityStore);
+
+			// Step 7: Inject soft-delete filter conditions for every database range
+			// whose entity carries an @SoftDelete annotation. Runs last so that all
+			// identifier types are fully resolved before the injected nodes are added.
+			// Skipped when the query carries the @ignoreSoftDelete true directive.
+			(new InjectSoftDeleteCondition($this->entityStore))->inject($ast);
 		}
 		
 		/**

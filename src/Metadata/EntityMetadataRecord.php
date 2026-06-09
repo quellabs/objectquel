@@ -66,6 +66,9 @@
 		 * @param array<Index|UniqueIndex|FullTextIndex> $indexes Index annotations from class level
 		 * @param string|null $autoIncrementColumn Property name of auto-increment primary key (if any)
 		 * @param array<string, ColumnDefinitionRecord> $columnDefinitions
+		 * @param string|null $softDeleteProperty Property name carrying the @SoftDelete annotation, or null
+		 * @param string|null $softDeleteColumn Database column name of the soft-delete field, or null
+		 * @param string|null $softDeleteColumnType Column type of the soft-delete field ('datetime', 'boolean', etc.), or null
 		 */
 		public function __construct(
 			public string $className,
@@ -82,6 +85,9 @@
 			public array $indexes,
 			public ?string $autoIncrementColumn,
 			public array $columnDefinitions,
+			public ?string $softDeleteProperty = null,
+			public ?string $softDeleteColumn = null,
+			public ?string $softDeleteColumnType = null,
 		) {
 		}
 		
@@ -274,5 +280,13 @@
 		public function isImmutable(): bool {
 			$annotationList = $this->getAnnotationsOfType(Immutable::class);
 			return !empty($annotationList);
+		}
+		
+		/**
+		 * Returns true if this entity has a soft-delete column.
+		 * @return bool
+		 */
+		public function hasSoftDelete(): bool {
+			return $this->softDeleteProperty !== null;
 		}
 	}

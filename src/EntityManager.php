@@ -305,8 +305,14 @@
 				return $existingEntity;
 			}
 			
-			// Fall back to a database query
-			$result = $this->findBy($entityType, $primaryKeys);
+			// Fall back to a database query. Pass ignoreSoftDelete so that the PK
+			// lookup is never blocked by a soft-delete filter -- the caller explicitly
+			// asked for this entity by identity and must receive it regardless of state.
+			$query = $this->queryBuilder->prepareQuery($entityType, $primaryKeys, null, ['ignoreSoftDelete']);
+			$result = array_column($this->getAll($query, $primaryKeys), 'main');
+			
+			// Remove all duplicate records
+			$result = ResultProcessor::deDuplicateObjects($result);
 			
 			// If the query returns no results, return null
 			if (empty($result)) {

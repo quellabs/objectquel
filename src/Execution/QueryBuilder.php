@@ -34,10 +34,14 @@
 		 * @param array<string, mixed> $primaryKeys Primary key column-to-value pairs for the WHERE clause.
 		 *                                          Pass an empty array to retrieve all instances.
 		 * @param array<string, string>|null $sortBy
+		 * @param array<int, string> $flags Optional query flags. Supported values:
+		 *                                  'ignoreSoftDelete' - suppresses the soft-delete filter,
+		 *                                  used by find() so PK lookups always return the entity
+		 *                                  regardless of its soft-delete state.
 		 * @return string The complete query string.
 		 * @throws EntityResolutionException
 		 */
-		public function prepareQuery(string $entityType, array $primaryKeys, ?array $sortBy = null): string {
+		public function prepareQuery(string $entityType, array $primaryKeys, ?array $sortBy = null, array $flags = []): string {
 			// Collect all range definitions: 'main' plus any eagerly-joined relations.
 			$relationRanges = $this->getRelationRanges($entityType);
 			
@@ -54,8 +58,12 @@
 			// Sort
 			$sortString = !empty($sortBy) ? " sort by " . $this->sortByToString($sortBy) : "";
 			
+			// Prepend the directive before the range declarations when the caller
+			// wants to bypass soft-delete filtering (e.g. find() by primary key).
+			$directivePrefix = in_array('ignoreSoftDelete', $flags, true) ? "@ignoreSoftDelete true\n" : "";
+			
 			// Final shape
-			return "{$rangesImpl}\nretrieve unique (" . implode(",", array_keys($relationRanges)) . "){$whereString}{$sortString}";
+			return "{$directivePrefix}{$rangesImpl}\nretrieve unique (" . implode(",", array_keys($relationRanges)) . "){$whereString}{$sortString}";
 		}
 		
 		/**
