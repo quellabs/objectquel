@@ -106,23 +106,28 @@
 		 * @return AstInterface|null
 		 */
 		private function buildCondition(AstRangeDatabase $range, EntityMetadataRecord $metadata): ?AstInterface {
+			// softDeleteProperty is non-null here: buildCondition is only called
+			// from inject() after hasSoftDelete() confirmed the property exists.
+			// The assertion satisfies PHPStan without a runtime cost.
+			$softDeleteProperty = $metadata->softDeleteProperty ?? throw new \LogicException('buildCondition called on entity without @SoftDelete');
+
 			// Build the two-node identifier chain: range.softDeleteProperty
 			// The root node carries EntityRoot type (the range alias) and the leaf
 			// carries EntityProperty type (the column on that entity).
 			$root = new AstIdentifier($range->getName(), IdentifierType::EntityRoot);
 			$root->setRange($range);
-			
-			$leaf = new AstIdentifier($metadata->softDeleteProperty, IdentifierType::EntityProperty);
+
+			$leaf = new AstIdentifier($softDeleteProperty, IdentifierType::EntityProperty);
 			$root->setNext($leaf);
 			$leaf->setParent($root);
-			
+
 			return match ($metadata->softDeleteColumnType) {
 				// NULL means active (not yet soft-deleted); any timestamp means deleted
 				'datetime' => new AstCheckNull($root),
-				
+
 				// false means active; true means deleted
 				'boolean'  => new AstExpression($root, new AstBool(false), '='),
-				
+
 				// Unknown column type — skip rather than silently emitting a broken query
 				default    => null,
 			};
