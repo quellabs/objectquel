@@ -112,11 +112,11 @@
 			$softDeleteProperty = $metadata->softDeleteProperty ?? throw new \LogicException('buildCondition called on entity without @SoftDelete');
 
 			// Build the two-node identifier chain: range.softDeleteProperty
-			// The root node carries EntityRoot type (the range alias) and the leaf
-			// carries EntityProperty type (the column on that entity).
+			// The root node carries EntityRoot type (the range alias)
 			$root = new AstIdentifier($range->getName(), IdentifierType::EntityRoot);
 			$root->setRange($range);
 
+			// The leaf carries EntityProperty type (the column on that entity)
 			$leaf = new AstIdentifier($softDeleteProperty, IdentifierType::EntityProperty);
 			$root->setNext($leaf);
 			$leaf->setParent($root);
