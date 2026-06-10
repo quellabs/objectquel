@@ -38,6 +38,7 @@
 	use Quellabs\SignalHub\SignalHub;
 	use Quellabs\SignalHub\SignalHubLocator;
 	use Quellabs\Support\Tools;
+	use Quellabs\ObjectQuel\Digest\SlowQueryLogWriter;
 	
 	/**
 	 * Represents an Entity Manager.
@@ -48,6 +49,12 @@
 		 * Signals
 		 */
 		protected ?Signal $debugQuerySignal;
+		
+		/**
+		 * Writes slow query log entries when a log path is configured.
+		 * Null when slow query logging is disabled.
+		 */
+		protected ?SlowQueryLogWriter $slowQueryLogWriter;
 		
 		/**
 		 * Properties
@@ -76,6 +83,12 @@
 			$this->queryBuilder = new QueryBuilder($this->entityStore);
 			$this->queryExecutor = new QueryExecutor($this);
 			$this->propertyHandler = new PropertyHandler();
+			
+			// Instantiate the slow query log writer if a log path is configured
+			$slowQueryLog = $configuration->getSlowQueryLog();
+			$this->slowQueryLogWriter = $slowQueryLog !== null
+				? new SlowQueryLogWriter($slowQueryLog, $configuration->getSlowQueryThreshold())
+				: null;
 			
 			// Fetch Signal or create if it doesn't exist
 			$this->debugQuerySignal = $this->signalHub->getSignal('debug.database.query');
@@ -176,6 +189,14 @@
 			
 			// Record end time to calculate execution duration
 			$end = microtime(true);
+			
+			// Write to the slow query log if enabled
+			$this->slowQueryLogWriter?->write(
+				$query,
+				$this->queryExecutor->getLastExecutedSql(),
+				$end - $start,
+				$result->recordCount(),
+			);
 			
 			// In development mode, emit a debug signal with the full query plan
 			// (planner decisions + generated SQL). Skipped entirely in production.

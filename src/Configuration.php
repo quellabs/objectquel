@@ -90,6 +90,21 @@
 		private bool $developmentMode = false;
 		
 		/**
+		 * @var string|null Absolute path to the ObjectQuel slow query log file.
+		 * When set, queries that meet or exceed $slowQueryThreshold are written
+		 * to this file in a format modelled on the MySQL slow query log.
+		 * Set to null to disable slow query logging entirely.
+		 */
+		private ?string $slowQueryLog = null;
+		
+		/**
+		 * @var float Minimum execution time in seconds before a query is written
+		 * to the slow query log. Set to 0.0 to log every query regardless of
+		 * duration. Has no effect when $slowQueryLog is null.
+		 */
+		private float $slowQueryThreshold = 0.0;
+		
+		/**
 		 * Retrieves entity path
 		 * @return string Primary entity path
 		 */
@@ -246,6 +261,44 @@
 		 */
 		public function setDevelopmentMode(bool $developmentMode): self {
 			$this->developmentMode = $developmentMode;
+			return $this;
+		}
+		
+		/**
+		 * Returns the path to the slow query log file, or null if disabled.
+		 * @return string|null
+		 */
+		public function getSlowQueryLog(): ?string {
+			return $this->slowQueryLog;
+		}
+		
+		/**
+		 * Sets the path to the slow query log file.
+		 * Pass null to disable slow query logging.
+		 * @param string|null $slowQueryLog
+		 * @return self
+		 */
+		public function setSlowQueryLog(?string $slowQueryLog): self {
+			$this->slowQueryLog = $slowQueryLog;
+			return $this;
+		}
+		
+		/**
+		 * Returns the minimum execution time in seconds for a query to be
+		 * written to the slow query log. 0.0 means log every query.
+		 * @return float
+		 */
+		public function getSlowQueryThreshold(): float {
+			return $this->slowQueryThreshold;
+		}
+		
+		/**
+		 * Sets the minimum execution time threshold for slow query logging.
+		 * @param float $slowQueryThreshold Minimum seconds. 0.0 logs all queries.
+		 * @return self
+		 */
+		public function setSlowQueryThreshold(float $slowQueryThreshold): self {
+			$this->slowQueryThreshold = $slowQueryThreshold;
 			return $this;
 		}
 	}
