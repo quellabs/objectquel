@@ -114,7 +114,4 @@
 	 *     indexes: IndexChangeSet
 	 * }
 	 */
-	final class SculptTypes {
-		private function __construct() {
-		}
-	}
+	final class SculptTypes {}
