@@ -15,14 +15,12 @@
 		
 		/**
 		 * Alias for the range - used as a table alias in SQL queries
-		 * @var string
 		 */
 		private string $name;
 		
 		/**
 		 * True if the relation is optional (LEFT JOIN), false if required (INNER JOIN)
 		 * This determines the type of join that will be generated in the SQL query
-		 * @var bool
 		 */
 		private bool $required;
 		
@@ -34,19 +32,28 @@
 		private ?AstInterface $joinProperty;
 		
 		/**
+		 * Relation name
+		 */
+		private ?string $viaRelation;
+		
+		/**
 		 * AstRange constructor.
 		 * @param string $name The name/alias for this range (used as table alias)
 		 * @param bool $required Whether this is a required join (INNER) or optional (LEFT)
+		 * @param AstInterface|null $joinProperty
+		 * @param string|null $viaRelation
 		 */
 		public function __construct(
-			string        $name,
-			bool          $required = false,
-			?AstInterface $joinProperty = null
+			string $name,
+			bool $required = false,
+			?AstInterface $joinProperty = null,
+			?string $viaRelation = null,
 		) {
 			$this->name = $name;
 			$this->required = $required;
 			$this->joinProperty = $joinProperty;
 			$this->joinProperty?->setParent($this);
+			$this->viaRelation = $viaRelation;
 		}
 		
 		/**
@@ -117,6 +124,24 @@
 		}
 		
 		/**
+		 * Returns the via relation
+		 * @return string|null
+		 */
+		public function getViaRelation(): ?string {
+			return $this->viaRelation;
+		}
+		
+		/**
+		 * Sets the via relation
+		 * @param string|null $viaRelation
+		 * @return $this
+		 */
+		public function setViaRelation(?string $viaRelation): AstRange {
+			$this->viaRelation = $viaRelation;
+			return $this;
+		}
+		
+		/**
 		 * Set whether this relation is required.
 		 * Makes the relation required (INNER JOIN) or optional (LEFT JOIN).
 		 * This affects how the SQL query is generated and what results are returned.
@@ -144,7 +169,7 @@
 			$joinProperty = $this->getJoinProperty()?->deepClone();
 			
 			// @phpstan-ignore-next-line new.static
-			$clone = new static($this->name, $this->required, $joinProperty);
+			$clone = new static($this->name, $this->required, $joinProperty, $this->viaRelation);
 			$clone->setParent($this);
 			return $clone;
 		}
