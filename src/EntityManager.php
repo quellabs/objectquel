@@ -21,6 +21,7 @@
 	namespace Quellabs\ObjectQuel;
 	
 	use Cake\Database\Connection;
+	use Quellabs\ObjectQuel\Exception\EntityNotFoundException;
 	use Quellabs\AnnotationReader\Exception\AnnotationReaderException;
 	use Quellabs\ObjectQuel\DatabaseAdapter\DatabaseAdapter;
 	use Quellabs\ObjectQuel\Exception\EntityResolutionException;
@@ -305,9 +306,8 @@
 		 * @param class-string<T> $entityType The fully qualified class name of the entity
 		 * @param int|string $primaryKey The primary key of the entity
 		 * @return T|null The found entity or null if not found
-		 * @throws QuelException
-		 * @throws EntityResolutionException
-		 * @psalm-return T|null
+		 * @throws EntityResolutionException If the entity cannot be instantiated or hydrated.
+		 * @throws QuelException If the underlying query fails.
 		 */
 		public function find(string $entityType, int|string $primaryKey): ?object {
 			// Normalize the primary key
@@ -346,6 +346,30 @@
 			 */
 			$entity = $result[0];
 			return $entity;
+		}
+		
+		/**
+		 * Finds an entity by its primary key or throws an exception if not found.
+		 *
+		 * Behaves identically to find(), but throws EntityNotFoundException instead
+		 * of returning null when no matching entity exists.
+		 *
+		 * @template T of object
+		 * @param class-string<T> $entityType The fully qualified class name of the entity to retrieve.
+		 * @param int|string $primaryKey The primary key value to look up.
+		 * @return T The resolved entity instance.
+		 * @throws EntityNotFoundException    If no entity with the given primary key exists.
+		 * @throws EntityResolutionException  If the entity cannot be instantiated or hydrated.
+		 * @throws QuelException              If the underlying query fails.
+		 */
+		public function findOrFail(string $entityType, int|string $primaryKey): object {
+			$result = $this->find($entityType, $primaryKey);
+			
+			if ($result === null) {
+				throw new EntityNotFoundException("Entity $entityType not found");
+			}
+			
+			return $result;
 		}
 		
 		/**
