@@ -238,10 +238,13 @@
 				return false;
 			}
 			
-			// Check whether $targetEntity appears in the projection AND was joined
-			// via the specific $joinProperty on $currentEntity. Checking only the
-			// entity name would accept a join via a different property (e.g. "editor"
-			// when we are looking for "author") as a false positive.
+			// The rewritten JOIN condition references the owning-side FK *column* on the target
+			// entity (e.g. "customerId"), not the relation property ("customer") and nothing on
+			// the parent. Resolve that column the same way the join was built.
+			$targetMetadata = $this->entityStore->getMetadata($targetEntity);
+			$fkColumn = $this->getRelationAnnotation($targetMetadata, $joinProperty)?->getLocalColumn()
+				?? $joinProperty . 'Id';
+			
 			foreach ($this->retrieve->getRanges() as $range) {
 				if (!($range instanceof AstRangeDatabase)) {
 					continue;
@@ -252,8 +255,10 @@
 					continue;
 				}
 				
-				// The join condition must reference $joinProperty on $currentEntity
-				if ($range->hasJoinProperty($currentEntity, $joinProperty)) {
+				// Match against the range's own entity name (as written in the query). Identifiers in
+				// the JOIN condition carry that raw name, so comparing against the normalized FQN
+				// would never match.
+				if ($range->hasJoinProperty($range->getEntityName(), $fkColumn)) {
 					return true;
 				}
 			}
