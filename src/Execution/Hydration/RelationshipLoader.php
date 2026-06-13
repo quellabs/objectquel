@@ -238,27 +238,24 @@
 				return false;
 			}
 			
-			// The rewritten JOIN condition references the owning-side FK *column* on the target
-			// entity (e.g. "customerId"), not the relation property ("customer") and nothing on
-			// the parent. Resolve that column the same way the join was built.
-			$targetMetadata = $this->entityStore->getMetadata($targetEntity);
-			$fkColumn = $this->getRelationAnnotation($targetMetadata, $joinProperty)?->getLocalColumn()
-				?? $joinProperty . 'Id';
-			
+			// The via-rewrite tags the FK-holding (dependent) range with its owning-side relation
+			// property name. That range's entity is exactly $targetEntity and $joinProperty is a
+			// relation declared on it, so matching (entity, viaRelation) is unambiguous: a relation
+			// of the same name on a different entity (e.g. "editor" vs "author") cannot collide.
 			foreach ($this->retrieve->getRanges() as $range) {
 				if (!($range instanceof AstRangeDatabase)) {
 					continue;
 				}
 				
-				// Range must resolve to the target entity
-				if ($this->entityStore->normalizeEntityClass($range->getEntityName()) !== $targetEntity) {
+				// Range must have been joined via this exact relation. Require the join to still be
+				// present: optimizer passes can fold a join into WHERE and null it, in which case the
+				// relation was not materialised as a join and we fall back to lazy loading.
+				if ($range->getJoinProperty() === null || $range->getViaRelation() !== $joinProperty) {
 					continue;
 				}
 				
-				// Match against the range's own entity name (as written in the query). Identifiers in
-				// the JOIN condition carry that raw name, so comparing against the normalized FQN
-				// would never match.
-				if ($range->hasJoinProperty($range->getEntityName(), $fkColumn)) {
+				// ...and resolve to the target entity
+				if ($this->entityStore->normalizeEntityClass($range->getEntityName()) === $targetEntity) {
 					return true;
 				}
 			}

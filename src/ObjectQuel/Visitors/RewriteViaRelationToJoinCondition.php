@@ -179,6 +179,14 @@
 				throw new TransformationException('Expected parent identifier to belong to an entity range');
 			}
 			
+			// The owning-side relation property is declared on the FK-holding (dependent) entity:
+			// $this->range on the InverseOf path, $range on the direct path. That range's entity is
+			// exactly the InverseOf target, so tagging it with the relation name lets the hydrator
+			// match by (entity, relation) instead of re-inspecting the rewritten JOIN columns.
+			$isInverseOfPath = ($joinPropertyName !== null && $joinPropertyName !== '');
+			$dependentRange = $isInverseOfPath ? $this->range : $range;
+			$dependentRange->setViaRelation($isInverseOfPath ? $joinPropertyName : $joinProperty->getName());
+			
 			// Dispatch to a dedicated handler based on the relation type
 			/** @noinspection PhpSwitchCanBeReplacedWithMatchExpressionInspection */
 			switch (true) {
@@ -286,9 +294,6 @@
 			$effectiveName = $joinPropertyName !== null ? $joinPropertyName : $joinProperty->getName();
 			$relationColumn = $relation->getLocalColumn() ?? $effectiveName . 'Id';
 			
-			// Set the relation name in the range so we can reference it later
-			$range->setViaRelation($effectiveName);
-
 			// InverseOf ($joinPropertyName set): $this->range is the owning/child entity
 			// (e.g. 'a' in "range of a via c.posts"), so FK ($relationColumn) is on
 			// $this->range and PK ($referencedColumn) is on $range.
