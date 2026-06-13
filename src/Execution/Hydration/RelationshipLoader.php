@@ -70,26 +70,27 @@
 				
 				foreach ($this->getRelationAnnotations($entityClass) as $property => $dependencies) {
 					foreach ($dependencies as $dependency) {
-						// Owning side (ManyToOne / OneToOne): the foreign key lives on this entity.
-						if ($dependency instanceof ManyToOne || $dependency instanceof OneToOne) {
-							$this->loadOwningRelation($entity, $property, $dependency);
-							continue;
+						switch (true) {
+							case $dependency instanceof ManyToOne:
+							case $dependency instanceof OneToOne:
+								$this->loadOwningRelation($entity, $property, $dependency);
+								break;
+							
+							case $dependency instanceof InverseOf:
+								$relation = $dependency->getRelation();
+								$targetEntity = $this->entityStore->normalizeEntityClass($dependency->getTargetEntity());
+								$isJoined = $this->wasEntityRequested($entityClass, $targetEntity, $relation);
+								$isCollection = $this->isCollectionProperty($entityClass, $property);
+								
+								match (true) {
+									$isCollection && $isJoined => $this->populateJoinedInverseCollection($entity, $entityClass, $property, $dependency, $entities),
+									$isCollection => $this->installLazyInverseCollection($entity, $entityClass, $property, $dependency),
+									$isJoined => $this->setScalarInverseFromResultSetOrProxy($entity, $entityClass, $property, $dependency, $entities),
+									default => $this->createAndSetScalarInverseOfProxy($entity, $entityClass, $property, $dependency),
+								};
+								
+								break;
 						}
-						
-						// InverseOf: select the strategy from the (collection?, joined?) matrix.
-						$isCollection = $this->isCollectionProperty($entityClass, $property);
-						$isJoined = $this->wasEntityRequested(
-							$entityClass,
-							$this->entityStore->normalizeEntityClass($dependency->getTargetEntity()),
-							$dependency->getRelation()
-						);
-						
-						match (true) {
-							$isCollection && $isJoined => $this->populateJoinedInverseCollection($entity, $entityClass, $property, $dependency, $entities),
-							$isCollection              => $this->installLazyInverseCollection($entity, $entityClass, $property, $dependency),
-							$isJoined                  => $this->setScalarInverseFromResultSetOrProxy($entity, $entityClass, $property, $dependency, $entities),
-							default                    => $this->createAndSetScalarInverseOfProxy($entity, $entityClass, $property, $dependency),
-						};
 					}
 				}
 			}
