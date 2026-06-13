@@ -127,12 +127,49 @@
 					continue;
 				}
 				
-				$alias = $this->createAlias($rangeCounter++);
+				// The JOIN must connect the dependent range back to 'main'. Emitting
+				// "via {alias}.{property}" is self-referential: the via property's parent is the
+				// dependent range itself, so the rewrite collapses both sides of the join onto it
+				// (e.g. r0.id = r0.user_id). Route through main's inverse side instead, which the
+				// rewrite resolves to the correct condition (e.g. r0.user_id = main.id).
+				$mainInverse = $this->resolveMainInverseProperty($entityType, $dependentEntityType, $property);
 				
-				// Emit 'via alias.propertyName' — the relation property on the dependent
-				// entity is the authoritative join path; no FK column reconstruction needed.
-				$ranges[$alias] = "range of {$alias} is {$dependentEntityType} via {$alias}.{$property}";
+				// No back-reference on main means there is no collection or scalar to receive the
+				// eager-loaded rows, so the range would serve no purpose — skip it.
+				if ($mainInverse === null) {
+					continue;
+				}
+				
+				$alias = $this->createAlias($rangeCounter++);
+				$ranges[$alias] = "range of {$alias} is {$dependentEntityType} via main.{$mainInverse}";
 			}
+		}
+		
+		/**
+		 * Resolves the property on the main entity that is the inverse of a given owning-side
+		 * relation on a dependent entity. Used to express the eager JOIN from main's side so the
+		 * rewrite produces a correct condition rather than a self-referential one.
+		 * @param string $mainEntityType The entity being retrieved (the 'main' range).
+		 * @param string $dependentEntityType The entity that owns the relation pointing at main.
+		 * @param string $owningProperty The relation property on the dependent entity (e.g. 'user').
+		 * @return string|null The inverse property name on main, or null when main has no back-reference.
+		 * @throws EntityResolutionException
+		 */
+		private function resolveMainInverseProperty(string $mainEntityType, string $dependentEntityType, string $owningProperty): ?string {
+			$mainMetadata = $this->entityStore->getMetadata($mainEntityType);
+			
+			foreach ($mainMetadata->getInverseOfDependencies() as $property => $inverseOf) {
+				// The inverse must name this exact owning-side relation and point back at the dependent.
+				if ($inverseOf->getRelation() !== $owningProperty) {
+					continue;
+				}
+				
+				if ($this->entityStore->normalizeEntityClass($inverseOf->getTargetEntity()) === $dependentEntityType) {
+					return $property;
+				}
+			}
+			
+			return null;
 		}
 		
 		/**
