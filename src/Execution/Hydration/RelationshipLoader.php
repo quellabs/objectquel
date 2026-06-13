@@ -76,17 +76,17 @@
 								$this->loadOwningRelation($entity, $property, $dependency);
 								break;
 							
-							case $dependency instanceof InverseOf:
+							default: // InverseOf — the only remaining annotation type
 								$relation = $dependency->getRelation();
 								$targetEntity = $this->entityStore->normalizeEntityClass($dependency->getTargetEntity());
 								$isJoined = $this->wasEntityRequested($entityClass, $targetEntity, $relation);
 								$isCollection = $this->isCollectionProperty($entityClass, $property);
 								
 								match (true) {
-									$isCollection && $isJoined => $this->populateJoinedInverseCollection($entity, $entityClass, $property, $dependency, $entities),
-									$isCollection => $this->installLazyInverseCollection($entity, $entityClass, $property, $dependency),
-									$isJoined => $this->setScalarInverseFromResultSetOrProxy($entity, $entityClass, $property, $dependency, $entities),
-									default => $this->createAndSetScalarInverseOfProxy($entity, $entityClass, $property, $dependency),
+									$isCollection && $isJoined => $this->loadInverseCollectionEager($entity, $entityClass, $property, $dependency, $entities),
+									$isCollection => $this->loadInverseCollectionLazy($entity, $entityClass, $property, $dependency),
+									$isJoined => $this->loadInverseScalarEager($entity, $entityClass, $property, $dependency, $entities),
+									default => $this->loadInverseScalarLazy($entity, $entityClass, $property, $dependency),
 								};
 								
 								break;
@@ -308,7 +308,7 @@
 		 * @param InverseOf $dependency The InverseOf annotation
 		 * @throws EntityResolutionException
 		 */
-		private function createAndSetScalarInverseOfProxy(object $entity, string $entityClass, string $property, InverseOf $dependency): void {
+		private function loadInverseScalarLazy(object $entity, string $entityClass, string $property, InverseOf $dependency): void {
 			// The via property name on the dependent entity — the FK that points back to this entity
 			$relation = $dependency->getRelation();
 			$targetEntity = $this->entityStore->normalizeEntityClass($dependency->getTargetEntity());
@@ -372,15 +372,15 @@
 		 * @throws EntityResolutionException
 		 * @throws QuelException
 		 */
-		private function setScalarInverseFromResultSetOrProxy(
+		private function loadInverseScalarEager(
 			object $entity,
 			string $entityClass,
 			string $property,
 			InverseOf $dependency,
 			array $entities
 		): void {
-			if (!$this->populateJoinedInverseScalar($entity, $entityClass, $property, $dependency, $entities)) {
-				$this->createAndSetScalarInverseOfProxy($entity, $entityClass, $property, $dependency);
+			if (!$this->tryAssignInverseScalarFromResultSet($entity, $entityClass, $property, $dependency, $entities)) {
+				$this->loadInverseScalarLazy($entity, $entityClass, $property, $dependency);
 			}
 		}
 		
@@ -414,7 +414,7 @@
 		 * @throws EntityResolutionException
 		 * @throws QuelException
 		 */
-		private function populateJoinedInverseCollection(
+		private function loadInverseCollectionEager(
 			object $entity,
 			string $entityClass,
 			string $property,
@@ -459,7 +459,7 @@
 		 * @throws EntityResolutionException
 		 * @throws QuelException
 		 */
-		private function populateJoinedInverseScalar(
+		private function tryAssignInverseScalarFromResultSet(
 			object $entity,
 			string $entityClass,
 			string $property,
@@ -493,7 +493,7 @@
 		 * @throws EntityResolutionException
 		 * @throws QuelException
 		 */
-		private function installLazyInverseCollection(
+		private function loadInverseCollectionLazy(
 			object $entity,
 			string $entityClass,
 			string $property,
