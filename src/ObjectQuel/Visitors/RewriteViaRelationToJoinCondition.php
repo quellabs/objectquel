@@ -59,6 +59,12 @@
 			// The relation property is on the next node (e.g. 'addresses'), not the root ('c')
 			// getNext() is guaranteed non-null here because hasNext() returned true
 			$propertyNode = $side->getNext();
+
+			// hasNext() guarantees non-null, but getNext() returns AstIdentifier|null;
+			// this guard satisfies PHPStan's flow analysis without altering runtime behaviour
+			if ($propertyNode === null) {
+				return $side;
+			}
 			
 			// Fetch the entity name
 			$entityName = $side->getEntityName();
