@@ -527,7 +527,8 @@
 					) {
 						// resolveTargetProperty handles both ManyToOne (inversedBy or PK fallback)
 						// and OneToOne (inversedBy or PK fallback) transparently.
-						$resolvedInversedBy = $this->entityStore->resolveTargetProperty($annotation);
+						$annotationMetadata = $this->entityStore->getMetadata($annotation->getTargetEntity());
+						$resolvedInversedBy = $annotation->getReferencedColumn() ?? $annotationMetadata->getPrimaryKey();
 						
 						// Confirm the back-reference property matches what the join expects
 						if ($resolvedInversedBy === $relatedPropertyName) {
