@@ -127,7 +127,7 @@
 			
 			// Determine the name and property of the target entity based on the dependency.
 			$targetEntityName = $dependency->getTargetEntity();
-			$inversedPropertyName = $this->entityStore->resolveTargetProperty($dependency);
+			$inversedPropertyName = $this->resolveTargetProperty($dependency);
 			
 			if ($inversedPropertyName === null) {
 				throw new \LogicException(
@@ -190,7 +190,7 @@
 			
 			// resolveTargetProperty returns null only when the target entity has no
 			// primary key — a configuration error that should have been caught earlier.
-			$relationPropertyName = $this->entityStore->resolveTargetProperty($dependency);
+			$relationPropertyName = $this->resolveTargetProperty($dependency);
 			
 			// Error when entity has no primary key
 			if ($relationPropertyName === null) {
@@ -322,7 +322,7 @@
 			// Resolve the referenced property on this entity; fall back to primary key when
 			// inversedBy is absent or the relation annotation cannot be found
 			$ownerPrimaryKey = $this->entityStore->getMetadata($entityClass)->getPrimaryKey();
-			$resolvedTarget = $viaRelation !== null ? $this->entityStore->resolveTargetProperty($viaRelation) : null;
+			$resolvedTarget = $viaRelation !== null ? $this->resolveTargetProperty($viaRelation) : null;
 			$parentProperty = $resolvedTarget ?? $ownerPrimaryKey;
 			
 			if ($parentProperty === null) {
@@ -651,7 +651,7 @@
 			// Resolve the referenced property on the owner; fall back to its primary key.
 			// Both being null means the target entity has no primary key — a configuration error.
 			$ownerPrimaryKey = $this->entityStore->getMetadata($ownerClass)->getPrimaryKey();
-			$resolvedTarget = $this->entityStore->resolveTargetProperty($viaRelation);
+			$resolvedTarget = $this->resolveTargetProperty($viaRelation);
 			$parentProperty = $resolvedTarget ?? $ownerPrimaryKey;
 			
 			if ($parentProperty === null) {
@@ -736,5 +736,28 @@
 			}
 			
 			return $result;
+		}
+		
+		/**
+		 * Resolves the back-reference property name on the target entity for a ManyToOne or OneToOne relation.
+		 *
+		 * For OneToOne, inversedBy is the primary key property on the target entity that the
+		 * foreign key column points to. If not set, the target entity's primary key is used as a fallback.
+		 *
+		 * For ManyToOne, inversedBy is a direct property name on the target entity. If absent,
+		 * the target entity's primary key is used as a fallback.
+		 *
+		 * Returns null when no property can be determined.
+		 *
+		 * @param ManyToOne|OneToOne $relation The relation annotation to resolve
+		 * @return string|null The back-reference property name on the target entity, or null if unresolvable
+		 * @throws EntityResolutionException When target entity metadata cannot be loaded
+		 */
+		private function resolveTargetProperty(ManyToOne|OneToOne $relation): ?string {
+			// Fetch metadata for entity
+			$metadata = $this->entityStore->getMetadata($relation->getTargetEntity());
+			
+			// Return referencedColumn, falling back to the primary key
+			return $relation->getReferencedColumn() ?? $metadata->getPrimaryKey();
 		}
 	}

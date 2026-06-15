@@ -321,29 +321,7 @@
 				fn(array $entityDependencies) => in_array($normalizedClass, $entityDependencies, true)
 			));
 		}
-		
-		/**
-		 * Resolves the back-reference property name on the target entity for a ManyToOne or OneToOne relation.
-		 *
-		 * For OneToOne, inversedBy is the primary key property on the target entity that the
-		 * foreign key column points to. If not set, the target entity's primary key is used as a fallback.
-		 *
-		 * For ManyToOne, inversedBy is a direct property name on the target entity. If absent,
-		 * the target entity's primary key is used as a fallback.
-		 *
-		 * Returns null when no property can be determined.
-		 *
-		 * @param ManyToOne|OneToOne $relation The relation annotation to resolve
-		 * @return string|null The back-reference property name on the target entity, or null if unresolvable
-		 * @throws EntityResolutionException When target entity metadata cannot be loaded
-		 */
-		public function resolveTargetProperty(ManyToOne|OneToOne $relation): ?string {
-			// Fetch metadata for entity
-			$metadata = $this->getMetadata($relation->getTargetEntity());
-			
-			// Return referencedColumn, falling back to the primary key
-			return $relation->getReferencedColumn() ?? $metadata->getPrimaryKey();
-		}
+
 		
 		// ==================== Private Helper Methods ====================
 		
