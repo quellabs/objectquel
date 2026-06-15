@@ -28,6 +28,14 @@
 		private PropertyHandler $propertyHandler;
 		
 		/**
+		 * @var array<string, array<string, array<int, object>>>
+		 *     Per-call FK index used by findInverseMatches() to populate eager InverseOf
+		 *     relations: indexKey => bucketKey => candidates. Reset on entry to
+		 *     loadRelationships() and released on exit.
+		 */
+		private array $candidateIndex = [];
+		
+		/**
 		 * RelationshipLoader constructor
 		 * @param EntityManager $entityManager
 		 * @param AstRetrieve $retrieve
@@ -65,6 +73,10 @@
 		 * @throws HydrationException
 		 */
 		public function loadRelationships(array $entities): void {
+			// Reset the per-call eager-InverseOf FK index. loadRelationships() runs once per result
+			// set and is not re-entrant (see QuelResult), so the index is scoped to this call only.
+			$this->candidateIndex = [];
+			
 			foreach ($entities as $entity) {
 				$entityClass = $this->entityStore->normalizeEntityClass($entity);
 				
@@ -94,6 +106,10 @@
 					}
 				}
 			}
+			
+			// Release the FK index buckets now that population is complete; the loader is retained
+			// by QuelResult for its lifetime, so we don't keep the candidate references alive.
+			$this->candidateIndex = [];
 		}
 		
 		/**
@@ -421,10 +437,6 @@
 			InverseOf $dependency,
 			array $entities
 		): void {
-			$relation = $dependency->getRelation();
-			$targetEntity = $this->entityStore->normalizeEntityClass($dependency->getTargetEntity());
-			$parentKeyValue = $this->resolveParentKeyValue($entity, $entityClass, $relation, $targetEntity);
-			
 			// The collection is created by the entity itself; if the property does not hold one
 			// (e.g. it is declared as a plain array), there is nothing to populate.
 			$collection = $this->propertyHandler->get($entity, $property);
@@ -433,12 +445,9 @@
 				return;
 			}
 			
-			// Scan all hydrated entities for candidates that belong to this parent
-			foreach ($entities as $candidate) {
-				if (!$this->inverseCandidateMatches($candidate, $targetEntity, $relation, $entityClass, $parentKeyValue)) {
-					continue;
-				}
-				
+			// Resolve the candidates belonging to this parent via the shared FK index (one indexed
+			// pass over the result set, not a per-parent linear scan).
+			foreach ($this->findInverseMatches($entity, $entityClass, $dependency, $entities) as $candidate) {
 				// Add the candidate to the parent's collection, but only if
 				// it isn't already present — avoids duplicates when the same
 				// result set is processed more than once
@@ -466,16 +475,8 @@
 			InverseOf $dependency,
 			array $entities
 		): bool {
-			$relation = $dependency->getRelation();
-			$targetEntity = $this->entityStore->normalizeEntityClass($dependency->getTargetEntity());
-			$parentKeyValue = $this->resolveParentKeyValue($entity, $entityClass, $relation, $targetEntity);
-			
-			// Find the first matching candidate and set it directly on the property
-			foreach ($entities as $candidate) {
-				if (!$this->inverseCandidateMatches($candidate, $targetEntity, $relation, $entityClass, $parentKeyValue)) {
-					continue;
-				}
-				
+			// Find the first matching candidate via the shared FK index and set it on the property
+			foreach ($this->findInverseMatches($entity, $entityClass, $dependency, $entities) as $candidate) {
 				$this->propertyHandler->set($entity, $property, $candidate);
 				return true;
 			}
@@ -547,34 +548,90 @@
 		}
 		
 		/**
-		 * Returns true when $candidate is a related entity that points back to the parent through
-		 * the via relation. Used by both the collection and scalar joined-population strategies.
-		 * @param object $candidate A hydrated entity from the result set
-		 * @param string $targetEntity The resolved dependent entity class name
-		 * @param string $relation The via relation property name on the dependent entity
-		 * @param string $parentClass The resolved class name of the parent entity
-		 * @param mixed $parentKeyValue The parent key value the candidate's FK must match
-		 * @return bool
+		 * Returns the hydrated candidates whose via FK points back to $entity for an InverseOf
+		 * relation. Replaces the previous per-parent linear scan over the full result set: the first
+		 * parent needing a given (target entity, relation, declaring class) triple pays one O(n) pass
+		 * to bucket every candidate by FK value; later parents reuse those buckets via an O(1) lookup.
+		 * The index ($this->candidateIndex) lives only for the current loadRelationships() call.
+		 *
+		 * Membership uses the same predicate the linear scan did — instanceof the target,
+		 * candidateMapsToParent(), and a strict comparison of the candidate's FK value against the
+		 * parent key — so behaviour and result-set ordering are preserved.
+		 * @param object $entity The parent entity
+		 * @param string $entityClass The resolved class name of the parent entity
+		 * @param InverseOf $dependency The relation annotation
+		 * @param array<int, object> $entities All hydrated entities from the result set
+		 * @return array<int, object> Matching candidates, in result-set order
 		 * @throws EntityResolutionException
+		 * @throws QuelException
 		 */
-		private function inverseCandidateMatches(object $candidate, string $targetEntity, string $relation, string $parentClass, mixed $parentKeyValue): bool {
-			// Skip entities that are not of the expected related type
-			if (!($candidate instanceof $targetEntity)) {
-				return false;
+		private function findInverseMatches(object $entity, string $entityClass, InverseOf $dependency, array $entities): array {
+			$relation = $dependency->getRelation();
+			$targetEntity = $this->entityStore->normalizeEntityClass($dependency->getTargetEntity());
+			$parentKeyValue = $this->resolveParentKeyValue($entity, $entityClass, $relation, $targetEntity);
+			
+			// One index per (target entity, via relation, declaring class). parentClass is part of the
+			// key because candidateMapsToParent() is evaluated against it, so buckets cannot be shared
+			// across parents of different classes. A NUL separator cannot occur in a class or property
+			// name, so the composite key is unambiguous.
+			$indexKey = $targetEntity . "\0" . $relation . "\0" . $entityClass;
+			
+			if (!isset($this->candidateIndex[$indexKey])) {
+				$buckets = [];
+				
+				foreach ($entities as $candidate) {
+					// Skip entities that are not of the expected related type. Checked first so unrelated
+					// candidates never trigger a metadata lookup.
+					if (!($candidate instanceof $targetEntity)) {
+						continue;
+					}
+					
+					// Verify that the candidate's via property is actually
+					// annotated as a relation pointing back to this parent entity type.
+					// This prevents false matches in schemas where two unrelated entity
+					// types share the same FK property name and overlapping ID values.
+					if (!$this->candidateMapsToParent($candidate, $relation, $entityClass)) {
+						continue;
+					}
+					
+					// Bucket by the candidate's FK column value. $relation is the relation property
+					// (e.g. "user"), but we need the underlying FK column value (e.g. "userId") since
+					// the relation property holds an object, not a scalar.
+					$buckets[$this->inverseBucketKey($this->getCandidateFkValue($candidate, $relation))][] = $candidate;
+				}
+				
+				$this->candidateIndex[$indexKey] = $buckets;
 			}
 			
-			// Verify that the candidate's via property is actually
-			// annotated as a relation pointing back to this parent entity type.
-			// This prevents false matches in schemas where two unrelated entity
-			// types share the same FK property name and overlapping ID values.
-			if (!$this->candidateMapsToParent($candidate, $relation, $parentClass)) {
-				return false;
+			return $this->candidateIndex[$indexKey][$this->inverseBucketKey($parentKeyValue)] ?? [];
+		}
+		
+		/**
+		 * Encodes a scalar FK value into a bucket key that preserves strict (===) semantics: the
+		 * type-prefixed encoding keeps int 1, string "1", null and false in separate buckets,
+		 * matching the comparison the previous linear scan performed. FK values are int|string in
+		 * practice (the proxy path constrains lookup keys to those types).
+		 * @param mixed $value
+		 * @return string
+		 */
+		private function inverseBucketKey(mixed $value): string {
+			if (is_int($value)) {
+				return 'i:' . $value;
 			}
 			
-			// Compare the candidate's FK column value against the parent's referenced property value.
-			// $relation is the relation property (e.g. "user"), but we need the underlying FK column
-			// value (e.g. "userId") since the relation property holds an object, not a scalar.
-			return $this->getCandidateFkValue($candidate, $relation) === $parentKeyValue;
+			if (is_string($value)) {
+				return 's:' . $value;
+			}
+			
+			if ($value === null) {
+				return 'n:';
+			}
+			
+			if (is_bool($value)) {
+				return 'b:' . ($value ? '1' : '0');
+			}
+			
+			return 'x:' . var_export($value, true);
 		}
 		
 		/**
