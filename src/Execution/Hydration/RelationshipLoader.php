@@ -19,6 +19,9 @@
 	use Quellabs\ObjectQuel\Exception\EntityResolutionException;
 	use Quellabs\ObjectQuel\ReflectionManagement\PropertyHandler;
 	
+	/**
+	 * @phpstan-type InverseFkIndex array<string, array<string, array<int, object>>>
+	 */
 	class RelationshipLoader {
 		
 		private AstRetrieve $retrieve;
@@ -26,14 +29,6 @@
 		private EntityManager $entityManager;
 		private EntityStore $entityStore;
 		private PropertyHandler $propertyHandler;
-		
-		/**
-		 * @var array<string, array<string, array<int, object>>>
-		 *     Per-call FK index used by findInverseMatches() to populate eager InverseOf
-		 *     relations: indexKey => bucketKey => candidates. Reset on entry to
-		 *     loadRelationships() and released on exit.
-		 */
-		private array $candidateIndex = [];
 		
 		/**
 		 * RelationshipLoader constructor
@@ -73,9 +68,10 @@
 		 * @throws HydrationException
 		 */
 		public function loadRelationships(array $entities): void {
-			// Reset the per-call eager-InverseOf FK index. loadRelationships() runs once per result
-			// set and is not re-entrant (see QuelResult), so the index is scoped to this call only.
-			$this->candidateIndex = [];
+			// Per-call FK index for eager InverseOf population. Built lazily by findInverseMatches()
+			// and threaded into the eager loaders by reference; discarded when this method returns.
+			/** @var InverseFkIndex $index */
+			$index = [];
 			
 			foreach ($entities as $entity) {
 				$entityClass = $this->entityStore->normalizeEntityClass($entity);
@@ -95,9 +91,9 @@
 								$isCollection = $this->isCollectionProperty($entityClass, $property);
 								
 								match (true) {
-									$isCollection && $isJoined => $this->loadInverseCollectionEager($entity, $entityClass, $property, $dependency, $entities),
+									$isCollection && $isJoined => $this->loadInverseCollectionEager($entity, $entityClass, $property, $dependency, $entities, $index),
 									$isCollection => $this->loadInverseCollectionLazy($entity, $entityClass, $property, $dependency),
-									$isJoined => $this->loadInverseScalarEager($entity, $entityClass, $property, $dependency, $entities),
+									$isJoined => $this->loadInverseScalarEager($entity, $entityClass, $property, $dependency, $entities, $index),
 									default => $this->loadInverseScalarLazy($entity, $entityClass, $property, $dependency),
 								};
 								
@@ -106,10 +102,6 @@
 					}
 				}
 			}
-			
-			// Release the FK index buckets now that population is complete; the loader is retained
-			// by QuelResult for its lifetime, so we don't keep the candidate references alive.
-			$this->candidateIndex = [];
 		}
 		
 		/**
@@ -385,6 +377,7 @@
 		 * @param string $property The scalar property name
 		 * @param InverseOf $dependency The relation annotation
 		 * @param array<int, object> $entities All hydrated entities from the result set
+		 * @param InverseFkIndex $index Per-call FK bucket index, threaded by reference (see findInverseMatches())
 		 * @throws EntityResolutionException
 		 * @throws QuelException
 		 */
@@ -393,9 +386,10 @@
 			string $entityClass,
 			string $property,
 			InverseOf $dependency,
-			array $entities
+			array $entities,
+			array &$index
 		): void {
-			if (!$this->tryAssignInverseScalarFromResultSet($entity, $entityClass, $property, $dependency, $entities)) {
+			if (!$this->tryAssignInverseScalarFromResultSet($entity, $entityClass, $property, $dependency, $entities, $index)) {
 				$this->loadInverseScalarLazy($entity, $entityClass, $property, $dependency);
 			}
 		}
@@ -427,6 +421,7 @@
 		 * @param string $property The collection property name
 		 * @param InverseOf $dependency The relation annotation
 		 * @param array<int, object> $entities All hydrated entities from the result set
+		 * @param InverseFkIndex $index Per-call FK bucket index, threaded by reference (see findInverseMatches())
 		 * @throws EntityResolutionException
 		 * @throws QuelException
 		 */
@@ -435,7 +430,8 @@
 			string $entityClass,
 			string $property,
 			InverseOf $dependency,
-			array $entities
+			array $entities,
+			array &$index
 		): void {
 			// The collection is created by the entity itself; if the property does not hold one
 			// (e.g. it is declared as a plain array), there is nothing to populate.
@@ -447,7 +443,7 @@
 			
 			// Resolve the candidates belonging to this parent via the shared FK index (one indexed
 			// pass over the result set, not a per-parent linear scan).
-			foreach ($this->findInverseMatches($entity, $entityClass, $dependency, $entities) as $candidate) {
+			foreach ($this->findInverseMatches($entity, $entityClass, $dependency, $entities, $index) as $candidate) {
 				// Add the candidate to the parent's collection, but only if
 				// it isn't already present — avoids duplicates when the same
 				// result set is processed more than once
@@ -464,6 +460,7 @@
 		 * @param string $property The scalar property name
 		 * @param InverseOf $dependency The relation annotation
 		 * @param array<int, object> $entities All hydrated entities from the result set
+		 * @param InverseFkIndex $index Per-call FK bucket index, threaded by reference (see findInverseMatches())
 		 * @return bool True when a matching entity was found and set, false otherwise
 		 * @throws EntityResolutionException
 		 * @throws QuelException
@@ -473,10 +470,11 @@
 			string $entityClass,
 			string $property,
 			InverseOf $dependency,
-			array $entities
+			array $entities,
+			array &$index
 		): bool {
 			// Find the first matching candidate via the shared FK index and set it on the property
-			foreach ($this->findInverseMatches($entity, $entityClass, $dependency, $entities) as $candidate) {
+			foreach ($this->findInverseMatches($entity, $entityClass, $dependency, $entities, $index) as $candidate) {
 				$this->propertyHandler->set($entity, $property, $candidate);
 				return true;
 			}
@@ -552,7 +550,8 @@
 		 * relation. Replaces the previous per-parent linear scan over the full result set: the first
 		 * parent needing a given (target entity, relation, declaring class) triple pays one O(n) pass
 		 * to bucket every candidate by FK value; later parents reuse those buckets via an O(1) lookup.
-		 * The index ($this->candidateIndex) lives only for the current loadRelationships() call.
+		 * The $index is owned by loadRelationships() and threaded in by reference, so it lives only
+		 * for the current call.
 		 *
 		 * Membership uses the same predicate the linear scan did — instanceof the target,
 		 * candidateMapsToParent(), and a strict comparison of the candidate's FK value against the
@@ -561,11 +560,12 @@
 		 * @param string $entityClass The resolved class name of the parent entity
 		 * @param InverseOf $dependency The relation annotation
 		 * @param array<int, object> $entities All hydrated entities from the result set
+		 * @param InverseFkIndex $index Per-call FK bucket index (indexKey => bucketKey => candidates), built lazily and reused across parents
 		 * @return array<int, object> Matching candidates, in result-set order
 		 * @throws EntityResolutionException
 		 * @throws QuelException
 		 */
-		private function findInverseMatches(object $entity, string $entityClass, InverseOf $dependency, array $entities): array {
+		private function findInverseMatches(object $entity, string $entityClass, InverseOf $dependency, array $entities, array &$index): array {
 			$relation = $dependency->getRelation();
 			$targetEntity = $this->entityStore->normalizeEntityClass($dependency->getTargetEntity());
 			$parentKeyValue = $this->resolveParentKeyValue($entity, $entityClass, $relation, $targetEntity);
@@ -576,7 +576,7 @@
 			// name, so the composite key is unambiguous.
 			$indexKey = $targetEntity . "\0" . $relation . "\0" . $entityClass;
 			
-			if (!isset($this->candidateIndex[$indexKey])) {
+			if (!isset($index[$indexKey])) {
 				$buckets = [];
 				
 				foreach ($entities as $candidate) {
@@ -600,10 +600,10 @@
 					$buckets[$this->inverseBucketKey($this->getCandidateFkValue($candidate, $relation))][] = $candidate;
 				}
 				
-				$this->candidateIndex[$indexKey] = $buckets;
+				$index[$indexKey] = $buckets;
 			}
 			
-			return $this->candidateIndex[$indexKey][$this->inverseBucketKey($parentKeyValue)] ?? [];
+			return $index[$indexKey][$this->inverseBucketKey($parentKeyValue)] ?? [];
 		}
 		
 		/**
