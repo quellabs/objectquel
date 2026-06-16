@@ -202,7 +202,7 @@
 				return $this->createManyToOneJoinCondition($joinProperty, $relation, $range, $owningProperty, $fkOnJoiningRange);
 			}
 			
-			return $this->createOneToOneJoinCondition($joinProperty, $relation, $range, $fkOnJoiningRange);
+			return $this->createOneToOneJoinCondition($joinProperty, $relation, $range, $owningProperty, $fkOnJoiningRange);
 		}
 		
 		/**
@@ -266,8 +266,9 @@
 		 * @throws EntityResolutionException
 		 */
 		private function createManyToOneJoinCondition(AstIdentifier $joinProperty, ManyToOne $relation, AstRange|AstRangeDatabase|AstRangeJsonSource $range, ?string $owningProperty, bool $fkOnJoiningRange): AstInterface {
-			// referencedColumn is the FK property on the owning (child) entity.
-			// When omitted, fall back to the primary key of the target entity.
+			// referencedColumn is the column on the target (parent) entity that the FK
+			// points at — not the FK itself. When omitted, fall back to the target
+			// entity's primary key.
 			$referencedColumn = $relation->getReferencedColumn();
 			
 			if ($referencedColumn === null) {
@@ -295,28 +296,33 @@
 		
 		/**
 		 * Builds a JOIN condition AST for a OneToOne relation.
-		 * The owning side always holds the FK column; inversedBy is always set.
+		 * The owning side always holds the FK column; referencedColumn is always set.
 		 * @param AstIdentifier $joinProperty The property node used in the via-clause (e.g. 'profile')
 		 * @param OneToOne $relation The OneToOne annotation
 		 * @param AstRange|AstRangeDatabase|AstRangeJsonSource $range The related range
+		 * @param string|null $owningProperty Owning-side property name on the InverseOf path, null otherwise
 		 * @param bool $fkOnJoiningRange True when the FK is on $this->range (InverseOf path)
 		 * @return AstInterface
-		 * @throws TransformationException When inversedBy is missing
+		 * @throws TransformationException When referencedColumn is missing
 		 */
-		private function createOneToOneJoinCondition(AstIdentifier $joinProperty, OneToOne $relation, AstRange|AstRangeDatabase|AstRangeJsonSource $range, bool $fkOnJoiningRange): AstInterface {
-			// All stored OneToOne relations are owning-side — inversedBy is always set.
-			// The non-owning side is declared with @InverseOf and never reaches this method.
-			$inversedBy = $relation->getReferencedColumn();
+		private function createOneToOneJoinCondition(AstIdentifier $joinProperty, OneToOne $relation, AstRange|AstRangeDatabase|AstRangeJsonSource $range, ?string $owningProperty, bool $fkOnJoiningRange): AstInterface {
+			// All stored OneToOne relations are owning-side; the non-owning side is declared
+			// with @InverseOf and never reaches this method. referencedColumn is the column on
+			// the target entity that the FK points at (usually its primary key).
+			$referencedColumn = $relation->getReferencedColumn();
 			
-			if (empty($inversedBy)) {
-				throw new TransformationException('OneToOne relation is missing inversedBy');
+			if (empty($referencedColumn)) {
+				throw new TransformationException('OneToOne relation is missing referencedColumn');
 			}
 			
-			// NOTE: unlike the ManyToOne handler, the localColumn default is based on the
-			// via-clause property name ($joinProperty->getName()) rather than the resolved
-			// owning-side property. Behaviour preserved from the original implementation.
-			$relationColumn = $relation->getLocalColumn() ?? $joinProperty->getName() . 'Id';
-			return $this->createJoinConditionAst($relationColumn, $inversedBy, $range, $fkOnJoiningRange);
+			// localColumn is the FK column on the owning entity, defaulting to the owning-side
+			// relation property name suffixed with 'Id' (e.g. 'user' -> 'userId'). On the InverseOf
+			// path that base is $owningProperty; on the direct path it is the via-clause property.
+			// The InverseOf property name (e.g. 'profile') must not be used as the base.
+			// This mirrors the ManyToOne handler.
+			$localColumnBase = $owningProperty ?? $joinProperty->getName();
+			$relationColumn = $relation->getLocalColumn() ?? $localColumnBase . 'Id';
+			return $this->createJoinConditionAst($relationColumn, $referencedColumn, $range, $fkOnJoiningRange);
 		}
 		
 		/**
