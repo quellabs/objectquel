@@ -128,8 +128,8 @@
 			$relationColumn = $dependency->getLocalColumn() ?? "{$property}Id";
 			$relationColumnValue = $this->propertyHandler->get($entity, $relationColumn);
 			
-			// If the value of the relation column is 0 or null, the operation does not continue.
-			if (empty($relationColumnValue)) {
+			// A null relation column value means there is no relation to resolve.
+			if ($relationColumnValue === null) {
 				return;
 			}
 			
@@ -424,6 +424,7 @@
 		 * @param InverseFkIndex $index Per-call FK bucket index, threaded by reference (see findInverseMatches())
 		 * @throws EntityResolutionException
 		 * @throws QuelException
+		 * @throws \LogicException When the property is not a CollectionInterface
 		 */
 		private function loadInverseCollectionEager(
 			object $entity,
@@ -433,12 +434,18 @@
 			array $entities,
 			array &$index
 		): void {
-			// The collection is created by the entity itself; if the property does not hold one
-			// (e.g. it is declared as a plain array), there is nothing to populate.
+			// The collection is created by the entity itself and must be a CollectionInterface.
+			// A plain array (or any non-collection) cannot hold managed relations, so fail loudly
+			// rather than silently dropping the inverse population.
 			$collection = $this->propertyHandler->get($entity, $property);
 			
 			if (!($collection instanceof CollectionInterface)) {
-				return;
+				throw new \LogicException(
+					"InverseOf collection '{$entityClass}::{$property}' must be typed as " .
+					CollectionInterface::class . " and initialized to a collection instance; got " .
+					get_debug_type($collection) . ". Declare it as 'public CollectionInterface \${$property};' " .
+					"and initialize it in the entity constructor."
+				);
 			}
 			
 			// Resolve the candidates belonging to this parent via the shared FK index (one indexed
@@ -491,6 +498,7 @@
 		 * @param InverseOf $dependency The relation annotation
 		 * @throws EntityResolutionException
 		 * @throws QuelException
+		 * @throws \LogicException When the property is not a CollectionInterface
 		 */
 		private function loadInverseCollectionLazy(
 			object $entity,
@@ -501,8 +509,20 @@
 			// Fetch the property
 			$propertyValue = $this->propertyHandler->get($entity, $property);
 			
-			// Only process properties that currently hold an empty collection
-			if (!($propertyValue instanceof CollectionInterface) || !$propertyValue->isEmpty()) {
+			// InverseOf collections must be typed as a CollectionInterface — the scaffolder emits this
+			// and initializes them in the constructor. A plain array cannot be lazily managed, so fail
+			// loudly instead of silently skipping.
+			if (!($propertyValue instanceof CollectionInterface)) {
+				throw new \LogicException(
+					"InverseOf collection '{$entityClass}::{$property}' must be typed as " .
+					CollectionInterface::class . " and initialized to a collection instance; got " .
+					get_debug_type($propertyValue) . ". Declare it as 'public CollectionInterface \${$property};' " .
+					"and initialize it in the entity constructor."
+				);
+			}
+			
+			// Skip collections that are already populated to avoid clobbering existing members
+			if (!$propertyValue->isEmpty()) {
 				return;
 			}
 			
