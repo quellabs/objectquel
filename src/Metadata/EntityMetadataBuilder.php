@@ -113,6 +113,8 @@
 				// has a corresponding @Orm\Column property on this entity. Catching this
 				// at metadata build time gives a clear error instead of a silent hydration failure.
 				$this->validateRelationColumns($className, $annotations, $manyToOneRelations, $oneToOneRelations);
+				$this->validateSingleRelationPerProperty($className, $manyToOneRelations, $oneToOneRelations, $inverseOfRelations);
+				$this->validateInverseOfPropertyTypes($className, $inverseOfRelations);
 				
 				// Return  a new EntityMetadataRecord containing all relation data
 				return new EntityMetadataRecord(
@@ -452,5 +454,74 @@
 			}
 			
 			return false;
+		}
+		
+		/**
+		 * Validates that no property carries more than one relationship annotation.
+		 *
+		 * A property is either an owning side (ManyToOne/OneToOne) or an inverse hydration
+		 * target (InverseOf), never both. Catching overlaps here prevents the loader from
+		 * silently keeping the first relation annotation and dropping the rest.
+		 * @param class-string $className
+		 * @param array<string, ManyToOne> $manyToOneRelations
+		 * @param array<string, OneToOne> $oneToOneRelations
+		 * @param array<string, InverseOf> $inverseOfRelations
+		 * @throws \RuntimeException When a property declares more than one relationship annotation
+		 */
+		private function validateSingleRelationPerProperty(
+			string $className,
+			array $manyToOneRelations,
+			array $oneToOneRelations,
+			array $inverseOfRelations
+		): void {
+			// Collect, per property, every relationship annotation type declared on it.
+			$typesByProperty = [];
+			
+			$relationsByType = [
+				'ManyToOne' => $manyToOneRelations,
+				'OneToOne'  => $oneToOneRelations,
+				'InverseOf' => $inverseOfRelations,
+			];
+			
+			foreach ($relationsByType as $type => $relations) {
+				foreach (array_keys($relations) as $property) {
+					$typesByProperty[$property][] = $type;
+				}
+			}
+			
+			// A property mapped by more than one type carries conflicting relationship annotations.
+			foreach ($typesByProperty as $property => $types) {
+				if (count($types) > 1) {
+					throw new \RuntimeException(
+						"Property '{$property}' on '{$className}' declares multiple relationship annotations (" .
+						implode(', ', $types) . "). A property may carry only one of ManyToOne, OneToOne, or InverseOf."
+					);
+				}
+			}
+		}
+		
+		/**
+		 * Validates that InverseOf collection properties are typed as a CollectionInterface.
+		 *
+		 * A plain 'array' cannot hold a managed collection — the hydrator only populates
+		 * CollectionInterface instances — so reject it at build time with an actionable error
+		 * instead of letting the relation silently fail to populate during hydration.
+		 * @param class-string $className
+		 * @param array<string, InverseOf> $inverseOfRelations
+		 * @throws \RuntimeException When an InverseOf property is typed as a plain array
+		 */
+		private function validateInverseOfPropertyTypes(string $className, array $inverseOfRelations): void {
+			foreach (array_keys($inverseOfRelations) as $property) {
+				$type = $this->reflectionHandler->getPropertyType($className, $property);
+				
+				// Strip a leading nullable marker before comparing the declared type name.
+				if ($type !== null && ltrim($type, '?') === 'array') {
+					throw new \RuntimeException(
+						"InverseOf property '{$property}' on '{$className}' is typed as 'array'. " .
+						"Inverse collections must be typed as " . \Quellabs\ObjectQuel\Collections\CollectionInterface::class .
+						" and initialized to a collection instance in the entity constructor."
+					);
+				}
+			}
 		}
 	}

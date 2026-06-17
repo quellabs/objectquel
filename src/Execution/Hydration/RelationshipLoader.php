@@ -353,14 +353,30 @@
 			// Capture references for the initializer closure
 			$entityManager = $this->entityManager;
 			$propertyHandler = $this->propertyHandler;
+			$unitOfWork = $this->unitOfWork;
 			
 			$proxy = new $proxyClassName(
 				$this->entityManager,
-				function () use ($entityManager, $propertyHandler, $entity, $property, $targetEntity, $relation, $parentKeyValue): void {
+				function (ProxyInterface $proxy) use ($entityManager, $unitOfWork, $propertyHandler, $entity, $property, $targetEntity, $relation, $parentKeyValue): void {
+					// doInitialize() invokes this on every accessor call, so bail out once the
+					// proxy has already been resolved to avoid re-running the findOneBy query.
+					if ($proxy->isInitialized()) {
+						return;
+					}
+					
 					// findOneBy returns a fully hydrated entity registered in the UnitOfWork.
 					$result = $entityManager->findOneBy($targetEntity, [$relation => $parentKeyValue]);
 					
-					// Set it directly on the parent property — no proxy seeding needed.
+					// Copy the resolved entity's scalar columns into the proxy itself. Generated
+					// accessors read the proxy's own fields via parent::, so the access that triggered
+					// initialization must see real data rather than an empty proxy.
+					if ($result !== null) {
+						$serializer = $unitOfWork->getSerializer();
+						$serializer->deserialize($proxy, $serializer->serialize($result));
+					}
+					
+					// Point the parent at the fully hydrated managed entity so subsequent reads
+					// (including its own relations) resolve through it rather than the proxy.
 					$propertyHandler->set($entity, $property, $result);
 				}
 			);
@@ -783,8 +799,10 @@
 			// Fetch the type name
 			$typeName = $type->getName();
 			
-			// Treat array and any CollectionInterface implementation as a collection
-			return $typeName === 'array' || is_a($typeName, CollectionInterface::class, true);
+			// An inverse property is a collection only when typed as a CollectionInterface
+			// implementation. A plain 'array' is rejected at metadata build time, so it is not
+			// treated as a collection here (doing so would misroute it to the scalar loaders).
+			return is_a($typeName, CollectionInterface::class, true);
 		}
 		
 		/**
