@@ -142,4 +142,37 @@
 		 * @return string  A complete SQL expression, no placeholders.
 		 */
 		public function getCurrentDatetimeFunction(): string;
+		
+		/**
+		 * Returns the SQL infix operator(s) used for a regular expression match
+		 * on engines where REGEXP_LIKE() is not available (see supportsRegexpLike()).
+		 * Callers only reach this when supportsRegexpLike() is false, so flags
+		 * are never representable here and are dropped by design — case
+		 * sensitivity then depends on column collation rather than an explicit flag.
+		 *
+		 * Returned as ['match' => ..., 'notMatch' => ...] because some engines use
+		 * an unrelated token pair rather than a NOT-prefixed form of the same
+		 * operator (e.g. PostgreSQL's '~' vs '!~', not 'NOT ~').
+		 *
+		 * Examples by engine:
+		 *   MySQL/MariaDB  → ['match' => 'REGEXP',  'notMatch' => 'NOT REGEXP']
+		 *   PostgreSQL     → ['match' => '~',       'notMatch' => '!~']
+		 *   SQLite         → ['match' => 'REGEXP',  'notMatch' => 'NOT REGEXP']
+		 *                     (same keyword as MySQL; SQLite parses REGEXP natively
+		 *                     but it errors with "no such function: regexp" unless
+		 *                     the connection has registered a regexp() user
+		 *                     function — that registration is an application/driver
+		 *                     concern this interface cannot detect or guarantee)
+		 *
+		 * SQL Server has no equivalent at all below compatibility level 170
+		 * (SQL Server 2025) — there is no plain regex operator at any compatibility
+		 * level. Implementations for SQL Server should make supportsRegexpLike()
+		 * return true once compatibility level 170+ is confirmed (covering both the
+		 * flagged and flag-less cases via REGEXP_LIKE(col, pattern[, flags])), and
+		 * may throw from this method for older compatibility levels, since reaching
+		 * it there means no regex support exists on the connection at all.
+		 *
+		 * @return array{match: string, notMatch: string}
+		 */
+		public function getRegexpFallbackOperators(): array;
 	}

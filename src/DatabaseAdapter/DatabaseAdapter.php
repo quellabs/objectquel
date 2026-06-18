@@ -6,7 +6,6 @@
 	use Cake\Database\StatementInterface;
 	use Cake\Database\Connection;
 	use Phinx\Db\Adapter\AdapterInterface;
-	use Quellabs\ObjectQuel\Configuration;
 	use Phinx\Db\Adapter\AdapterFactory;
 	
 	/**
@@ -67,6 +66,15 @@
 		private ?AdapterInterface $phinxAdapterCache;
 		
 		/**
+		 * Cached SQL Server database compatibility level (e.g. 170 for SQL
+		 * Server 2025), fetched via DATABASEPROPERTYEX(). Null means "not yet
+		 * queried, or the query failed". Only meaningful when getDatabaseType()
+		 * is 'sqlsrv' — irrelevant for every other engine.
+		 * @var int|null
+		 */
+		private ?int $sqlServerCompatibilityLevelCache;
+		
+		/**
 		 * Constructs a new database adapter instance
 		 * @param Connection $connection CakePHP database connection to wrap
 		 */
@@ -77,6 +85,7 @@
 			$this->transaction_depth = 0;
 			$this->databaseTypeCache = null;
 			$this->phinxAdapterCache = null;
+			$this->sqlServerCompatibilityLevelCache = null;
 		}
 		
 		// ==================== Connection & Driver Info ====================
@@ -282,6 +291,46 @@
 			}
 			
 			return $result;
+		}
+		
+		/**
+		 * Returns the current database's compatibility level on SQL Server
+		 * (e.g. 170 for SQL Server 2025), or null if it could not be determined
+		 * or the connection is not SQL Server. Result is cached for the lifetime
+		 * of this adapter instance.
+		 *
+		 * Compatibility level is a per-database setting independent of the
+		 * engine version — a SQL Server 2025 instance can host a database still
+		 * pinned to an older compatibility level (e.g. migrated without ever
+		 * raising it), so the engine version returned by getServerVersion()
+		 * alone cannot answer "which T-SQL features does this database support".
+		 *
+		 * @return int|null
+		 */
+		public function getSqlServerCompatibilityLevel(): ?int {
+			// Return cache
+			if ($this->sqlServerCompatibilityLevelCache !== null) {
+				return $this->sqlServerCompatibilityLevelCache;
+			}
+			
+			// DB_NAME() resolves to the current connection's database, so this
+			// works without the caller needing to know or pass the database name.
+			$stmt = $this->execute(
+				"SELECT DATABASEPROPERTYEX(DB_NAME(), 'CompatibilityLevel') AS compat_level"
+			);
+			
+			if ($stmt === null) {
+				return null;
+			}
+			
+			$row = $stmt->fetchAssoc();
+			$stmt->closeCursor();
+			
+			if (!$row || !isset($row['compat_level'])) {
+				return null;
+			}
+			
+			return $this->sqlServerCompatibilityLevelCache = (int)$row['compat_level'];
 		}
 		
 		/**

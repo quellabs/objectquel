@@ -807,7 +807,7 @@
 		/**
 		 * Handles type validation for numeric, integer, and float types using
 		 * predefined regex patterns. Optimizes for literal values and uses
-		 * SQL REGEXP for dynamic values.
+		 * a platform-appropriate regex match for dynamic values.
 		 * @param AstIsNumeric|AstIsInteger|AstIsFloat $ast The type check AST node
 		 * @param string $patternKey The key for the regex pattern to use
 		 * @return string SQL condition for type checking
@@ -815,10 +815,10 @@
 		private function handleTypeCheckWithPattern(AstIsNumeric|AstIsInteger|AstIsFloat $ast, string $patternKey): string {
 			$valueNode = $ast->getValue();
 			
-			// String literal: use SQL REGEXP with the pattern
+			// String literal: use a platform-appropriate regex match with the pattern
 			if ($valueNode instanceof AstString) {
 				$escaped = "'" . $this->escapeSqlString($valueNode->getValue()) . "'";
-				return "{$escaped} REGEXP '" . self::REGEX_PATTERNS[$patternKey] . "'";
+				return $this->buildRegexMatch($escaped, self::REGEX_PATTERNS[$patternKey]);
 			}
 			
 			// Numeric literal: evaluate at compile time
@@ -836,7 +836,7 @@
 				return '0';
 			}
 			
-			// Identifier: use type inference to avoid a runtime REGEXP where possible
+			// Identifier: use type inference to avoid a runtime regex match where possible
 			$inferredType = $this->typeInference->inferReturnType($valueNode);
 			$string = $this->visitNodeAndReturnSQL($valueNode);
 			
@@ -846,8 +846,26 @@
 				['INTEGER', 'float'] => '0',
 				['FLOAT', 'float'] => '1',
 				['FLOAT', 'integer'] => '0',
-				default => "{$string} REGEXP '" . self::REGEX_PATTERNS[$patternKey] . "'",
+				default => $this->buildRegexMatch($string, self::REGEX_PATTERNS[$patternKey]),
 			};
+		}
+		
+		/**
+		 * Builds a platform-appropriate "does this expression match this pattern"
+		 * SQL fragment. Used for the flag-less, always-positive matches needed by
+		 * handleTypeCheckWithPattern() — never negated, so this only ever needs
+		 * the 'match' half of getRegexpFallbackOperators(), not 'notMatch'.
+		 * @param string $sqlExpression Already-generated SQL for the value being tested
+		 * @param string $pattern Raw regex pattern (no delimiters)
+		 * @return string SQL boolean expression
+		 */
+		private function buildRegexMatch(string $sqlExpression, string $pattern): string {
+			if ($this->platform->supportsRegexpLike()) {
+				return "REGEXP_LIKE({$sqlExpression}, \"{$pattern}\")";
+			}
+			
+			$operator = $this->platform->getRegexpFallbackOperators()['match'];
+			return "{$sqlExpression} {$operator} '{$pattern}'";
 		}
 		
 		/**
@@ -884,13 +902,15 @@
 		/**
 		 * Handle regular expression patterns for SQL REGEXP / REGEXP_LIKE conversion.
 		 *
-		 * When the pattern carries flags (e.g. /pattern/i) AND the connected database
-		 * supports REGEXP_LIKE(), emits REGEXP_LIKE(col, "pattern", "flags") so that
-		 * the flags are honoured (e.g. case-insensitive matching).
+		 * When the platform supports REGEXP_LIKE() (MySQL 8.0+, SQL Server 2025+),
+		 * emits REGEXP_LIKE(col, "pattern"[, "flags"]) — with the flags argument
+		 * included only when flags are present, since REGEXP_LIKE accepts the
+		 * 2-argument form on both supporting engines.
 		 *
-		 * When the platform does not support REGEXP_LIKE, or no flags are present,
-		 * falls back to the plain col REGEXP "pattern" form and flags are ignored.
-		 * In that case case-sensitivity is determined by the column's collation.
+		 * Otherwise falls back to the platform's plain match/not-match operator
+		 * pair (e.g. MySQL/MariaDB/SQLite's REGEXP/NOT REGEXP, or PostgreSQL's
+		 * ~/!~). Flags are dropped in this path — case-sensitivity then depends
+		 * on the column's collation rather than an explicit flag.
 		 *
 		 * @param AstRegExp $rightAst The regex pattern AST node
 		 * @param NodeBinary $ast The full expression
@@ -901,16 +921,21 @@
 			$leftResult = $this->visitNodeAndReturnSQL($ast->getLeft());
 			$flags = $rightAst->getFlags();
 			
-			// Use REGEXP_LIKE(col, pattern, flags) when flags are present and the
-			// platform supports it (MySQL 8.0+). This is the only way to pass flags
-			// to the regex engine in MySQL — the plain REGEXP operator has no flag syntax.
-			if ($flags !== '' && $this->platform->supportsRegexpLike()) {
+			// REGEXP_LIKE(col, pattern[, flags]) when the platform supports it.
+			// Used regardless of whether flags are present — REGEXP_LIKE with no
+			// third argument is valid on every engine that supports the function,
+			// so there is no reason to fall back to the plain operator just
+			// because this particular pattern has no flags.
+			if ($this->platform->supportsRegexpLike()) {
 				$not = $operator === '<>' ? 'NOT ' : '';
-				return "{$not}REGEXP_LIKE({$leftResult}, \"{$rightAst->getValue()}\", \"{$flags}\")";
+				$flagsArg = $flags !== '' ? ", \"{$flags}\"" : '';
+				return "{$not}REGEXP_LIKE({$leftResult}, \"{$rightAst->getValue()}\"{$flagsArg})";
 			}
 			
-			// Fallback: plain REGEXP. Flags are dropped — behavior depends on collation.
-			$regexpOperator = $operator === '=' ? ' REGEXP ' : ' NOT REGEXP ';
+			// Fallback: platform-specific plain match operator. Flags are dropped
+			// — behavior depends on collation.
+			$operators = $this->platform->getRegexpFallbackOperators();
+			$regexpOperator = $operator === '=' ? $operators['match'] : $operators['notMatch'];
 			return "{$leftResult}{$regexpOperator}\"{$rightAst->getValue()}\"";
 		}
 		

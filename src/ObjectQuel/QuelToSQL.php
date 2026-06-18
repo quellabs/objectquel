@@ -32,8 +32,8 @@
 		 * @param PlatformCapabilitiesInterface $platform Database engine capability descriptor
 		 */
 		public function __construct(
-			EntityStore                   $entityStore,
-			array                         &$parameters,
+			EntityStore $entityStore,
+			array &$parameters,
 			PlatformCapabilitiesInterface $platform = new NullPlatformCapabilities()
 		) {
 			$this->entityStore = $entityStore;
@@ -111,7 +111,7 @@
 					if (!$this->identifierIsEntity($value->getExpression())) {
 						// Fetch the alias name
 						$aliasName = $value->getName();
-
+						
 						// When emitting as a subquery, rewrite the alias to use the outer range name (e.g. "id" → "x.id").
 						if ($outerRangeName !== null) {
 							$aliasName = $outerRangeName . '.' . $aliasName;
@@ -223,6 +223,13 @@
 		
 		/**
 		 * Directly manipulate the values in IN() without extra queries
+		 *
+		 * Emits a portable CASE expression rather than MySQL/MariaDB's FIELD()
+		 * function, which has no equivalent on PostgreSQL, SQLite, or SQL Server.
+		 * CASE col WHEN v1 THEN 1 WHEN v2 THEN 2 ... END produces the same
+		 * ordering as FIELD(col, v1, v2, ...) and is standard SQL supported by
+		 * every target engine.
+		 *
 		 * @param AstRetrieve $retrieve
 		 * @return string
 		 * @throws QuelException
@@ -245,6 +252,7 @@
 				// Convert Quel conditions to a SQL string
 				$retrieveEntitiesVisitor = new BuildSqlFromAst($this->entityStore, $this->parameters, "SORT", $this->platform);
 				$astObject->getIdentifier()->accept($retrieveEntitiesVisitor);
+				$column = $retrieveEntitiesVisitor->getResult();
 				
 				// Process the results into an SQL ORDER BY clause
 				$mappedParameters = array_map(function ($e) {
@@ -255,11 +263,31 @@
 					}
 				}, $astObject->getParameters());
 				
-				// Remove empty values, make unique and implode
-				$parametersSql = implode(",", array_unique(array_filter($mappedParameters)));
+				// Remove empty values and make unique, preserving the original order
+				// so the WHEN clauses below assign positions in the same sequence
+				// FIELD() would have used.
+				$uniqueValues = array_unique(array_filter($mappedParameters));
 				
-				// Return results
-				return "ORDER BY FIELD(" . $retrieveEntitiesVisitor->getResult() . ", " . $parametersSql . ")";
+				// Build "WHEN value THEN position" for each value, 1-indexed to
+				// match FIELD()'s convention (FIELD() returns 1 for the first
+				// list entry, not 0).
+				$whenClauses = [];
+				$position = 1;
+				
+				foreach ($uniqueValues as $value) {
+					$whenClauses[] = "WHEN {$value} THEN {$position}";
+					$position++;
+				}
+				
+				// Return results.
+				// ELSE 0 makes unmatched rows sort before all matched positions on
+				// every engine, replicating FIELD()'s behavior exactly. Without it,
+				// non-matching rows would be NULL, and NULL's default ordering
+				// position in ASC sorts differs by engine — MySQL, SQLite, and SQL
+				// Server put NULL first (matching FIELD()'s 0), but PostgreSQL puts
+				// NULL last by default, which would silently change result order
+				// on that one engine if left implicit.
+				return "ORDER BY CASE {$column} " . implode(" ", $whenClauses) . " ELSE 0 END";
 			}
 		}
 		

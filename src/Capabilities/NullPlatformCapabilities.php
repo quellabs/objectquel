@@ -113,4 +113,14 @@
 		public function getCurrentDatetimeFunction(): string {
 			return 'NOW()';
 		}
+		
+		/**
+		 * @inheritDoc
+		 *
+		 * Defaults to MySQL/MariaDB syntax, the most broadly recognised default
+		 * when no database connection is available to detect the actual engine.
+		 */
+		public function getRegexpFallbackOperators(): array {
+			return ['match' => 'REGEXP', 'notMatch' => 'NOT REGEXP'];
+		}
 	}

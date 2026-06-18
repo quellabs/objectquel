@@ -15,12 +15,21 @@
 	 *   $platform = new PlatformCapabilities($adapter);
 	 *   $quelToSQL = new QuelToSQL($entityStore, $parameters, $platform);
 	 */
-	readonly class PlatformCapabilities implements PlatformCapabilitiesInterface {
+	class PlatformCapabilities implements PlatformCapabilitiesInterface {
 		
 		/**
 		 * @var DatabaseAdapter
 		 */
-		private DatabaseAdapter $adapter;
+		private readonly DatabaseAdapter $adapter;
+		
+		/**
+		 * Lazily-populated cache for supportsWindowFunctions()'s probe query result.
+		 * Per-instance (unlike a `static` local, which would be shared across every
+		 * PlatformCapabilities instance regardless of which connection it wraps).
+		 * Null means "not yet probed".
+		 * @var bool|null
+		 */
+		private ?bool $windowFunctionsCache = null;
 		
 		/**
 		 * Constructor
@@ -41,29 +50,64 @@
 		/**
 		 * @inheritDoc
 		 *
-		 * REGEXP_LIKE(col, pattern, flags) is available in MySQL 8.0.0 and later.
-		 * MariaDB exposes REGEXP_LIKE() but does not accept the flags argument,
-		 * so this returns false for MariaDB and all non-MySQL databases.
+		 * REGEXP_LIKE(col, pattern, flags) is available in MySQL 8.0.0 and later,
+		 * and in SQL Server 2025 and later — but only once the database's
+		 * compatibility level has actually been raised to 170+. A SQL Server 2025
+		 * instance hosting a database left at an older compatibility level does
+		 * not support REGEXP_LIKE() despite the engine itself being new enough,
+		 * so this confirms compatibility level via DatabaseAdapter::
+		 * getSqlServerCompatibilityLevel() rather than inferring support from
+		 * engine version alone.
+		 * MariaDB exposes REGEXP_LIKE() but does not accept the flags argument
+		 * (rejected by design — PCRE inline flags were considered sufficient — see
+		 * MDEV-4425), so this returns false for MariaDB and all other engines.
 		 */
 		public function supportsRegexpLike(): bool {
-			if ($this->adapter->getDatabaseType() !== 'mysql') {
-				return false;
-			}
-			
-			return version_compare($this->adapter->getServerVersion(), '8.0.0', '>=');
+			return match ($this->adapter->getDatabaseType()) {
+				'mysql' => version_compare($this->adapter->getServerVersion(), '8.0.0', '>='),
+				'sqlsrv' => version_compare($this->adapter->getServerVersion(), '17.0', '>=')
+					&& ($this->adapter->getSqlServerCompatibilityLevel() ?? 0) >= 170,
+				default => false,
+			};
 		}
 		
 		/**
 		 * @inheritDoc
 		 *
-		 * Performs feature detection by executing a probe query the first time it is
-		 * called. Result is cached for the lifetime of this instance.
+		 * Only reached when supportsRegexpLike() is false. For 'sqlsrv' that
+		 * covers two cases: an engine older than SQL Server 2025, or a SQL Server
+		 * 2025+ engine hosting a database whose compatibility level hasn't been
+		 * raised to 170+. Either way there is no regex operator available, so
+		 * this throws rather than returning a syntactically-valid-looking
+		 * operator that isn't.
+		 */
+		public function getRegexpFallbackOperators(): array {
+			return match ($this->adapter->getDatabaseType()) {
+				'pgsql' => ['match' => '~', 'notMatch' => '!~'],
+				'sqlsrv' => throw new \RuntimeException(
+					'No regular expression support is available on this SQL Server ' .
+					'connection. REGEXP_LIKE() requires SQL Server 2025 (compatibility ' .
+					'level 170+); no fallback operator exists on earlier versions.'
+				),
+				
+				// MySQL, MariaDB, SQLite all parse the REGEXP keyword the same way.
+				// SQLite specifically requires a regexp() user function to be
+				// registered on the connection or this will fail at query time with
+				// "no such function: regexp" — that registration is outside what
+				// this interface can control.
+				default => ['match' => 'REGEXP', 'notMatch' => 'NOT REGEXP'],
+			};
+		}
+		
+		/**
+		 * @inheritDoc
+		 *
+		 * Performs feature detection by executing a probe query the first time it
+		 * is called. Result is cached per-instance for the lifetime of this object.
 		 */
 		public function supportsWindowFunctions(): bool {
-			static $cache = null;
-			
-			if ($cache !== null) {
-				return $cache;
+			if ($this->windowFunctionsCache !== null) {
+				return $this->windowFunctionsCache;
 			}
 			
 			// Portable probe: COUNT(...) OVER () over a single-row derived table.
@@ -72,11 +116,11 @@
 			$stmt = $this->adapter->execute($probeSql);
 			
 			if ($stmt === null) {
-				return $cache = false;
+				return $this->windowFunctionsCache = false;
 			}
 			
 			$stmt->closeCursor();
-			return $cache = true;
+			return $this->windowFunctionsCache = true;
 		}
 		
 		/**
