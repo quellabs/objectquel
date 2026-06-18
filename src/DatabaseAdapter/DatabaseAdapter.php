@@ -44,12 +44,9 @@
 		/**
 		 * Keep a list of decimal types for precision/scale inclusion
 		 * Phinx seems to sometimes return precision for integer fields which is incorrect
-         * @var array|string[] Decimal types in database
+		 * @var array|string[] Decimal types in database
 		 */
 		const array DECIMAL_TYPES = ['decimal', 'numeric', 'float', 'double'];
-		
-		/** @var Configuration Configuration instance for ObjectQuel settings */
-		protected Configuration $configuration;
 		
 		/** @var Connection CakePHP database connection instance */
 		protected Connection $connection;
@@ -63,26 +60,23 @@
 		/** @var int Current nesting level of active transactions (0 = no active transaction) */
 		protected int $transaction_depth;
 		
-		/** @var array<string, array<string, mixed>> Cached index definitions for tables */
-		protected array $indexes;
-		
 		/** @var string|null Cached database type identifier (null = not yet determined) */
 		private ?string $databaseTypeCache;
+		
+		/** @var AdapterInterface|null Cached Phinx adapter instance (null = not yet created) */
+		private ?AdapterInterface $phinxAdapterCache;
 		
 		/**
 		 * Constructs a new database adapter instance
 		 * @param Connection $connection CakePHP database connection to wrap
 		 */
 		public function __construct(Connection $connection) {
-			// Store connection
 			$this->connection = $connection;
-			
-			// setup ORM
-			$this->indexes = [];
 			$this->last_error = 0;
 			$this->last_error_message = '';
 			$this->transaction_depth = 0;
 			$this->databaseTypeCache = null;
+			$this->phinxAdapterCache = null;
 		}
 		
 		// ==================== Connection & Driver Info ====================
@@ -154,9 +148,15 @@
 		/**
 		 * Creates a Phinx adapter instance from the current CakePHP connection
 		 * Maps CakePHP driver configuration to Phinx adapter format for schema migration support.
+		 * The instance is cached for the lifetime of this DatabaseAdapter, since the
+		 * underlying CakePHP connection config is immutable after construction.
 		 * @return AdapterInterface Phinx adapter instance configured for the current database
 		 */
 		public function getPhinxAdapter(): AdapterInterface {
+			if ($this->phinxAdapterCache !== null) {
+				return $this->phinxAdapterCache;
+			}
+			
 			// Use the existing connection instead of fetching 'default'
 			$connection = $this->connection;
 			
@@ -188,8 +188,9 @@
 				'charset' => $config['encoding'] ?? 'utf8mb4',
 			];
 			
-			// Create and return the adapter
-			return AdapterFactory::instance()->getAdapter($phinxConfig['adapter'], $phinxConfig);
+			// Create and cache the adapter
+			$this->phinxAdapterCache = AdapterFactory::instance()->getAdapter($phinxConfig['adapter'], $phinxConfig);
+			return $this->phinxAdapterCache;
 		}
 		
 		// ==================== Database Capability Detection ====================
@@ -199,7 +200,7 @@
 		 * @return bool True if native ENUM types are supported (MySQL/MariaDB), false otherwise
 		 */
 		public function supportsNativeEnums(): bool {
-			return in_array($this->getDatabaseType(), ['mysql', 'mariadb']);
+			return in_array($this->getDatabaseType(), ['mysql', 'mariadb'], true);
 		}
 		
 		// ==================== Schema Introspection ====================
@@ -265,7 +266,7 @@
 					'identity'    => $column->getIdentity(),
 					
 					// Whether this column is part of the primary key
-					'primary_key' => in_array($column->getName(), $primaryKey),
+					'primary_key' => in_array($column->getName(), $primaryKey, true),
 					
 					// Values for enums
 					'values'      => $column->getValues()
@@ -274,20 +275,29 @@
 				// For enums put the max length in the column data.
 				// This is needed to be able to compare entity data with database data
 				if ($columnType === 'enum') {
-					$values = $column->getValues();
-					
-					if (!empty($values)) {
-						$maxLength = max(array_map('strlen', $values));
-						$columnData['limit'] = max($maxLength, 32);
-					} else {
-						$columnData['limit'] = 32;
-					}
+					$columnData['limit'] = $this->resolveEnumLimit($column->getValues());
 				}
 				
 				$result[$column->getName()] = $columnData;
 			}
 			
 			return $result;
+		}
+		
+		/**
+		 * Computes the storage limit for an enum column based on its longest case.
+		 * Falls back to a minimum of 32 to leave headroom for entity-side comparisons
+		 * against database data, even when the enum has no defined values.
+		 * @param array<int, string>|null $values Enum case values
+		 * @return int Limit to use for the column definition
+		 */
+		private function resolveEnumLimit(?array $values): int {
+			if (empty($values)) {
+				return 32;
+			}
+			
+			$maxLength = max(array_map('strlen', $values));
+			return max($maxLength, 32);
 		}
 		
 		/**
@@ -327,7 +337,6 @@
 					 * This supports both single and composite primary keys
 					 * @var array{type: string, columns: array<string>} $constraintData
 					 */
-					$constraintData = $schema->getConstraint($constraint);
 					return $constraintData['columns'];
 				}
 			}
@@ -362,8 +371,6 @@
 				// Store the index details in the result array, using the index name as key
 				// Index details include columns, type (PRIMARY, UNIQUE, INDEX), and other properties
 				/** @var array{type: string, columns: array<string>, length: array<int,int>|null} $index */
-				$index = $tableSchema->getIndex($indexName);
-				
 				if (in_array($index['type'], self::INDEX_TYPES, true)) {
 					$type = $index['type'];
 				} else {
@@ -478,7 +485,12 @@
 		// ==================== Transaction Management ====================
 		
 		/**
-		 * Begins a new database transaction
+		 * Begins a new database transaction.
+		 *
+		 * Nesting is depth-counted, not savepoint-based: an inner
+		 * rollbackTrans() does not roll back immediately, it only rolls
+		 * back once the outermost call unwinds.
+		 *
 		 * @return void
 		 */
 		public function beginTrans(): void {
@@ -490,10 +502,16 @@
 		}
 		
 		/**
-		 * Commits the current transaction
+		 * Commits the current transaction.
+		 * See beginTrans() for notes on logical (depth-counted) nesting.
 		 * @return void
+		 * @throws \LogicException If called without a matching beginTrans()
 		 */
 		public function commitTrans(): void {
+			if ($this->transaction_depth <= 0) {
+				throw new \LogicException('commitTrans() called without an active transaction');
+			}
+			
 			$this->transaction_depth--;
 			
 			if ($this->transaction_depth == 0) {
@@ -502,10 +520,16 @@
 		}
 		
 		/**
-		 * Rolls back the current transaction
+		 * Rolls back the current transaction.
+		 * See beginTrans() for notes on logical (depth-counted) nesting.
 		 * @return void
+		 * @throws \LogicException If called without a matching beginTrans()
 		 */
 		public function rollbackTrans(): void {
+			if ($this->transaction_depth <= 0) {
+				throw new \LogicException('rollbackTrans() called without an active transaction');
+			}
+			
 			$this->transaction_depth--;
 			
 			if ($this->transaction_depth == 0) {

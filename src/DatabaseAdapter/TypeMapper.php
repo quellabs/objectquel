@@ -2,9 +2,6 @@
 	
 	namespace Quellabs\ObjectQuel\DatabaseAdapter;
 	
-	use Quellabs\ObjectQuel\Annotations\Orm\Column;
-	use Quellabs\ObjectQuel\Serialization\Normalizer\EnumNormalizer;
-	
 	/**
 	 * TypeMapper static utility class
 	 */
@@ -28,6 +25,88 @@
 		];
 		
 		/**
+		 * Phinx column type to corresponding PHP type
+		 * @var array<string, string>
+		 */
+		private const array TYPE_MAP = [
+			// Integer types
+			'tinyinteger'  => 'int',
+			'smallinteger' => 'int',
+			'integer'      => 'int',
+			'biginteger'   => 'int', // Could be 'string' for very large numbers
+			
+			// String types
+			'string'       => 'string',
+			'char'         => 'string',
+			'text'         => 'string',
+			
+			// Float/decimal types
+			'float'        => 'float',
+			'decimal'      => 'float', // Could also be string for precision
+			
+			// Boolean type
+			'boolean'      => 'bool',
+			
+			// Date and time types
+			'date'         => '\DateTime',
+			'datetime'     => '\DateTime',
+			'time'         => '\DateTime',
+			'timestamp'    => '\DateTime',
+			
+			// Binary type
+			'binary'       => 'string',
+			'blob'         => 'string',
+			
+			// JSON type — 'json' is the ORM canonical type; the migration layer
+			// translates it to 'jsonb' on PostgreSQL. 'jsonb' never appears here.
+			'json'         => 'array',
+			
+			// Other types
+			'enum'         => 'string',
+			'set'          => 'array',
+			'uuid'         => 'string',
+			'year'         => 'int'
+		];
+		
+		/**
+		 * Type-specific properties relevant for column comparison, beyond the base set
+		 * @var array<string, string[]>
+		 */
+		private const array RELEVANT_PROPERTIES = [
+			// Integer types (universally supported)
+			'tinyinteger'  => ['limit', 'unsigned', 'identity'],
+			'smallinteger' => ['limit', 'unsigned', 'identity'],
+			'integer'      => ['limit', 'unsigned', 'identity'],
+			'biginteger'   => ['limit', 'unsigned', 'identity'],
+			
+			// String types (universally supported)
+			'string'       => ['limit'],
+			'char'         => ['limit'],
+			'text'         => [],
+			
+			// Float/decimal types (universally supported)
+			'float'        => ['precision', 'unsigned'],
+			'decimal'      => ['precision', 'scale', 'unsigned'],
+			
+			// Boolean type (universally supported)
+			'boolean'      => [],
+			
+			// Date and time types (universally supported)
+			'date'         => [],
+			'datetime'     => ['precision'],
+			'time'         => ['precision'],
+			'timestamp'    => ['precision', 'update'],
+			
+			// Binary type (universally supported)
+			'binary'       => ['limit'],
+			'blob'         => [],
+			
+			// Common extension types
+			'json'         => [],
+			'enum'         => ['limit', 'values'],
+		];
+		
+		/**
 		 * Get the default limit for a column type
 		 * @param string $type Column type
 		 * @return int|null The default limit (null if not applicable)
@@ -42,47 +121,7 @@
 		 * @return string The corresponding PHP type
 		 */
 		public static function phinxTypeToPhpType(string $phinxType): string {
-			$typeMap = [
-				// Integer types
-				'tinyinteger'  => 'int',
-				'smallinteger' => 'int',
-				'integer'      => 'int',
-				'biginteger'   => 'int', // Could be 'string' for very large numbers
-				
-				// String types
-				'string'       => 'string',
-				'char'         => 'string',
-				'text'         => 'string',
-				
-				// Float/decimal types
-				'float'        => 'float',
-				'decimal'      => 'float', // Could also be string for precision
-				
-				// Boolean type
-				'boolean'      => 'bool',
-				
-				// Date and time types
-				'date'         => '\DateTime',
-				'datetime'     => '\DateTime',
-				'time'         => '\DateTime',
-				'timestamp'    => '\DateTime',
-				
-				// Binary type
-				'binary'       => 'string',
-				'blob'         => 'string',
-				
-				// JSON type — 'json' is the ORM canonical type; the migration layer
-				// translates it to 'jsonb' on PostgreSQL. 'jsonb' never appears here.
-				'json'         => 'array',
-				
-				// Other types
-				'enum'         => 'string',
-				'set'          => 'array',
-				'uuid'         => 'string',
-				'year'         => 'int'
-			];
-			
-			return $typeMap[$phinxType] ?? 'mixed';
+			return self::TYPE_MAP[$phinxType] ?? 'mixed';
 		}
 		
 		/**
@@ -94,43 +133,8 @@
 			// Base properties all columns have
 			$baseProperties = ['type', 'null', 'default'];
 			
-			// Type-specific properties
-			$typeProperties = [
-				// Integer types (universally supported)
-				'tinyinteger'  => ['limit', 'unsigned', 'identity'],
-				'smallinteger' => ['limit', 'unsigned', 'identity'],
-				'integer'      => ['limit', 'unsigned', 'identity'],
-				'biginteger'   => ['limit', 'unsigned', 'identity'],
-				
-				// String types (universally supported)
-				'string'       => ['limit'],
-				'char'         => ['limit'],
-				'text'         => [],
-				
-				// Float/decimal types (universally supported)
-				'float'        => ['precision', 'unsigned'],
-				'decimal'      => ['precision', 'scale', 'unsigned'],
-				
-				// Boolean type (universally supported)
-				'boolean'      => [],
-				
-				// Date and time types (universally supported)
-				'date'         => [],
-				'datetime'     => ['precision'],
-				'time'         => ['precision'],
-				'timestamp'    => ['precision', 'update'],
-				
-				// Binary type (universally supported)
-				'binary'       => ['limit'],
-				'blob'         => [],
-				
-				// Common extension types
-				'json'         => [],
-				'enum'         => ['limit', 'values'],
-			];
-			
 			// Unknown types get no extra properties beyond the base set
-			return array_merge($baseProperties, $typeProperties[$type] ?? []);
+			return array_merge($baseProperties, self::RELEVANT_PROPERTIES[$type] ?? []);
 		}
 		
 		/**
