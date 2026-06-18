@@ -290,7 +290,7 @@
 			
 			$this->lexer->match(Token::Comma);
 			
-			$altValue = $this->expressionRule->parseSimpleValue();
+			$altValue = $this->expressionRule->parse();
 			
 			$this->lexer->match(Token::ParenthesesClose);
 

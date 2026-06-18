@@ -3,9 +3,7 @@
 	namespace Quellabs\ObjectQuel\ObjectQuel\Rules;
 	
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstBool;
-	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstExpression;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstFactor;
-	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstIdentifier;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstNull;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstNumber;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstParameter;
@@ -15,7 +13,6 @@
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstUnaryOperation;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstCast;
 	use Quellabs\ObjectQuel\ObjectQuel\AstInterface;
-	use Quellabs\ObjectQuel\ObjectQuel\Lexer;
 	use Quellabs\ObjectQuel\ObjectQuel\LexerException;
 	use Quellabs\ObjectQuel\ObjectQuel\ParserException;
 	use Quellabs\ObjectQuel\ObjectQuel\Token;
@@ -32,59 +29,21 @@
 		 */
 		public function parse(): AstInterface {
 			// Parse the first factor in the term
-			$factor = $this->parseFactor();
+			$left = $this->parseFactor();
 			
-			switch ($this->lexer->lookahead()) {
-				case Token::Plus:
-					$this->lexer->match($this->lexer->lookahead());
-					return new AstTerm($factor, $this->parse(), "+");
+			// Fold left so that "1 - 2 - 3" parses as (1 - 2) - 3 instead of
+			// 1 - (2 - 3). A right-recursive call here would make + and -
+			// right-associative, which is incorrect for arithmetic.
+			while (true) {
+				$lookahead = $this->lexer->lookahead();
 				
-				case Token::Minus:
-					$this->lexer->match($this->lexer->lookahead());
-					return new AstTerm($factor, $this->parse(), "-");
+				if ($lookahead !== Token::Plus && $lookahead !== Token::Minus) {
+					return $left;
+				}
 				
-				default:
-					return $factor;
-			}
-		}
-		
-		/**
-		 * Parse a simple value (number, string, true, false)
-		 * @return AstInterface
-		 * @throws LexerException|ParserException|\ReflectionException
-		 */
-		public function parseSimpleValue(): AstInterface {
-			$token = $this->lexer->peek();
-			$tokenType = $token->getType();
-			$tokenExtraData = $token->getExtraData();
-			
-			switch ($tokenType) {
-				case Token::Number :
-					$this->lexer->match($tokenType);
-					return new AstNumber(var_export($token->getNumericValue(), true));
-				
-				case Token::String :
-					$this->lexer->match($tokenType);
-					
-					if (isset($tokenExtraData['char']) && is_string($tokenExtraData['char'])) {
-						$enclosingChar = $tokenExtraData['char'];
-					} else {
-						$enclosingChar = '"';
-					}
-					
-					return new AstString($token->getStringValue(), $enclosingChar);
-				
-				case Token::False :
-					$this->lexer->match($tokenType);
-					return new AstBool(false);
-				
-				case Token::True :
-					$this->lexer->match($tokenType);
-					return new AstBool(true);
-				
-				default :
-					$tokenTypeName = Token::toString($tokenType);
-					throw new ParserException("Unexpected token '{$tokenTypeName}' on line {$this->lexer->getLineNumber()}");
+				$this->lexer->match($lookahead);
+				$right = $this->parseFactor();
+				$left = new AstTerm($left, $right, $lookahead === Token::Plus ? "+" : "-");
 			}
 		}
 		
@@ -190,21 +149,21 @@
 		 */
 		protected function parseFactor(): AstInterface {
 			// Parse a constant or an identifier (like a variable)
-			$unaryExpression = $this->parseUnaryExpression();
+			$left = $this->parseUnaryExpression();
 			
-			// Check if the next token is either '*' or '/'
-			switch($this->lexer->lookahead()) {
-				case Token::Star :
-					$this->lexer->match($this->lexer->lookahead());
-					return new AstFactor($unaryExpression, $this->parseFactor(), "*");
+			// Fold left so that "8 / 4 / 2" parses as (8 / 4) / 2 instead of
+			// 8 / (4 / 2). A right-recursive call here would make * and /
+			// right-associative, which is incorrect for arithmetic.
+			while (true) {
+				$lookahead = $this->lexer->lookahead();
 				
-				case Token::Slash :
-					$this->lexer->match($this->lexer->lookahead());
-					return new AstFactor($unaryExpression, $this->parseFactor(), "/");
+				if ($lookahead !== Token::Star && $lookahead !== Token::Slash) {
+					return $left;
+				}
 				
-				default :
-					return $unaryExpression;
-				
+				$this->lexer->match($lookahead);
+				$right = $this->parseUnaryExpression();
+				$left = new AstFactor($left, $right, $lookahead === Token::Star ? "*" : "/");
 			}
 		}
 		
@@ -314,7 +273,7 @@
 		 * identifier as the type name and leaves rejection to a later pass.
 		 *
 		 * @return AstCast
-		 * @throws LexerException|ParserException
+		 * @throws LexerException|ParserException|\ReflectionException
 		 */
 		protected function parseCastExpression(): AstCast {
 			// Consume (
