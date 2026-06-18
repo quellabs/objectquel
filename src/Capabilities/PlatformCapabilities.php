@@ -50,23 +50,19 @@
 		/**
 		 * @inheritDoc
 		 *
-		 * REGEXP_LIKE(col, pattern, flags) is available in MySQL 8.0.0 and later,
-		 * and in SQL Server 2025 and later — but only once the database's
-		 * compatibility level has actually been raised to 170+. A SQL Server 2025
-		 * instance hosting a database left at an older compatibility level does
-		 * not support REGEXP_LIKE() despite the engine itself being new enough,
-		 * so this confirms compatibility level via DatabaseAdapter::
-		 * getSqlServerCompatibilityLevel() rather than inferring support from
-		 * engine version alone.
-		 * MariaDB exposes REGEXP_LIKE() but does not accept the flags argument
-		 * (rejected by design — PCRE inline flags were considered sufficient — see
-		 * MDEV-4425), so this returns false for MariaDB and all other engines.
+		 * REGEXP_LIKE(col, pattern, flags) is supported by MySQL 8.0+ and SQL Server
+		 * 2025+ when the database compatibility level is 170 or higher. Because SQL
+		 * Server support depends on compatibility level rather than engine version,
+		 * this checks DatabaseAdapter::getSqlServerCompatibilityLevel().
+		 *
+		 * MariaDB provides REGEXP_LIKE() but rejects the flags argument by design
+		 * (MDEV-4425), relying on PCRE inline flags instead, so this returns false
+		 * for MariaDB and all other engines.
 		 */
 		public function supportsRegexpLike(): bool {
 			return match ($this->adapter->getDatabaseType()) {
-				'mysql' => version_compare($this->adapter->getServerVersion(), '8.0.0', '>='),
-				'sqlsrv' => version_compare($this->adapter->getServerVersion(), '17.0', '>=')
-					&& ($this->adapter->getSqlServerCompatibilityLevel() ?? 0) >= 170,
+				'mysql' => $this->supportsMysqlRegexpLike(),
+				'sqlsrv' => $this->supportsSqlServerRegexpLike(),
 				default => false,
 			};
 		}
@@ -190,20 +186,27 @@
 		 * JSON path extraction style depends on the engine and version:
 		 * - PostgreSQL:       col #>> '{a,b}'          (all versions)
 		 * - MariaDB >= 10.9:  JSON_VALUE(col, '$.a.b')
-		 * - SQLite >= 3.38:   JSON_VALUE(col, '$.a.b')
+		 * - SQLite >= 3.38:   col ->> '$.a.b'          (SQLite has no JSON_VALUE())
 		 * - All others:       JSON_UNQUOTE(JSON_EXTRACT(col, '$.a.b'))
 		 */
 		public function getJsonExtractionStyle(): JsonExtractionStyle {
-			return match ($this->adapter->getDatabaseType()) {
-				'pgsql' => JsonExtractionStyle::HashDoubleArrow,
-				'mariadb' => version_compare($this->adapter->getServerVersion(), '10.9.0', '>=')
-					? JsonExtractionStyle::JsonValue
-					: JsonExtractionStyle::JsonUnquote,
-				'sqlite' => version_compare($this->adapter->getServerVersion(), '3.38.0', '>=')
-					? JsonExtractionStyle::JsonValue
-					: JsonExtractionStyle::JsonUnquote,
-				default => JsonExtractionStyle::JsonUnquote,
-			};
+			switch ($this->adapter->getDatabaseType()) {
+				case 'pgsql':
+					return JsonExtractionStyle::HashDoubleArrow;
+				
+				case 'mariadb':
+					return $this->supportsMariaDbJsonValue()
+						? JsonExtractionStyle::JsonValue
+						: JsonExtractionStyle::JsonUnquote;
+				
+				case 'sqlite':
+					return $this->supportsSqliteArrowOperator()
+						? JsonExtractionStyle::ArrowOperator
+						: JsonExtractionStyle::JsonUnquote;
+				
+				default:
+					return JsonExtractionStyle::JsonUnquote;
+			}
 		}
 		
 		/**
@@ -297,5 +300,45 @@
 				'sqlsrv' => 'SYSDATETIME()',
 				default => 'NOW()',
 			};
+		}
+		
+		/**
+		 * REGEXP_LIKE(col, pattern, flags) was added in MySQL 8.0.0.
+		 * @return bool
+		 */
+		private function supportsMysqlRegexpLike(): bool {
+			return version_compare($this->adapter->getServerVersion(), '8.0.0', '>=');
+		}
+		
+		/**
+		 * REGEXP_LIKE(col, pattern, flags) is available in SQL Server 2025 and later,
+		 * provided the database compatibility level is 170 or higher.
+		 * @return bool
+		 */
+		private function supportsSqlServerRegexpLike(): bool {
+			if (!version_compare($this->adapter->getServerVersion(), '17.0', '>=')) {
+				return false;
+			}
+			
+			return ($this->adapter->getSqlServerCompatibilityLevel() ?? 0) >= 170;
+		}
+		
+		/**
+		 * JSON_VALUE() was added in MariaDB 10.9.0.
+		 * @return bool
+		 */
+		private function supportsMariaDbJsonValue(): bool {
+			return version_compare($this->adapter->getServerVersion(), '10.9.0', '>=');
+		}
+		
+		/**
+		 * SQLite added the -> and ->> JSON operators in 3.38.0. SQLite has no
+		 * JSON_VALUE() function at any version; ->> is the closest equivalent —
+		 * it unwraps the result to a plain SQL scalar the same way JSON_VALUE()
+		 * does on MariaDB/SQL Server, just with different syntax.
+		 * @return bool
+		 */
+		private function supportsSqliteArrowOperator(): bool {
+			return version_compare($this->adapter->getServerVersion(), '3.38.0', '>=');
 		}
 	}

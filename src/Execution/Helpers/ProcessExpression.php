@@ -1113,9 +1113,17 @@
 				})(),
 				
 				JsonExtractionStyle::JsonValue => (function () use ($rangeName, $columnName, $pathSegments) {
-					// SQL:2016 JSON_VALUE — SQLite 3.38+, MariaDB 10.9+, SQL Server 2022+
+					// SQL:2016 JSON_VALUE — MariaDB 10.9+. (SQLite has no
+					// JSON_VALUE() function at any version — see ArrowOperator.)
 					$jsonPath = '$.' . implode('.', $pathSegments);
 					return "JSON_VALUE(`{$rangeName}`.`{$columnName}`, '{$jsonPath}')";
+				})(),
+				
+				JsonExtractionStyle::ArrowOperator => (function () use ($rangeName, $columnName, $pathSegments) {
+					// SQLite 3.38+: col ->> '$.a.b' — SQLite's equivalent of
+					// JSON_VALUE(); it unwraps the result to a plain SQL scalar.
+					$jsonPath = '$.' . implode('.', $pathSegments);
+					return "\"{$rangeName}\".\"{$columnName}\" ->> '{$jsonPath}'";
 				})(),
 				
 				// Default: MySQL/MariaDB JSON_UNQUOTE(JSON_EXTRACT(...))
