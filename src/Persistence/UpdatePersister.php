@@ -4,6 +4,7 @@
 	
 	use Quellabs\ObjectQuel\Annotations\Orm\Column;
 	use Quellabs\ObjectQuel\Annotations\Orm\Version;
+	use Quellabs\ObjectQuel\Capabilities\PlatformCapabilities;
 	use Quellabs\ObjectQuel\DatabaseAdapter\DatabaseAdapter;
 	use Quellabs\ObjectQuel\EntityStore;
 	use Quellabs\ObjectQuel\Exception\EntityResolutionException;
@@ -36,6 +37,13 @@
 		private DatabaseAdapter $connection;
 		
 		/**
+		 * Used to generate engine-appropriate SQL fragments (e.g. the correct
+		 * "current datetime" expression) instead of hardcoding MySQL syntax.
+		 * @var PlatformCapabilities
+		 */
+		private PlatformCapabilities $platformCapabilities;
+		
+		/**
 		 * Handles values with @Orm\Version annotations
 		 * @var VersionValueHandler
 		 */
@@ -49,6 +57,7 @@
 			$this->unitOfWork = $unitOfWork;
 			$this->entityStore = $unitOfWork->getEntityStore();
 			$this->connection = $unitOfWork->getConnection();
+			$this->platformCapabilities = $unitOfWork->getPlatformCapabilities();
 			$this->valueHandler = $unitOfWork->getVersionValueHandler();
 		}
 		
@@ -200,8 +209,10 @@
 						break;
 					
 					case 'datetime':
-						// Datetime versions use the database's current timestamp
-						$setClauseParts[] = "{$columnName}=NOW()";
+						// Use the engine-appropriate "current datetime" expression rather
+						// than hardcoding MySQL's NOW() — SQLite and SQL Server use
+						// different syntax for this.
+						$setClauseParts[] = "{$columnName}=" . $this->platformCapabilities->getCurrentDatetimeFunction();
 						break;
 					
 					case 'uuid':

@@ -55,14 +55,14 @@
 		 * @param DatabaseQueryExecutor|null $databaseExecutor
 		 */
 		public function __construct(
-			EntityManager          $entityManager,
+			EntityManager $entityManager,
 			?DatabaseQueryExecutor $databaseExecutor = null
 		) {
 			// Init the capabilities class for engine specific optimizations
 			$this->entityManager = $entityManager;
 			$this->connection = $entityManager->getConnection();
-			$this->capabilities = new PlatformCapabilities($this->connection);
-
+			$this->capabilities = $this->entityManager->getUnitOfWork()->getPlatformCapabilities();
+			
 			// Create specialized executors
 			$this->databaseExecutor = $databaseExecutor ?? new DatabaseQueryExecutor($entityManager, $this->capabilities);
 			$this->jsonExecutor = new JsonQueryExecutor();

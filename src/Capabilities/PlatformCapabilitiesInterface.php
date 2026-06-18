@@ -124,4 +124,22 @@
 		 * @return string  A complete SQL expression, no placeholders.
 		 */
 		public function getCurrentUnixTimestamp(): string;
+		
+		/**
+		 * Returns the SQL expression that yields the current date and time as a
+		 * native datetime/timestamp value (not a Unix timestamp).
+		 *
+		 * Used when writing a value into a datetime/timestamp-typed column — e.g.
+		 * an @Orm\Version column on insert/update — where the column's native type
+		 * is required rather than an integer epoch value.
+		 *
+		 * Examples by engine:
+		 *   MySQL/MariaDB  → 'NOW()'
+		 *   PostgreSQL     → 'NOW()'
+		 *   SQLite         → "datetime('now')"
+		 *   SQL Server     → 'SYSDATETIME()'
+		 *
+		 * @return string  A complete SQL expression, no placeholders.
+		 */
+		public function getCurrentDatetimeFunction(): string;
 	}

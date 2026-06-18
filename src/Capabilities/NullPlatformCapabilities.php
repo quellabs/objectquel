@@ -104,4 +104,13 @@
 		public function getCurrentUnixTimestamp(): string {
 			return 'UNIX_TIMESTAMP()';
 		}
+
+		/**
+		 * @inheritDoc
+		 *
+		 * Defaults to MySQL/MariaDB syntax, which PostgreSQL also accepts as-is.
+		 */
+		public function getCurrentDatetimeFunction(): string {
+			return 'NOW()';
+		}
 	}

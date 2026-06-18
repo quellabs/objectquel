@@ -24,6 +24,7 @@
 	use Quellabs\ObjectQuel\Exception\QuelException;
 	use Quellabs\ObjectQuel\Annotations\Orm\ManyToOne;
 	use Quellabs\ObjectQuel\Annotations\Orm\OneToOne;
+	use Quellabs\ObjectQuel\Capabilities\PlatformCapabilities;
 	use Quellabs\ObjectQuel\Collections\EntityCollection;
 	use Quellabs\ObjectQuel\DatabaseAdapter\DatabaseAdapter;
 	use Quellabs\ObjectQuel\Exception\EntityResolutionException;
@@ -47,6 +48,7 @@
 		protected PropertyHandler $propertyHandler;
 		protected SQLSerializer $serializer;
 		protected DatabaseAdapter $connection;
+		protected PlatformCapabilities $platformCapabilities;
 		protected EntityLifecycleManager $lifecycleManager;
 		protected InsertPersister $insertPersister;
 		protected UpdatePersister $updatePersister;
@@ -79,6 +81,7 @@
 		public function __construct(EntityManager $entityManager) {
 			$this->signalHub = SignalHubLocator::getInstance();
 			$this->connection = $entityManager->getConnection();
+			$this->platformCapabilities = new PlatformCapabilities($this->connection);
 			$this->entityManager = $entityManager;
 			$this->entityStore = $entityManager->getEntityStore();
 			$this->propertyHandler = new PropertyHandler();
@@ -163,6 +166,16 @@
 		 */
 		public function getConnection(): DatabaseAdapter {
 			return $this->connection;
+		}
+		
+		/**
+		 * Returns the platform capabilities instance, used to generate engine-
+		 * appropriate SQL (e.g. the correct "current datetime" expression) instead
+		 * of hardcoding MySQL-specific syntax in the persistence layer.
+		 * @return PlatformCapabilities
+		 */
+		public function getPlatformCapabilities(): PlatformCapabilities {
+			return $this->platformCapabilities;
 		}
 		
 		/**

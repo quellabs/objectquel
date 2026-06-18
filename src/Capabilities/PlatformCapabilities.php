@@ -120,7 +120,7 @@
 		 */
 		public function getFulltextIndexStyle(): FulltextIndexStyle {
 			return match ($this->adapter->getDatabaseType()) {
-				'postgres', 'postgresql' => FulltextIndexStyle::Tsvector,
+				'pgsql' => FulltextIndexStyle::Tsvector,
 				'sqlite' => FulltextIndexStyle::Fts5,
 				default => FulltextIndexStyle::Fulltext,
 			};
@@ -135,7 +135,7 @@
 		 */
 		public function getNativeJsonType(): string {
 			return match ($this->adapter->getDatabaseType()) {
-				'postgres', 'postgresql' => 'jsonb',
+				'pgsql' => 'jsonb',
 				default => 'json',
 			};
 		}
@@ -144,14 +144,14 @@
 		 * @inheritDoc
 		 *
 		 * JSON path extraction style depends on the engine and version:
-		 * - PostgreSQL:        col #>> '{a,b}'          (all versions)
+		 * - PostgreSQL:       col #>> '{a,b}'          (all versions)
 		 * - MariaDB >= 10.9:  JSON_VALUE(col, '$.a.b')
 		 * - SQLite >= 3.38:   JSON_VALUE(col, '$.a.b')
 		 * - All others:       JSON_UNQUOTE(JSON_EXTRACT(col, '$.a.b'))
 		 */
 		public function getJsonExtractionStyle(): JsonExtractionStyle {
 			return match ($this->adapter->getDatabaseType()) {
-				'postgres', 'postgresql' => JsonExtractionStyle::HashDoubleArrow,
+				'pgsql' => JsonExtractionStyle::HashDoubleArrow,
 				'mariadb' => version_compare($this->adapter->getServerVersion(), '10.9.0', '>=')
 					? JsonExtractionStyle::JsonValue
 					: JsonExtractionStyle::JsonUnquote,
@@ -161,6 +161,7 @@
 				default => JsonExtractionStyle::JsonUnquote,
 			};
 		}
+		
 		/**
 		 * @inheritDoc
 		 *
@@ -181,7 +182,7 @@
 		 */
 		public function getSupportedCastTypes(): array {
 			return match ($this->adapter->getDatabaseType()) {
-				'postgres', 'postgresql' => [
+				'pgsql' => [
 					'int'     => 'INTEGER',
 					'float'   => 'FLOAT',
 					'string'  => 'TEXT',
@@ -202,7 +203,7 @@
 				],
 			};
 		}
-
+		
 		/**
 		 * @inheritDoc
 		 *
@@ -213,12 +214,12 @@
 		 */
 		public function getUnixTimestampFunction(): string {
 			return match ($this->adapter->getDatabaseType()) {
-				'postgres', 'postgresql' => 'EXTRACT(EPOCH FROM %s)::BIGINT',
-				'sqlite'                 => "strftime('%%s', %s)",
-				default                  => 'UNIX_TIMESTAMP(%s)',
+				'pgsql' => 'EXTRACT(EPOCH FROM %s)::BIGINT',
+				'sqlite' => "strftime('%%s', %s)",
+				default => 'UNIX_TIMESTAMP(%s)',
 			};
 		}
-
+		
 		/**
 		 * @inheritDoc
 		 *
@@ -229,9 +230,28 @@
 		 */
 		public function getCurrentUnixTimestamp(): string {
 			return match ($this->adapter->getDatabaseType()) {
-				'postgres', 'postgresql' => 'EXTRACT(EPOCH FROM NOW())::BIGINT',
-				'sqlite'                 => "strftime('%s','now')",
-				default                  => 'UNIX_TIMESTAMP()',
+				'pgsql' => 'EXTRACT(EPOCH FROM NOW())::BIGINT',
+				'sqlite' => "strftime('%s','now')",
+				default => 'UNIX_TIMESTAMP()',
+			};
+		}
+		
+		/**
+		 * @inheritDoc
+		 *
+		 * Current date/time as a native datetime value per engine:
+		 * - MySQL / MariaDB: NOW()
+		 * - PostgreSQL:      NOW()
+		 * - SQLite:          CURRENT_TIMESTAMP
+		 * - SQL Server:      SYSDATETIME() — higher precision than GETDATE(),
+		 *                    which reduces the chance of two concurrent writes
+		 *                    producing an identical version timestamp.
+		 */
+		public function getCurrentDatetimeFunction(): string {
+			return match ($this->adapter->getDatabaseType()) {
+				'sqlite' => 'CURRENT_TIMESTAMP',
+				'sqlsrv' => 'SYSDATETIME()',
+				default => 'NOW()',
 			};
 		}
 	}

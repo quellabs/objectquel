@@ -6,6 +6,7 @@
 	use Quellabs\ObjectQuel\Annotations\Orm\PrimaryKeyStrategy;
 	use Quellabs\ObjectQuel\Annotations\Orm\DiscriminatorColumn;
 	use Quellabs\ObjectQuel\Annotations\Orm\DiscriminatorValue;
+	use Quellabs\ObjectQuel\Capabilities\PlatformCapabilities;
 	use Quellabs\ObjectQuel\DatabaseAdapter\DatabaseAdapter;
 	use Quellabs\ObjectQuel\EntityManager;
 	use Quellabs\ObjectQuel\EntityStore;
@@ -53,6 +54,13 @@
 		private DatabaseAdapter $connection;
 		
 		/**
+		 * Used to generate engine-appropriate SQL fragments (e.g. the correct
+		 * "current datetime" expression) instead of hardcoding MySQL syntax.
+		 * @var PlatformCapabilities
+		 */
+		private PlatformCapabilities $platformCapabilities;
+		
+		/**
 		 * Factory for creating primary key values
 		 * @var PrimaryKeyFactory
 		 */
@@ -80,6 +88,7 @@
 			$this->entityStore = $unitOfWork->getEntityStore();
 			$this->propertyHandler = $unitOfWork->getPropertyHandler();
 			$this->connection = $unitOfWork->getConnection();
+			$this->platformCapabilities = $unitOfWork->getPlatformCapabilities();
 			$this->valueHandler = $unitOfWork->getVersionValueHandler();
 			$this->primaryKeyFactory = $factory ?? new PrimaryKeyFactory();
 			$this->strategyColumnCache = [];
@@ -153,12 +162,17 @@
 				$serializedEntity[$columnName] = $discriminatorValue;
 			}
 			
-			// Create the SQL query for insertion
-			$sqlParts = [];
+			// Create the SQL query for insertion.
+			// Uses portable INSERT INTO table (col1, col2) VALUES (val1, val2) syntax
+			// rather than MySQL/MariaDB-only "INSERT INTO table SET col=val" syntax,
+			// so this works unmodified against PostgreSQL, SQLite, and SQL Server too.
+			$columnParts = [];
+			$valueParts = [];
 			
 			foreach ($serializedEntity as $key => $value) {
 				// Escape the identifier (add backticks)
 				$escapedKey = $this->connection->escapeIdentifier($key);
+				$columnParts[] = $escapedKey;
 				
 				// Check if the column name exists
 				if (isset($versionColumnNames[$key])) {
@@ -171,19 +185,22 @@
 					// Remove version property from bound parameters list
 					unset($serializedEntity[$key]);
 					
-					// Add initial value to SQL
-					$sqlParts[] = $escapedKey . "=" . $initialVersion;
+					// Initial version values are raw SQL expressions (e.g. NOW(), a UUID
+					// literal, or a bare integer), not bound parameters, so they go
+					// directly into the VALUES list rather than as a :placeholder.
+					$valueParts[] = $initialVersion;
 				} else {
 					// normal bound parameter
-					$sqlParts[] = $escapedKey . "=:" . $key;
+					$valueParts[] = ":" . $key;
 				}
 			}
 			
 			// Implode the parts
-			$sql = implode(",", $sqlParts);
+			$columnList = implode(",", $columnParts);
+			$valueList = implode(",", $valueParts);
 			
 			// Execute the insert query with the serialized entity data as parameters
-			$rs = $this->connection->Execute("INSERT INTO {$tableNameEscaped} SET {$sql}", $serializedEntity);
+			$rs = $this->connection->Execute("INSERT INTO {$tableNameEscaped} ({$columnList}) VALUES ({$valueList})", $serializedEntity);
 			
 			// If the query fails, throw an exception with the error details
 			if (!$rs) {
@@ -272,6 +289,7 @@
 		 * @throws \Exception
 		 */
 		protected function getInitialVersionValue(string $columnType): int|string {
+			/** @noinspection PhpSwitchCanBeReplacedWithMatchExpressionInspection */
 			switch ($columnType) {
 				case 'int':
 				case 'integer':
@@ -280,7 +298,10 @@
 				
 				case 'datetime':
 				case 'timestamp':
-					return "NOW()";
+					// Use the engine-appropriate "current datetime" expression rather
+					// than hardcoding MySQL's NOW() — SQLite and SQL Server use
+					// different syntax for this.
+					return $this->platformCapabilities->getCurrentDatetimeFunction();
 				
 				case 'uuid':
 				case 'guid':
