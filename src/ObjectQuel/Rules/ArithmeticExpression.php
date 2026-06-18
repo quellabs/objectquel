@@ -19,25 +19,16 @@
 	
 	class ArithmeticExpression extends ExpressionRuleBase {
 		
-		// Tokens that unambiguously mark "(Identifier)" as a cast attempt,
-		// since no other valid parse exists for e.g. (blob)p.id -- two
-		// adjacent expressions with nothing connecting them. The type name
-		// itself is never validated here; an unknown type like (blob)p.id
-		// still reaches parseCastExpression() and is rejected later by
-		// semantic analysis.
+		// Tokens that unambiguously mark "(Identifier)" as a cast attempt --
+		// no other valid parse exists, e.g. for (blob)p.id. Unknown type names
+		// are still accepted here and rejected later by semantic analysis.
 		private const array EXPRESSION_START_TOKENS = [
 			Token::Number, Token::String, Token::False, Token::True, Token::Null,
 			Token::Parameter, Token::Slash, Token::Identifier, Token::ParenthesesOpen,
 		];
 		
-		// Known cast type keywords. Plus/Minus are genuinely ambiguous and
-		// excluded from EXPRESSION_START_TOKENS above: (int)-x is a cast of a
-		// negated operand, but (x) + 1 is a grouped expression in an addition
-		// -- the same token shape, "(Identifier)" then +/-, means either one.
-		// This list resolves that one junction by checking the identifier
-		// against known types; it intentionally does NOT gate the unambiguous
-		// case above, since (blob)p.id must still be recognised as a cast
-		// attempt and rejected by semantic analysis, not silently misparsed.
+		// Known cast types. Only consulted for the Plus/Minus ambiguity: both
+		// (int)-x (cast) and (x) - 1 (subtraction) share the same token shape.
 		private const array CAST_TYPES = ['int', 'float', 'string', 'decimal', 'bool', 'datetime'];
 		
 		/**
@@ -116,44 +107,19 @@
 				case Token::Identifier :
 					$node = $this->parsePropertyChain();
 					
-					// Kijk of het een commando is. Zo ja, parse dan het commando.
+					// Check if it is a command. If so, parse the command.
 					if ($this->lexer->lookahead() === Token::ParenthesesOpen) {
 						$queryFunctionRule = new QueryFunction($this);
 						return $queryFunctionRule->parse($node->getCompleteName());
 					}
 					
-					// Anders, retourneer de property keten
+					// Otherwise, return the property chain.
 					return $node;
 				
 				case Token::ParenthesesOpen:
-					// (Identifier) is a cast only if an operand follows the closing
-					// paren, e.g. (int)p.id; otherwise it's a grouped expression like
-					// (x). A following Plus/Minus is ambiguous -- (int)-x is a cast,
-					// but (x) + 1 is addition -- so that case falls back to checking
-					// the identifier against CAST_TYPES. Checking any of this requires
-					// peeking past ')', so we speculatively consume via saveState/restoreState.
-					if ($this->lexer->peekNext() === Token::Identifier) {
-						$state = $this->lexer->saveState();
-						$this->lexer->match(Token::ParenthesesOpen); // consume '('
-						$typeNameToken = $this->lexer->match(Token::Identifier); // consume type name
-						$isCast = false;
-						
-						if ($this->lexer->lookahead() === Token::ParenthesesClose) {
-							$this->lexer->match(Token::ParenthesesClose); // consume ')'
-							$next = $this->lexer->lookahead();
-							
-							if ($next === Token::Plus || $next === Token::Minus) {
-								$isCast = in_array(strtolower($typeNameToken->getStringValue()), self::CAST_TYPES, true);
-							} else {
-								$isCast = in_array($next, self::EXPRESSION_START_TOKENS, true);
-							}
-						}
-						
-						$this->lexer->restoreState($state);
-						
-						if ($isCast) {
-							return $this->parseCastExpression();
-						}
+					// Handle casts
+					if ($this->looksLikeCast()) {
+						return $this->parseCastExpression();
 					}
 					
 					// Handle parenthesized expressions
@@ -166,6 +132,54 @@
 				default :
 					$tokenTypeName = Token::toString($tokenType);
 					throw new ParserException("Unexpected token '{$tokenTypeName}' on line {$this->lexer->getLineNumber()}");
+			}
+		}
+		
+		/**
+		 * Determines whether the upcoming "(Identifier)" is a cast, e.g.
+		 * (int)p.id, rather than a parenthesized expression, e.g. (x) or
+		 * (p.id + 1). Restores lexer position before returning either way.
+		 *
+		 * @return bool True if the upcoming tokens should be parsed as a cast.
+		 */
+		private function looksLikeCast(): bool {
+			// Must start "( Identifier"; e.g. (p.id + 1) fails the ")" check below.
+			if ($this->lexer->peekNext() !== Token::Identifier) {
+				return false;
+			}
+			
+			// Speculative lookahead -- restoreState() in finally undoes this.
+			$state = $this->lexer->saveState();
+			$this->lexer->match(Token::ParenthesesOpen);
+			$typeNameToken = $this->lexer->match(Token::Identifier);
+			
+			try {
+				// More than a single identifier inside the parens, e.g. (p.id)
+				// or (p.id + 1) -- not a cast, a grouped expression instead.
+				if ($this->lexer->lookahead() !== Token::ParenthesesClose) {
+					return false;
+				}
+				
+				$this->lexer->match(Token::ParenthesesClose);
+				$tokenAfterParens = $this->lexer->lookahead();
+				
+				// A fresh expression-starting token, e.g. (blob)p.id, has no
+				// grouped-expression reading -- it can only be a cast attempt.
+				// Unknown type names are accepted here; semantic analysis rejects them.
+				if (in_array($tokenAfterParens, self::EXPRESSION_START_TOKENS, true)) {
+					return true;
+				}
+				
+				// +/- is genuinely ambiguous: (int)-x is a cast, (x) - 1 is
+				// subtraction. Only here does the identifier's text matter.
+				if ($tokenAfterParens === Token::Plus || $tokenAfterParens === Token::Minus) {
+					return in_array(strtolower($typeNameToken->getStringValue()), self::CAST_TYPES, true);
+				}
+				
+				// Anything else means the parens were a complete value on their own.
+				return false;
+			} finally {
+				$this->lexer->restoreState($state);
 			}
 		}
 		
@@ -300,15 +314,7 @@
 		
 		/**
 		 * Parses a C-style cast expression: (type)expression
-		 *
-		 * Called when parsePrimaryExpression() detects ( Identifier ) followed
-		 * by an operand, disambiguating it from a standalone parenthesized
-		 * identifier expression like (x). The type name itself is not
-		 * validated here except when the operand starts with +/-, where it's
-		 * checked against CAST_TYPES to resolve that one ambiguous case;
-		 * otherwise an unknown type (e.g. (blob)x) is still parsed as a cast
-		 * and rejected later by semantic analysis.
-		 *
+		 * Called after looksLikeCast() confirms the upcoming tokens are a cast.
 		 * @return AstCast
 		 * @throws LexerException|ParserException|\ReflectionException
 		 */
@@ -327,6 +333,7 @@
 			// so a leading sign, e.g. (int)-x, is consumed correctly.
 			$operand = $this->parseUnaryExpression();
 			
+			// Return the cast node
 			return new AstCast($castType, $operand);
 		}
 	}
