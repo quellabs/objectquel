@@ -13,7 +13,7 @@ Server.
 $results = $entityManager->executeQuery("
     range of p is App\\Entity\\Product
     range of c is App\\Entity\\Category via p.categories
-    retrieve (p, c.name as categoryName)
+    retrieve (p, categoryName=c.name)
     where p.price < :maxPrice and c.active = true
     sort by p.name asc
 ", [

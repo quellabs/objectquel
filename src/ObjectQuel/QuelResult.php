@@ -23,17 +23,22 @@
 		/**
 		 * Responsible for converting raw data into entity objects
 		 */
-		private EntityHydrator $entityHydrator;
+		private readonly EntityHydrator $entityHydrator;
 		
 		/**
 		 * Handles loading relationships between entities
 		 */
-		private RelationshipLoader $relationShipLoader;
+		private readonly RelationshipLoader $relationshipLoader;
 		
 		/**
 		 * Performs transformations on the result set (like sorting)
 		 */
-		private ResultTransformer $resultTransformer;
+		private readonly ResultTransformer $resultTransformer;
+		
+		/**
+		 * Flag indicating if sorting should be handled in application logic rather than database
+		 */
+		private readonly bool $sortInApplicationLogic;
 		
 		/**
 		 * The actual result set containing hydrated entities and data
@@ -45,11 +50,6 @@
 		 * Current position in the result set for iteration
 		 */
 		private int $index;
-		
-		/**
-		 * Flag indicating if sorting should be handled in application logic rather than database
-		 */
-		private bool $sortInApplicationLogic;
 		
 		/**
 		 * Constructor initializes helpers and processes the raw data into structured results
@@ -65,7 +65,7 @@
 		public function __construct(EntityManager $entityManager, AstRetrieve $retrieve, array $data) {
 			// Initialize helper objects
 			$this->entityHydrator = new EntityHydrator($entityManager);
-			$this->relationShipLoader = new RelationshipLoader($entityManager, $retrieve);
+			$this->relationshipLoader = new RelationshipLoader($entityManager, $retrieve);
 			$this->resultTransformer = new ResultTransformer();
 			
 			// Determine if sorting should be done in application logic
@@ -89,7 +89,7 @@
 			$this->result = $result['result'];
 			
 			// Load relationships between entities
-			$this->relationShipLoader->loadRelationships(array_values($result['entities']));
+			$this->relationshipLoader->loadRelationships(array_values($result['entities']));
 			
 			// Sort the results if needed:
 			// 1) A method is called in SORT BY clause
@@ -110,7 +110,7 @@
 		/**
 		 * Reads a row of a result set and advances the recordset pointer
 		 * Similar to PDO's fetch() method
-		 * @return array<string, mixed>|null The current row (entity or array) or false if no more rows
+		 * @return array<string, mixed>|null The current row (entity or array) or null if no more rows
 		 */
 		public function fetchRow(): ?array {
 			if ($this->index >= $this->recordCount()) {
@@ -128,11 +128,19 @@
 		 * @param string|int $columnName Column name or index to fetch
 		 * @return array<int, mixed> Array of values from the specified column
 		 */
-		public function fetchCol(string|int $columnName=0): array {
+		public function fetchCol(string|int $columnName = 0): array {
 			// If index specifies column, convert to column name
 			if (is_int($columnName)) {
-				$keys = array_keys($this->result);
-				$columnName = $keys[$columnName];
+				$firstRow = $this->result[0] ?? [];
+				$columns = array_keys($firstRow);
+				
+				if (!isset($columns[$columnName])) {
+					throw new \OutOfBoundsException(
+						"Column index {$columnName} does not exist."
+					);
+				}
+				
+				$columnName = $columns[$columnName];
 			}
 			
 			return array_column($this->result, $columnName);
@@ -145,16 +153,27 @@
 		 * @return void
 		 */
 		public function seek(int $pos): void {
+			if ($pos < 0 || $pos > $this->recordCount()) {
+				throw new \OutOfBoundsException("Position {$pos} does not exist.");
+			}
+			
 			$this->index = $pos;
 		}
 		
 		/**
-		 * Resets the pointer and returns all rows as an array
-		 * Useful for getting the full result set at once
+		 * Resets the internal cursor to the first row in the result set.
+		 * @return void
+		 */
+		public function rewind(): void {
+			$this->index = 0;
+		}
+		
+		/**
+		 * Returns all rows in the result set.
+		 * Does not modify the current cursor position.
 		 * @return array<int, array<string, mixed>> All rows in the result set
 		 */
 		public function fetchAll(): array {
-			$this->index = 0; // Reset the pointer
 			return $this->result;
 		}
 		
@@ -220,11 +239,7 @@
 		 * @return void
 		 */
 		public function offsetSet(mixed $offset, mixed $value): void {
-			if (is_null($offset)) {
-				$this->result[] = $value;
-			} else {
-				$this->result[$this->validOffset($offset)] = $value;
-			}
+			throw new \LogicException('QuelResult is immutable.');
 		}
 		
 		/**
@@ -233,7 +248,7 @@
 		 * @return void
 		 */
 		public function offsetUnset(mixed $offset): void {
-			unset($this->result[$this->validOffset($offset)]);
+			throw new \LogicException('QuelResult is immutable.');
 		}
 		
 		/**
@@ -253,7 +268,7 @@
 		}
 		
 		/**
-		 * Asserts that an offset is a valid array key type (int or string).
+		 * Asserts that an offset is a valid array key type (int).
 		 * Used by ArrayAccess methods to satisfy static analysis; mixed offsets
 		 * are rejected at runtime rather than silently coerced.
 		 * @param mixed $offset
