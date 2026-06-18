@@ -169,6 +169,10 @@
 			$columnParts = [];
 			$valueParts = [];
 			
+			// Copy first, then mutate the copy below — $serializedEntity itself stays
+			// untouched so the foreach over it isn't iterating an array it's also modifying.
+			$boundParameters = $serializedEntity;
+			
 			foreach ($serializedEntity as $key => $value) {
 				// Escape the identifier (add backticks)
 				$escapedKey = $this->connection->escapeIdentifier($key);
@@ -182,8 +186,10 @@
 					// Fetch the value
 					$initialVersion = $this->getInitialVersionValue($versionColumns[$columnName]["column"]->getType());
 					
-					// Remove version property from bound parameters list
-					unset($serializedEntity[$key]);
+					// Remove version column from the bound parameters, since its value is
+					// inlined as a raw SQL expression below rather than bound — it has no
+					// :placeholder in the query, so PDO would reject an unused named parameter.
+					unset($boundParameters[$key]);
 					
 					// Initial version values are raw SQL expressions (e.g. NOW(), a UUID
 					// literal, or a bare integer), not bound parameters, so they go
@@ -199,8 +205,8 @@
 			$columnList = implode(",", $columnParts);
 			$valueList = implode(",", $valueParts);
 			
-			// Execute the insert query with the serialized entity data as parameters
-			$rs = $this->connection->Execute("INSERT INTO {$tableNameEscaped} ({$columnList}) VALUES ({$valueList})", $serializedEntity);
+			// Execute the insert query with the bound parameters (version columns excluded)
+			$rs = $this->connection->Execute("INSERT INTO {$tableNameEscaped} ({$columnList}) VALUES ({$valueList})", $boundParameters);
 			
 			// If the query fails, throw an exception with the error details
 			if (!$rs) {
