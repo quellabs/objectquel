@@ -154,9 +154,12 @@
 			$typeNameToken = $this->lexer->match(Token::Identifier);
 			
 			try {
+				// Fetch the lookahead
+				$tokenAfterIdentifier = $this->lexer->lookahead();
+				
 				// More than a single identifier inside the parens, e.g. (p.id)
 				// or (p.id + 1) -- not a cast, a grouped expression instead.
-				if ($this->lexer->lookahead() !== Token::ParenthesesClose) {
+				if ($tokenAfterIdentifier !== Token::ParenthesesClose) {
 					return false;
 				}
 				
