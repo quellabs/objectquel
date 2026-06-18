@@ -68,6 +68,7 @@
 		 * @return AstInterface The appropriate AST node for the parsed function
 		 * @throws LexerException When token matching fails
 		 * @throws ParserException When function name is not recognized or parsing fails
+		 * @throws \ReflectionException When reflection fails
 		 */
 		public function parse(string $command): AstInterface {
 			return match (strtolower($command)) {

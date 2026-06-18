@@ -19,6 +19,27 @@
 	
 	class ArithmeticExpression extends ExpressionRuleBase {
 		
+		// Tokens that unambiguously mark "(Identifier)" as a cast attempt,
+		// since no other valid parse exists for e.g. (blob)p.id -- two
+		// adjacent expressions with nothing connecting them. The type name
+		// itself is never validated here; an unknown type like (blob)p.id
+		// still reaches parseCastExpression() and is rejected later by
+		// semantic analysis.
+		private const array EXPRESSION_START_TOKENS = [
+			Token::Number, Token::String, Token::False, Token::True, Token::Null,
+			Token::Parameter, Token::Slash, Token::Identifier, Token::ParenthesesOpen,
+		];
+		
+		// Known cast type keywords. Plus/Minus are genuinely ambiguous and
+		// excluded from EXPRESSION_START_TOKENS above: (int)-x is a cast of a
+		// negated operand, but (x) + 1 is a grouped expression in an addition
+		// -- the same token shape, "(Identifier)" then +/-, means either one.
+		// This list resolves that one junction by checking the identifier
+		// against known types; it intentionally does NOT gate the unambiguous
+		// case above, since (blob)p.id must still be recognised as a cast
+		// attempt and rejected by semantic analysis, not silently misparsed.
+		private const array CAST_TYPES = ['int', 'float', 'string', 'decimal', 'bool', 'datetime'];
+		
 		/**
 		 * Parse an expression, which can either be a simple term, a ternary
 		 * conditional expression, or a relational expression.
@@ -31,9 +52,7 @@
 			// Parse the first factor in the term
 			$left = $this->parseFactor();
 			
-			// Fold left so that "1 - 2 - 3" parses as (1 - 2) - 3 instead of
-			// 1 - (2 - 3). A right-recursive call here would make + and -
-			// right-associative, which is incorrect for arithmetic.
+			// Fold left: right-recursion here would make +/- right-associative.
 			while (true) {
 				$lookahead = $this->lexer->lookahead();
 				
@@ -72,7 +91,7 @@
 					}
 					
 					return new AstString($token->getStringValue(), $enclosingChar);
-					
+				
 				case Token::False :
 					$this->lexer->match($tokenType);
 					return new AstBool(false);
@@ -107,25 +126,36 @@
 					return $node;
 				
 				case Token::ParenthesesOpen:
-					// A parenthesised identifier immediately followed by a closing paren
-					// is a C-style cast: (int)x.id, (float)x.price, etc.
-					// The lexer holds a two-token lookahead: next_token (current, already
-					// known to be '(' here) and the field $lookahead (one ahead of that).
-					// peekNext() exposes the field lookahead, which is the token right
-					// after '('. To see the token after that (expected ')') we must
-					// speculatively consume one token via saveState/restoreState.
+					// (Identifier) is a cast only if an operand follows the closing
+					// paren, e.g. (int)p.id; otherwise it's a grouped expression like
+					// (x). A following Plus/Minus is ambiguous -- (int)-x is a cast,
+					// but (x) + 1 is addition -- so that case falls back to checking
+					// the identifier against CAST_TYPES. Checking any of this requires
+					// peeking past ')', so we speculatively consume via saveState/restoreState.
 					if ($this->lexer->peekNext() === Token::Identifier) {
 						$state = $this->lexer->saveState();
 						$this->lexer->match(Token::ParenthesesOpen); // consume '('
-						$this->lexer->match(Token::Identifier);      // consume type name
-						$isCast = $this->lexer->lookahead() === Token::ParenthesesClose;
+						$typeNameToken = $this->lexer->match(Token::Identifier); // consume type name
+						$isCast = false;
+						
+						if ($this->lexer->lookahead() === Token::ParenthesesClose) {
+							$this->lexer->match(Token::ParenthesesClose); // consume ')'
+							$next = $this->lexer->lookahead();
+							
+							if ($next === Token::Plus || $next === Token::Minus) {
+								$isCast = in_array(strtolower($typeNameToken->getStringValue()), self::CAST_TYPES, true);
+							} else {
+								$isCast = in_array($next, self::EXPRESSION_START_TOKENS, true);
+							}
+						}
+						
 						$this->lexer->restoreState($state);
-
+						
 						if ($isCast) {
 							return $this->parseCastExpression();
 						}
 					}
-
+					
 					// Handle parenthesized expressions
 					$this->lexer->match(Token::ParenthesesOpen);
 					$logicalExpression = new LogicalExpression($this->lexer);
@@ -151,9 +181,7 @@
 			// Parse a constant or an identifier (like a variable)
 			$left = $this->parseUnaryExpression();
 			
-			// Fold left so that "8 / 4 / 2" parses as (8 / 4) / 2 instead of
-			// 8 / (4 / 2). A right-recursive call here would make * and /
-			// right-associative, which is incorrect for arithmetic.
+			// Fold left: right-recursion here would make */÷ right-associative.
 			while (true) {
 				$lookahead = $this->lexer->lookahead();
 				
@@ -189,7 +217,7 @@
 					} else {
 						return new AstNumber($resultToken->getStringValue());
 					}
-
+				
 				default:
 					// If not a unary operator, parse a primary expression
 					return $this->parsePrimaryExpression();
@@ -217,8 +245,11 @@
 			$pattern = "";
 			$flags = "";
 			
+			// Tracks [...] so an unescaped '/' inside a class isn't a terminator.
+			$inCharClass = false;
+			
 			// Read until we find the closing slash
-			while ($currentPos < strlen($source) && $source[$currentPos] !== '/') {
+			while ($currentPos < strlen($source) && ($inCharClass || $source[$currentPos] !== '/')) {
 				// Handle escape sequences
 				if ($source[$currentPos] === '\\') {
 					if ($currentPos + 1 >= strlen($source)) {
@@ -228,6 +259,13 @@
 					$pattern .= $source[$currentPos] . $source[$currentPos + 1];
 					$currentPos += 2;
 					continue;
+				}
+				
+				// First '[' opens the class; first ']' after that closes it.
+				if ($source[$currentPos] === '[' && !$inCharClass) {
+					$inCharClass = true;
+				} elseif ($source[$currentPos] === ']' && $inCharClass) {
+					$inCharClass = false;
 				}
 				
 				// Add the current character to the pattern
@@ -259,18 +297,17 @@
 			// Return the regular expression
 			return new AstRegExp($pattern, $flags);
 		}
-
+		
 		/**
 		 * Parses a C-style cast expression: (type)expression
 		 *
-		 * Called when parsePrimaryExpression() detects the pattern
-		 * ( Identifier ) which is unambiguously a cast because a valid
-		 * parenthesised sub-expression always contains an operator, a keyword,
-		 * or more than one token between the parens.
-		 *
-		 * The cast type keyword is validated against the platform supported cast
-		 * types at semantic-analysis time, not here, so the parser accepts any
-		 * identifier as the type name and leaves rejection to a later pass.
+		 * Called when parsePrimaryExpression() detects ( Identifier ) followed
+		 * by an operand, disambiguating it from a standalone parenthesized
+		 * identifier expression like (x). The type name itself is not
+		 * validated here except when the operand starts with +/-, where it's
+		 * checked against CAST_TYPES to resolve that one ambiguous case;
+		 * otherwise an unknown type (e.g. (blob)x) is still parsed as a cast
+		 * and rejected later by semantic analysis.
 		 *
 		 * @return AstCast
 		 * @throws LexerException|ParserException|\ReflectionException
@@ -278,19 +315,18 @@
 		protected function parseCastExpression(): AstCast {
 			// Consume (
 			$this->lexer->match(Token::ParenthesesOpen);
-
+			
 			// Consume the type keyword (e.g. int, float, string)
 			$typeToken = $this->lexer->match(Token::Identifier);
 			$castType = strtolower($typeToken->getStringValue());
-
+			
 			// Consume )
 			$this->lexer->match(Token::ParenthesesClose);
-
-			// Parse the operand: only a property chain is valid after a cast.
-			// The semantic analyser enforces this; the parser accepts any primary
-			// expression here so that error messages come from the validator.
-			$operand = $this->parsePrimaryExpression();
-
+			
+			// Parse the cast operand. parseUnaryExpression (not parsePrimaryExpression)
+			// so a leading sign, e.g. (int)-x, is consumed correctly.
+			$operand = $this->parseUnaryExpression();
+			
 			return new AstCast($castType, $operand);
 		}
 	}

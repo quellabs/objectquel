@@ -49,6 +49,7 @@
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstSum;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstSumU;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstTerm;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstUnaryOperation;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\NodeBinary;
 	use Quellabs\ObjectQuel\ObjectQuel\AstInterface;
 	use Quellabs\ObjectQuel\Capabilities\PlatformCapabilitiesInterface;
@@ -398,6 +399,21 @@
 			$this->result[] = sprintf($this->platform->getUnixTimestampFunction(), $innerSql);
 		}
 
+		/**
+		 * Process a unary operator node (e.g. -x, +x).
+		 * Unlike AstTerm/AstFactor this has a single operand, not two, so it
+		 * can't go through expressionHandler::handleGenericExpression (which
+		 * requires a NodeBinary). Unary + is a no-op in SQL but is still
+		 * emitted for symmetry with -; the parser only produces this node for
+		 * non-literal operands (identifiers, sub-expressions) since a sign
+		 * before a numeric literal is folded into the AstNumber value itself.
+		 * @param AstUnaryOperation $ast The unary operator node to process
+		 */
+		protected function handleUnaryOperation(AstUnaryOperation $ast): void {
+			$innerSql = $this->visitNodeAndReturnSQL($ast->getExpression());
+			$this->result[] = "{$ast->getOperator()}{$innerSql}";
+		}
+		
 		/**
 		 * Process a binary operator node
 		 * Binary operators work on two operands (e.g., +, -, *, /, =, <, >).
