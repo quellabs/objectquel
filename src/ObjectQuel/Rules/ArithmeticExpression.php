@@ -304,6 +304,22 @@
 				++$currentPos;
 			}
 			
+			// Validate flags against the set supported by MySQL's REGEXP_LIKE (ICU engine):
+			// c = case-sensitive, i = case-insensitive, m = multi-line,
+			// n = '.' matches newline, u = Unicode
+			if ($flags !== '') {
+				$validFlags = ['c', 'i', 'm', 'n', 'u'];
+				$invalidFlags = array_diff(str_split($flags), $validFlags);
+				
+				if (!empty($invalidFlags)) {
+					throw new ParserException(
+						"Invalid regular expression flag(s): '" . implode("', '", $invalidFlags) . "'. " .
+						"Supported flags are: c (case-sensitive), i (case-insensitive), " .
+						"m (multi-line), n (. matches newline), u (Unicode)."
+					);
+				}
+			}
+			
 			// Now we need to update the lexer's position to match where we've read to
 			// We might need to add a method to the Lexer class for this
 			$this->lexer->setPos($currentPos);
