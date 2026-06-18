@@ -80,7 +80,7 @@
 			$this->entityStore = $unitOfWork->getEntityStore();
 			$this->propertyHandler = $unitOfWork->getPropertyHandler();
 			$this->connection = $unitOfWork->getConnection();
-			$this->valueHandler = new VersionValueHandler($unitOfWork->getConnection(), $unitOfWork->getEntityStore(), $unitOfWork, $unitOfWork->getPropertyHandler());
+			$this->valueHandler = $unitOfWork->getVersionValueHandler();
 			$this->primaryKeyFactory = $factory ?? new PrimaryKeyFactory();
 			$this->strategyColumnCache = [];
 		}

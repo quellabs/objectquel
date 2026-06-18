@@ -16,28 +16,22 @@
 	class DeletePersister {
 		
 		/**
-		 * Reference to the UnitOfWork that manages persistence operations
-		 * This is a duplicate of the parent's unitOfWork property with a different naming convention
-		 */
-		protected UnitOfWork $unitOfWork;
-		
-		/**
 		 * The EntityStore that maintains metadata about entities and their mappings
 		 * Used to retrieve information about entity tables, columns and identifiers
 		 */
-		protected EntityStore $entityStore;
+		private EntityStore $entityStore;
 		
 		/**
 		 * Utility for handling entity property access and manipulation
 		 * Provides methods to get and set entity properties regardless of their visibility
 		 */
-		protected PropertyHandler $propertyHandler;
+		private PropertyHandler $propertyHandler;
 		
 		/**
 		 * Database connection adapter used for executing SQL queries
 		 * Abstracts the underlying database system and provides a unified interface
 		 */
-		protected DatabaseAdapter $connection;
+		private DatabaseAdapter $connection;
 		
 		/**
 		 * DeletePersister constructor
@@ -45,7 +39,6 @@
 		 * @param UnitOfWork $unitOfWork The UnitOfWork that will coordinate deletion operations
 		 */
 		public function __construct(UnitOfWork $unitOfWork) {
-			$this->unitOfWork = $unitOfWork;
 			$this->entityStore = $unitOfWork->getEntityStore();
 			$this->propertyHandler = $unitOfWork->getPropertyHandler();
 			$this->connection = $unitOfWork->getConnection();

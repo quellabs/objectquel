@@ -30,6 +30,7 @@
 	use Quellabs\ObjectQuel\Persistence\DeletePersister;
 	use Quellabs\ObjectQuel\Persistence\InsertPersister;
 	use Quellabs\ObjectQuel\Persistence\UpdatePersister;
+	use Quellabs\ObjectQuel\Persistence\VersionValueHandler;
 	use Quellabs\ObjectQuel\PrimaryKeys\PrimaryKeyFactory;
 	use Quellabs\ObjectQuel\ProxyGenerator\ProxyInterface;
 	use Quellabs\ObjectQuel\ReflectionManagement\PropertyHandler;
@@ -50,6 +51,7 @@
 		protected InsertPersister $insertPersister;
 		protected UpdatePersister $updatePersister;
 		protected DeletePersister $deletePersister;
+		protected VersionValueHandler $versionValueHandler;
 		
 		/** @var array<string, array<string, object>> */
 		protected array $entitiesByClass = [];
@@ -105,6 +107,7 @@
 			
 			// Instantiate persisters once for reuse across commits
 			$primaryKeyFactory = new PrimaryKeyFactory();
+			$this->versionValueHandler = new VersionValueHandler($this->connection, $this->entityStore, $this, $this->propertyHandler);
 			$this->insertPersister = new InsertPersister($this, $primaryKeyFactory);
 			$this->updatePersister = new UpdatePersister($this);
 			$this->deletePersister = new DeletePersister($this);
@@ -160,6 +163,16 @@
 		 */
 		public function getConnection(): DatabaseAdapter {
 			return $this->connection;
+		}
+		
+		/**
+		 * Returns the shared VersionValueHandler instance
+		 * Centralized here so InsertPersister and UpdatePersister don't each
+		 * construct their own copy with duplicated dependency wiring
+		 * @return VersionValueHandler
+		 */
+		public function getVersionValueHandler(): VersionValueHandler {
+			return $this->versionValueHandler;
 		}
 		
 		/**
