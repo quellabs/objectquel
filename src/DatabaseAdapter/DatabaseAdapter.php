@@ -195,8 +195,9 @@
 				'pass'    => $config['password'],
 				'port'    => $config['port'] ?? 3306,
 				'charset' => $config['encoding'] ?? 'utf8mb4',
+				'suffix'  => ''
 			];
-			
+
 			// Create and cache the adapter
 			$this->phinxAdapterCache = AdapterFactory::instance()->getAdapter($phinxConfig['adapter'], $phinxConfig);
 			return $this->phinxAdapterCache;
