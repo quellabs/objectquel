@@ -18,7 +18,7 @@
 	class SchemaComparator {
 		
 		private const array NUMERIC_PROPERTIES = ['limit', 'precision', 'scale'];
-		private const array BOOLEAN_PROPERTIES = ['null', 'unsigned', 'signed', 'identity'];
+		private const array BOOLEAN_PROPERTIES = ['nullable', 'unsigned', 'identity'];
 		
 		/** @var DatabaseAdapter Database connection adapter for querying schema information */
 		private DatabaseAdapter $connection;

@@ -433,6 +433,30 @@
 				];
 			}
 			
+			// CakePHP's schema model treats UNIQUE indexes as table constraints, not as
+			// indexes: $tableSchema->indexes() only ever yields plain KEY / FULLTEXT
+			// entries. Without reading constraints() too, every UNIQUE index would be
+			// invisible here and would be reported as "missing" by IndexComparator on
+			// every single make:migrations run, forever, even immediately after it was
+			// created.
+			foreach ($tableSchema->constraints() as $constraintName) {
+				$constraint = $tableSchema->getConstraint($constraintName);
+				
+				// getConstraint() can theoretically return null on race conditions or
+				// schema inconsistencies, so guard defensively. Only unique constraints
+				// are relevant here; primary keys and foreign keys are handled elsewhere.
+				if ($constraint === null || $constraint['type'] !== 'unique') {
+					continue;
+				}
+				
+				/** @var array{type: string, columns: array<string>} $constraint */
+				$result[$constraintName] = [
+					'type'    => 'unique',
+					'columns' => $constraint['columns'],
+					'length'  => null,
+				];
+			}
+			
 			return $result;
 		}
 		

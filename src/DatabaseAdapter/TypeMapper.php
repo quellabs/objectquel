@@ -131,7 +131,7 @@
 		 */
 		public static function getRelevantProperties(string $type): array {
 			// Base properties all columns have
-			$baseProperties = ['type', 'null', 'default'];
+			$baseProperties = ['type', 'nullable', 'default'];
 			
 			// Unknown types get no extra properties beyond the base set
 			return array_merge($baseProperties, self::RELEVANT_PROPERTIES[$type] ?? []);

@@ -26,6 +26,20 @@
 		public function supportsNativeEnums(): bool;
 		
 		/**
+		 * Checks whether the database engine has a real UNSIGNED integer modifier.
+		 *
+		 * Only MySQL and MariaDB support this. SQLite, PostgreSQL, and SQL Server
+		 * have no such concept — integers are always signed. This matters beyond
+		 * SQL generation: schema introspection on these engines cannot report
+		 * "unsigned" back from an existing column (there is nothing to report),
+		 * so 'unsigned' must be excluded from schema comparisons entirely on
+		 * engines where this returns false, or diffing will never converge.
+		 *
+		 * @return bool
+		 */
+		public function supportsUnsignedIntegers(): bool;
+		
+		/**
 		 * Returns true if the database engine supports REGEXP_LIKE(col, pattern, flags).
 		 * @return bool
 		 */

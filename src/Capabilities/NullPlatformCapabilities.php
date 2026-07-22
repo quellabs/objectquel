@@ -22,6 +22,13 @@
 		/**
 		 * @inheritDoc
 		 */
+		public function supportsUnsignedIntegers(): bool {
+			return false;
+		}
+		
+		/**
+		 * @inheritDoc
+		 */
 		public function supportsRegexpLike(): bool {
 			return false;
 		}
