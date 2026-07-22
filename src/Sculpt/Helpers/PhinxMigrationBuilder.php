@@ -555,7 +555,7 @@ PHP;
 				$options[] = "'scale' => " . $definition['scale'];
 			}
 			
-			if (isset($definition['unsigned'])) {
+			if (isset($definition['unsigned']) && $this->platform->supportsUnsignedIntegers()) {
 				// Phinx uses 'signed', which is the logical inverse of 'unsigned'
 				$options[] = "'signed' => " . ($definition['unsigned'] ? 'false' : 'true');
 			}

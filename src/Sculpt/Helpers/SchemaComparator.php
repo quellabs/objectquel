@@ -191,6 +191,15 @@
 			$columnType = $columnDefinition['type'];
 			$relevantProperties = TypeMapper::getRelevantProperties($columnType);
 			
+			// The connected engine has no UNSIGNED integer modifier at all (SQLite,
+			// PostgreSQL, SQL Server). Schema introspection on these engines cannot
+			// report 'unsigned' back from a real column, so comparing it here would
+			// forever detect a false difference between the entity's declared
+			// unsigned=true and whatever the introspected value happens to default to.
+			if (!$this->platform->supportsUnsignedIntegers()) {
+				$relevantProperties = array_diff($relevantProperties, ['unsigned']);
+			}
+			
 			// array_intersect_key always preserves 'type' because it is in every relevantProperties
 			// list, but PHPStan models the result as having all keys optional.
 			/** @var ColumnDefinition $filtered */

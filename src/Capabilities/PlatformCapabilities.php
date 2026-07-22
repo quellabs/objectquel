@@ -48,6 +48,14 @@
 		}
 		
 		/**
+		 * Checks whether the database engine has a real UNSIGNED integer modifier.
+		 * @return bool
+		 */
+		public function supportsUnsignedIntegers(): bool {
+			return in_array($this->adapter->getDatabaseType(), ['mysql', 'mariadb']);
+		}
+		
+		/**
 		 * @inheritDoc
 		 *
 		 * REGEXP_LIKE(col, pattern, flags) is supported by MySQL 8.0+ and SQL Server
