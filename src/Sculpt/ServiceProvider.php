@@ -137,7 +137,8 @@
 		 *             pass: string,
 		 *             port: int,
 		 *             charset: string,
-		 *             collation: string
+		 *             collation: string,
+		 *             suffix: string
 		 *         }
 		 *     }
 		 * }
@@ -145,6 +146,10 @@
 		public function createPhinxConfig(): array {
 			// Fetch default values
 			$defaults = $this->getDefaults();
+			
+			// Change suffix for SQLite
+			$driver = $this->getConfigValueAsString('driver', $defaults['driver']);
+			$isSqlite = $driver === 'sqlite';
 			
 			// Make a phinx config configuration array
 			return [
@@ -155,7 +160,7 @@
 					'default_migration_table' => $this->getConfigValueAsString('migration_table', 'phinxlog'),
 					'default_environment'     => 'development',
 					'development'             => [
-						'adapter'   => $this->getConfigValueAsString('driver', $defaults['driver']),
+						'adapter'   => $driver,
 						'host'      => $this->getConfigValueAsString('host', $defaults['host']),
 						'name'      => $this->getConfigValueAsString('database', $defaults['database']),
 						'user'      => $this->getConfigValueAsString('username', $defaults['username']),
@@ -163,6 +168,7 @@
 						'port'      => $this->getConfigValueAsInt('port', $defaults['port']),
 						'charset'   => $this->getConfigValueAsString('encoding', $defaults['encoding']),
 						'collation' => $this->getConfigValueAsString('collation', $defaults['collation']),
+						'suffix'    => $isSqlite ? '' : '.sqlite3',
 					],
 				],
 			];
