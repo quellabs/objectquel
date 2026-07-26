@@ -2,6 +2,7 @@
 	
 	namespace Quellabs\ObjectQuel\Sculpt\Helpers;
 	
+	use Phinx\Util\Literal;
 	use Quellabs\ObjectQuel\Capabilities\NullPlatformCapabilities;
 	use Quellabs\ObjectQuel\Capabilities\PlatformCapabilitiesInterface;
 	use Quellabs\ObjectQuel\DatabaseAdapter\DatabaseAdapter;
@@ -235,6 +236,13 @@
 		 * @return mixed Normalized property value
 		 */
 		private function normalizePropertyValue(string $property, mixed $value, string $columnType): mixed {
+			// Phinx's SQLite adapter can return a default value wrapped in a
+			// Literal object instead of a plain scalar. Unwrap it first so it
+			// compares equal to the plain string/scalar the entity side produces.
+			if ($value instanceof Literal) {
+				$value = (string)$value;
+			}
+			
 			// Convert numeric properties to integers if the value is numeric
 			// This ensures consistent data types for properties like length, precision, scale, etc.
 			if (in_array($property, self::NUMERIC_PROPERTIES) && is_numeric($value)) {
