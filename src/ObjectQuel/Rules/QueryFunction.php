@@ -6,6 +6,7 @@
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstAny;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstAvg;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstAvgU;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstCheckNull;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstDate;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstIfNull;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstMax;
@@ -60,7 +61,7 @@
 		 * Supported functions:
 		 * - Aggregate: count, countu, avg, avgu
 		 * - String: concat, search
-		 * - Type checking: is_empty, is_numeric, is_integer, is_float
+		 * - Type checking: is_empty, is_numeric, is_integer, is_float, is_null
 		 * - Temporal: date
 		 * - Utility: exists
 		 *
@@ -84,6 +85,7 @@
 				'concat' => $this->parseConcat(),
 				'search_score' => $this->parseSearchScore(),
 				'is_empty' => $this->parseIsEmpty(),
+				'is_null' => $this->parseIsNull(),
 				'is_numeric' => $this->parseIsNumeric(),
 				'is_integer' => $this->parseIsInteger(),
 				'is_float' => $this->parseIsFloat(),
@@ -244,6 +246,15 @@
 		 */
 		protected function parseIsEmpty(): AstIsEmpty {
 			return $this->parseSingleParameter(AstIsEmpty::class);
+		}
+		
+		/**
+		 * Parses is_null(expr) — a strict NULL check
+		 * @return AstCheckNull
+		 * @throws LexerException|ParserException|\ReflectionException
+		 */
+		protected function parseIsNull(): AstCheckNull {
+			return $this->parseSingleParameter(AstCheckNull::class);
 		}
 		
 		/**
