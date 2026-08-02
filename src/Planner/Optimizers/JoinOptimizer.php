@@ -77,15 +77,17 @@
 				
 				// Analyzes a specific range to determine the optimal JOIN type.
 				$analysis = $this->analyzeConditions($ast, $range);
-				
-				// NULL Check Priority: If range has NULL checks → force LEFT JOIN
+
+				// NULL Check Priority: NULL checks require a LEFT JOIN.
+				// Unlike LEFT_UNCHANGED, this can never be promoted to INNER while
+				// the check exists, since INNER would remove the NULL rows being tested.
 				if ($analysis->hasNullChecks) {
 					// Set not required
 					$range->setRequired(false);
 					
 					// Add note to the plan log
-					$log->note('optimizer', 'join', 'LEFT_UNCHANGED',
-						"Range '{$range->getName()}' has IS NULL / IS NOT NULL in WHERE; kept as LEFT JOIN (cannot promote)",
+					$log->note('optimizer', 'join', 'FORCED_LEFT',
+						"Range '{$range->getName()}' has IS NULL / IS NOT NULL in WHERE; cannot promote to INNER JOIN",
 						$range->getName()
 					);
 					
