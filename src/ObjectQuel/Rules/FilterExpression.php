@@ -3,7 +3,6 @@
 	namespace Quellabs\ObjectQuel\ObjectQuel\Rules;
 	
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstIn;
-	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstNot;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstNumber;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstString;
 	use Quellabs\ObjectQuel\ObjectQuel\AstInterface;
@@ -20,28 +19,9 @@
 		 * @throws LexerException|ParserException|\ReflectionException
 		 */
 		public function parse(): AstInterface {
-			// Handle NOT expressions specifically for FilterExpression operations
-			if ($this->lexer->lookahead() == Token::Not) {
-				$this->lexer->match(Token::Not);
-				
-				// If we have "NOT IN", we need to peek ahead to see if IN follows
-				// @phpstan-ignore-next-line
-				if ($this->lexer->lookahead() === Token::In) {
-					// Get the left expression from a parent parse - this would be the value
-					// we're checking in the NOT IN statement
-					$arithmeticExpression = new ArithmeticExpression($this->lexer);
-					$leftExpression = $arithmeticExpression->parse();
-					
-					// Now parse the IN statement directly and wrap it in NOT
-					$inExpression = $this->parseIn($leftExpression);
-					return new AstNot($inExpression);
-				}
-				
-				// For other NOT expressions, fall back to the parent behavior
-				return new AstNot(parent::parse());
-			}
-			
-			// Parse the first term in the expression
+			// Parse the first term in the expression. NOT is handled per
+			// term, in PredicateExpression::parse() — see that method's
+			// own docblock — not here.
 			$expression = parent::parse();
 			
 			// Try to parse a filter expression (like IN)

@@ -29,12 +29,6 @@
 		 * @throws LexerException|ParserException
 		 */
 		public function parse(): AstInterface {
-			// Handle NOT expression
-			if ($this->lexer->lookahead() == Token::Not) {
-				$this->lexer->match(Token::Not);
-				return new AstNot($this->parse());
-			}
-			
 			// Parse the left-hand side of the OR expression; this could be an AND expression
 			$left = $this->parseAndExpression();
 			

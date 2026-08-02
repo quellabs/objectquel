@@ -2,6 +2,7 @@
 	
 	namespace Quellabs\ObjectQuel\ObjectQuel\Rules;
 	
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstNot;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstParameter;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstSearch;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstString;
@@ -33,6 +34,14 @@
 		/**
 		 * Parse a predicate expression.
 		 *
+		 * A leading NOT negates exactly the term that follows it. Checked
+		 * here rather than higher up the hierarchy (LogicalExpression,
+		 * FilterExpression) because this method is what
+		 * LogicalExpression::parseAndExpression() actually calls once per
+		 * AND/OR operand — a NOT check placed above this level only runs
+		 * once for the whole expression and ends up negating every
+		 * subsequent AND/OR operand along with the intended term.
+		 *
 		 * If the current token is an identifier immediately followed by '(',
 		 * attempt to dispatch it as a known predicate function. If the name is
 		 * not recognized, fall through to ComparisonExpression without consuming
@@ -44,6 +53,11 @@
 		 * @throws ParserException
 		 */
 		public function parse(): AstInterface {
+			if ($this->lexer->lookahead() === Token::Not) {
+				$this->lexer->match(Token::Not);
+				return new AstNot($this->parse());
+			}
+			
 			// Only attempt predicate dispatch when we see an identifier
 			// immediately followed by '(' — anything else cannot be a predicate call
 			if (
