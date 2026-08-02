@@ -221,18 +221,27 @@
 		}
 		
 		/**
-		 * Converts an associative array of primary-key parameters to an ObjectQuel WHERE fragment.
+		 * Converts primary-key parameters into an ObjectQuel WHERE fragment.
+		 *
+		 * Null values are emitted as `main.{key} is null` instead of
+		 * `main.{key}=:{key}`, because binding `NULL` to `=` would compile to
+		 * `= NULL`, which never matches in SQL. Callers naturally expect `IS NULL`
+		 * semantics, consistent with CakePHP's `Query::where()`. Corresponding null
+		 * keys must also be omitted from the bound-parameter array, since no
+		 * `:{key}` placeholder is generated.
+		 *
 		 * @param array<string, mixed> $parameters Key-value pairs where keys are column/property names.
 		 * @return string
 		 */
 		private function parametersToString(array $parameters): string {
 			$parts = [];
 			
-			foreach ($parameters as $key => $_) {
-				// Produces a condition like "main.id=:id".
-				// The ":key" syntax is the named-placeholder convention understood by the
-				// ObjectQuel query executor — binding happens downstream, not here.
-				$parts[] = "main.{$key}=:{$key}";
+			foreach ($parameters as $key => $value) {
+				if ($value === null) {
+					$parts[] = "main.{$key} is null";
+				} else {
+					$parts[] = "main.{$key}=:{$key}";
+				}
 			}
 			
 			// Multiple primary-key columns (composite keys) are ANDed together.

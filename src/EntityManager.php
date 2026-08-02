@@ -383,11 +383,16 @@
 		 * @throws EntityResolutionException
 		 */
 		public function findBy(string $entityType, array $searchData, ?array $sortBy = null): array {
-			// Prepare a query in case the entity is not found
+			// Build the query using the original search data so null values can be
+			// translated into `is null` conditions instead of `:{key}` placeholders.
 			$query = $this->queryBuilder->prepareQuery($entityType, $searchData, $sortBy);
+
+			// Skip null values: they generate `main.{key} is null` rather than a
+			// `:{key}` placeholder, so there is nothing to bind.
+			$boundParameters = array_filter($searchData, static fn(mixed $value): bool => $value !== null);
 			
 			// Execute query and retrieve result
-			$result = $this->getAll($query, $searchData);
+			$result = $this->getAll($query, $boundParameters);
 			
 			// Extract the main column from the result
 			$filteredResult = array_column($result, "main");
