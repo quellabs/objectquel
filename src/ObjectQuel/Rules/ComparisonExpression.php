@@ -4,6 +4,7 @@
 	
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstExpression;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstIn;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstNot;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstNumber;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRegExp;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstString;
@@ -49,6 +50,15 @@
 			
 			// Parse the first term in the expression
 			$expression = $arithmeticExpression->parse();
+
+			// "expr NOT IN (...)" — standard SQL postfix form. NOT here
+			// only ever means this; if it isn't immediately followed by
+			// IN, it doesn't belong to this expression at all, so leave
+			// it unconsumed for whatever parses next.
+			if ($this->lexer->lookahead() === Token::Not && $this->lexer->peekNext() === Token::In) {
+				$this->lexer->match(Token::Not);
+				return new AstNot($this->parseIn($expression));
+			}
 
 			// Check for ternary operator
 			/** @noinspection PhpSwitchCanBeReplacedWithMatchExpressionInspection */
