@@ -10,8 +10,6 @@
 	use Quellabs\ObjectQuel\ObjectQuel\LexerException;
 	use Quellabs\ObjectQuel\ObjectQuel\ParserException;
 	use Quellabs\ObjectQuel\ObjectQuel\Token;
-	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstCheckNull;
-	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstCheckNotNull;
 	
 	class FilterExpression extends LogicalExpression {
 		
@@ -45,12 +43,6 @@
 			
 			// Parse the first term in the expression
 			$expression = parent::parse();
-			
-			// After matching IS, look for 'null' or 'not null'
-			if ($this->lexer->lookahead() == Token::Is) {
-				$this->lexer->match(Token::Is);
-				return $this->parseIs($expression);
-			}
 			
 			// Try to parse a filter expression (like IN)
 			try {
@@ -111,29 +103,6 @@
 				default:
 					throw new ParserException("Expected a logical operator");
 			}
-		}
-		
-		/**
-		 * Analyzes 'is' expressions to determine if an expression is null or not-null.
-		 * @param AstInterface $expression The expression to analyze.
-		 * @return AstInterface An AstNotNull or AstNull object, depending on the presence of the 'not' token.
-		 * @throws LexerException
-		 */
-		protected function parseIs(AstInterface $expression): AstInterface {
-			// Check if there's a 'not' token, indicating a 'not-null' expression
-			if ($this->lexer->optionalMatch(Token::Not)) {
-				// Match the following 'null' token that is now required after 'not'
-				$this->lexer->match(Token::Null);
-				
-				// Return an AstNotNull object, indicating the expression is not null
-				return new AstCheckNotNull($expression);
-			}
-			
-			// Match the 'null' token for a regular 'null' expression
-			$this->lexer->match(Token::Null);
-			
-			// Return an AstNull object, indicating the expression is null
-			return new AstCheckNull($expression);
 		}
 		
 	}
