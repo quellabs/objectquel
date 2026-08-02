@@ -34,19 +34,15 @@
 		/**
 		 * Parse a predicate expression.
 		 *
-		 * A leading NOT negates exactly the term that follows it. Checked
-		 * here rather than higher up the hierarchy (LogicalExpression,
-		 * FilterExpression) because this method is what
-		 * LogicalExpression::parseAndExpression() actually calls once per
-		 * AND/OR operand — a NOT check placed above this level only runs
-		 * once for the whole expression and ends up negating every
-		 * subsequent AND/OR operand along with the intended term.
+		 * A leading NOT negates only the following term. This check belongs here
+		 * because LogicalExpression parses AND/OR operands by repeatedly calling
+		 * this method; handling NOT at a higher level would incorrectly negate
+		 * subsequent operands.
 		 *
-		 * If the current token is an identifier immediately followed by '(',
-		 * attempt to dispatch it as a known predicate function. If the name is
-		 * not recognized, fall through to ComparisonExpression without consuming
-		 * any tokens. Each predicate branch is responsible for consuming its
-		 * own identifier token.
+		 * If an identifier is immediately followed by '(', attempt to parse it as
+		 * a predicate function. Unknown names fall through to
+		 * ComparisonExpression without consuming any tokens. Predicate branches
+		 * consume their own identifier.
 		 *
 		 * @return AstInterface
 		 * @throws LexerException

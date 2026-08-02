@@ -6,7 +6,6 @@
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstAny;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstAvg;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstAvgU;
-	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstCheckNotNull;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstCheckNull;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstDate;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstIfNull;
@@ -250,7 +249,8 @@
 		}
 		
 		/**
-		 * Parses is_null(expr) — a strict NULL check
+		 * Parses is_null(expr) — a strict NULL check, unlike is_empty()
+		 * which also treats 0, '', and false as empty.
 		 * @return AstCheckNull
 		 * @throws LexerException|ParserException|\ReflectionException
 		 */

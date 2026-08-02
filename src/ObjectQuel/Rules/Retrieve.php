@@ -33,8 +33,8 @@
 		/** @var ArithmeticExpression Parser rule for handling arithmetic expressions in field lists and sort clauses */
 		private ArithmeticExpression $expressionRule;
 		
-		/** @var FilterExpression Parser rule for handling filter expressions in WHERE clauses */
-		private FilterExpression $filterExpressionRule;
+		/** @var LogicalExpression Parser rule for handling WHERE-clause conditions (AND/OR/NOT/comparisons) */
+		private LogicalExpression $conditionRule;
 		
 		/**
 		 * Initialize the Retrieve parser with required dependencies.
@@ -44,7 +44,7 @@
 			$this->lexer = $lexer;
 			$this->isTemporaryTable = $isTemporaryTable;
 			$this->expressionRule = new ArithmeticExpression($this->lexer);
-			$this->filterExpressionRule = new FilterExpression($this->lexer);
+			$this->conditionRule = new LogicalExpression($this->lexer);
 		}
 		
 		/**
@@ -202,7 +202,7 @@
 		 */
 		private function parseWhereClause(AstRetrieve $retrieve): void {
 			if ($this->lexer->optionalMatch(Token::Where)) {
-				$retrieve->setConditions($this->filterExpressionRule->parse());
+				$retrieve->setConditions($this->conditionRule->parse());
 			}
 		}
 		
