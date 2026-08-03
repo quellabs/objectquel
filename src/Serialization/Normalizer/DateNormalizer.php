@@ -35,7 +35,7 @@
 		 *                        - Input value is null
 		 *                        - Input is an empty/zero date ("0000-00-00")
 		 *                        - Input cannot be parsed
-		 * @throws \DateInvalidTimeZoneException
+		 * @throws \DateInvalidTimeZoneException|\DateMalformedStringException
 		 */
 		public function normalize(mixed $value): ?\DateTime {
 			$timezone = new \DateTimeZone(date_default_timezone_get());

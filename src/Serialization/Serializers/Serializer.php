@@ -58,6 +58,12 @@
 		 * @throws \RuntimeException If a normalizer class cannot be instantiated
 		 */
 		public function normalizeValue(Column $annotation, mixed $value): mixed {
+			// Preserve NULL for nullable columns instead of coercing to 0/0.0/false;
+			// non-nullable columns fall through to the existing cast as a safety net.
+			if ($value === null && $annotation->isNullable()) {
+				return null;
+			}
+
 			// Extract the column type from the annotation object
 			$columnType = $annotation->getType();
 			
