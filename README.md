@@ -6,8 +6,8 @@
 
 A domain-level query language and engine for PHP, with a full ORM attached. ObjectQuel's declarative syntax inspired
 by [QUEL](https://en.wikipedia.org/wiki/QUEL_query_languages) expresses entity queries above the table level — relationships, patterns, full-text search, and
-cross-source joins are first-class expressions, not raw SQL escapes.  Supports MySQL, PostgreSQL, SQLite, and SQL
-Server.
+cross-source joins are first-class expressions, not raw SQL escapes.  Supports MySQL/MariaDB, PostgreSQL, SQLite, and
+SQL Server.
 
 ```php
 $results = $entityManager->executeQuery("
@@ -41,7 +41,7 @@ Version 2.0 introduces breaking changes to the relationship annotation model:
 Before:
 ```php
 // UserEntity
-/** @Orm\OneToMany(targetEntity=PostEntity::class, mappedBy="user") */
+/** @Orm\OneToMany(targetEntity=PostEntity::class, mappedBy="userId") */
 public Collection $posts;
 ```
 
@@ -73,7 +73,7 @@ $results = $entityManager->executeQuery("
     range of p is App\\Entity\\Product
     retrieve (p) where p.name = /^Tech/i
     sort by p.createdAt desc
-    window 0 using window_size 10
+    window 0, 10
 ");
 ```
 
@@ -117,7 +117,7 @@ sort by order.orderDate desc
 ObjectQuel can join database entities with JSON files in a single query, applying
 inner, left, or cross joins based on context — the engine handles the cross-source matching.
 Neither Doctrine nor Eloquent can do this. You'd query the database, load the JSON separately, and merge results in PHP.
-ObjectQuel also supports JSONPath prefiltering to extract nested structures before the query runs, keeping memory usage
+ObjectQuel also supports JSONPath pre-filtering to extract nested structures before the query runs, keeping memory usage
 low on large files.
 
 **Existence checks as expressions:**
@@ -153,7 +153,7 @@ $rs = $entityManager->executeQuery("
     range of c is App\\Entity\\Customer via o.customer
     retrieve (o, c.name) where o.createdAt > :since
     sort by o.createdAt desc
-    window 0 using window_size 20
+    window 0, 20
 ");
 
 foreach($rs as $row) { 
@@ -164,12 +164,12 @@ foreach($rs as $row) {
 **Doctrine DQL:**
 
 ```php
-$results = $entityManager->createQuery(
-    'SELECT o, c.name FROM App\\Entity\\Order o
+$results = $entityManager->createQuery('
+     SELECT o, c.name FROM App\\Entity\\Order o
      JOIN o.customer c
      WHERE o.createdAt > :since
-     ORDER BY o.createdAt DESC'
-)->setParameter('since', $since)
+     ORDER BY o.createdAt DESC
+')->setParameter('since', $since)
  ->setMaxResults(20)
  ->getResult();
 ```
