@@ -159,6 +159,13 @@
 		
 		/**
 		 * @inheritDoc
+		 */
+		public function supportsFieldFunction(): bool {
+			return in_array($this->adapter->getDatabaseType(), ['mysql', 'mariadb']);
+		}
+		
+		/**
+		 * @inheritDoc
 		 *
 		 * Maps each supported database engine to its fulltext search style:
 		 * - MySQL / MariaDB: FULLTEXT index with MATCH ... AGAINST

@@ -58,6 +58,17 @@
 		public function supportsIndexHiding(): bool;
 		
 		/**
+		 * Returns true if the database engine supports ORDER BY FIELD(col, v1, v2, ...).
+		 *
+		 * Only MySQL and MariaDB implement FIELD(). Every other target engine
+		 * (PostgreSQL, SQLite, SQL Server) has no equivalent function, so callers
+		 * must fall back to a portable CASE expression when this returns false.
+		 *
+		 * @return bool
+		 */
+		public function supportsFieldFunction(): bool;
+		
+		/**
 		 * Returns the fulltext search style supported by the current database engine.
 		 *
 		 * The returned value determines how ObjectQuel generates fulltext index DDL

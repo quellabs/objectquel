@@ -224,11 +224,11 @@
 		/**
 		 * Directly manipulate the values in IN() without extra queries
 		 *
-		 * Emits a portable CASE expression rather than MySQL/MariaDB's FIELD()
-		 * function, which has no equivalent on PostgreSQL, SQLite, or SQL Server.
-		 * CASE col WHEN v1 THEN 1 WHEN v2 THEN 2 ... END produces the same
-		 * ordering as FIELD(col, v1, v2, ...) and is standard SQL supported by
-		 * every target engine.
+		 * On MySQL/MariaDB this emits ORDER BY FIELD(col, v1, v2, ...) directly,
+		 * since both engines support it natively. On every other target engine
+		 * (PostgreSQL, SQLite, SQL Server) FIELD() doesn't exist, so a portable
+		 * CASE col WHEN v1 THEN 1 WHEN v2 THEN 2 ... END expression is emitted
+		 * instead, which produces the same ordering and is standard SQL.
 		 *
 		 * @param AstRetrieve $retrieve
 		 * @return string
@@ -264,9 +264,14 @@
 				}, $astObject->getParameters());
 				
 				// Remove empty values and make unique, preserving the original order
-				// so the WHEN clauses below assign positions in the same sequence
-				// FIELD() would have used.
+				// so both branches below assign positions in the same sequence.
 				$uniqueValues = array_unique(array_filter($mappedParameters));
+				
+				// MySQL/MariaDB support FIELD() natively, so use it directly rather
+				// than the portable CASE fallback below.
+				if ($this->platform->supportsFieldFunction()) {
+					return "ORDER BY FIELD({$column}, " . implode(", ", $uniqueValues) . ")";
+				}
 				
 				// Build "WHEN value THEN position" for each value, 1-indexed to
 				// match FIELD()'s convention (FIELD() returns 1 for the first
