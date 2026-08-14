@@ -213,11 +213,11 @@
 
 		/**
 		 * Returns the nearest preceding token that isn't whitespace
-		 * @param array $tokens Full token list from token_get_all()
+		 * @param list<array{0: int, 1: string, 2: int}|string> $tokens Full token list from token_get_all()
 		 * @param int $index Index to search backwards from (exclusive)
-		 * @return array|string|null
+		 * @return array{0: int, 1: string, 2: int}|string|null
 		 */
-		private function previousNonWhitespaceToken(array $tokens, int $index) {
+		private function previousNonWhitespaceToken(array $tokens, int $index): array|string|null {
 			for ($i = $index - 1; $i >= 0; $i--) {
 				if (is_array($tokens[$i]) && $tokens[$i][0] === T_WHITESPACE) {
 					continue;
