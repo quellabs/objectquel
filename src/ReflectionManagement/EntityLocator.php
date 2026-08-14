@@ -115,42 +115,118 @@
 		}
 		
 		/**
-		 * Extracts the fully qualified class name from a PHP file by reading its content
+		 * Extracts the fully qualified class name from a PHP file by tokenizing its content.
+		 * Uses PHP's own tokenizer (rather than a regex over the raw source) so that
+		 * the word "class" appearing inside a docblock or comment can never be
+		 * mistaken for the actual class declaration.
 		 * @param string $filePath The full path to the PHP file
 		 * @return string|null The fully qualified class name, or null if not found
 		 */
 		private function extractEntityNameFromFile(string $filePath): ?string {
 			// Read the file contents
 			$contents = file_get_contents($filePath);
-			
+
 			// If no content found, return null
 			if ($contents === false) {
 				return null;
 			}
-			
-			// Extract the namespace
-			if (preg_match('/namespace\s+([^;]+);/s', $contents, $namespaceMatches)) {
-				$namespace = $namespaceMatches[1];
-			} else {
-				$namespace = '';
+
+			// Tokenize the source. Comments/docblocks become T_COMMENT/T_DOC_COMMENT
+			// tokens, so their text can never be picked up as a namespace or class name.
+			$tokens = token_get_all($contents);
+			$tokenCount = count($tokens);
+			$namespace = '';
+			$className = null;
+
+			for ($i = 0; $i < $tokenCount; $i++) {
+				$token = $tokens[$i];
+
+				if (!is_array($token)) {
+					continue;
+				}
+
+				$id = $token[0];
+
+				// Namespace declaration: concatenate every non-whitespace token
+				// until the terminating ';' or '{'
+				if ($id === T_NAMESPACE) {
+					$namespace = '';
+
+					for ($j = $i + 1; $j < $tokenCount; $j++) {
+						$next = $tokens[$j];
+
+						if ($next === ';' || $next === '{') {
+							break;
+						}
+
+						if (is_array($next) && $next[0] !== T_WHITESPACE) {
+							$namespace .= $next[1];
+						}
+					}
+
+					continue;
+				}
+
+				// Class declaration: take the identifier that immediately follows
+				// the "class" keyword, but skip `Foo::class` and `new class { ... }`
+				if ($id === T_CLASS && $className === null) {
+					$previous = $this->previousNonWhitespaceToken($tokens, $i);
+
+					if (
+						is_array($previous) &&
+						in_array($previous[0], [T_DOUBLE_COLON, T_NEW], true)
+					) {
+						continue;
+					}
+
+					for ($j = $i + 1; $j < $tokenCount; $j++) {
+						$next = $tokens[$j];
+
+						if (is_array($next) && $next[0] === T_WHITESPACE) {
+							continue;
+						}
+
+						if (is_array($next) && $next[0] === T_STRING) {
+							$className = $next[1];
+						}
+
+						break;
+					}
+				}
 			}
-			
-			// Extract the class name
-			if (preg_match('/class\s+(\w+)/s', $contents, $classMatches)) {
-				$className = $classMatches[1];
+
+			if ($className !== null) {
 				return $namespace . '\\' . $className;
 			}
-			
+
 			// If no class found, use filename as class name (without .php extension)
 			$fileName = basename($filePath);
 			$pos = strpos($fileName, '.php');
-			
+
 			if ($pos === false) {
 				return $namespace . '\\' . $fileName;
 			}
-			
+
 			$className = substr($fileName, 0, $pos);
 			return $namespace . '\\' . $className;
+		}
+
+		/**
+		 * Returns the nearest preceding token that isn't whitespace
+		 * @param array $tokens Full token list from token_get_all()
+		 * @param int $index Index to search backwards from (exclusive)
+		 * @return array|string|null
+		 */
+		private function previousNonWhitespaceToken(array $tokens, int $index) {
+			for ($i = $index - 1; $i >= 0; $i--) {
+				if (is_array($tokens[$i]) && $tokens[$i][0] === T_WHITESPACE) {
+					continue;
+				}
+
+				return $tokens[$i];
+			}
+
+			return null;
 		}
 		
 		/**
