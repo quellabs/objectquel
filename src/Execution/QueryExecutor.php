@@ -21,6 +21,7 @@
 	use Quellabs\ObjectQuel\Execution\Executors\JsonQueryExecutor;
 	use Quellabs\ObjectQuel\ObjectQuel\QueryNormalizer;
 	use Quellabs\ObjectQuel\ObjectQuel\SemanticAnalyzer;
+	use Quellabs\ObjectQuel\ObjectQuel\Visitors\CoerceDateTimeParameters;
 	use Quellabs\ObjectQuel\ObjectQuel\Visitors\ResolveIdentifierRange;
 	use Quellabs\ObjectQuel\ObjectQuel\Visitors\ResolvePropertyType;
 	use Quellabs\ObjectQuel\ObjectQuel\Visitors\ResolveRootIdentifierType;
@@ -133,7 +134,12 @@
 				
 				// Processing phase #1 - Transform and enhance the AST
 				$this->queryNormalizer->transform($ast);
-				
+
+				// Coerce parameters bound against \DateTime columns (DateTimeInterface,
+				// formatted strings) into Unix timestamps, mirroring the column-side
+				// conversion NormalizeDateTime just applied.
+				$this->coerceDateTimeParameters($ast, $normalizedParameters);
+
 				// Validation phase - Ensure AST integrity and correctness
 				$this->semanticAnalyser->validate($ast);
 				
@@ -190,6 +196,7 @@
 				
 				// Normalize and validate the AST before handing it to the optimizer
 				$this->queryNormalizer->transform($ast);
+				$this->coerceDateTimeParameters($ast, $normalizedParameters);
 				$this->semanticAnalyser->validate($ast);
 				
 				// Run the optimizer and planner with an active log so every decision is recorded
@@ -285,6 +292,25 @@
 			$retrieve->accept(new ResolveIdentifierRange($retrieve));
 		}
 		
+		/**
+		 * Recursively applies CoerceDateTimeParameters to the given query and every
+		 * nested subquery range, mirroring how QueryNormalizer::transform() recurses
+		 * into nested queries before processing the outer one.
+		 * @param AstRetrieve $ast
+		 * @param array<string, mixed> $parameters Reference to the query's bound parameters
+		 * @return void
+		 * @throws QuelException
+		 */
+		private function coerceDateTimeParameters(AstRetrieve $ast, array &$parameters): void {
+			foreach ($ast->getRanges() as $range) {
+				if ($range instanceof AstRangeDatabaseSubquery) {
+					$this->coerceDateTimeParameters($range->getQuery(), $parameters);
+				}
+			}
+
+			$ast->accept(new CoerceDateTimeParameters($parameters));
+		}
+
 		/**
 		 * Normalizes an array of parameters by casting all keys to strings.
 		 * @param array<int|string, mixed> $params The parameters to normalize.
