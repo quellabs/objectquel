@@ -10,6 +10,7 @@
 	use Quellabs\AnnotationReader\Exception\ParserException;
 	use Quellabs\ObjectQuel\Annotations\Orm\Cascade;
 	use Quellabs\ObjectQuel\Annotations\Orm\Column;
+	use Quellabs\ObjectQuel\Annotations\Orm\EntityBridge;
 	use Quellabs\ObjectQuel\Annotations\Orm\ForeignKey;
 	use Quellabs\ObjectQuel\Annotations\Orm\ForeignKeyAction;
 	use Quellabs\ObjectQuel\Annotations\Orm\FullTextIndex;
@@ -88,7 +89,11 @@
 				}
 				
 				$tableName = $tableAnnotation->getName();
-				
+
+				// Marks a pure linking/junction entity; QueryBuilder reads this to decide
+				// whether to eager-join one hop further through its own relations.
+				$isEntityBridge = $classAnnotations->getFirst(EntityBridge::class) !== null;
+
 				// Get the list of declared properties via reflection
 				$properties = $this->reflectionHandler->getProperties($className);
 				
@@ -143,6 +148,7 @@
 					softDeleteColumnType: $columnData->softDeleteColumnType,
 					foreignKeys: $foreignKeys,
 					foreignKeyActions: $foreignKeyActions,
+					isEntityBridge: $isEntityBridge,
 				);
 			} catch (\RuntimeException $e) {
 				throw $e;

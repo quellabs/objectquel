@@ -73,6 +73,7 @@
 		 * @param string|null $softDeleteColumnType Column type of the soft-delete field ('datetime', 'boolean', etc.), or null
 		 * @param array<string, ForeignKey> $foreignKeys Database column name => ForeignKey annotation
 		 * @param array<string, ForeignKeyAction> $foreignKeyActions Database column name => ForeignKeyAction annotation
+		 * @param bool $isEntityBridge True when the class carries the class-level @Orm\EntityBridge marker
 		 */
 		public function __construct(
 			public string $className,
@@ -94,6 +95,7 @@
 			public ?string $softDeleteColumnType = null,
 			public array $foreignKeys = [],
 			public array $foreignKeyActions = [],
+			public bool $isEntityBridge = false,
 		) {
 		}
 		
@@ -313,5 +315,13 @@
 		 */
 		public function getForeignKeyActionForColumn(string $columnName): ?ForeignKeyAction {
 			return $this->foreignKeyActions[$columnName] ?? null;
+		}
+
+		/**
+		 * Returns true if this entity carries the class-level @Orm\EntityBridge marker.
+		 * @return bool
+		 */
+		public function isEntityBridge(): bool {
+			return $this->isEntityBridge;
 		}
 	}

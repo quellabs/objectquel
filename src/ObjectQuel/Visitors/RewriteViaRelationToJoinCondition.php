@@ -193,8 +193,15 @@
 			// hydrator can match by (entity, relation) instead of re-inspecting the rewritten
 			// JOIN columns. On the InverseOf path that name is $owningProperty; on the direct
 			// path it is the via-clause property itself.
+			//
+			// Only tag when unset: a chained via-hop off an already-joined dependent range
+			// (e.g. a second hop through a range reached via InverseOf) would otherwise
+			// overwrite that range's original tag and break its InverseOf match.
 			$dependentRange = $fkOnJoiningRange ? $this->range : $range;
-			$dependentRange->setViaRelation($owningProperty ?? $joinProperty->getName());
+
+			if ($dependentRange->getViaRelation() === null) {
+				$dependentRange->setViaRelation($owningProperty ?? $joinProperty->getName());
+			}
 			
 			// Dispatch on relation type. The parameter type is ManyToOne|OneToOne, so these
 			// two branches are exhaustive.

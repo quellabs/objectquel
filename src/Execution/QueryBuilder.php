@@ -142,6 +142,63 @@
 				
 				$alias = $this->createAlias($rangeCounter++);
 				$ranges[$alias] = "range of {$alias} is {$dependentEntityType} via main.{$mainInverse}";
+
+				// If this dependent is itself marked @Orm\EntityBridge, eager-join one hop
+				// further through its own relations instead of leaving the far side lazy.
+				$this->addBridgeExpansionRanges($dependentEntityType, $alias, $entityType, $ranges, $rangeCounter);
+			}
+		}
+
+		/**
+		 * When a dependent entity just joined in by addRanges() is marked @Orm\EntityBridge —
+		 * a pure linking/junction entity holding two ordinary ManyToOne (or owning OneToOne)
+		 * relations — eager-join one hop further through its own relations, so the far side of
+		 * the link resolves in the same query rather than lazily per row.
+		 *
+		 * The relation that was just used to reach the bridge from $excludedEntityType is
+		 * skipped, so the entity already being loaded doesn't get rejoined. The via-clause is
+		 * anchored on the bridge's own alias rather than 'main' (e.g. "range of r1 is Tag via
+		 * r0.tag") — not self-referential, since the bridge range and the target range differ.
+		 * @param string $bridgeEntityType The bridge entity's class name
+		 * @param string $bridgeAlias The alias addRanges() just assigned to the bridge's own range
+		 * @param string $excludedEntityType The entity type already reached via this bridge
+		 * @param array<string, string> $ranges Accumulator array (modified in place)
+		 * @param int $rangeCounter Alias counter (modified in place)
+		 * @return void
+		 * @throws EntityResolutionException
+		 */
+		private function addBridgeExpansionRanges(
+			string $bridgeEntityType,
+			string $bridgeAlias,
+			string $excludedEntityType,
+			array &$ranges,
+			int &$rangeCounter
+		): void {
+			$bridgeMetadata = $this->entityStore->getMetadata($bridgeEntityType);
+
+			if (!$bridgeMetadata->isEntityBridge()) {
+				return;
+			}
+
+			$relations = $bridgeMetadata->getOneToOneDependencies() + $bridgeMetadata->getManyToOneDependencies();
+
+			foreach ($relations as $property => $relation) {
+				// LAZY relations are resolved at property-access time by the ORM proxy,
+				// not via an eager join here — same convention as addRanges().
+				if ($relation->getFetch() === self::FETCH_LAZY) {
+					continue;
+				}
+
+				$targetEntityType = $this->entityStore->normalizeEntityClass($relation->getTargetEntity());
+
+				// Skip the relation that was just used to reach the bridge — re-adding it
+				// would rejoin the entity already being loaded back into the query.
+				if ($targetEntityType === $excludedEntityType) {
+					continue;
+				}
+
+				$alias = $this->createAlias($rangeCounter++);
+				$ranges[$alias] = "range of {$alias} is {$targetEntityType} via {$bridgeAlias}.{$property}";
 			}
 		}
 		
