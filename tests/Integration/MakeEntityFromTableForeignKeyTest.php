@@ -284,4 +284,164 @@
 			self::assertStringNotContainsString('@Orm\ForeignKey', $code);
 			self::assertStringNotContainsString('@Orm\ForeignKeyAction', $code);
 		}
+
+		// -------------------------------------------------------------------------
+		// A constraint that matches the safe defaults exactly emits no
+		// ForeignKeyAction at all — presence means something was actually declared.
+		// -------------------------------------------------------------------------
+
+		public function testConstraintMatchingSafeDefaultsExactlyEmitsNoForeignKeyActionAtAll(): void {
+			[$command, $provider] = $this->makeCommand(true);
+			$adapter = $provider->getDatabaseAdapter();
+
+			$adapter->execute('CREATE TABLE customers (id INTEGER PRIMARY KEY)');
+			$adapter->execute(
+				'CREATE TABLE orders (' .
+				'id INTEGER PRIMARY KEY, ' .
+				'customer_id INTEGER NOT NULL, ' .
+				// Explicitly RESTRICT/NO ACTION, not omitted — SQLite's *omitted*
+				// default is NO ACTION for onDelete too (see the self-referencing
+				// test above), so only an explicit RESTRICT here actually exercises
+				// "detected value equals the annotation default".
+				'FOREIGN KEY (customer_id) REFERENCES customers(id) ON DELETE RESTRICT ON UPDATE NO ACTION' .
+				')'
+			);
+
+			$code = $this->generateEntityCode($command, $provider, 'orders', true);
+
+			self::assertStringContainsString(
+				'@Orm\ForeignKey(target="App\\Entities\\CustomersEntity", referencedColumn="id")',
+				$code
+			);
+			self::assertStringNotContainsString('@Orm\ForeignKeyAction', $code);
+		}
+
+		// -------------------------------------------------------------------------
+		// Only onUpdate deviates — ForeignKeyAction still emits both values together
+		// -------------------------------------------------------------------------
+
+		public function testOnUpdateOnlyDeviationStillEmitsForeignKeyActionWithBothValues(): void {
+			[$command, $provider] = $this->makeCommand(true);
+			$adapter = $provider->getDatabaseAdapter();
+
+			$adapter->execute('CREATE TABLE customers (id INTEGER PRIMARY KEY)');
+			$adapter->execute(
+				'CREATE TABLE orders (' .
+				'id INTEGER PRIMARY KEY, ' .
+				'customer_id INTEGER NOT NULL, ' .
+				'FOREIGN KEY (customer_id) REFERENCES customers(id) ON DELETE RESTRICT ON UPDATE CASCADE' .
+				')'
+			);
+
+			$code = $this->generateEntityCode($command, $provider, 'orders', true);
+
+			self::assertStringContainsString(
+				'@Orm\ForeignKeyAction(onDelete="RESTRICT", onUpdate="CASCADE")',
+				$code
+			);
+		}
+
+		// -------------------------------------------------------------------------
+		// Multiple FK columns on the same table are each annotated independently
+		// -------------------------------------------------------------------------
+
+		public function testMultipleForeignKeysOnDifferentColumnsAreEachAnnotatedIndependently(): void {
+			[$command, $provider] = $this->makeCommand(true);
+			$adapter = $provider->getDatabaseAdapter();
+
+			$adapter->execute('CREATE TABLE customers (id INTEGER PRIMARY KEY)');
+			$adapter->execute('CREATE TABLE warehouses (id INTEGER PRIMARY KEY)');
+			$adapter->execute(
+				'CREATE TABLE orders (' .
+				'id INTEGER PRIMARY KEY, ' .
+				'customer_id INTEGER NOT NULL, ' .
+				'warehouse_id INTEGER NOT NULL, ' .
+				'FOREIGN KEY (customer_id) REFERENCES customers(id) ON DELETE CASCADE, ' .
+				'FOREIGN KEY (warehouse_id) REFERENCES warehouses(id) ON DELETE SET NULL' .
+				')'
+			);
+
+			$code = $this->generateEntityCode($command, $provider, 'orders', true);
+
+			self::assertStringContainsString(
+				'@Orm\ForeignKey(target="App\\Entities\\CustomersEntity", referencedColumn="id")',
+				$code
+			);
+			self::assertStringContainsString(
+				'@Orm\ForeignKey(target="App\\Entities\\WarehousesEntity", referencedColumn="id")',
+				$code
+			);
+			self::assertStringContainsString('@Orm\ForeignKeyAction(onDelete="CASCADE", onUpdate="NO ACTION")', $code);
+			self::assertStringContainsString('@Orm\ForeignKeyAction(onDelete="SET NULL", onUpdate="NO ACTION")', $code);
+			self::assertStringContainsString('protected int $customerId;', $code);
+			self::assertStringContainsString('protected int $warehouseId;', $code);
+		}
+
+		// -------------------------------------------------------------------------
+		// A table with no foreign keys at all produces no FK-related output
+		// -------------------------------------------------------------------------
+
+		public function testTableWithNoForeignKeysProducesNoForeignKeyOutputEvenWithGenerateForeignKeysOn(): void {
+			[$command, $provider] = $this->makeCommand(true);
+			$adapter = $provider->getDatabaseAdapter();
+
+			$adapter->execute('CREATE TABLE standalone (id INTEGER PRIMARY KEY, name TEXT)');
+
+			$code = $this->generateEntityCode($command, $provider, 'standalone', true);
+
+			self::assertStringNotContainsString('@Orm\ForeignKey', $code);
+			self::assertStringNotContainsString('@Orm\ForeignKeyAction', $code);
+			self::assertStringContainsString('protected ?string $name', $code);
+		}
+
+		// -------------------------------------------------------------------------
+		// A FK referencing a non-primary-key column round-trips the real column
+		// -------------------------------------------------------------------------
+
+		public function testForeignKeyReferencingANonPrimaryKeyColumnRoundTripsTheRealReferencedColumn(): void {
+			[$command, $provider] = $this->makeCommand(true);
+			$adapter = $provider->getDatabaseAdapter();
+
+			$adapter->execute('CREATE TABLE customers (id INTEGER PRIMARY KEY, email TEXT UNIQUE)');
+			$adapter->execute(
+				'CREATE TABLE orders (' .
+				'id INTEGER PRIMARY KEY, ' .
+				'customer_email TEXT NOT NULL, ' .
+				'FOREIGN KEY (customer_email) REFERENCES customers(email)' .
+				')'
+			);
+
+			$code = $this->generateEntityCode($command, $provider, 'orders', true);
+
+			self::assertStringContainsString(
+				'@Orm\ForeignKey(target="App\\Entities\\CustomersEntity", referencedColumn="email")',
+				$code
+			);
+		}
+
+		// -------------------------------------------------------------------------
+		// Multi-word snake_case table/column names resolve correctly
+		// -------------------------------------------------------------------------
+
+		public function testMultiWordTableAndColumnNamesResolveToCorrectCamelCaseTargetAndProperty(): void {
+			[$command, $provider] = $this->makeCommand(true);
+			$adapter = $provider->getDatabaseAdapter();
+
+			$adapter->execute('CREATE TABLE product_categories (id INTEGER PRIMARY KEY)');
+			$adapter->execute(
+				'CREATE TABLE order_items (' .
+				'id INTEGER PRIMARY KEY, ' .
+				'product_category_id INTEGER NOT NULL, ' .
+				'FOREIGN KEY (product_category_id) REFERENCES product_categories(id)' .
+				')'
+			);
+
+			$code = $this->generateEntityCode($command, $provider, 'order_items', true);
+
+			self::assertStringContainsString(
+				'@Orm\ForeignKey(target="App\\Entities\\ProductCategoriesEntity", referencedColumn="id")',
+				$code
+			);
+			self::assertStringContainsString('protected int $productCategoryId;', $code);
+		}
 	}
