@@ -152,6 +152,10 @@ HELP;
 		
 		// Path to the migrations folder
 		'migrations_path'  => dirname(__FILE__) . '/../migrations',
+
+		// Detect existing database foreign key constraints when running
+		// make:entity-from-table and emit a matching @Orm\ForeignKey annotation
+		'generate_foreign_keys' => false,
 	];
 PHP;
 		}

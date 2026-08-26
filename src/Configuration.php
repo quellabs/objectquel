@@ -103,6 +103,15 @@
 		 * duration. Has no effect when $slowQueryLog is null.
 		 */
 		private float $slowQueryThreshold = 0.0;
+
+		/**
+		 * @var bool Whether make:entity-from-table should detect existing database
+		 * foreign key constraints and emit a matching @Orm\ForeignKey annotation.
+		 * Off by default so a project with real FK constraints in a legacy database
+		 * doesn't have its generated entities change shape the next time it
+		 * regenerates one, unless it deliberately opts in.
+		 */
+		private bool $generateForeignKeys = false;
 		
 		/**
 		 * Retrieves entity path
@@ -299,6 +308,25 @@
 		 */
 		public function setSlowQueryThreshold(float $slowQueryThreshold): self {
 			$this->slowQueryThreshold = $slowQueryThreshold;
+			return $this;
+		}
+
+		/**
+		 * Returns whether make:entity-from-table should detect and annotate
+		 * existing database foreign key constraints.
+		 * @return bool
+		 */
+		public function getGenerateForeignKeys(): bool {
+			return $this->generateForeignKeys;
+		}
+
+		/**
+		 * Enables or disables foreign key detection during entity generation.
+		 * @param bool $generateForeignKeys
+		 * @return self
+		 */
+		public function setGenerateForeignKeys(bool $generateForeignKeys): self {
+			$this->generateForeignKeys = $generateForeignKeys;
 			return $this;
 		}
 	}

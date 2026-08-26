@@ -20,6 +20,7 @@
 	 *
 	 * @phpstan-import-type ColumnDefinition from DatabaseAdapter
 	 * @phpstan-import-type IndexDefinition from DatabaseAdapter
+	 * @phpstan-import-type ForeignKeyDefinition from DatabaseAdapter
 	 */
 	class MakeEntityFromTableCommand extends CommandBase {
 		
@@ -101,21 +102,28 @@ HELP;
 			// Extract all necessary data from the table
 			$tableCamelCase = $this->camelCase($table);
 			$tableDescription = $databaseAdapter->getColumns($table);
-			
+
 			if (empty($tableDescription)) {
 				$this->output->writeLn("Could not extract table description for {$table}.");
 				return 0;
 			}
-			
+
+			// Foreign key detection is opt-in (config: generate_foreign_keys). When
+			// disabled, skip the read entirely so output stays byte-identical to
+			// what this command produced before this feature existed.
+			$foreignKeys = $this->configuration->getGenerateForeignKeys()
+				? $this->getTableForeignKeys($table)
+				: [];
+
 			// Generate namespace and imports
 			$entityCode = "<?php\n";
 			$entityCode .= $this->generateNamespace();
 			$entityCode .= $this->generateImports();
 			$entityCode .= $this->generateClassDocBlock($table, $tableCamelCase);
-			
+
 			// Generate entity code
 			$entityCode .= "    class {$tableCamelCase}Entity {\n";
-			$entityCode .= $this->generateMemberVariables($tableDescription);
+			$entityCode .= $this->generateMemberVariables($tableDescription, $foreignKeys);
 			$entityCode .= $this->generateConstructor($tableDescription);
 			$entityCode .= $this->generateGettersAndSetters($tableDescription);
 			$entityCode .= "    }\n"; // Class closing brace
@@ -162,6 +170,11 @@ HELP;
 			$output .= "    use Quellabs\\ObjectQuel\\Annotations\Orm\ManyToOne;\n";
 			$output .= "    use Quellabs\\ObjectQuel\\Annotations\Orm\Index;\n";
 			$output .= "    use Quellabs\\ObjectQuel\\Annotations\Orm\UniqueIndex;\n";
+
+			if ($this->configuration->getGenerateForeignKeys()) {
+				$output .= "    use Quellabs\\ObjectQuel\\Annotations\Orm\ForeignKey;\n";
+			}
+
 			$output .= "    use Quellabs\\ObjectQuel\\Collections\\Collection;\n";
 			$output .= "    use Quellabs\\ObjectQuel\\Collections\\CollectionInterface;\n";
 			$output .= "\n";
@@ -282,23 +295,26 @@ HELP;
 		/**
 		 * Generate the member variables for the entity class
 		 * @param array<string, ColumnDefinition> $tableDescription
+		 * @param array<string, array{target: string, referencedColumn: string, onDelete: string, onUpdate: string}> $foreignKeys
+		 *        Detected foreign keys keyed by local database column name. Empty when
+		 *        generate_foreign_keys is disabled.
 		 * @return string The generated member variables code with proper ORM annotations
 		 */
-		private function generateMemberVariables(array $tableDescription): string {
+		private function generateMemberVariables(array $tableDescription, array $foreignKeys = []): string {
 			// Initialize empty output string to store the generated code
 			$output = "";
-			
+
 			// Iterate through each column in the table description
 			foreach ($tableDescription as $columnName => $column) {
 				// Convert the database column name to camelCase for PHP property naming convention
 				$columnCamelCase = lcfirst($this->camelCase($columnName));
-				
+
 				// Get the PHP type for this column (string, int, \DateTime, etc.)
 				$acceptType = $this->getColumnType($column);
-				
+
 				// Begin generating the PHPDoc comment block with ORM annotations
 				$output .= "        /**\n";
-				
+
 				// Normalize the database-native type to the ORM canonical type before
 				// writing the annotation. PostgreSQL returns 'jsonb' from its schema
 				// catalog but the ORM only knows 'json'.
@@ -308,7 +324,17 @@ HELP;
 				$output .= "         * @Orm\Column(name=\"{$columnName}\", type=\"{$ormType}\"";
 				$output .= $this->getColumnAnnotationDetails($column);
 				$output .= ")\n";
-				
+
+				// If a real FK constraint was detected on this column, annotate it too.
+				// The property stays a plain scalar (protected int $userId) — this does
+				// not convert the column into a ManyToOne/OneToOne object relation.
+				if (isset($foreignKeys[$columnName])) {
+					$foreignKey = $foreignKeys[$columnName];
+					$output .= "         * @Orm\ForeignKey(target=\"{$foreignKey['target']}\", " .
+						"referencedColumn=\"{$foreignKey['referencedColumn']}\", " .
+						"onDelete=\"{$foreignKey['onDelete']}\", onUpdate=\"{$foreignKey['onUpdate']}\")\n";
+				}
+
 				// If this is an auto-incrementing primary key, add the PrimaryKeyStrategy annotation
 				if ($column["primary_key"] && $column["identity"]) {
 					$output .= "         * @Orm\PrimaryKeyStrategy(strategy=\"identity\")\n";
@@ -577,5 +603,49 @@ HELP;
 					'unique'  => strtoupper($index['type']) === 'UNIQUE'  // Convert type to boolean flag for uniqueness
 				];
 			}, $this->provider->getDatabaseAdapter()->getIndexes($tableName));
+		}
+
+		/**
+		 * Retrieves database foreign key constraints for a table, keyed by local
+		 * column name, and resolves each one's target entity class name (2.4).
+		 *
+		 * The target table's own entity may not have been generated yet — this
+		 * command is typically run per-table, in whatever order the user chooses.
+		 * The target class name is resolved using this command's own naming
+		 * convention (StudlyCase table name + "Entity" suffix, in the configured
+		 * entity namespace) and emitted as a plain string, regardless of whether
+		 * that file exists yet; annotation parameters are resolved lazily by the
+		 * metadata layer, not required to exist at generation time.
+		 *
+		 * Composite foreign keys (more than one local/referenced column) are
+		 * skipped: @Orm\ForeignKey only supports a single referencedColumn, so a
+		 * composite constraint can't be represented as one annotation.
+		 *
+		 * @param string $tableName The name of the database table to get foreign keys for
+		 * @return array<string, array{target: string, referencedColumn: string, onDelete: string, onUpdate: string}>
+		 */
+		private function getTableForeignKeys(string $tableName): array {
+			$result = [];
+
+			foreach ($this->provider->getDatabaseAdapter()->getForeignKeys($tableName) as $foreignKey) {
+				if (count($foreignKey['columns']) !== 1 || count($foreignKey['referencedColumns']) !== 1) {
+					continue;
+				}
+
+				$localColumn = $foreignKey['columns'][0];
+				$targetEntityName = $this->camelCase($foreignKey['referencedTable']);
+
+				$result[$localColumn] = [
+					'target'           => "{$this->configuration->getEntityNameSpace()}\\{$targetEntityName}Entity",
+					// Round-trip the source constraint's actual rule (2.5) — never
+					// default to RESTRICT here, that would silently change behavior
+					// relative to what the database actually enforces today.
+					'referencedColumn' => $foreignKey['referencedColumns'][0],
+					'onDelete'         => $foreignKey['onDelete'],
+					'onUpdate'         => $foreignKey['onUpdate'],
+				];
+			}
+
+			return $result;
 		}
 	}

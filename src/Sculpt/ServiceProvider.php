@@ -59,25 +59,27 @@
 		 *      entity_path: string,
 		 *      proxy_namespace: string,
 		 *      proxy_path: string,
-		 *      metadata_cache_path: string
+		 *      metadata_cache_path: string,
+		 *      generate_foreign_keys: bool
 		 * }
 		 */
 		public static function getDefaults(): array {
 			return [
-				'driver'              => 'mysql',
-				'host'                => '',
-				'database'            => '',
-				'username'            => '',
-				'password'            => '',
-				'port'                => 3306,
-				'encoding'            => 'utf8mb4',
-				'collation'           => 'utf8mb4_unicode_ci',
-				'migrations_path'     => '',
-				'entity_namespace'    => '',
-				'entity_path'         => '',
-				'proxy_namespace'     => 'Quellabs\\ObjectQuel\\Proxy\\Runtime',
-				'proxy_path'          => '',
-				'metadata_cache_path' => ComposerUtils::getProjectRoot() . "/storage/annotations"
+				'driver'                => 'mysql',
+				'host'                  => '',
+				'database'              => '',
+				'username'              => '',
+				'password'              => '',
+				'port'                  => 3306,
+				'encoding'              => 'utf8mb4',
+				'collation'             => 'utf8mb4_unicode_ci',
+				'migrations_path'       => '',
+				'entity_namespace'      => '',
+				'entity_path'           => '',
+				'proxy_namespace'       => 'Quellabs\\ObjectQuel\\Proxy\\Runtime',
+				'proxy_path'            => '',
+				'metadata_cache_path'   => ComposerUtils::getProjectRoot() . "/storage/annotations",
+				'generate_foreign_keys' => false,
 			];
 		}
 		
@@ -94,6 +96,7 @@
 			$configuration->setMigrationsPath($this->getConfigValueAsString('migrations_path', $defaults['migrations_path']));
 			$configuration->setMetadataCachePath($this->getConfigValueAsString('metadata_cache_path', $defaults['metadata_cache_path']));
 			$configuration->setUseMetadataCache(!empty($this->getConfigValueAsString('metadata_cache_path', $defaults['metadata_cache_path'])));
+			$configuration->setGenerateForeignKeys($this->getConfigValueAsBool('generate_foreign_keys', $defaults['generate_foreign_keys']));
 			return $configuration;
 		}
 		
