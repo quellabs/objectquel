@@ -824,12 +824,13 @@
 			foreach ($metadata->getAnnotations() as $property => $annotations) {
 				// Loop through the annotations for a single property of the entity.
 				foreach ($annotations as $annotation) {
-					// Check if the current annotation is a ManyToOne annotation or a bidirectional OneToOne.
-					// These types indicate a dependency on a parent entity
-					if (
-						!($annotation instanceof ManyToOne) &&
-						(!($annotation instanceof OneToOne) || is_null($annotation->getReferencedColumn()))
-					) {
+					// Check if the current annotation is a ManyToOne or OneToOne annotation.
+					// Both are owning sides that hold a real FK column needing a value —
+					// 'referencedColumn' only affects bidirectional setter sync codegen and
+					// has nothing to do with whether this entity owns the FK, so a
+					// unidirectional OneToOne (no referencedColumn) still needs its FK
+					// column populated here exactly like ManyToOne does.
+					if (!($annotation instanceof ManyToOne) && !($annotation instanceof OneToOne)) {
 						continue; // Skip this annotation if it's not a relationship to a parent
 					}
 					
@@ -940,17 +941,14 @@
 			$manyToOneDependencies = $metadata->getManyToOneDependencies();
 			
 			// Retrieve all OneToOne relationships defined in the dependent entity class
-			// These are one-to-one associations between entities
+			// These are one-to-one associations between entities. Cascade-remove is
+			// driven purely by the Cascade annotation below, exactly like ManyToOne —
+			// 'referencedColumn' only affects bidirectional setter sync codegen, so
+			// filtering on it here would silently skip cascade-remove for a
+			// unidirectional OneToOne that explicitly declares Cascade(remove).
 			$oneToOneDependencies = $metadata->getOneToOneDependencies();
-			
-			// Filter OneToOne relationships to only include bidirectional ones
-			// We only want relationships where both sides reference each other
-			// This is determined by checking if the inversedBy property is set
-			$oneToOneDependencies = array_filter($oneToOneDependencies, function ($e) {
-				return !empty($e->getReferencedColumn());
-			});
-			
-			// Process both ManyToOne and filtered OneToOne relationships together
+
+			// Process both ManyToOne and OneToOne relationships together
 			foreach (array_merge($manyToOneDependencies, $oneToOneDependencies) as $property => $annotation) {
 				// Skip if this relationship doesn't point to our parent entity class
 				// This ensures we only process relationships relevant to the deleted entity

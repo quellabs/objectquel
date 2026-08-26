@@ -2,13 +2,9 @@
 
 	namespace Quellabs\ObjectQuel\Tests\Integration;
 
-	use Cake\Database\Connection;
-	use Cake\Database\Driver\Sqlite;
 	use PHPUnit\Framework\TestCase;
 	use Quellabs\ObjectQuel\Annotations\Orm\Cascade;
-	use Quellabs\ObjectQuel\Configuration;
-	use Quellabs\ObjectQuel\EntityManager;
-	use Quellabs\ObjectQuel\Tests\Support\FkTestSupport;
+	use Quellabs\ObjectQuel\Tests\Support\SharedTestEntityManager;
 	use Quellabs\ObjectQuel\UnitOfWork;
 
 	/**
@@ -20,35 +16,19 @@
 	 * "remove" is present, false otherwise.
 	 *
 	 * shouldCascadeRemove() is private, so it's exercised via reflection rather
-	 * than through a full cascade-delete integration test.
+	 * than through a full cascade-delete integration test — see
+	 * RelationshipCascadeForeignKeyTest for that end-to-end coverage.
+	 *
+	 * The UnitOfWork comes from SharedTestEntityManager rather than a private
+	 * EntityManager of this class's own: SignalHub is a process-wide singleton
+	 * that throws on a duplicate 'orm.prePersist' registration, so only one
+	 * EntityManager can ever exist per PHPUnit process — see that class's
+	 * docblock for the full explanation.
 	 */
 	class CascadeStrategyTest extends TestCase {
-		use FkTestSupport;
-
-		/**
-		 * One shared UnitOfWork for the whole class. SignalHub is a process-wide
-		 * singleton that throws on a duplicate signal name (see EntityManager's own
-		 * "Single EntityManager for the entire test suite" note in tests/bootstrap.php
-		 * for the app-level suite) — constructing a fresh EntityManager per test
-		 * method would trip that on the second test.
-		 */
-		private static ?UnitOfWork $unitOfWork = null;
 
 		private static function unitOfWork(): UnitOfWork {
-			if (self::$unitOfWork === null) {
-				self::loadFkFixtureEntities();
-
-				$connection = new Connection(['driver' => Sqlite::class, 'database' => ':memory:']);
-
-				$configuration = new Configuration();
-				$configuration->setEntityPath(__DIR__ . '/../Fixtures/Entities');
-				$configuration->setEntityNameSpace('Quellabs\\ObjectQuel\\Tests\\Fixtures\\Entities');
-				$configuration->setUseMetadataCache(false);
-
-				self::$unitOfWork = (new EntityManager($configuration, $connection))->getUnitOfWork();
-			}
-
-			return self::$unitOfWork;
+			return SharedTestEntityManager::get()->getUnitOfWork();
 		}
 
 		private function invokeShouldCascadeRemove(Cascade $cascade): bool {
