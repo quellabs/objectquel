@@ -110,10 +110,10 @@
 		}
 
 		public function testDeletingAReferencedParentIsRejectedWhenNoCascadeRuleExists(): void {
-			// The "both raw-SQL DELETE and the DB constraint are real" half of 1.5's
-			// distinct-guarantees test — here as a rejection case (default RESTRICT/
-			// NO ACTION-equivalent behavior); the CASCADE-succeeds half is already
-			// covered by the constraint-creation test above declaring ON DELETE CASCADE.
+			// The rejection half of 1.5's distinct-guarantees test (default
+			// RESTRICT-equivalent behavior). See the CASCADE test below for the
+			// complementary case — a raw DELETE that goes around the ORM entirely
+			// still cascades when the constraint says so.
 			$this->adapter->execute('CREATE TABLE oq_fk_test_customers (id INT PRIMARY KEY) ENGINE=InnoDB');
 			$this->adapter->execute(
 				'CREATE TABLE oq_fk_test_orders (' .
@@ -130,5 +130,32 @@
 			$result = $this->adapter->execute('DELETE FROM oq_fk_test_customers WHERE id = 1');
 			self::assertNull($result);
 			self::assertStringContainsString('FOREIGN KEY', (string)$this->adapter->getLastErrorMessage());
+		}
+
+		/**
+		 * The complementary case: ON DELETE CASCADE doesn't just get declared, it
+		 * actually performs the child deletion — proven with a raw DELETE that
+		 * goes around the ORM entirely, exactly the scenario Cascade(strategy=
+		 * "database")'s promise (see the plan's problem statement) depends on.
+		 */
+		public function testOnDeleteCascadeActuallyDeletesChildRowsNotJustDeclaresIt(): void {
+			$this->adapter->execute('CREATE TABLE oq_fk_test_customers (id INT PRIMARY KEY) ENGINE=InnoDB');
+			$this->adapter->execute(
+				'CREATE TABLE oq_fk_test_orders (' .
+				'id INT PRIMARY KEY, ' .
+				'customer_id INT NOT NULL, ' .
+				'CONSTRAINT fk_oq_fk_test_orders_customer_id FOREIGN KEY (customer_id) ' .
+				'REFERENCES oq_fk_test_customers(id) ON DELETE CASCADE' .
+				') ENGINE=InnoDB'
+			);
+
+			$this->adapter->execute('INSERT INTO oq_fk_test_customers (id) VALUES (1)');
+			$this->adapter->execute('INSERT INTO oq_fk_test_orders (id, customer_id) VALUES (1, 1)');
+
+			$result = $this->adapter->execute('DELETE FROM oq_fk_test_customers WHERE id = 1');
+			self::assertNotNull($result);
+
+			$remaining = $this->adapter->execute('SELECT id FROM oq_fk_test_orders WHERE id = 1')->fetchAll('assoc');
+			self::assertSame([], $remaining);
 		}
 	}

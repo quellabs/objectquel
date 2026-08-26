@@ -8,7 +8,9 @@
 	use Quellabs\ObjectQuel\Sculpt\Helpers\ForeignKeyComparator;
 	use Quellabs\ObjectQuel\Sculpt\Helpers\PhinxMigrationBuilder;
 	use Quellabs\ObjectQuel\Tests\Fixtures\Entities\FkCustomerEntity;
+	use Quellabs\ObjectQuel\Tests\Fixtures\Entities\FkOrderEntity;
 	use Quellabs\ObjectQuel\Tests\Fixtures\Entities\FkOrderRemovedEntity;
+	use Quellabs\ObjectQuel\Tests\Fixtures\Entities\FkOrderScalarActionEntity;
 	use Quellabs\ObjectQuel\Tests\Fixtures\Entities\FkOrderScalarEntity;
 	use Quellabs\ObjectQuel\Tests\Support\FkTestSupport;
 
@@ -131,6 +133,96 @@
 				"['delete' => 'RESTRICT', 'update' => 'NO ACTION', 'constraint' => 'fk_fk_orders_removed_customer_id'])",
 				$content
 			);
+		}
+
+		// -------------------------------------------------------------------------
+		// Modified — the one bucket no prior test ever populated
+		// -------------------------------------------------------------------------
+
+		public function testModifiedForeignKeyActionEmitsADropAndRecreateWithTheNewRule(): void {
+			// The live constraint already exists under the exact name this
+			// generator would produce, but with the *old* rule (RESTRICT/NO
+			// ACTION) — as if @Orm\ForeignKeyAction was just added/changed to
+			// CASCADE/RESTRICT on FkOrderScalarActionEntity since the last run.
+			$this->adapter->execute('CREATE TABLE fk_customers (id INTEGER PRIMARY KEY)');
+			$this->adapter->execute(
+				'CREATE TABLE fk_orders_scalar_action (' .
+				'id INTEGER PRIMARY KEY, customer_id INTEGER, ' .
+				'CONSTRAINT fk_fk_orders_scalar_action_customer_id FOREIGN KEY (customer_id) ' .
+				'REFERENCES fk_customers(id) ON DELETE RESTRICT ON UPDATE NO ACTION' .
+				')'
+			);
+
+			$fkDiff = $this->comparator->compareForeignKeys(FkOrderScalarActionEntity::class);
+
+			self::assertSame([], $fkDiff['added']);
+			self::assertSame([], $fkDiff['deleted']);
+			self::assertArrayHasKey('fk_fk_orders_scalar_action_customer_id', $fkDiff['modified']);
+
+			$modified = $fkDiff['modified']['fk_fk_orders_scalar_action_customer_id'];
+			self::assertSame('RESTRICT', $modified['database']['onDelete']);
+			self::assertSame('NO ACTION', $modified['database']['onUpdate']);
+			self::assertSame('CASCADE', $modified['entity']['onDelete']);
+			self::assertSame('RESTRICT', $modified['entity']['onUpdate']);
+
+			$changes = $this->emptyEntityChangeSet();
+			$changes['foreignKeys'] = $fkDiff;
+
+			$content = $this->buildMigrationContent(['fk_orders_scalar_action' => $changes]);
+
+			// up() drops the old constraint (by name) and adds the new one with
+			// the entity's rule.
+			self::assertStringContainsString(
+				"->dropForeignKey(['customer_id'], 'fk_fk_orders_scalar_action_customer_id')",
+				$content
+			);
+			self::assertStringContainsString(
+				"->addForeignKey(['customer_id'], 'fk_customers', ['id'], " .
+				"['delete' => 'CASCADE', 'update' => 'RESTRICT', 'constraint' => 'fk_fk_orders_scalar_action_customer_id'])",
+				$content
+			);
+
+			// down() must restore the database's original rule, not just repeat
+			// the entity's rule under a different name — invertForeignKeyModifications()
+			// swaps entity/database, so this is the regression check that the swap
+			// actually happened rather than being a no-op.
+			$upPos = strpos($content, 'public function up');
+			$downPos = strpos($content, 'public function down');
+			self::assertNotFalse($upPos);
+			self::assertNotFalse($downPos);
+
+			$downBody = substr($content, $downPos);
+			self::assertStringContainsString(
+				"->addForeignKey(['customer_id'], 'fk_customers', ['id'], " .
+				"['delete' => 'RESTRICT', 'update' => 'NO ACTION', 'constraint' => 'fk_fk_orders_scalar_action_customer_id'])",
+				$downBody
+			);
+		}
+
+		// -------------------------------------------------------------------------
+		// Cascade is fully independent of the generated constraint
+		// -------------------------------------------------------------------------
+
+		public function testCascadePresentAlongsideForeignKeyDoesNotAffectTheGeneratedConstraint(): void {
+			// FkOrderEntity stacks ManyToOne + Cascade + ForeignKey + ForeignKeyAction
+			// on the same relation property. This is pure metadata resolution — no
+			// live table needs to exist — and proves the generated constraint comes
+			// entirely from ForeignKey/ForeignKeyAction, exactly as it would if
+			// Cascade weren't declared at all (compare FkOrderScalarActionEntity's
+			// ForeignKeyAction(onDelete="CASCADE") above, which has no Cascade,
+			// ManyToOne, or object relation anywhere).
+			$definitions = $this->comparator->getEntityForeignKeys(FkOrderEntity::class);
+
+			self::assertArrayHasKey('fk_fk_orders_customer_id', $definitions);
+
+			$definition = $definitions['fk_fk_orders_customer_id'];
+			self::assertSame(['customer_id'], $definition['columns']);
+			self::assertSame('fk_customers', $definition['referencedTable']);
+			self::assertSame(['id'], $definition['referencedColumns']);
+			self::assertSame('CASCADE', $definition['onDelete']);
+			// onUpdate was never declared on FkOrderEntity's ForeignKeyAction —
+			// the plain annotation default, unaffected by Cascade being present.
+			self::assertSame('NO ACTION', $definition['onUpdate']);
 		}
 
 		// -------------------------------------------------------------------------
