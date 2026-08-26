@@ -5,6 +5,7 @@
 	use PHPUnit\Framework\TestCase;
 	use Quellabs\ObjectQuel\Execution\QueryBuilder;
 	use Quellabs\ObjectQuel\ProxyGenerator\ProxyInterface;
+	use Quellabs\ObjectQuel\Tests\Fixtures\RelationshipEntities\RelCategoryEntity;
 	use Quellabs\ObjectQuel\Tests\Fixtures\RelationshipEntities\RelOrderCascadeEntity;
 	use Quellabs\ObjectQuel\Tests\Fixtures\RelationshipEntities\RelPostEntity;
 	use Quellabs\ObjectQuel\Tests\Fixtures\RelationshipEntities\RelPostTagEntity;
@@ -29,9 +30,10 @@
 
 			$adapter->execute('CREATE TABLE IF NOT EXISTS rel_posts (id INTEGER PRIMARY KEY)');
 			$adapter->execute('CREATE TABLE IF NOT EXISTS rel_tags (id INTEGER PRIMARY KEY)');
-			$adapter->execute('CREATE TABLE IF NOT EXISTS rel_post_tags (id INTEGER PRIMARY KEY, post_id INTEGER, tag_id INTEGER)');
+			$adapter->execute('CREATE TABLE IF NOT EXISTS rel_categories (id INTEGER PRIMARY KEY)');
+			$adapter->execute('CREATE TABLE IF NOT EXISTS rel_post_tags (id INTEGER PRIMARY KEY, post_id INTEGER, tag_id INTEGER, category_id INTEGER)');
 
-			foreach (['rel_post_tags', 'rel_posts', 'rel_tags'] as $table) {
+			foreach (['rel_post_tags', 'rel_posts', 'rel_tags', 'rel_categories'] as $table) {
 				$adapter->execute("DELETE FROM {$table}");
 			}
 
@@ -101,6 +103,62 @@
 				'Expected the far side of the bridge to be eagerly hydrated in the same query, not a lazy proxy.'
 			);
 			self::assertSame($tag->getId(), $loadedTag->getId());
+		}
+
+		/**
+		 * Direct evidence of the skip: a LAZY relation on the bridge (RelPostTagEntity::
+		 * $category) must not get an extra hop, even though it's an ordinary ManyToOne
+		 * that would otherwise qualify like $tag does.
+		 */
+		public function testLazyBridgeRelationGetsNoExtraHop(): void {
+			$entityStore = SharedTestEntityManager::get()->getEntityStore();
+			$queryBuilder = new QueryBuilder($entityStore);
+
+			$query = $queryBuilder->prepareQuery(RelPostEntity::class, ['id' => 1]);
+
+			self::assertStringNotContainsString(RelCategoryEntity::class, $query, $query);
+		}
+
+		/**
+		 * End-to-end: the far side of a LAZY bridge relation must still resolve
+		 * correctly through the ordinary lazy-proxy path — the skip only affects
+		 * eager-join timing, not correctness.
+		 */
+		public function testLazyBridgeRelationResolvesViaProxy(): void {
+			$em = SharedTestEntityManager::get();
+
+			$post = new RelPostEntity();
+			$em->persist($post);
+			$em->flush();
+
+			$tag = new RelTagEntity();
+			$em->persist($tag);
+			$em->flush();
+
+			$category = new RelCategoryEntity();
+			$em->persist($category);
+			$em->flush();
+
+			$postTag = new RelPostTagEntity();
+			$postTag->post = $post;
+			$postTag->tag = $tag;
+			$postTag->category = $category;
+			$em->persist($postTag);
+			$em->flush();
+
+			$em->getUnitOfWork()->clear();
+
+			/** @var RelPostEntity $loadedPost */
+			$loadedPost = $em->find(RelPostEntity::class, $post->getId());
+			$loadedCategory = $loadedPost->postTags->first()->category;
+
+			self::assertInstanceOf(RelCategoryEntity::class, $loadedCategory);
+			self::assertInstanceOf(
+				ProxyInterface::class,
+				$loadedCategory,
+				'Expected a LAZY bridge relation to come back as a lazy proxy, not eagerly hydrated.'
+			);
+			self::assertSame($category->getId(), $loadedCategory->getId());
 		}
 
 		/**

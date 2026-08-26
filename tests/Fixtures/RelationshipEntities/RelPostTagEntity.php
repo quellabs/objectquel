@@ -45,6 +45,18 @@
 		 */
 		protected ?int $tagId = null;
 
+		/**
+		 * LAZY on purpose: proves addBridgeExpansionRanges() skips the extra hop for a
+		 * bridge relation that isn't eager, leaving it to resolve via the normal proxy.
+		 * @Orm\ManyToOne(targetEntity=RelCategoryEntity::class, localColumn="categoryId", fetch="LAZY")
+		 */
+		public ?RelCategoryEntity $category = null;
+
+		/**
+		 * @Orm\Column(name="category_id", type="integer", nullable=true)
+		 */
+		protected ?int $categoryId = null;
+
 		public function getId(): ?int {
 			return $this->id;
 		}
