@@ -5,16 +5,16 @@
 	use Quellabs\ObjectQuel\Annotations\Orm\Table;
 	use Quellabs\ObjectQuel\Annotations\Orm\Column;
 	use Quellabs\ObjectQuel\Annotations\Orm\PrimaryKeyStrategy;
-	use Quellabs\ObjectQuel\Annotations\Orm\Cascade;
+	use Quellabs\ObjectQuel\Annotations\Orm\ForeignKeyAction;
 
 	/**
-	 * Invalid case: @Orm\Cascade on a plain scalar column with no ManyToOne/OneToOne
-	 * relation anywhere on the property. Cascade only governs PHP-side behavior for
-	 * an object relation — there's nothing for it to walk here. Metadata build must
-	 * throw.
-	 * @Orm\Table(name="fk_orders_orm")
+	 * Invalid case: @Orm\ForeignKeyAction with no matching @Orm\ForeignKey on the
+	 * same column. ForeignKeyAction only configures an existing constraint's
+	 * ON DELETE/ON UPDATE behavior — it has nothing to configure here. Metadata
+	 * build must throw.
+	 * @Orm\Table(name="fk_orders_action_no_fk")
 	 */
-	class FkOrderOrmEntity {
+	class FkOrderActionNoFkEntity {
 		/**
 		 * @Orm\Column(name="id", type="integer", unsigned=true, primary_key=true)
 		 * @Orm\PrimaryKeyStrategy(strategy="identity")
@@ -23,7 +23,7 @@
 
 		/**
 		 * @Orm\Column(name="customer_id", type="integer")
-		 * @Orm\Cascade(operations={"remove"})
+		 * @Orm\ForeignKeyAction(onDelete="CASCADE")
 		 */
 		protected ?int $customerId = null;
 	}

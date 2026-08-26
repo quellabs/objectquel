@@ -1022,13 +1022,7 @@
 		 * @return bool True if cascading removal should be performed
 		 */
 		private function shouldCascadeRemove(Cascade $cascadeAnnotation): bool {
-			// Skip if 'remove' operation not present in the cascade operations list
-			if (!in_array('remove', $cascadeAnnotation->getOperations())) {
-				return false;
-			}
-			// Skip database-level cascades (handled by DB itself)
-			// Yes, cascading removal should be performed
-			return $cascadeAnnotation->getStrategy() !== 'database';
+			return in_array('remove', $cascadeAnnotation->getOperations());
 		}
 		
 		/**

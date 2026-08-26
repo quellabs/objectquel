@@ -9,8 +9,10 @@
 	use Quellabs\ObjectQuel\Annotations\Orm\Cascade;
 
 	/**
-	 * Invalid case: Cascade(strategy="both") also requires a matching @Orm\ForeignKey
-	 * — only strategy="orm" is exempt. Metadata build must throw here too.
+	 * Relation + Cascade with no ForeignKey/ForeignKeyAction anywhere — valid.
+	 * Pure PHP-side cascade removal, no real database constraint generated for
+	 * this column at all. Cascade never required a ForeignKey; it only requires
+	 * something to cascade in PHP, which the ManyToOne relation provides.
 	 * @Orm\Table(name="fk_orders_both_no_fk")
 	 */
 	class FkOrderBothNoFkEntity {
@@ -22,7 +24,7 @@
 
 		/**
 		 * @Orm\ManyToOne(targetEntity=FkCustomerEntity::class, referencedColumn="id", localColumn="customerId", fetch="EAGER")
-		 * @Orm\Cascade(strategy="both")
+		 * @Orm\Cascade(operations={"remove"})
 		 */
 		public ?FkCustomerEntity $customer;
 

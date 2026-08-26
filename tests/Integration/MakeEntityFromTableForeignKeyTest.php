@@ -9,9 +9,11 @@
 	use Quellabs\Sculpt\Console\ConsoleOutput;
 
 	/**
-	 * Part 2.3-2.5 — MakeEntityFromTableCommand: detecting a real database foreign
-	 * key constraint and annotating the generated entity with a matching
-	 * @Orm\ForeignKey, gated by the generate_foreign_keys config key (2.2).
+	 * Part 2.3-2.5, revised — MakeEntityFromTableCommand: detecting a real database
+	 * foreign key constraint and annotating the generated entity with a matching
+	 * @Orm\ForeignKey (structure) plus, when the detected rule isn't the safe
+	 * default, a separate @Orm\ForeignKeyAction (behavior) — gated by the
+	 * generate_foreign_keys config key (2.2).
 	 *
 	 * Exercises the command's private code-generation helpers directly via
 	 * reflection (mirroring ForeignKeyMigrationTest's approach) rather than
@@ -122,6 +124,7 @@
 			$code = $this->generateEntityCode($command, $provider, 'orders', false);
 
 			self::assertStringNotContainsString('ForeignKey', $code);
+			self::assertStringNotContainsString('ForeignKeyAction', $code);
 			self::assertStringContainsString('protected int $customerId;', $code);
 		}
 
@@ -145,8 +148,13 @@
 			$code = $this->generateEntityCode($command, $provider, 'orders', true);
 
 			self::assertStringContainsString('use Quellabs\\ObjectQuel\\Annotations\Orm\ForeignKey;', $code);
+			self::assertStringContainsString('use Quellabs\\ObjectQuel\\Annotations\Orm\ForeignKeyAction;', $code);
 			self::assertStringContainsString(
-				'@Orm\ForeignKey(target="App\\Entities\\CustomersEntity", referencedColumn="id", onDelete="CASCADE", onUpdate="RESTRICT")',
+				'@Orm\ForeignKey(target="App\\Entities\\CustomersEntity", referencedColumn="id")',
+				$code
+			);
+			self::assertStringContainsString(
+				'@Orm\ForeignKeyAction(onDelete="CASCADE", onUpdate="RESTRICT")',
 				$code
 			);
 
@@ -156,6 +164,7 @@
 			self::assertStringContainsString('protected int $customerId;', $code);
 			self::assertStringContainsString('public function getCustomerId() : int', $code);
 			self::assertStringNotContainsString('@Orm\ManyToOne', $code);
+			self::assertStringNotContainsString('@Orm\Cascade', $code);
 			self::assertStringNotContainsString('CustomerEntity $customer', $code);
 		}
 
@@ -177,10 +186,17 @@
 
 			$code = $this->generateEntityCode($command, $provider, 'employees', true);
 
-			// No ON DELETE was declared, so SQLite's real default (NO ACTION, not
-			// RESTRICT — see 2.5's round-trip test below) is what's reported here.
 			self::assertStringContainsString(
-				'@Orm\ForeignKey(target="App\\Entities\\EmployeesEntity", referencedColumn="id", onDelete="NO ACTION", onUpdate="NO ACTION")',
+				'@Orm\ForeignKey(target="App\\Entities\\EmployeesEntity", referencedColumn="id")',
+				$code
+			);
+
+			// No ON DELETE was declared, so SQLite's real default (NO ACTION, not
+			// RESTRICT — see 2.5's round-trip test below) differs from the
+			// ForeignKeyAction default (RESTRICT), so it's emitted explicitly to
+			// round-trip the real rule rather than silently defaulting.
+			self::assertStringContainsString(
+				'@Orm\ForeignKeyAction(onDelete="NO ACTION", onUpdate="NO ACTION")',
 				$code
 			);
 		}
@@ -210,7 +226,11 @@
 			$code = $this->generateEntityCode($command, $provider, 'products', true);
 
 			self::assertStringContainsString(
-				'@Orm\ForeignKey(target="App\\Entities\\SuppliersEntity", referencedColumn="id", onDelete="NO ACTION", onUpdate="NO ACTION")',
+				'@Orm\ForeignKey(target="App\\Entities\\SuppliersEntity", referencedColumn="id")',
+				$code
+			);
+			self::assertStringContainsString(
+				'@Orm\ForeignKeyAction(onDelete="NO ACTION", onUpdate="NO ACTION")',
 				$code
 			);
 		}
@@ -234,7 +254,10 @@
 
 			$code = $this->generateEntityCode($command, $provider, 'orders', true);
 
-			self::assertStringContainsString('onDelete="SET NULL"', $code);
+			self::assertStringContainsString(
+				'@Orm\ForeignKeyAction(onDelete="SET NULL", onUpdate="NO ACTION")',
+				$code
+			);
 			self::assertStringNotContainsString('onDelete="RESTRICT"', $code);
 		}
 
@@ -259,5 +282,6 @@
 			$code = $this->generateEntityCode($command, $provider, 'stores', true);
 
 			self::assertStringNotContainsString('@Orm\ForeignKey', $code);
+			self::assertStringNotContainsString('@Orm\ForeignKeyAction', $code);
 		}
 	}

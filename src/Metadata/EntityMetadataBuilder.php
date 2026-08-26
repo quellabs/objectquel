@@ -11,6 +11,7 @@
 	use Quellabs\ObjectQuel\Annotations\Orm\Cascade;
 	use Quellabs\ObjectQuel\Annotations\Orm\Column;
 	use Quellabs\ObjectQuel\Annotations\Orm\ForeignKey;
+	use Quellabs\ObjectQuel\Annotations\Orm\ForeignKeyAction;
 	use Quellabs\ObjectQuel\Annotations\Orm\FullTextIndex;
 	use Quellabs\ObjectQuel\Annotations\Orm\Index;
 	use Quellabs\ObjectQuel\Annotations\Orm\ManyToOne;
@@ -111,6 +112,7 @@
 				$oneToOneRelations = $this->extractRelations($annotations, OneToOne::class);
 				$inverseOfRelations = $this->extractRelations($annotations, InverseOf::class);
 				$foreignKeys = $this->extractForeignKeys($className, $annotations, $columnData->columnMap, $manyToOneRelations, $oneToOneRelations);
+				$foreignKeyActions = $this->extractForeignKeyActions($className, $annotations, $columnData->columnMap, $manyToOneRelations, $oneToOneRelations, $foreignKeys);
 
 				// Validate that every localColumn declared on a ManyToOne or OneToOne
 				// has a corresponding @Orm\Column property on this entity. Catching this
@@ -118,7 +120,7 @@
 				$this->validateRelationColumns($className, $annotations, $manyToOneRelations, $oneToOneRelations);
 				$this->validateSingleRelationPerProperty($className, $manyToOneRelations, $oneToOneRelations, $inverseOfRelations);
 				$this->validateInverseOfPropertyTypes($className, $inverseOfRelations);
-				$this->validateCascadeRequiresForeignKey($className, $annotations, $columnData->columnMap, $manyToOneRelations, $oneToOneRelations, $foreignKeys);
+				$this->validateCascadeRequiresRelation($className, $annotations, $manyToOneRelations, $oneToOneRelations);
 
 				// Return  a new EntityMetadataRecord containing all relation data
 				return new EntityMetadataRecord(
@@ -140,6 +142,7 @@
 					softDeleteColumn: $columnData->softDeleteColumn,
 					softDeleteColumnType: $columnData->softDeleteColumnType,
 					foreignKeys: $foreignKeys,
+					foreignKeyActions: $foreignKeyActions,
 				);
 			} catch (\RuntimeException $e) {
 				throw $e;
@@ -327,6 +330,61 @@
 			}
 
 			return $foreignKeys;
+		}
+
+		/**
+		 * Collects @Orm\ForeignKeyAction annotations, keyed by the same database
+		 * column name extractForeignKeys() uses, so the two can be looked up
+		 * together by column. ForeignKeyAction only configures an existing
+		 * ForeignKey's ON DELETE/ON UPDATE behavior — it's meaningless without one,
+		 * so a ForeignKeyAction with no matching ForeignKey on the same column is a
+		 * build-time error rather than a silently-ignored annotation.
+		 * @param class-string $className
+		 * @param array<string, AnnotationCollection> $annotations
+		 * @param array<string, string> $columnMap Property name => column name
+		 * @param array<string, ManyToOne> $manyToOneRelations
+		 * @param array<string, OneToOne> $oneToOneRelations
+		 * @param array<string, ForeignKey> $foreignKeys Column name => ForeignKey annotation
+		 * @return array<string, ForeignKeyAction> Column name => ForeignKeyAction annotation
+		 * @throws \RuntimeException When a ForeignKeyAction has no matching ForeignKey
+		 */
+		private function extractForeignKeyActions(
+			string $className,
+			array $annotations,
+			array $columnMap,
+			array $manyToOneRelations,
+			array $oneToOneRelations,
+			array $foreignKeys
+		): array {
+			$relations = $manyToOneRelations + $oneToOneRelations;
+			$foreignKeyActions = [];
+
+			foreach ($annotations as $property => $annotationCollection) {
+				foreach ($annotationCollection as $annotation) {
+					if (!$annotation instanceof ForeignKeyAction) {
+						continue;
+					}
+
+					$columnName = $this->resolveLocalColumnName($property, $columnMap, $relations);
+
+					if ($columnName === null || !isset($foreignKeys[$columnName])) {
+						$columnDescription = $columnName ?? $property;
+
+						throw new \RuntimeException(
+							"Property '{$property}' on '{$className}' carries an '@Orm\\ForeignKeyAction' " .
+							"annotation but no matching '@Orm\\ForeignKey' exists for column " .
+							"'{$columnDescription}'. ForeignKeyAction only configures an existing foreign " .
+							"key's ON DELETE/ON UPDATE behavior — declare '@Orm\\ForeignKey' for that " .
+							"column first."
+						);
+					}
+
+					$foreignKeyActions[$columnName] = $annotation;
+					break;
+				}
+			}
+
+			return $foreignKeyActions;
 		}
 
 		/**
@@ -545,54 +603,42 @@
 		}
 		
 		/**
-		 * Validates that any relation declaring Cascade(strategy="database"|"both") has a
-		 * matching @Orm\ForeignKey for its local column.
+		 * Validates that every @Orm\Cascade annotation sits on a property that also
+		 * carries a ManyToOne/OneToOne relation.
 		 *
-		 * Cascade::getStrategy() === 'database'|'both' tells UnitOfWork to skip its own
-		 * PHP-side cascade and trust a real database constraint to perform the delete
-		 * instead. Without a matching ForeignKey, MakeMigrationsCommand never generates
-		 * that constraint, so the delete would silently never happen at all. Catching
-		 * this at metadata build time turns that silent no-op into a loud, actionable
-		 * error — the same convention this codebase already applies to an unsatisfiable
-		 * caller-declared configuration.
-		 *
-		 * strategy="orm" (the default) needs no ForeignKey at all and is left alone.
+		 * Cascade is purely about ORM-side (PHP) behavior: whether UnitOfWork also
+		 * walks and persists/removes the related entity. That requires an actual
+		 * object relation to walk — a plain scalar column has nothing for it to do.
+		 * Deliberately independent of @Orm\ForeignKey/@Orm\ForeignKeyAction: a
+		 * relation can have Cascade with no real database constraint at all, or a
+		 * database constraint with no Cascade, or both — the two are unrelated.
 		 * @param class-string $className
 		 * @param array<string, AnnotationCollection> $annotations
-		 * @param array<string, string> $columnMap Property name => database column name
 		 * @param array<string, ManyToOne> $manyToOneRelations
 		 * @param array<string, OneToOne> $oneToOneRelations
-		 * @param array<string, ForeignKey> $foreignKeys Column name => ForeignKey annotation
-		 * @throws \RuntimeException When a database/both cascade has no matching ForeignKey
+		 * @throws \RuntimeException When a Cascade annotation has no relation to cascade
 		 */
-		private function validateCascadeRequiresForeignKey(
+		private function validateCascadeRequiresRelation(
 			string $className,
 			array $annotations,
-			array $columnMap,
 			array $manyToOneRelations,
-			array $oneToOneRelations,
-			array $foreignKeys
+			array $oneToOneRelations
 		): void {
 			$relations = $manyToOneRelations + $oneToOneRelations;
 
-			foreach ($relations as $property => $relation) {
-				$cascade = $this->findCascadeAnnotation($annotations[$property] ?? null);
+			foreach ($annotations as $property => $annotationCollection) {
+				$cascade = $this->findCascadeAnnotation($annotationCollection);
 
-				if ($cascade === null || !in_array($cascade->getStrategy(), ['database', 'both'], true)) {
+				if ($cascade === null) {
 					continue;
 				}
 
-				$localColumn = $this->resolveLocalColumnName($property, $columnMap, $relations);
-
-				if ($localColumn === null || !isset($foreignKeys[$localColumn])) {
-					$columnDescription = $localColumn ?? ($relation->getLocalColumn() ?? $property . 'Id');
-
+				if (!isset($relations[$property])) {
 					throw new \RuntimeException(
-						"Relation '{$property}' on '{$className}' declares Cascade(strategy=\"{$cascade->getStrategy()}\") " .
-						"but no '@Orm\\ForeignKey' annotation exists for column '{$columnDescription}'. Add an " .
-						"'@Orm\\ForeignKey' annotation for that column (on '{$property}' itself, or on the property " .
-						"backing it) so a real database constraint can be generated, or change the Cascade strategy " .
-						"to \"orm\"."
+						"Property '{$property}' on '{$className}' carries an '@Orm\\Cascade' annotation " .
+						"but no '@Orm\\ManyToOne' or '@Orm\\OneToOne' annotation. Cascade only governs " .
+						"whether the ORM also walks and persists/removes a related object in PHP — it " .
+						"has nothing to do on a plain column."
 					);
 				}
 			}

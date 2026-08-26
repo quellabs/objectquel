@@ -6,7 +6,10 @@
 	use Quellabs\ObjectQuel\Annotations\Orm\ForeignKey;
 
 	/**
-	 * Part 1.1 — @Orm\ForeignKey annotation: parameter validation and defaults.
+	 * Part 1.1, revised — @Orm\ForeignKey annotation: parameter validation and
+	 * defaults. Pure structure only (target, referencedColumn) — the ON DELETE/ON
+	 * UPDATE behavior lives on the separate @Orm\ForeignKeyAction annotation, see
+	 * ForeignKeyActionTest.
 	 */
 	class ForeignKeyTest extends TestCase {
 
@@ -28,59 +31,16 @@
 
 			self::assertSame('App\\Entities\\CustomerEntity', $fk->getTarget());
 			self::assertNull($fk->getReferencedColumn());
-			self::assertSame('RESTRICT', $fk->getOnDelete());
-			self::assertSame('NO ACTION', $fk->getOnUpdate());
 		}
 
 		public function testExplicitParametersAreHonored(): void {
 			$fk = new ForeignKey([
 				'target'           => 'App\\Entities\\CustomerEntity',
 				'referencedColumn' => 'uuid',
-				'onDelete'         => 'CASCADE',
-				'onUpdate'         => 'SET NULL',
 			]);
 
 			self::assertSame('App\\Entities\\CustomerEntity', $fk->getTarget());
 			self::assertSame('uuid', $fk->getReferencedColumn());
-			self::assertSame('CASCADE', $fk->getOnDelete());
-			self::assertSame('SET NULL', $fk->getOnUpdate());
-		}
-
-		/**
-		 * @dataProvider validActionProvider
-		 */
-		public function testAllFourActionsAreAcceptedForOnDeleteAndOnUpdate(string $action): void {
-			$fk = new ForeignKey([
-				'target'   => 'App\\Entities\\CustomerEntity',
-				'onDelete' => $action,
-				'onUpdate' => $action,
-			]);
-
-			self::assertSame($action, $fk->getOnDelete());
-			self::assertSame($action, $fk->getOnUpdate());
-		}
-
-		public static function validActionProvider(): array {
-			return [
-				'RESTRICT'  => ['RESTRICT'],
-				'CASCADE'   => ['CASCADE'],
-				'SET NULL'  => ['SET NULL'],
-				'NO ACTION' => ['NO ACTION'],
-			];
-		}
-
-		public function testInvalidOnDeleteValueIsRejected(): void {
-			$this->expectException(\InvalidArgumentException::class);
-			$this->expectExceptionMessage("'onDelete' must be one of");
-
-			new ForeignKey(['target' => 'App\\Entities\\CustomerEntity', 'onDelete' => 'SET_NULL']);
-		}
-
-		public function testInvalidOnUpdateValueIsRejected(): void {
-			$this->expectException(\InvalidArgumentException::class);
-			$this->expectExceptionMessage("'onUpdate' must be one of");
-
-			new ForeignKey(['target' => 'App\\Entities\\CustomerEntity', 'onUpdate' => 'DO_NOTHING']);
 		}
 
 		public function testReferencedColumnMustBeStringOrNull(): void {
@@ -99,7 +59,7 @@
 		}
 
 		public function testGetParametersReturnsOriginalParameterArray(): void {
-			$params = ['target' => 'App\\Entities\\CustomerEntity', 'onDelete' => 'CASCADE'];
+			$params = ['target' => 'App\\Entities\\CustomerEntity', 'referencedColumn' => 'uuid'];
 			$fk = new ForeignKey($params);
 
 			self::assertSame($params, $fk->getParameters());

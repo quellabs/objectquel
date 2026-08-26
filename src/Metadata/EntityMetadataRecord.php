@@ -24,6 +24,7 @@
 	use Quellabs\AnnotationReader\Collection\AnnotationCollection;
 	use Quellabs\ObjectQuel\Annotations\Orm\Column;
 	use Quellabs\ObjectQuel\Annotations\Orm\ForeignKey;
+	use Quellabs\ObjectQuel\Annotations\Orm\ForeignKeyAction;
 	use Quellabs\ObjectQuel\Annotations\Orm\FullTextIndex;
 	use Quellabs\ObjectQuel\Annotations\Orm\Immutable;
 	use Quellabs\ObjectQuel\Annotations\Orm\Index;
@@ -71,6 +72,7 @@
 		 * @param string|null $softDeleteColumn Database column name of the soft-delete field, or null
 		 * @param string|null $softDeleteColumnType Column type of the soft-delete field ('datetime', 'boolean', etc.), or null
 		 * @param array<string, ForeignKey> $foreignKeys Database column name => ForeignKey annotation
+		 * @param array<string, ForeignKeyAction> $foreignKeyActions Database column name => ForeignKeyAction annotation
 		 */
 		public function __construct(
 			public string $className,
@@ -91,6 +93,7 @@
 			public ?string $softDeleteColumn = null,
 			public ?string $softDeleteColumnType = null,
 			public array $foreignKeys = [],
+			public array $foreignKeyActions = [],
 		) {
 		}
 		
@@ -300,5 +303,15 @@
 		 */
 		public function getForeignKeyForColumn(string $columnName): ?ForeignKey {
 			return $this->foreignKeys[$columnName] ?? null;
+		}
+
+		/**
+		 * Retrieve the ForeignKeyAction annotation declared for a database column,
+		 * if any. Absence means the safe defaults (RESTRICT / NO ACTION) apply.
+		 * @param string $columnName Database column name
+		 * @return ForeignKeyAction|null
+		 */
+		public function getForeignKeyActionForColumn(string $columnName): ?ForeignKeyAction {
+			return $this->foreignKeyActions[$columnName] ?? null;
 		}
 	}

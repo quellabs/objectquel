@@ -91,14 +91,17 @@
 					);
 				}
 
+				// ForeignKeyAction is optional and independent of ForeignKey itself —
+				// its absence means the safe defaults apply, not that nothing was declared.
+				$action = $metadata->getForeignKeyActionForColumn($columnName);
 				$name = 'fk_' . $metadata->tableName . '_' . $columnName;
 
 				$result[$name] = [
 					'columns'           => [$columnName],
 					'referencedTable'   => $targetMetadata->tableName,
 					'referencedColumns' => [$referencedColumn],
-					'onDelete'          => $annotation->getOnDelete(),
-					'onUpdate'          => $annotation->getOnUpdate(),
+					'onDelete'          => $action?->getOnDelete() ?? 'RESTRICT',
+					'onUpdate'          => $action?->getOnUpdate() ?? 'NO ACTION',
 				];
 			}
 

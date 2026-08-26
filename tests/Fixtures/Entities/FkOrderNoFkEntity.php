@@ -7,10 +7,14 @@
 	use Quellabs\ObjectQuel\Annotations\Orm\PrimaryKeyStrategy;
 	use Quellabs\ObjectQuel\Annotations\Orm\ManyToOne;
 	use Quellabs\ObjectQuel\Annotations\Orm\Cascade;
+	use Quellabs\ObjectQuel\Annotations\Orm\ForeignKey;
 
 	/**
-	 * Invalid case: Cascade(strategy="database") with NO matching @Orm\ForeignKey
-	 * anywhere for the relation's local column. Metadata build must throw.
+	 * Relation + Cascade + ForeignKey, but no ForeignKeyAction. Valid: Cascade no
+	 * longer has any opinion about ForeignKey at all (the two are fully
+	 * independent, like Doctrine's cascade vs. @JoinColumn(onDelete=...)), so this
+	 * builds successfully with the constraint left at its safe defaults
+	 * (RESTRICT / NO ACTION).
 	 * @Orm\Table(name="fk_orders_no_fk")
 	 */
 	class FkOrderNoFkEntity {
@@ -22,7 +26,8 @@
 
 		/**
 		 * @Orm\ManyToOne(targetEntity=FkCustomerEntity::class, referencedColumn="id", localColumn="customerId", fetch="EAGER")
-		 * @Orm\Cascade(strategy="database")
+		 * @Orm\Cascade(operations={"remove"})
+		 * @Orm\ForeignKey(target=FkCustomerEntity::class)
 		 */
 		public ?FkCustomerEntity $customer;
 

@@ -173,6 +173,7 @@ HELP;
 
 			if ($this->configuration->getGenerateForeignKeys()) {
 				$output .= "    use Quellabs\\ObjectQuel\\Annotations\Orm\ForeignKey;\n";
+				$output .= "    use Quellabs\\ObjectQuel\\Annotations\Orm\ForeignKeyAction;\n";
 			}
 
 			$output .= "    use Quellabs\\ObjectQuel\\Collections\\Collection;\n";
@@ -331,8 +332,15 @@ HELP;
 				if (isset($foreignKeys[$columnName])) {
 					$foreignKey = $foreignKeys[$columnName];
 					$output .= "         * @Orm\ForeignKey(target=\"{$foreignKey['target']}\", " .
-						"referencedColumn=\"{$foreignKey['referencedColumn']}\", " .
-						"onDelete=\"{$foreignKey['onDelete']}\", onUpdate=\"{$foreignKey['onUpdate']}\")\n";
+						"referencedColumn=\"{$foreignKey['referencedColumn']}\")\n";
+
+					// Only emit ForeignKeyAction when the live constraint's rule deviates
+					// from the safe defaults (RESTRICT / NO ACTION) — presence means
+					// something was actually declared, matching @Orm\Index's own convention.
+					if ($foreignKey['onDelete'] !== 'RESTRICT' || $foreignKey['onUpdate'] !== 'NO ACTION') {
+						$output .= "         * @Orm\ForeignKeyAction(onDelete=\"{$foreignKey['onDelete']}\", " .
+							"onUpdate=\"{$foreignKey['onUpdate']}\")\n";
+					}
 				}
 
 				// If this is an auto-incrementing primary key, add the PrimaryKeyStrategy annotation
