@@ -83,12 +83,40 @@
 		 */
 		public function generatePropertyDocComment(array $property): string {
 			$propertiesString = implode(", ", $this->buildColumnAnnotationAttributes($property));
-			
+
 			$code = "/**\n";
 			$code .= " * @Orm\\Column({$propertiesString})\n";
+			$code .= $this->buildForeignKeyAnnotationLines($property);
 			$code .= " */";
-			
+
 			return $code;
+		}
+
+		/**
+		 * Builds the @Orm\ForeignKey (and, when the rule deviates from the safe
+		 * defaults, @Orm\ForeignKeyAction) docblock lines for a property carrying
+		 * FK constraint data. Returns an empty string when the property has none.
+		 *
+		 * ForeignKeyAction is only emitted on deviation from RESTRICT/NO ACTION —
+		 * same "presence means declared" convention as MakeEntityFromTableCommand,
+		 * so a bare ForeignKey line always means the safe defaults apply.
+		 * @param array $property
+		 * @phpstan-param PropertyDefinition $property
+		 * @return string
+		 */
+		private function buildForeignKeyAnnotationLines(array $property): string {
+			if (!isset($property['foreignKey'])) {
+				return "";
+			}
+
+			$foreignKey = $property['foreignKey'];
+			$lines = " * @Orm\\ForeignKey(target=\"{$foreignKey['target']}\")\n";
+
+			if ($foreignKey['onDelete'] !== 'RESTRICT' || $foreignKey['onUpdate'] !== 'NO ACTION') {
+				$lines .= " * @Orm\\ForeignKeyAction(onDelete=\"{$foreignKey['onDelete']}\", onUpdate=\"{$foreignKey['onUpdate']}\")\n";
+			}
+
+			return $lines;
 		}
 		
 		/**

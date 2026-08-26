@@ -152,37 +152,43 @@
 		 */
 		protected function ensureRequiredImports(string $content, array $properties): string {
 			$hasInverseOf = false;
-			$hasRelationship = false;
-			
+			$hasForeignKey = false;
+			$hasForeignKeyAction = false;
+
 			foreach ($properties as $property) {
-				if (!isset($property['relationshipType'])) {
-					continue;
-				}
-				
-				$hasRelationship = true;
-				
-				if ($property['collection'] ?? false) {
+				if (isset($property['relationshipType']) && ($property['collection'] ?? false)) {
 					$hasInverseOf = true;
 				}
+
+				if (isset($property['foreignKey'])) {
+					$hasForeignKey = true;
+
+					if ($property['foreignKey']['onDelete'] !== 'RESTRICT' || $property['foreignKey']['onUpdate'] !== 'NO ACTION') {
+						$hasForeignKeyAction = true;
+					}
+				}
 			}
-			
-			if (!$hasRelationship) {
-				return $content;
-			}
-			
-			// Required imports for InverseOf properties
+
 			$needed = [];
-			
+
 			if ($hasInverseOf) {
 				$needed[] = 'use Quellabs\\ObjectQuel\\Annotations\\Orm\\InverseOf;';
 				$needed[] = 'use Quellabs\\ObjectQuel\\Collections\\Collection;';
 				$needed[] = 'use Quellabs\\ObjectQuel\\Collections\\CollectionInterface;';
 			}
-			
+
+			if ($hasForeignKey) {
+				$needed[] = 'use Quellabs\\ObjectQuel\\Annotations\\Orm\\ForeignKey;';
+			}
+
+			if ($hasForeignKeyAction) {
+				$needed[] = 'use Quellabs\\ObjectQuel\\Annotations\\Orm\\ForeignKeyAction;';
+			}
+
 			foreach ($needed as $import) {
 				$content = PhpClassEditor::addUseStatement($content, $import);
 			}
-			
+
 			return $content;
 		}
 		
@@ -356,6 +362,8 @@
 			$content .= "\n";
 			$content .= "\tuse Quellabs\\ObjectQuel\\Annotations\\Orm\\Table;\n";
 			$content .= "\tuse Quellabs\\ObjectQuel\\Annotations\\Orm\\Column;\n";
+			$content .= "\tuse Quellabs\\ObjectQuel\\Annotations\\Orm\\ForeignKey;\n";
+			$content .= "\tuse Quellabs\\ObjectQuel\\Annotations\\Orm\\ForeignKeyAction;\n";
 			$content .= "\tuse Quellabs\\ObjectQuel\\Annotations\\Orm\\Index;\n";
 			$content .= "\tuse Quellabs\\ObjectQuel\\Annotations\\Orm\\UniqueIndex;\n";
 			$content .= "\tuse Quellabs\\ObjectQuel\\Annotations\\Orm\\FullTextIndex;\n";

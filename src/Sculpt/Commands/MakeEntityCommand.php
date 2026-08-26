@@ -26,10 +26,10 @@
 	 * @phpstan-import-type ColumnDefinitionRecord from EntityMetadataRecord
 	 */
 	class MakeEntityCommand extends MakeCommandBase {
-		
+
 		/** @var EntityModifier|null Lazy-loaded entity modifier for creating/updating entity files */
 		private ?EntityModifier $entityModifier = null;
-		
+
 		/**
 		 * Get the command signature used to invoke this command.
 		 * @return string Command signature
@@ -76,6 +76,11 @@ FIELD TYPES:
 NOTES:
     - The "id" property is reserved and generated automatically
     - Foreign key columns are added automatically for owning-side relationships
+    - When "generate_foreign_keys" is enabled in config, owning-side relationships
+      additionally get a real database foreign key constraint with the safe
+      defaults (ON DELETE RESTRICT / ON UPDATE NO ACTION), independent of the
+      ORM-level relationship itself — edit @Orm\ForeignKeyAction by hand
+      afterward if a relation needs a different rule
     - Enter ? at the field type prompt to see all available types
 HELP;
 		}
@@ -273,7 +278,32 @@ HELP;
 				"readonly" => true
 			];
 		}
-		
+
+		/**
+		 * Attaches a real database foreign key constraint to a just-built FK column.
+		 * Called unconditionally whenever generate_foreign_keys is on — the config
+		 * flag is the single policy decision of whether owning-side relationships
+		 * get real constraints. No interactive prompt for ON DELETE/ON UPDATE either:
+		 * the safe defaults (RESTRICT/NO ACTION) are written directly, and the user
+		 * edits @Orm\ForeignKeyAction by hand afterward if a relation needs something
+		 * else — consistent with generatePropertyDocComment() only ever emitting that
+		 * annotation on deviation from the defaults.
+		 * @param array $property The FK column property from buildForeignKeyProperty()
+		 * @phpstan-param BaseProperty $property
+		 * @param string $targetEntity Target entity name (without "Entity" suffix)
+		 * @return array The property, with 'foreignKey' set
+		 * @phpstan-return BaseProperty
+		 */
+		private function attachForeignKeyConstraint(array $property, string $targetEntity): array {
+			$property['foreignKey'] = [
+				'target'   => $this->configuration->getEntityNameSpace() . '\\' . $targetEntity . 'Entity',
+				'onDelete' => 'RESTRICT',
+				'onUpdate' => 'NO ACTION',
+			];
+
+			return $property;
+		}
+
 		/**
 		 * Collect configuration for a relationship property.
 		 * Returns array of properties (relationship + FK column if applicable).
@@ -724,7 +754,16 @@ HELP;
 			// Add the FK column alongside the relationship property for owning sides
 			if ($isOwningSide && $relationColumn !== null) {
 				$fkInfo = $this->determineForeignKeyType($targetInfo['targetEntity'], $targetInfo['referencedField']);
-				$properties[] = $this->buildForeignKeyProperty($relationColumn, $fkInfo['type'], $fkInfo['unsigned'], $nullable);
+				$fkColumn = $this->buildForeignKeyProperty($relationColumn, $fkInfo['type'], $fkInfo['unsigned'], $nullable);
+
+				// Real DB-level constraints are opt-in (config: generate_foreign_keys), same
+				// gate as MakeEntityFromTableCommand — off by default so this prompt never
+				// interrupts users who don't want ObjectQuel managing real constraints.
+				if ($this->configuration->getGenerateForeignKeys()) {
+					$fkColumn = $this->attachForeignKeyConstraint($fkColumn, $targetInfo['targetEntity']);
+				}
+
+				$properties[] = $fkColumn;
 			}
 			
 			return $properties;

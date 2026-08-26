@@ -20,6 +20,19 @@
 	 *
 	 * @phpstan-type PhinxColumnType 'tinyinteger'|'smallinteger'|'integer'|'biginteger'|'string'|'char'|'text'|'float'|'decimal'|'boolean'|'date'|'datetime'|'time'|'timestamp'
 	 *
+	 * A real database-level FK constraint attached to a scalar or FK-column
+	 * property, mirroring @Orm\ForeignKey / @Orm\ForeignKeyAction. onDelete/
+	 * onUpdate always carry a concrete value here (defaults included) — the
+	 * generator decides whether ForeignKeyAction is worth emitting by
+	 * comparing them against RESTRICT/NO ACTION, same convention as
+	 * MakeEntityFromTableCommand.
+	 *
+	 * @phpstan-type ForeignKeyConstraint array{
+	 *     target: string,
+	 *     onDelete: string,
+	 *     onUpdate: string
+	 * }
+	 *
 	 * @phpstan-type BaseProperty array{
 	 *     name: string,
 	 *     type: PhinxColumnType,
@@ -28,7 +41,8 @@
 	 *     unsigned?: bool,
 	 *     limit?: int|string,
 	 *     precision?: int,
-	 *     scale?: int
+	 *     scale?: int,
+	 *     foreignKey?: ForeignKeyConstraint
 	 * }
 	 *
 	 * @phpstan-type EnumProperty array{
