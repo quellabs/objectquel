@@ -23,6 +23,10 @@
 	 *     added           array<indexName, indexConfig>
 	 *     modified        array<indexName, ['entity' => indexConfig, 'database' => indexConfig]>
 	 *     deleted         array<indexName, indexConfig>
+	 *   foreignKeys:
+	 *     added           array<constraintName, foreignKeyConfig>
+	 *     modified        array<constraintName, ['entity' => foreignKeyConfig, 'database' => foreignKeyConfig]>
+	 *     deleted         array<constraintName, foreignKeyConfig>
 	 *
 	 * A column definition is an associative array with keys such as:
 	 *   type, limit, nullable, default, precision, scale, unsigned, identity,
@@ -31,20 +35,29 @@
 	 * An indexConfig is an associative array with keys:
 	 *   columns (string[]), type ('INDEX'|'UNIQUE'|'FULLTEXT'), unique (bool, optional)
 	 *
+	 * A foreignKeyConfig is an associative array with keys:
+	 *   columns (string[]), referencedTable (string), referencedColumns (string[]),
+	 *   onDelete (string), onUpdate (string)
+	 *
 	 * @phpstan-import-type ColumnDefinition from DatabaseAdapter
+	 * @phpstan-import-type ForeignKeyDefinition from DatabaseAdapter
 	 * @phpstan-import-type ColumnModification from SculptTypes
 	 * @phpstan-import-type IndexDefinition from SculptTypes
 	 * @phpstan-import-type IndexChangeSet from SculptTypes
+	 * @phpstan-import-type ForeignKeyChangeSet from SculptTypes
 	 *
 	 * @phpstan-type IndexConfig IndexDefinition
 	 * @phpstan-type IndexChanges IndexChangeSet
+	 * @phpstan-type ForeignKeyConfig ForeignKeyDefinition
+	 * @phpstan-type ForeignKeyChanges ForeignKeyChangeSet
 	 *
 	 * @phpstan-type TableChanges array{
 	 *     table_not_exists?: bool,
 	 *     added?: array<string, ColumnDefinition>,
 	 *     modified?: array<string, ColumnModification>,
 	 *     deleted?: array<string, ColumnDefinition>,
-	 *     indexes?: IndexChanges
+	 *     indexes?: IndexChanges,
+	 *     foreignKeys?: ForeignKeyChanges
 	 * }
 	 *
 	 * @phpstan-type AllChanges array<string, TableChanges>
@@ -123,53 +136,93 @@
 		 * @return string Complete PHP source ready to write to disk
 		 */
 		private function buildMigrationContent(string $className, array $allChanges): string {
-			$up = [];
-			$down = [];
-			
+			$normalized = [];
+
 			foreach ($allChanges as $tableName => $changes) {
-				$changes = $this->normalizeChanges($changes);
-				
+				$normalized[$tableName] = $this->normalizeChanges($changes);
+			}
+
+			$up = [];
+			$downColumnsAndIndexes = [];
+			$downForeignKeys = [];
+			$downDropTables = [];
+
+			// Pass 1: tables, columns and indexes. Foreign keys are deliberately left
+			// out of table creation here — a table with a foreign key must be created
+			// after the table it references, and emitting every create() first, then
+			// every addForeignKey() in a second pass (below), sidesteps needing a
+			// dependency-ordering algorithm entirely.
+			foreach ($normalized as $tableName => $changes) {
 				if ($changes['table_not_exists']) {
-					// New table: up creates it, down drops it entirely
 					$up[] = $this->buildCreateTableCode($tableName, $changes['added'], $changes['indexes']['added']);
-					$down[] = "        \$this->table('{$tableName}')->drop()->save();";
+					// Table drop is deferred to the very end of down() — see below — so
+					// it runs after any foreign key pointing at (or added to) it has
+					// already been undone.
+					$downDropTables[] = "        \$this->table('{$tableName}')->drop()->save();";
 					continue;
 				}
-				
+
 				// Column changes — down is always the mirror image of up
 				if (!empty($changes['added'])) {
 					$up[] = $this->buildAddColumnsCode($tableName, $changes['added']);
-					$down[] = $this->buildRemoveColumnsCode($tableName, $changes['added']);
+					$downColumnsAndIndexes[] = $this->buildRemoveColumnsCode($tableName, $changes['added']);
 				}
-				
+
 				if (!empty($changes['modified'])) {
 					$up[] = $this->buildChangeColumnsCode($tableName, $changes['modified'], 'to');
-					$down[] = $this->buildChangeColumnsCode($tableName, $changes['modified'], 'from');
+					$downColumnsAndIndexes[] = $this->buildChangeColumnsCode($tableName, $changes['modified'], 'from');
 				}
-				
+
 				if (!empty($changes['deleted'])) {
 					$up[] = $this->buildRemoveColumnsCode($tableName, $changes['deleted']);
-					$down[] = $this->buildAddColumnsCode($tableName, $changes['deleted']);
+					$downColumnsAndIndexes[] = $this->buildAddColumnsCode($tableName, $changes['deleted']);
 				}
-				
+
 				// Index changes — down is the mirror image of up
 				if (!empty($changes['indexes']['added'])) {
 					$up[] = $this->buildAddIndexesCode($tableName, $changes['indexes']['added']);
-					$down[] = $this->buildRemoveIndexesCode($tableName, $changes['indexes']['added']);
+					$downColumnsAndIndexes[] = $this->buildRemoveIndexesCode($tableName, $changes['indexes']['added']);
 				}
-				
+
 				if (!empty($changes['indexes']['modified'])) {
 					$up[] = $this->buildModifyIndexesCode($tableName, $changes['indexes']['modified']);
 					// Swap entity/database sides so down() restores the previous index state
-					$down[] = $this->buildModifyIndexesCode($tableName, $this->invertIndexModifications($changes['indexes']['modified']));
+					$downColumnsAndIndexes[] = $this->buildModifyIndexesCode($tableName, $this->invertIndexModifications($changes['indexes']['modified']));
 				}
-				
+
 				if (!empty($changes['indexes']['deleted'])) {
 					$up[] = $this->buildRemoveIndexesCode($tableName, $changes['indexes']['deleted']);
-					$down[] = $this->buildAddIndexesCode($tableName, $changes['indexes']['deleted']);
+					$downColumnsAndIndexes[] = $this->buildAddIndexesCode($tableName, $changes['indexes']['deleted']);
 				}
 			}
-			
+
+			// Pass 2: foreign keys, once every table (new or existing) is guaranteed to exist.
+			foreach ($normalized as $tableName => $changes) {
+				$foreignKeys = $changes['foreignKeys'];
+
+				if (!empty($foreignKeys['added'])) {
+					$up[] = $this->buildAddForeignKeysCode($tableName, $foreignKeys['added']);
+					$downForeignKeys[] = $this->buildRemoveForeignKeysCode($tableName, $foreignKeys['added']);
+				}
+
+				if (!empty($foreignKeys['modified'])) {
+					$up[] = $this->buildModifyForeignKeysCode($tableName, $foreignKeys['modified']);
+					// Swap entity/database sides so down() restores the previous constraint state
+					$downForeignKeys[] = $this->buildModifyForeignKeysCode($tableName, $this->invertForeignKeyModifications($foreignKeys['modified']));
+				}
+
+				if (!empty($foreignKeys['deleted'])) {
+					$up[] = $this->buildRemoveForeignKeysCode($tableName, $foreignKeys['deleted']);
+					$downForeignKeys[] = $this->buildAddForeignKeysCode($tableName, $foreignKeys['deleted']);
+				}
+			}
+
+			// down() must undo in the exact reverse of up(): foreign keys first — a
+			// column or table this migration constrains can't be altered or dropped
+			// while that constraint still exists — then column/index changes, then
+			// finally the tables this migration created.
+			$down = array_merge($downForeignKeys, $downColumnsAndIndexes, $downDropTables);
+
 			$upBody = implode("\n\n", $up);
 			$downBody = implode("\n\n", $down);
 			
@@ -211,6 +264,7 @@ PHP;
 		 *     modified: array<string, ColumnModification>,
 		 *     deleted: array<string, ColumnDefinition>,
 		 *     indexes: IndexChanges,
+		 *     foreignKeys: ForeignKeyChanges,
 		 *     table_not_exists: bool
 		 * }
 		 */
@@ -220,11 +274,13 @@ PHP;
 				'modified'         => [],
 				'deleted'          => [],
 				'indexes'          => ['added' => [], 'modified' => [], 'deleted' => []],
+				'foreignKeys'      => ['added' => [], 'modified' => [], 'deleted' => []],
 				'table_not_exists' => false,
 			];
-			
+
 			$merged = array_merge($defaults, $changes);
 			$merged['indexes'] = array_merge($defaults['indexes'], $changes['indexes'] ?? []);
+			$merged['foreignKeys'] = array_merge($defaults['foreignKeys'], $changes['foreignKeys'] ?? []);
 			return $merged;
 		}
 		
@@ -240,11 +296,29 @@ PHP;
 		 */
 		private function invertIndexModifications(array $modified): array {
 			$inverted = [];
-			
+
 			foreach ($modified as $name => $configs) {
 				$inverted[$name] = ['entity' => $configs['database'], 'database' => $configs['entity']];
 			}
-			
+
+			return $inverted;
+		}
+
+		/**
+		 * Swap the 'entity' and 'database' sides of each modified-foreign-key entry.
+		 * Mirrors invertIndexModifications() so buildModifyForeignKeysCode() can be
+		 * reused unchanged for both the forward and reverse migration.
+		 *
+		 * @param array<string, array{entity: ForeignKeyConfig, database: ForeignKeyConfig}> $modified
+		 * @return array<string, array{entity: ForeignKeyConfig, database: ForeignKeyConfig}>
+		 */
+		private function invertForeignKeyModifications(array $modified): array {
+			$inverted = [];
+
+			foreach ($modified as $name => $configs) {
+				$inverted[$name] = ['entity' => $configs['database'], 'database' => $configs['entity']];
+			}
+
 			return $inverted;
 		}
 		
@@ -441,6 +515,77 @@ PHP;
 			return $builder->update();
 		}
 		
+		// -------------------------------------------------------------------------
+		// Foreign key-level code generators
+		// -------------------------------------------------------------------------
+
+		/**
+		 * Generate code to add new foreign key constraints to a table.
+		 * @param string $tableName Table to modify
+		 * @param array<string, ForeignKeyConfig> $foreignKeys
+		 */
+		private function buildAddForeignKeysCode(string $tableName, array $foreignKeys): string {
+			$builder = new MigrationCodeBuilder($tableName);
+
+			foreach ($foreignKeys as $name => $config) {
+				$builder->addForeignKey($config['columns'], $config['referencedTable'], $config['referencedColumns'], $this->buildForeignKeyOptions($name, $config));
+			}
+
+			return $builder->update();
+		}
+
+		/**
+		 * Generate code to remove foreign key constraints from a table by name.
+		 * @param string $tableName Table to modify
+		 * @param array<string, ForeignKeyConfig> $foreignKeys
+		 */
+		private function buildRemoveForeignKeysCode(string $tableName, array $foreignKeys): string {
+			$builder = new MigrationCodeBuilder($tableName);
+
+			foreach ($foreignKeys as $name => $config) {
+				$builder->dropForeignKey($config['columns'], $name);
+			}
+
+			return $builder->update();
+		}
+
+		/**
+		 * Generate code to modify existing foreign key constraints.
+		 *
+		 * Phinx has no native modify-foreign-key operation, so each change is emitted
+		 * as a dropForeignKey() followed by an addForeignKey(), mirroring how modified
+		 * indexes are handled. The 'entity' side of the config holds the target state.
+		 * @param string $tableName Table to modify
+		 * @param array<string, array{entity: ForeignKeyConfig, database: ForeignKeyConfig}> $foreignKeys
+		 */
+		private function buildModifyForeignKeysCode(string $tableName, array $foreignKeys): string {
+			$builder = new MigrationCodeBuilder($tableName);
+
+			foreach ($foreignKeys as $name => $configs) {
+				$builder->dropForeignKey($configs['database']['columns'], $name);
+				$builder->addForeignKey($configs['entity']['columns'], $configs['entity']['referencedTable'], $configs['entity']['referencedColumns'], $this->buildForeignKeyOptions($name, $configs['entity']));
+			}
+
+			return $builder->update();
+		}
+
+		/**
+		 * Build the Phinx options array for a foreign key configuration.
+		 * The constraint name is always included, both so it round-trips into a
+		 * deterministic name on the next diff (see DatabaseAdapter::getForeignKeys())
+		 * and so dropForeignKey() can target it precisely later.
+		 * @param string $name Constraint name — always emitted as 'constraint'
+		 * @param ForeignKeyConfig $config
+		 * @return array<int, string>
+		 */
+		private function buildForeignKeyOptions(string $name, array $config): array {
+			return [
+				"'delete' => '{$config['onDelete']}'",
+				"'update' => '{$config['onUpdate']}'",
+				"'constraint' => '{$name}'",
+			];
+		}
+
 		// -------------------------------------------------------------------------
 		// Column helpers
 		// -------------------------------------------------------------------------

@@ -92,7 +92,22 @@
 	 * }
 	 *
 	 * -------------------------------------------------------------------------
-	 * Composite types (depend on ColumnDefinition and IndexChangeSet)
+	 * Foreign key types
+	 * -------------------------------------------------------------------------
+	 *
+	 * @phpstan-import-type ForeignKeyDefinition from DatabaseAdapter
+	 *
+	 * @phpstan-type ForeignKeyChangeSet array{
+	 *     added: array<string, ForeignKeyDefinition>,
+	 *     modified: array<string, array{
+	 *         database: ForeignKeyDefinition,
+	 *         entity: ForeignKeyDefinition
+	 *     }>,
+	 *     deleted: array<string, ForeignKeyDefinition>
+	 * }
+	 *
+	 * -------------------------------------------------------------------------
+	 * Composite types (depend on ColumnDefinition, IndexChangeSet and ForeignKeyChangeSet)
 	 * -------------------------------------------------------------------------
 	 *
 	 * A single entry from the 'modified' map: the before/after column definitions
@@ -111,7 +126,8 @@
 	 *     added: array<string, ColumnDefinition>,
 	 *     modified: array<string, ColumnModification>,
 	 *     deleted: array<string, ColumnDefinition>,
-	 *     indexes: IndexChangeSet
+	 *     indexes: IndexChangeSet,
+	 *     foreignKeys: ForeignKeyChangeSet
 	 * }
 	 */
 	final class SculptTypes {}

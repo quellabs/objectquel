@@ -179,6 +179,19 @@ HELP;
 				foreach ($changes['indexes']['deleted'] as $idx => $cfg) {
 					$this->output->writeLn(" ✓ Dropped index: {$tableName}.{$idx}");
 				}
+
+				// Foreign-key-level changes
+				foreach ($changes['foreignKeys']['added'] as $fk => $cfg) {
+					$this->output->writeLn(" ✓ New foreign key: {$tableName}.{$fk}");
+				}
+
+				foreach ($changes['foreignKeys']['modified'] as $fk => $cfg) {
+					$this->output->writeLn(" ✓ Modified foreign key: {$tableName}.{$fk}");
+				}
+
+				foreach ($changes['foreignKeys']['deleted'] as $fk => $cfg) {
+					$this->output->writeLn(" ✓ Dropped foreign key: {$tableName}.{$fk}");
+				}
 			}
 			
 			$this->output->writeLn("");

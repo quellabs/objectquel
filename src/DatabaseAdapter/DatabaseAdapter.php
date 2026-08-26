@@ -34,6 +34,14 @@
 	 *     length: array<int, int>|null,
 	 *     name?: string
 	 * }
+	 *
+	 * @phpstan-type ForeignKeyDefinition array{
+	 *     columns: string[],
+	 *     referencedTable: string,
+	 *     referencedColumns: string[],
+	 *     onDelete: string,
+	 *     onUpdate: string
+	 * }
 	 */
 	class DatabaseAdapter {
 		
@@ -86,6 +94,14 @@
 			$this->databaseTypeCache = null;
 			$this->phinxAdapterCache = null;
 			$this->sqlServerCompatibilityLevelCache = null;
+
+			// SQLite disables foreign-key enforcement per-connection by default, even when
+			// the schema declares real FK constraints. Without this, a constraint generated
+			// from an @Orm\ForeignKey annotation (or any FK already present in the schema)
+			// would silently do nothing on SQLite.
+			if ($this->getDatabaseType() === 'sqlite') {
+				$this->execute('PRAGMA foreign_keys = ON');
+			}
 		}
 		
 		// ==================== Connection & Driver Info ====================
@@ -460,7 +476,125 @@
 			
 			return $result;
 		}
-		
+
+		/**
+		 * Retrieves foreign key constraint definitions for a database table.
+		 * @param string $tableName
+		 * @return array<string, ForeignKeyDefinition> Constraint name => definition
+		 */
+		public function getForeignKeys(string $tableName): array {
+			return match ($this->getDatabaseType()) {
+				'sqlite'          => $this->getSqliteForeignKeys($tableName),
+				'mysql', 'mariadb' => $this->getMysqlForeignKeys($tableName),
+				default           => throw new \RuntimeException(
+					"getForeignKeys() is not supported for database type '{$this->getDatabaseType()}'. " .
+					"Supported: mysql, mariadb, sqlite."
+				),
+			};
+		}
+
+		/**
+		 * Reads foreign keys for a table on MySQL/MariaDB.
+		 *
+		 * KEY_COLUMN_USAGE alone maps columns to the referenced table/column but doesn't
+		 * carry the ON DELETE/UPDATE action, so it's joined against REFERENTIAL_CONSTRAINTS
+		 * (matched on CONSTRAINT_NAME + CONSTRAINT_SCHEMA) to get the actual delete/update rule.
+		 * @param string $tableName
+		 * @return array<string, ForeignKeyDefinition> Constraint name => definition
+		 */
+		private function getMysqlForeignKeys(string $tableName): array {
+			$statement = $this->execute(
+				"SELECT
+					kcu.CONSTRAINT_NAME AS constraint_name,
+					kcu.COLUMN_NAME AS column_name,
+					kcu.ORDINAL_POSITION AS ordinal_position,
+					kcu.REFERENCED_TABLE_NAME AS referenced_table,
+					kcu.REFERENCED_COLUMN_NAME AS referenced_column,
+					rc.DELETE_RULE AS delete_rule,
+					rc.UPDATE_RULE AS update_rule
+				FROM information_schema.KEY_COLUMN_USAGE kcu
+				JOIN information_schema.REFERENTIAL_CONSTRAINTS rc
+					ON rc.CONSTRAINT_NAME = kcu.CONSTRAINT_NAME
+					AND rc.CONSTRAINT_SCHEMA = kcu.CONSTRAINT_SCHEMA
+				WHERE kcu.TABLE_SCHEMA = DATABASE()
+					AND kcu.TABLE_NAME = :tableName
+					AND kcu.REFERENCED_TABLE_NAME IS NOT NULL
+				ORDER BY kcu.CONSTRAINT_NAME, kcu.ORDINAL_POSITION",
+				['tableName' => $tableName]
+			);
+
+			if ($statement === null) {
+				return [];
+			}
+
+			$result = [];
+
+			/** @var array{constraint_name: string, column_name: string, referenced_table: string, referenced_column: string, delete_rule: string, update_rule: string} $row */
+			foreach ($statement->fetchAll('assoc') as $row) {
+				$name = $row['constraint_name'];
+
+				if (!isset($result[$name])) {
+					$result[$name] = [
+						'columns'           => [],
+						'referencedTable'   => $row['referenced_table'],
+						'referencedColumns' => [],
+						'onDelete'          => $row['delete_rule'],
+						'onUpdate'          => $row['update_rule'],
+					];
+				}
+
+				$result[$name]['columns'][] = $row['column_name'];
+				$result[$name]['referencedColumns'][] = $row['referenced_column'];
+			}
+
+			return $result;
+		}
+
+		/**
+		 * Reads foreign keys for a table on SQLite via PRAGMA foreign_key_list().
+		 *
+		 * Rows sharing the same 'id' belong to the same (possibly composite) constraint,
+		 * ordered by 'seq'. SQLite assigns no constraint name, so a deterministic one is
+		 * synthesized from the table and local columns — matching the naming convention
+		 * MakeMigrationsCommand uses when generating constraints, so round-tripping a
+		 * generated constraint back through this method compares equal.
+		 * @param string $tableName
+		 * @return array<string, ForeignKeyDefinition> Constraint name => definition
+		 */
+		private function getSqliteForeignKeys(string $tableName): array {
+			$quotedTable = $this->escapeIdentifier($tableName);
+			$statement = $this->execute("PRAGMA foreign_key_list({$quotedTable})");
+
+			if ($statement === null) {
+				return [];
+			}
+
+			$byId = [];
+
+			/** @var array{id: int, seq: int, table: string, from: string, to: string, on_update: string, on_delete: string} $row */
+			foreach ($statement->fetchAll('assoc') as $row) {
+				$byId[$row['id']]['referencedTable'] ??= $row['table'];
+				$byId[$row['id']]['onDelete'] ??= strtoupper($row['on_delete']);
+				$byId[$row['id']]['onUpdate'] ??= strtoupper($row['on_update']);
+				$byId[$row['id']]['columns'][(int)$row['seq']] = $row['from'];
+				$byId[$row['id']]['referencedColumns'][(int)$row['seq']] = $row['to'];
+			}
+
+			$result = [];
+
+			foreach ($byId as $definition) {
+				ksort($definition['columns']);
+				ksort($definition['referencedColumns']);
+				$definition['columns'] = array_values($definition['columns']);
+				$definition['referencedColumns'] = array_values($definition['referencedColumns']);
+
+				$name = 'fk_' . $tableName . '_' . implode('_', $definition['columns']);
+				$result[$name] = $definition;
+			}
+
+			return $result;
+		}
+
 		// ==================== Query Execution ====================
 		
 		/**

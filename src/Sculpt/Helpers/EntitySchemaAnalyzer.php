@@ -40,7 +40,10 @@
 		
 		/** @var IndexComparator Handles comparison of database indexes between entity and schema */
 		private IndexComparator $indexComparator;
-		
+
+		/** @var ForeignKeyComparator Handles comparison of database foreign keys between entity and schema */
+		private ForeignKeyComparator $foreignKeyComparator;
+
 		/** @var SchemaComparator Handles comparison of column definitions and structures */
 		private SchemaComparator $schemaComparator;
 		
@@ -60,6 +63,7 @@
 			$this->connection = $connection;
 			$this->entityStore = $entityStore;
 			$this->indexComparator = new IndexComparator($connection, $entityStore);
+			$this->foreignKeyComparator = new ForeignKeyComparator($connection, $entityStore);
 			$this->schemaComparator = new SchemaComparator($connection, $platform);
 		}
 		
@@ -142,18 +146,24 @@
 						'modified' => [],
 						'deleted'  => [],
 					],
+					'foreignKeys'      => [
+						'added'    => $this->foreignKeyComparator->getEntityForeignKeys($className),
+						'modified' => [],
+						'deleted'  => [],
+					],
 				];
 			}
-			
+
 			// Fetch the table columns
 			$tableColumns = $this->connection->getColumns($tableName);
-			
+
 			// Analyze what changed
 			$changes = $this->schemaComparator->analyzeSchemaChanges($entityColumns, $tableColumns);
-			
-			// Add index comparisons to the change set
+
+			// Add index and foreign key comparisons to the change set
 			$changes['indexes'] = $this->indexComparator->compareIndexes($className);
-			
+			$changes['foreignKeys'] = $this->foreignKeyComparator->compareForeignKeys($className);
+
 			// Return results
 			return $changes;
 		}
@@ -186,7 +196,16 @@
 			) {
 				return true;
 			}
-			
+
+			// Check for foreign-key-level changes
+			if (
+				!empty($changes['foreignKeys']['added']) ||
+				!empty($changes['foreignKeys']['modified']) ||
+				!empty($changes['foreignKeys']['deleted'])
+			) {
+				return true;
+			}
+
 			return false;
 		}
 		

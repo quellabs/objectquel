@@ -23,6 +23,7 @@
 	use Quellabs\AnnotationReader\AnnotationInterface;
 	use Quellabs\AnnotationReader\Collection\AnnotationCollection;
 	use Quellabs\ObjectQuel\Annotations\Orm\Column;
+	use Quellabs\ObjectQuel\Annotations\Orm\ForeignKey;
 	use Quellabs\ObjectQuel\Annotations\Orm\FullTextIndex;
 	use Quellabs\ObjectQuel\Annotations\Orm\Immutable;
 	use Quellabs\ObjectQuel\Annotations\Orm\Index;
@@ -69,6 +70,7 @@
 		 * @param string|null $softDeleteProperty Property name carrying the @SoftDelete annotation, or null
 		 * @param string|null $softDeleteColumn Database column name of the soft-delete field, or null
 		 * @param string|null $softDeleteColumnType Column type of the soft-delete field ('datetime', 'boolean', etc.), or null
+		 * @param array<string, ForeignKey> $foreignKeys Database column name => ForeignKey annotation
 		 */
 		public function __construct(
 			public string $className,
@@ -88,6 +90,7 @@
 			public ?string $softDeleteProperty = null,
 			public ?string $softDeleteColumn = null,
 			public ?string $softDeleteColumnType = null,
+			public array $foreignKeys = [],
 		) {
 		}
 		
@@ -288,5 +291,14 @@
 		 */
 		public function hasSoftDelete(): bool {
 			return $this->softDeleteProperty !== null;
+		}
+
+		/**
+		 * Retrieve the ForeignKey annotation declared for a database column, if any.
+		 * @param string $columnName Database column name
+		 * @return ForeignKey|null
+		 */
+		public function getForeignKeyForColumn(string $columnName): ?ForeignKey {
+			return $this->foreignKeys[$columnName] ?? null;
 		}
 	}

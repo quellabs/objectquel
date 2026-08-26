@@ -101,6 +101,34 @@
 			$this->appendToChain("            ->removeIndexByName('{$name}')");
 			return $this;
 		}
+
+		/**
+		 * Append an addForeignKey() call to the chain.
+		 *
+		 * @param string[] $columns Local column(s) that carry the foreign key
+		 * @param string   $referencedTable Table the foreign key points to
+		 * @param string[] $referencedColumns Column(s) on the referenced table
+		 * @param string[] $options Pre-formatted option strings, e.g. ["'delete' => 'CASCADE'", "'constraint' => 'fk_orders_customer_id'"]
+		 */
+		public function addForeignKey(array $columns, string $referencedTable, array $referencedColumns, array $options): static {
+			$columnsList = "'" . implode("', '", $columns) . "'";
+			$referencedColumnsList = "'" . implode("', '", $referencedColumns) . "'";
+			$optionsStr = implode(', ', $options);
+			$this->appendToChain("            ->addForeignKey([{$columnsList}], '{$referencedTable}', [{$referencedColumnsList}], [{$optionsStr}])");
+			return $this;
+		}
+
+		/**
+		 * Append a dropForeignKey() call to the chain, targeting a specific named constraint.
+		 *
+		 * @param string[] $columns Local column(s) the constraint is on
+		 * @param string   $constraintName Name of the constraint to drop
+		 */
+		public function dropForeignKey(array $columns, string $constraintName): static {
+			$columnsList = "'" . implode("', '", $columns) . "'";
+			$this->appendToChain("            ->dropForeignKey([{$columnsList}], '{$constraintName}')");
+			return $this;
+		}
 		
 		/**
 		 * Append a raw $this->execute() statement.
