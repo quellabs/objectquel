@@ -46,6 +46,16 @@
 		public function supportsIndexHiding(): bool {
 			return false;
 		}
+
+		/**
+		 * @inheritDoc
+		 *
+		 * Defaults to MySQL/MariaDB syntax; unreachable in practice since
+		 * supportsIndexHiding() is false here, so callers should never get this far.
+		 */
+		public function getIndexVisibilityKeywords(): array {
+			return ['hidden' => 'INVISIBLE', 'visible' => 'VISIBLE'];
+		}
 		
 		/**
 		 * @inheritDoc

@@ -56,6 +56,19 @@
 		 * @return bool
 		 */
 		public function supportsIndexHiding(): bool;
+
+		/**
+		 * Returns the ALTER INDEX keyword pair used to hide an index from the
+		 * query optimizer and restore it to visibility. Only meaningful when
+		 * supportsIndexHiding() is true.
+		 *
+		 * Examples by engine:
+		 *   MySQL   → ['hidden' => 'INVISIBLE',  'visible' => 'VISIBLE']
+		 *   MariaDB → ['hidden' => 'IGNORED',    'visible' => 'NOT IGNORED']
+		 *
+		 * @return array{hidden: string, visible: string}
+		 */
+		public function getIndexVisibilityKeywords(): array;
 		
 		/**
 		 * Returns true if the database engine supports ORDER BY FIELD(col, v1, v2, ...).

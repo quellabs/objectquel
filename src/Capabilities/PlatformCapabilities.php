@@ -156,7 +156,20 @@
 			// is safe to use directly for both engines.
 			return version_compare($this->adapter->getServerVersion(), $minimumVersions[$dbType], '>=');
 		}
-		
+
+		/**
+		 * @inheritDoc
+		 *
+		 * Only reached when supportsIndexHiding() is true, so this only needs to
+		 * distinguish MySQL from MariaDB.
+		 */
+		public function getIndexVisibilityKeywords(): array {
+			return match ($this->adapter->getDatabaseType()) {
+				'mysql' => ['hidden' => 'INVISIBLE', 'visible' => 'VISIBLE'],
+				default => ['hidden' => 'IGNORED', 'visible' => 'NOT IGNORED'],
+			};
+		}
+
 		/**
 		 * @inheritDoc
 		 */

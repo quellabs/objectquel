@@ -151,11 +151,8 @@ HELP;
 			// Each dialect uses different syntax to hide an index from the optimizer:
 			//   MySQL   → INVISIBLE  (standard SQL extension)
 			//   MariaDB → IGNORED    (MariaDB-specific terminology)
-			if ($databaseAdapter->getDatabaseType() === 'mysql') {
-				$sql = "ALTER TABLE `{$metadata->tableName}` ALTER INDEX `{$indexName}` INVISIBLE";
-			} else {
-				$sql = "ALTER TABLE `{$metadata->tableName}` ALTER INDEX `{$indexName}` IGNORED";
-			}
+			$keyword = $capabilities->getIndexVisibilityKeywords()['hidden'];
+			$sql = "ALTER TABLE `{$metadata->tableName}` ALTER INDEX `{$indexName}` {$keyword}";
 			
 			// Execute the query
 			$result = $databaseAdapter->execute($sql);

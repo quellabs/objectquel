@@ -147,11 +147,8 @@ HELP;
 			// Each dialect uses different syntax to restore an index to optimizer visibility:
 			//   MySQL   → VISIBLE      (standard SQL extension)
 			//   MariaDB → NOT IGNORED  (MariaDB-specific terminology)
-			if ($databaseAdapter->getDatabaseType() === 'mysql') {
-				$sql = "ALTER TABLE `{$metadata->tableName}` ALTER INDEX `{$indexName}` VISIBLE";
-			} else {
-				$sql = "ALTER TABLE `{$metadata->tableName}` ALTER INDEX `{$indexName}` NOT IGNORED";
-			}
+			$keyword = $capabilities->getIndexVisibilityKeywords()['visible'];
+			$sql = "ALTER TABLE `{$metadata->tableName}` ALTER INDEX `{$indexName}` {$keyword}";
 			
 			// Execute the query
 			$result = $databaseAdapter->execute($sql);
