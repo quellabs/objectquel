@@ -637,7 +637,7 @@ PHP;
 		 * @return string Phinx type string
 		 */
 		private function resolveType(array $definition): string {
-			if ($definition['type'] === 'enum' && !$this->connection->supportsNativeEnums()) {
+			if ($definition['type'] === 'enum' && !$this->platform->supportsNativeEnums()) {
 				return 'string';
 			}
 			
@@ -689,7 +689,7 @@ PHP;
 		private function buildColumnOptions(array $definition): array {
 			$options = [];
 			$isEnum = $definition['type'] === 'enum';
-			$native = $this->connection->supportsNativeEnums();
+			$native = $this->platform->supportsNativeEnums();
 			
 			// Suppress limit for native enums — MySQL derives the length from the values list
 			if (!empty($definition['limit']) && (!$isEnum || !$native)) {

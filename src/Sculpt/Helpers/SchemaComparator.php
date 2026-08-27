@@ -21,19 +21,14 @@
 		private const array NUMERIC_PROPERTIES = ['limit', 'precision', 'scale'];
 		private const array BOOLEAN_PROPERTIES = ['nullable', 'unsigned', 'identity'];
 		
-		/** @var DatabaseAdapter Database connection adapter for querying schema information */
-		private DatabaseAdapter $connection;
-		
 		/** @var PlatformCapabilitiesInterface Describes what the connected database engine supports */
 		private PlatformCapabilitiesInterface $platform;
-		
+
 		/**
 		 * SchemaComparator constructor
-		 * @param DatabaseAdapter $connection
 		 * @param PlatformCapabilitiesInterface $platform Database engine capability descriptor
 		 */
-		public function __construct(DatabaseAdapter $connection, PlatformCapabilitiesInterface $platform = new NullPlatformCapabilities()) {
-			$this->connection = $connection;
+		public function __construct(PlatformCapabilitiesInterface $platform = new NullPlatformCapabilities()) {
 			$this->platform = $platform;
 		}
 		
@@ -136,7 +131,7 @@
 			$normalized = $this->addDefaultValues($columnDefinition);
 			
 			// Step 2: If database does not support ENUM, normalize enum to string
-			if ($normalized['type'] === 'enum' && !$this->connection->supportsNativeEnums()) {
+			if ($normalized['type'] === 'enum' && !$this->platform->supportsNativeEnums()) {
 				$normalized['type'] = 'string';
 			}
 			

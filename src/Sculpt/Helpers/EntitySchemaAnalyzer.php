@@ -64,7 +64,7 @@
 			$this->entityStore = $entityStore;
 			$this->indexComparator = new IndexComparator($connection, $entityStore, $platform);
 			$this->foreignKeyComparator = new ForeignKeyComparator($connection, $entityStore, $platform);
-			$this->schemaComparator = new SchemaComparator($connection, $platform);
+			$this->schemaComparator = new SchemaComparator($platform);
 		}
 		
 		/**

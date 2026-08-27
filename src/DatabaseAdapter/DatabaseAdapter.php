@@ -219,16 +219,6 @@
 			return $this->phinxAdapterCache;
 		}
 		
-		// ==================== Database Capability Detection ====================
-		
-		/**
-		 * Checks whether the database supports native ENUM column types
-		 * @return bool True if native ENUM types are supported (MySQL/MariaDB), false otherwise
-		 */
-		public function supportsNativeEnums(): bool {
-			return in_array($this->getDatabaseType(), ['mysql', 'mariadb'], true);
-		}
-		
 		// ==================== Schema Introspection ====================
 		
 		/**
