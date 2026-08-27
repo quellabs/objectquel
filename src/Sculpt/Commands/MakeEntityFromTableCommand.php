@@ -108,9 +108,9 @@ HELP;
 				return 0;
 			}
 
-			// Foreign key detection is opt-in (config: generate_foreign_keys). When
-			// disabled, skip the read entirely so output stays byte-identical to
-			// what this command produced before this feature existed.
+			// Foreign key detection is opt-in (config: generate_foreign_keys); skip
+			// the read entirely when disabled so output stays byte-identical for
+			// projects that don't want ObjectQuel managing real constraints.
 			$foreignKeys = $this->configuration->getGenerateForeignKeys()
 				? $this->getTableForeignKeys($table)
 				: [];
@@ -619,7 +619,7 @@ HELP;
 
 		/**
 		 * Retrieves database foreign key constraints for a table, keyed by local
-		 * column name, and resolves each one's target entity class name (2.4).
+		 * column name, and resolves each one's target entity class name.
 		 *
 		 * The target table's own entity may not have been generated yet — this
 		 * command is typically run per-table, in whatever order the user chooses.
@@ -649,9 +649,9 @@ HELP;
 
 				$result[$localColumn] = [
 					'target'           => "{$this->configuration->getEntityNameSpace()}\\{$targetEntityName}Entity",
-					// Round-trip the source constraint's actual rule (2.5) — never
-					// default to RESTRICT here, that would silently change behavior
-					// relative to what the database actually enforces today.
+					// Round-trip the source constraint's actual rule — defaulting to
+					// RESTRICT here would silently misrepresent what the database
+					// actually enforces.
 					'referencedColumn' => $foreignKey['referencedColumns'][0],
 					'onDelete'         => $foreignKey['onDelete'],
 					'onUpdate'         => $foreignKey['onUpdate'],
