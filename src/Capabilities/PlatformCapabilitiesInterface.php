@@ -227,15 +227,18 @@
 		 * Returns true if DatabaseAdapter::getForeignKeys() can actually
 		 * introspect real foreign key constraints for this engine.
 		 *
-		 * MySQL, MariaDB, and SQLite are implemented (via information_schema and
-		 * PRAGMA foreign_key_list respectively). PostgreSQL and SQL Server are
-		 * not — DatabaseAdapter::getForeignKeys() returns an empty array for
-		 * them rather than throwing, but callers that rely on its result to
-		 * diff live constraints (ForeignKeyComparator, IndexComparator) must
-		 * check this first: an empty result from an unsupported engine means
-		 * "we don't know", not "there are none", and treating it as the latter
-		 * would make every entity-declared foreign key look newly added on
-		 * every single run.
+		 * True for every engine getDatabaseType() can identify today (MySQL,
+		 * MariaDB, SQLite, PostgreSQL, SQL Server) — each has a real
+		 * implementation in DatabaseAdapter::getForeignKeys(). This exists as a
+		 * capability rather than callers simply trusting the result because a
+		 * hypothetical future engine added to getDatabaseType() without a
+		 * matching branch there falls back to an empty array rather than an
+		 * exception, and that empty result would otherwise be indistinguishable
+		 * from "this table genuinely has no foreign keys" — callers that rely
+		 * on it to diff live constraints (ForeignKeyComparator, IndexComparator)
+		 * must check this first, since treating an unsupported engine's empty
+		 * result as "there are none" would make every entity-declared foreign
+		 * key look newly added on every single run.
 		 *
 		 * @return bool
 		 */

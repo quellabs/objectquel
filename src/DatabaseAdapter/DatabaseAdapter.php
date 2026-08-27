@@ -480,15 +480,17 @@
 		/**
 		 * Retrieves foreign key constraint definitions for a database table.
 		 *
-		 * Only implemented for MySQL, MariaDB, and SQLite — every other engine
-		 * (PostgreSQL, SQL Server) returns an empty array rather than throwing,
-		 * since not every engine having a real implementation is an expected,
-		 * ordinary condition here, not an error. An empty result on an engine
-		 * without a real implementation means "not introspectable", not "no
-		 * foreign keys exist" — callers that need to tell those two apart
-		 * (e.g. before diffing against entity-declared foreign keys) should
-		 * check PlatformCapabilitiesInterface::supportsForeignKeyIntrospection()
-		 * first rather than infer it from an empty result.
+		 * Implemented for every engine getDatabaseType() can identify (MySQL,
+		 * MariaDB, SQLite, PostgreSQL, SQL Server). The 'default' branch exists
+		 * only as a defensive fallback for a hypothetical future engine added to
+		 * getDatabaseType() without a matching branch here — it returns an empty
+		 * array rather than throwing, since that scenario shouldn't be an error
+		 * that crashes make:migrations. An empty result there means "not
+		 * introspectable", not "no foreign keys exist" — callers that need to
+		 * tell those two apart (e.g. before diffing against entity-declared
+		 * foreign keys) should check
+		 * PlatformCapabilitiesInterface::supportsForeignKeyIntrospection() first
+		 * rather than infer it from an empty result.
 		 * @param string $tableName
 		 * @return array<string, ForeignKeyDefinition> Constraint name => definition
 		 */
@@ -496,6 +498,8 @@
 			return match ($this->getDatabaseType()) {
 				'sqlite'           => $this->getSqliteForeignKeys($tableName),
 				'mysql', 'mariadb' => $this->getMysqlForeignKeys($tableName),
+				'pgsql'            => $this->getPostgresForeignKeys($tableName),
+				'sqlsrv'           => $this->getSqlServerForeignKeys($tableName),
 				default            => [],
 			};
 		}
@@ -597,6 +601,148 @@
 
 				$name = 'fk_' . $tableName . '_' . implode('_', $definition['columns']);
 				$result[$name] = $definition;
+			}
+
+			return $result;
+		}
+
+		/**
+		 * Reads foreign keys for a table on PostgreSQL via information_schema.
+		 *
+		 * key_column_usage/constraint_column_usage have no ordinal column that
+		 * reliably pairs a composite constraint's local columns to its referenced
+		 * columns — joining them for a multi-column FK produces every local/
+		 * referenced column combination, not just the real pairs. @Orm\ForeignKey
+		 * only ever declares single-column constraints anyway (matching
+		 * MakeEntityFromTableCommand's "composite FKs skipped as unrepresentable"),
+		 * so a constraint whose local columns don't resolve to exactly one distinct
+		 * name is a real composite FK found in the live schema and is simply not
+		 * reported, rather than risk reporting a wrongly-paired column set.
+		 * @param string $tableName
+		 * @return array<string, ForeignKeyDefinition> Constraint name => definition
+		 */
+		private function getPostgresForeignKeys(string $tableName): array {
+			$statement = $this->execute(
+				"SELECT
+					tc.constraint_name AS constraint_name,
+					kcu.column_name AS column_name,
+					ccu.table_name AS referenced_table,
+					ccu.column_name AS referenced_column,
+					rc.delete_rule AS delete_rule,
+					rc.update_rule AS update_rule
+				FROM information_schema.table_constraints tc
+				JOIN information_schema.key_column_usage kcu
+					ON kcu.constraint_name = tc.constraint_name
+					AND kcu.constraint_schema = tc.constraint_schema
+				JOIN information_schema.referential_constraints rc
+					ON rc.constraint_name = tc.constraint_name
+					AND rc.constraint_schema = tc.constraint_schema
+				JOIN information_schema.constraint_column_usage ccu
+					ON ccu.constraint_name = rc.unique_constraint_name
+					AND ccu.constraint_schema = rc.unique_constraint_schema
+				WHERE tc.constraint_type = 'FOREIGN KEY'
+					AND tc.table_schema = current_schema()
+					AND tc.table_name = :tableName
+				ORDER BY tc.constraint_name, kcu.ordinal_position",
+				['tableName' => $tableName]
+			);
+
+			if ($statement === null) {
+				return [];
+			}
+
+			$byName = [];
+
+			/** @var array{constraint_name: string, column_name: string, referenced_table: string, referenced_column: string, delete_rule: string, update_rule: string} $row */
+			foreach ($statement->fetchAll('assoc') as $row) {
+				$byName[$row['constraint_name']][] = $row;
+			}
+
+			$result = [];
+
+			foreach ($byName as $name => $rows) {
+				$localColumns = array_values(array_unique(array_column($rows, 'column_name')));
+
+				if (count($localColumns) !== 1) {
+					continue;
+				}
+
+				$result[$name] = [
+					'columns'           => $localColumns,
+					'referencedTable'   => $rows[0]['referenced_table'],
+					'referencedColumns' => [$rows[0]['referenced_column']],
+					'onDelete'          => $rows[0]['delete_rule'],
+					'onUpdate'          => $rows[0]['update_rule'],
+				];
+			}
+
+			return $result;
+		}
+
+		/**
+		 * Reads foreign keys for a table on SQL Server via sys.foreign_keys /
+		 * sys.foreign_key_columns. Unlike PostgreSQL's information_schema,
+		 * foreign_key_columns stores one row per local/referenced column pair
+		 * natively (constraint_column_id gives the correct pairing ordinal), so
+		 * composite constraints round-trip correctly with no ambiguity to guard
+		 * against.
+		 * @param string $tableName
+		 * @return array<string, ForeignKeyDefinition> Constraint name => definition
+		 */
+		private function getSqlServerForeignKeys(string $tableName): array {
+			$statement = $this->execute(
+				"SELECT
+					fk.name AS constraint_name,
+					pc.name AS column_name,
+					fkc.constraint_column_id AS ordinal_position,
+					rt.name AS referenced_table,
+					rc.name AS referenced_column,
+					fk.delete_referential_action_desc AS delete_rule,
+					fk.update_referential_action_desc AS update_rule
+				FROM sys.foreign_keys fk
+				JOIN sys.foreign_key_columns fkc
+					ON fkc.constraint_object_id = fk.object_id
+				JOIN sys.columns pc
+					ON pc.object_id = fkc.parent_object_id AND pc.column_id = fkc.parent_column_id
+				JOIN sys.columns rc
+					ON rc.object_id = fkc.referenced_object_id AND rc.column_id = fkc.referenced_column_id
+				JOIN sys.tables t
+					ON t.object_id = fk.parent_object_id
+				JOIN sys.tables rt
+					ON rt.object_id = fk.referenced_object_id
+				WHERE t.name = :tableName
+				ORDER BY fk.name, fkc.constraint_column_id",
+				['tableName' => $tableName]
+			);
+
+			if ($statement === null) {
+				return [];
+			}
+
+			$byName = [];
+
+			/** @var array{constraint_name: string, column_name: string, ordinal_position: int|string, referenced_table: string, referenced_column: string, delete_rule: string, update_rule: string} $row */
+			foreach ($statement->fetchAll('assoc') as $row) {
+				$byName[$row['constraint_name']][(int)$row['ordinal_position']] = $row;
+			}
+
+			$result = [];
+
+			foreach ($byName as $name => $rows) {
+				ksort($rows);
+				$first = reset($rows);
+
+				$result[$name] = [
+					'columns'           => array_column($rows, 'column_name'),
+					'referencedTable'   => $first['referenced_table'],
+					'referencedColumns' => array_column($rows, 'referenced_column'),
+					// SQL Server's *_referential_action_desc columns use underscores
+					// (NO_ACTION, SET_NULL, SET_DEFAULT) where every other engine here
+					// uses spaces; normalize so ForeignKeyComparator's string diff
+					// isn't fooled by formatting alone.
+					'onDelete'          => str_replace('_', ' ', $first['delete_rule']),
+					'onUpdate'          => str_replace('_', ' ', $first['update_rule']),
+				];
 			}
 
 			return $result;

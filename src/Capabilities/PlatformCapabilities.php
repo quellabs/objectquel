@@ -330,11 +330,11 @@
 		/**
 		 * @inheritDoc
 		 *
-		 * DatabaseAdapter::getForeignKeys() only has real implementations for
-		 * MySQL, MariaDB, and SQLite.
+		 * DatabaseAdapter::getForeignKeys() has a real implementation for every
+		 * engine getDatabaseType() can identify.
 		 */
 		public function supportsForeignKeyIntrospection(): bool {
-			return in_array($this->adapter->getDatabaseType(), ['mysql', 'mariadb', 'sqlite']);
+			return in_array($this->adapter->getDatabaseType(), ['mysql', 'mariadb', 'sqlite', 'pgsql', 'sqlsrv']);
 		}
 
 		/**
