@@ -470,17 +470,12 @@
 		/**
 		 * Retrieves foreign key constraint definitions for a database table.
 		 *
-		 * Implemented for every engine getDatabaseType() can identify (MySQL,
-		 * MariaDB, SQLite, PostgreSQL, SQL Server). The 'default' branch exists
-		 * only as a defensive fallback for a hypothetical future engine added to
-		 * getDatabaseType() without a matching branch here — it returns an empty
-		 * array rather than throwing, since that scenario shouldn't be an error
-		 * that crashes make:migrations. An empty result there means "not
-		 * introspectable", not "no foreign keys exist" — callers that need to
-		 * tell those two apart (e.g. before diffing against entity-declared
-		 * foreign keys) should check
-		 * PlatformCapabilitiesInterface::supportsForeignKeyIntrospection() first
-		 * rather than infer it from an empty result.
+		 * Implemented for every engine getDatabaseType() can identify; the
+		 * 'default' branch is a defensive fallback for a future unmapped engine,
+		 * returning an empty array rather than throwing. Callers that diff
+		 * against the result should check
+		 * PlatformCapabilitiesInterface::supportsForeignKeyIntrospection() first —
+		 * an empty result there means "not introspectable", not "none exist".
 		 * @param string $tableName
 		 * @return array<string, ForeignKeyDefinition> Constraint name => definition
 		 */
@@ -599,15 +594,12 @@
 		/**
 		 * Reads foreign keys for a table on PostgreSQL via information_schema.
 		 *
-		 * key_column_usage/constraint_column_usage have no ordinal column that
-		 * reliably pairs a composite constraint's local columns to its referenced
-		 * columns — joining them for a multi-column FK produces every local/
-		 * referenced column combination, not just the real pairs. @Orm\ForeignKey
-		 * only ever declares single-column constraints anyway (matching
-		 * MakeEntityFromTableCommand's "composite FKs skipped as unrepresentable"),
-		 * so a constraint whose local columns don't resolve to exactly one distinct
-		 * name is a real composite FK found in the live schema and is simply not
-		 * reported, rather than risk reporting a wrongly-paired column set.
+		 * information_schema has no ordinal linking a composite constraint's local
+		 * columns to its referenced columns, so joining produces every possible
+		 * pairing, not just the real ones. Since @Orm\ForeignKey only ever declares
+		 * single-column constraints, a constraint resolving to more than one local
+		 * column is a real composite FK and is simply not reported, rather than
+		 * risk a wrongly-paired column set.
 		 * @param string $tableName
 		 * @return array<string, ForeignKeyDefinition> Constraint name => definition
 		 */
@@ -671,11 +663,9 @@
 
 		/**
 		 * Reads foreign keys for a table on SQL Server via sys.foreign_keys /
-		 * sys.foreign_key_columns. Unlike PostgreSQL's information_schema,
-		 * foreign_key_columns stores one row per local/referenced column pair
-		 * natively (constraint_column_id gives the correct pairing ordinal), so
-		 * composite constraints round-trip correctly with no ambiguity to guard
-		 * against.
+		 * sys.foreign_key_columns, which stores one row per column pair natively
+		 * (constraint_column_id gives the correct ordinal), so composite
+		 * constraints round-trip correctly with no pairing ambiguity.
 		 * @param string $tableName
 		 * @return array<string, ForeignKeyDefinition> Constraint name => definition
 		 */
@@ -726,10 +716,8 @@
 					'columns'           => array_column($rows, 'column_name'),
 					'referencedTable'   => $first['referenced_table'],
 					'referencedColumns' => array_column($rows, 'referenced_column'),
-					// SQL Server's *_referential_action_desc columns use underscores
-					// (NO_ACTION, SET_NULL, SET_DEFAULT) where every other engine here
-					// uses spaces; normalize so ForeignKeyComparator's string diff
-					// isn't fooled by formatting alone.
+					// SQL Server uses underscores (NO_ACTION, SET_NULL) where every
+					// other engine uses spaces; normalize for a consistent string diff.
 					'onDelete'          => str_replace('_', ' ', $first['delete_rule']),
 					'onUpdate'          => str_replace('_', ' ', $first['update_rule']),
 				];

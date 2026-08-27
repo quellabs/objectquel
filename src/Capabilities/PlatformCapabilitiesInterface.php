@@ -216,21 +216,13 @@
 
 		/**
 		 * Returns true if the database engine has real, independently addressable
-		 * named foreign key constraints — i.e. the constraint name is a live
-		 * catalog attribute the engine tracks and can be operated on later, not
-		 * just inert text embedded at creation time.
-		 *
-		 * MySQL, MariaDB, PostgreSQL, and SQL Server all support this: a
-		 * constraint's name is a real, queryable, independently-droppable object.
-		 * SQLite does not — it will parse and store a `CONSTRAINT name` clause in
-		 * a CREATE TABLE statement, but `PRAGMA foreign_key_list()` never reports
-		 * it back, there is no `ALTER TABLE ... DROP CONSTRAINT`, and Phinx's
-		 * SQLite adapter throws BadMethodCallException if asked to drop a foreign
-		 * key by name. The name would be write-only decoration.
+		 * named foreign key constraints, not just inert text embedded at creation
+		 * time. True for MySQL, MariaDB, PostgreSQL, and SQL Server; false for
+		 * SQLite, which parses a `CONSTRAINT name` clause but never reports or
+		 * lets you drop by that name.
 		 *
 		 * Callers must omit the constraint name from both addForeignKey() and
-		 * dropForeignKey() when this returns false, so the generated migration
-		 * doesn't claim a capability the engine doesn't have.
+		 * dropForeignKey() when this returns false.
 		 *
 		 * @return bool
 		 */
@@ -238,20 +230,14 @@
 
 		/**
 		 * Returns true if DatabaseAdapter::getForeignKeys() can actually
-		 * introspect real foreign key constraints for this engine.
+		 * introspect real foreign key constraints for this engine. True for
+		 * every engine getDatabaseType() can identify today.
 		 *
-		 * True for every engine getDatabaseType() can identify today (MySQL,
-		 * MariaDB, SQLite, PostgreSQL, SQL Server) — each has a real
-		 * implementation in DatabaseAdapter::getForeignKeys(). This exists as a
-		 * capability rather than callers simply trusting the result because a
-		 * hypothetical future engine added to getDatabaseType() without a
-		 * matching branch there falls back to an empty array rather than an
-		 * exception, and that empty result would otherwise be indistinguishable
-		 * from "this table genuinely has no foreign keys" — callers that rely
-		 * on it to diff live constraints (ForeignKeyComparator, IndexComparator)
-		 * must check this first, since treating an unsupported engine's empty
-		 * result as "there are none" would make every entity-declared foreign
-		 * key look newly added on every single run.
+		 * Exists so callers that diff against a live schema
+		 * (ForeignKeyComparator, IndexComparator) can tell "no foreign keys
+		 * exist" apart from "this engine isn't introspectable" — both return an
+		 * empty array, but treating the latter as the former would make every
+		 * entity-declared foreign key look newly added on every run.
 		 *
 		 * @return bool
 		 */

@@ -40,11 +40,10 @@
 		 * Compares database foreign keys with entity-declared @Orm\ForeignKey annotations
 		 * to find missing, removed or inconsistent constraints.
 		 *
-		 * Returns an empty diff outright on an engine DatabaseAdapter::getForeignKeys()
-		 * can't actually introspect (see
-		 * PlatformCapabilitiesInterface::supportsForeignKeyIntrospection()) — its
-		 * empty result there means "unknown", not "none", and diffing against it
-		 * would make every entity-declared foreign key look newly added on every run.
+		 * Returns an empty diff when the engine isn't introspectable (see
+		 * PlatformCapabilitiesInterface::supportsForeignKeyIntrospection()), since
+		 * diffing against an empty getForeignKeys() there would make every
+		 * entity-declared foreign key look newly added on every run.
 		 * @param string|object $entity The entity class to analyze
 		 * @return ForeignKeyChangeSet An array containing differences between DB and entity foreign keys
 		 * @throws EntityResolutionException

@@ -111,12 +111,8 @@
 
 			$foreignKey = $property['foreignKey'];
 
-			// target is emitted as a bare ::class reference, not a quoted string: the
-			// annotation lexer treats backslashes inside quoted strings as escape
-			// sequences and silently drops them, which corrupts any namespaced FQCN
-			// (e.g. "App\Entities\AuthorEntity" -> "AppEntitiesAuthorEntity"). A bare
-			// class-constant token is parsed as namespace-separated identifiers instead,
-			// so the FQCN survives intact.
+			// Bare ::class reference, not a quoted string: the annotation lexer eats
+			// backslashes inside quoted strings as escapes, corrupting a namespaced FQCN.
 			$lines = " * @Orm\\ForeignKey(target={$foreignKey['target']}::class)\n";
 
 			if ($foreignKey['onDelete'] !== 'RESTRICT' || $foreignKey['onUpdate'] !== 'NO ACTION') {

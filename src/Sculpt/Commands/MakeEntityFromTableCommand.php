@@ -332,11 +332,9 @@ HELP;
 				if (isset($foreignKeys[$columnName])) {
 					$foreignKey = $foreignKeys[$columnName];
 
-					// target is a bare ::class reference, not a quoted string — the
-					// annotation lexer eats backslashes inside quoted strings as escape
-					// sequences, which corrupts a namespaced FQCN (e.g.
-					// "App\Entities\UserEntity" -> "AppEntitiesUserEntity"). referencedColumn
-					// stays a quoted string since it's a plain column name, not a class reference.
+					// target is a bare ::class reference (the annotation lexer would corrupt
+					// a namespaced FQCN inside a quoted string); referencedColumn stays quoted
+					// since it's a plain column name, not a class reference.
 					$output .= "         * @Orm\ForeignKey(target={$foreignKey['target']}::class, " .
 						"referencedColumn=\"{$foreignKey['referencedColumn']}\")\n";
 

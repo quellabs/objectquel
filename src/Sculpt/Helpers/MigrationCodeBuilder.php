@@ -121,11 +121,9 @@
 		/**
 		 * Append a dropForeignKey() call to the chain.
 		 *
-		 * Pass $constraintName on engines that can target a constraint by name
-		 * (see PlatformCapabilitiesInterface::supportsNamedForeignKeys()).
-		 * Omit it (null) on engines that can't — e.g. SQLite, where Phinx throws
-		 * BadMethodCallException if a constraint name is given — so Phinx falls
-		 * back to its by-column-list drop instead.
+		 * Pass $constraintName only on engines with real named constraints (see
+		 * PlatformCapabilitiesInterface::supportsNamedForeignKeys()); omit it
+		 * (null) elsewhere so Phinx falls back to dropping by column list.
 		 *
 		 * @param string[] $columns Local column(s) the constraint is on
 		 * @param string|null $constraintName Name of the constraint to drop, or null to drop by column list

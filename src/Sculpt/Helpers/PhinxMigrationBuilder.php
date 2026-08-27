@@ -577,13 +577,8 @@ PHP;
 		/**
 		 * Build the Phinx options array for a foreign key configuration.
 		 * The constraint name is only included on engines with real named
-		 * constraints (see PlatformCapabilitiesInterface::supportsNamedForeignKeys()).
-		 * On engines without them (SQLite), writing a 'constraint' name into the
-		 * DDL would be inert decoration at best and misleading at worst — the
-		 * name is never tracked as a real, independently addressable object, so
-		 * the generated migration shouldn't claim otherwise. Diffing still works
-		 * without it: DatabaseAdapter::getForeignKeys() synthesizes the same
-		 * deterministic name from the table/columns on read-back regardless.
+		 * constraints (see PlatformCapabilitiesInterface::supportsNamedForeignKeys());
+		 * on others it would be inert, misleading DDL text.
 		 * @param string $name Constraint name — emitted as 'constraint' only where supported
 		 * @param ForeignKeyConfig $config
 		 * @return array<int, string>

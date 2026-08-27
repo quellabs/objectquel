@@ -94,16 +94,11 @@
 				unset($tableIndexes[$name]);
 			}
 
-			// Any remaining DB indexes are candidates for deletion, except ones a live
-			// foreign key constraint still relies on: MySQL (and others) auto-create a
-			// supporting index for every FK, which @Orm\Index never declares, so without
-			// this exclusion every FK column would look like an orphaned index the moment
-			// its constraint exists — and dropping it out from under a live constraint
-			// fails outright (e.g. MySQL #1553). Whether that constraint itself is being
-			// kept, modified, or dropped in this same run is ForeignKeyComparator's
-			// concern, not this one's; a support index left behind after its FK is
-			// deliberately removed is an independent, low-stakes cleanup a project can
-			// still declare via its own @Orm\Index.
+			// Remaining DB indexes are candidates for deletion, except ones a live FK
+			// relies on: MySQL auto-creates a supporting index per FK that @Orm\Index
+			// never declares, and dropping it while the constraint still needs it fails
+			// outright. Whether the FK itself is kept, modified, or dropped is
+			// ForeignKeyComparator's concern, not this one's.
 			$fkBackedColumnSets = $this->getForeignKeyBackedColumnSets($metadata->tableName);
 			$result['deleted'] = [];
 
@@ -119,13 +114,9 @@
 		/**
 		 * Returns the column lists of every live foreign key constraint on a table,
 		 * so compareIndexes() can recognize an index that only exists to support one.
-		 *
-		 * Returns an empty list outright on an engine
-		 * DatabaseAdapter::getForeignKeys() can't actually introspect (see
-		 * PlatformCapabilitiesInterface::supportsForeignKeyIntrospection()) —
-		 * its empty result there means "unknown", not "there are none", and
-		 * treating it as the latter would just silently skip the exclusion
-		 * rather than protect anything.
+		 * Returns an empty list when the engine isn't introspectable (see
+		 * PlatformCapabilitiesInterface::supportsForeignKeyIntrospection()), since an
+		 * empty getForeignKeys() there means "unknown", not "there are none".
 		 * @param string $tableName
 		 * @return array<string, string[]>
 		 */
