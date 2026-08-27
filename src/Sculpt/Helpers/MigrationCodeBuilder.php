@@ -119,14 +119,26 @@
 		}
 
 		/**
-		 * Append a dropForeignKey() call to the chain, targeting a specific named constraint.
+		 * Append a dropForeignKey() call to the chain.
+		 *
+		 * Pass $constraintName on engines that can target a constraint by name
+		 * (see PlatformCapabilitiesInterface::supportsNamedForeignKeys()).
+		 * Omit it (null) on engines that can't — e.g. SQLite, where Phinx throws
+		 * BadMethodCallException if a constraint name is given — so Phinx falls
+		 * back to its by-column-list drop instead.
 		 *
 		 * @param string[] $columns Local column(s) the constraint is on
-		 * @param string   $constraintName Name of the constraint to drop
+		 * @param string|null $constraintName Name of the constraint to drop, or null to drop by column list
 		 */
-		public function dropForeignKey(array $columns, string $constraintName): static {
+		public function dropForeignKey(array $columns, ?string $constraintName = null): static {
 			$columnsList = "'" . implode("', '", $columns) . "'";
-			$this->appendToChain("            ->dropForeignKey([{$columnsList}], '{$constraintName}')");
+
+			if ($constraintName !== null) {
+				$this->appendToChain("            ->dropForeignKey([{$columnsList}], '{$constraintName}')");
+			} else {
+				$this->appendToChain("            ->dropForeignKey([{$columnsList}])");
+			}
+
 			return $this;
 		}
 		

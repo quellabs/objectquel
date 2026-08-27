@@ -54,24 +54,24 @@
 		public function compareIndexes(mixed $entity): array {
 			// Fetch the metadata
 			$metadata = $this->entityStore->getMetadata($entity);
-			
+
 			// Get database indexes
 			$tableIndexes = $this->getTableIndexes($metadata->tableName);
-			
+
 			// Get entity indexes
 			$entityIndexes = $this->getEntityIndexes($entity);
-			
+
 			// Early return if both are empty
 			if (empty($tableIndexes) && empty($entityIndexes)) {
 				return ['added' => [], 'modified' => [], 'deleted' => []];
 			}
-			
+
 			// Initialize results arrays
 			$result = [
 				'added'    => [],
 				'modified' => []
 			];
-			
+
 			// Find missing and modified indexes in one pass through entity indexes
 			foreach ($entityIndexes as $name => $config) {
 				if (!isset($tableIndexes[$name])) {
@@ -82,14 +82,44 @@
 						'entity'   => $config
 					];
 				}
-				
+
 				// Mark as processed
 				unset($tableIndexes[$name]);
 			}
-			
-			// Any remaining DB indexes must be deleted
-			$result['deleted'] = $tableIndexes;
+
+			// Any remaining DB indexes are candidates for deletion, except ones a live
+			// foreign key constraint still relies on: MySQL (and others) auto-create a
+			// supporting index for every FK, which @Orm\Index never declares, so without
+			// this exclusion every FK column would look like an orphaned index the moment
+			// its constraint exists — and dropping it out from under a live constraint
+			// fails outright (e.g. MySQL #1553). Whether that constraint itself is being
+			// kept, modified, or dropped in this same run is ForeignKeyComparator's
+			// concern, not this one's; a support index left behind after its FK is
+			// deliberately removed is an independent, low-stakes cleanup a project can
+			// still declare via its own @Orm\Index.
+			$fkBackedColumnSets = $this->getForeignKeyBackedColumnSets($metadata->tableName);
+			$result['deleted'] = [];
+
+			foreach ($tableIndexes as $name => $config) {
+				if (!in_array($config['columns'], $fkBackedColumnSets, true)) {
+					$result['deleted'][$name] = $config;
+				}
+			}
+
 			return $result;
+		}
+
+		/**
+		 * Returns the column lists of every live foreign key constraint on a table,
+		 * so compareIndexes() can recognize an index that only exists to support one.
+		 * @param string $tableName
+		 * @return array<int, string[]>
+		 */
+		private function getForeignKeyBackedColumnSets(string $tableName): array {
+			return array_map(
+				static fn(array $foreignKey): array => $foreignKey['columns'],
+				$this->connection->getForeignKeys($tableName)
+			);
 		}
 		
 		

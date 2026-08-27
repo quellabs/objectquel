@@ -200,4 +200,26 @@
 		 * @return array{match: string, notMatch: string}
 		 */
 		public function getRegexpFallbackOperators(): array;
+
+		/**
+		 * Returns true if the database engine has real, independently addressable
+		 * named foreign key constraints — i.e. the constraint name is a live
+		 * catalog attribute the engine tracks and can be operated on later, not
+		 * just inert text embedded at creation time.
+		 *
+		 * MySQL, MariaDB, PostgreSQL, and SQL Server all support this: a
+		 * constraint's name is a real, queryable, independently-droppable object.
+		 * SQLite does not — it will parse and store a `CONSTRAINT name` clause in
+		 * a CREATE TABLE statement, but `PRAGMA foreign_key_list()` never reports
+		 * it back, there is no `ALTER TABLE ... DROP CONSTRAINT`, and Phinx's
+		 * SQLite adapter throws BadMethodCallException if asked to drop a foreign
+		 * key by name. The name would be write-only decoration.
+		 *
+		 * Callers must omit the constraint name from both addForeignKey() and
+		 * dropForeignKey() when this returns false, so the generated migration
+		 * doesn't claim a capability the engine doesn't have.
+		 *
+		 * @return bool
+		 */
+		public function supportsNamedForeignKeys(): bool;
 	}

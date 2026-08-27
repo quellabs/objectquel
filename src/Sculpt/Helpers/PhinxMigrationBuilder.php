@@ -535,15 +535,19 @@ PHP;
 		}
 
 		/**
-		 * Generate code to remove foreign key constraints from a table by name.
+		 * Generate code to remove foreign key constraints from a table.
+		 * Targets the constraint by name where the engine supports it; falls back
+		 * to dropping by column list on engines that don't (see
+		 * PlatformCapabilitiesInterface::supportsNamedForeignKeys()).
 		 * @param string $tableName Table to modify
 		 * @param array<string, ForeignKeyConfig> $foreignKeys
 		 */
 		private function buildRemoveForeignKeysCode(string $tableName, array $foreignKeys): string {
 			$builder = new MigrationCodeBuilder($tableName);
+			$supportsNamedForeignKeys = $this->platform->supportsNamedForeignKeys();
 
 			foreach ($foreignKeys as $name => $config) {
-				$builder->dropForeignKey($config['columns'], $name);
+				$builder->dropForeignKey($config['columns'], $supportsNamedForeignKeys ? $name : null);
 			}
 
 			return $builder->update();
@@ -560,9 +564,10 @@ PHP;
 		 */
 		private function buildModifyForeignKeysCode(string $tableName, array $foreignKeys): string {
 			$builder = new MigrationCodeBuilder($tableName);
+			$supportsNamedForeignKeys = $this->platform->supportsNamedForeignKeys();
 
 			foreach ($foreignKeys as $name => $configs) {
-				$builder->dropForeignKey($configs['database']['columns'], $name);
+				$builder->dropForeignKey($configs['database']['columns'], $supportsNamedForeignKeys ? $name : null);
 				$builder->addForeignKey($configs['entity']['columns'], $configs['entity']['referencedTable'], $configs['entity']['referencedColumns'], $this->buildForeignKeyOptions($name, $configs['entity']));
 			}
 
@@ -571,19 +576,29 @@ PHP;
 
 		/**
 		 * Build the Phinx options array for a foreign key configuration.
-		 * The constraint name is always included, both so it round-trips into a
-		 * deterministic name on the next diff (see DatabaseAdapter::getForeignKeys())
-		 * and so dropForeignKey() can target it precisely later.
-		 * @param string $name Constraint name — always emitted as 'constraint'
+		 * The constraint name is only included on engines with real named
+		 * constraints (see PlatformCapabilitiesInterface::supportsNamedForeignKeys()).
+		 * On engines without them (SQLite), writing a 'constraint' name into the
+		 * DDL would be inert decoration at best and misleading at worst — the
+		 * name is never tracked as a real, independently addressable object, so
+		 * the generated migration shouldn't claim otherwise. Diffing still works
+		 * without it: DatabaseAdapter::getForeignKeys() synthesizes the same
+		 * deterministic name from the table/columns on read-back regardless.
+		 * @param string $name Constraint name — emitted as 'constraint' only where supported
 		 * @param ForeignKeyConfig $config
 		 * @return array<int, string>
 		 */
 		private function buildForeignKeyOptions(string $name, array $config): array {
-			return [
+			$options = [
 				"'delete' => '{$config['onDelete']}'",
 				"'update' => '{$config['onUpdate']}'",
-				"'constraint' => '{$name}'",
 			];
+
+			if ($this->platform->supportsNamedForeignKeys()) {
+				$options[] = "'constraint' => '{$name}'";
+			}
+
+			return $options;
 		}
 
 		// -------------------------------------------------------------------------

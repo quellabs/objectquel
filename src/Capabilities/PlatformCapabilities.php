@@ -316,7 +316,17 @@
 				default => 'NOW()',
 			};
 		}
-		
+
+		/**
+		 * @inheritDoc
+		 *
+		 * SQLite is the only engine here without real, independently addressable
+		 * named constraints — every other supported engine tracks one for real.
+		 */
+		public function supportsNamedForeignKeys(): bool {
+			return $this->adapter->getDatabaseType() !== 'sqlite';
+		}
+
 		/**
 		 * REGEXP_LIKE(col, pattern, flags) was added in MySQL 8.0.0.
 		 * @return bool

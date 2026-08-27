@@ -140,4 +140,14 @@
 		public function getRegexpFallbackOperators(): array {
 			return ['match' => 'REGEXP', 'notMatch' => 'NOT REGEXP'];
 		}
+
+		/**
+		 * @inheritDoc
+		 *
+		 * Conservative default: false, so callers neither write nor rely on a
+		 * constraint name, and drop by column list instead of by name.
+		 */
+		public function supportsNamedForeignKeys(): bool {
+			return false;
+		}
 	}

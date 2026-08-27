@@ -331,7 +331,13 @@ HELP;
 				// not convert the column into a ManyToOne/OneToOne object relation.
 				if (isset($foreignKeys[$columnName])) {
 					$foreignKey = $foreignKeys[$columnName];
-					$output .= "         * @Orm\ForeignKey(target=\"{$foreignKey['target']}\", " .
+
+					// target is a bare ::class reference, not a quoted string — the
+					// annotation lexer eats backslashes inside quoted strings as escape
+					// sequences, which corrupts a namespaced FQCN (e.g.
+					// "App\Entities\UserEntity" -> "AppEntitiesUserEntity"). referencedColumn
+					// stays a quoted string since it's a plain column name, not a class reference.
+					$output .= "         * @Orm\ForeignKey(target={$foreignKey['target']}::class, " .
 						"referencedColumn=\"{$foreignKey['referencedColumn']}\")\n";
 
 					// Only emit ForeignKeyAction when the live constraint's rule deviates
