@@ -8,9 +8,12 @@
 	 * @Annotation
 	 * Declares a real database-level foreign key constraint for a column.
 	 *
-	 * Usable directly on a plain @Orm\Column-backed scalar property (no ManyToOne/OneToOne
-	 * required), or stacked alongside a ManyToOne/OneToOne annotation on the same property
-	 * for entities that also model the relation as an object graph.
+	 * Legal only on a plain @Orm\Column-backed scalar property — never on a
+	 * ManyToOne/OneToOne relation property. A relation's local column is
+	 * already required to have its own @Orm\Column-backed scalar property
+	 * (see EntityMetadataBuilder::validateRelationColumns()), so that scalar
+	 * property is where @Orm\ForeignKey belongs even for a column that also
+	 * backs an object relation.
 	 *
 	 * Purely structural — target and referencedColumn only. The constraint's ON DELETE/ON
 	 * UPDATE behavior is a separate concern, declared via @Orm\ForeignKeyAction on the same

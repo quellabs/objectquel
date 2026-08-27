@@ -288,17 +288,19 @@
 		 * caring whether that column belongs to a scalar property or the local side
 		 * of a ManyToOne/OneToOne relation.
 		 *
-		 * A ForeignKey may be declared either on the scalar @Orm\Column property that
-		 * backs the FK column directly, or on a ManyToOne/OneToOne property, in which
-		 * case the column name is derived the same way validateRelationColumns() does
-		 * (relation's localColumn, or "{property}Id" by convention).
+		 * @Orm\ForeignKey is only legal on the plain scalar @Orm\Column property that
+		 * backs the FK column — never on the ManyToOne/OneToOne property itself. A
+		 * relation's local column is already required to have its own scalar
+		 * @Orm\Column property (see validateRelationColumns()), so there is always a
+		 * single canonical place for the annotation to live, even for a column that
+		 * also backs an object relation.
 		 * @param class-string $className
 		 * @param array<string, AnnotationCollection> $annotations
 		 * @param array<string, string> $columnMap Property name => column name
 		 * @param array<string, ManyToOne> $manyToOneRelations
 		 * @param array<string, OneToOne> $oneToOneRelations
 		 * @return array<string, ForeignKey> Column name => ForeignKey annotation
-		 * @throws \RuntimeException When a ForeignKey annotation's column can't be determined
+		 * @throws \RuntimeException When declared on a relation property, or its column can't be determined
 		 */
 		private function extractForeignKeys(
 			string $className,
@@ -316,14 +318,20 @@
 						continue;
 					}
 
-					$columnName = $this->resolveLocalColumnName($property, $columnMap, $relations);
+					if (isset($relations[$property])) {
+						throw new \RuntimeException(
+							"Property '{$property}' on '{$className}' carries an '@Orm\\ForeignKey' annotation " .
+							"on a ManyToOne/OneToOne relation. '@Orm\\ForeignKey' is only legal on the plain " .
+							"'@Orm\\Column' scalar property backing the relation's local column."
+						);
+					}
+
+					$columnName = $columnMap[$property] ?? null;
 
 					if ($columnName === null) {
 						throw new \RuntimeException(
 							"Property '{$property}' on '{$className}' carries an '@Orm\\ForeignKey' annotation " .
-							"but its database column name can't be determined: it has neither an '@Orm\\Column' " .
-							"of its own, nor a ManyToOne/OneToOne relation whose localColumn resolves to a " .
-							"property that has one."
+							"but has no '@Orm\\Column' of its own."
 						);
 					}
 
@@ -371,7 +379,16 @@
 						continue;
 					}
 
-					$columnName = $this->resolveLocalColumnName($property, $columnMap, $relations);
+					if (isset($relations[$property])) {
+						throw new \RuntimeException(
+							"Property '{$property}' on '{$className}' carries an '@Orm\\ForeignKeyAction' " .
+							"annotation on a ManyToOne/OneToOne relation. '@Orm\\ForeignKeyAction' is only " .
+							"legal on the plain '@Orm\\Column' scalar property backing the relation's local " .
+							"column, alongside '@Orm\\ForeignKey'."
+						);
+					}
+
+					$columnName = $columnMap[$property] ?? null;
 
 					if ($columnName === null || !isset($foreignKeys[$columnName])) {
 						$columnDescription = $columnName ?? $property;
@@ -391,33 +408,6 @@
 			}
 
 			return $foreignKeyActions;
-		}
-
-		/**
-		 * Resolves the database column name backing a property.
-		 *
-		 * A property either carries its own @Orm\Column (the column name is read
-		 * directly from $columnMap), or is a ManyToOne/OneToOne relation property,
-		 * in which case its localColumn is — by this codebase's own convention, see
-		 * validateRelationColumns() — a PHP property name (defaulting to
-		 * "{property}Id"), not a database column name, and must be resolved through
-		 * $columnMap a second time to reach the actual column.
-		 * @param string $property
-		 * @param array<string, string> $columnMap Property name => database column name
-		 * @param array<string, ManyToOne|OneToOne> $relations Property => relation annotation
-		 * @return string|null Database column name, or null if it can't be determined
-		 */
-		private function resolveLocalColumnName(string $property, array $columnMap, array $relations): ?string {
-			if (isset($columnMap[$property])) {
-				return $columnMap[$property];
-			}
-
-			if (isset($relations[$property])) {
-				$localProperty = $relations[$property]->getLocalColumn() ?? $property . 'Id';
-				return $columnMap[$localProperty] ?? null;
-			}
-
-			return null;
 		}
 
 		/**
