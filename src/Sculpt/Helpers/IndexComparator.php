@@ -113,7 +113,7 @@
 		 * Returns the column lists of every live foreign key constraint on a table,
 		 * so compareIndexes() can recognize an index that only exists to support one.
 		 * @param string $tableName
-		 * @return array<int, string[]>
+		 * @return array<string, string[]>
 		 */
 		private function getForeignKeyBackedColumnSets(string $tableName): array {
 			return array_map(
