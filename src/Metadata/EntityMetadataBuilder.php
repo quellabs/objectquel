@@ -3,6 +3,7 @@
 	namespace Quellabs\ObjectQuel\Metadata;
 	
 	use Quellabs\ObjectQuel\EntityStore;
+	use Quellabs\ObjectQuel\Annotations\Orm\Table;
 	use Quellabs\AnnotationReader\AnnotationReader;
 	use Quellabs\ObjectQuel\Exception\EntityResolutionException;
 	use Quellabs\AnnotationReader\Collection\AnnotationCollection;
@@ -23,9 +24,7 @@
 	use Quellabs\ObjectQuel\Annotations\Orm\UniqueIndex;
 	use Quellabs\ObjectQuel\Annotations\Orm\Version;
 	use Quellabs\ObjectQuel\DatabaseAdapter\TypeMapper;
-	use Quellabs\ObjectQuel\Metadata\ColumnData;
 	use Quellabs\ObjectQuel\ReflectionManagement\ReflectionHandler;
-	use Quellabs\Support\NamespaceResolver;
 	
 	/**
 	 * Builds EntityMetadata objects from class annotations and reflection.
@@ -57,6 +56,7 @@
 		
 		/**
 		 * EntityMetadataBuilder constructor
+		 * @param EntityStore $entityStore
 		 * @param AnnotationReader $annotationReader
 		 * @param ReflectionHandler $reflectionHandler
 		 */
@@ -82,9 +82,9 @@
 				$classAnnotations = $this->annotationReader->getClassAnnotations($className);
 				
 				// Extract table name
-				$tableAnnotation = $classAnnotations->getFirst(\Quellabs\ObjectQuel\Annotations\Orm\Table::class);
+				$tableAnnotation = $classAnnotations->getFirst(Table::class);
 				
-				if (!$tableAnnotation instanceof \Quellabs\ObjectQuel\Annotations\Orm\Table) {
+				if (!$tableAnnotation instanceof Table) {
 					throw new \RuntimeException("Missing @Table annotation on {$className}");
 				}
 				
@@ -288,19 +288,20 @@
 		 * caring whether that column belongs to a scalar property or the local side
 		 * of a ManyToOne/OneToOne relation.
 		 *
-		 * @Orm\ForeignKey is only legal on the plain scalar @Orm\Column property that
-		 * backs the FK column — never on the ManyToOne/OneToOne property itself. A
-		 * relation's local column is already required to have its own scalar
-		 * @Orm\Column property (see validateRelationColumns()), so there is always a
-		 * single canonical place for the annotation to live, even for a column that
-		 * also backs an object relation.
+		 * @Orm\ForeignKey belongs on the plain scalar @Orm\Column property that backs
+		 * the FK column. A relation's local column is already required to have its
+		 * own scalar @Orm\Column property (see validateRelationColumns()), so that's
+		 * always the canonical place for the annotation to live, even for a column
+		 * that also backs an object relation. When @Orm\ForeignKey is placed on the
+		 * ManyToOne/OneToOne property itself instead, it's simply ignored.
 		 * @param class-string $className
 		 * @param array<string, AnnotationCollection> $annotations
 		 * @param array<string, string> $columnMap Property name => column name
 		 * @param array<string, ManyToOne> $manyToOneRelations
 		 * @param array<string, OneToOne> $oneToOneRelations
 		 * @return array<string, ForeignKey> Column name => ForeignKey annotation
-		 * @throws \RuntimeException When declared on a relation property, or its column can't be determined
+		 * @throws \RuntimeException When its column can't be determined
+		 * @throws EntityResolutionException
 		 */
 		private function extractForeignKeys(
 			string $className,
@@ -314,16 +315,15 @@
 
 			foreach ($annotations as $property => $annotationCollection) {
 				foreach ($annotationCollection as $annotation) {
+					// Skip any annotation that is not ForeignKey
 					if (!$annotation instanceof ForeignKey) {
 						continue;
 					}
 
+					// Ignored when declared on the relation property itself — the
+					// canonical place is the scalar column backing it.
 					if (isset($relations[$property])) {
-						throw new \RuntimeException(
-							"Property '{$property}' on '{$className}' carries an '@Orm\\ForeignKey' annotation " .
-							"on a ManyToOne/OneToOne relation. '@Orm\\ForeignKey' is only legal on the plain " .
-							"'@Orm\\Column' scalar property backing the relation's local column."
-						);
+						continue;
 					}
 
 					$columnName = $columnMap[$property] ?? null;
@@ -331,7 +331,9 @@
 					if ($columnName === null) {
 						throw new \RuntimeException(
 							"Property '{$property}' on '{$className}' carries an '@Orm\\ForeignKey' annotation " .
-							"but has no '@Orm\\Column' of its own."
+							"but is not itself declared with '@Orm\\Column'. '@Orm\\ForeignKey' is only legal " .
+							"on a scalar column property — add '@Orm\\Column' to '{$property}', or move " .
+							"'@Orm\\ForeignKey' to the property that has one."
 						);
 					}
 
@@ -379,13 +381,10 @@
 						continue;
 					}
 
+					// Ignored when declared on the relation property itself, same as
+					// ForeignKey — there's no ForeignKey on this property to configure.
 					if (isset($relations[$property])) {
-						throw new \RuntimeException(
-							"Property '{$property}' on '{$className}' carries an '@Orm\\ForeignKeyAction' " .
-							"annotation on a ManyToOne/OneToOne relation. '@Orm\\ForeignKeyAction' is only " .
-							"legal on the plain '@Orm\\Column' scalar property backing the relation's local " .
-							"column, alongside '@Orm\\ForeignKey'."
-						);
+						continue;
 					}
 
 					$columnName = $columnMap[$property] ?? null;
@@ -428,7 +427,7 @@
 						|| $annotation instanceof UniqueIndex
 						|| $annotation instanceof FullTextIndex;
 				})->toArray();
-				
+
 				/** @var array<int, Index|UniqueIndex|FullTextIndex> $result */
 				return $result;
 			} catch (ParserException $e) {
