@@ -5,37 +5,44 @@
 	use Quellabs\ObjectQuel\Annotations\Orm\FullTextIndex;
 	use Quellabs\ObjectQuel\Annotations\Orm\Index;
 	use Quellabs\ObjectQuel\Annotations\Orm\UniqueIndex;
+	use Quellabs\ObjectQuel\Capabilities\NullPlatformCapabilities;
+	use Quellabs\ObjectQuel\Capabilities\PlatformCapabilitiesInterface;
 	use Quellabs\ObjectQuel\DatabaseAdapter\DatabaseAdapter;
 	use Quellabs\ObjectQuel\EntityStore;
 	use Quellabs\ObjectQuel\Exception\EntityResolutionException;
 	use Quellabs\ObjectQuel\Sculpt\SculptTypes;
-	
+
 	/**
 	 * @phpstan-import-type IndexDefinition from SculptTypes
 	 * @phpstan-import-type IndexChangeSet from SculptTypes
 	 */
 	class IndexComparator {
-		
+
 		/**
 		 * Database connection / interface with cakephp/database and Phinx
 		 * @var DatabaseAdapter
 		 */
 		private DatabaseAdapter $connection;
-		
+
 		/**
 		 * EntityStore manages entity metadata and relations
 		 * @var EntityStore
 		 */
 		private EntityStore $entityStore;
-		
+
+		/** @var PlatformCapabilitiesInterface Describes what the connected database engine supports */
+		private PlatformCapabilitiesInterface $platform;
+
 		/**
 		 * IndexComparator constructor
 		 * @param DatabaseAdapter $connection
 		 * @param EntityStore $entityStore
+		 * @param PlatformCapabilitiesInterface $platform Database engine capability descriptor
 		 */
-		public function __construct(DatabaseAdapter $connection, EntityStore $entityStore) {
+		public function __construct(DatabaseAdapter $connection, EntityStore $entityStore, PlatformCapabilitiesInterface $platform = new NullPlatformCapabilities()) {
 			$this->connection = $connection;
 			$this->entityStore = $entityStore;
+			$this->platform = $platform;
 		}
 		
 		/**
@@ -112,10 +119,21 @@
 		/**
 		 * Returns the column lists of every live foreign key constraint on a table,
 		 * so compareIndexes() can recognize an index that only exists to support one.
+		 *
+		 * Returns an empty list outright on an engine
+		 * DatabaseAdapter::getForeignKeys() can't actually introspect (see
+		 * PlatformCapabilitiesInterface::supportsForeignKeyIntrospection()) —
+		 * its empty result there means "unknown", not "there are none", and
+		 * treating it as the latter would just silently skip the exclusion
+		 * rather than protect anything.
 		 * @param string $tableName
 		 * @return array<string, string[]>
 		 */
 		private function getForeignKeyBackedColumnSets(string $tableName): array {
+			if (!$this->platform->supportsForeignKeyIntrospection()) {
+				return [];
+			}
+
 			return array_map(
 				static fn(array $foreignKey): array => $foreignKey['columns'],
 				$this->connection->getForeignKeys($tableName)

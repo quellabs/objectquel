@@ -479,17 +479,24 @@
 
 		/**
 		 * Retrieves foreign key constraint definitions for a database table.
+		 *
+		 * Only implemented for MySQL, MariaDB, and SQLite — every other engine
+		 * (PostgreSQL, SQL Server) returns an empty array rather than throwing,
+		 * since not every engine having a real implementation is an expected,
+		 * ordinary condition here, not an error. An empty result on an engine
+		 * without a real implementation means "not introspectable", not "no
+		 * foreign keys exist" — callers that need to tell those two apart
+		 * (e.g. before diffing against entity-declared foreign keys) should
+		 * check PlatformCapabilitiesInterface::supportsForeignKeyIntrospection()
+		 * first rather than infer it from an empty result.
 		 * @param string $tableName
 		 * @return array<string, ForeignKeyDefinition> Constraint name => definition
 		 */
 		public function getForeignKeys(string $tableName): array {
 			return match ($this->getDatabaseType()) {
-				'sqlite'          => $this->getSqliteForeignKeys($tableName),
+				'sqlite'           => $this->getSqliteForeignKeys($tableName),
 				'mysql', 'mariadb' => $this->getMysqlForeignKeys($tableName),
-				default           => throw new \RuntimeException(
-					"getForeignKeys() is not supported for database type '{$this->getDatabaseType()}'. " .
-					"Supported: mysql, mariadb, sqlite."
-				),
+				default            => [],
 			};
 		}
 

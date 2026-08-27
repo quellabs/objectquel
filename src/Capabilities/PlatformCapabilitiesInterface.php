@@ -222,4 +222,22 @@
 		 * @return bool
 		 */
 		public function supportsNamedForeignKeys(): bool;
+
+		/**
+		 * Returns true if DatabaseAdapter::getForeignKeys() can actually
+		 * introspect real foreign key constraints for this engine.
+		 *
+		 * MySQL, MariaDB, and SQLite are implemented (via information_schema and
+		 * PRAGMA foreign_key_list respectively). PostgreSQL and SQL Server are
+		 * not — DatabaseAdapter::getForeignKeys() returns an empty array for
+		 * them rather than throwing, but callers that rely on its result to
+		 * diff live constraints (ForeignKeyComparator, IndexComparator) must
+		 * check this first: an empty result from an unsupported engine means
+		 * "we don't know", not "there are none", and treating it as the latter
+		 * would make every entity-declared foreign key look newly added on
+		 * every single run.
+		 *
+		 * @return bool
+		 */
+		public function supportsForeignKeyIntrospection(): bool;
 	}

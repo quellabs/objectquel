@@ -150,4 +150,15 @@
 		public function supportsNamedForeignKeys(): bool {
 			return false;
 		}
+
+		/**
+		 * @inheritDoc
+		 *
+		 * Conservative default: false, so callers never treat an empty
+		 * DatabaseAdapter::getForeignKeys() result as "no foreign keys exist"
+		 * without knowing whether this engine can even report them.
+		 */
+		public function supportsForeignKeyIntrospection(): bool {
+			return false;
+		}
 	}

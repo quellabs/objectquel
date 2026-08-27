@@ -2,6 +2,8 @@
 
 	namespace Quellabs\ObjectQuel\Sculpt\Helpers;
 
+	use Quellabs\ObjectQuel\Capabilities\NullPlatformCapabilities;
+	use Quellabs\ObjectQuel\Capabilities\PlatformCapabilitiesInterface;
 	use Quellabs\ObjectQuel\DatabaseAdapter\DatabaseAdapter;
 	use Quellabs\ObjectQuel\EntityStore;
 	use Quellabs\ObjectQuel\Exception\EntityResolutionException;
@@ -19,25 +21,40 @@
 		/** @var EntityStore EntityStore manages entity metadata and relations */
 		private EntityStore $entityStore;
 
+		/** @var PlatformCapabilitiesInterface Describes what the connected database engine supports */
+		private PlatformCapabilitiesInterface $platform;
+
 		/**
 		 * ForeignKeyComparator constructor
 		 * @param DatabaseAdapter $connection
 		 * @param EntityStore $entityStore
+		 * @param PlatformCapabilitiesInterface $platform Database engine capability descriptor
 		 */
-		public function __construct(DatabaseAdapter $connection, EntityStore $entityStore) {
+		public function __construct(DatabaseAdapter $connection, EntityStore $entityStore, PlatformCapabilitiesInterface $platform = new NullPlatformCapabilities()) {
 			$this->connection = $connection;
 			$this->entityStore = $entityStore;
+			$this->platform = $platform;
 		}
 
 		/**
 		 * Compares database foreign keys with entity-declared @Orm\ForeignKey annotations
 		 * to find missing, removed or inconsistent constraints.
+		 *
+		 * Returns an empty diff outright on an engine DatabaseAdapter::getForeignKeys()
+		 * can't actually introspect (see
+		 * PlatformCapabilitiesInterface::supportsForeignKeyIntrospection()) — its
+		 * empty result there means "unknown", not "none", and diffing against it
+		 * would make every entity-declared foreign key look newly added on every run.
 		 * @param string|object $entity The entity class to analyze
 		 * @return ForeignKeyChangeSet An array containing differences between DB and entity foreign keys
 		 * @throws EntityResolutionException
 		 * @throws \Exception
 		 */
 		public function compareForeignKeys(mixed $entity): array {
+			if (!$this->platform->supportsForeignKeyIntrospection()) {
+				return ['added' => [], 'modified' => [], 'deleted' => []];
+			}
+
 			$metadata = $this->entityStore->getMetadata($entity);
 			$tableForeignKeys = $this->connection->getForeignKeys($metadata->tableName);
 			$entityForeignKeys = $this->getEntityForeignKeys($entity);

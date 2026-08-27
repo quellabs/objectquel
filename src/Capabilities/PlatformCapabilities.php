@@ -328,6 +328,16 @@
 		}
 
 		/**
+		 * @inheritDoc
+		 *
+		 * DatabaseAdapter::getForeignKeys() only has real implementations for
+		 * MySQL, MariaDB, and SQLite.
+		 */
+		public function supportsForeignKeyIntrospection(): bool {
+			return in_array($this->adapter->getDatabaseType(), ['mysql', 'mariadb', 'sqlite']);
+		}
+
+		/**
 		 * REGEXP_LIKE(col, pattern, flags) was added in MySQL 8.0.0.
 		 * @return bool
 		 */
