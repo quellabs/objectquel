@@ -991,7 +991,8 @@
 				// The relationship column is used to identify which dependent objects reference this parent
 				$this->cascadeDeleteDependentObjects(
 					$dependentEntityClass,             // The class of dependent objects to search for
-					$relationColumn,                   // The property that references the parent
+					$property,                         // The object-reference property, e.g. "customer"
+					$relationColumn,                   // The scalar FK column that references the parent
 					$entity                            // The parent entity being deleted
 				);
 			}
@@ -1052,37 +1053,81 @@
 		/**
 		 * Find and schedule deletion of dependent objects
 		 * @param class-string $dependentEntityClass Class name of dependent entity
-		 * @param string $property Property name with the relationship
+		 * @param string $relationProperty Object-reference property holding the parent, e.g. "customer"
+		 * @param string $relationColumn Scalar FK column property, e.g. "customerId"
 		 * @param object $parentEntity The parent entity object
 		 * @return void
 		 * @throws EntityResolutionException|Exception\QuelException
 		 */
-		private function cascadeDeleteDependentObjects(string $dependentEntityClass, string $property, object $parentEntity): void {
+		private function cascadeDeleteDependentObjects(string $dependentEntityClass, string $relationProperty, string $relationColumn, object $parentEntity): void {
+			// Schedule any managed, not-yet-persisted dependents first. These
+			// can never be found by the DB-driven lookup below — they don't
+			// exist in the database yet — but without this they'd still get
+			// inserted afterward, pointing at a parent row that's about to
+			// be removed.
+			$this->cascadeDeleteUnpersistedDependents($dependentEntityClass, $relationProperty, $parentEntity);
+
 			// Extract the primary key identifiers from the parent entity
 			// This returns an array of primary key field names and their values
 			$parentPrimaryKeys = $this->getIdentifiers($parentEntity);
-			
+
 			// Composite primary keys are not supported for cascade delete lookup;
 			// the dependent objects query expects a single scalar foreign key value.
 			if (count($parentPrimaryKeys) !== 1) {
 				return;
 			}
-			
+
 			// Get the first (and only) primary key value
 			$parentId = $parentPrimaryKeys[array_key_first($parentPrimaryKeys)];
-			
+
+			// A parent that was never persisted has no id and therefore no rows
+			// in the database to cascade to. Querying with a null id would risk
+			// matching unrelated rows whose FK column happens to be genuinely
+			// NULL rather than rows that actually reference this parent.
+			if ($parentId === null) {
+				return;
+			}
+
 			// Query the entity manager to find all dependent objects
 			// that have a foreign key relationship to the parent entity
-			// Uses the specified property name to match against the parent's ID
+			// Uses the specified column name to match against the parent's ID
 			$dependentObjects = $this->entityManager->findBy($dependentEntityClass, [
-				$property => $parentId
+				$relationColumn => $parentId
 			]);
-			
+
 			// Iterate through each found dependent object and mark it for deletion
 			// This doesn't immediately delete the objects, but schedules them for deletion
 			// when the entity manager flushes changes to the database
 			foreach ($dependentObjects as $dependentObject) {
 				$this->scheduleForDelete($dependentObject);
+			}
+		}
+
+		/**
+		 * Schedules for deletion any managed, not-yet-persisted (New) instances
+		 * of $dependentEntityClass whose $relationProperty still holds a direct
+		 * reference to $parentEntity. Covers the gap the DB-driven lookup in
+		 * cascadeDeleteDependentObjects() can't: an entity that was persist()ed
+		 * in this same unit of work but never flushed has no row in the
+		 * database yet, so it would otherwise slip through cascade-remove and
+		 * get inserted afterward pointing at a parent that no longer exists.
+		 * @param class-string $dependentEntityClass Class name of dependent entity
+		 * @param string $relationProperty Object-reference property holding the parent, e.g. "customer"
+		 * @param object $parentEntity The parent entity object
+		 * @return void
+		 * @throws EntityResolutionException
+		 */
+		private function cascadeDeleteUnpersistedDependents(string $dependentEntityClass, string $relationProperty, object $parentEntity): void {
+			$normalizedClass = $this->entityStore->normalizeEntityClass($dependentEntityClass);
+
+			foreach ($this->entitiesByClass[$normalizedClass] ?? [] as $candidate) {
+				if ($this->getEntityState($candidate) !== DirtyState::New) {
+					continue;
+				}
+
+				if ($this->propertyHandler->get($candidate, $relationProperty) === $parentEntity) {
+					$this->scheduleForDelete($candidate);
+				}
 			}
 		}
 		
