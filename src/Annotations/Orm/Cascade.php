@@ -8,21 +8,14 @@
 	 * @Annotation
 	 * Declares ORM-side (PHP) cascading behavior for a relation: whether
 	 * persisting/removing an entity also persists/removes a related one,
-	 * walked in PHP by UnitOfWork.
+	 * walked in PHP by UnitOfWork. Independent of any database-level FK
+	 * constraint — @Orm\ForeignKey/@Orm\ForeignKeyAction configure the
+	 * database itself and know nothing about this annotation.
 	 *
-	 * Deliberately independent of any database-level foreign key constraint —
-	 * @Orm\ForeignKey/@Orm\ForeignKeyAction configure what the database itself
-	 * does and know nothing about this annotation, the way Doctrine's own
-	 * `cascade` option is unrelated to its `@JoinColumn(onDelete=...)`.
-	 *
-	 * Valid on ManyToOne/OneToOne (the owning side) for both "remove" and
-	 * "persist" — cascade-remove is discovered by querying the dependent
-	 * entity's FK column directly, so it never needs a loaded collection.
-	 * Also valid on InverseOf, but for "persist" only: a new, not-yet-saved
-	 * child only exists in the parent's in-memory InverseOf collection, so
-	 * that's the only property cascade-persist can walk to find it there.
-	 * "remove" on InverseOf is rejected at metadata-build time, since nothing
-	 * reads it and it would silently do nothing.
+	 * Valid on ManyToOne/OneToOne for "remove" and "persist". Valid on
+	 * InverseOf for "persist" only: cascade-remove is discovered via a DB
+	 * query on the dependent's FK column, so it never reads Cascade off
+	 * InverseOf — declaring "remove" there is rejected at build time.
 	 *
 	 * Example: @Orm\Cascade(operations={"remove"})
 	 */

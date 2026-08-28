@@ -337,13 +337,9 @@
 		 * @throws OrmException if an error occurs during the database process.
 		 */
 		public function commit(object|array|null $entity = null): void {
-			// Tracks whether beginTrans() below actually ran, so the catch block
-			// below only rolls back a transaction that was really started —
-			// executeCascadingPersists()/scheduleEntitiesForPersistence() can
-			// throw before that point (e.g. EntityResolutionException, or the
-			// cycle-detection OrmException), and calling rollbackTrans() without
-			// a matching beginTrans() throws its own LogicException, masking
-			// whatever error actually happened.
+			// Whether beginTrans() below actually ran. rollbackTrans() throws if
+			// called without a matching beginTrans(), so the catch block must
+			// only call it when a transaction was really started.
 			$transactionStarted = false;
 
 			try {
@@ -718,17 +714,11 @@
 					// Get a unique identifier for the parent entity
 					$parentId = spl_object_hash($parentEntity);
 
-					// Skip parents that aren't part of this commit at all (not in the
-					// identity map — e.g. an already-persisted entity that isn't being
-					// touched, or an unmanaged one that Cascade(persist) didn't pick up).
-					// $inDegree only has entries for $flattenedIdentityMap, so without
-					// this guard $graph[$parentId] would be a dead branch Kahn's
-					// algorithm never visits: it's only reachable by starting from a
-					// zero-inDegree node in $inDegree, and $parentId is never one of
-					// those. The child's inDegree would then never reach zero and
-					// get misreported below as a cycle, even though there isn't one —
-					// this parent simply imposes no ordering constraint on the batch
-					// being persisted right now.
+					// Skip parents outside this commit (already persisted and
+					// untouched, or unmanaged and not cascaded) — $inDegree only
+					// covers $flattenedIdentityMap, so an edge to an absent parent
+					// could never resolve and the child would be misreported as a
+					// cycle below.
 					if (!isset($inDegree[$parentId])) {
 						continue;
 					}
@@ -1145,15 +1135,10 @@
 		}
 
 		/**
-		 * Process cascading persists for ManyToOne relationships of an entity.
-		 * This handles the single parent entity that should be persisted
-		 * when the owning (child) entity is persisted — e.g. persisting a new
-		 * Order whose ->customer is itself a new, unmanaged Customer.
-		 * Mechanically identical to processCascadingOneToOnePersists(): both
-		 * hold a direct object reference on the entity, so both can be walked
-		 * the same way. Kept as a separate method (rather than merging the two
-		 * annotation types into one loop) to mirror how the rest of UnitOfWork
-		 * already treats ManyToOne and OneToOne as distinct relation kinds.
+		 * Cascades persist to the parent held by a ManyToOne relation — e.g.
+		 * persisting a new Order whose ->customer is itself new and unmanaged.
+		 * Mirrors processCascadingOneToOnePersists(): both hold a direct
+		 * object reference, so both walk the same way.
 		 * @param object $entity The entity whose ManyToOne relationships should be processed
 		 * @return void
 		 * @throws EntityResolutionException

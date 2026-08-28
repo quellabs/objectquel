@@ -598,27 +598,13 @@
 		}
 		
 		/**
-		 * Validates that every @Orm\Cascade annotation sits on a property that also
-		 * carries a ManyToOne/OneToOne/InverseOf relation, and that it declares
-		 * only operations that relation is actually able to perform.
-		 *
-		 * Cascade is purely about ORM-side (PHP) behavior: whether UnitOfWork also
-		 * walks and persists/removes the related entity. That requires an actual
-		 * object relation to walk — a plain scalar column has nothing for it to do.
-		 * Deliberately independent of @Orm\ForeignKey/@Orm\ForeignKeyAction: a
-		 * relation can have Cascade with no real database constraint at all, or a
-		 * database constraint with no Cascade, or both — the two are unrelated.
-		 *
-		 * ManyToOne/OneToOne (the owning side) support both "remove" and "persist":
-		 * UnitOfWork::handleDependentEntityClass() discovers cascade-remove targets
-		 * with a DB query keyed on the child's FK column, so it never needs a
-		 * loaded collection to work from. Cascade-persist on a related *collection*,
-		 * by contrast, can only walk objects that are already in memory — a new,
-		 * unsaved child only exists in the parent's InverseOf collection, so
-		 * UnitOfWork::processCascadingInverseOfPersists() reads Cascade off the
-		 * @Orm\InverseOf property itself. There is no DB query that could discover
-		 * those objects, so InverseOf only supports "persist" — declaring "remove"
-		 * there would silently do nothing, which is rejected here instead.
+		 * Validates that every @Orm\Cascade sits on a property that carries a
+		 * ManyToOne/OneToOne/InverseOf relation — a plain scalar column has
+		 * nothing for it to walk — and that InverseOf only declares "persist",
+		 * since cascade-remove never reads Cascade off InverseOf (see
+		 * Cascade.php for why). Independent of @Orm\ForeignKey/@Orm\ForeignKeyAction:
+		 * a relation can have Cascade with no database constraint, a database
+		 * constraint with no Cascade, or both.
 		 * @param class-string $className
 		 * @param array<string, AnnotationCollection> $annotations
 		 * @param array<string, ManyToOne> $manyToOneRelations
