@@ -686,16 +686,16 @@
 				// These are dependencies where this entity depends on a parent entity
 				$manyToOneParents = $metadata->getManyToOneDependencies();
 				
-				// Get all OneToOne relationships where this entity is the owning side
+				// Get all OneToOne relationships where this entity is the owning side.
+				// All of them hold a real FK column needing a value — 'referencedColumn'
+				// only affects bidirectional setter-sync codegen and has nothing to do
+				// with whether this entity owns the FK, so a unidirectional OneToOne
+				// (no referencedColumn) still needs parent-before-child ordering here
+				// exactly like ManyToOne does. See extractParentPrimaryKeyData() and
+				// handleDependentEntityClass() for the same reasoning.
 				$oneToOneParents = $metadata->getOneToOneDependencies();
-				
-				// Filter OneToOne relationships to only include those that are bidirectional
-				// This is determined by checking if inversedBy is not empty
-				$oneToOneParents = array_filter($oneToOneParents, function ($e) {
-					return !empty($e->getReferencedColumn());
-				});
-				
-				// Process all parent dependencies (both ManyToOne and qualifying OneToOne)
+
+				// Process all parent dependencies (both ManyToOne and OneToOne)
 				foreach (array_merge($manyToOneParents, $oneToOneParents) as $property => $annotation) {
 					// Get the actual parent entity object from the current entity's property
 					$parentEntity = $this->propertyHandler->get($entity, $property);
