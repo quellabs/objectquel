@@ -667,25 +667,24 @@
 			// Fetch the identity map as one linear list
 			$flattenedIdentityMap = $this->getFlattenedIdentityMap();
 			
-			// Prepare the graph and inDegree counters for each entity.
-			// This initializes every entity with an empty list of dependents and zero dependencies.
+			// Build the dependency graph by examining each entity's relationships.
+			// $graph[hash] lists the entities that depend on it (children); $inDegree[hash]
+			// counts how many parents it still needs processed first. Both default lazily
+			// via ??= so every entity gets an entry even if it has no relationships at all.
 			$graph = [];
 			$inDegree = [];
-			
+
 			foreach ($flattenedIdentityMap as $hash => $entity) {
-				$graph[$hash] = []; // Initialize an empty array of dependent entities (children)
-				$inDegree[$hash] = 0; // Initially, assume entity has no dependencies on other entities
-			}
-			
-			// Build the dependency graph by examining each entity's relationships
-			foreach ($flattenedIdentityMap as $hash => $entity) {
+				$graph[$hash] ??= [];
+				$inDegree[$hash] ??= 0;
+
 				// Fetch metadata
 				$metadata = $this->getEntityStore()->getMetadata($entity);
-				
+
 				// Get all ManyToOne relationships where this entity is the "many" side
 				// These are dependencies where this entity depends on a parent entity
 				$manyToOneParents = $metadata->getManyToOneDependencies();
-				
+
 				// Get all OneToOne relationships where this entity is the owning side.
 				// All of them hold a real FK column needing a value — 'referencedColumn'
 				// only affects bidirectional setter-sync codegen and has nothing to do
@@ -699,12 +698,12 @@
 				foreach (array_merge($manyToOneParents, $oneToOneParents) as $property => $annotation) {
 					// Get the actual parent entity object from the current entity's property
 					$parentEntity = $this->propertyHandler->get($entity, $property);
-					
+
 					// Skip if the relationship is not an object (no parent entity assigned)
 					if (!is_object($parentEntity)) {
 						continue;
 					}
-					
+
 					// Skip if the parent is a proxy (lazy-loaded) that hasn't been initialized
 					// Including uninitialized proxies could trigger unwanted database queries
 					if (($parentEntity instanceof ProxyInterface) && !$parentEntity->isInitialized()) {
@@ -714,12 +713,12 @@
 					// Get a unique identifier for the parent entity
 					$parentId = spl_object_hash($parentEntity);
 
-					// Skip parents outside this commit (already persisted and
-					// untouched, or unmanaged and not cascaded) — $inDegree only
-					// covers $flattenedIdentityMap, so an edge to an absent parent
-					// could never resolve and the child would be misreported as a
-					// cycle below.
-					if (!isset($inDegree[$parentId])) {
+					// Skip parents outside this commit (already persisted and untouched, or
+					// unmanaged and not cascaded) — checked against $flattenedIdentityMap
+					// rather than $inDegree since, with the single-pass build above, a
+					// parent visited later in iteration order wouldn't have an $inDegree
+					// entry yet even though it is part of this commit.
+					if (!isset($flattenedIdentityMap[$parentId])) {
 						continue;
 					}
 
