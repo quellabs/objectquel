@@ -242,4 +242,18 @@
 		 * @return bool
 		 */
 		public function supportsForeignKeyIntrospection(): bool;
+
+		/**
+		 * Returns the connected database engine's type identifier.
+		 *
+		 * This is the most basic fact PlatformCapabilities reports — every other
+		 * method here is, internally, a decision made from this same value. It's
+		 * exposed directly so collaborators that build engine-specific SQL text
+		 * from scratch (e.g. DDLTypeMapper's temporary-table DDL) can branch on
+		 * the engine without PlatformCapabilities having to grow a bespoke
+		 * reporting method for every syntax difference between engines.
+		 *
+		 * @return string One of 'mysql', 'mariadb', 'pgsql', 'sqlite', 'sqlsrv'
+		 */
+		public function getDatabaseType(): string;
 	}

@@ -11,6 +11,12 @@
 	 * available at runtime. Construct this once (typically alongside your
 	 * EntityManager) and pass it into QuelToSQL.
 	 *
+	 * This class only reports facts about the connected engine (booleans,
+	 * tokens, and getDatabaseType() itself) — it never builds SQL text.
+	 * Collaborators that render whole DDL/SQL fragments from those facts (e.g.
+	 * DDLTypeMapper) take a PlatformCapabilitiesInterface and query it, rather
+	 * than this class delegating out to them.
+	 *
 	 * Example:
 	 *   $platform = new PlatformCapabilities($adapter);
 	 *   $quelToSQL = new QuelToSQL($entityStore, $parameters, $platform);
@@ -348,6 +354,13 @@
 		 */
 		public function supportsForeignKeyIntrospection(): bool {
 			return in_array($this->adapter->getDatabaseType(), ['mysql', 'mariadb', 'sqlite', 'pgsql', 'sqlsrv']);
+		}
+
+		/**
+		 * @inheritDoc
+		 */
+		public function getDatabaseType(): string {
+			return $this->adapter->getDatabaseType();
 		}
 
 		/**

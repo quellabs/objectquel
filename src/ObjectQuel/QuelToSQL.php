@@ -16,15 +16,22 @@
 	use Quellabs\ObjectQuel\Execution\Visitors\DetectPrimaryKeyInClauseException;
 	use Quellabs\ObjectQuel\Capabilities\PlatformCapabilitiesInterface;
 	use Quellabs\ObjectQuel\Capabilities\NullPlatformCapabilities;
-	
+	use Quellabs\ObjectQuel\DatabaseAdapter\SqlIdentifierQuoter;
+
 	class QuelToSQL {
-		
+
 		private EntityStore $entityStore;
 		private PlatformCapabilitiesInterface $platform;
-		
+
+		/**
+		 * Quotes identifiers/aliases for whichever engine $platform describes.
+		 * @var SqlIdentifierQuoter
+		 */
+		private SqlIdentifierQuoter $identifierQuoter;
+
 		/** @var array<string, mixed> */
 		private array $parameters;
-		
+
 		/**
 		 * QuelToSQL constructor
 		 * @param EntityStore $entityStore
@@ -39,6 +46,7 @@
 			$this->entityStore = $entityStore;
 			$this->parameters = &$parameters;
 			$this->platform = $platform;
+			$this->identifierQuoter = new SqlIdentifierQuoter($platform);
 		}
 		
 		/**
@@ -117,8 +125,10 @@
 							$aliasName = $outerRangeName . '.' . $aliasName;
 						}
 						
-						// Add the alias to the SQL result
-						$sqlResult .= " as `{$aliasName}`";
+						// Add the alias to the SQL result. $aliasName may itself contain a
+						// literal '.' (see outerRangeName handling above); quoteIdentifier()
+						// never splits on '.', so it survives quoting as a single token.
+						$sqlResult .= " as " . $this->identifierQuoter->quoteIdentifier($aliasName);
 					}
 					
 					// Add the SQL result to the result array
@@ -174,13 +184,13 @@
 				// Regular ranges reference a physical table looked up from the entity store.
 				if ($range instanceof AstRangeDatabaseSubquery) {
 					$subSQL = $this->convertToSQL($range->getQuery(), $rangeName);
-					$tableNames[] = "({$subSQL}) as `{$rangeName}`";
+					$tableNames[] = "({$subSQL}) as " . $this->identifierQuoter->quoteIdentifier($rangeName);
 				} else {
 					// Get the metadata for the entity.
 					$metadata = $this->entityStore->getMetadata($range->getEntityName());
-					
+
 					// Add the table name and alias to the list for the FROM clause.
-					$tableNames[] = "`{$metadata->tableName}` as `{$rangeName}`";
+					$tableNames[] = $this->identifierQuoter->quoteIdentifier($metadata->tableName) . " as " . $this->identifierQuoter->quoteIdentifier($rangeName);
 				}
 			}
 			
@@ -431,12 +441,12 @@
 				// Regular ranges reference a physical table looked up from the entity store.
 				if ($range instanceof AstRangeDatabaseMaterialized) {
 					$subSQL = $this->convertToSQL($range->getQuery(), $rangeName);
-					$result[] = "{$joinType} JOIN ({$subSQL}) as `{$rangeName}` ON {$joinColumn}";
+					$result[] = "{$joinType} JOIN ({$subSQL}) as " . $this->identifierQuoter->quoteIdentifier($rangeName) . " ON {$joinColumn}";
 				} elseif ($range instanceof AstRangeDatabaseTempTable) {
-					$result[] = "{$joinType} JOIN `{$range->getTableName()}` as `{$rangeName}` ON {$joinColumn}";
+					$result[] = "{$joinType} JOIN " . $this->identifierQuoter->quoteIdentifier($range->getTableName()) . " as " . $this->identifierQuoter->quoteIdentifier($rangeName) . " ON {$joinColumn}";
 				} elseif ($range instanceof AstRangeDatabase) {
 					$metadata = $this->entityStore->getMetadata($range->getEntityName());
-					$result[] = "{$joinType} JOIN `{$metadata->tableName}` as `{$rangeName}` ON {$joinColumn}";
+					$result[] = "{$joinType} JOIN " . $this->identifierQuoter->quoteIdentifier($metadata->tableName) . " as " . $this->identifierQuoter->quoteIdentifier($rangeName) . " ON {$joinColumn}";
 				} else {
 					throw new \LogicException(
 						"Unresolved AstRangeDatabaseSubquery '{$rangeName}' reached QuelToSQL — planner did not complete substitution"

@@ -1,7 +1,7 @@
 <?php
 	
 	namespace Quellabs\ObjectQuel\Capabilities;
-	
+
 	/**
 	 * Conservative no-op platform used when no database connection is available.
 	 *
@@ -170,5 +170,17 @@
 		 */
 		public function supportsForeignKeyIntrospection(): bool {
 			return false;
+		}
+
+		/**
+		 * @inheritDoc
+		 *
+		 * Defaults to 'mysql', the most widely deployed engine in the
+		 * Canvas/ObjectQuel target stack. Callers that need the real engine must
+		 * inject a real PlatformCapabilities instance instead of relying on this
+		 * null implementation.
+		 */
+		public function getDatabaseType(): string {
+			return 'mysql';
 		}
 	}

@@ -81,7 +81,8 @@
 			$this->constantExecutor = new ConstantQueryExecutor();
 			$this->tempTableExecutor = new TempTableExecutor(
 				$queryExecutor->getConnection(),
-				$queryExecutor->getEntityManager()->getEntityStore()
+				$queryExecutor->getEntityManager()->getEntityStore(),
+				$queryExecutor->getEntityManager()->getUnitOfWork()->getPlatformCapabilities()
 			);
 		}
 		

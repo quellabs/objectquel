@@ -2,7 +2,10 @@
 	
 	namespace Quellabs\ObjectQuel\Execution\Executors;
 	
+	use Quellabs\ObjectQuel\Capabilities\PlatformCapabilitiesInterface;
 	use Quellabs\ObjectQuel\DatabaseAdapter\DatabaseAdapter;
+	use Quellabs\ObjectQuel\DatabaseAdapter\DDLTypeMapper;
+	use Quellabs\ObjectQuel\DatabaseAdapter\SqlIdentifierQuoter;
 	use Quellabs\ObjectQuel\EntityStore;
 	use Quellabs\ObjectQuel\Planner\TempTableStage;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstIdentifier;
@@ -17,10 +20,12 @@
 	 *      handles JSON and database stages correctly via the existing flow).
 	 *   2. Inspecting the first result row to infer a column schema, or falling back
 	 *      to the inner query's projection list when the result is empty.
-	 *   3. Creating a MySQL temporary table with that schema.
+	 *   3. Creating a session-scoped temporary table with that schema, using DDL
+	 *      appropriate to the connected engine (see DDLTypeMapper).
 	 *   4. Inserting all result rows in batches.
-	 *   5. Mutating the AstRangeDatabase: setQuery(null) + setTableName(), so that
-	 *      QuelToSQL will reference the temp table as a plain table.
+	 *   5. Mutating the AstRangeDatabase via setTableName() with the resolved
+	 *      physical table name, so QuelToSQL will reference the temp table as a
+	 *      plain table.
 	 *   6. Registering the temp table name for cleanup after the outer query completes.
 	 *
 	 * Cleanup must be called explicitly by the orchestrating code (PlanExecutor)
@@ -43,8 +48,9 @@
 	 *   (function calls, computed expressions, literals) fall back to VARCHAR(255).
 	 *
 	 * Batch size:
-	 *   Rows are inserted in batches of INSERT_BATCH_SIZE to avoid hitting MySQL's
-	 *   max_allowed_packet limit on very large result sets.
+	 *   Rows are inserted in batches of INSERT_BATCH_SIZE to avoid hitting
+	 *   per-statement/packet size limits (e.g. MySQL's max_allowed_packet) on
+	 *   very large result sets.
 	 */
 	class TempTableExecutor {
 		
@@ -67,7 +73,22 @@
 		private EntityStore $entityStore;
 
 		/**
-		 * Names of temporary tables created during this execution, registered for cleanup
+		 * Renders temp table DDL (CREATE/DROP keywords, physical name, column
+		 * types) correctly for whichever engine is connected.
+		 * @var DDLTypeMapper
+		 */
+		private DDLTypeMapper $ddlTypeMapper;
+
+		/**
+		 * Quotes table/column identifiers correctly for whichever engine is connected.
+		 * @var SqlIdentifierQuoter
+		 */
+		private SqlIdentifierQuoter $identifierQuoter;
+
+		/**
+		 * Names of temporary tables created during this execution, registered for cleanup.
+		 * These are physical names (see DDLTypeMapper::getTempTableName()),
+		 * not the logical range table name.
 		 * @var string[]
 		 */
 		private array $createdTables = [];
@@ -76,10 +97,13 @@
 		 * TempTableExecutor constructor
 		 * @param DatabaseAdapter $connection
 		 * @param EntityStore $entityStore
+		 * @param PlatformCapabilitiesInterface $platform
 		 */
-		public function __construct(DatabaseAdapter $connection, EntityStore $entityStore) {
+		public function __construct(DatabaseAdapter $connection, EntityStore $entityStore, PlatformCapabilitiesInterface $platform) {
 			$this->connection = $connection;
 			$this->entityStore = $entityStore;
+			$this->ddlTypeMapper = new DDLTypeMapper($platform);
+			$this->identifierQuoter = new SqlIdentifierQuoter($platform);
 		}
 		
 		/**
@@ -97,8 +121,14 @@
 		 */
 		public function execute(TempTableStage $stage, callable $runner): void {
 			$range = $stage->getRange();
-			$tableName = $range->getTableName();
 			$innerQuery = $stage->getQuery();
+
+			// Resolve the physical table name for the connected engine (SQL Server
+			// prefixes with '#'; every other engine uses the logical name as-is)
+			// and store it back on the range so downstream SQL generation
+			// (QuelToSQL) references the same physical table this method creates.
+			$tableName = $this->ddlTypeMapper->getTempTableName($range->getTableName());
+			$range->setTableName($tableName);
 			
 			// Execute the inner query through the full pipeline.
 			// This handles JSON stages, sub-decomposition, etc. transparently.
@@ -139,13 +169,14 @@
 		 * Must be called in a finally block after the outer query completes,
 		 * whether execution succeeded or failed.
 		 * Errors during cleanup are silently swallowed to avoid masking the real result:
-		 * MySQL will drop session-scoped temporary tables automatically when the
-		 * connection closes anyway.
+		 * every supported engine drops session-scoped temporary tables automatically
+		 * when the connection closes anyway.
 		 */
 		public function cleanup(): void {
 			foreach ($this->createdTables as $tableName) {
 				try {
-					$this->connection->execute("DROP TEMPORARY TABLE IF EXISTS `{$tableName}`");
+					$quotedName = $this->identifierQuoter->quoteIdentifier($tableName);
+					$this->connection->execute("{$this->ddlTypeMapper->getDropTempTableKeyword()} {$quotedName}");
 				} catch (\Throwable) {
 					// Silently ignore cleanup failures — see docblock above
 				}
@@ -220,40 +251,7 @@
 				return 'VARCHAR(255)';
 			}
 
-			return $this->sqlTypeFromColumnDefinition($columnDefinition);
-		}
-
-		/**
-		 * Maps a declared @Column definition to a MySQL DDL type fragment.
-		 * @param array{type: string, limit: int|array<int,int>|null, unsigned: bool, precision: int|null, scale: int|null} $columnDefinition
-		 * @return string
-		 */
-		private function sqlTypeFromColumnDefinition(array $columnDefinition): string {
-			$limit = is_int($columnDefinition['limit']) ? $columnDefinition['limit'] : 255;
-			$unsigned = $columnDefinition['unsigned'] ? ' UNSIGNED' : '';
-
-			return match ($columnDefinition['type']) {
-				'tinyinteger' => "TINYINT{$unsigned}",
-				'smallinteger' => "SMALLINT{$unsigned}",
-				'integer' => "INT{$unsigned}",
-				'biginteger' => "BIGINT{$unsigned}",
-				'float' => "FLOAT{$unsigned}",
-				'decimal' => sprintf('DECIMAL(%d,%d)%s', $columnDefinition['precision'] ?? 10, $columnDefinition['scale'] ?? 0, $unsigned),
-				'boolean' => 'TINYINT(1)',
-				'date' => 'DATE',
-				'datetime' => 'DATETIME',
-				'time' => 'TIME',
-				'timestamp' => 'TIMESTAMP',
-				'text' => 'TEXT',
-				'blob' => 'BLOB',
-				'binary' => "VARBINARY({$limit})",
-				'json' => 'JSON',
-				'uuid' => 'CHAR(36)',
-				'year' => 'YEAR',
-				'char' => "CHAR({$limit})",
-				// 'string', 'enum', 'set', and any unrecognized type
-				default => "VARCHAR({$limit})",
-			};
+			return $this->ddlTypeMapper->getTempTableColumnType($columnDefinition);
 		}
 
 		/**
@@ -268,13 +266,14 @@
 		 */
 		private function createTable(string $tableName, array $columns, array $columnTypes): void {
 			$columnDefs = array_map(
-				fn(string $col) => "`{$col}` " . ($columnTypes[$col] ?? 'VARCHAR(255)') . " NULL",
+				fn(string $col) => $this->identifierQuoter->quoteIdentifier($col) . ' ' . ($columnTypes[$col] ?? 'VARCHAR(255)') . " NULL",
 				$columns
 			);
-			
+
 			$sql = sprintf(
-				"CREATE TEMPORARY TABLE `%s` (%s)",
-				$tableName,
+				"%s %s (%s)",
+				$this->ddlTypeMapper->getCreateTempTableKeyword(),
+				$this->identifierQuoter->quoteIdentifier($tableName),
 				implode(', ', $columnDefs)
 			);
 			
@@ -292,19 +291,21 @@
 		
 		/**
 		 * Inserts rows into the temporary table in batches.
-		 * Batching avoids hitting MySQL's max_allowed_packet limit on large result sets.
+		 * Batching avoids hitting per-statement/packet size limits (e.g. MySQL's
+		 * max_allowed_packet) on large result sets.
 		 * @param string $tableName
 		 * @param string[] $columns
 		 * @param list<array<string, bool|float|int|string|null>> $rows
 		 * @throws QuelException
 		 */
 		private function insertRows(string $tableName, array $columns, array $rows): void {
-			$columnList = implode(', ', array_map(fn($c) => "`{$c}`", $columns));
+			$columnList = implode(', ', array_map(fn($c) => $this->identifierQuoter->quoteIdentifier($c), $columns));
+			$quotedTableName = $this->identifierQuoter->quoteIdentifier($tableName);
 			$placeholderRow = '(' . implode(', ', array_fill(0, count($columns), '?')) . ')';
-			
+
 			foreach (array_chunk($rows, self::INSERT_BATCH_SIZE) as $batch) {
 				$placeholders = implode(', ', array_fill(0, count($batch), $placeholderRow));
-				$sql = "INSERT INTO `{$tableName}` ({$columnList}) VALUES {$placeholders}";
+				$sql = "INSERT INTO {$quotedTableName} ({$columnList}) VALUES {$placeholders}";
 				
 				// Flatten the batch of rows into a single parameter array.
 				// Missing keys are treated as null; objects are cast to string defensively.
