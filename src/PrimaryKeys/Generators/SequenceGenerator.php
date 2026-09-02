@@ -34,18 +34,25 @@
 			
 			// Get the actual database column name for the primary key
 			$primaryKey = $columnMap[$identifierKeys[0]];
-			
+
+			// Quote identifiers for the connected engine — both are plain real
+			// column/table names, so DatabaseAdapter::escapeIdentifier() (the same
+			// mechanism the Persistence\* classes use for INSERT/UPDATE/DELETE) is
+			// the right tool here.
+			$quotedPrimaryKey = $connection->escapeIdentifier($primaryKey);
+			$quotedTableName = $connection->escapeIdentifier($metadata->tableName);
+
 			// Execute a SQL query to get the next sequence value
 			// This query finds the maximum current value and adds 1
 			$rs = $connection->execute("
 				 SELECT
-					COALESCE(MAX(`{$primaryKey}`), 0) + 1
-				 FROM `{$metadata->tableName}`
+					COALESCE(MAX({$quotedPrimaryKey}), 0) + 1
+				 FROM {$quotedTableName}
 			  ");
-			
+
 			// execute() returns StatementInterface|null
 			if ($rs === null) {
-				throw new \RuntimeException("SequenceGenerator could not generate a sequence for table `{$metadata->tableName}`.");
+				throw new \RuntimeException("SequenceGenerator could not generate a sequence for table '{$metadata->tableName}'.");
 			}
 			
 			// Fetch the single scalar result and return it
