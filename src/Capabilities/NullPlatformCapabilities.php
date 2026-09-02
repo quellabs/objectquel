@@ -99,23 +99,6 @@
 		/**
 		 * @inheritDoc
 		 *
-		 * Returns the baseline cast types supported by MySQL/MariaDB, which are the
-		 * most conservative valid set. Callers that need engine-specific types should
-		 * inject a real PlatformCapabilities instance instead of relying on this null
-		 * implementation.
-		 */
-		public function getSupportedCastTypes(): array {
-			return [
-				'int'     => 'SIGNED',
-				'float'   => 'DOUBLE',
-				'string'  => 'CHAR',
-				'decimal' => 'DECIMAL',
-			];
-		}
-
-		/**
-		 * @inheritDoc
-		 *
 		 * Defaults to MySQL/MariaDB syntax, the most widely deployed engine in the
 		 * Canvas/ObjectQuel target stack.
 		 */

@@ -5,21 +5,14 @@
 	use Quellabs\ObjectQuel\Capabilities\PlatformCapabilitiesInterface;
 
 	/**
-	 * Renders engine-specific SQL DDL fragments for session-scoped temporary
-	 * tables, driven by a PlatformCapabilitiesInterface's reported facts.
+	 * Renders engine-specific SQL DDL for session-scoped temporary tables,
+	 * driven by a PlatformCapabilitiesInterface's reported facts. Unlike
+	 * TypeMapper (abstract @Column type → PHP type, engine-agnostic), this
+	 * maps to literal engine-specific SQL syntax.
 	 *
-	 * Unlike TypeMapper (which maps abstract @Column types to PHP types and is
-	 * engine-agnostic), this maps them to literal engine-specific SQL syntax —
-	 * e.g. no UNSIGNED modifier outside MySQL/MariaDB, no TINYINT/YEAR on
-	 * PostgreSQL or SQL Server, native BOOLEAN/UUID/BYTEA types on PostgreSQL
-	 * instead of TINYINT(1)/CHAR(36)/BLOB. PlatformCapabilitiesInterface itself
-	 * only reports facts (booleans, tokens, getDatabaseType()) and never builds
-	 * SQL text — this class is where those facts turn into actual SQL.
-	 *
-	 * Used only by TempTableExecutor. Identifier/alias quoting is a separate,
-	 * non-DDL concern (every SQL statement needs it, not just DDL) and lives in
-	 * SqlIdentifierQuoter instead — QuelToSQL, which never emits DDL, depends
-	 * on that class, not this one.
+	 * Used only by TempTableExecutor. Identifier/alias quoting lives in
+	 * SqlIdentifierQuoter instead, since it's needed by every SQL statement,
+	 * not just DDL — QuelToSQL depends on that class, not this one.
 	 */
 	class DDLTypeMapper {
 
@@ -37,16 +30,11 @@
 		}
 
 		/**
-		 * Returns the physical table name to use for a session-scoped temporary
-		 * table, given the logical base name.
-		 *
-		 * Every supported engine except SQL Server creates temporary tables by
-		 * name exactly as given, distinguished from permanent tables only by the
-		 * CREATE/DROP keyword (see getCreateTempTableKeyword()/getDropTempTableKeyword()).
-		 * SQL Server has no such keyword: a "local temporary table" is identified
-		 * purely by a leading '#' in its name. Callers must use the name this
-		 * method returns for every subsequent reference to the table (DDL, DML,
-		 * and any later SQL that reads from it) — not just the CREATE statement.
+		 * Returns the physical table name for a session-scoped temporary table.
+		 * SQL Server has no CREATE/DROP TEMPORARY keyword — a local temp table
+		 * is identified purely by a leading '#' in its name — so callers must
+		 * use this returned name everywhere the table is referenced, not just
+		 * in the CREATE statement.
 		 *
 		 * @param string $baseName Logical temp table name, e.g. 'tmp_range_abc123'
 		 * @return string The physical name to create and reference
@@ -56,14 +44,9 @@
 		}
 
 		/**
-		 * Returns the CREATE-statement keyword sequence for a session-scoped
-		 * temporary table, up to but not including the table name.
-		 *
-		 * Examples by engine:
-		 *   MySQL/MariaDB/PostgreSQL/SQLite → 'CREATE TEMPORARY TABLE'
-		 *   SQL Server                      → 'CREATE TABLE' (temp-ness comes from
-		 *                                      the '#' prefix in getTempTableName())
-		 *
+		 * Returns the CREATE-statement keyword sequence, up to but not including
+		 * the table name. SQL Server gets plain 'CREATE TABLE' — its temp-ness
+		 * comes from the '#' prefix in getTempTableName(), not a keyword.
 		 * @return string
 		 */
 		public function getCreateTempTableKeyword(): string {
@@ -71,17 +54,10 @@
 		}
 
 		/**
-		 * Returns the DROP-statement keyword sequence for a session-scoped
-		 * temporary table, up to but not including the table name.
-		 *
-		 * Only MySQL/MariaDB accept the TEMPORARY keyword in DROP TABLE; every
-		 * other engine rejects it there even though it's required (or, for SQL
-		 * Server, irrelevant) in CREATE.
-		 *
-		 * Examples by engine:
-		 *   MySQL/MariaDB                        → 'DROP TEMPORARY TABLE IF EXISTS'
-		 *   PostgreSQL/SQLite/SQL Server          → 'DROP TABLE IF EXISTS'
-		 *
+		 * Returns the DROP-statement keyword sequence, up to but not including
+		 * the table name. Only MySQL/MariaDB accept TEMPORARY in DROP TABLE;
+		 * every other engine rejects it there even though CREATE requires (or,
+		 * for SQL Server, ignores) it.
 		 * @return string
 		 */
 		public function getDropTempTableKeyword(): string {
@@ -140,8 +116,9 @@
 		}
 
 		/**
-		 * PostgreSQL DDL type mapping. No UNSIGNED modifier, no TINYINT/YEAR;
-		 * native BOOLEAN/UUID/BYTEA types replace MySQL's TINYINT(1)/CHAR(36)/BLOB.
+		 * PostgreSQL DDL type mapping: no UNSIGNED, no TINYINT/YEAR (SMALLINT
+		 * covers both — Postgres has no 1-byte integer type); native
+		 * BOOLEAN/UUID/BYTEA replace MySQL's TINYINT(1)/CHAR(36)/BLOB.
 		 * @param array{type: string, limit: int|array<int,int>|null, unsigned: bool, precision: int|null, scale: int|null} $columnDefinition
 		 * @return string
 		 */
@@ -149,7 +126,6 @@
 			$limit = is_int($columnDefinition['limit']) ? $columnDefinition['limit'] : 255;
 
 			return match ($columnDefinition['type']) {
-				// PostgreSQL has no 1-byte integer type; SMALLINT is the closest fit.
 				'tinyinteger', 'smallinteger', 'year' => 'SMALLINT',
 				'integer' => 'INTEGER',
 				'biginteger' => 'BIGINT',
@@ -172,8 +148,7 @@
 		/**
 		 * SQLite DDL type mapping. SQLite derives storage affinity from the type
 		 * name rather than enforcing a fixed type system, so this only needs to
-		 * avoid syntax SQLite doesn't parse (e.g. UNSIGNED) — it does not need a
-		 * distinct type name per case the way the other engines do.
+		 * avoid syntax it can't parse (e.g. UNSIGNED), not a distinct name per case.
 		 * @param array{type: string, limit: int|array<int,int>|null, unsigned: bool, precision: int|null, scale: int|null} $columnDefinition
 		 * @return string
 		 */
@@ -198,12 +173,11 @@
 		}
 
 		/**
-		 * SQL Server DDL type mapping. No UNSIGNED modifier; TINYINT is already
-		 * unsigned (0-255) by definition. TIMESTAMP is deliberately avoided even
-		 * for the ORM's 'timestamp' type — in T-SQL, TIMESTAMP names a rowversion
-		 * type, not a datetime, so DATETIME2 is used for both 'datetime' and
-		 * 'timestamp'. TEXT/BLOB use their MAX-length replacements, since TEXT/
-		 * IMAGE are deprecated.
+		 * SQL Server DDL type mapping. No UNSIGNED (TINYINT is already 0-255 by
+		 * definition). TIMESTAMP is deliberately never emitted — in T-SQL that
+		 * name means a rowversion, not a datetime — so DATETIME2 covers both
+		 * 'datetime' and 'timestamp'. TEXT/IMAGE are deprecated; their
+		 * MAX-length replacements are used instead.
 		 * @param array{type: string, limit: int|array<int,int>|null, unsigned: bool, precision: int|null, scale: int|null} $columnDefinition
 		 * @return string
 		 */

@@ -21,8 +21,8 @@
 	 * performs the conversion. Use isPhpOnlyCast() to distinguish between the two.
 	 *
 	 * The exact SQL type token emitted depends on the connected engine and is
-	 * resolved by PlatformCapabilitiesInterface::getSupportedCastTypes() at
-	 * SQL-generation time. The cast type stored here is always the canonical
+	 * resolved by CastTypeMapper::getSupportedCastTypes() at SQL-generation
+	 * time. The cast type stored here is always the canonical
 	 * QUEL keyword (e.g. 'int', 'float', 'string', 'decimal'), never the
 	 * engine-specific SQL token.
 	 *

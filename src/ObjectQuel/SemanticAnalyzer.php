@@ -8,6 +8,7 @@
 	use Quellabs\ObjectQuel\Exception\SemanticException;
 	use Quellabs\ObjectQuel\Capabilities\NullPlatformCapabilities;
 	use Quellabs\ObjectQuel\Capabilities\PlatformCapabilitiesInterface;
+	use Quellabs\ObjectQuel\DatabaseAdapter\CastTypeMapper;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstCast;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstAggregate;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstIdentifier;
@@ -42,12 +43,11 @@
 		private EntityStore $entityStore;
 		
 		/**
-		 * Platform capabilities used to validate cast types against
-		 * engine-specific supported sets.
-		 * @var PlatformCapabilitiesInterface
+		 * Resolves cast types against engine-specific supported sets.
+		 * @var CastTypeMapper
 		 */
-		private PlatformCapabilitiesInterface $platform;
-		
+		private CastTypeMapper $castTypeMapper;
+
 		/**
 		 * Constructor - initializes the validator with entity schema information
 		 * @param EntityStore $entityStore The entity store containing schema definitions
@@ -55,7 +55,7 @@
 		 */
 		public function __construct(EntityStore $entityStore, PlatformCapabilitiesInterface $platform = new NullPlatformCapabilities()) {
 			$this->entityStore = $entityStore;
-			$this->platform = $platform;
+			$this->castTypeMapper = new CastTypeMapper($platform);
 		}
 		
 		/**
@@ -960,16 +960,16 @@
 		 * the connected database engine supports.
 		 *
 		 * The set of valid types is engine-specific and is retrieved from
-		 * PlatformCapabilitiesInterface::getSupportedCastTypes(). An unsupported
-		 * type name (e.g. (blob)x.data on MySQL) is rejected here with a clear
-		 * message listing the valid alternatives.
+		 * CastTypeMapper::getSupportedCastTypes(). An unsupported type name
+		 * (e.g. (blob)x.data on MySQL) is rejected here with a clear message
+		 * listing the valid alternatives.
 		 *
 		 * @param AstRetrieve $ast
 		 * @throws SemanticException
 		 */
 		private function validateCastTypes(AstRetrieve $ast): void {
 			// Fetch all cast types the database supports
-			$supportedTypes = $this->platform->getSupportedCastTypes();
+			$supportedTypes = $this->castTypeMapper->getSupportedCastTypes();
 			
 			// Collect every AstCast node in the entire query tree
 			$collector = new CollectNodes(AstCast::class);

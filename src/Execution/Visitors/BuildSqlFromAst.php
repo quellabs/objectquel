@@ -54,6 +54,7 @@
 	use Quellabs\ObjectQuel\ObjectQuel\AstInterface;
 	use Quellabs\ObjectQuel\Capabilities\PlatformCapabilitiesInterface;
 	use Quellabs\ObjectQuel\Capabilities\NullPlatformCapabilities;
+	use Quellabs\ObjectQuel\DatabaseAdapter\CastTypeMapper;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstCast;
 	use Quellabs\ObjectQuel\ObjectQuel\AstVisitorInterface;
 	
@@ -94,7 +95,10 @@
 
 		/** @var PlatformCapabilitiesInterface Database engine capability descriptor */
 		private PlatformCapabilitiesInterface $platform;
-		
+
+		/** @var CastTypeMapper Resolves QUEL cast types to SQL type tokens for the connected engine */
+		private CastTypeMapper $castTypeMapper;
+
 		/**
 		 * Initialize the SQL converter with required dependencies
 		 * @param EntityStore $store Entity storage containing schema and metadata
@@ -119,7 +123,8 @@
 			$this->parameters = &$parameters; // Use reference to allow parameter modification
 			$this->partOfQuery = $partOfQuery;
 			$this->platform = $platform;
-			
+			$this->castTypeMapper = new CastTypeMapper($platform);
+
 			// Initialize helper classes with proper dependencies and references
 			$this->sqlFragmentBuilder = new BuildSqlFragments($this->entityStore, $this, $subqueryAliasRangeName);
 			$this->typeInference = new ResolveType($this->entityStore);
@@ -332,13 +337,10 @@
 		/**
 		 * Process a cast expression node.
 		 *
-		 * Emits either:
-		 *   CAST(col AS TYPE)   for MySQL, MariaDB, SQLite, SQL Server
-		 *   col::TYPE           for PostgreSQL (CastStyle::DoubleColon)
-		 *
-		 * The SQL type token (e.g. SIGNED, DOUBLE, TEXT) is resolved from
-		 * PlatformCapabilitiesInterface::getSupportedCastTypes() using the
-		 * canonical QUEL cast type stored on the node (e.g. int, float, string).
+		 * Emits standard CAST(col AS TYPE), supported by every engine ObjectQuel
+		 * targets. The SQL type token (e.g. SIGNED, DOUBLE, TEXT) is resolved from
+		 * CastTypeMapper::getSupportedCastTypes() using the canonical QUEL cast
+		 * type stored on the node (e.g. int, float, string).
 		 *
 		 * @param AstCast $ast The cast node to process
 		 */
@@ -353,7 +355,7 @@
 			// Resolve the SQL type token for the target engine.
 			// The semantic analyser has already verified that this cast type is
 			// supported, so the key is guaranteed to exist here.
-			$supportedTypes = $this->platform->getSupportedCastTypes();
+			$supportedTypes = $this->castTypeMapper->getSupportedCastTypes();
 			$sqlType = $supportedTypes[$ast->getCastType()] ?? strtoupper($ast->getCastType());
 
 			// Generate the SQL fragment for the inner expression
