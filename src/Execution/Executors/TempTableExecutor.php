@@ -3,8 +3,12 @@
 	namespace Quellabs\ObjectQuel\Execution\Executors;
 	
 	use Quellabs\ObjectQuel\DatabaseAdapter\DatabaseAdapter;
+	use Quellabs\ObjectQuel\EntityStore;
 	use Quellabs\ObjectQuel\Planner\TempTableStage;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstIdentifier;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRetrieve;
+	use Quellabs\ObjectQuel\ObjectQuel\AstInterface;
+	use Quellabs\ObjectQuel\Exception\EntityResolutionException;
 	use Quellabs\ObjectQuel\Exception\QuelException;
 	
 	/**
@@ -33,10 +37,10 @@
 	 *     nodes), since there are no result rows to infer the schema from.
 	 *
 	 * Column type inference:
-	 *   All columns are created as VARCHAR(255) NULL on first use. This is intentional:
-	 *   the exact MySQL type does not matter for a session-scoped temporary table that
-	 *   is only used within a single query's execution. Refinement (e.g. detecting
-	 *   INT from PHP int values) can be added later without changing the contract.
+	 *   Each column's SQL type is resolved from the source entity's declared @Column
+	 *   type via EntityStore metadata, when the projected value is a plain entity
+	 *   property reference. Columns that don't trace back to a single entity property
+	 *   (function calls, computed expressions, literals) fall back to VARCHAR(255).
 	 *
 	 * Batch size:
 	 *   Rows are inserted in batches of INSERT_BATCH_SIZE to avoid hitting MySQL's
@@ -54,19 +58,28 @@
 		 * @var DatabaseAdapter
 		 */
 		private DatabaseAdapter $connection;
-		
+
+		/**
+		 * Entity metadata source used to resolve declared column types for the
+		 * temp table schema.
+		 * @var EntityStore
+		 */
+		private EntityStore $entityStore;
+
 		/**
 		 * Names of temporary tables created during this execution, registered for cleanup
 		 * @var string[]
 		 */
 		private array $createdTables = [];
-		
+
 		/**
 		 * TempTableExecutor constructor
 		 * @param DatabaseAdapter $connection
+		 * @param EntityStore $entityStore
 		 */
-		public function __construct(DatabaseAdapter $connection) {
+		public function __construct(DatabaseAdapter $connection, EntityStore $entityStore) {
 			$this->connection = $connection;
+			$this->entityStore = $entityStore;
 		}
 		
 		/**
@@ -105,8 +118,13 @@
 				$columns = array_map(fn($key) => (string)$key, array_keys($rows[0]));
 			}
 			
+			// Resolve each column's SQL type from the source entity's declared
+			// @Column metadata, so joins against typed columns don't run through
+			// implicit VARCHAR conversion (see class docblock).
+			$columnTypes = $this->resolveColumnTypes($innerQuery);
+
 			// Create the temporary table and populate it
-			$this->createTable($tableName, $columns);
+			$this->createTable($tableName, $columns, $columnTypes);
 			
 			if (!empty($rows)) {
 				$this->insertRows($tableName, $columns, $rows);
@@ -153,17 +171,104 @@
 			
 			return $columns;
 		}
-		
+
+		/**
+		 * Resolves the SQL column type for every projected value, keyed by output
+		 * column name (the AstAlias name), by inspecting the query's projection list.
+		 * @param AstRetrieve $query
+		 * @return array<string, string> Column name => SQL type
+		 */
+		private function resolveColumnTypes(AstRetrieve $query): array {
+			$types = [];
+
+			foreach ($query->getValues() as $value) {
+				$types[$value->getName()] = $this->resolveColumnType($value->getExpression());
+			}
+
+			return $types;
+		}
+
+		/**
+		 * Resolves the SQL type for a single projected expression. Only a plain
+		 * entity property reference (e.g. `p.price`) can be traced back to a
+		 * declared @Column type; anything else (function calls, computed
+		 * expressions, literals) falls back to VARCHAR(255).
+		 * @param AstInterface $expression
+		 * @return string
+		 */
+		private function resolveColumnType(AstInterface $expression): string {
+			if (!$expression instanceof AstIdentifier) {
+				return 'VARCHAR(255)';
+			}
+
+			$entityName = $expression->getEntityName();
+
+			if ($entityName === null) {
+				return 'VARCHAR(255)';
+			}
+
+			try {
+				$metadata = $this->entityStore->getMetadata($entityName);
+			} catch (EntityResolutionException) {
+				return 'VARCHAR(255)';
+			}
+
+			$columnName = $metadata->getColumnName($expression->getPropertyName());
+			$columnDefinition = $columnName !== null ? ($metadata->columnDefinitions[$columnName] ?? null) : null;
+
+			if ($columnDefinition === null) {
+				return 'VARCHAR(255)';
+			}
+
+			return $this->sqlTypeFromColumnDefinition($columnDefinition);
+		}
+
+		/**
+		 * Maps a declared @Column definition to a MySQL DDL type fragment.
+		 * @param array{type: string, limit: int|array<int,int>|null, unsigned: bool, precision: int|null, scale: int|null} $columnDefinition
+		 * @return string
+		 */
+		private function sqlTypeFromColumnDefinition(array $columnDefinition): string {
+			$limit = is_int($columnDefinition['limit']) ? $columnDefinition['limit'] : 255;
+			$unsigned = $columnDefinition['unsigned'] ? ' UNSIGNED' : '';
+
+			return match ($columnDefinition['type']) {
+				'tinyinteger' => "TINYINT{$unsigned}",
+				'smallinteger' => "SMALLINT{$unsigned}",
+				'integer' => "INT{$unsigned}",
+				'biginteger' => "BIGINT{$unsigned}",
+				'float' => "FLOAT{$unsigned}",
+				'decimal' => sprintf('DECIMAL(%d,%d)%s', $columnDefinition['precision'] ?? 10, $columnDefinition['scale'] ?? 0, $unsigned),
+				'boolean' => 'TINYINT(1)',
+				'date' => 'DATE',
+				'datetime' => 'DATETIME',
+				'time' => 'TIME',
+				'timestamp' => 'TIMESTAMP',
+				'text' => 'TEXT',
+				'blob' => 'BLOB',
+				'binary' => "VARBINARY({$limit})",
+				'json' => 'JSON',
+				'uuid' => 'CHAR(36)',
+				'year' => 'YEAR',
+				'char' => "CHAR({$limit})",
+				// 'string', 'enum', 'set', and any unrecognized type
+				default => "VARCHAR({$limit})",
+			};
+		}
+
 		/**
 		 * Creates a temporary table with the given name and columns.
-		 * All columns are VARCHAR(255) NULL — see class docblock for rationale.
+		 * Each column uses the SQL type resolved by resolveColumnTypes(), falling
+		 * back to VARCHAR(255) for columns that couldn't be resolved — see class
+		 * docblock for rationale.
 		 * @param string $tableName
 		 * @param string[] $columns
+		 * @param array<string, string> $columnTypes Column name => SQL type
 		 * @throws QuelException
 		 */
-		private function createTable(string $tableName, array $columns): void {
+		private function createTable(string $tableName, array $columns, array $columnTypes): void {
 			$columnDefs = array_map(
-				fn(string $col) => "`{$col}` VARCHAR(255) NULL",
+				fn(string $col) => "`{$col}` " . ($columnTypes[$col] ?? 'VARCHAR(255)') . " NULL",
 				$columns
 			);
 			

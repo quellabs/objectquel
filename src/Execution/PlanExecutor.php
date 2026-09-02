@@ -79,7 +79,10 @@
 			$this->databaseExecutor = $queryExecutor->getDatabaseExecutor();
 			$this->jsonExecutor = $queryExecutor->getJsonExecutor();
 			$this->constantExecutor = new ConstantQueryExecutor();
-			$this->tempTableExecutor = new TempTableExecutor($queryExecutor->getConnection());
+			$this->tempTableExecutor = new TempTableExecutor(
+				$queryExecutor->getConnection(),
+				$queryExecutor->getEntityManager()->getEntityStore()
+			);
 		}
 		
 		/**
