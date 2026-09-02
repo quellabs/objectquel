@@ -220,6 +220,8 @@
 		 * JSON path extraction style depends on the engine and version:
 		 * - PostgreSQL:       col #>> '{a,b}'          (all versions)
 		 * - MariaDB >= 10.9:  JSON_VALUE(col, '$.a.b')
+		 * - SQL Server:       JSON_VALUE(col, '$.a.b') (available since SQL Server
+		 *                     2016; same function/path syntax as MariaDB's)
 		 * - SQLite >= 3.38:   col ->> '$.a.b'          (SQLite has no JSON_VALUE())
 		 * - All others:       JSON_UNQUOTE(JSON_EXTRACT(col, '$.a.b'))
 		 */
@@ -227,17 +229,20 @@
 			switch ($this->adapter->getDatabaseType()) {
 				case 'pgsql':
 					return JsonExtractionStyle::HashDoubleArrow;
-				
+
 				case 'mariadb':
 					return $this->supportsMariaDbJsonValue()
 						? JsonExtractionStyle::JsonValue
 						: JsonExtractionStyle::JsonUnquote;
-				
+
+				case 'sqlsrv':
+					return JsonExtractionStyle::JsonValue;
+
 				case 'sqlite':
 					return $this->supportsSqliteArrowOperator()
 						? JsonExtractionStyle::ArrowOperator
 						: JsonExtractionStyle::JsonUnquote;
-				
+
 				default:
 					return JsonExtractionStyle::JsonUnquote;
 			}

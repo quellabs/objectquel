@@ -32,7 +32,15 @@
 	 *     matches none of them and falls through to being returned completely
 	 *     UNQUOTED — verified directly against Cake\Database\IdentifierQuoter:
 	 *     quoteIdentifier('#tmp_x') returns '#tmp_x', not '[#tmp_x]'.
-	 * Both failure modes are silent (no exception, just wrong/unquoted SQL),
+	 *   - SQLite double-quote fallback: SQLite silently reinterprets an
+	 *     unresolvable double-quoted token as a string literal instead of
+	 *     raising an error (kept for compatibility with older code that used
+	 *     double quotes for string literals); backtick-quoted tokens have no
+	 *     such fallback. CakePHP's SQLite driver uses double quotes, so
+	 *     escapeIdentifier() carries this risk on SQLite; this class uses
+	 *     backticks for SQLite instead (grouped with MySQL/MariaDB below).
+	 * All three failure modes above are silent (no exception, just wrong or
+	 * unquoted SQL, or SQL that quietly changes meaning),
 	 * which is why this class always does the simple, predictable wrap rather
 	 * than reusing the driver's smarter-but-unsafe-for-us quoter. It's also
 	 * the only option for QuelToSQL, which is deliberately never given a live
@@ -78,8 +86,9 @@
 		 */
 		public function quoteIdentifier(string $identifier): string {
 			return match ($this->platform->getDatabaseType()) {
-				'pgsql', 'sqlite' => '"' . str_replace('"', '""', $identifier) . '"',
+				'pgsql' => '"' . str_replace('"', '""', $identifier) . '"',
 				'sqlsrv' => '[' . str_replace(']', ']]', $identifier) . ']',
+				// mysql/mariadb/sqlite: see the SQLite double-quote note above.
 				default => '`' . str_replace('`', '``', $identifier) . '`',
 			};
 		}

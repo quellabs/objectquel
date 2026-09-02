@@ -12,7 +12,8 @@
 	 *                     Supported by: PostgreSQL (all versions)
 	 *
 	 * - JsonValue       → JSON_VALUE(col, '$.a.b')
-	 *                     Supported by: MariaDB >= 10.9
+	 *                     Supported by: MariaDB >= 10.9, SQL Server (all versions
+	 *                     targeted here — available since SQL Server 2016)
 	 *                     SQLite has no JSON_VALUE() function at any version — use
 	 *                     ArrowOperator for SQLite >= 3.38 instead.
 	 *

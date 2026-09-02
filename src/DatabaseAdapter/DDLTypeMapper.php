@@ -47,6 +47,16 @@
 		 * Returns the CREATE-statement keyword sequence, up to but not including
 		 * the table name. SQL Server gets plain 'CREATE TABLE' — its temp-ness
 		 * comes from the '#' prefix in getTempTableName(), not a keyword.
+		 *
+		 * NOTE: this method's "every engine except sqlsrv" default and
+		 * getDropTempTableKeyword()'s "only mysql/mariadb" default point in
+		 * opposite directions. That's intentional, not drift: CREATE TEMPORARY
+		 * TABLE is accepted by every engine except SQL Server, while TEMPORARY
+		 * in DROP TABLE is accepted only by MySQL/MariaDB — the two statements
+		 * genuinely differ per engine, so mirroring one method's branch
+		 * structure onto the other would misrepresent real SQL syntax.
+		 * getDatabaseType() is a closed enumeration (see DatabaseAdapter), so
+		 * there is no unrecognised value for the two to disagree on in practice.
 		 * @return string
 		 */
 		public function getCreateTempTableKeyword(): string {
@@ -57,7 +67,8 @@
 		 * Returns the DROP-statement keyword sequence, up to but not including
 		 * the table name. Only MySQL/MariaDB accept TEMPORARY in DROP TABLE;
 		 * every other engine rejects it there even though CREATE requires (or,
-		 * for SQL Server, ignores) it.
+		 * for SQL Server, ignores) it. See the note on getCreateTempTableKeyword()
+		 * about why this method's default direction differs from that one.
 		 * @return string
 		 */
 		public function getDropTempTableKeyword(): string {
@@ -88,7 +99,7 @@
 		 * @return string
 		 */
 		private function getMysqlTempTableColumnType(array $columnDefinition): string {
-			$limit = is_int($columnDefinition['limit']) ? $columnDefinition['limit'] : 255;
+			$limit = is_int($columnDefinition['limit']) ? $columnDefinition['limit'] : (TypeMapper::getDefaultLimit($columnDefinition['type']) ?? 255);
 			$unsigned = $columnDefinition['unsigned'] ? ' UNSIGNED' : '';
 
 			return match ($columnDefinition['type']) {
@@ -123,7 +134,7 @@
 		 * @return string
 		 */
 		private function getPostgresTempTableColumnType(array $columnDefinition): string {
-			$limit = is_int($columnDefinition['limit']) ? $columnDefinition['limit'] : 255;
+			$limit = is_int($columnDefinition['limit']) ? $columnDefinition['limit'] : (TypeMapper::getDefaultLimit($columnDefinition['type']) ?? 255);
 
 			return match ($columnDefinition['type']) {
 				'tinyinteger', 'smallinteger', 'year' => 'SMALLINT',
@@ -153,7 +164,7 @@
 		 * @return string
 		 */
 		private function getSqliteTempTableColumnType(array $columnDefinition): string {
-			$limit = is_int($columnDefinition['limit']) ? $columnDefinition['limit'] : 255;
+			$limit = is_int($columnDefinition['limit']) ? $columnDefinition['limit'] : (TypeMapper::getDefaultLimit($columnDefinition['type']) ?? 255);
 
 			return match ($columnDefinition['type']) {
 				'tinyinteger', 'smallinteger', 'integer', 'biginteger', 'year' => 'INTEGER',
@@ -182,7 +193,7 @@
 		 * @return string
 		 */
 		private function getSqlServerTempTableColumnType(array $columnDefinition): string {
-			$limit = is_int($columnDefinition['limit']) ? $columnDefinition['limit'] : 255;
+			$limit = is_int($columnDefinition['limit']) ? $columnDefinition['limit'] : (TypeMapper::getDefaultLimit($columnDefinition['type']) ?? 255);
 
 			return match ($columnDefinition['type']) {
 				'tinyinteger' => 'TINYINT',

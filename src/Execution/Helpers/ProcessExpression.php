@@ -27,6 +27,7 @@
 	use Quellabs\ObjectQuel\Capabilities\FulltextIndexStyle;
 	use Quellabs\ObjectQuel\Capabilities\NullPlatformCapabilities;
 	use Quellabs\ObjectQuel\Capabilities\PlatformCapabilitiesInterface;
+	use Quellabs\ObjectQuel\DatabaseAdapter\SqlIdentifierQuoter;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\NodeBinary;
 	use Quellabs\ObjectQuel\ObjectQuel\AstInterface;
 	use Quellabs\ObjectQuel\ObjectQuel\AstVisitorInterface;
@@ -92,7 +93,10 @@
 		
 		/** @var PlatformCapabilitiesInterface Describes what the connected database engine supports */
 		private PlatformCapabilitiesInterface $platform;
-		
+
+		/** @var SqlIdentifierQuoter Quotes table/column identifiers correctly for the connected engine */
+		private SqlIdentifierQuoter $identifierQuoter;
+
 		/**
 		 * Constructor - Initialize the expression handler with required dependencies
 		 * @param EntityStore $entityStore EntityStore holds entity metadata
@@ -113,6 +117,7 @@
 			$this->parameters = &$parameters;
 			$this->mainVisitor = $mainVisitor;
 			$this->platform = $platform;
+			$this->identifierQuoter = new SqlIdentifierQuoter($platform);
 		}
 		
 		/**
@@ -651,7 +656,7 @@
 			$propertyName = $nextNode->getName();
 			
 			if (empty($entityName)) {
-				return "{$rangeName}.`{$rangeName}.{$propertyName}`";
+				return "{$rangeName}." . $this->identifierQuoter->quoteIdentifier("{$rangeName}.{$propertyName}");
 			}
 			
 			// When the chain contains a JSON property, defer to the dedicated JSON
@@ -747,7 +752,7 @@
 			
 			// Column aliases in derived tables are stored as "rangeName.property" (e.g. "x.id"),
 			// so reference them with the range prefix to match the subquery's SELECT aliases.
-			return "`{$rangeName}`.`{$rangeName}.{$columnName}`";
+			return $this->identifierQuoter->quoteIdentifier($rangeName) . '.' . $this->identifierQuoter->quoteIdentifier("{$rangeName}.{$columnName}");
 		}
 		
 		/**
@@ -801,7 +806,7 @@
 			}
 			
 			// Return fully qualified column name
-			return "`{$rangeName}`.`{$metadata->columnMap[$property]}`";
+			return $this->identifierQuoter->quoteIdentifier($rangeName) . '.' . $this->identifierQuoter->quoteIdentifier($metadata->columnMap[$property]);
 		}
 		
 		/**
@@ -1105,31 +1110,36 @@
 			}
 			
 			// Build the JSON path expression and emit dialect-specific SQL.
+			// Every branch quotes the column reference via identifierQuoter rather
+			// than a hardcoded quote character, so quoting stays correct even if
+			// SqlIdentifierQuoter's per-engine choice ever changes.
+			$quotedColumn = $this->identifierQuoter->quoteIdentifier($rangeName) . '.' . $this->identifierQuoter->quoteIdentifier($columnName);
+
 			return match ($this->platform->getJsonExtractionStyle()) {
-				JsonExtractionStyle::HashDoubleArrow => (function () use ($rangeName, $columnName, $pathSegments) {
+				JsonExtractionStyle::HashDoubleArrow => (function () use ($quotedColumn, $pathSegments) {
 					// PostgreSQL: col #>> '{segment1,segment2,...}'
 					$pgPath = implode(',', $pathSegments);
-					return "\"{$rangeName}\".\"{$columnName}\" #>> '{" . $pgPath . "}'";
+					return "{$quotedColumn} #>> '{" . $pgPath . "}'";
 				})(),
-				
-				JsonExtractionStyle::JsonValue => (function () use ($rangeName, $columnName, $pathSegments) {
-					// SQL:2016 JSON_VALUE — MariaDB 10.9+. (SQLite has no
-					// JSON_VALUE() function at any version — see ArrowOperator.)
+
+				JsonExtractionStyle::JsonValue => (function () use ($quotedColumn, $pathSegments) {
+					// SQL:2016 JSON_VALUE — MariaDB 10.9+ and SQL Server. (SQLite has
+					// no JSON_VALUE() function at any version — see ArrowOperator.)
 					$jsonPath = '$.' . implode('.', $pathSegments);
-					return "JSON_VALUE(`{$rangeName}`.`{$columnName}`, '{$jsonPath}')";
+					return "JSON_VALUE({$quotedColumn}, '{$jsonPath}')";
 				})(),
-				
-				JsonExtractionStyle::ArrowOperator => (function () use ($rangeName, $columnName, $pathSegments) {
+
+				JsonExtractionStyle::ArrowOperator => (function () use ($quotedColumn, $pathSegments) {
 					// SQLite 3.38+: col ->> '$.a.b' — SQLite's equivalent of
 					// JSON_VALUE(); it unwraps the result to a plain SQL scalar.
 					$jsonPath = '$.' . implode('.', $pathSegments);
-					return "\"{$rangeName}\".\"{$columnName}\" ->> '{$jsonPath}'";
+					return "{$quotedColumn} ->> '{$jsonPath}'";
 				})(),
-				
+
 				// Default: MySQL/MariaDB JSON_UNQUOTE(JSON_EXTRACT(...))
-				default => (function () use ($rangeName, $columnName, $pathSegments) {
+				default => (function () use ($quotedColumn, $pathSegments) {
 					$jsonPath = '$.' . implode('.', $pathSegments);
-					return "JSON_UNQUOTE(JSON_EXTRACT(`{$rangeName}`.`{$columnName}`, '{$jsonPath}'))";
+					return "JSON_UNQUOTE(JSON_EXTRACT({$quotedColumn}, '{$jsonPath}'))";
 				})(),
 			};
 		}

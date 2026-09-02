@@ -126,9 +126,9 @@
 			$this->castTypeMapper = new CastTypeMapper($platform);
 
 			// Initialize helper classes with proper dependencies and references
-			$this->sqlFragmentBuilder = new BuildSqlFragments($this->entityStore, $this, $subqueryAliasRangeName);
+			$this->sqlFragmentBuilder = new BuildSqlFragments($this->entityStore, $this, $subqueryAliasRangeName, $this->platform);
 			$this->typeInference = new ResolveType($this->entityStore);
-			$this->aggregateHandler = new ProcessAggregate($this->entityStore, $this->partOfQuery, $this->sqlFragmentBuilder, $this);
+			$this->aggregateHandler = new ProcessAggregate($this->entityStore, $this->partOfQuery, $this->sqlFragmentBuilder, $this, $this->platform);
 			$this->expressionHandler = new ProcessExpression($this->entityStore, $this->typeInference, $this->parameters, $this, $this->platform);
 		}
 		

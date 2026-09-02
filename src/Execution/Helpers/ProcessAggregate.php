@@ -2,6 +2,9 @@
 	
 	namespace Quellabs\ObjectQuel\Execution\Helpers;
 	
+	use Quellabs\ObjectQuel\Capabilities\NullPlatformCapabilities;
+	use Quellabs\ObjectQuel\Capabilities\PlatformCapabilitiesInterface;
+	use Quellabs\ObjectQuel\DatabaseAdapter\SqlIdentifierQuoter;
 	use Quellabs\ObjectQuel\EntityStore;
 	use Quellabs\ObjectQuel\Exception\EntityResolutionException;
 	use Quellabs\ObjectQuel\Execution\Visitors\BuildSqlFromAst;
@@ -52,24 +55,30 @@
 		
 		/** @var BuildSqlFromAst Converts AST nodes to their SQL string representations */
 		private BuildSqlFromAst $convertToString;
-		
+
+		/** @var SqlIdentifierQuoter Quotes table/column identifiers correctly for the connected engine */
+		private SqlIdentifierQuoter $identifierQuoter;
+
 		/**
 		 * Initializes the aggregate handler with required dependencies.
 		 * @param EntityStore $entityStore Maps entity names to table names and provides schema metadata
 		 * @param string $partOfQuery Current SQL clause context (SELECT, WHERE, etc.) for output formatting
 		 * @param BuildSqlFragments $sqlBuilder Helper for building SQL components like joins and conditions
 		 * @param BuildSqlFromAst $convertToString Converts AST expressions to SQL strings
+		 * @param PlatformCapabilitiesInterface $platform Database engine capability descriptor
 		 */
 		public function __construct(
 			EntityStore $entityStore,
 			string $partOfQuery,
 			BuildSqlFragments $sqlBuilder,
 			BuildSqlFromAst $convertToString,
+			PlatformCapabilitiesInterface $platform = new NullPlatformCapabilities(),
 		) {
 			$this->entityStore = $entityStore;
 			$this->partOfQuery = $partOfQuery;
 			$this->sqlBuilder = $sqlBuilder;
 			$this->convertToString = $convertToString;
+			$this->identifierQuoter = new SqlIdentifierQuoter($platform);
 		}
 		
 		// ============================================================================
@@ -639,7 +648,7 @@
 			$metadata = $this->entityStore->getMetadata($mainRange->getEntityName());
 			
 			// Convert to SQL
-			$sql = "`{$metadata->tableName}` {$mainRange->getName()}";
+			$sql = $this->identifierQuoter->quoteIdentifier($metadata->tableName) . ' ' . $this->identifierQuoter->quoteIdentifier($mainRange->getName());
 			
 			// Add JOIN clauses for each related range
 			foreach ($joinRanges as $range) {
@@ -661,7 +670,7 @@
 				$joinType = $range->isRequired() ? "INNER" : "LEFT";
 				
 				// Add it to the query
-				$sql .= " {$joinType} JOIN `{$metadata->tableName}` {$range->getName()} ON {$joinCondition}";
+				$sql .= " {$joinType} JOIN " . $this->identifierQuoter->quoteIdentifier($metadata->tableName) . ' ' . $this->identifierQuoter->quoteIdentifier($range->getName()) . " ON {$joinCondition}";
 			}
 			
 			return $sql;

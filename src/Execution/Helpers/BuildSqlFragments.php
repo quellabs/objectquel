@@ -2,6 +2,9 @@
 	
 	namespace Quellabs\ObjectQuel\Execution\Helpers;
 	
+	use Quellabs\ObjectQuel\Capabilities\NullPlatformCapabilities;
+	use Quellabs\ObjectQuel\Capabilities\PlatformCapabilitiesInterface;
+	use Quellabs\ObjectQuel\DatabaseAdapter\SqlIdentifierQuoter;
 	use Quellabs\ObjectQuel\EntityStore;
 	use Quellabs\ObjectQuel\Exception\EntityResolutionException;
 	use Quellabs\ObjectQuel\Execution\SqlGeneratorInterface;
@@ -34,7 +37,10 @@
 		
 		/** @var string|null When set, column aliases in buildEntityColumns use this name instead of the inner range name */
 		private ?string $subqueryAliasRangeName;
-		
+
+		/** @var SqlIdentifierQuoter Quotes table/column identifiers correctly for the connected engine */
+		private SqlIdentifierQuoter $identifierQuoter;
+
 		/**
 		 * Constructor - initializes the SQL builder helper with required dependencies
 		 * @param EntityStore $entityStore Entity metadata store
@@ -42,15 +48,18 @@
 		 * @param string|null $subqueryAliasRangeName When set, buildEntityColumns() aliases columns
 		 *        using this name instead of the inner range name, so derived table columns match
 		 *        what the outer query expects (e.g. "x.id" instead of "y.id")
+		 * @param PlatformCapabilitiesInterface $platform Database engine capability descriptor
 		 */
 		public function __construct(
 			EntityStore           $entityStore,
 			SqlGeneratorInterface $mainVisitor,
-			?string               $subqueryAliasRangeName = null
+			?string               $subqueryAliasRangeName = null,
+			PlatformCapabilitiesInterface $platform = new NullPlatformCapabilities()
 		) {
 			$this->entityStore = $entityStore;
 			$this->mainVisitor = $mainVisitor;
 			$this->subqueryAliasRangeName = $subqueryAliasRangeName;
+			$this->identifierQuoter = new SqlIdentifierQuoter($platform);
 		}
 		
 		/**
@@ -113,7 +122,9 @@
 			
 			// Build aliased column selections for each property
 			foreach ($metadata->columnMap as $item => $value) {
-				$result[] = "`{$rangeName}`.`{$value}` as `{$aliasRangeName}.{$item}`";
+				$columnRef = $this->identifierQuoter->quoteIdentifier($rangeName) . '.' . $this->identifierQuoter->quoteIdentifier($value);
+				$alias = $this->identifierQuoter->quoteIdentifier("{$aliasRangeName}.{$item}");
+				$result[] = "{$columnRef} as {$alias}";
 			}
 			
 			return implode(",", $result);
