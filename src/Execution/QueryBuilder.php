@@ -273,8 +273,55 @@
 					$rangeCounter
 				);
 			}
-			
+
+			// $entityType may itself own a ManyToOne/OneToOne pointing *at* a bridge entity
+			// (the reverse direction from the walk above, e.g. AuditLog::$postTag -> PostTagEntity).
+			// That relation is main's own, so addForwardBridgeRanges() joins the bridge directly
+			// off 'main' and then extends one hop further through the bridge's own relations,
+			// same as addBridgeExpansionRanges() does for the child-side case.
+			$this->addForwardBridgeRanges($entityType, $ranges, $rangeCounter);
+
 			return $ranges;
+		}
+
+		/**
+		 * When $entityType itself owns a ManyToOne/owning-OneToOne relation pointing at a
+		 * bridge entity, eager-join that bridge directly off 'main' (subject to fetch), then
+		 * extend one hop further through the bridge's own relations via addBridgeExpansionRanges().
+		 *
+		 * This is the reverse direction of the walk in getRelationRanges(): that walk finds
+		 * entities that point *at* $entityType (the child side); this handles $entityType
+		 * pointing *at* a bridge (the parent side), which is otherwise always left lazy.
+		 * @param string $entityType The entity type being retrieved (the 'main' range).
+		 * @param array<string, string> $ranges Accumulator array (modified in place).
+		 * @param int $rangeCounter Alias counter (modified in place).
+		 * @return void
+		 * @throws EntityResolutionException
+		 */
+		private function addForwardBridgeRanges(string $entityType, array &$ranges, int &$rangeCounter): void {
+			$metadata = $this->entityStore->getMetadata($entityType);
+			$relations = $metadata->getOneToOneDependencies() + $metadata->getManyToOneDependencies();
+
+			foreach ($relations as $property => $relation) {
+				// LAZY relations are resolved at property-access time by the ORM proxy,
+				// not via an eager join here — same convention as addRanges().
+				if ($relation->getFetch() === self::FETCH_LAZY) {
+					continue;
+				}
+
+				$targetEntityType = $this->entityStore->normalizeEntityClass($relation->getTargetEntity());
+
+				if (!$this->entityStore->getMetadata($targetEntityType)->isEntityBridge()) {
+					continue;
+				}
+
+				$alias = $this->createAlias($rangeCounter++);
+				$ranges[$alias] = "range of {$alias} is {$targetEntityType} via main.{$property}";
+
+				// Extend one hop further through the bridge's own relations, excluding
+				// $entityType so a relation pointing back at it (if any) isn't rejoined.
+				$this->addBridgeExpansionRanges($targetEntityType, $alias, $entityType, $ranges, $rangeCounter);
+			}
 		}
 		
 		/**
