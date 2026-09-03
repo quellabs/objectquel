@@ -42,6 +42,8 @@
 	 *     onDelete: string,
 	 *     onUpdate: string
 	 * }
+	 *
+	 * @phpstan-type IndexUsageStats array{reads: int, writes: int}
 	 */
 	class DatabaseAdapter {
 		
@@ -726,8 +728,136 @@
 			return $result;
 		}
 
+		// ==================== Index Usage Statistics ====================
+
+		/**
+		 * Retrieves per-index read/write usage counters from the database engine.
+		 *
+		 * Implemented only for engines that expose the data: MySQL/MariaDB via
+		 * performance_schema, PostgreSQL via pg_stat_user_indexes. SQLite and any
+		 * unmapped engine return null — callers must treat null as "stats
+		 * unavailable" and omit the usage columns, since zero hits and no data
+		 * are different signals.
+		 * @param string[] $tables Table names to fetch statistics for
+		 * @return array<string, array<string, IndexUsageStats>>|null Table name => index name => stats
+		 */
+		public function getIndexUsageStatistics(array $tables): ?array {
+			return match ($this->getDatabaseType()) {
+				'mysql', 'mariadb' => $this->getMysqlIndexUsageStatistics($tables),
+				'pgsql'            => $this->getPostgresIndexUsageStatistics($tables),
+				default            => null,
+			};
+		}
+
+		/**
+		 * Loads index usage stats from MySQL/MariaDB performance_schema.
+		 *
+		 * Queries table_io_waits_summary_by_index_usage, which tracks the number
+		 * of read and write I/O waits per index. A row with COUNT_READ = 0 and
+		 * COUNT_WRITE = 0 indicates the index has never been accessed since the
+		 * last server restart or TRUNCATE of the summary table.
+		 *
+		 * Table names are interpolated directly rather than bound as parameters.
+		 * performance_schema tables reject prepared-statement parameter binding on
+		 * some MySQL/MariaDB versions, causing the query to fail silently. Table
+		 * names are sourced from getTables() (schema introspection, not user input)
+		 * and are escaped via addslashes() before interpolation, so this is safe.
+		 *
+		 * Returns null when performance_schema is unavailable or the query fails,
+		 * so the caller can distinguish "zero usage" from "no data".
+		 * @param string[] $tables
+		 * @return array<string, array<string, IndexUsageStats>>|null
+		 */
+		private function getMysqlIndexUsageStatistics(array $tables): ?array {
+			// Quote each table name and interpolate into the IN clause.
+			// Binding via ? placeholders fails against performance_schema tables on
+			// some MySQL/MariaDB versions; direct interpolation of schema-sourced,
+			// quoted names is safe here.
+			$inList = implode(', ', array_map(
+				fn(string $t) => "'" . addslashes($t) . "'",
+				$tables
+			));
+
+			$sql = "
+				SELECT
+					OBJECT_NAME   AS table_name,
+					INDEX_NAME    AS index_name,
+					COUNT_READ    AS `reads`,
+					COUNT_WRITE   AS `writes`
+				FROM performance_schema.table_io_waits_summary_by_index_usage
+				WHERE OBJECT_SCHEMA = DATABASE()
+				  AND OBJECT_NAME IN ({$inList})
+				  AND INDEX_NAME IS NOT NULL
+			";
+
+			$statement = $this->execute($sql);
+
+			if ($statement === null) {
+				return null;
+			}
+
+			$result = [];
+
+			/** @var array{table_name: string, index_name: string, reads: int, writes: int} $row */
+			foreach ($statement->fetchAll('assoc') as $row) {
+				$result[$row['table_name']][$row['index_name']] = [
+					'reads'  => (int)$row['reads'],
+					'writes' => (int)$row['writes'],
+				];
+			}
+
+			return $result;
+		}
+
+		/**
+		 * Loads index usage stats from PostgreSQL pg_stat_user_indexes.
+		 *
+		 * idx_scan is the number of index scans initiated on this index.
+		 * PostgreSQL does not expose a separate write counter at the index level
+		 * (writes are tracked at the table level), so writes are reported as -1
+		 * and rendered as n/a by callers.
+		 *
+		 * Table names are interpolated directly for consistency with the MySQL
+		 * implementation; they are sourced from getTables() and escaped before use.
+		 * @param string[] $tables
+		 * @return array<string, array<string, IndexUsageStats>>|null
+		 */
+		private function getPostgresIndexUsageStatistics(array $tables): ?array {
+			$inList = implode(', ', array_map(
+				fn(string $t) => "'" . addslashes($t) . "'",
+				$tables
+			));
+
+			$sql = "
+				SELECT
+					relname      AS table_name,
+					indexrelname AS index_name,
+					idx_scan     AS reads
+				FROM pg_stat_user_indexes
+				WHERE relname IN ({$inList})
+			";
+
+			$statement = $this->execute($sql);
+
+			if ($statement === null) {
+				return null;
+			}
+
+			$result = [];
+
+			/** @var array{table_name: string, index_name: string, reads: int} $row */
+			foreach ($statement->fetchAll('assoc') as $row) {
+				$result[$row['table_name']][$row['index_name']] = [
+					'reads'  => (int)$row['reads'],
+					'writes' => -1, // PostgreSQL does not track per-index writes
+				];
+			}
+
+			return $result;
+		}
+
 		// ==================== Query Execution ====================
-		
+
 		/**
 		 * Rewrites duplicate named parameters so PDO can bind them.
 		 * @param string $sql The SQL query, modified in place
