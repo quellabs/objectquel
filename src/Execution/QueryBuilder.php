@@ -156,7 +156,11 @@
 
 				// If this dependent is itself marked @Orm\EntityBridge, eager-join one hop
 				// further through its own relations instead of leaving the far side lazy.
-				$this->addBridgeExpansionRanges($dependentEntityType, $alias, $entityType, $ranges, $rangeCounter);
+				// Exclude by $property (the exact relation just used to reach the bridge),
+				// not by target type — a self-referencing bridge (e.g. Friendship::$userA
+				// and $userB both targeting User) would otherwise have both relations
+				// excluded just for sharing a target type with the one that reached it.
+				$this->addBridgeExpansionRanges($dependentEntityType, $alias, null, $property, $ranges, $rangeCounter);
 			}
 		}
 
@@ -166,16 +170,28 @@
 		 * relations — eager-join one hop further through its own relations, so the far side of
 		 * the link resolves in the same query rather than lazily per row.
 		 *
-		 * The relation that was just used to reach the bridge from $excludedEntityType is
-		 * skipped, so the entity already being loaded doesn't get rejoined. Pass null when
-		 * there is no such relation — e.g. the bridge itself is 'main' because the caller
-		 * queried it directly, so nothing has been reached via it yet. The via-clause is
-		 * anchored on the bridge's own alias, which is 'main' in that direct-query case and
-		 * a joined alias otherwise (e.g. "range of r1 is Tag via r0.tag") — not
-		 * self-referential, since the bridge range and the target range differ.
+		 * Two independent, mutually-exclusive exclusion criteria prevent rejoining the
+		 * entity already reached via this bridge — each caller uses whichever one it can
+		 * actually identify:
+		 *  - $excludedProperty matches by relation identity: the exact property on the
+		 *    bridge itself that was just used to reach it (the child-side case, where that
+		 *    property is known). Matching by identity rather than target type means a
+		 *    self-referencing bridge (e.g. Friendship::$userA and $userB both targeting
+		 *    User) still gets its other relation joined instead of losing both to a
+		 *    type-based match.
+		 *  - $excludedEntityType matches by target type: used when the bridge was reached
+		 *    via a relation that lives on the *other* side (the forward case, where main
+		 *    owns the relation into the bridge, not the reverse) — there is no bridge-owned
+		 *    property to match by identity there, only "don't rejoin main's own type".
+		 * Pass both as null when there is nothing to exclude — e.g. the bridge itself is
+		 * 'main' because the caller queried it directly, so nothing has been reached via it
+		 * yet. The via-clause is anchored on the bridge's own alias, which is 'main' in that
+		 * direct-query case and a joined alias otherwise (e.g. "range of r1 is Tag via
+		 * r0.tag") — not self-referential, since the bridge range and the target range differ.
 		 * @param string $bridgeEntityType The bridge entity's class name
 		 * @param string $bridgeAlias The alias the bridge's own range was assigned ('main' when the bridge is the queried entity itself)
-		 * @param string|null $excludedEntityType The entity type already reached via this bridge, or null if none
+		 * @param string|null $excludedEntityType Target type to skip (forward case), or null
+		 * @param string|null $excludedProperty Bridge-owned property to skip by identity (child-side case), or null
 		 * @param array<string, string> $ranges Accumulator array (modified in place)
 		 * @param int $rangeCounter Alias counter (modified in place)
 		 * @return void
@@ -185,6 +201,7 @@
 			string $bridgeEntityType,
 			string $bridgeAlias,
 			?string $excludedEntityType,
+			?string $excludedProperty,
 			array &$ranges,
 			int &$rangeCounter
 		): void {
@@ -203,10 +220,19 @@
 					continue;
 				}
 
+				// Skip the exact relation that was just used to reach the bridge, by
+				// property identity — see the method docblock for why this is preferred
+				// over a target-type match wherever the property is known.
+				if ($excludedProperty !== null && $property === $excludedProperty) {
+					continue;
+				}
+
 				$targetEntityType = $this->entityStore->normalizeEntityClass($relation->getTargetEntity());
 
-				// Skip the relation that was just used to reach the bridge — re-adding it
-				// would rejoin the entity already being loaded back into the query.
+				// Skip any bridge relation whose target is the entity type that reached
+				// the bridge via its own (non-bridge-owned) relation — that entity is
+				// already 'main'. Only used when there's no bridge-owned property to
+				// match by identity instead (see docblock).
 				if ($excludedEntityType !== null && $targetEntityType === $excludedEntityType) {
 					continue;
 				}
@@ -267,7 +293,7 @@
 			// gets when reached as a dependent or via a forward relation, just anchored on
 			// 'main' since a direct query means nothing has reached it to exclude.
 			if ($this->entityStore->getMetadata($entityType)->isEntityBridge()) {
-				$this->addBridgeExpansionRanges($entityType, 'main', null, $ranges, $rangeCounter);
+				$this->addBridgeExpansionRanges($entityType, 'main', null, null, $ranges, $rangeCounter);
 			}
 
 			// getDependentEntities returns every entity type that declares a relationship
@@ -343,8 +369,10 @@
 				$ranges[$alias] = "range of {$alias} is {$targetEntityType} via main.{$property}";
 
 				// Extend one hop further through the bridge's own relations, excluding
-				// $entityType so a relation pointing back at it (if any) isn't rejoined.
-				$this->addBridgeExpansionRanges($targetEntityType, $alias, $entityType, $ranges, $rangeCounter);
+				// $entityType by target type (no bridge-owned property identifies this
+				// relation — it lives on $entityType's side, not the bridge's) so a
+				// relation pointing back at it (if any) isn't rejoined.
+				$this->addBridgeExpansionRanges($targetEntityType, $alias, $entityType, null, $ranges, $rangeCounter);
 			}
 		}
 		
