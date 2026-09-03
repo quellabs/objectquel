@@ -167,12 +167,15 @@
 		 * the link resolves in the same query rather than lazily per row.
 		 *
 		 * The relation that was just used to reach the bridge from $excludedEntityType is
-		 * skipped, so the entity already being loaded doesn't get rejoined. The via-clause is
-		 * anchored on the bridge's own alias rather than 'main' (e.g. "range of r1 is Tag via
-		 * r0.tag") — not self-referential, since the bridge range and the target range differ.
+		 * skipped, so the entity already being loaded doesn't get rejoined. Pass null when
+		 * there is no such relation — e.g. the bridge itself is 'main' because the caller
+		 * queried it directly, so nothing has been reached via it yet. The via-clause is
+		 * anchored on the bridge's own alias, which is 'main' in that direct-query case and
+		 * a joined alias otherwise (e.g. "range of r1 is Tag via r0.tag") — not
+		 * self-referential, since the bridge range and the target range differ.
 		 * @param string $bridgeEntityType The bridge entity's class name
-		 * @param string $bridgeAlias The alias addRanges() just assigned to the bridge's own range
-		 * @param string $excludedEntityType The entity type already reached via this bridge
+		 * @param string $bridgeAlias The alias the bridge's own range was assigned ('main' when the bridge is the queried entity itself)
+		 * @param string|null $excludedEntityType The entity type already reached via this bridge, or null if none
 		 * @param array<string, string> $ranges Accumulator array (modified in place)
 		 * @param int $rangeCounter Alias counter (modified in place)
 		 * @return void
@@ -181,7 +184,7 @@
 		private function addBridgeExpansionRanges(
 			string $bridgeEntityType,
 			string $bridgeAlias,
-			string $excludedEntityType,
+			?string $excludedEntityType,
 			array &$ranges,
 			int &$rangeCounter
 		): void {
@@ -204,7 +207,7 @@
 
 				// Skip the relation that was just used to reach the bridge — re-adding it
 				// would rejoin the entity already being loaded back into the query.
-				if ($targetEntityType === $excludedEntityType) {
+				if ($excludedEntityType !== null && $targetEntityType === $excludedEntityType) {
 					continue;
 				}
 
@@ -245,7 +248,9 @@
 		 *
 		 * The first entry is always 'main'. Subsequent entries are derived from OneToOne
 		 * (owned-side only) and ManyToOne relationships on each entity that declares a
-		 * dependency on $entityType.
+		 * dependency on $entityType, plus — when $entityType is itself an @Orm\EntityBridge —
+		 * its own two relations, and — when $entityType owns a relation into a bridge — that
+		 * bridge and one hop past it.
 		 *
 		 * @param string $entityType The entity type for which relationships should be retrieved.
 		 * @return array<string, string> Range definitions keyed by alias.
@@ -256,7 +261,15 @@
 			// All other ranges are joins relative to it.
 			$ranges = ['main' => "range of main is {$entityType}"];
 			$rangeCounter = 0;
-			
+
+			// If the queried entity is itself an @Orm\EntityBridge, eager-join its own two
+			// relations directly off 'main' (subject to fetch) — the same expansion a bridge
+			// gets when reached as a dependent or via a forward relation, just anchored on
+			// 'main' since a direct query means nothing has reached it to exclude.
+			if ($this->entityStore->getMetadata($entityType)->isEntityBridge()) {
+				$this->addBridgeExpansionRanges($entityType, 'main', null, $ranges, $rangeCounter);
+			}
+
 			// getDependentEntities returns every entity type that declares a relationship
 			// pointing at $entityType. We inspect each one for eagerly-fetchable relations
 			// and add a range for each qualifying join.
