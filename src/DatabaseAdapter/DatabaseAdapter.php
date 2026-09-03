@@ -343,22 +343,6 @@
 		}
 		
 		/**
-		 * Computes the storage limit for an enum column based on its longest case.
-		 * Falls back to a minimum of 32 to leave headroom for entity-side comparisons
-		 * against database data, even when the enum has no defined values.
-		 * @param array<int, string>|null $values Enum case values
-		 * @return int Limit to use for the column definition
-		 */
-		private function resolveEnumLimit(?array $values): int {
-			if (empty($values)) {
-				return 32;
-			}
-			
-			$maxLength = max(array_map('strlen', $values));
-			return max($maxLength, 32);
-		}
-		
-		/**
 		 * Retrieves the primary key column name for a table
 		 * For composite primary keys, returns only the first column.
 		 * @param string $tableName Name of the table
@@ -489,243 +473,6 @@
 				'sqlsrv'           => $this->getSqlServerForeignKeys($tableName),
 				default            => [],
 			};
-		}
-
-		/**
-		 * Reads foreign keys for a table on MySQL/MariaDB.
-		 *
-		 * KEY_COLUMN_USAGE alone maps columns to the referenced table/column but doesn't
-		 * carry the ON DELETE/UPDATE action, so it's joined against REFERENTIAL_CONSTRAINTS
-		 * (matched on CONSTRAINT_NAME + CONSTRAINT_SCHEMA) to get the actual delete/update rule.
-		 * @param string $tableName
-		 * @return array<string, ForeignKeyDefinition> Constraint name => definition
-		 */
-		private function getMysqlForeignKeys(string $tableName): array {
-			$statement = $this->execute(
-				"SELECT
-					kcu.CONSTRAINT_NAME AS constraint_name,
-					kcu.COLUMN_NAME AS column_name,
-					kcu.ORDINAL_POSITION AS ordinal_position,
-					kcu.REFERENCED_TABLE_NAME AS referenced_table,
-					kcu.REFERENCED_COLUMN_NAME AS referenced_column,
-					rc.DELETE_RULE AS delete_rule,
-					rc.UPDATE_RULE AS update_rule
-				FROM information_schema.KEY_COLUMN_USAGE kcu
-				JOIN information_schema.REFERENTIAL_CONSTRAINTS rc
-					ON rc.CONSTRAINT_NAME = kcu.CONSTRAINT_NAME
-					AND rc.CONSTRAINT_SCHEMA = kcu.CONSTRAINT_SCHEMA
-				WHERE kcu.TABLE_SCHEMA = DATABASE()
-					AND kcu.TABLE_NAME = :tableName
-					AND kcu.REFERENCED_TABLE_NAME IS NOT NULL
-				ORDER BY kcu.CONSTRAINT_NAME, kcu.ORDINAL_POSITION",
-				['tableName' => $tableName]
-			);
-
-			if ($statement === null) {
-				return [];
-			}
-
-			$result = [];
-
-			/** @var array{constraint_name: string, column_name: string, referenced_table: string, referenced_column: string, delete_rule: string, update_rule: string} $row */
-			foreach ($statement->fetchAll('assoc') as $row) {
-				$name = $row['constraint_name'];
-
-				if (!isset($result[$name])) {
-					$result[$name] = [
-						'columns'           => [],
-						'referencedTable'   => $row['referenced_table'],
-						'referencedColumns' => [],
-						'onDelete'          => $row['delete_rule'],
-						'onUpdate'          => $row['update_rule'],
-					];
-				}
-
-				$result[$name]['columns'][] = $row['column_name'];
-				$result[$name]['referencedColumns'][] = $row['referenced_column'];
-			}
-
-			return $result;
-		}
-
-		/**
-		 * Reads foreign keys for a table on SQLite via PRAGMA foreign_key_list().
-		 *
-		 * Rows sharing the same 'id' belong to the same (possibly composite) constraint,
-		 * ordered by 'seq'. SQLite assigns no constraint name, so a deterministic one is
-		 * synthesized from the table and local columns — matching the naming convention
-		 * MakeMigrationsCommand uses when generating constraints, so round-tripping a
-		 * generated constraint back through this method compares equal.
-		 * @param string $tableName
-		 * @return array<string, ForeignKeyDefinition> Constraint name => definition
-		 */
-		private function getSqliteForeignKeys(string $tableName): array {
-			$quotedTable = $this->escapeIdentifier($tableName);
-			$statement = $this->execute("PRAGMA foreign_key_list({$quotedTable})");
-
-			if ($statement === null) {
-				return [];
-			}
-
-			$byId = [];
-
-			/** @var array{id: int, seq: int, table: string, from: string, to: string, on_update: string, on_delete: string} $row */
-			foreach ($statement->fetchAll('assoc') as $row) {
-				$byId[$row['id']]['referencedTable'] ??= $row['table'];
-				$byId[$row['id']]['onDelete'] ??= strtoupper($row['on_delete']);
-				$byId[$row['id']]['onUpdate'] ??= strtoupper($row['on_update']);
-				$byId[$row['id']]['columns'][(int)$row['seq']] = $row['from'];
-				$byId[$row['id']]['referencedColumns'][(int)$row['seq']] = $row['to'];
-			}
-
-			$result = [];
-
-			foreach ($byId as $definition) {
-				ksort($definition['columns']);
-				ksort($definition['referencedColumns']);
-				$definition['columns'] = array_values($definition['columns']);
-				$definition['referencedColumns'] = array_values($definition['referencedColumns']);
-
-				$name = 'fk_' . $tableName . '_' . implode('_', $definition['columns']);
-				$result[$name] = $definition;
-			}
-
-			return $result;
-		}
-
-		/**
-		 * Reads foreign keys for a table on PostgreSQL via information_schema.
-		 *
-		 * information_schema has no ordinal linking a composite constraint's local
-		 * columns to its referenced columns, so joining produces every possible
-		 * pairing, not just the real ones. Since @Orm\ForeignKey only ever declares
-		 * single-column constraints, a constraint resolving to more than one local
-		 * column is a real composite FK and is simply not reported, rather than
-		 * risk a wrongly-paired column set.
-		 * @param string $tableName
-		 * @return array<string, ForeignKeyDefinition> Constraint name => definition
-		 */
-		private function getPostgresForeignKeys(string $tableName): array {
-			$statement = $this->execute(
-				"SELECT
-					tc.constraint_name AS constraint_name,
-					kcu.column_name AS column_name,
-					ccu.table_name AS referenced_table,
-					ccu.column_name AS referenced_column,
-					rc.delete_rule AS delete_rule,
-					rc.update_rule AS update_rule
-				FROM information_schema.table_constraints tc
-				JOIN information_schema.key_column_usage kcu
-					ON kcu.constraint_name = tc.constraint_name
-					AND kcu.constraint_schema = tc.constraint_schema
-				JOIN information_schema.referential_constraints rc
-					ON rc.constraint_name = tc.constraint_name
-					AND rc.constraint_schema = tc.constraint_schema
-				JOIN information_schema.constraint_column_usage ccu
-					ON ccu.constraint_name = rc.unique_constraint_name
-					AND ccu.constraint_schema = rc.unique_constraint_schema
-				WHERE tc.constraint_type = 'FOREIGN KEY'
-					AND tc.table_schema = current_schema()
-					AND tc.table_name = :tableName
-				ORDER BY tc.constraint_name, kcu.ordinal_position",
-				['tableName' => $tableName]
-			);
-
-			if ($statement === null) {
-				return [];
-			}
-
-			$byName = [];
-
-			/** @var array{constraint_name: string, column_name: string, referenced_table: string, referenced_column: string, delete_rule: string, update_rule: string} $row */
-			foreach ($statement->fetchAll('assoc') as $row) {
-				$byName[$row['constraint_name']][] = $row;
-			}
-
-			$result = [];
-
-			foreach ($byName as $name => $rows) {
-				$localColumns = array_values(array_unique(array_column($rows, 'column_name')));
-
-				if (count($localColumns) !== 1) {
-					continue;
-				}
-
-				$result[$name] = [
-					'columns'           => $localColumns,
-					'referencedTable'   => $rows[0]['referenced_table'],
-					'referencedColumns' => [$rows[0]['referenced_column']],
-					'onDelete'          => $rows[0]['delete_rule'],
-					'onUpdate'          => $rows[0]['update_rule'],
-				];
-			}
-
-			return $result;
-		}
-
-		/**
-		 * Reads foreign keys for a table on SQL Server via sys.foreign_keys /
-		 * sys.foreign_key_columns, which stores one row per column pair natively
-		 * (constraint_column_id gives the correct ordinal), so composite
-		 * constraints round-trip correctly with no pairing ambiguity.
-		 * @param string $tableName
-		 * @return array<string, ForeignKeyDefinition> Constraint name => definition
-		 */
-		private function getSqlServerForeignKeys(string $tableName): array {
-			$statement = $this->execute(
-				"SELECT
-					fk.name AS constraint_name,
-					pc.name AS column_name,
-					fkc.constraint_column_id AS ordinal_position,
-					rt.name AS referenced_table,
-					rc.name AS referenced_column,
-					fk.delete_referential_action_desc AS delete_rule,
-					fk.update_referential_action_desc AS update_rule
-				FROM sys.foreign_keys fk
-				JOIN sys.foreign_key_columns fkc
-					ON fkc.constraint_object_id = fk.object_id
-				JOIN sys.columns pc
-					ON pc.object_id = fkc.parent_object_id AND pc.column_id = fkc.parent_column_id
-				JOIN sys.columns rc
-					ON rc.object_id = fkc.referenced_object_id AND rc.column_id = fkc.referenced_column_id
-				JOIN sys.tables t
-					ON t.object_id = fk.parent_object_id
-				JOIN sys.tables rt
-					ON rt.object_id = fk.referenced_object_id
-				WHERE t.name = :tableName
-				ORDER BY fk.name, fkc.constraint_column_id",
-				['tableName' => $tableName]
-			);
-
-			if ($statement === null) {
-				return [];
-			}
-
-			$byName = [];
-
-			/** @var array{constraint_name: string, column_name: string, ordinal_position: int|string, referenced_table: string, referenced_column: string, delete_rule: string, update_rule: string} $row */
-			foreach ($statement->fetchAll('assoc') as $row) {
-				$byName[$row['constraint_name']][(int)$row['ordinal_position']] = $row;
-			}
-
-			$result = [];
-
-			foreach ($byName as $name => $rows) {
-				ksort($rows);
-				$first = reset($rows);
-
-				$result[$name] = [
-					'columns'           => array_column($rows, 'column_name'),
-					'referencedTable'   => $first['referenced_table'],
-					'referencedColumns' => array_column($rows, 'referenced_column'),
-					// SQL Server uses underscores (NO_ACTION, SET_NULL) where every
-					// other engine uses spaces; normalize for a consistent string diff.
-					'onDelete'          => str_replace('_', ' ', $first['delete_rule']),
-					'onUpdate'          => str_replace('_', ' ', $first['update_rule']),
-				];
-			}
-
-			return $result;
 		}
 
 		// ==================== Index Usage Statistics ====================
@@ -898,6 +645,22 @@
 		}
 		
 		/**
+		 * Computes the storage limit for an enum column based on its longest case.
+		 * Falls back to a minimum of 32 to leave headroom for entity-side comparisons
+		 * against database data, even when the enum has no defined values.
+		 * @param array<int, string>|null $values Enum case values
+		 * @return int Limit to use for the column definition
+		 */
+		private function resolveEnumLimit(?array $values): int {
+			if (empty($values)) {
+				return 32;
+			}
+			
+			$maxLength = max(array_map('strlen', $values));
+			return max($maxLength, 32);
+		}
+		
+		/**
 		 * Reads index usage stats from MySQL/MariaDB's
 		 * performance_schema.table_io_waits_summary_by_index_usage (0/0 means
 		 * unused since the last restart, not "no data"). Returns null when the
@@ -976,6 +739,231 @@
 				$result[$row['table_name']][$row['index_name']] = [
 					'reads'  => (int)$row['reads'],
 					'writes' => -1, // PostgreSQL does not track per-index writes
+				];
+			}
+			
+			return $result;
+		}
+		
+		/**
+		 * Reads foreign keys for a table on MySQL/MariaDB.
+		 *
+		 * KEY_COLUMN_USAGE alone maps columns to the referenced table/column but doesn't
+		 * carry the ON DELETE/UPDATE action, so it's joined against REFERENTIAL_CONSTRAINTS
+		 * (matched on CONSTRAINT_NAME + CONSTRAINT_SCHEMA) to get the actual delete/update rule.
+		 * @param string $tableName
+		 * @return array<string, ForeignKeyDefinition> Constraint name => definition
+		 */
+		private function getMysqlForeignKeys(string $tableName): array {
+			$statement = $this->execute("
+				SELECT
+					kcu.CONSTRAINT_NAME AS constraint_name,
+					kcu.COLUMN_NAME AS column_name,
+					kcu.ORDINAL_POSITION AS ordinal_position,
+					kcu.REFERENCED_TABLE_NAME AS referenced_table,
+					kcu.REFERENCED_COLUMN_NAME AS referenced_column,
+					rc.DELETE_RULE AS delete_rule,
+					rc.UPDATE_RULE AS update_rule
+				FROM information_schema.KEY_COLUMN_USAGE kcu
+				JOIN information_schema.REFERENTIAL_CONSTRAINTS rc ON rc.CONSTRAINT_NAME = kcu.CONSTRAINT_NAME AND rc.CONSTRAINT_SCHEMA = kcu.CONSTRAINT_SCHEMA
+				WHERE kcu.TABLE_SCHEMA = DATABASE() AND kcu.TABLE_NAME = :tableName AND kcu.REFERENCED_TABLE_NAME IS NOT NULL
+				ORDER BY kcu.CONSTRAINT_NAME, kcu.ORDINAL_POSITION
+			", [
+				'tableName' => $tableName
+			]);
+			
+			if ($statement === null) {
+				return [];
+			}
+			
+			$result = [];
+			
+			/** @var array{constraint_name: string, column_name: string, referenced_table: string, referenced_column: string, delete_rule: string, update_rule: string} $row */
+			foreach ($statement->fetchAll('assoc') as $row) {
+				$name = $row['constraint_name'];
+				
+				if (!isset($result[$name])) {
+					$result[$name] = [
+						'columns'           => [],
+						'referencedTable'   => $row['referenced_table'],
+						'referencedColumns' => [],
+						'onDelete'          => $row['delete_rule'],
+						'onUpdate'          => $row['update_rule'],
+					];
+				}
+				
+				$result[$name]['columns'][] = $row['column_name'];
+				$result[$name]['referencedColumns'][] = $row['referenced_column'];
+			}
+			
+			return $result;
+		}
+		
+		/**
+		 * Reads foreign keys for a table on SQLite via PRAGMA foreign_key_list().
+		 *
+		 * Rows sharing the same 'id' belong to the same (possibly composite) constraint,
+		 * ordered by 'seq'. SQLite assigns no constraint name, so a deterministic one is
+		 * synthesized from the table and local columns — matching the naming convention
+		 * MakeMigrationsCommand uses when generating constraints, so round-tripping a
+		 * generated constraint back through this method compares equal.
+		 * @param string $tableName
+		 * @return array<string, ForeignKeyDefinition> Constraint name => definition
+		 */
+		private function getSqliteForeignKeys(string $tableName): array {
+			$quotedTable = $this->escapeIdentifier($tableName);
+			$statement = $this->execute("PRAGMA foreign_key_list({$quotedTable})");
+			
+			if ($statement === null) {
+				return [];
+			}
+			
+			$byId = [];
+			
+			/** @var array{id: int, seq: int, table: string, from: string, to: string, on_update: string, on_delete: string} $row */
+			foreach ($statement->fetchAll('assoc') as $row) {
+				$byId[$row['id']]['referencedTable'] ??= $row['table'];
+				$byId[$row['id']]['onDelete'] ??= strtoupper($row['on_delete']);
+				$byId[$row['id']]['onUpdate'] ??= strtoupper($row['on_update']);
+				$byId[$row['id']]['columns'][(int)$row['seq']] = $row['from'];
+				$byId[$row['id']]['referencedColumns'][(int)$row['seq']] = $row['to'];
+			}
+			
+			$result = [];
+			
+			foreach ($byId as $definition) {
+				ksort($definition['columns']);
+				ksort($definition['referencedColumns']);
+				$definition['columns'] = array_values($definition['columns']);
+				$definition['referencedColumns'] = array_values($definition['referencedColumns']);
+				
+				$name = 'fk_' . $tableName . '_' . implode('_', $definition['columns']);
+				$result[$name] = $definition;
+			}
+			
+			return $result;
+		}
+		
+		/**
+		 * Reads foreign keys for a table on PostgreSQL via information_schema.
+		 *
+		 * information_schema has no ordinal linking a composite constraint's local
+		 * columns to its referenced columns, so joining produces every possible
+		 * pairing, not just the real ones. Since @Orm\ForeignKey only ever declares
+		 * single-column constraints, a constraint resolving to more than one local
+		 * column is a real composite FK and is simply not reported, rather than
+		 * risk a wrongly-paired column set.
+		 * @param string $tableName
+		 * @return array<string, ForeignKeyDefinition> Constraint name => definition
+		 */
+		private function getPostgresForeignKeys(string $tableName): array {
+			$statement = $this->execute("
+				SELECT
+					tc.constraint_name AS constraint_name,
+					kcu.column_name AS column_name,
+					ccu.table_name AS referenced_table,
+					ccu.column_name AS referenced_column,
+					rc.delete_rule AS delete_rule,
+					rc.update_rule AS update_rule
+				FROM information_schema.table_constraints tc
+				JOIN information_schema.key_column_usage kcu ON kcu.constraint_name = tc.constraint_name AND kcu.constraint_schema = tc.constraint_schema
+				JOIN information_schema.referential_constraints rc ON rc.constraint_name = tc.constraint_name AND rc.constraint_schema = tc.constraint_schema
+				JOIN information_schema.constraint_column_usage ccu ON ccu.constraint_name = rc.unique_constraint_name AND ccu.constraint_schema = rc.unique_constraint_schema
+				WHERE tc.constraint_type = 'FOREIGN KEY' AND
+				      tc.table_schema = current_schema() AND
+				      tc.table_name = :tableName
+				ORDER BY tc.constraint_name, kcu.ordinal_position
+			", [
+				'tableName' => $tableName
+			]);
+			
+			if ($statement === null) {
+				return [];
+			}
+			
+			$byName = [];
+			
+			/** @var array{constraint_name: string, column_name: string, referenced_table: string, referenced_column: string, delete_rule: string, update_rule: string} $row */
+			foreach ($statement->fetchAll('assoc') as $row) {
+				$byName[$row['constraint_name']][] = $row;
+			}
+			
+			$result = [];
+			
+			foreach ($byName as $name => $rows) {
+				$localColumns = array_values(array_unique(array_column($rows, 'column_name')));
+				
+				if (count($localColumns) !== 1) {
+					continue;
+				}
+				
+				$result[$name] = [
+					'columns'           => $localColumns,
+					'referencedTable'   => $rows[0]['referenced_table'],
+					'referencedColumns' => [$rows[0]['referenced_column']],
+					'onDelete'          => $rows[0]['delete_rule'],
+					'onUpdate'          => $rows[0]['update_rule'],
+				];
+			}
+			
+			return $result;
+		}
+		
+		/**
+		 * Reads foreign keys for a table on SQL Server via sys.foreign_keys /
+		 * sys.foreign_key_columns, which stores one row per column pair natively
+		 * (constraint_column_id gives the correct ordinal), so composite
+		 * constraints round-trip correctly with no pairing ambiguity.
+		 * @param string $tableName
+		 * @return array<string, ForeignKeyDefinition> Constraint name => definition
+		 */
+		private function getSqlServerForeignKeys(string $tableName): array {
+			$statement = $this->execute("
+				SELECT
+					fk.name AS constraint_name,
+					pc.name AS column_name,
+					fkc.constraint_column_id AS ordinal_position,
+					rt.name AS referenced_table,
+					rc.name AS referenced_column,
+					fk.delete_referential_action_desc AS delete_rule,
+					fk.update_referential_action_desc AS update_rule
+				FROM sys.foreign_keys fk
+				JOIN sys.foreign_key_columns fkc ON fkc.constraint_object_id = fk.object_id
+				JOIN sys.columns pc ON pc.object_id = fkc.parent_object_id AND pc.column_id = fkc.parent_column_id
+				JOIN sys.columns rc ON rc.object_id = fkc.referenced_object_id AND rc.column_id = fkc.referenced_column_id
+				JOIN sys.tables t ON t.object_id = fk.parent_object_id
+				JOIN sys.tables rt ON rt.object_id = fk.referenced_object_id
+				WHERE t.name = :tableName
+				ORDER BY fk.name, fkc.constraint_column_id
+			", [
+				'tableName' => $tableName
+			]);
+			
+			if ($statement === null) {
+				return [];
+			}
+			
+			$byName = [];
+			
+			/** @var array{constraint_name: string, column_name: string, ordinal_position: int|string, referenced_table: string, referenced_column: string, delete_rule: string, update_rule: string} $row */
+			foreach ($statement->fetchAll('assoc') as $row) {
+				$byName[$row['constraint_name']][(int)$row['ordinal_position']] = $row;
+			}
+			
+			$result = [];
+			
+			foreach ($byName as $name => $rows) {
+				ksort($rows);
+				$first = reset($rows);
+				
+				$result[$name] = [
+					'columns'           => array_column($rows, 'column_name'),
+					'referencedTable'   => $first['referenced_table'],
+					'referencedColumns' => array_column($rows, 'referenced_column'),
+					// SQL Server uses underscores (NO_ACTION, SET_NULL) where every
+					// other engine uses spaces; normalize for a consistent string diff.
+					'onDelete'          => str_replace('_', ' ', $first['delete_rule']),
+					'onUpdate'          => str_replace('_', ' ', $first['update_rule']),
 				];
 			}
 			
