@@ -67,6 +67,17 @@
 		}
 		
 		/**
+		 * Whether a relation is fetched lazily (resolved at property-access time by the
+		 * ORM proxy) rather than eager-joined here. Centralized so the three range-walking
+		 * methods below apply the same fetch-mode check consistently.
+		 * @param ManyToOne|OneToOne $relation
+		 * @return bool
+		 */
+		private function isLazy(ManyToOne|OneToOne $relation): bool {
+			return $relation->getFetch() === self::FETCH_LAZY;
+		}
+
+		/**
 		 * Generates a unique alias string for a range.
 		 * Centralized so alias format is changed in one place only.
 		 * @param int $counter
@@ -109,10 +120,10 @@
 			foreach ($relations as $property => $relation) {
 				// LAZY relations are intentionally excluded: they are resolved at
 				// property-access time by the ORM proxy, not via an eager join here.
-				if ($relation->getFetch() === self::FETCH_LAZY) {
+				if ($this->isLazy($relation)) {
 					continue;
 				}
-				
+
 				// normalizeEntityClass strips namespace aliases and other decoration so
 				// we can do a reliable string comparison against $entityType.
 				// If this relation points somewhere else entirely, it is irrelevant here.
@@ -185,7 +196,7 @@
 			foreach ($relations as $property => $relation) {
 				// LAZY relations are resolved at property-access time by the ORM proxy,
 				// not via an eager join here — same convention as addRanges().
-				if ($relation->getFetch() === self::FETCH_LAZY) {
+				if ($this->isLazy($relation)) {
 					continue;
 				}
 
@@ -305,7 +316,7 @@
 			foreach ($relations as $property => $relation) {
 				// LAZY relations are resolved at property-access time by the ORM proxy,
 				// not via an eager join here — same convention as addRanges().
-				if ($relation->getFetch() === self::FETCH_LAZY) {
+				if ($this->isLazy($relation)) {
 					continue;
 				}
 
