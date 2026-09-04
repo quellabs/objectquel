@@ -81,7 +81,11 @@
 		 * @return string
 		 */
 		private function plainDrop(string $physicalName, bool $ifExists): string {
-			return 'DROP TABLE ' . ($ifExists ? 'IF EXISTS ' : '') . $this->identifierQuoter->quoteIdentifier($physicalName);
+			if ($ifExists) {
+				return 'DROP TABLE IF EXISTS ' . $this->identifierQuoter->quoteIdentifier($physicalName);
+			} else {
+				return 'DROP TABLE ' . $this->identifierQuoter->quoteIdentifier($physicalName);
+			}
 		}
 
 		/**
@@ -98,6 +102,9 @@
 		 * @return string
 		 */
 		private function sqlServerUnqualifiedDrop(string $name, bool $ifExists): string {
+			// $name's real kind is unknown here — getTempTableName() is just a
+			// string transform ("#{$name}"), used to construct the candidate
+			// temp-table name to probe for, not a claim that $name IS temporary.
 			$physicalTempName = $this->ddlTypeMapper->getTempTableName($name);
 			$quotedTempName = $this->identifierQuoter->quoteIdentifier($physicalTempName);
 			$permanentDrop = $this->plainDrop($name, $ifExists);
