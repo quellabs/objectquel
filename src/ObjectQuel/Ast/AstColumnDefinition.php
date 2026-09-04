@@ -5,16 +5,11 @@
 	use Quellabs\ObjectQuel\ObjectQuel\AstVisitorInterface;
 
 	/**
-	 * Class AstColumnDefinition
-	 *
-	 * Represents a single column definition inside a `create [temporary] Name
-	 * (...)` statement: a name, an abstract type (the same vocabulary
-	 * @Orm\Column annotations use — see DatabaseAdapter\TypeMapper), an optional
-	 * limit/precision/scale, and the minimal constraint set this feature
-	 * supports (`not null`, `primary key`, `identity`).
-	 *
-	 * Holds no nested AstInterface children — a column definition has no
-	 * sub-expressions to visit, only scalar metadata.
+	 * A single column definition inside `create [temporary] Name (...)`: a
+	 * name, an abstract type (the @Orm\Column vocabulary — see
+	 * DatabaseAdapter\TypeMapper), optional limit/precision/scale, and the
+	 * minimal constraint set supported (`not null`, `primary key`,
+	 * `identity`). No nested AstInterface children.
 	 */
 	class AstColumnDefinition extends Ast {
 

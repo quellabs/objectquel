@@ -10,11 +10,8 @@
 
 	/**
 	 * Parser for `destroy Name {, Name}` statements in the ObjectQuel language.
-	 *
-	 * Authentic QUEL's `destroy` also drops indexes (an index is "also a
-	 * table" per the QUEL reference, same statement, no separate grammar) —
-	 * not implemented here yet; see objectquel-destroy-plan.md for why that's
-	 * deferred rather than solved with an invented registry.
+	 * Table-only for now — index destroy isn't implemented (see
+	 * objectquel-destroy-plan.md).
 	 */
 	class Destroy {
 

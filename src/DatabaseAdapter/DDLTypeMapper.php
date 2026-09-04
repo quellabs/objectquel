@@ -78,21 +78,15 @@
 		}
 
 		/**
-		 * Renders a complete column definition fragment — type plus the minimal
-		 * constraint set QUEL's `create` statement supports (NOT NULL, PRIMARY
-		 * KEY, identity/auto-increment) — for a CREATE TABLE statement on the
-		 * connected engine.
+		 * Renders a complete column definition — type plus the minimal
+		 * constraint set QUEL's `create` supports (NOT NULL, PRIMARY KEY,
+		 * identity) — for the connected engine. Unlike getTempTableColumnType()
+		 * (type only, used by TempTableExecutor which never needs constraints),
+		 * this is for `create`, where the author writes constraints explicitly.
 		 *
-		 * Unlike getTempTableColumnType() (type fragment only, used by
-		 * TempTableExecutor which infers columns from a query result shape and
-		 * never needed constraints), this is used by QUEL's `create` statement,
-		 * where the author writes the constraints explicitly.
-		 *
-		 * $identity is only ever true alongside $primaryKey — the caller
-		 * (Rules\CreateTable) rejects the combination at parse time, since an
-		 * identity column with no primary key would need per-dialect handling
-		 * this method does not attempt (most concretely, SQLite's
-		 * AUTOINCREMENT only exists on `INTEGER PRIMARY KEY`).
+		 * $identity is only ever true alongside $primaryKey — Rules\CreateTable
+		 * rejects the combination at parse time, since e.g. SQLite's
+		 * AUTOINCREMENT only exists on `INTEGER PRIMARY KEY`.
 		 *
 		 * @param string $quotedColumnName Already-quoted column identifier
 		 * @param array{type: string, limit: int|array<int,int>|null, unsigned: bool, precision: int|null, scale: int|null} $columnDefinition

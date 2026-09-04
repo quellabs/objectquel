@@ -10,17 +10,15 @@
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstCreateTable;
 
 	/**
-	 * Executes an AstCreateTable statement by compiling it to dialect-correct
-	 * CREATE TABLE DDL (via DDLTypeMapper) and running it directly against the
+	 * Executes an AstCreateTable statement: compiles it to dialect-correct
+	 * CREATE TABLE DDL via DDLTypeMapper and runs it directly against the
 	 * connection.
 	 *
-	 * Deliberately bypasses the `retrieve` pipeline entirely — semantic
-	 * analyzer, optimizer, planner, hydration — none of which applies to a DDL
-	 * statement with no rows to return. This mirrors TempTableExecutor's
-	 * existing precedent of building and executing DDL directly rather than
-	 * routing through BuildSqlFromAst, which is an expression-level visitor
-	 * driven by the retrieve/optimizer pipeline, not a top-level statement
-	 * compiler.
+	 * Bypasses the `retrieve` pipeline entirely — none of it applies to a DDL
+	 * statement with no rows to return. Mirrors TempTableExecutor's existing
+	 * precedent of building and running DDL directly rather than through
+	 * BuildSqlFromAst, which is a retrieve-pipeline expression visitor, not a
+	 * top-level statement compiler.
 	 */
 	class CreateTableExecutor {
 
@@ -63,10 +61,8 @@
 		public function execute(AstCreateTable $statement): void {
 			$sql = $this->buildSql($statement);
 
-			// DatabaseAdapter::execute() swallows the underlying exception itself
-			// and returns null on failure rather than throwing — a try/catch
-			// around this call would never fire. Failure must be detected via
-			// the null return and DatabaseAdapter::getLastErrorMessage() instead.
+			// execute() swallows the exception and returns null on failure
+			// rather than throwing — a try/catch here would never fire.
 			if ($this->connection->execute($sql) === null) {
 				throw new QuelException(
 					"Failed to create table '{$statement->getTableName()}': {$this->connection->getLastErrorMessage()}",

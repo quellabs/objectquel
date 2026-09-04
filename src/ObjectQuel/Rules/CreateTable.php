@@ -172,11 +172,8 @@
 				break;
 			}
 
-			// Identity columns are rendered per-dialect assuming they ARE the
-			// table's primary key (see DDLTypeMapper::renderColumnDefinition) —
-			// most concretely, SQLite's AUTOINCREMENT only exists on
-			// `INTEGER PRIMARY KEY`. Rather than silently producing invalid or
-			// surprising DDL on some dialects, require the combination explicitly.
+			// Identity columns are rendered assuming they're the primary key
+			// (e.g. SQLite's AUTOINCREMENT only exists on INTEGER PRIMARY KEY).
 			if ($identity && !$primaryKey) {
 				throw new ParserException("Column '{$columnName}' declares 'identity' without 'primary key' — identity columns must be the table's primary key");
 			}

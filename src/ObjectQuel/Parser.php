@@ -54,17 +54,12 @@
 					    break;
 
 				    case Token::Create :
-					    // Ranges declared ahead of a `create` (if any) are simply
-					    // unused — `create` doesn't reference ranges, and the same
-					    // parsed $ranges array is available to any `retrieve`
-					    // elsewhere in this do-while loop, so this isn't silent
-					    // data loss the way discarding a one-shot parse would be.
+					    // Ranges ahead of `create` (if any) are simply unused —
+					    // still available to any `retrieve` elsewhere in this loop.
 					    $queries[] = $this->createTableRule->parse();
 					    break;
 
 				    case Token::Destroy :
-					    // Same rationale as Token::Create above — any ranges
-					    // parsed ahead of this statement are simply unused.
 					    $queries[] = $this->destroyRule->parse();
 					    break;
 

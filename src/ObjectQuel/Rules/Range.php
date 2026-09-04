@@ -76,29 +76,20 @@
 		}
 
 		/**
-		 * Parse a raw table definition in a RANGE clause.
-		 * Format: RANGE OF alias IS table Name
-		 * Distinct from an entity range: no EntityStore lookup is involved, and
-		 * no namespace/VIA syntax applies — this addresses a table created via
-		 * QUEL's own `create` statement (or a pre-existing table with no Entity
-		 * class), never a Phinx-managed, annotation-mapped one.
+		 * Parse `range of alias is table Name` — a raw table name, no
+		 * EntityStore lookup, no namespace/VIA syntax.
 		 * @param Token $alias The token containing the alias identifier
 		 * @return AstRangeDatabaseTable AST node representing a raw table source
 		 * @throws LexerException
 		 */
 		private function parseTableRange(Token $alias): AstRangeDatabaseTable {
-			// Consume the 'table' marker keyword
 			$this->lexer->match(Token::Table);
-
-			// Match and consume an 'Identifier' token for the table name
 			$tableName = $this->lexer->match(Token::Identifier)->getStringValue();
 
-			// Match an optional semicolon at the end of the statement
 			if ($this->lexer->lookahead() == Token::Semicolon) {
 				$this->lexer->match(Token::Semicolon);
 			}
 
-			// Create and return the AST node for a raw table reference
 			return new AstRangeDatabaseTable($alias->getStringValue(), $tableName);
 		}
 		

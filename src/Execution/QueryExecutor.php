@@ -137,9 +137,8 @@
 				// Parse the input query string into an Abstract Syntax Tree (AST)
 				$ast = $this->parse($query);
 
-				// DDL statements bypass the retrieve pipeline entirely — semantic
-				// analysis, optimization, planning, and hydration are all
-				// retrieve-specific and produce no rows for a statement like this.
+				// DDL statements bypass the retrieve pipeline entirely — none
+				// of it applies to a statement with no rows to return.
 				if ($ast instanceof AstCreateTable) {
 					$this->createTableExecutor->execute($ast);
 					return null;
@@ -215,11 +214,8 @@
 				// Parse and resolve identifiers
 				$ast = $this->parse($query);
 
-				// DDL statements have no planning pipeline to explain — and
-				// explainQuery()'s dry-run wrapper only intercepts the retrieve
-				// database executor, not CreateTableExecutor/DestroyExecutor, so
-				// continuing here would run real DDL against the real
-				// connection despite being called "explain".
+				// explainQuery()'s dry-run only intercepts the retrieve database
+				// executor, not these — continuing would run real DDL.
 				if ($ast instanceof AstCreateTable || $ast instanceof AstDestroy) {
 					throw new QuelException("explain is not supported for DDL statements");
 				}

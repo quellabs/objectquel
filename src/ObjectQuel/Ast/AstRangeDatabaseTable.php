@@ -3,21 +3,17 @@
 	namespace Quellabs\ObjectQuel\ObjectQuel\Ast;
 
 	/**
-	 * Class AstRangeDatabaseTable
+	 * `range of alias is table Name` — keyed on a raw table name, not an
+	 * Entity class, so no EntityStore lookup is involved. Distinct from
+	 * AstRangeDatabaseTempTable, which materializes a subquery into a temp
+	 * table as an internal planner optimization.
 	 *
-	 * Represents `range of alias is table Name` — a range keyed on a raw table
-	 * name rather than an Entity class, so no EntityStore lookup is involved.
-	 *
-	 * Distinct from AstRangeDatabaseTempTable, which materializes a subquery's
-	 * results into a temp table as an internal planner optimization. A
-	 * QUEL-authored table (via `create`) has an explicit column list, not an
-	 * underlying query, so it needs this lighter range shape instead.
-	 *
-	 * Parses today (see Rules\Range); full compile/execution support in the
-	 * `retrieve` pipeline — property resolution, hydration, etc. against a
-	 * non-Entity-mapped table — is not wired up yet. That integration is
-	 * deferred until the `append`/`replace`/`delete`/`destroy` statements this
-	 * range form primarily exists for are implemented.
+	 * Not usable in `retrieve`, by design: `retrieve` hydrates Entity-mapped
+	 * data into objects, and a bare table has no entity to hydrate into.
+	 * Exists for the bulk, direct-SQL write verbs
+	 * (`append`/`replace`/`delete`/`destroy`) instead — see
+	 * objectquel-write-verbs-design.md. Parses today; those verbs still need
+	 * to be built to consume it.
 	 */
 	class AstRangeDatabaseTable extends AstRange {
 

@@ -5,14 +5,10 @@
 	use Quellabs\ObjectQuel\ObjectQuel\AstVisitorInterface;
 
 	/**
-	 * Class AstCreateTable
-	 *
-	 * Represents a `create [temporary] Name (attr = type constraints, ...)`
-	 * statement — a top-level ObjectQuel statement, not part of a `retrieve`
-	 * query. Compiled and executed directly against the connection (see
-	 * Execution\Executors\CreateTableExecutor); does not go through the
-	 * retrieve pipeline (semantic analyzer, optimizer, planner, hydration),
-	 * none of which applies to a DDL statement with no rows to return.
+	 * A `create [temporary] Name (attr = type constraints, ...)` statement —
+	 * a top-level statement, not part of a `retrieve` query. Compiled and
+	 * executed directly (see Execution\Executors\CreateTableExecutor),
+	 * bypassing the retrieve pipeline entirely.
 	 */
 	class AstCreateTable extends Ast {
 

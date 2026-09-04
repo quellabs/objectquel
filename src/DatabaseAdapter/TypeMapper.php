@@ -116,12 +116,10 @@
 		}
 
 		/**
-		 * Returns whether the given name is a recognised abstract column type —
-		 * the same vocabulary @Orm\Column annotations use. Used by QUEL's
-		 * `create` statement to reject unknown type names at parse time rather
-		 * than let them fall through DDLTypeMapper's per-dialect default branch
-		 * (VARCHAR) silently.
-		 * @param string $type Column type name (already lowercased by the caller)
+		 * Whether $type is a recognised abstract column type (the vocabulary
+		 * @Orm\Column uses). Used by `create` to reject unknown types at parse
+		 * time instead of silently falling through to VARCHAR.
+		 * @param string $type Column type name (already lowercased)
 		 * @return bool
 		 */
 		public static function isValidColumnType(string $type): bool {

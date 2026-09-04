@@ -3,18 +3,11 @@
 	namespace Quellabs\ObjectQuel\ObjectQuel\Ast;
 
 	/**
-	 * Class AstDestroy
-	 *
-	 * Represents a `destroy Name {, Name}` statement — a top-level ObjectQuel
-	 * statement, not part of a `retrieve` query. Drops one or more tables
-	 * (permanent or temporary; index destroy is not implemented yet — see
-	 * objectquel-destroy-plan.md).
-	 *
-	 * A flat list of names, mirroring the comma-separated-list grammar
-	 * directly rather than splitting into per-name statements at parse time.
-	 * Compiled and executed directly against the connection (see
-	 * Execution\Executors\DestroyExecutor); does not go through the retrieve
-	 * pipeline, same as AstCreateTable.
+	 * A `destroy Name {, Name}` statement — a top-level statement, drops one
+	 * or more tables (permanent or temporary; index destroy isn't
+	 * implemented yet, see objectquel-destroy-plan.md). Flat name list,
+	 * mirroring the grammar directly. Compiled and executed directly (see
+	 * Execution\Executors\DestroyExecutor), same as AstCreateTable.
 	 */
 	class AstDestroy extends Ast {
 
