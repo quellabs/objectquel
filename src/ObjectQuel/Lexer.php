@@ -87,6 +87,8 @@
 		        'destroy'     => Token::Destroy,
 		        'if'          => Token::If,
 		        'exists'      => Token::Exists,
+		        'append'      => Token::Append,
+		        'to'          => Token::To,
 	        ];
 			
 			$this->single_tokens = [

@@ -227,6 +227,23 @@
 		}
 		
 		/**
+		 * Executes a bulk, set-based write-verb statement (`append`, and later
+		 * `replace`/`delete`/upsert) — these bypass the identity map and
+		 * change tracking entirely, so unlike a `retrieve` executed through
+		 * executeQuery(), the returned QuelResult carries no fetchable rows,
+		 * just how many rows were affected and, when applicable, a generated
+		 * primary key (see QuelResult::fromWriteStatement() and
+		 * objectquel-append-plan.md).
+		 * @param string $query The ObjectQuel statement string
+		 * @param array<string, mixed> $parameters Query parameters
+		 * @return QuelResult
+		 * @throws QuelException
+		 */
+		public function executeStatement(string $query, array $parameters = []): QuelResult {
+			return $this->queryExecutor->executeStatement($query, $parameters);
+		}
+
+		/**
 		 * Returns planner decisions and generated SQL for a query without executing it.
 		 * Combines explain() with a SQL dry-run into one coherent result.
 		 * @param string $query The ObjectQuel query string

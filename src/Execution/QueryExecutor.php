@@ -2,6 +2,7 @@
 	
 	namespace Quellabs\ObjectQuel\Execution;
 	
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstAppend;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstCreateTable;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstDestroy;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRangeDatabaseSubquery;
@@ -20,6 +21,7 @@
 	use Quellabs\ObjectQuel\ObjectQuel\Parser;
 	use Quellabs\ObjectQuel\ObjectQuel\ParserException;
 	use Quellabs\ObjectQuel\ObjectQuel\QuelResult;
+	use Quellabs\ObjectQuel\Execution\Executors\AppendExecutor;
 	use Quellabs\ObjectQuel\Execution\Executors\CreateTableExecutor;
 	use Quellabs\ObjectQuel\Execution\Executors\DatabaseQueryExecutor;
 	use Quellabs\ObjectQuel\Execution\Executors\DestroyExecutor;
@@ -56,7 +58,8 @@
 		private JsonQueryExecutor $jsonExecutor;
 		private CreateTableExecutor $createTableExecutor;
 		private DestroyExecutor $destroyExecutor;
-		
+		private AppendExecutor $appendExecutor;
+
 		/**
 		 * Constructor
 		 * @param EntityManager $entityManager
@@ -70,13 +73,14 @@
 			$this->entityManager = $entityManager;
 			$this->connection = $entityManager->getConnection();
 			$this->capabilities = $this->entityManager->getUnitOfWork()->getPlatformCapabilities();
-			
+
 			// Create specialized executors
 			$this->databaseExecutor = $databaseExecutor ?? new DatabaseQueryExecutor($entityManager, $this->capabilities);
 			$this->jsonExecutor = new JsonQueryExecutor();
 			$this->createTableExecutor = new CreateTableExecutor($this->connection, $this->capabilities);
 			$this->destroyExecutor = new DestroyExecutor($this->connection, $this->capabilities);
-			
+			$this->appendExecutor = new AppendExecutor($this->connection, $entityManager->getEntityStore(), $entityManager, $this->capabilities);
+
 			// Init the plan executor
 			$this->planExecutor = new PlanExecutor($this);
 			
@@ -175,7 +179,7 @@
 				$result = $this->planExecutor->execute($executionPlan);
 				
 				// Hydrate and return the query result.
-				return new QuelResult($this->entityManager, $ast, $result);
+				return QuelResult::fromRetrieve($this->entityManager, $ast, $result);
 			} catch (ParserException|LexerException $e) {
 				throw new QuelException("Syntax error: " . $e->getMessage(), 'syntax_error', 0, $e);
 			} catch (SemanticException $e) {
@@ -189,6 +193,64 @@
 			}
 		}
 		
+		/**
+		 * Executes a bulk, set-based write-verb statement (`append`, and later
+		 * `replace`/`delete`/upsert) and returns how many rows it affected.
+		 * Deliberately separate from executeQuery(): these statements bypass
+		 * the identity map and change tracking entirely and have no rows to
+		 * hydrate, so the returned QuelResult carries an affected-row count
+		 * and generated primary key (see QuelResult::fromWriteStatement())
+		 * rather than fetchable rows — mirroring the Connection::query() vs.
+		 * Connection::execute() split most DB abstraction layers have (see
+		 * objectquel-append-plan.md).
+		 * @param string $query The ObjectQuel statement string
+		 * @param array<int|string, mixed> $parameters Query parameters
+		 * @return QuelResult
+		 * @throws QuelException
+		 */
+		public function executeStatement(string $query, array $parameters = []): QuelResult {
+			try {
+				$normalizedParameters = $this->normalizeParams($parameters);
+				$this->databaseExecutor->resetLastExecutedSql();
+
+				$ast = $this->parseStatement($query);
+
+				if ($ast instanceof AstAppend) {
+					return $this->appendExecutor->execute($ast, $normalizedParameters);
+				}
+
+				throw new QuelException("Invalid statement type: expected a write-verb statement (e.g. append)");
+			} catch (ParserException|LexerException $e) {
+				throw new QuelException("Syntax error: " . $e->getMessage(), 'syntax_error', 0, $e);
+			} catch (SemanticException $e) {
+				throw new QuelException($e->getMessage(), 'semantic_error', 0, $e);
+			} catch (EntityResolutionException $e) {
+				throw new QuelException($e->getMessage(), 'resolution_error', 0, $e);
+			} catch (\ReflectionException $e) {
+				throw new QuelException($e->getMessage(), 'resolution_error', 0, $e);
+			}
+		}
+
+		/**
+		 * Parses a Quel write-verb statement and returns its AST representation.
+		 * @param string $query The Quel statement string to parse
+		 * @return AstInterface
+		 * @throws LexerException
+		 * @throws ParserException
+		 * @throws QuelException If the parsed statement isn't a write verb
+		 */
+		private function parseStatement(string $query): AstInterface {
+			$lexer = new Lexer($query);
+			$parser = new Parser($lexer);
+			$ast = $parser->parse();
+
+			if (!$ast instanceof AstAppend) {
+				throw new QuelException("Invalid statement type: expected a write-verb statement (e.g. append)");
+			}
+
+			return $ast;
+		}
+
 		/**
 		 * Return the executed SQL
 		 * @return list<string>

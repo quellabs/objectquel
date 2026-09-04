@@ -3,6 +3,7 @@
     namespace Quellabs\ObjectQuel\ObjectQuel;
 
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRange;
+	use Quellabs\ObjectQuel\ObjectQuel\Rules\Append;
 	use Quellabs\ObjectQuel\ObjectQuel\Rules\CreateTable;
 	use Quellabs\ObjectQuel\ObjectQuel\Rules\Destroy;
 	use Quellabs\ObjectQuel\ObjectQuel\Rules\Range;
@@ -15,6 +16,7 @@
 		private Retrieve $retrieveRule;
 		private CreateTable $createTableRule;
 		private Destroy $destroyRule;
+		private Append $appendRule;
 
 		/**
          * Parser constructor.
@@ -26,6 +28,7 @@
             $this->retrieveRule = new Retrieve($lexer);
             $this->createTableRule = new CreateTable($lexer);
             $this->destroyRule = new Destroy($lexer);
+            $this->appendRule = new Append($lexer);
         }
 		
 	    /**
@@ -61,6 +64,10 @@
 
 				    case Token::Destroy :
 					    $queries[] = $this->destroyRule->parse();
+					    break;
+
+				    case Token::Append :
+					    $queries[] = $this->appendRule->parse($ranges);
 					    break;
 
 				    default :

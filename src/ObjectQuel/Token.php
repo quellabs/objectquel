@@ -86,6 +86,8 @@
 		const int Destroy = 128;
 		const int If = 129;
 		const int Exists = 130;
+		const int Append = 131;
+		const int To = 132;
 		
 		protected int $type;
 		protected mixed $value;
