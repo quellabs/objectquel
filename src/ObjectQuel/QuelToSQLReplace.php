@@ -77,7 +77,34 @@
 
 			$range = $statement->getRange();
 			$metadata = $this->entityStore->getMetadata($range->getEntityName());
-			$assignments = $statement->getAssignments();
+			$setClauseParts = $this->buildSetClause($statement->getAssignments(), $metadata, $parameters);
+
+			return sprintf(
+				'UPDATE %s as %s SET %s WHERE %s',
+				$this->identifierQuoter->quoteIdentifier($metadata->tableName),
+				$this->identifierQuoter->quoteIdentifier($range->getName()),
+				implode(', ', $setClauseParts),
+				$this->compileExpression($statement->getConditions(), $parameters)
+			);
+		}
+
+		/**
+		 * Builds the `` `col` = <sql> `` SET-clause fragments for a set of
+		 * assignments against $metadata's entity — property-exists/type
+		 * checks, bare (unqualified) target columns (see this class's
+		 * docblock for why), and an automatic bump for any @Orm\Version
+		 * column not explicitly assigned. Public so QuelToSQLAppend can reuse
+		 * it unchanged for upsert's `or replace (...)` on-conflict UPDATE
+		 * clause (see objectquel-upsert-plan.md) — the exact same rules
+		 * apply there, just folded into an INSERT instead of a standalone
+		 * UPDATE statement.
+		 * @param AstAssignment[] $assignments
+		 * @param EntityMetadataRecord $metadata
+		 * @param array<string, mixed> $parameters Bound parameters, by reference
+		 * @return string[]
+		 * @throws SemanticException
+		 */
+		public function buildSetClause(array $assignments, EntityMetadataRecord $metadata, array &$parameters): array {
 			$properties = array_map(fn(AstAssignment $assignment) => $assignment->getProperty(), $assignments);
 
 			AssignmentValidator::assertPropertiesExist($properties, $metadata);
@@ -87,10 +114,10 @@
 				$assignments
 			);
 
-			// Any @Orm\Version column the user didn't explicitly assign still
-			// bumps — replace bypasses UnitOfWork entirely, so without this a
-			// QUEL-level replace would silently leave the version column
-			// stale (see objectquel-replace-plan.md).
+			// Any @Orm\Version column the caller didn't explicitly assign
+			// still bumps — replace/upsert bypass UnitOfWork entirely, so
+			// without this the version column would silently go stale (see
+			// objectquel-replace-plan.md).
 			$versionColumnsToBump = array_diff_key($metadata->versionColumns, array_flip($properties));
 
 			if (!empty($versionColumnsToBump)) {
@@ -100,13 +127,7 @@
 				);
 			}
 
-			return sprintf(
-				'UPDATE %s as %s SET %s WHERE %s',
-				$this->identifierQuoter->quoteIdentifier($metadata->tableName),
-				$this->identifierQuoter->quoteIdentifier($range->getName()),
-				implode(', ', $setClauseParts),
-				$this->compileExpression($statement->getConditions(), $parameters)
-			);
+			return $setClauseParts;
 		}
 
 		/**

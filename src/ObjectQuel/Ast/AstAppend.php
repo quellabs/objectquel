@@ -28,6 +28,14 @@
 	 * class name, whether the statement named a declared range alias or a
 	 * bare entity name directly — a range with nothing to read from isn't
 	 * required, only to know which entity/table (see objectquel-append-plan.md).
+	 *
+	 * $onConflict is the upsert extension (see objectquel-upsert-plan.md):
+	 * `append to u (...) or replace (...) where <cond>` — literally the
+	 * already-defined AstReplace node, minus its own target range (implied
+	 * to be this statement's own target, so it's still a real
+	 * AstRangeDatabase under the hood — see Rules\Append). Only meaningful
+	 * for the literal-values form; the insert-from-select form's grammar
+	 * never reaches an `or` token, so this is always null there.
 	 */
 	class AstAppend extends Ast {
 
@@ -41,17 +49,21 @@
 
 		private ?AstRetrieve $source;
 
+		private ?AstReplace $onConflict;
+
 		/**
 		 * @param string $entityName Resolved target entity class name
 		 * @param AstAssignment[][]|null $rows Assignment rows (literal-values form)
 		 * @param string[]|null $columns Bare column list (insert-from-select form)
 		 * @param AstRetrieve|null $source Source query (insert-from-select form)
+		 * @param AstReplace|null $onConflict Upsert's `or replace (...) where ...` clause
 		 */
-		private function __construct(string $entityName, ?array $rows, ?array $columns, ?AstRetrieve $source) {
+		private function __construct(string $entityName, ?array $rows, ?array $columns, ?AstRetrieve $source, ?AstReplace $onConflict = null) {
 			$this->entityName = $entityName;
 			$this->rows = $rows;
 			$this->columns = $columns;
 			$this->source = $source;
+			$this->onConflict = $onConflict;
 
 			foreach ($this->rows ?? [] as $row) {
 				foreach ($row as $assignment) {
@@ -60,15 +72,17 @@
 			}
 
 			$this->source?->setParent($this);
+			$this->onConflict?->setParent($this);
 		}
 
 		/**
 		 * @param string $entityName
 		 * @param AstAssignment[][] $rows
+		 * @param AstReplace|null $onConflict Upsert's `or replace (...) where ...` clause
 		 * @return self
 		 */
-		public static function forValues(string $entityName, array $rows): self {
-			return new self($entityName, $rows, null, null);
+		public static function forValues(string $entityName, array $rows, ?AstReplace $onConflict = null): self {
+			return new self($entityName, $rows, null, null, $onConflict);
 		}
 
 		/**
@@ -91,6 +105,7 @@
 			}
 
 			$this->source?->accept($visitor);
+			$this->onConflict?->accept($visitor);
 		}
 
 		public function getEntityName(): string {
@@ -119,10 +134,16 @@
 			return $this->source;
 		}
 
+		public function getOnConflict(): ?AstReplace {
+			return $this->onConflict;
+		}
+
 		public function deepClone(): static {
+			$clonedOnConflict = $this->onConflict?->deepClone();
+
 			if ($this->source !== null) {
 				// @phpstan-ignore-next-line new.static
-				$clone = new static($this->entityName, null, $this->columns, $this->source->deepClone());
+				$clone = new static($this->entityName, null, $this->columns, $this->source->deepClone(), $clonedOnConflict);
 			} else {
 				$clonedRows = array_map(
 					fn(array $row) => $this->cloneArray($row),
@@ -130,7 +151,7 @@
 				);
 
 				// @phpstan-ignore-next-line new.static
-				$clone = new static($this->entityName, $clonedRows, null, null);
+				$clone = new static($this->entityName, $clonedRows, null, null, $clonedOnConflict);
 			}
 
 			$clone->setParent($this->getParent());

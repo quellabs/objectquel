@@ -14,6 +14,7 @@
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstParameter;
 	use Quellabs\ObjectQuel\ObjectQuel\QuelResult;
 	use Quellabs\ObjectQuel\ObjectQuel\QuelToSQLAppend;
+	use Quellabs\ObjectQuel\ObjectQuel\QuelToSQLReplace;
 	use Quellabs\ObjectQuel\PrimaryKeys\PrimaryKeyFactory;
 
 	/**
@@ -51,7 +52,11 @@
 			$this->connection = $connection;
 			$this->entityStore = $entityStore;
 			$this->entityManager = $entityManager;
-			$this->compiler = new QuelToSQLAppend($entityStore, $entityManager, $platform);
+
+			// Reused (not reconstructed) for upsert's on-conflict UPDATE SET
+			// clause — see QuelToSQLAppend's docblock.
+			$replaceCompiler = new QuelToSQLReplace($entityStore, $platform, $entityManager->getUnitOfWork()->getVersionValueHandler());
+			$this->compiler = new QuelToSQLAppend($entityStore, $entityManager, $platform, $replaceCompiler);
 		}
 
 		/**

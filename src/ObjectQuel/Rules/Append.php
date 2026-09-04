@@ -6,6 +6,7 @@
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstAssignment;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRange;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRangeDatabase;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstReplace;
 	use Quellabs\ObjectQuel\ObjectQuel\Lexer;
 	use Quellabs\ObjectQuel\ObjectQuel\LexerException;
 	use Quellabs\ObjectQuel\ObjectQuel\ParserException;
@@ -22,6 +23,11 @@
 	 *   append to u (name = "Alice", email = "alice@example.com")
 	 *   append to u (name = "Alice", ...), (name = "Bob", ...)
 	 *   append to o (name, total) retrieve (a.name, a.total) where a.closed = true
+	 *
+	 * The literal-values form also accepts a trailing upsert extension (see
+	 * objectquel-upsert-plan.md):
+	 *
+	 *   append to u (email = e, name = n) or replace (name = n) where u.email = e
 	 */
 	class Append {
 
@@ -48,7 +54,7 @@
 			$this->lexer->match(Token::Append);
 			$this->lexer->match(Token::To);
 
-			$entityName = $this->parseTarget($ranges);
+			[$entityName, $targetRange] = $this->parseTarget($ranges);
 
 			$this->lexer->match(Token::ParenthesesOpen);
 
@@ -56,8 +62,9 @@
 
 			if ($this->lexer->optionalMatch(Token::Equals)) {
 				$rows = $this->parseValueRows($firstProperty);
+				$onConflict = $this->parseOptionalOnConflict($targetRange);
 				$this->consumeOptionalSemicolon();
-				return AstAppend::forValues($entityName, $rows);
+				return AstAppend::forValues($entityName, $rows, $onConflict);
 			}
 
 			$columns = $this->parseColumnList($firstProperty);
@@ -78,10 +85,12 @@
 		 * with that name exists) the identifier itself, treated as a bare
 		 * entity name.
 		 * @param AstRange[] $ranges
-		 * @return string
+		 * @return array{0: string, 1: ?AstRangeDatabase} Resolved entity name, and
+		 *         the declared range object when the target was one (null for a
+		 *         bare entity name — see parseOptionalOnConflict())
 		 * @throws LexerException|ParserException
 		 */
-		private function parseTarget(array $ranges): string {
+		private function parseTarget(array $ranges): array {
 			$name = $this->lexer->match(Token::Identifier)->getStringValue();
 
 			// Range aliases are never namespaced — a following backslash means
@@ -92,7 +101,7 @@
 					$name .= "\\" . $this->lexer->match(Token::Identifier)->getStringValue();
 				}
 
-				return $name;
+				return [$name, null];
 			}
 
 			foreach ($ranges as $range) {
@@ -104,11 +113,37 @@
 					throw new ParserException("append target '{$name}' must be a database entity range");
 				}
 
-				return $range->getEntityName();
+				return [$range->getEntityName(), $range];
 			}
 
 			// No matching range — treat the identifier as a bare entity name.
-			return $name;
+			return [$name, null];
+		}
+
+		/**
+		 * Parses upsert's optional trailing `or replace (...) where ...`
+		 * clause (see objectquel-upsert-plan.md). The target range is implied
+		 * to be this statement's own target, so it must already be a declared
+		 * range — a bare entity-name target has nothing for the WHERE clause
+		 * to resolve identifiers against, the same restriction standalone
+		 * `replace`/`delete` already have.
+		 * @param AstRangeDatabase|null $targetRange
+		 * @return AstReplace|null
+		 * @throws LexerException|ParserException
+		 */
+		private function parseOptionalOnConflict(?AstRangeDatabase $targetRange): ?AstReplace {
+			if (!$this->lexer->optionalMatch(Token::Or)) {
+				return null;
+			}
+
+			if ($targetRange === null) {
+				throw new ParserException("append ... or replace requires the target to be a declared range (e.g. 'range of u is Entity'), not a bare entity name, on line {$this->lexer->getLineNumber()}");
+			}
+
+			$this->lexer->match(Token::Replace);
+
+			$replaceRule = new Replace($this->lexer);
+			return $replaceRule->parseAssignmentsAndConditions($targetRange);
 		}
 
 		/**

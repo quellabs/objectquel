@@ -4,6 +4,7 @@
 
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstAssignment;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRange;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRangeDatabase;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstReplace;
 	use Quellabs\ObjectQuel\ObjectQuel\Lexer;
 	use Quellabs\ObjectQuel\ObjectQuel\LexerException;
@@ -18,6 +19,12 @@
 	 * Unlike `append`, the target must already be a declared range (no bare
 	 * entity name form) — the mandatory `where` clause needs a concrete
 	 * range to resolve `range.property` identifiers against.
+	 *
+	 * parseAssignmentsAndConditions() is reused directly by Rules\Append for
+	 * upsert's `append ... or replace (...) where ...` extension (see
+	 * objectquel-upsert-plan.md), where the leading `replace <range>` target
+	 * is omitted (implied to be the append's own target) — everything after
+	 * that is identical grammar, so it isn't reimplemented there.
 	 */
 	class Replace {
 
@@ -45,12 +52,28 @@
 
 			$targetName = $this->lexer->match(Token::Identifier)->getStringValue();
 			$range = TargetRange::resolve($targetName, $ranges, 'replace');
+			$replace = $this->parseAssignmentsAndConditions($range);
+
+			$this->consumeOptionalSemicolon();
+
+			return $replace;
+		}
+
+		/**
+		 * Parses the parenthesized assignment list and mandatory WHERE clause,
+		 * given an already-resolved target range — the part shared with
+		 * upsert's `append ... or replace (...) where ...` on-conflict clause
+		 * (see objectquel-upsert-plan.md), where the leading `replace <range>`
+		 * target is omitted (implied to be the append's own target).
+		 * @param AstRangeDatabase $range
+		 * @return AstReplace
+		 * @throws LexerException|ParserException
+		 */
+		public function parseAssignmentsAndConditions(AstRangeDatabase $range): AstReplace {
 			$assignments = $this->parseAssignments();
 
 			$whereClauseRule = new WhereClause($this->lexer);
 			$conditions = $whereClauseRule->parseRequired('replace');
-
-			$this->consumeOptionalSemicolon();
 
 			return new AstReplace($range, $assignments, $conditions);
 		}
