@@ -13,7 +13,7 @@
 	 * on any particular database library.
 	 *
 	 * Implement this interface once per integration point (e.g. a CakePHP adapter)
-	 * and inject it into QuelToSQL. When no implementation is provided, ObjectQuel
+	 * and inject it into QuelToSQLRetrieve. When no implementation is provided, ObjectQuel
 	 * falls back to NullPlatformCapabilities, which assumes the most conservative
 	 * (widest-compatible) behavior.
 	 */

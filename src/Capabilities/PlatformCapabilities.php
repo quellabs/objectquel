@@ -9,7 +9,7 @@
 	 *
 	 * Wraps a DatabaseAdapter and uses it to determine which SQL features are
 	 * available at runtime. Construct this once (typically alongside your
-	 * EntityManager) and pass it into QuelToSQL.
+	 * EntityManager) and pass it into QuelToSQLRetrieve.
 	 *
 	 * This class only reports facts about the connected engine (booleans,
 	 * tokens, and getDatabaseType() itself) — it never builds SQL text.
@@ -19,7 +19,7 @@
 	 *
 	 * Example:
 	 *   $platform = new PlatformCapabilities($adapter);
-	 *   $quelToSQL = new QuelToSQL($entityStore, $parameters, $platform);
+	 *   $quelToSQL = new QuelToSQLRetrieve($entityStore, $parameters, $platform);
 	 */
 	class PlatformCapabilities implements PlatformCapabilitiesInterface {
 		

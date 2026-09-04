@@ -11,8 +11,8 @@
 	 * This is a general SQL-rendering concern, not a DDL one — every generated
 	 * statement needs identifiers quoted (SELECT, JOIN, INSERT, CREATE, all of
 	 * it), so this stays separate from DDLTypeMapper, which is specifically
-	 * about temporary-table DDL for TempTableExecutor. QuelToSQL (the QUEL→SQL
-	 * compiler, which never emits DDL) depends on this class, not on
+	 * about temporary-table DDL for TempTableExecutor. QuelToSQLRetrieve (the
+	 * retrieve compiler, which never emits DDL) depends on this class, not on
 	 * DDLTypeMapper, for exactly that reason.
 	 *
 	 * Deliberately does not delegate to DatabaseAdapter::escapeIdentifier()
@@ -23,7 +23,7 @@
 	 * for:
 	 *   - Alias quoting: the driver's quoter splits any '.' into a qualified
 	 *     `x`.`id` reference (it's built for real table.column identifiers).
-	 *     QuelToSQL deliberately builds single-token aliases containing a
+	 *     QuelToSQLRetrieve deliberately builds single-token aliases containing a
 	 *     literal '.' (e.g. 'x.id'); splitting them produces invalid SQL in
 	 *     alias position. See quoteIdentifier().
 	 *   - SQL Server temp table names: the driver's quoter's regexes all
@@ -43,7 +43,7 @@
 	 * unquoted SQL, or SQL that quietly changes meaning),
 	 * which is why this class always does the simple, predictable wrap rather
 	 * than reusing the driver's smarter-but-unsafe-for-us quoter. It's also
-	 * the only option for QuelToSQL, which is deliberately never given a live
+	 * the only option for QuelToSQLRetrieve, which is deliberately never given a live
 	 * DatabaseAdapter/connection (see its own docblock) and so has no way to
 	 * reach escapeIdentifier() regardless.
 	 */
@@ -72,7 +72,7 @@
 		 * as one literal token and never splits on '.' into a qualified
 		 * table.column reference.
 		 *
-		 * That "never split" guarantee is load-bearing for QuelToSQL's alias
+		 * That "never split" guarantee is load-bearing for QuelToSQLRetrieve's alias
 		 * positions: it deliberately builds alias names containing a literal '.'
 		 * (e.g. 'x.id', so a subquery's flattened columns can be looked up by the
 		 * outer range+property they came from) that must survive quoting as one

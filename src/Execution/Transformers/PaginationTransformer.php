@@ -15,7 +15,7 @@
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstNumber;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRetrieve;
 	use Quellabs\ObjectQuel\ObjectQuel\PrimaryKeyInfo;
-	use Quellabs\ObjectQuel\ObjectQuel\QuelToSQL;
+	use Quellabs\ObjectQuel\ObjectQuel\QuelToSQLRetrieve;
 	use Quellabs\ObjectQuel\Execution\Visitors\DetectPrimaryKeyInClause;
 	use Quellabs\ObjectQuel\Execution\Visitors\DetectPrimaryKeyInClauseException;
 	
@@ -235,7 +235,7 @@
 			}
 			
 			// Transform the Quel query to SQL
-			$quelToSQL = new QuelToSQL($this->entityStore, $stringKeyedParameters, $this->platform);
+			$quelToSQL = new QuelToSQLRetrieve($this->entityStore, $stringKeyedParameters, $this->platform);
 			return $quelToSQL->convertToSQL($retrieve);
 		}
 		

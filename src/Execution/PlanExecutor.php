@@ -114,7 +114,7 @@
 					if ($stage instanceof TempTableStage) {
 						// Materialize the inner query into a temp table before the outer
 						// database stage runs. This mutates the stage's AstRangeDatabase
-						// so QuelToSQL emits a plain table reference in subsequent stages.
+						// so QuelToSQLRetrieve emits a plain table reference in subsequent stages.
 						// TempTableStages contribute no rows to intermediate results.
 						$this->tempTableExecutor->execute(
 							$stage,

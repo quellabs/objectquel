@@ -18,7 +18,7 @@
 	use Quellabs\ObjectQuel\Capabilities\NullPlatformCapabilities;
 	use Quellabs\ObjectQuel\DatabaseAdapter\SqlIdentifierQuoter;
 
-	class QuelToSQL {
+	class QuelToSQLRetrieve {
 
 		private EntityStore $entityStore;
 		private PlatformCapabilitiesInterface $platform;
@@ -33,7 +33,7 @@
 		private array $parameters;
 
 		/**
-		 * QuelToSQL constructor
+		 * QuelToSQLRetrieve constructor
 		 * @param EntityStore $entityStore
 		 * @param array<string, mixed> $parameters
 		 * @param PlatformCapabilitiesInterface $platform Database engine capability descriptor
@@ -477,7 +477,7 @@
 					$result[] = $this->buildJoinClause($joinType, $this->identifierQuoter->quoteIdentifier($metadata->tableName), $rangeName, $joinColumn);
 				} else {
 					throw new \LogicException(
-						"Unresolved AstRangeDatabaseSubquery '{$rangeName}' reached QuelToSQL — planner did not complete substitution"
+						"Unresolved AstRangeDatabaseSubquery '{$rangeName}' reached QuelToSQLRetrieve — planner did not complete substitution"
 					);
 				}
 			}

@@ -12,7 +12,7 @@
 	 *
 	 * Used only by TempTableExecutor. Identifier/alias quoting lives in
 	 * SqlIdentifierQuoter instead, since it's needed by every SQL statement,
-	 * not just DDL — QuelToSQL depends on that class, not this one.
+	 * not just DDL — QuelToSQLRetrieve depends on that class, not this one.
 	 */
 	class DDLTypeMapper {
 

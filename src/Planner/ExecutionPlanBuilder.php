@@ -55,7 +55,7 @@
 		 *   1. For each temporary range (AstRangeDatabase with embedded subquery):
 		 *      a. If it contains external sources → add a TempTableStage first, then
 		 *         register a dependency so the outer database stage runs after it.
-		 *      b. If it is pure SQL → leave as-is (inline subquery handled by QuelToSQL).
+		 *      b. If it is pure SQL → leave as-is (inline subquery handled by QuelToSQLRetrieve).
 		 *   2. Add the main database stage (which references temp tables as plain tables
 		 *      by the time it executes, because all TempTableStages will have run first).
 		 *   3. Add JSON/other non-database range stages (existing behavior).

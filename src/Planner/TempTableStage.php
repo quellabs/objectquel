@@ -17,8 +17,8 @@
 	 *      pipeline (including JSON stages), then creates a temporary table and inserts
 	 *      the resulting rows.
 	 *   3. TempTableExecutor mutates the AstRangeDatabase: setQuery(null) and
-	 *      setTableName('tmp_...'), so that QuelToSQL sees a plain table reference.
-	 *   4. The outer ExecutionStage runs and QuelToSQL generates correct SQL.
+	 *      setTableName('tmp_...'), so that QuelToSQLRetrieve sees a plain table reference.
+	 *   4. The outer ExecutionStage runs and QuelToSQLRetrieve generates correct SQL.
 	 *   5. TempTableExecutor drops the temporary table in a finally block.
 	 *
 	 * The interface contract for hasResultProcessor / getResultProcessor / getStaticParams
@@ -37,7 +37,7 @@
 		/**
 		 * The AstRangeDatabase node whose embedded query must be materialized.
 		 * This is the SAME object reference held by the outer ExecutionStage's query
-		 * range list, so mutations made by TempTableExecutor are visible to QuelToSQL.
+		 * range list, so mutations made by TempTableExecutor are visible to QuelToSQLRetrieve.
 		 * @var AstRangeDatabaseTempTable
 		 */
 		private AstRangeDatabaseTempTable $range;

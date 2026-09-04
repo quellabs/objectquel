@@ -244,7 +244,7 @@
 			$expression = $ast->getExpression();
 			
 			// search_score() aliased as a SELECT column: score=search_score(p.content, :term)
-			// Emit only the MATCH...AGAINST expression — QuelToSQL::getFieldNames() appends
+			// Emit only the MATCH...AGAINST expression — QuelToSQLRetrieve::getFieldNames() appends
 			// AS `name` itself for all non-entity expressions, so we must not add it here.
 			if ($expression instanceof AstSearchScore) {
 				$this->addToVisitedNodes($expression);

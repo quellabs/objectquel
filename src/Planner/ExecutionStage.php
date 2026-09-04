@@ -139,7 +139,7 @@
 		 * Determines the type of join this stage should perform when combining
 		 * its results with the accumulated result set.
 		 *
-		 * For database stages the join type is determined by QuelToSQL (INNER vs LEFT
+		 * For database stages the join type is determined by QuelToSQLRetrieve (INNER vs LEFT
 		 * based on AstRange::isRequired()). This method is only consulted for
 		 * in-memory joins, which currently means JSON source stages.
 		 *
@@ -164,7 +164,7 @@
 			}
 			
 			// The remaining inference only applies to JSON source stages.
-			// DB-to-DB join type is handled by QuelToSQL, not here.
+			// DB-to-DB join type is handled by QuelToSQLRetrieve, not here.
 			if (!$this->range instanceof AstRangeJsonSource) {
 				return 'left';
 			}

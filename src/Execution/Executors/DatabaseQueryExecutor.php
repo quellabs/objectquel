@@ -11,7 +11,7 @@
 	use Quellabs\ObjectQuel\Execution\Transformers\PaginationTransformer;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRetrieve;
 	use Quellabs\ObjectQuel\Exception\QuelException;
-	use Quellabs\ObjectQuel\ObjectQuel\QuelToSQL;
+	use Quellabs\ObjectQuel\ObjectQuel\QuelToSQLRetrieve;
 	
 	/**
 	 * Handles database-specific query execution including SQL conversion and temp tables
@@ -105,7 +105,7 @@
 		 * @throws QuelException
 		 */
 		protected function convertToSQL(AstRetrieve $retrieve, array &$parameters): string {
-			$quelToSQL = new QuelToSQL($this->entityManager->getEntityStore(), $parameters, $this->capabilities);
+			$quelToSQL = new QuelToSQLRetrieve($this->entityManager->getEntityStore(), $parameters, $this->capabilities);
 			return $quelToSQL->convertToSQL($retrieve);
 		}
 	}
