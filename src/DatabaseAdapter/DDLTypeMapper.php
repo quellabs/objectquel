@@ -44,21 +44,22 @@
 		}
 
 		/**
-		 * Returns the physical table name for either a permanent or temporary
-		 * table. Lets a caller building either kind (e.g. QuelToSQLCreate) get
-		 * the name from one place instead of branching on $temporary itself.
+		 * Returns the physical table name for a permanent table — the base
+		 * name unchanged. Trivial, but exists so a caller building either kind
+		 * (e.g. QuelToSQLCreate) can pick between this and getTempTableName()
+		 * without special-casing the permanent branch itself.
 		 * @param string $baseName Logical table name
-		 * @param bool $temporary
-		 * @return string The physical name to create and reference
+		 * @return string
 		 */
-		public function getTableName(string $baseName, bool $temporary): string {
-			return $temporary ? $this->getTempTableName($baseName) : $baseName;
+		public function getTableName(string $baseName): string {
+			return $baseName;
 		}
 
 		/**
-		 * Returns the CREATE-statement keyword sequence, up to but not including
-		 * the table name. SQL Server gets plain 'CREATE TABLE' — its temp-ness
-		 * comes from the '#' prefix in getTempTableName(), not a keyword.
+		 * Returns the CREATE-statement keyword sequence for a temporary table,
+		 * up to but not including the table name. SQL Server gets plain
+		 * 'CREATE TABLE' — its temp-ness comes from the '#' prefix in
+		 * getTempTableName(), not a keyword.
 		 *
 		 * NOTE: this method's "every engine except sqlsrv" default and
 		 * getDropTempTableKeyword()'s "only mysql/mariadb" default point in
@@ -71,29 +72,28 @@
 		 * there is no unrecognised value for the two to disagree on in practice.
 		 * @return string
 		 */
-		public function getCreateTempTableKeyword(): string {
+		public function getTemporaryCreateTableKeyword(): string {
 			return $this->platform->getDatabaseType() === 'sqlsrv' ? 'CREATE TABLE' : 'CREATE TEMPORARY TABLE';
 		}
 
 		/**
-		 * Returns the CREATE-statement keyword sequence for either a permanent
-		 * or temporary table, up to but not including the table name. Lets a
-		 * caller building either kind (e.g. QuelToSQLCreate) get the keyword
-		 * from one place instead of hardcoding 'CREATE TABLE' next to a call
-		 * to getCreateTempTableKeyword().
-		 * @param bool $temporary
+		 * Returns the CREATE-statement keyword sequence for a permanent table —
+		 * always plain 'CREATE TABLE', but exists so a caller building either
+		 * kind can pick between this and getTemporaryCreateTableKeyword()
+		 * without hardcoding the literal itself.
 		 * @return string
 		 */
-		public function getCreateTableKeyword(bool $temporary): string {
-			return $temporary ? $this->getCreateTempTableKeyword() : 'CREATE TABLE';
+		public function getCreateTableKeyword(): string {
+			return 'CREATE TABLE';
 		}
 
 		/**
 		 * Returns the DROP-statement keyword sequence, up to but not including
 		 * the table name. Only MySQL/MariaDB accept TEMPORARY in DROP TABLE;
 		 * every other engine rejects it there even though CREATE requires (or,
-		 * for SQL Server, ignores) it. See the note on getCreateTempTableKeyword()
-		 * about why this method's default direction differs from that one.
+		 * for SQL Server, ignores) it. See the note on
+		 * getTemporaryCreateTableKeyword() about why this method's default
+		 * direction differs from that one.
 		 * @return string
 		 */
 		public function getDropTempTableKeyword(): string {

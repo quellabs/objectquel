@@ -272,7 +272,7 @@
 
 			$sql = sprintf(
 				"%s %s (%s)",
-				$this->ddlTypeMapper->getCreateTempTableKeyword(),
+				$this->ddlTypeMapper->getTemporaryCreateTableKeyword(),
 				$this->identifierQuoter->quoteIdentifier($tableName),
 				implode(', ', $columnDefs)
 			);
