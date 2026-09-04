@@ -228,30 +228,29 @@
 		 * @return string
 		 */
 		private function resolveColumnType(AstInterface $expression): string {
-			if (!$expression instanceof AstIdentifier) {
-				return 'VARCHAR(255)';
-			}
-
-			$entityName = $expression->getEntityName();
-
-			if ($entityName === null) {
-				return 'VARCHAR(255)';
-			}
-
 			try {
+				if (!$expression instanceof AstIdentifier) {
+					throw new \UnexpectedValueException();
+				}
+
+				$entityName = $expression->getEntityName();
+
+				if ($entityName === null) {
+					throw new \UnexpectedValueException();
+				}
+
 				$metadata = $this->entityStore->getMetadata($entityName);
-			} catch (EntityResolutionException) {
+				$columnName = $metadata->getColumnName($expression->getPropertyName());
+				$columnDefinition = $columnName !== null ? ($metadata->columnDefinitions[$columnName] ?? null) : null;
+
+				if ($columnDefinition === null) {
+					throw new \UnexpectedValueException();
+				}
+
+				return $this->ddlTypeMapper->getTempTableColumnType($columnDefinition);
+			} catch (EntityResolutionException | \UnexpectedValueException) {
 				return 'VARCHAR(255)';
 			}
-
-			$columnName = $metadata->getColumnName($expression->getPropertyName());
-			$columnDefinition = $columnName !== null ? ($metadata->columnDefinitions[$columnName] ?? null) : null;
-
-			if ($columnDefinition === null) {
-				return 'VARCHAR(255)';
-			}
-
-			return $this->ddlTypeMapper->getTempTableColumnType($columnDefinition);
 		}
 
 		/**
