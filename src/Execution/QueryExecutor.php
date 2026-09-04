@@ -4,6 +4,7 @@
 	
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstAppend;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstCreateTable;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstDelete;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstDestroy;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRangeDatabaseSubquery;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstReplace;
@@ -25,6 +26,7 @@
 	use Quellabs\ObjectQuel\Execution\Executors\AppendExecutor;
 	use Quellabs\ObjectQuel\Execution\Executors\CreateTableExecutor;
 	use Quellabs\ObjectQuel\Execution\Executors\DatabaseQueryExecutor;
+	use Quellabs\ObjectQuel\Execution\Executors\DeleteExecutor;
 	use Quellabs\ObjectQuel\Execution\Executors\DestroyExecutor;
 	use Quellabs\ObjectQuel\Execution\Executors\JsonQueryExecutor;
 	use Quellabs\ObjectQuel\Execution\Executors\ReplaceExecutor;
@@ -62,6 +64,7 @@
 		private DestroyExecutor $destroyExecutor;
 		private AppendExecutor $appendExecutor;
 		private ReplaceExecutor $replaceExecutor;
+		private DeleteExecutor $deleteExecutor;
 
 		/**
 		 * Constructor
@@ -84,6 +87,7 @@
 			$this->destroyExecutor = new DestroyExecutor($this->connection, $this->capabilities);
 			$this->appendExecutor = new AppendExecutor($this->connection, $entityManager->getEntityStore(), $entityManager, $this->capabilities);
 			$this->replaceExecutor = new ReplaceExecutor($this->connection, $entityManager, $this->capabilities);
+			$this->deleteExecutor = new DeleteExecutor($this->connection, $entityManager->getEntityStore(), $this->capabilities);
 
 			// Init the plan executor
 			$this->planExecutor = new PlanExecutor($this);
@@ -199,7 +203,7 @@
 		
 		/**
 		 * Executes a bulk, set-based write-verb statement (`append`,
-		 * `replace`, and later `delete`/upsert) and returns how many rows it
+		 * `replace`, `delete`, and later upsert) and returns how many rows it
 		 * affected. Deliberately separate from executeQuery(): these
 		 * statements bypass the identity map and change tracking entirely
 		 * and have no rows to hydrate, so the returned QuelResult carries an
@@ -227,7 +231,11 @@
 					return $this->replaceExecutor->execute($ast, $normalizedParameters);
 				}
 
-				throw new QuelException("Invalid statement type: expected a write-verb statement (e.g. append, replace)");
+				if ($ast instanceof AstDelete) {
+					return $this->deleteExecutor->execute($ast, $normalizedParameters);
+				}
+
+				throw new QuelException("Invalid statement type: expected a write-verb statement (e.g. append, replace, delete)");
 			} catch (ParserException|LexerException $e) {
 				throw new QuelException("Syntax error: " . $e->getMessage(), 'syntax_error', 0, $e);
 			} catch (SemanticException $e) {
@@ -252,8 +260,8 @@
 			$parser = new Parser($lexer);
 			$ast = $parser->parse();
 
-			if (!$ast instanceof AstAppend && !$ast instanceof AstReplace) {
-				throw new QuelException("Invalid statement type: expected a write-verb statement (e.g. append, replace)");
+			if (!$ast instanceof AstAppend && !$ast instanceof AstReplace && !$ast instanceof AstDelete) {
+				throw new QuelException("Invalid statement type: expected a write-verb statement (e.g. append, replace, delete)");
 			}
 
 			return $ast;

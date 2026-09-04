@@ -90,6 +90,7 @@
 		        'append'      => Token::Append,
 		        'to'          => Token::To,
 		        'replace'     => Token::Replace,
+		        'delete'      => Token::Delete,
 	        ];
 			
 			$this->single_tokens = [

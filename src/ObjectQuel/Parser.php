@@ -5,6 +5,7 @@
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRange;
 	use Quellabs\ObjectQuel\ObjectQuel\Rules\Append;
 	use Quellabs\ObjectQuel\ObjectQuel\Rules\CreateTable;
+	use Quellabs\ObjectQuel\ObjectQuel\Rules\Delete;
 	use Quellabs\ObjectQuel\ObjectQuel\Rules\Destroy;
 	use Quellabs\ObjectQuel\ObjectQuel\Rules\Range;
 	use Quellabs\ObjectQuel\ObjectQuel\Rules\Replace;
@@ -19,6 +20,7 @@
 		private Destroy $destroyRule;
 		private Append $appendRule;
 		private Replace $replaceRule;
+		private Delete $deleteRule;
 
 		/**
          * Parser constructor.
@@ -32,6 +34,7 @@
             $this->destroyRule = new Destroy($lexer);
             $this->appendRule = new Append($lexer);
             $this->replaceRule = new Replace($lexer);
+            $this->deleteRule = new Delete($lexer);
         }
 		
 	    /**
@@ -75,6 +78,14 @@
 
 				    case Token::Replace :
 					    $queries[] = $this->replaceRule->parse($ranges);
+					    break;
+
+				    case Token::Delete :
+					    // No lookahead/dispatch needed — unlike a `delete table Name`
+					    // spelling some designs assume, authentic QUEL's drop verb is
+					    // `destroy`, a completely separate keyword and token, so
+					    // Token::Delete always means this DML verb.
+					    $queries[] = $this->deleteRule->parse($ranges);
 					    break;
 
 				    default :

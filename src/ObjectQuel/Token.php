@@ -89,6 +89,7 @@
 		const int Append = 131;
 		const int To = 132;
 		const int Replace = 133;
+		const int Delete = 134;
 		
 		protected int $type;
 		protected mixed $value;

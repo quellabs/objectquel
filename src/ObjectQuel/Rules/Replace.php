@@ -4,7 +4,6 @@
 
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstAssignment;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRange;
-	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRangeDatabase;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstReplace;
 	use Quellabs\ObjectQuel\ObjectQuel\Lexer;
 	use Quellabs\ObjectQuel\ObjectQuel\LexerException;
@@ -45,7 +44,7 @@
 			$this->lexer->match(Token::Replace);
 
 			$targetName = $this->lexer->match(Token::Identifier)->getStringValue();
-			$range = $this->resolveTargetRange($targetName, $ranges);
+			$range = TargetRange::resolve($targetName, $ranges, 'replace');
 			$assignments = $this->parseAssignments();
 
 			$whereClauseRule = new WhereClause($this->lexer);
@@ -54,32 +53,6 @@
 			$this->consumeOptionalSemicolon();
 
 			return new AstReplace($range, $assignments, $conditions);
-		}
-
-		/**
-		 * Resolves the target range name to a declared AstRangeDatabase.
-		 * Unlike `append`, there is no bare-entity-name fallback — the
-		 * mandatory `where` clause needs a concrete range to resolve
-		 * identifiers against, so the target must already be declared.
-		 * @param string $name
-		 * @param AstRange[] $ranges
-		 * @return AstRangeDatabase
-		 * @throws ParserException
-		 */
-		private function resolveTargetRange(string $name, array $ranges): AstRangeDatabase {
-			foreach ($ranges as $range) {
-				if ($range->getName() !== $name) {
-					continue;
-				}
-
-				if (!$range instanceof AstRangeDatabase) {
-					throw new ParserException("replace target '{$name}' must be a database entity range");
-				}
-
-				return $range;
-			}
-
-			throw new ParserException("Undefined range reference '{$name}' in replace statement. Make sure the range is declared before it is used.");
 		}
 
 		/**

@@ -12,11 +12,7 @@
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstReplace;
 	use Quellabs\ObjectQuel\ObjectQuel\AstInterface;
 	use Quellabs\ObjectQuel\ObjectQuel\Helpers\AssignmentValidator;
-	use Quellabs\ObjectQuel\ObjectQuel\Visitors\ResolveIdentifierRange;
-	use Quellabs\ObjectQuel\ObjectQuel\Visitors\ResolvePropertyType;
-	use Quellabs\ObjectQuel\ObjectQuel\Visitors\ResolveRootIdentifierType;
-	use Quellabs\ObjectQuel\ObjectQuel\Visitors\ValidateEntityPropertyExists;
-	use Quellabs\ObjectQuel\ObjectQuel\Visitors\ValidateRangesDeclared;
+	use Quellabs\ObjectQuel\ObjectQuel\Helpers\WriteVerbIdentifierResolver;
 	use Quellabs\ObjectQuel\Persistence\VersionValueHandler;
 
 	/**
@@ -77,7 +73,7 @@
 			// Identifiers in the WHERE clause and assignment values (e.g.
 			// `count = count + 1`) need a resolved type/range before anything
 			// below can compile them to SQL.
-			$this->resolveIdentifierTypes($statement);
+			WriteVerbIdentifierResolver::resolve($statement, $this->entityStore);
 
 			$range = $statement->getRange();
 			$metadata = $this->entityStore->getMetadata($range->getEntityName());
@@ -148,22 +144,5 @@
 		private function compileExpression(AstInterface $expression, array &$parameters): string {
 			$builder = new BuildSqlFromAst($this->entityStore, $parameters, 'VALUES', $this->platform);
 			return $builder->visitNodeAndReturnSQL($expression);
-		}
-
-		/**
-		 * Resolves identifier types/ranges across the whole statement (range,
-		 * assignment values, WHERE condition) and validates them — the same
-		 * checks a `retrieve`'s WHERE clause goes through, applied to
-		 * AstReplace's single-range shape via the NodeWithRanges interface.
-		 * @param AstReplace $statement
-		 * @return void
-		 * @throws SemanticException
-		 */
-		private function resolveIdentifierTypes(AstReplace $statement): void {
-			$statement->accept(new ResolveRootIdentifierType($statement));
-			$statement->accept(new ResolvePropertyType($this->entityStore));
-			$statement->accept(new ResolveIdentifierRange($statement));
-			$statement->accept(new ValidateRangesDeclared());
-			$statement->accept(new ValidateEntityPropertyExists($this->entityStore));
 		}
 	}
