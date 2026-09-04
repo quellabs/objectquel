@@ -235,9 +235,9 @@
 					throw new \UnexpectedValueException();
 				}
 
-				$entityName = $expression->getEntityName();
-
 				// No entity range behind this identifier (e.g. a subquery column).
+				$entityName = $expression->getEntityName();
+				
 				if ($entityName === null) {
 					throw new \UnexpectedValueException();
 				}
