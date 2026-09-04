@@ -15,6 +15,7 @@
 	use Quellabs\ObjectQuel\ObjectQuel\QuelResult;
 	use Quellabs\ObjectQuel\ObjectQuel\QuelToSQLAppend;
 	use Quellabs\ObjectQuel\ObjectQuel\QuelToSQLReplace;
+	use Quellabs\ObjectQuel\ObjectQuel\QuelToSQLUpsert;
 	use Quellabs\ObjectQuel\PrimaryKeys\PrimaryKeyFactory;
 
 	/**
@@ -53,10 +54,16 @@
 			$this->entityStore = $entityStore;
 			$this->entityManager = $entityManager;
 
-			// Reused (not reconstructed) for upsert's on-conflict UPDATE SET
-			// clause — see QuelToSQLAppend's docblock.
+			// QuelToSQLReplace is reused (not reconstructed) so upsert's
+			// on-conflict UPDATE SET clause is built by the exact same
+			// property/type/@Orm\Version-bump rules a standalone `replace`
+			// uses — see QuelToSQLReplace::buildSetClause(). QuelToSQLUpsert
+			// itself isn't a compiler for its own AST node (there's no
+			// AstUpsert — see QuelToSQLAppend's docblock); it just keeps the
+			// on-conflict dialect-branching logic out of QuelToSQLAppend.
 			$replaceCompiler = new QuelToSQLReplace($entityStore, $platform, $entityManager->getUnitOfWork()->getVersionValueHandler());
-			$this->compiler = new QuelToSQLAppend($entityStore, $entityManager, $platform, $replaceCompiler);
+			$upsertCompiler = new QuelToSQLUpsert($entityStore, $platform, $replaceCompiler);
+			$this->compiler = new QuelToSQLAppend($entityStore, $entityManager, $platform, $upsertCompiler);
 		}
 
 		/**

@@ -13,11 +13,8 @@
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstAppend;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstAssignment;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRangeDatabaseSubquery;
-	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstReplace;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRetrieve;
 	use Quellabs\ObjectQuel\ObjectQuel\Helpers\AssignmentValidator;
-	use Quellabs\ObjectQuel\ObjectQuel\Helpers\ConflictTargetResolver;
-	use Quellabs\ObjectQuel\ObjectQuel\Helpers\WriteVerbIdentifierResolver;
 	use Quellabs\ObjectQuel\ObjectQuel\Visitors\CoerceDateTimeParameters;
 	use Quellabs\ObjectQuel\ObjectQuel\Visitors\ResolveIdentifierRange;
 	use Quellabs\ObjectQuel\ObjectQuel\Visitors\ResolvePropertyType;
@@ -41,19 +38,13 @@
 	 * expression-to-SQL visitor the retrieve pipeline uses for WHERE/VALUES.
 	 *
 	 * When the literal-values form carries an upsert's `or replace (...)
-	 * where ...` on-conflict clause (see objectquel-upsert-plan.md), the
-	 * generated SQL branches by dialect — all via
-	 * PlatformCapabilitiesInterface::getDatabaseType(), the same "build
-	 * engine-specific SQL text from scratch" branching QuelToSQLCreate/
-	 * QuelToSQLDestroy already use, not a bespoke capability method for a
-	 * one-off shape:
-	 *   - Postgres/SQLite: `INSERT ... ON CONFLICT (cols) DO UPDATE SET ...`
-	 *   - MySQL/MariaDB:   `INSERT ... ON DUPLICATE KEY UPDATE ...` — fires
-	 *     on *any* unique-key collision on the table, not only the named
-	 *     conflict columns; a real MySQL syntax gap, not something this
-	 *     compiler can paper over.
-	 *   - SQL Server:      `MERGE ... WHEN MATCHED THEN UPDATE ... WHEN NOT
-	 *     MATCHED THEN INSERT ...`
+	 * where ...` on-conflict clause (see objectquel-upsert-plan.md),
+	 * compiling it is delegated to QuelToSQLUpsert once the base INSERT and
+	 * per-row values are ready — there's no separate `AstUpsert` node (an
+	 * upsert *is* an AstAppend with an optional AstReplace slot), so
+	 * QuelToSQLUpsert isn't a sibling compiler for its own node the way
+	 * QuelToSQLReplace/QuelToSQLDelete are; it exists purely to keep that
+	 * dialect-branching logic out of this file.
 	 */
 	class QuelToSQLAppend {
 
@@ -61,7 +52,7 @@
 		private EntityManager $entityManager;
 		private SqlIdentifierQuoter $identifierQuoter;
 		private PlatformCapabilitiesInterface $platform;
-		private QuelToSQLReplace $replaceCompiler;
+		private QuelToSQLUpsert $upsertCompiler;
 
 		/**
 		 * QuelToSQLAppend constructor
@@ -71,17 +62,16 @@
 		 *        normalize/validate/optimize pipeline a top-level retrieve goes
 		 *        through — QueryOptimizer specifically requires an EntityManager.
 		 * @param PlatformCapabilitiesInterface $platform
-		 * @param QuelToSQLReplace $replaceCompiler Reused (not reconstructed) for
-		 *        upsert's on-conflict UPDATE SET clause, so it's built with the
-		 *        exact same property-exists/type/@Orm\Version-bump rules a
-		 *        standalone `replace` uses — see buildSetClause().
+		 * @param QuelToSQLUpsert $upsertCompiler Handles the on-conflict
+		 *        extension when an AstAppend carries one — see this class's
+		 *        docblock and QuelToSQLUpsert's own.
 		 */
-		public function __construct(EntityStore $entityStore, EntityManager $entityManager, PlatformCapabilitiesInterface $platform, QuelToSQLReplace $replaceCompiler) {
+		public function __construct(EntityStore $entityStore, EntityManager $entityManager, PlatformCapabilitiesInterface $platform, QuelToSQLUpsert $upsertCompiler) {
 			$this->entityStore = $entityStore;
 			$this->entityManager = $entityManager;
 			$this->identifierQuoter = new SqlIdentifierQuoter($platform);
 			$this->platform = $platform;
-			$this->replaceCompiler = $replaceCompiler;
+			$this->upsertCompiler = $upsertCompiler;
 		}
 
 		/**
@@ -131,13 +121,14 @@
 				$rows
 			);
 
+			$insertSql = $this->compileInsert($metadata, $columnNames, $properties, $compiledRows);
 			$onConflict = $statement->getOnConflict();
 
 			if ($onConflict === null) {
-				return $this->compileInsert($metadata, $columnNames, $properties, $compiledRows);
+				return $insertSql;
 			}
 
-			return $this->compileUpsert($metadata, $properties, $columnNames, $compiledRows, $onConflict, $parameters);
+			return $this->upsertCompiler->convertToSQL($insertSql, $metadata, $properties, $columnNames, $compiledRows, $onConflict, $parameters);
 		}
 
 		/**
@@ -203,152 +194,6 @@
 				$this->quoteIdentifierList($columnNames),
 				implode(', ', $valueTuples)
 			);
-		}
-
-		/**
-		 * Resolves and validates the on-conflict clause, then dispatches to
-		 * the dialect-appropriate insert-or-update compiler (see this class's
-		 * docblock).
-		 * @param EntityMetadataRecord $metadata
-		 * @param string[] $properties
-		 * @param string[] $columnNames
-		 * @param array<int, array<string, string>> $compiledRows
-		 * @param AstReplace $onConflict
-		 * @param array<string, mixed> $parameters
-		 * @return string
-		 * @throws SemanticException
-		 */
-		private function compileUpsert(
-			EntityMetadataRecord $metadata,
-			array $properties,
-			array $columnNames,
-			array $compiledRows,
-			AstReplace $onConflict,
-			array &$parameters
-		): string {
-			// The on-conflict clause's own WHERE/assignment identifiers need a
-			// resolved type/range before ConflictTargetResolver or
-			// buildSetClause can read them.
-			WriteVerbIdentifierResolver::resolve($onConflict, $this->entityStore);
-
-			$conflictProperties = ConflictTargetResolver::resolve($onConflict->getConditions(), $metadata);
-			$this->assertConflictPropertiesSuppliedByRow($conflictProperties, $properties, $metadata);
-
-			$conflictColumns = array_map(fn(string $property) => $metadata->getColumnName($property), $conflictProperties);
-			$setClauseParts = $this->replaceCompiler->buildSetClause($onConflict->getAssignments(), $metadata, $parameters);
-			$dialect = $this->platform->getDatabaseType();
-
-			if (in_array($dialect, ['pgsql', 'sqlite'], true)) {
-				return sprintf(
-					'%s ON CONFLICT (%s) DO UPDATE SET %s',
-					$this->compileInsert($metadata, $columnNames, $properties, $compiledRows),
-					$this->quoteIdentifierList($conflictColumns),
-					implode(', ', $setClauseParts)
-				);
-			}
-
-			if (in_array($dialect, ['mysql', 'mariadb'], true)) {
-				return sprintf(
-					'%s ON DUPLICATE KEY UPDATE %s',
-					$this->compileInsert($metadata, $columnNames, $properties, $compiledRows),
-					implode(', ', $setClauseParts)
-				);
-			}
-
-			// sqlsrv — no ON CONFLICT/ON DUPLICATE KEY UPDATE equivalent at all.
-			return $this->compileMerge($metadata, $properties, $columnNames, $compiledRows, $conflictColumns, $setClauseParts);
-		}
-
-		/**
-		 * Compiles the SQL Server `MERGE` form. The USING source is a VALUES
-		 * row constructor exposing every appended column (not just the
-		 * conflict columns) under the same compiled expressions the plain
-		 * INSERT uses, so:
-		 *   - the ON clause can compare target.col = source.col per conflict column
-		 *   - WHEN NOT MATCHED's INSERT can reference source.col for every
-		 *     column, instead of re-embedding per-row literals a second time
-		 * WHEN MATCHED's UPDATE SET uses the on-conflict clause's own
-		 * (independently compiled) assignment values, exactly as the other
-		 * two dialect branches do — never source.*, since those expressions
-		 * may differ from what was inserted.
-		 * @param EntityMetadataRecord $metadata
-		 * @param string[] $properties
-		 * @param string[] $columnNames
-		 * @param array<int, array<string, string>> $compiledRows
-		 * @param string[] $conflictColumns
-		 * @param string[] $setClauseParts
-		 * @return string
-		 */
-		private function compileMerge(
-			EntityMetadataRecord $metadata,
-			array $properties,
-			array $columnNames,
-			array $compiledRows,
-			array $conflictColumns,
-			array $setClauseParts
-		): string {
-			$targetAlias = $this->identifierQuoter->quoteIdentifier('__upsert_target');
-			$sourceAlias = $this->identifierQuoter->quoteIdentifier('__upsert_source');
-			$quotedColumnList = $this->quoteIdentifierList($columnNames);
-
-			$sourceRows = array_map(
-				fn(array $compiledRow) => '(' . implode(', ', array_map(fn(string $property) => $compiledRow[$property], $properties)) . ')',
-				$compiledRows
-			);
-
-			$onClauseParts = array_map(
-				fn(string $column) => sprintf(
-					'%s.%s = %s.%s',
-					$targetAlias,
-					$this->identifierQuoter->quoteIdentifier($column),
-					$sourceAlias,
-					$this->identifierQuoter->quoteIdentifier($column)
-				),
-				$conflictColumns
-			);
-
-			$insertValueRefs = array_map(
-				fn(string $column) => $sourceAlias . '.' . $this->identifierQuoter->quoteIdentifier($column),
-				$columnNames
-			);
-
-			return sprintf(
-				'MERGE INTO %s AS %s USING (VALUES %s) AS %s (%s) ON %s WHEN MATCHED THEN UPDATE SET %s WHEN NOT MATCHED THEN INSERT (%s) VALUES (%s);',
-				$this->identifierQuoter->quoteIdentifier($metadata->tableName),
-				$targetAlias,
-				implode(', ', $sourceRows),
-				$sourceAlias,
-				$quotedColumnList,
-				implode(' AND ', $onClauseParts),
-				implode(', ', $setClauseParts),
-				$quotedColumnList,
-				implode(', ', $insertValueRefs)
-			);
-		}
-
-		/**
-		 * Every conflict-target property must also be part of the append's
-		 * own row — otherwise there's nothing to compare against for
-		 * detecting the conflict on that row. (All rows of a multi-row
-		 * append share the same property set — enforced at parse time by
-		 * Rules\Append — so checking the first row's set covers every row.)
-		 * @param string[] $conflictProperties
-		 * @param string[] $rowProperties
-		 * @param EntityMetadataRecord $metadata
-		 * @return void
-		 * @throws SemanticException
-		 */
-		private function assertConflictPropertiesSuppliedByRow(array $conflictProperties, array $rowProperties, EntityMetadataRecord $metadata): void {
-			$missing = array_diff($conflictProperties, $rowProperties);
-
-			if (!empty($missing)) {
-				throw new SemanticException(sprintf(
-					"append ... or replace's conflict target (%s) must also be part of the append's own column list on '%s' — missing: %s",
-					implode(', ', $conflictProperties),
-					$metadata->className,
-					implode(', ', $missing)
-				));
-			}
 		}
 
 		/**
