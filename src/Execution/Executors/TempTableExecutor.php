@@ -229,26 +229,34 @@
 		 */
 		private function resolveColumnType(AstInterface $expression): string {
 			try {
+				// Function calls, computed expressions, and literals have no
+				// entity property behind them to look up a declared type for.
 				if (!$expression instanceof AstIdentifier) {
 					throw new \UnexpectedValueException();
 				}
 
 				$entityName = $expression->getEntityName();
 
+				// No entity range behind this identifier (e.g. a subquery column).
 				if ($entityName === null) {
 					throw new \UnexpectedValueException();
 				}
 
+				// getMetadata() throws EntityResolutionException if $entityName
+				// isn't a real, mapped entity.
 				$metadata = $this->entityStore->getMetadata($entityName);
 				$columnName = $metadata->getColumnName($expression->getPropertyName());
 				$columnDefinition = $columnName !== null ? ($metadata->columnDefinitions[$columnName] ?? null) : null;
 
+				// Property has no backing column (e.g. a virtual/computed property).
 				if ($columnDefinition === null) {
 					throw new \UnexpectedValueException();
 				}
 
 				return $this->ddlTypeMapper->getTempTableColumnType($columnDefinition);
 			} catch (EntityResolutionException | \UnexpectedValueException) {
+				// Any of the above "can't resolve a real declared type" cases
+				// fall back to the same untyped default.
 				return 'VARCHAR(255)';
 			}
 		}
