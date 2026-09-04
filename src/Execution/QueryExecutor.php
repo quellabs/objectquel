@@ -3,6 +3,7 @@
 	namespace Quellabs\ObjectQuel\Execution;
 	
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstCreateTable;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstDestroy;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRangeDatabaseSubquery;
 	use Quellabs\ObjectQuel\Capabilities\PlatformCapabilities;
 	use Quellabs\ObjectQuel\EntityManager;
@@ -21,6 +22,7 @@
 	use Quellabs\ObjectQuel\ObjectQuel\QuelResult;
 	use Quellabs\ObjectQuel\Execution\Executors\CreateTableExecutor;
 	use Quellabs\ObjectQuel\Execution\Executors\DatabaseQueryExecutor;
+	use Quellabs\ObjectQuel\Execution\Executors\DestroyExecutor;
 	use Quellabs\ObjectQuel\Execution\Executors\JsonQueryExecutor;
 	use Quellabs\ObjectQuel\ObjectQuel\QueryNormalizer;
 	use Quellabs\ObjectQuel\ObjectQuel\SemanticAnalyzer;
@@ -53,6 +55,7 @@
 		private DatabaseQueryExecutor $databaseExecutor;
 		private JsonQueryExecutor $jsonExecutor;
 		private CreateTableExecutor $createTableExecutor;
+		private DestroyExecutor $destroyExecutor;
 		
 		/**
 		 * Constructor
@@ -72,6 +75,7 @@
 			$this->databaseExecutor = $databaseExecutor ?? new DatabaseQueryExecutor($entityManager, $this->capabilities);
 			$this->jsonExecutor = new JsonQueryExecutor();
 			$this->createTableExecutor = new CreateTableExecutor($this->connection, $this->capabilities);
+			$this->destroyExecutor = new DestroyExecutor($this->connection, $this->capabilities);
 			
 			// Init the plan executor
 			$this->planExecutor = new PlanExecutor($this);
@@ -138,6 +142,11 @@
 				// retrieve-specific and produce no rows for a statement like this.
 				if ($ast instanceof AstCreateTable) {
 					$this->createTableExecutor->execute($ast);
+					return null;
+				}
+
+				if ($ast instanceof AstDestroy) {
+					$this->destroyExecutor->execute($ast);
 					return null;
 				}
 
@@ -208,11 +217,11 @@
 
 				// DDL statements have no planning pipeline to explain — and
 				// explainQuery()'s dry-run wrapper only intercepts the retrieve
-				// database executor, not CreateTableExecutor, so continuing here
-				// would run real DDL against the real connection despite being
-				// called "explain".
-				if ($ast instanceof AstCreateTable) {
-					throw new QuelException("explain is not supported for 'create' statements");
+				// database executor, not CreateTableExecutor/DestroyExecutor, so
+				// continuing here would run real DDL against the real
+				// connection despite being called "explain".
+				if ($ast instanceof AstCreateTable || $ast instanceof AstDestroy) {
+					throw new QuelException("explain is not supported for DDL statements");
 				}
 
 				$this->resolveAndSetIdentifierTypes($ast);
@@ -268,7 +277,7 @@
 		/**
 		 * Parses a Quel query and returns its AST representation.
 		 * @param string $query The Quel query string to parse
-		 * @return AstInterface The parsed AST (AstRetrieve or AstCreateTable)
+		 * @return AstInterface The parsed AST (AstRetrieve, AstCreateTable, or AstDestroy)
 		 * @throws LexerException
 		 * @throws ParserException
 		 * @throws QuelException If parsing, validation, or processing fails
@@ -286,8 +295,8 @@
 			$ast = $parser->parse();
 
 			// Ensure the parsed AST represents a statement type this executor knows how to run
-			if (!$ast instanceof AstRetrieve && !$ast instanceof AstCreateTable) {
-				throw new QuelException("Invalid query type: expected retrieve or create operation");
+			if (!$ast instanceof AstRetrieve && !$ast instanceof AstCreateTable && !$ast instanceof AstDestroy) {
+				throw new QuelException("Invalid query type: expected retrieve, create, or destroy operation");
 			}
 
 			// The AST is now fully validated

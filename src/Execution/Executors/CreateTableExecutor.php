@@ -63,14 +63,14 @@
 		public function execute(AstCreateTable $statement): void {
 			$sql = $this->buildSql($statement);
 
-			try {
-				$this->connection->execute($sql);
-			} catch (\Throwable $e) {
+			// DatabaseAdapter::execute() swallows the underlying exception itself
+			// and returns null on failure rather than throwing — a try/catch
+			// around this call would never fire. Failure must be detected via
+			// the null return and DatabaseAdapter::getLastErrorMessage() instead.
+			if ($this->connection->execute($sql) === null) {
 				throw new QuelException(
-					"Failed to create table '{$statement->getTableName()}': {$e->getMessage()}",
-					'table_creation_error',
-					0,
-					$e
+					"Failed to create table '{$statement->getTableName()}': {$this->connection->getLastErrorMessage()}",
+					'table_creation_error'
 				);
 			}
 		}

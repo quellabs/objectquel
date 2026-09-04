@@ -4,6 +4,7 @@
 
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRange;
 	use Quellabs\ObjectQuel\ObjectQuel\Rules\CreateTable;
+	use Quellabs\ObjectQuel\ObjectQuel\Rules\Destroy;
 	use Quellabs\ObjectQuel\ObjectQuel\Rules\Range;
 	use Quellabs\ObjectQuel\ObjectQuel\Rules\Retrieve;
 
@@ -13,6 +14,7 @@
         private Range $rangeRule;
 		private Retrieve $retrieveRule;
 		private CreateTable $createTableRule;
+		private Destroy $destroyRule;
 
 		/**
          * Parser constructor.
@@ -23,6 +25,7 @@
             $this->rangeRule = new Range($lexer);
             $this->retrieveRule = new Retrieve($lexer);
             $this->createTableRule = new CreateTable($lexer);
+            $this->destroyRule = new Destroy($lexer);
         }
 		
 	    /**
@@ -57,6 +60,12 @@
 					    // elsewhere in this do-while loop, so this isn't silent
 					    // data loss the way discarding a one-shot parse would be.
 					    $queries[] = $this->createTableRule->parse();
+					    break;
+
+				    case Token::Destroy :
+					    // Same rationale as Token::Create above — any ranges
+					    // parsed ahead of this statement are simply unused.
+					    $queries[] = $this->destroyRule->parse();
 					    break;
 
 				    default :

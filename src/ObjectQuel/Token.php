@@ -84,6 +84,7 @@
 		const int Primary = 125;
 		const int Key = 126;
 		const int Table = 127;
+		const int Destroy = 128;
 		
 		protected int $type;
 		protected mixed $value;

@@ -85,6 +85,7 @@
 		        'primary'     => Token::Primary,
 		        'key'         => Token::Key,
 		        'table'       => Token::Table,
+		        'destroy'     => Token::Destroy,
 	        ];
 			
 			$this->single_tokens = [
