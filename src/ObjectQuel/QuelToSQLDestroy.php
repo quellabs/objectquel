@@ -3,6 +3,7 @@
 	namespace Quellabs\ObjectQuel\ObjectQuel;
 
 	use Quellabs\ObjectQuel\Capabilities\PlatformCapabilitiesInterface;
+	use Quellabs\ObjectQuel\DatabaseAdapter\DDLTypeMapper;
 	use Quellabs\ObjectQuel\DatabaseAdapter\SqlIdentifierQuoter;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstDestroy;
 
@@ -10,36 +11,112 @@
 	 * Compiles an AstDestroy statement to one `DROP TABLE <name>` per target.
 	 * Sibling to QuelToSQLRetrieve/QuelToSQLCreate.
 	 *
-	 * No dialect branching — plain `DROP TABLE` is correct on every engine
-	 * for both permanent and session-temp tables. `IF EXISTS` is included
-	 * only when the statement's `if exists` qualifier is present; by default
-	 * a missing name must fail loudly, not silently no-op — see
-	 * DestroyExecutor.
+	 * `IF EXISTS` is included only when the statement's `if exists`
+	 * qualifier is present; by default a missing name must fail loudly, not
+	 * silently no-op — see DestroyExecutor.
+	 *
+	 * Dialect branching only matters for `temporary`/temp-table resolution:
+	 * on mysql/mariadb/pgsql/sqlite a session-temp table's physical name is
+	 * the same as its logical one (the engine resolves an unqualified name
+	 * to the session's temp table first if one exists — MySQL: temp tables
+	 * shadow same-named permanent ones; Postgres: the per-session temp
+	 * schema is first in `search_path`; SQLite: `TEMP` is searched before
+	 * `MAIN`), so plain `DROP TABLE <name>` already does the right thing
+	 * whether or not `temporary` was written. SQL Server has no such
+	 * shadowing: a local temp table's real name is `#name`, a different
+	 * physical object, so `destroy Name` on SQL Server needs special
+	 * handling — see convertToSQL().
 	 */
 	class QuelToSQLDestroy {
 
+		private DDLTypeMapper $ddlTypeMapper;
 		private SqlIdentifierQuoter $identifierQuoter;
+		private PlatformCapabilitiesInterface $platform;
 
 		/**
 		 * QuelToSQLDestroy constructor
 		 * @param PlatformCapabilitiesInterface $platform
 		 */
 		public function __construct(PlatformCapabilitiesInterface $platform) {
+			$this->ddlTypeMapper = new DDLTypeMapper($platform);
 			$this->identifierQuoter = new SqlIdentifierQuoter($platform);
+			$this->platform = $platform;
 		}
 
 		/**
-		 * Compiles a `destroy Name {, Name} [if exists]` statement to SQL —
-		 * one `DROP TABLE` statement per name, in the order they were named.
+		 * Compiles a `destroy [temporary] Name {, Name} [if exists]`
+		 * statement to SQL — one `DROP TABLE` statement per name, in the
+		 * order they were named.
 		 * @param AstDestroy $statement
 		 * @return string[]
 		 */
 		public function convertToSQL(AstDestroy $statement): array {
-			$keyword = $statement->isIfExists() ? 'DROP TABLE IF EXISTS ' : 'DROP TABLE ';
+			$temporary = $statement->isTemporary();
+			$ifExists = $statement->isIfExists();
+			$isSqlServer = $this->platform->getDatabaseType() === 'sqlsrv';
 
 			return array_map(
-				fn(string $name) => $keyword . $this->identifierQuoter->quoteIdentifier($name),
+				function (string $name) use ($temporary, $ifExists, $isSqlServer) {
+					// `temporary` makes the target unambiguous: resolve straight
+					// to its physical name (identity everywhere except SQL
+					// Server) and drop that, exactly like the non-sqlsrv case
+					// below.
+					if ($temporary) {
+						return $this->plainDrop($this->ddlTypeMapper->getTempTableName($name), $ifExists);
+					}
+
+					if ($isSqlServer) {
+						return $this->sqlServerUnqualifiedDrop($name, $ifExists);
+					}
+
+					return $this->plainDrop($name, $ifExists);
+				},
 				$statement->getNames()
 			);
+		}
+
+		/**
+		 * A single `DROP TABLE [IF EXISTS] <name>` statement — correct
+		 * whenever the physical name to drop is already known unambiguously
+		 * (a permanent table anywhere, or a temp table once resolved via
+		 * DDLTypeMapper::getTempTableName()).
+		 * @param string $physicalName
+		 * @param bool $ifExists
+		 * @return string
+		 */
+		private function plainDrop(string $physicalName, bool $ifExists): string {
+			$keyword = $ifExists ? 'DROP TABLE IF EXISTS ' : 'DROP TABLE ';
+			return $keyword . $this->identifierQuoter->quoteIdentifier($physicalName);
+		}
+
+		/**
+		 * An unqualified `destroy Name` on SQL Server, where it's not known
+		 * whether $name refers to a permanent table or a session-temp one.
+		 * Emulates the "temp shadows permanent" priority the other three
+		 * engines give unqualified names natively: drop the local temp table
+		 * `#name` if a session-scoped one currently exists (checked via
+		 * `tempdb..#name`, since local temp tables live in tempdb), otherwise
+		 * fall back to dropping the permanent table.
+		 * @param string $name
+		 * @param bool $ifExists
+		 * @return string
+		 */
+		private function sqlServerUnqualifiedDrop(string $name, bool $ifExists): string {
+			$physicalTempName = $this->ddlTypeMapper->getTempTableName($name);
+			$quotedTempName = $this->identifierQuoter->quoteIdentifier($physicalTempName);
+			$permanentDrop = $this->plainDrop($name, $ifExists);
+
+			return "IF OBJECT_ID('tempdb..{$this->escapeStringLiteral($physicalTempName)}') IS NOT NULL "
+				. "DROP TABLE {$quotedTempName} ELSE {$permanentDrop}";
+		}
+
+		/**
+		 * Escapes a value for inclusion in a single-quoted T-SQL string
+		 * literal (doubling embedded quotes, the ANSI SQL escaping rule).
+		 * @param string $value
+		 * @return string
+		 */
+		private function escapeStringLiteral(string $value): string {
+			return str_replace("'", "''", $value);
 		}
 	}

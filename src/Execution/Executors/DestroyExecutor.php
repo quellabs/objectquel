@@ -45,7 +45,7 @@
 		}
 
 		/**
-		 * Compile and execute a `destroy Name {, Name}` statement.
+		 * Compile and execute a `destroy [temporary] Name {, Name} [if exists]` statement.
 		 * @param AstDestroy $statement
 		 * @return void
 		 * @throws QuelException On the first DDL failure
