@@ -8,7 +8,6 @@
 	use Quellabs\ObjectQuel\ObjectQuel\LexerException;
 	use Quellabs\ObjectQuel\ObjectQuel\ParserException;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRangeDatabase;
-	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRangeDatabaseTable;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRangeJsonSource;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRangeDatabaseSubquery;
 	
@@ -66,33 +65,10 @@
 				return $this->parseJsonRange($alias->getStringValue());
 			}
 
-			// Check if the next token is 'table' — a raw table name, not an Entity class
-			if ($this->lexer->lookahead() == Token::Table) {
-				return $this->parseTableRange($alias);
-			}
-
 			// Otherwise, treat it as a database entity source
 			return $this->parseEntityRange($alias);
 		}
 
-		/**
-		 * Parse `range of alias is table Name` — a raw table name, no
-		 * EntityStore lookup, no namespace/VIA syntax.
-		 * @param Token $alias The token containing the alias identifier
-		 * @return AstRangeDatabaseTable AST node representing a raw table source
-		 * @throws LexerException
-		 */
-		private function parseTableRange(Token $alias): AstRangeDatabaseTable {
-			$this->lexer->match(Token::Table);
-			$tableName = $this->lexer->match(Token::Identifier)->getStringValue();
-
-			if ($this->lexer->lookahead() == Token::Semicolon) {
-				$this->lexer->match(Token::Semicolon);
-			}
-
-			return new AstRangeDatabaseTable($alias->getStringValue(), $tableName);
-		}
-		
 		/**
 		 * Parse ranges
 		 * @return AstRange[]

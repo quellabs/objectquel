@@ -84,7 +84,6 @@
 		        'identity'    => Token::Identity,
 		        'primary'     => Token::Primary,
 		        'key'         => Token::Key,
-		        'table'       => Token::Table,
 		        'destroy'     => Token::Destroy,
 		        'if'          => Token::If,
 		        'exists'      => Token::Exists,

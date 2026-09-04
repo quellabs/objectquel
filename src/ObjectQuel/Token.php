@@ -83,7 +83,6 @@
 		const int Identity = 124;
 		const int Primary = 125;
 		const int Key = 126;
-		const int Table = 127;
 		const int Destroy = 128;
 		const int If = 129;
 		const int Exists = 130;

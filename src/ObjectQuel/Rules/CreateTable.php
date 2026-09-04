@@ -15,8 +15,7 @@
 	 * [if not exists]` statements in the ObjectQuel language.
 	 *
 	 * Authentic QUEL has no `table` keyword in this statement at all (see
-	 * objectquel-create-table-plan.md) — `table` is only used separately, as
-	 * the `range of x is table Name` disambiguation marker.
+	 * objectquel-create-table-plan.md).
 	 */
 	class CreateTable {
 
