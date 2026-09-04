@@ -78,6 +78,12 @@
 		const int WindowSize = 119;
 		const int JsonSource = 120;
 		const int Filter = 121;
+		const int Create = 122;
+		const int Temporary = 123;
+		const int Identity = 124;
+		const int Primary = 125;
+		const int Key = 126;
+		const int Table = 127;
 		
 		protected int $type;
 		protected mixed $value;

@@ -2,6 +2,7 @@
 	
 	namespace Quellabs\ObjectQuel\Execution;
 	
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstCreateTable;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRangeDatabaseSubquery;
 	use Quellabs\ObjectQuel\Capabilities\PlatformCapabilities;
 	use Quellabs\ObjectQuel\EntityManager;
@@ -11,12 +12,14 @@
 	use Quellabs\ObjectQuel\Exception\SemanticException;
 	use Quellabs\ObjectQuel\Exception\TransformationException;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRetrieve;
+	use Quellabs\ObjectQuel\ObjectQuel\AstInterface;
 	use Quellabs\ObjectQuel\ObjectQuel\Lexer;
 	use Quellabs\ObjectQuel\ObjectQuel\LexerException;
 	use Quellabs\ObjectQuel\Exception\QuelException;
 	use Quellabs\ObjectQuel\ObjectQuel\Parser;
 	use Quellabs\ObjectQuel\ObjectQuel\ParserException;
 	use Quellabs\ObjectQuel\ObjectQuel\QuelResult;
+	use Quellabs\ObjectQuel\Execution\Executors\CreateTableExecutor;
 	use Quellabs\ObjectQuel\Execution\Executors\DatabaseQueryExecutor;
 	use Quellabs\ObjectQuel\Execution\Executors\JsonQueryExecutor;
 	use Quellabs\ObjectQuel\ObjectQuel\QueryNormalizer;
@@ -49,6 +52,7 @@
 		private SemanticAnalyzer $semanticAnalyser;
 		private DatabaseQueryExecutor $databaseExecutor;
 		private JsonQueryExecutor $jsonExecutor;
+		private CreateTableExecutor $createTableExecutor;
 		
 		/**
 		 * Constructor
@@ -67,6 +71,7 @@
 			// Create specialized executors
 			$this->databaseExecutor = $databaseExecutor ?? new DatabaseQueryExecutor($entityManager, $this->capabilities);
 			$this->jsonExecutor = new JsonQueryExecutor();
+			$this->createTableExecutor = new CreateTableExecutor($this->connection, $this->capabilities);
 			
 			// Init the plan executor
 			$this->planExecutor = new PlanExecutor($this);
@@ -114,20 +119,28 @@
 		 * To inspect planner decisions without executing, use explain() instead.
 		 * @param string $query The ObjectQuel query string
 		 * @param array<int|string, mixed> $parameters Query parameters
-		 * @return QuelResult
+		 * @return QuelResult|null Null for statements with no rows to return (e.g. `create`)
 		 * @throws QuelException
 		 */
-		public function executeQuery(string $query, array $parameters = []): QuelResult {
+		public function executeQuery(string $query, array $parameters = []): ?QuelResult {
 			try {
 				// Normalize parameters
 				$normalizedParameters = $this->normalizeParams($parameters);
-				
+
 				// Clear SQL list
 				$this->databaseExecutor->resetLastExecutedSql();
-				
+
 				// Parse the input query string into an Abstract Syntax Tree (AST)
 				$ast = $this->parse($query);
-				
+
+				// DDL statements bypass the retrieve pipeline entirely — semantic
+				// analysis, optimization, planning, and hydration are all
+				// retrieve-specific and produce no rows for a statement like this.
+				if ($ast instanceof AstCreateTable) {
+					$this->createTableExecutor->execute($ast);
+					return null;
+				}
+
 				// Resolve all identifier types. Note: this does no semantic checking.
 				// It just flags the type based on AST hierarchy
 				$this->resolveAndSetIdentifierTypes($ast);
@@ -192,6 +205,16 @@
 				
 				// Parse and resolve identifiers
 				$ast = $this->parse($query);
+
+				// DDL statements have no planning pipeline to explain — and
+				// explainQuery()'s dry-run wrapper only intercepts the retrieve
+				// database executor, not CreateTableExecutor, so continuing here
+				// would run real DDL against the real connection despite being
+				// called "explain".
+				if ($ast instanceof AstCreateTable) {
+					throw new QuelException("explain is not supported for 'create' statements");
+				}
+
 				$this->resolveAndSetIdentifierTypes($ast);
 				
 				// Normalize and validate the AST before handing it to the optimizer
@@ -243,31 +266,30 @@
 		}
 		
 		/**
-		 * Parses a Quel query and returns its validated AST representation.
+		 * Parses a Quel query and returns its AST representation.
 		 * @param string $query The Quel query string to parse
-		 * @return AstRetrieve The validated AST or null if parsing fails
+		 * @return AstInterface The parsed AST (AstRetrieve or AstCreateTable)
 		 * @throws LexerException
 		 * @throws ParserException
 		 * @throws QuelException If parsing, validation, or processing fails
 		 */
-		private function parse(string $query): AstRetrieve {
+		private function parse(string $query): AstInterface {
 			// Convert the raw query string into an Abstract Syntax Tree
 			// Create a lexer to break the query string into tokens (keywords, identifiers, operators, etc.)
 			$lexer = new Lexer($query);
-			
+
 			// Create a parser that takes the tokenized input and builds an Abstract Syntax Tree
 			$parser = new Parser($lexer);
-			
+
 			// Execute the parsing process to generate the AST representation of the query
 			// This transforms the linear token sequence into a hierarchical tree structure
 			$ast = $parser->parse();
-			
-			// Ensure the parsed AST represents a RETRIEVE operation
-			// This method specifically handles RETRIEVE queries
-			if (!$ast instanceof AstRetrieve) {
-				throw new QuelException("Invalid query type: expected retrieve operation");
+
+			// Ensure the parsed AST represents a statement type this executor knows how to run
+			if (!$ast instanceof AstRetrieve && !$ast instanceof AstCreateTable) {
+				throw new QuelException("Invalid query type: expected retrieve or create operation");
 			}
-			
+
 			// The AST is now fully validated
 			return $ast;
 		}

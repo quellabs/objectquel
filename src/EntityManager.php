@@ -196,7 +196,7 @@
 				$query,
 				$this->queryExecutor->getLastExecutedSql(),
 				$end - $start,
-				$result->recordCount(),
+				$result?->recordCount() ?? 0,
 			);
 			
 			// In development mode, emit a debug signal with the full query plan

@@ -32,10 +32,10 @@
 		
 		/** @var ArithmeticExpression Parser rule for handling arithmetic expressions in field lists and sort clauses */
 		private ArithmeticExpression $expressionRule;
-		
+
 		/** @var LogicalExpression Parser rule for handling WHERE-clause conditions (AND/OR/NOT/comparisons) */
 		private LogicalExpression $conditionRule;
-		
+
 		/**
 		 * Initialize the Retrieve parser with required dependencies.
 		 * @param Lexer $lexer The lexer instance for token processing
@@ -46,7 +46,7 @@
 			$this->expressionRule = new ArithmeticExpression($this->lexer);
 			$this->conditionRule = new LogicalExpression($this->lexer);
 		}
-		
+
 		/**
 		 * Parse a complete 'retrieve' statement from the ObjectQuel language.
 		 * @param array<mixed> $directives Query modification directives affecting behavior
@@ -56,7 +56,7 @@
 		 */
 		public function parse(array $directives, array $ranges): AstRetrieve {
 			$this->lexer->match(Token::Retrieve);
-			
+
 			$retrieve = new AstRetrieve(
 				$directives,
 				$ranges,

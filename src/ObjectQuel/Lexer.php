@@ -79,6 +79,12 @@
 		        'window_size' => Token::WindowSize,
 		        'json_source' => Token::JsonSource,
 		        'filter'      => Token::Filter,
+		        'create'      => Token::Create,
+		        'temporary'   => Token::Temporary,
+		        'identity'    => Token::Identity,
+		        'primary'     => Token::Primary,
+		        'key'         => Token::Key,
+		        'table'       => Token::Table,
 	        ];
 			
 			$this->single_tokens = [

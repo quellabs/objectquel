@@ -8,6 +8,7 @@
 	use Quellabs\ObjectQuel\ObjectQuel\LexerException;
 	use Quellabs\ObjectQuel\ObjectQuel\ParserException;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRangeDatabase;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRangeDatabaseTable;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRangeJsonSource;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRangeDatabaseSubquery;
 	
@@ -64,9 +65,41 @@
 			if ($this->lexer->optionalMatch(Token::JsonSource)) {
 				return $this->parseJsonRange($alias->getStringValue());
 			}
-			
+
+			// Check if the next token is 'table' — a raw table name, not an Entity class
+			if ($this->lexer->lookahead() == Token::Table) {
+				return $this->parseTableRange($alias);
+			}
+
 			// Otherwise, treat it as a database entity source
 			return $this->parseEntityRange($alias);
+		}
+
+		/**
+		 * Parse a raw table definition in a RANGE clause.
+		 * Format: RANGE OF alias IS table Name
+		 * Distinct from an entity range: no EntityStore lookup is involved, and
+		 * no namespace/VIA syntax applies — this addresses a table created via
+		 * QUEL's own `create` statement (or a pre-existing table with no Entity
+		 * class), never a Phinx-managed, annotation-mapped one.
+		 * @param Token $alias The token containing the alias identifier
+		 * @return AstRangeDatabaseTable AST node representing a raw table source
+		 * @throws LexerException
+		 */
+		private function parseTableRange(Token $alias): AstRangeDatabaseTable {
+			// Consume the 'table' marker keyword
+			$this->lexer->match(Token::Table);
+
+			// Match and consume an 'Identifier' token for the table name
+			$tableName = $this->lexer->match(Token::Identifier)->getStringValue();
+
+			// Match an optional semicolon at the end of the statement
+			if ($this->lexer->lookahead() == Token::Semicolon) {
+				$this->lexer->match(Token::Semicolon);
+			}
+
+			// Create and return the AST node for a raw table reference
+			return new AstRangeDatabaseTable($alias->getStringValue(), $tableName);
 		}
 		
 		/**
@@ -76,13 +109,13 @@
 		 */
 		protected function parseRanges(): array {
 			$ranges = [];
-			
+
 			$rangeRule = new Range($this->lexer);
-			
+
 			while ($this->lexer->peek()->getType() == Token::Range) {
 				$ranges[] = $rangeRule->parse();
 			}
-			
+
 			return $ranges;
 		}
 		
@@ -96,10 +129,10 @@
 		private function parseSubqueryRange(string $alias): AstRangeDatabaseSubquery {
 			// Match opening parenthesis - start of query expression
 			$this->lexer->match(Token::ParenthesesOpen);
-			
+
 			// Parse range definitions that will be available to the query
 			$ranges = $this->parseRanges();
-			
+
 			// Parse the actual retrieve query using the defined ranges
 			$query = new Retrieve($this->lexer, true);
 			$retrieve = $query->parse([], $ranges);

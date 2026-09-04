@@ -3,15 +3,17 @@
     namespace Quellabs\ObjectQuel\ObjectQuel;
 
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRange;
+	use Quellabs\ObjectQuel\ObjectQuel\Rules\CreateTable;
 	use Quellabs\ObjectQuel\ObjectQuel\Rules\Range;
 	use Quellabs\ObjectQuel\ObjectQuel\Rules\Retrieve;
-    
+
     class Parser {
-        
+
         protected Lexer $lexer;
         private Range $rangeRule;
 		private Retrieve $retrieveRule;
-		
+		private CreateTable $createTableRule;
+
 		/**
          * Parser constructor.
          * @param Lexer $lexer
@@ -20,6 +22,7 @@
             $this->lexer = $lexer;
             $this->rangeRule = new Range($lexer);
             $this->retrieveRule = new Retrieve($lexer);
+            $this->createTableRule = new CreateTable($lexer);
         }
 		
 	    /**
@@ -46,7 +49,16 @@
 				    case Token::Retrieve :
 					    $queries[] = $this->retrieveRule->parse($directives, $ranges);
 					    break;
-				    
+
+				    case Token::Create :
+					    // Ranges declared ahead of a `create` (if any) are simply
+					    // unused — `create` doesn't reference ranges, and the same
+					    // parsed $ranges array is available to any `retrieve`
+					    // elsewhere in this do-while loop, so this isn't silent
+					    // data loss the way discarding a one-shot parse would be.
+					    $queries[] = $this->createTableRule->parse();
+					    break;
+
 				    default :
 					    $tokenName = Token::toString($token->getType()) ?: 'unknown';
 					    throw new ParserException("Unexpected token '{$tokenName}' on line {$this->lexer->getLineNumber()}");
