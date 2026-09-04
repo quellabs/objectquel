@@ -102,15 +102,12 @@
 		 * @return string
 		 */
 		private function sqlServerUnqualifiedDrop(string $name, bool $ifExists): string {
-			// $name's real kind is unknown here — getTempTableName() is just a
-			// string transform ("#{$name}"), used to construct the candidate
-			// temp-table name to probe for, not a claim that $name IS temporary.
-			$physicalTempName = $this->ddlTypeMapper->getTempTableName($name);
-			$quotedTempName = $this->identifierQuoter->quoteIdentifier($physicalTempName);
+			$candidateTempTableName = $this->ddlTypeMapper->getTempTableName($name);
+			$quotedCandidateTempTableName = $this->identifierQuoter->quoteIdentifier($candidateTempTableName);
 			$permanentDrop = $this->plainDrop($name, $ifExists);
 
-			return "IF OBJECT_ID('tempdb..{$this->escapeStringLiteral($physicalTempName)}') IS NOT NULL "
-				. "DROP TABLE {$quotedTempName} ELSE {$permanentDrop}";
+			return "IF OBJECT_ID('tempdb..{$this->escapeStringLiteral($candidateTempTableName)}') IS NOT NULL "
+				. "DROP TABLE {$quotedCandidateTempTableName} ELSE {$permanentDrop}";
 		}
 
 		/**
