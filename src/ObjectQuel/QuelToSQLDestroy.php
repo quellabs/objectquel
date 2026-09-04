@@ -53,18 +53,18 @@
 		public function convertToSQL(AstDestroy $statement): array {
 			$temporary = $statement->isTemporary();
 			$isSqlServer = $this->platform->getDatabaseType() === 'sqlsrv';
-			$keyword = $statement->isIfExists() ? 'DROP TABLE IF EXISTS ' : 'DROP TABLE ';
+			$ifExists = $statement->isIfExists();
 
 			return array_map(
-				function (string $name) use ($temporary, $isSqlServer, $keyword) {
+				function (string $name) use ($temporary, $isSqlServer, $ifExists) {
 					if ($temporary) {
 						// `temporary` resolves directly to the physical name and drops it,
 						// matching the non-sqlsrv case below (except SQL Server).
-						return $this->plainDrop($this->ddlTypeMapper->getTempTableName($name), $keyword);
+						return $this->plainDrop($this->ddlTypeMapper->getTempTableName($name), $ifExists);
 					} elseif ($isSqlServer) {
-						return $this->sqlServerUnqualifiedDrop($name, $keyword);
+						return $this->sqlServerUnqualifiedDrop($name, $ifExists);
 					} else {
-						return $this->plainDrop($name, $keyword);
+						return $this->plainDrop($name, $ifExists);
 					}
 				},
 				$statement->getNames()
@@ -72,16 +72,16 @@
 		}
 
 		/**
-		 * A single `<keyword> <name>` statement — correct whenever the
-		 * physical name to drop is already known unambiguously (a permanent
-		 * table anywhere, or a temp table once resolved via
+		 * A single `DROP TABLE [IF EXISTS] <name>` statement — correct
+		 * whenever the physical name to drop is already known unambiguously
+		 * (a permanent table anywhere, or a temp table once resolved via
 		 * DDLTypeMapper::getTempTableName()).
 		 * @param string $physicalName
-		 * @param string $keyword 'DROP TABLE ' or 'DROP TABLE IF EXISTS ', decided by convertToSQL()
+		 * @param bool $ifExists
 		 * @return string
 		 */
-		private function plainDrop(string $physicalName, string $keyword): string {
-			return $keyword . $this->identifierQuoter->quoteIdentifier($physicalName);
+		private function plainDrop(string $physicalName, bool $ifExists): string {
+			return 'DROP TABLE ' . ($ifExists ? 'IF EXISTS ' : '') . $this->identifierQuoter->quoteIdentifier($physicalName);
 		}
 
 		/**
@@ -92,15 +92,15 @@
 		 * `#name` if a session-scoped one currently exists (checked via
 		 * `tempdb..#name`, since local temp tables live in tempdb) —
 		 * unconditionally, since existence was just confirmed — otherwise
-		 * fall back to dropping the permanent table with $keyword.
+		 * fall back to dropping the permanent table.
 		 * @param string $name
-		 * @param string $keyword 'DROP TABLE ' or 'DROP TABLE IF EXISTS ', decided by convertToSQL()
+		 * @param bool $ifExists
 		 * @return string
 		 */
-		private function sqlServerUnqualifiedDrop(string $name, string $keyword): string {
+		private function sqlServerUnqualifiedDrop(string $name, bool $ifExists): string {
 			$physicalTempName = $this->ddlTypeMapper->getTempTableName($name);
 			$quotedTempName = $this->identifierQuoter->quoteIdentifier($physicalTempName);
-			$permanentDrop = $this->plainDrop($name, $keyword);
+			$permanentDrop = $this->plainDrop($name, $ifExists);
 
 			return "IF OBJECT_ID('tempdb..{$this->escapeStringLiteral($physicalTempName)}') IS NOT NULL "
 				. "DROP TABLE {$quotedTempName} ELSE {$permanentDrop}";
