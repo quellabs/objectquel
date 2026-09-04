@@ -22,7 +22,7 @@
 	 * shadow same-named permanent ones; Postgres: the per-session temp
 	 * schema is first in `search_path`; SQLite: `TEMP` is searched before
 	 * `MAIN`), so plain `DROP TABLE <name>` already does the right thing
-	 * whether or not `temporary` was written. SQL Server has no such
+	 * whether `temporary` was written. SQL Server has no such
 	 * shadowing: a local temp table's real name is `#name`, a different
 	 * physical object, so `destroy Name` on SQL Server needs special
 	 * handling — see convertToSQL().
