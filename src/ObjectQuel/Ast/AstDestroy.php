@@ -3,23 +3,31 @@
 	namespace Quellabs\ObjectQuel\ObjectQuel\Ast;
 
 	/**
-	 * A `destroy Name {, Name}` statement — a top-level statement, drops one
-	 * or more tables (permanent or temporary; index destroy isn't
-	 * implemented yet, see objectquel-destroy-plan.md). Flat name list,
-	 * mirroring the grammar directly. Compiled and executed directly (see
-	 * Execution\Executors\DestroyExecutor), same as AstCreateTable.
+	 * A `destroy Name {, Name} [if exists]` statement — a top-level
+	 * statement, drops one or more tables (permanent or temporary; index
+	 * destroy isn't implemented yet, see objectquel-destroy-plan.md). Flat
+	 * name list, mirroring the grammar directly. `if exists` is QUEL-flavored
+	 * trailing-qualifier syntax for what SQL spells as a prefix `DROP TABLE
+	 * IF EXISTS` — a name that doesn't exist is silently ignored instead of
+	 * failing loudly, opt-in rather than the (fail-loud) default. Compiled
+	 * and executed directly (see Execution\Executors\DestroyExecutor), same
+	 * as AstCreateTable.
 	 */
 	class AstDestroy extends Ast {
 
 		/** @var string[] */
 		private array $names;
 
+		private bool $ifExists;
+
 		/**
 		 * AstDestroy constructor.
 		 * @param string[] $names
+		 * @param bool $ifExists
 		 */
-		public function __construct(array $names) {
+		public function __construct(array $names, bool $ifExists = false) {
 			$this->names = $names;
+			$this->ifExists = $ifExists;
 		}
 
 		/**
@@ -29,9 +37,13 @@
 			return $this->names;
 		}
 
+		public function isIfExists(): bool {
+			return $this->ifExists;
+		}
+
 		public function deepClone(): static {
 			// @phpstan-ignore-next-line new.static
-			$clone = new static($this->names);
+			$clone = new static($this->names, $this->ifExists);
 			$clone->setParent($this->getParent());
 			return $clone;
 		}

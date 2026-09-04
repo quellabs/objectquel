@@ -9,9 +9,9 @@
 	use Quellabs\ObjectQuel\ObjectQuel\Token;
 
 	/**
-	 * Parser for `destroy Name {, Name}` statements in the ObjectQuel language.
-	 * Table-only for now — index destroy isn't implemented (see
-	 * objectquel-destroy-plan.md).
+	 * Parser for `destroy Name {, Name} [if exists]` statements in the
+	 * ObjectQuel language. Table-only for now — index destroy isn't
+	 * implemented (see objectquel-destroy-plan.md).
 	 */
 	class Destroy {
 
@@ -50,9 +50,25 @@
 				$names[] = $name;
 			} while ($this->lexer->optionalMatch(Token::Comma));
 
+			$ifExists = $this->parseOptionalIfExists();
+
 			$this->consumeOptionalSemicolon();
 
-			return new AstDestroy($names);
+			return new AstDestroy($names, $ifExists);
+		}
+
+		/**
+		 * Parse an optional trailing `if exists` qualifier.
+		 * @return bool
+		 * @throws LexerException
+		 */
+		private function parseOptionalIfExists(): bool {
+			if (!$this->lexer->optionalMatch(Token::If)) {
+				return false;
+			}
+
+			$this->lexer->match(Token::Exists);
+			return true;
 		}
 
 		/**

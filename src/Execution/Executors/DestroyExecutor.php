@@ -10,8 +10,9 @@
 
 	/**
 	 * Executes an AstDestroy statement: compiles it via QuelToSQLDestroy (one
-	 * `DROP TABLE` per target) and runs each statement directly against the
-	 * connection, in order, stopping at the first failure.
+	 * `DROP TABLE` per target, `IF EXISTS` only when the statement's `if
+	 * exists` qualifier is present) and runs each statement directly against
+	 * the connection, in order, stopping at the first failure.
 	 *
 	 * Table-only — index destroy needs a name→owning-table registry that
 	 * doesn't exist yet (see objectquel-destroy-plan.md).
