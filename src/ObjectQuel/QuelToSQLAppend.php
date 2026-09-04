@@ -4,7 +4,6 @@
 
 	use Quellabs\ObjectQuel\Capabilities\PlatformCapabilitiesInterface;
 	use Quellabs\ObjectQuel\DatabaseAdapter\SqlIdentifierQuoter;
-	use Quellabs\ObjectQuel\DatabaseAdapter\TypeMapper;
 	use Quellabs\ObjectQuel\EntityManager;
 	use Quellabs\ObjectQuel\EntityStore;
 	use Quellabs\ObjectQuel\Exception\SemanticException;
@@ -13,13 +12,9 @@
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstAlias;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstAppend;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstAssignment;
-	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstBool;
-	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstNull;
-	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstNumber;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRangeDatabaseSubquery;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRetrieve;
-	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstString;
-	use Quellabs\ObjectQuel\ObjectQuel\AstInterface;
+	use Quellabs\ObjectQuel\ObjectQuel\Helpers\AssignmentValidator;
 	use Quellabs\ObjectQuel\ObjectQuel\Visitors\CoerceDateTimeParameters;
 	use Quellabs\ObjectQuel\ObjectQuel\Visitors\ResolveIdentifierRange;
 	use Quellabs\ObjectQuel\ObjectQuel\Visitors\ResolvePropertyType;
@@ -96,7 +91,7 @@
 			$rows = $statement->getRows();
 			$properties = array_map(fn(AstAssignment $assignment) => $assignment->getProperty(), $rows[0]);
 
-			$this->assertPropertiesExist($properties, $metadata);
+			AssignmentValidator::assertPropertiesExist($properties, $metadata);
 			$this->assertRequiredColumnsSupplied($properties, $metadata);
 
 			$quotedColumns = $this->quoteColumnList($properties, $metadata);
@@ -133,7 +128,7 @@
 			$columnDef = $columnName !== null ? ($metadata->columnDefinitions[$columnName] ?? null) : null;
 
 			if ($columnDef !== null) {
-				$this->assertValueTypeCompatible($assignment->getProperty(), $assignment->getValue(), $columnDef);
+				AssignmentValidator::assertValueTypeCompatible($assignment->getProperty(), $assignment->getValue(), $columnDef);
 			}
 
 			$builder = new BuildSqlFromAst($this->entityStore, $parameters, 'VALUES', $this->platform);
@@ -162,7 +157,7 @@
 			$properties = $statement->getColumns();
 			$source = $statement->getSource();
 
-			$this->assertPropertiesExist($properties, $metadata);
+			AssignmentValidator::assertPropertiesExist($properties, $metadata);
 			$this->assertRequiredColumnsSupplied($properties, $metadata);
 
 			// Visibility flags are only set by the optimizer pass inside
@@ -254,23 +249,6 @@
 		}
 
 		/**
-		 * @param string[] $properties
-		 * @param EntityMetadataRecord $metadata
-		 * @return void
-		 * @throws SemanticException
-		 */
-		private function assertPropertiesExist(array $properties, EntityMetadataRecord $metadata): void {
-			foreach ($properties as $property) {
-				if (!isset($metadata->columnMap[$property])) {
-					throw new SemanticException(
-						"The property '{$property}' does not exist in entity '{$metadata->className}'. " .
-						"Please check for typos or verify that the correct entity is being referenced in the append statement."
-					);
-				}
-			}
-		}
-
-		/**
 		 * Every non-nullable, non-defaulted, non-generated (primary key) column
 		 * must be supplied, or the database would reject the INSERT at runtime
 		 * — this catches that at compile time instead (see
@@ -305,40 +283,6 @@
 					count($missing) === 1 ? 'y' : 'ies',
 					implode(', ', $missing)
 				));
-			}
-		}
-
-		/**
-		 * Best-effort static type check between a literal assignment value and
-		 * its target column's declared type. Parameters, casts, and arithmetic
-		 * expressions carry no static type and are left to the database.
-		 * @param string $property
-		 * @param AstInterface $value
-		 * @param array{type: string, nullable: bool} $columnDef
-		 * @return void
-		 * @throws SemanticException
-		 */
-		private function assertValueTypeCompatible(string $property, AstInterface $value, array $columnDef): void {
-			$expectedPhpType = TypeMapper::phinxTypeToPhpType($columnDef['type']);
-
-			if ($value instanceof AstNull) {
-				if (!$columnDef['nullable']) {
-					throw new SemanticException("Cannot assign null to non-nullable property '{$property}'");
-				}
-
-				return;
-			}
-
-			if ($value instanceof AstBool && $expectedPhpType !== 'bool') {
-				throw new SemanticException("Cannot assign a boolean value to property '{$property}' (expects {$columnDef['type']})");
-			}
-
-			if ($value instanceof AstNumber && in_array($expectedPhpType, ['bool', '\DateTime', 'array'], true)) {
-				throw new SemanticException("Cannot assign a numeric value to property '{$property}' (expects {$columnDef['type']})");
-			}
-
-			if ($value instanceof AstString && in_array($expectedPhpType, ['bool', 'array'], true)) {
-				throw new SemanticException("Cannot assign a string value to property '{$property}' (expects {$columnDef['type']})");
 			}
 		}
 	}

@@ -22,7 +22,7 @@
 	 * - Uniqueness constraints (DISTINCT)
 	 * - Compiler directives
 	 */
-	class AstRetrieve extends Ast implements NodeWithConditions {
+	class AstRetrieve extends Ast implements NodeWithConditions, NodeWithRanges {
 		
 		/** @var array<string, mixed> Compiler directives that control query compilation behavior */
 		protected array $directives;

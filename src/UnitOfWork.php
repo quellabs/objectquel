@@ -110,7 +110,7 @@
 			
 			// Instantiate persisters once for reuse across commits
 			$primaryKeyFactory = new PrimaryKeyFactory();
-			$this->versionValueHandler = new VersionValueHandler($this->connection, $this->entityStore, $this, $this->propertyHandler);
+			$this->versionValueHandler = new VersionValueHandler($this->connection, $this->entityStore, $this, $this->propertyHandler, $this->platformCapabilities);
 			$this->insertPersister = new InsertPersister($this, $primaryKeyFactory);
 			$this->updatePersister = new UpdatePersister($this);
 			$this->deletePersister = new DeletePersister($this);

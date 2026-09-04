@@ -5,29 +5,29 @@
 	
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstIdentifier;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRange;
-	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRetrieve;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\NodeWithRanges;
 	use Quellabs\ObjectQuel\ObjectQuel\AstInterface;
 	use Quellabs\ObjectQuel\ObjectQuel\AstVisitorInterface;
 	use Quellabs\ObjectQuel\ObjectQuel\IdentifierType;
-	
+
 	/**
 	 * Implements the Visitor pattern to process AST nodes and identify ranges (aliases).
 	 * When an identifier in the AST matches a defined range name, this visitor attaches
 	 * the corresponding range object to that identifier node.
 	 */
 	class ResolveIdentifierRange implements AstVisitorInterface {
-		
+
 		/**
 		 * Array of available ranges (aliases) that can be matched against identifiers
 		 * @var AstRange[] Array containing AstRange objects that represent predefined ranges
 		 */
 		private array $ranges;
-		
+
 		/**
 		 * EntityProcessRange constructor.
-		 * @param AstRetrieve $retrieve Root query
+		 * @param NodeWithRanges $retrieve Root query (AstRetrieve, or AstReplace's single-range statement)
 		 */
-		public function __construct(AstRetrieve $retrieve) {
+		public function __construct(NodeWithRanges $retrieve) {
 			$this->ranges = $retrieve->getRanges();
 		}
 		

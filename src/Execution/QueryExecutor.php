@@ -6,6 +6,7 @@
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstCreateTable;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstDestroy;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRangeDatabaseSubquery;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstReplace;
 	use Quellabs\ObjectQuel\Capabilities\PlatformCapabilities;
 	use Quellabs\ObjectQuel\EntityManager;
 	use Quellabs\ObjectQuel\DatabaseAdapter\DatabaseAdapter;
@@ -26,6 +27,7 @@
 	use Quellabs\ObjectQuel\Execution\Executors\DatabaseQueryExecutor;
 	use Quellabs\ObjectQuel\Execution\Executors\DestroyExecutor;
 	use Quellabs\ObjectQuel\Execution\Executors\JsonQueryExecutor;
+	use Quellabs\ObjectQuel\Execution\Executors\ReplaceExecutor;
 	use Quellabs\ObjectQuel\ObjectQuel\QueryNormalizer;
 	use Quellabs\ObjectQuel\ObjectQuel\SemanticAnalyzer;
 	use Quellabs\ObjectQuel\ObjectQuel\Visitors\CoerceDateTimeParameters;
@@ -59,6 +61,7 @@
 		private CreateTableExecutor $createTableExecutor;
 		private DestroyExecutor $destroyExecutor;
 		private AppendExecutor $appendExecutor;
+		private ReplaceExecutor $replaceExecutor;
 
 		/**
 		 * Constructor
@@ -80,6 +83,7 @@
 			$this->createTableExecutor = new CreateTableExecutor($this->connection, $this->capabilities);
 			$this->destroyExecutor = new DestroyExecutor($this->connection, $this->capabilities);
 			$this->appendExecutor = new AppendExecutor($this->connection, $entityManager->getEntityStore(), $entityManager, $this->capabilities);
+			$this->replaceExecutor = new ReplaceExecutor($this->connection, $entityManager, $this->capabilities);
 
 			// Init the plan executor
 			$this->planExecutor = new PlanExecutor($this);
@@ -194,15 +198,15 @@
 		}
 		
 		/**
-		 * Executes a bulk, set-based write-verb statement (`append`, and later
-		 * `replace`/`delete`/upsert) and returns how many rows it affected.
-		 * Deliberately separate from executeQuery(): these statements bypass
-		 * the identity map and change tracking entirely and have no rows to
-		 * hydrate, so the returned QuelResult carries an affected-row count
-		 * and generated primary key (see QuelResult::fromWriteStatement())
-		 * rather than fetchable rows — mirroring the Connection::query() vs.
-		 * Connection::execute() split most DB abstraction layers have (see
-		 * objectquel-append-plan.md).
+		 * Executes a bulk, set-based write-verb statement (`append`,
+		 * `replace`, and later `delete`/upsert) and returns how many rows it
+		 * affected. Deliberately separate from executeQuery(): these
+		 * statements bypass the identity map and change tracking entirely
+		 * and have no rows to hydrate, so the returned QuelResult carries an
+		 * affected-row count and generated primary key (see
+		 * QuelResult::fromWriteStatement()) rather than fetchable rows —
+		 * mirroring the Connection::query() vs. Connection::execute() split
+		 * most DB abstraction layers have (see objectquel-append-plan.md).
 		 * @param string $query The ObjectQuel statement string
 		 * @param array<int|string, mixed> $parameters Query parameters
 		 * @return QuelResult
@@ -219,7 +223,11 @@
 					return $this->appendExecutor->execute($ast, $normalizedParameters);
 				}
 
-				throw new QuelException("Invalid statement type: expected a write-verb statement (e.g. append)");
+				if ($ast instanceof AstReplace) {
+					return $this->replaceExecutor->execute($ast, $normalizedParameters);
+				}
+
+				throw new QuelException("Invalid statement type: expected a write-verb statement (e.g. append, replace)");
 			} catch (ParserException|LexerException $e) {
 				throw new QuelException("Syntax error: " . $e->getMessage(), 'syntax_error', 0, $e);
 			} catch (SemanticException $e) {
@@ -244,8 +252,8 @@
 			$parser = new Parser($lexer);
 			$ast = $parser->parse();
 
-			if (!$ast instanceof AstAppend) {
-				throw new QuelException("Invalid statement type: expected a write-verb statement (e.g. append)");
+			if (!$ast instanceof AstAppend && !$ast instanceof AstReplace) {
+				throw new QuelException("Invalid statement type: expected a write-verb statement (e.g. append, replace)");
 			}
 
 			return $ast;

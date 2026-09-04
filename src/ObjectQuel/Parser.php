@@ -7,6 +7,7 @@
 	use Quellabs\ObjectQuel\ObjectQuel\Rules\CreateTable;
 	use Quellabs\ObjectQuel\ObjectQuel\Rules\Destroy;
 	use Quellabs\ObjectQuel\ObjectQuel\Rules\Range;
+	use Quellabs\ObjectQuel\ObjectQuel\Rules\Replace;
 	use Quellabs\ObjectQuel\ObjectQuel\Rules\Retrieve;
 
     class Parser {
@@ -17,6 +18,7 @@
 		private CreateTable $createTableRule;
 		private Destroy $destroyRule;
 		private Append $appendRule;
+		private Replace $replaceRule;
 
 		/**
          * Parser constructor.
@@ -29,6 +31,7 @@
             $this->createTableRule = new CreateTable($lexer);
             $this->destroyRule = new Destroy($lexer);
             $this->appendRule = new Append($lexer);
+            $this->replaceRule = new Replace($lexer);
         }
 		
 	    /**
@@ -68,6 +71,10 @@
 
 				    case Token::Append :
 					    $queries[] = $this->appendRule->parse($ranges);
+					    break;
+
+				    case Token::Replace :
+					    $queries[] = $this->replaceRule->parse($ranges);
 					    break;
 
 				    default :

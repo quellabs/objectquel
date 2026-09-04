@@ -89,6 +89,7 @@
 		        'exists'      => Token::Exists,
 		        'append'      => Token::Append,
 		        'to'          => Token::To,
+		        'replace'     => Token::Replace,
 	        ];
 			
 			$this->single_tokens = [

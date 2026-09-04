@@ -88,6 +88,7 @@
 		const int Exists = 130;
 		const int Append = 131;
 		const int To = 132;
+		const int Replace = 133;
 		
 		protected int $type;
 		protected mixed $value;

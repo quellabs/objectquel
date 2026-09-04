@@ -4,51 +4,45 @@
 	
 	use Quellabs\ObjectQuel\Annotations\Orm\Column;
 	use Quellabs\ObjectQuel\Annotations\Orm\Version;
-	use Quellabs\ObjectQuel\Capabilities\PlatformCapabilities;
 	use Quellabs\ObjectQuel\DatabaseAdapter\DatabaseAdapter;
 	use Quellabs\ObjectQuel\EntityStore;
 	use Quellabs\ObjectQuel\Exception\EntityResolutionException;
 	use Quellabs\ObjectQuel\OrmException;
 	use Quellabs\ObjectQuel\UnitOfWork;
-	use Quellabs\Support\Tools;
-	
+
 	/**
 	 * Specialized persister class responsible for updating existing entities in the database
 	 * Extends the PersisterBase to inherit common persistence functionality
 	 * This class handles the process of detecting and persisting changes to existing entities
 	 */
 	class UpdatePersister {
-		
+
 		/**
 		 * Reference to the UnitOfWork that manages persistence operations
 		 */
 		private UnitOfWork $unitOfWork;
-		
+
 		/**
 		 * The EntityStore that maintains metadata about entities and their mappings
 		 * Used to retrieve information about entity tables, columns and identifiers
 		 */
 		private EntityStore $entityStore;
-		
+
 		/**
 		 * Database connection adapter used for executing SQL queries
 		 * Abstracts the underlying database system and provides a unified interface
 		 */
 		private DatabaseAdapter $connection;
-		
+
 		/**
-		 * Used to generate engine-appropriate SQL fragments (e.g. the correct
-		 * "current datetime" expression) instead of hardcoding MySQL syntax.
-		 * @var PlatformCapabilities
-		 */
-		private PlatformCapabilities $platformCapabilities;
-		
-		/**
-		 * Handles values with @Orm\Version annotations
+		 * Handles values with @Orm\Version annotations, including building the
+		 * SET clause fragments that bump them (buildVersionSetClause()) —
+		 * shared with QuelToSQLReplace so QUEL-level `replace` bumps version
+		 * columns the same way object-level updates do.
 		 * @var VersionValueHandler
 		 */
 		private VersionValueHandler $valueHandler;
-		
+
 		/**
 		 * UpdatePersister constructor
 		 * @param UnitOfWork $unitOfWork The UnitOfWork that will coordinate update operations
@@ -57,7 +51,6 @@
 			$this->unitOfWork = $unitOfWork;
 			$this->entityStore = $unitOfWork->getEntityStore();
 			$this->connection = $unitOfWork->getConnection();
-			$this->platformCapabilities = $unitOfWork->getPlatformCapabilities();
 			$this->valueHandler = $unitOfWork->getVersionValueHandler();
 		}
 		
@@ -103,7 +96,7 @@
 			
 			// Build SET clause for version columns and regular changed fields
 			$setClauseParts = array_merge(
-				$this->buildVersionSetClause($versionColumns, $params),
+				$this->valueHandler->buildVersionSetClause($versionColumns, $params),
 				$this->buildFieldsSetClause($changedFields, $params)
 			);
 			
@@ -184,52 +177,7 @@
 				return $value !== $originalData[$key];
 			}, ARRAY_FILTER_USE_BOTH);
 		}
-		
-		/**
-		 * Builds the SET clause for version columns
-		 * Each version column type (integer, datetime, uuid) has different update logic
-		 * @param array<string, array{name: string, column: Column, version: Version}> $versionColumns
-		 * @param array<string, mixed> $params Reference to parameters array to add version parameters to
-		 * @return array<int, string> Array of SQL SET clause parts
-		 * @throws OrmException
-		 * @throws \Exception
-		 */
-		protected function buildVersionSetClause(array $versionColumns, array &$params): array {
-			$setClauseParts = [];
-			
-			// Process each version column according to its type
-			foreach ($versionColumns as $property => $versionColumn) {
-				$columnName = $this->connection->escapeIdentifier($versionColumn['name']);
-				
-				switch ($versionColumn['column']->getType()) {
-					case 'integer':
-					case 'bigint':
-						// Integer/bigint versions increment by 1
-						$setClauseParts[] = "{$columnName}={$columnName} + 1";
-						break;
-					
-					case 'datetime':
-						// Use the engine-appropriate "current datetime" expression rather
-						// than hardcoding MySQL's NOW() — SQLite and SQL Server use
-						// different syntax for this.
-						$setClauseParts[] = "{$columnName}=" . $this->platformCapabilities->getCurrentDatetimeFunction();
-						break;
-					
-					case 'uuid':
-						// UUID versions get a new generated GUID
-						$paramName = "version_{$versionColumn['name']}";
-						$setClauseParts[] = "{$columnName}=:{$paramName}";
-						$params[$paramName] = Tools::createUUIDv7();
-						break;
-					
-					default:
-						throw new OrmException("Invalid column type '{$versionColumn['column']->getType()}' for Version annotation on property '{$property}'");
-				}
-			}
-			
-			return $setClauseParts;
-		}
-		
+
 		/**
 		 * Builds the SET clause for regular changed fields
 		 * Each field gets a prefixed parameter name to avoid collisions with other parameters
