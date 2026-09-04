@@ -44,6 +44,18 @@
 		}
 
 		/**
+		 * Returns the physical table name for either a permanent or temporary
+		 * table. Lets a caller building either kind (e.g. QuelToSQLCreate) get
+		 * the name from one place instead of branching on $temporary itself.
+		 * @param string $baseName Logical table name
+		 * @param bool $temporary
+		 * @return string The physical name to create and reference
+		 */
+		public function getTableName(string $baseName, bool $temporary): string {
+			return $temporary ? $this->getTempTableName($baseName) : $baseName;
+		}
+
+		/**
 		 * Returns the CREATE-statement keyword sequence, up to but not including
 		 * the table name. SQL Server gets plain 'CREATE TABLE' — its temp-ness
 		 * comes from the '#' prefix in getTempTableName(), not a keyword.

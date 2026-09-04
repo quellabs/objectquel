@@ -35,12 +35,7 @@
 		 */
 		public function convertToSQL(AstCreateTable $statement): string {
 			$keyword = $this->ddlTypeMapper->getCreateTableKeyword($statement->isTemporary());
-
-			// SQL Server has no CREATE TEMPORARY TABLE keyword — temp-ness comes
-			// from a '#' prefix in the physical name instead (see DDLTypeMapper).
-			$tableName = $statement->isTemporary()
-				? $this->ddlTypeMapper->getTempTableName($statement->getTableName())
-				: $statement->getTableName();
+			$tableName = $this->ddlTypeMapper->getTableName($statement->getTableName(), $statement->isTemporary());
 
 			$columnDefs = array_map(
 				fn($column) => $this->ddlTypeMapper->renderColumnDefinition(
