@@ -22,17 +22,32 @@
 	 * calls into only when `$onConflict` is non-null, handing it the base
 	 * INSERT SQL and the already-compiled rows it needs to build on.
 	 *
+	 * `or replace`'s assignment list is itself optional
+	 * (`AstReplace::getAssignments() === []`): `append to u (...) or replace
+	 * where <cond>`, with no parenthesized list at all, means "on conflict,
+	 * overwrite every appended column with the row that would have been
+	 * inserted" — the common upsert case, and QUEL reusing its own
+	 * `append`/`replace`/`or` verbs rather than inventing `ON CONFLICT`-
+	 * shaped clause words for it. Only when the caller needs the
+	 * conflict-time update to differ from the insert (e.g. incrementing a
+	 * counter instead of overwriting it) do they write the list out
+	 * explicitly, same as a standalone `replace`.
+	 *
 	 * Dialect branching is via PlatformCapabilitiesInterface::
 	 * getDatabaseType() — the same "build engine-specific SQL text from
 	 * scratch" approach QuelToSQLCreate/QuelToSQLDestroy already use, not a
 	 * bespoke capability method for a one-off shape:
-	 *   - Postgres/SQLite: `INSERT ... ON CONFLICT (cols) DO UPDATE SET ...`
+	 *   - Postgres/SQLite: `INSERT ... ON CONFLICT (cols) DO UPDATE SET ...`,
+	 *     the default SET referencing `EXCLUDED.col` (the row that would
+	 *     have been inserted).
 	 *   - MySQL/MariaDB:   `INSERT ... ON DUPLICATE KEY UPDATE ...` — fires
 	 *     on *any* unique-key collision on the table, not only the named
 	 *     conflict columns; a real MySQL syntax gap, not something this
-	 *     compiler can paper over.
+	 *     compiler can paper over. The default SET references `VALUES(col)`.
 	 *   - SQL Server:      `MERGE ... WHEN MATCHED THEN UPDATE ... WHEN NOT
-	 *     MATCHED THEN INSERT ...`
+	 *     MATCHED THEN INSERT ...`, the default SET referencing the USING
+	 *     source's own `source.col` (already computed there for the INSERT
+	 *     branch).
 	 */
 	class QuelToSQLUpsert {
 
@@ -46,9 +61,9 @@
 		 * @param EntityStore $entityStore
 		 * @param PlatformCapabilitiesInterface $platform
 		 * @param QuelToSQLReplace $replaceCompiler Reused (not reconstructed) for
-		 *        the on-conflict UPDATE SET clause, so it's built with the exact
-		 *        same property-exists/type/@Orm\Version-bump rules a standalone
-		 *        `replace` uses — see QuelToSQLReplace::buildSetClause().
+		 *        an explicit on-conflict UPDATE SET clause, so it's built with the
+		 *        exact same property-exists/type/@Orm\Version-bump rules a
+		 *        standalone `replace` uses — see QuelToSQLReplace::buildSetClause().
 		 */
 		public function __construct(EntityStore $entityStore, PlatformCapabilitiesInterface $platform, QuelToSQLReplace $replaceCompiler) {
 			$this->entityStore = $entityStore;
@@ -92,10 +107,14 @@
 			$this->assertConflictPropertiesSuppliedByRow($conflictProperties, $properties, $metadata);
 
 			$conflictColumns = array_map(fn(string $property) => $metadata->getColumnName($property), $conflictProperties);
-			$setClauseParts = $this->replaceCompiler->buildSetClause($onConflict->getAssignments(), $metadata, $parameters);
+			$explicitAssignments = $onConflict->getAssignments();
 			$dialect = $this->platform->getDatabaseType();
 
 			if (in_array($dialect, ['pgsql', 'sqlite'], true)) {
+				$setClauseParts = $explicitAssignments !== []
+					? $this->replaceCompiler->buildSetClause($explicitAssignments, $metadata, $parameters)
+					: $this->buildReferencedSetClause($columnNames, 'EXCLUDED', asFunction: false);
+
 				return sprintf(
 					'%s ON CONFLICT (%s) DO UPDATE SET %s',
 					$insertSql,
@@ -105,11 +124,15 @@
 			}
 
 			if (in_array($dialect, ['mysql', 'mariadb'], true)) {
+				$setClauseParts = $explicitAssignments !== []
+					? $this->replaceCompiler->buildSetClause($explicitAssignments, $metadata, $parameters)
+					: $this->buildReferencedSetClause($columnNames, 'VALUES', asFunction: true);
+
 				return sprintf('%s ON DUPLICATE KEY UPDATE %s', $insertSql, implode(', ', $setClauseParts));
 			}
 
 			// sqlsrv — no ON CONFLICT/ON DUPLICATE KEY UPDATE equivalent at all.
-			return $this->compileMerge($metadata, $properties, $columnNames, $compiledRows, $conflictColumns, $setClauseParts);
+			return $this->compileMerge($metadata, $properties, $columnNames, $compiledRows, $conflictColumns, $explicitAssignments, $parameters);
 		}
 
 		/**
@@ -120,17 +143,21 @@
 		 *   - the ON clause can compare target.col = source.col per conflict column
 		 *   - WHEN NOT MATCHED's INSERT can reference source.col for every
 		 *     column, instead of re-embedding per-row literals a second time
-		 * WHEN MATCHED's UPDATE SET uses the on-conflict clause's own
-		 * (independently compiled) assignment values, exactly as the other
-		 * two dialect branches do — never source.*, since those expressions
-		 * may differ from what was inserted.
+		 *   - WHEN MATCHED's UPDATE SET can reference source.col too, for the
+		 *     "no explicit replace list" default case
+		 * When an explicit `or replace (...)` list is given, WHEN MATCHED's
+		 * UPDATE SET uses those independently compiled assignment values
+		 * instead — never source.*, since those expressions may differ from
+		 * what was inserted.
 		 * @param EntityMetadataRecord $metadata
 		 * @param string[] $properties
 		 * @param string[] $columnNames
 		 * @param array<int, array<string, string>> $compiledRows
 		 * @param string[] $conflictColumns
-		 * @param string[] $setClauseParts
+		 * @param \Quellabs\ObjectQuel\ObjectQuel\Ast\AstAssignment[] $explicitAssignments Empty means "default to the inserted row"
+		 * @param array<string, mixed> $parameters
 		 * @return string
+		 * @throws SemanticException
 		 */
 		private function compileMerge(
 			EntityMetadataRecord $metadata,
@@ -138,7 +165,8 @@
 			array $columnNames,
 			array $compiledRows,
 			array $conflictColumns,
-			array $setClauseParts
+			array $explicitAssignments,
+			array &$parameters
 		): string {
 			$targetAlias = $this->identifierQuoter->quoteIdentifier('__upsert_target');
 			$sourceAlias = $this->identifierQuoter->quoteIdentifier('__upsert_source');
@@ -165,6 +193,10 @@
 				$columnNames
 			);
 
+			$setClauseParts = $explicitAssignments !== []
+				? $this->replaceCompiler->buildSetClause($explicitAssignments, $metadata, $parameters)
+				: $this->buildReferencedSetClause($columnNames, $sourceAlias, asFunction: false);
+
 			return sprintf(
 				'MERGE INTO %s AS %s USING (VALUES %s) AS %s (%s) ON %s WHEN MATCHED THEN UPDATE SET %s WHEN NOT MATCHED THEN INSERT (%s) VALUES (%s);',
 				$this->identifierQuoter->quoteIdentifier($metadata->tableName),
@@ -176,6 +208,34 @@
 				implode(', ', $setClauseParts),
 				$quotedColumnList,
 				implode(', ', $insertValueRefs)
+			);
+		}
+
+		/**
+		 * Builds the default "overwrite with the row that would have been
+		 * inserted" SET clause fragments — used whenever `or replace` has no
+		 * explicit assignment list. Every appended column is included
+		 * unconditionally, conflict columns too (re-setting a column to its
+		 * own value is a harmless no-op, and excluding it would be an extra
+		 * rule to state for no real benefit).
+		 * @param string[] $columnNames
+		 * @param string $reference Either a pseudo-table name to qualify
+		 *        each column with (`EXCLUDED`, or a USING source alias for
+		 *        MERGE), or — when $asFunction is true — a function name
+		 *        each column is passed to (MySQL's `VALUES(col)`).
+		 * @param bool $asFunction
+		 * @return string[]
+		 */
+		private function buildReferencedSetClause(array $columnNames, string $reference, bool $asFunction): array {
+			return array_map(
+				function (string $column) use ($reference, $asFunction) {
+					$quotedColumn = $this->identifierQuoter->quoteIdentifier($column);
+
+					return $asFunction
+						? "{$quotedColumn} = {$reference}({$quotedColumn})"
+						: "{$quotedColumn} = {$reference}.{$quotedColumn}";
+				},
+				$columnNames
 			);
 		}
 

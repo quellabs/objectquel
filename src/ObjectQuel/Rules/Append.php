@@ -30,9 +30,12 @@
 	 *   append to o (name, total) retrieve (a.name, a.total) where a.closed = true
 	 *
 	 * The literal-values form also accepts a trailing upsert extension (see
-	 * objectquel-upsert-plan.md):
+	 * objectquel-upsert-plan.md) — `or replace`'s assignment list is itself
+	 * optional, defaulting to "overwrite with the row that would have been
+	 * inserted" when omitted:
 	 *
-	 *   append to u (email = e, name = n) or replace (name = n) where u.email = e
+	 *   append to u (email = :e, name = :n) or replace where u.email = :e
+	 *   append to u (email = :e, views = 1) or replace (views = u.views + 1) where u.email = :e
 	 */
 	class Append {
 
@@ -87,9 +90,12 @@
 		}
 
 		/**
-		 * Parses upsert's optional trailing `or replace (...) where ...`
+		 * Parses upsert's optional trailing `or replace [(...)] where ...`
 		 * clause (see objectquel-upsert-plan.md). The target range is implied
-		 * to be this statement's own target.
+		 * to be this statement's own target. The assignment list itself is
+		 * optional here (unlike a standalone `replace`) — `or replace where
+		 * <cond>` with no list means "on conflict, overwrite with the row
+		 * that would have been inserted"; see QuelToSQLUpsert.
 		 * @param AstRangeDatabase $targetRange
 		 * @return AstReplace|null
 		 * @throws LexerException|ParserException
@@ -102,7 +108,7 @@
 			$this->lexer->match(Token::Replace);
 
 			$replaceRule = new Replace($this->lexer);
-			return $replaceRule->parseAssignmentsAndConditions($targetRange);
+			return $replaceRule->parseAssignmentsAndConditions($targetRange, assignmentsOptional: true);
 		}
 
 		/**

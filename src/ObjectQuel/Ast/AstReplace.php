@@ -30,6 +30,13 @@
 	 * `where` is mandatory (unlike `retrieve`'s optional WHERE) — there's no
 	 * "current tuple of an enclosing retrieve loop" default here; that
 	 * exception belongs to the EQUEL procedural layer, not bare `replace`.
+	 *
+	 * $assignments is empty only when this node represents upsert's `or
+	 * replace where <cond>` with no parenthesized list at all (see
+	 * Rules\Append/QuelToSQLUpsert) — meaning "overwrite with the row that
+	 * would have been inserted" instead of an explicit SET clause. A
+	 * standalone `replace` always has at least one assignment; only
+	 * Rules\Append's on-conflict parsing can produce an empty list.
 	 */
 	class AstReplace extends Ast implements NodeWithConditions, NodeWithRanges {
 

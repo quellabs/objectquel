@@ -24,7 +24,9 @@
 	 * upsert's `append ... or replace (...) where ...` extension (see
 	 * objectquel-upsert-plan.md), where the leading `replace <range>` target
 	 * is omitted (implied to be the append's own target) — everything after
-	 * that is identical grammar, so it isn't reimplemented there.
+	 * that is identical grammar, so it isn't reimplemented there. Upsert's
+	 * `or replace` additionally makes the assignment list itself optional
+	 * (`$assignmentsOptional`), which a standalone `replace` never allows.
 	 */
 	class Replace {
 
@@ -66,11 +68,19 @@
 		 * (see objectquel-upsert-plan.md), where the leading `replace <range>`
 		 * target is omitted (implied to be the append's own target).
 		 * @param AstRangeDatabase $range
+		 * @param bool $assignmentsOptional When true and no parenthesized list
+		 *        follows, the assignment list is left empty rather than being a
+		 *        parse error — upsert's `or replace where <cond>` with no list
+		 *        at all, meaning "on conflict, overwrite with the row that
+		 *        would have been inserted" (see QuelToSQLUpsert). A standalone
+		 *        `replace` always passes false: its list is never optional.
 		 * @return AstReplace
 		 * @throws LexerException|ParserException
 		 */
-		public function parseAssignmentsAndConditions(AstRangeDatabase $range): AstReplace {
-			$assignments = $this->parseAssignments();
+		public function parseAssignmentsAndConditions(AstRangeDatabase $range, bool $assignmentsOptional = false): AstReplace {
+			$assignments = $assignmentsOptional && $this->lexer->lookahead() !== Token::ParenthesesOpen
+				? []
+				: $this->parseAssignments();
 
 			$whereClauseRule = new WhereClause($this->lexer);
 			$conditions = $whereClauseRule->parseRequired('replace');
