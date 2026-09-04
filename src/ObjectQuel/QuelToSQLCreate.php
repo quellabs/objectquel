@@ -37,6 +37,9 @@
 		 * @return string
 		 */
 		public function convertToSQL(AstCreateTable $statement): string {
+			// SQL Server needs special syntax
+			$isSqlServer = $this->platform->getDatabaseType() === 'sqlsrv';
+			
 			// SQL Server has no CREATE TEMPORARY TABLE keyword — temp-ness comes
 			// from a '#' prefix in the physical name instead (see DDLTypeMapper).
 			if ($statement->isTemporary()) {
@@ -47,14 +50,13 @@
 				$tableName = $this->ddlTypeMapper->getTableName($statement->getTableName());
 			}
 
-			$isSqlServer = $this->platform->getDatabaseType() === 'sqlsrv';
-
 			// mysql/mariadb/pgsql/sqlite all accept IF NOT EXISTS inline, right
 			// after the CREATE [TEMPORARY] TABLE keyword.
 			if ($statement->isIfNotExists() && !$isSqlServer) {
 				$keyword .= ' IF NOT EXISTS';
 			}
 
+			// Build the SQL query
 			$columnDefs = array_map(
 				fn($column) => $this->ddlTypeMapper->renderColumnDefinition(
 					$this->identifierQuoter->quoteIdentifier($column->getName()),
@@ -79,8 +81,7 @@
 			// T-SQL workaround for this gap.
 			if ($statement->isIfNotExists() && $isSqlServer) {
 				$existsCheck = $statement->isTemporary()
-					// A local temp table lives in tempdb under its '#'-prefixed
-					// physical name.
+					// A local temp table lives in tempdb under its '#'-prefixed physical name.
 					? "OBJECT_ID('tempdb..{$this->escapeStringLiteral($tableName)}')"
 					: "OBJECT_ID(N'{$this->escapeStringLiteral($tableName)}', N'U')";
 
