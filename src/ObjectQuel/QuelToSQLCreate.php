@@ -80,12 +80,15 @@
 			// statement is wrapped in an existence check instead, the standard
 			// T-SQL workaround for this gap.
 			if ($statement->isIfNotExists() && $isSqlServer) {
-				$existsCheck = $statement->isTemporary()
-					// A local temp table lives in tempdb under its '#'-prefixed physical name.
-					? "OBJECT_ID('tempdb..{$this->escapeStringLiteral($tableName)}')"
-					: "OBJECT_ID(N'{$this->escapeStringLiteral($tableName)}', N'U')";
-
-				return "IF {$existsCheck} IS NULL {$createStatement}";
+				$tableNameRes = $this->escapeStringLiteral($tableName);
+				
+				return sprintf(
+					"IF %s IS NULL %s",
+					$statement->isTemporary()
+						? "OBJECT_ID('tempdb..{$tableNameRes}')"
+						: "OBJECT_ID(N'{$tableNameRes}', N'U')",
+					$createStatement
+				);
 			}
 
 			return $createStatement;
