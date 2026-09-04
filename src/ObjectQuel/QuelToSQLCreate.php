@@ -18,6 +18,7 @@
 
 		private DDLTypeMapper $ddlTypeMapper;
 		private SqlIdentifierQuoter $identifierQuoter;
+		private PlatformCapabilitiesInterface $platform;
 
 		/**
 		 * QuelToSQLCreate constructor
@@ -26,10 +27,12 @@
 		public function __construct(PlatformCapabilitiesInterface $platform) {
 			$this->ddlTypeMapper = new DDLTypeMapper($platform);
 			$this->identifierQuoter = new SqlIdentifierQuoter($platform);
+			$this->platform = $platform;
 		}
 
 		/**
-		 * Compiles a `create [temporary] Name (...)` statement to SQL.
+		 * Compiles a `create [temporary] Name (...) [if not exists]`
+		 * statement to SQL.
 		 * @param AstCreateTable $statement
 		 * @return string
 		 */
@@ -44,6 +47,14 @@
 				$tableName = $this->ddlTypeMapper->getTableName($statement->getTableName());
 			}
 
+			$isSqlServer = $this->platform->getDatabaseType() === 'sqlsrv';
+
+			// mysql/mariadb/pgsql/sqlite all accept IF NOT EXISTS inline, right
+			// after the CREATE [TEMPORARY] TABLE keyword.
+			if ($statement->isIfNotExists() && !$isSqlServer) {
+				$keyword .= ' IF NOT EXISTS';
+			}
+
 			$columnDefs = array_map(
 				fn($column) => $this->ddlTypeMapper->renderColumnDefinition(
 					$this->identifierQuoter->quoteIdentifier($column->getName()),
@@ -55,11 +66,37 @@
 				$statement->getColumns()
 			);
 
-			return sprintf(
+			$createStatement = sprintf(
 				'%s %s (%s)',
 				$keyword,
 				$this->identifierQuoter->quoteIdentifier($tableName),
 				implode(', ', $columnDefs)
 			);
+
+			// T-SQL has no inline IF NOT EXISTS on CREATE TABLE at all (unlike
+			// DROP TABLE IF EXISTS, which SQL Server does support) — the whole
+			// statement is wrapped in an existence check instead, the standard
+			// T-SQL workaround for this gap.
+			if ($statement->isIfNotExists() && $isSqlServer) {
+				$existsCheck = $statement->isTemporary()
+					// A local temp table lives in tempdb under its '#'-prefixed
+					// physical name.
+					? "OBJECT_ID('tempdb..{$this->escapeStringLiteral($tableName)}')"
+					: "OBJECT_ID(N'{$this->escapeStringLiteral($tableName)}', N'U')";
+
+				return "IF {$existsCheck} IS NULL {$createStatement}";
+			}
+
+			return $createStatement;
+		}
+
+		/**
+		 * Escapes a value for inclusion in a single-quoted T-SQL string
+		 * literal (doubling embedded quotes, the ANSI SQL escaping rule).
+		 * @param string $value
+		 * @return string
+		 */
+		private function escapeStringLiteral(string $value): string {
+			return str_replace("'", "''", $value);
 		}
 	}

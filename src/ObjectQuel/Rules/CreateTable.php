@@ -11,8 +11,8 @@
 	use Quellabs\ObjectQuel\ObjectQuel\Token;
 
 	/**
-	 * Parser for `create [temporary] Name (attr = type constraints, ...)`
-	 * statements in the ObjectQuel language.
+	 * Parser for `create [temporary] Name (attr = type constraints, ...)
+	 * [if not exists]` statements in the ObjectQuel language.
 	 *
 	 * Authentic QUEL has no `table` keyword in this statement at all (see
 	 * objectquel-create-table-plan.md) — `table` is only used separately, as
@@ -45,10 +45,26 @@
 			$tableName = $this->lexer->match(Token::Identifier)->getStringValue();
 
 			$columns = $this->parseColumnList($tableName);
+			$ifNotExists = $this->parseOptionalIfNotExists();
 
 			$this->consumeOptionalSemicolon();
 
-			return new AstCreateTable($tableName, $columns, $temporary);
+			return new AstCreateTable($tableName, $columns, $temporary, $ifNotExists);
+		}
+
+		/**
+		 * Parse an optional trailing `if not exists` qualifier.
+		 * @return bool
+		 * @throws LexerException|ParserException
+		 */
+		private function parseOptionalIfNotExists(): bool {
+			if (!$this->lexer->optionalMatch(Token::If)) {
+				return false;
+			}
+
+			$this->lexer->match(Token::Not);
+			$this->lexer->match(Token::Exists);
+			return true;
 		}
 
 		/**
