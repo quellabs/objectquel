@@ -64,6 +64,19 @@
 		}
 
 		/**
+		 * Returns the CREATE-statement keyword sequence for either a permanent
+		 * or temporary table, up to but not including the table name. Lets a
+		 * caller building either kind (e.g. QuelToSQLCreate) get the keyword
+		 * from one place instead of hardcoding 'CREATE TABLE' next to a call
+		 * to getCreateTempTableKeyword().
+		 * @param bool $temporary
+		 * @return string
+		 */
+		public function getCreateTableKeyword(bool $temporary): string {
+			return $temporary ? $this->getCreateTempTableKeyword() : 'CREATE TABLE';
+		}
+
+		/**
 		 * Returns the DROP-statement keyword sequence, up to but not including
 		 * the table name. Only MySQL/MariaDB accept TEMPORARY in DROP TABLE;
 		 * every other engine rejects it there even though CREATE requires (or,
