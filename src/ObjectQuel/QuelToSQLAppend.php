@@ -75,7 +75,7 @@
 		}
 
 		/**
-		 * Compiles an `append to <range/entity> (...)` statement to SQL.
+		 * Compiles an `append to <range> (...)` statement to SQL.
 		 * @param AstAppend $statement
 		 * @param array<string, mixed> $parameters Bound parameters, by reference
 		 *        (mutated only for insert-from-select's nested retrieve)

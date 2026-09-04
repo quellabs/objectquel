@@ -5,11 +5,14 @@
 	use Quellabs\ObjectQuel\ObjectQuel\AstVisitorInterface;
 
 	/**
-	 * An `append to <range/entity> (...)` statement — a top-level statement,
-	 * not part of a `retrieve` query. Compiled and executed directly (see
+	 * An `append to <range> (...)` statement — a top-level statement, not
+	 * part of a `retrieve` query. Compiled and executed directly (see
 	 * Execution\Executors\AppendExecutor and ObjectQuel\QuelToSQLAppend),
 	 * bypassing the retrieve pipeline entirely, same as AstCreateTable/
 	 * AstDestroy.
+	 *
+	 * The target must already be a declared range (`range of <name> is
+	 * <Entity>`), same restriction `replace`/`delete` have — see Rules\Append.
 	 *
 	 * Two mutually exclusive shapes, both represented by this one node
 	 * (distinguished at parse time by whether `=` follows the first name in
@@ -24,18 +27,15 @@
 	 *    — $columns holds the bare column list and $source the nested
 	 *    AstRetrieve to select from. $rows is null.
 	 *
-	 * $entityName is already resolved at parse time to the target entity's
-	 * class name, whether the statement named a declared range alias or a
-	 * bare entity name directly — a range with nothing to read from isn't
-	 * required, only to know which entity/table (see objectquel-append-plan.md).
+	 * $entityName is already resolved at parse time to the target range's
+	 * entity class name (see objectquel-append-plan.md).
 	 *
 	 * $onConflict is the upsert extension (see objectquel-upsert-plan.md):
 	 * `append to u (...) or replace (...) where <cond>` — literally the
 	 * already-defined AstReplace node, minus its own target range (implied
-	 * to be this statement's own target, so it's still a real
-	 * AstRangeDatabase under the hood — see Rules\Append). Only meaningful
-	 * for the literal-values form; the insert-from-select form's grammar
-	 * never reaches an `or` token, so this is always null there.
+	 * to be this statement's own target range — see Rules\Append). Only
+	 * meaningful for the literal-values form; the insert-from-select form's
+	 * grammar never reaches an `or` token, so this is always null there.
 	 */
 	class AstAppend extends Ast {
 

@@ -67,7 +67,7 @@
 		}
 
 		/**
-		 * Compile and execute an `append to <range/entity> (...)` statement.
+		 * Compile and execute an `append to <range> (...)` statement.
 		 * @param AstAppend $statement
 		 * @param array<string, mixed> $parameters
 		 * @return QuelResult
