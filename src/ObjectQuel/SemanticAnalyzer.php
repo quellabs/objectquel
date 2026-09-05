@@ -26,6 +26,7 @@
 	use Quellabs\ObjectQuel\ObjectQuel\Visitors\ValidateEntityPropertyExists;
 	use Quellabs\ObjectQuel\ObjectQuel\Visitors\ValidateJsonPropertyChain;
 	use Quellabs\ObjectQuel\ObjectQuel\Visitors\ValidateNoEntityExpressions;
+	use Quellabs\ObjectQuel\ObjectQuel\Visitors\ValidateTablePropertyExists;
 	use Quellabs\ObjectQuel\ObjectQuel\Visitors\CollectRangeReferences;
 	use Quellabs\ObjectQuel\ObjectQuel\Visitors\ValidateUnambiguousProperty;
 	use Quellabs\ObjectQuel\ObjectQuel\Visitors\ValidateRangesDeclared;
@@ -132,7 +133,12 @@
 
 			// Step 1: Validate property references against schema
 			$this->processWithVisitor($ast, ValidateEntityPropertyExists::class, $this->entityStore);
-			
+
+			// Step 1a: Validate column references on plain-table ranges against the
+			// live schema — the one check that needs a real connection instead of
+			// static EntityStore metadata, since a table range has no annotations.
+			$this->processWithVisitor($ast, ValidateTablePropertyExists::class, $this->databaseAdapter);
+
 			// Step 1b: Validate that JSON path segments only appear after a JSON-typed column
 			$this->processWithVisitor($ast, ValidateJsonPropertyChain::class, $this->entityStore);
 			
