@@ -31,7 +31,7 @@
 	 * (fail-loud) default. Compiled and executed directly (see
 	 * Execution\Executors\DestroyExecutor), same as AstCreateTable.
 	 */
-	class AstDestroy extends Ast {
+	class AstDestroy extends Ast implements AstStatement {
 
 		private string $name;
 

@@ -12,7 +12,7 @@
 	 * pipeline entirely. `if not exists` is the trailing-qualifier
 	 * counterpart to `destroy`'s `if exists`.
 	 */
-	class AstCreateTable extends Ast {
+	class AstCreateTable extends Ast implements AstStatement {
 
 		private string $tableName;
 

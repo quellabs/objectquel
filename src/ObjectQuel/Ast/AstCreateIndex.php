@@ -22,7 +22,7 @@
 	 * against here (see QuelToSQLCreateIndex): the combination is
 	 * unrepresentable, not rejected.
 	 */
-	class AstCreateIndex extends Ast {
+	class AstCreateIndex extends Ast implements AstStatement {
 
 		private string $tableName;
 

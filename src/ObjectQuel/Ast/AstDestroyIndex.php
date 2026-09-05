@@ -23,7 +23,7 @@
 	 * ... ON <table>` syntax requires it, and the grammar itself is
 	 * dialect-independent (see QuelToSQLDestroyIndex).
 	 */
-	class AstDestroyIndex extends Ast {
+	class AstDestroyIndex extends Ast implements AstStatement {
 
 		private string $indexName;
 

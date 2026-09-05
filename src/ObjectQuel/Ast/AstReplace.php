@@ -38,7 +38,7 @@
 	 * standalone `replace` always has at least one assignment; only
 	 * Rules\Append's on-conflict parsing can produce an empty list.
 	 */
-	class AstReplace extends Ast implements NodeWithConditions, NodeWithRanges {
+	class AstReplace extends Ast implements AstStatement, NodeWithConditions, NodeWithRanges {
 
 		private AstRangeDatabase|AstRangeTable $range;
 

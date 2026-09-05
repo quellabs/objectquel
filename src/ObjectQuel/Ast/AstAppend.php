@@ -42,7 +42,7 @@
 	 * meaningful for the literal-values form; the insert-from-select form's
 	 * grammar never reaches an `or` token, so this is always null there.
 	 */
-	class AstAppend extends Ast {
+	class AstAppend extends Ast implements AstStatement {
 
 		private AstRangeDatabase|AstRangeTable|AstRangeJsonSource $range;
 

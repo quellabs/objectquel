@@ -27,7 +27,7 @@
 	 * "current tuple of an enclosing retrieve loop" default here; that
 	 * exception belongs to the EQUEL procedural layer, not bare `delete`.
 	 */
-	class AstDelete extends Ast implements NodeWithConditions, NodeWithRanges {
+	class AstDelete extends Ast implements AstStatement, NodeWithConditions, NodeWithRanges {
 
 		private AstRangeDatabase|AstRangeTable $range;
 

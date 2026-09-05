@@ -10,6 +10,7 @@
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstDestroyIndex;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRangeDatabaseSubquery;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstReplace;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstStatement;
 	use Quellabs\ObjectQuel\Capabilities\PlatformCapabilities;
 	use Quellabs\ObjectQuel\EntityManager;
 	use Quellabs\ObjectQuel\DatabaseAdapter\DatabaseAdapter;
@@ -18,7 +19,6 @@
 	use Quellabs\ObjectQuel\Exception\SemanticException;
 	use Quellabs\ObjectQuel\Exception\TransformationException;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRetrieve;
-	use Quellabs\ObjectQuel\ObjectQuel\AstInterface;
 	use Quellabs\ObjectQuel\ObjectQuel\Lexer;
 	use Quellabs\ObjectQuel\ObjectQuel\LexerException;
 	use Quellabs\ObjectQuel\Exception\QuelException;
@@ -192,6 +192,14 @@
 					};
 				}
 
+				// Every other AstStatement variant was handled by one of the
+				// two blocks above, so this is always AstRetrieve — parse()'s
+				// return type just can't say so, since AstStatement doesn't
+				// enumerate its implementors.
+				if (!$ast instanceof AstRetrieve) {
+					throw new \LogicException('Unreachable: AstStatement is neither a DDL, write-verb, nor AstRetrieve node — ' . get_class($ast));
+				}
+
 				// Resolve all identifier types. Note: this does no semantic checking.
 				// It just flags the type based on AST hierarchy
 				$this->resolveAndSetIdentifierTypes($ast);
@@ -345,13 +353,13 @@
 		 * their own connection (see each Executor's docblock), so the only
 		 * way to avoid a real write is to compile the SQL directly instead of
 		 * calling execute().
-		 * @param AstInterface $ast Parsed statement — anything but AstRetrieve
+		 * @param AstStatement $ast Parsed statement — anything but AstRetrieve
 		 * @param array<string, mixed> $parameters Normalized query parameters
 		 * @return QueryPlan Empty planning notes, plus the compiled SQL
 		 * @throws QuelException On compile failure, or if the statement (a
 		 *         JSON-source-range append) produces no SQL at all
 		 */
-		private function explainNonRetrieveQuery(AstInterface $ast, array $parameters): QueryPlan {
+		private function explainNonRetrieveQuery(AstStatement $ast, array $parameters): QueryPlan {
 			try {
 				$sql = match (true) {
 					$ast instanceof AstCreateTable  => [$this->createTableExecutor->compileSql($ast)],
@@ -377,12 +385,12 @@
 		/**
 		 * Parses a Quel query and returns its AST representation.
 		 * @param string $query The Quel query string to parse
-		 * @return AstRetrieve|AstCreateTable|AstDestroy|AstDestroyIndex|AstCreateIndex|AstAppend|AstReplace|AstDelete The parsed AST
+		 * @return AstStatement The parsed AST — retrieve, DDL, or write-verb
 		 * @throws LexerException
 		 * @throws ParserException
 		 * @throws QuelException If parsing, validation, or processing fails
 		 */
-		private function parse(string $query): AstRetrieve|AstCreateTable|AstDestroy|AstDestroyIndex|AstCreateIndex|AstAppend|AstReplace|AstDelete {
+		private function parse(string $query): AstStatement {
 			// Convert the raw query string into an Abstract Syntax Tree
 			// Create a lexer to break the query string into tokens (keywords, identifiers, operators, etc.)
 			$lexer = new Lexer($query);
@@ -395,16 +403,7 @@
 			$ast = $parser->parse();
 
 			// Ensure the parsed AST represents a statement type this executor knows how to run
-			if (
-				!$ast instanceof AstRetrieve &&
-				!$ast instanceof AstCreateTable &&
-				!$ast instanceof AstDestroy &&
-				!$ast instanceof AstDestroyIndex &&
-				!$ast instanceof AstCreateIndex &&
-				!$ast instanceof AstAppend &&
-				!$ast instanceof AstReplace &&
-				!$ast instanceof AstDelete
-			) {
+			if (!$ast instanceof AstStatement) {
 				throw new QuelException("Invalid query type: expected retrieve, create, destroy, index, or write-verb (append/replace/delete) operation");
 			}
 
