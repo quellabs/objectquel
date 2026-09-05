@@ -212,9 +212,20 @@
 				$memoryUsage = memory_get_usage(true) / 1024;
 				$memoryPeakUsage = memory_get_peak_usage(true) / 1024;
 				
-				// Explain the query
-				$plan = $this->queryExecutor->explainQuery($query, $parameters);
-				
+				// Explain the query. DDL and write-verb statements (append/replace/
+				// delete) can't go through explain() — replaying them via a dry
+				// run would re-execute the write for real — so fall back to a
+				// plan with no planning notes, just the SQL that was actually run.
+				try {
+					$plan = $this->queryExecutor->explainQuery($query, $parameters);
+				} catch (QuelException $e) {
+					if ($e->type !== 'not_plannable') {
+						throw $e;
+					}
+
+					$plan = new QueryPlan([], $this->queryExecutor->getLastExecutedSql());
+				}
+
 				// Emit the query plan + additional query info
 				$this->debugQuerySignal?->emit([
 					'driver'            => 'objectquel',

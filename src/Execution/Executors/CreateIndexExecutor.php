@@ -60,11 +60,7 @@
 		 *         unique/primary index; sqlite: a primary key) is missing
 		 */
 		public function execute(AstCreateIndex $statement): void {
-			[$primaryKeyColumn, $sqlServerKeyIndexName] = $this->resolveFulltextPrerequisites($statement);
-
-			$statements = $this->compiler->convertToSQL($statement, $primaryKeyColumn, $sqlServerKeyIndexName);
-
-			foreach ($statements as $sql) {
+			foreach ($this->compileSql($statement) as $sql) {
 				// execute() swallows the exception and returns null on failure
 				// rather than throwing — a try/catch here would never fire.
 				if ($this->connection->execute($sql) === null) {
@@ -74,6 +70,23 @@
 					);
 				}
 			}
+		}
+
+		/**
+		 * Compiles an `index [unique|fulltext] on Table is index_name (...)`
+		 * statement to SQL without running it, for
+		 * QueryExecutor::explainQuery(). Still performs the fulltext
+		 * prerequisite lookup (schema introspection — read-only) since that
+		 * determines the SQL itself.
+		 * @param AstCreateIndex $statement
+		 * @return list<string>
+		 * @throws QuelException If a fulltext index's required schema
+		 *         prerequisite (sqlsrv: an existing unique/primary index;
+		 *         sqlite: a primary key) is missing
+		 */
+		public function compileSql(AstCreateIndex $statement): array {
+			[$primaryKeyColumn, $sqlServerKeyIndexName] = $this->resolveFulltextPrerequisites($statement);
+			return $this->compiler->convertToSQL($statement, $primaryKeyColumn, $sqlServerKeyIndexName);
 		}
 
 		/**

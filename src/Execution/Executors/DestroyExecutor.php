@@ -51,7 +51,7 @@
 		 * @throws QuelException On DDL failure
 		 */
 		public function execute(AstDestroy $statement): void {
-			foreach ($this->compiler->convertToSQL($statement) as $sql) {
+			foreach ($this->compileSql($statement) as $sql) {
 				// execute() swallows the exception and returns null on failure
 				// rather than throwing (same as CreateTableExecutor).
 				if ($this->connection->execute($sql) === null) {
@@ -61,5 +61,15 @@
 					);
 				}
 			}
+		}
+
+		/**
+		 * Compiles a `destroy [temporary] Name [if exists]` statement to SQL
+		 * without running it, for QueryExecutor::explainQuery().
+		 * @param AstDestroy $statement
+		 * @return list<string>
+		 */
+		public function compileSql(AstDestroy $statement): array {
+			return $this->compiler->convertToSQL($statement);
 		}
 	}

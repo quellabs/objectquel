@@ -49,7 +49,7 @@
 		 * @throws QuelException On DDL failure
 		 */
 		public function execute(AstCreateTable $statement): void {
-			$sql = $this->compiler->convertToSQL($statement);
+			$sql = $this->compileSql($statement);
 
 			// execute() swallows the exception and returns null on failure
 			// rather than throwing — a try/catch here would never fire.
@@ -59,5 +59,15 @@
 					'table_creation_error'
 				);
 			}
+		}
+
+		/**
+		 * Compiles a `create [temporary] Name (...)` statement to SQL
+		 * without running it, for QueryExecutor::explainQuery().
+		 * @param AstCreateTable $statement
+		 * @return string
+		 */
+		public function compileSql(AstCreateTable $statement): string {
+			return $this->compiler->convertToSQL($statement);
 		}
 	}

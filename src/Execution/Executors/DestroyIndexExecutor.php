@@ -34,7 +34,7 @@
 	 * sqlsrv/sqlite" section, which originally deferred exactly this. Both
 	 * need one extra round of introspection first, to decide whether
 	 * $indexName actually correlates to that special object — see
-	 * executeSqlServer()/executeSqlite(). A name that resolves to neither
+	 * resolveSqlServerStatements()/resolveSqliteStatements(). A name that resolves to neither
 	 * still falls through to the ordinary path unconditionally, so a
 	 * genuine typo gets the exact same native engine error (or native `IF
 	 * EXISTS` no-op) it always did: this introspection only ever adds a new
@@ -76,10 +76,22 @@
 		 * @throws QuelException On DDL failure
 		 */
 		public function execute(AstDestroyIndex $statement): void {
-			match ($this->platform->getDatabaseType()) {
-				'sqlsrv' => $this->executeSqlServer($statement),
-				'sqlite' => $this->executeSqlite($statement),
-				default => $this->runStatements($statement, $this->compiler->convertToSQL($statement)),
+			$this->runStatements($statement, $this->compileSql($statement));
+		}
+
+		/**
+		 * Compiles a `destroy Name on Table [if exists]` statement to SQL
+		 * without running it, for QueryExecutor::explainQuery(). Still
+		 * performs the sqlsrv/sqlite fulltext lookups (schema introspection —
+		 * read-only) since those determine which SQL is generated.
+		 * @param AstDestroyIndex $statement
+		 * @return list<string>
+		 */
+		public function compileSql(AstDestroyIndex $statement): array {
+			return match ($this->platform->getDatabaseType()) {
+				'sqlsrv' => $this->resolveSqlServerStatements($statement),
+				'sqlite' => $this->resolveSqliteStatements($statement),
+				default => $this->compiler->convertToSQL($statement),
 			};
 		}
 
@@ -92,8 +104,9 @@
 		 * typo) falls through to the ordinary path, whose own native `DROP
 		 * INDEX [IF EXISTS]` handles it exactly as before this method
 		 * existed.
+		 * @return list<string>
 		 */
-		private function executeSqlServer(AstDestroyIndex $statement): void {
+		private function resolveSqlServerStatements(AstDestroyIndex $statement): array {
 			$tableName = $statement->getTableName();
 			$indexes = $this->connection->getIndexes($tableName);
 
@@ -105,11 +118,10 @@
 					QuelToSQLCreateIndex::SQL_SERVER_FULLTEXT_INDEX_NAME_PROPERTY
 				) === $statement->getIndexName()
 			) {
-				$this->runStatements($statement, $this->compiler->convertToSqlServerFulltextDropSQL($statement));
-				return;
+				return $this->compiler->convertToSqlServerFulltextDropSQL($statement);
 			}
 
-			$this->runStatements($statement, $this->compiler->convertToSQL($statement));
+			return $this->compiler->convertToSQL($statement);
 		}
 
 		/**
@@ -117,9 +129,10 @@
 		 * table plus three sync triggers (see
 		 * QuelToSQLCreateIndex::compileSqliteFulltext()), not a row in
 		 * getIndexes() at all. Same "only intercept a confirmed match"
-		 * rationale as executeSqlServer().
+		 * rationale as resolveSqlServerStatements().
+		 * @return list<string>
 		 */
-		private function executeSqlite(AstDestroyIndex $statement): void {
+		private function resolveSqliteStatements(AstDestroyIndex $statement): array {
 			$tableName = $statement->getTableName();
 			$indexes = $this->connection->getIndexes($tableName);
 
@@ -127,12 +140,11 @@
 				$baseTable = $this->connection->getSqliteFts5BaseTable($statement->getIndexName());
 
 				if ($baseTable === $tableName) {
-					$this->runStatements($statement, $this->compiler->convertToSqliteFts5DropSQL($statement));
-					return;
+					return $this->compiler->convertToSqliteFts5DropSQL($statement);
 				}
 			}
 
-			$this->runStatements($statement, $this->compiler->convertToSQL($statement));
+			return $this->compiler->convertToSQL($statement);
 		}
 
 		/**

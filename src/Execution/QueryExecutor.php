@@ -145,7 +145,7 @@
 		 * `delete`) alike — so slow-query logging and the development-mode
 		 * debug signal in EntityManager::executeQuery() see all of them, not
 		 * just `retrieve`.
-		 * To inspect planner decisions without executing, use explain() instead.
+		 * To inspect planner decisions without executing, use explainQuery() instead.
 		 * @param string $query The ObjectQuel query string
 		 * @param array<int|string, mixed> $parameters Query parameters
 		 * @return QuelResult|null Null for statements with no rows to return (e.g. `create`)
@@ -263,22 +263,17 @@
 			try {
 				// Normalize parameters to string keys, matching executeQuery behavior
 				$normalizedParameters = $this->normalizeParams($parameters);
-				
+
 				// Parse and resolve identifiers
 				$ast = $this->parse($query);
 
-				// explainQuery()'s dry-run only intercepts the retrieve database
-				// executor, not these — continuing would run real DDL/writes.
-				if (
-					$ast instanceof AstCreateTable ||
-					$ast instanceof AstDestroy ||
-					$ast instanceof AstDestroyIndex ||
-					$ast instanceof AstCreateIndex ||
-					$ast instanceof AstAppend ||
-					$ast instanceof AstReplace ||
-					$ast instanceof AstDelete
-				) {
-					throw new QuelException("explain is not supported for DDL or write-verb statements");
+				// explainQuery() only calls explain() for a retrieve statement —
+				// DDL and write-verb statements have no optimizer/planner pipeline
+				// to log decisions from, so they're explained via
+				// explainNonRetrieveQuery() instead. This check is a defensive
+				// backstop, not a reachable path.
+				if (!$ast instanceof AstRetrieve) {
+					throw new QuelException("explain() only supports retrieve statements", 'not_plannable');
 				}
 
 				$this->resolveAndSetIdentifierTypes($ast);
@@ -318,17 +313,73 @@
 		 * @throws QuelException
 		 */
 		public function explainQuery(string $query, array $parameters = []): QueryPlan {
+			try {
+				$normalizedParameters = $this->normalizeParams($parameters);
+				$ast = $this->parse($query);
+			} catch (ParserException|LexerException $e) {
+				throw new QuelException("Syntax error: " . $e->getMessage(), 'syntax_error', 0, $e);
+			}
+
+			// DDL and write-verb statements compile straight to SQL — there's no
+			// optimizer/planner pipeline, and replaying them via the retrieve
+			// pipeline's dry-run executor would re-run the write for real (see
+			// explainNonRetrieveQuery()).
+			if (!$ast instanceof AstRetrieve) {
+				return $this->explainNonRetrieveQuery($ast, $normalizedParameters);
+			}
+
 			// Collect planner decisions by running the optimization pipeline
 			$log = $this->explain($query, $parameters);
-			
+
 			// Run the full pipeline again through a dry-run executor to capture
 			// generated SQL without touching the database. The dry-run is cheap
 			// since it skips all I/O.
 			$dryRun = new DryRunDatabaseQueryExecutor($this->entityManager, $this->capabilities);
 			$dryRunExecutor = new self($this->entityManager, $dryRun);
 			$dryRunExecutor->executeQuery($query, $parameters);
-			
+
 			return new QueryPlan($log->getNotes(), $dryRun->getCapturedSql());
+		}
+
+		/**
+		 * Compiles a DDL or write-verb (append/replace/delete) statement to
+		 * SQL without running it. Each of these bypasses the retrieve
+		 * pipeline's optimizer/planner entirely (see executeQuery()), so
+		 * there are no planning notes to report — only the SQL the statement
+		 * would run.
+		 *
+		 * Unlike the retrieve path, this never touches
+		 * DryRunDatabaseQueryExecutor: these statements always run through
+		 * their own connection (see each Executor's docblock), so the only
+		 * way to avoid a real write is to compile the SQL directly instead of
+		 * calling execute().
+		 * @param AstInterface $ast Parsed statement — anything but AstRetrieve
+		 * @param array<string, mixed> $parameters Normalized query parameters
+		 * @return QueryPlan Empty planning notes, plus the compiled SQL
+		 * @throws QuelException On compile failure, or if the statement (a
+		 *         JSON-source-range append) produces no SQL at all
+		 */
+		private function explainNonRetrieveQuery(AstInterface $ast, array $parameters): QueryPlan {
+			try {
+				$sql = match (true) {
+					$ast instanceof AstCreateTable  => [$this->createTableExecutor->compileSql($ast)],
+					$ast instanceof AstDestroy      => $this->destroyExecutor->compileSql($ast),
+					$ast instanceof AstDestroyIndex => $this->destroyIndexExecutor->compileSql($ast),
+					$ast instanceof AstCreateIndex  => $this->createIndexExecutor->compileSql($ast),
+					$ast instanceof AstAppend       => [$this->appendExecutor->compileSql($ast, $parameters)],
+					$ast instanceof AstReplace      => [$this->replaceExecutor->compileSql($ast, $parameters)],
+					$ast instanceof AstDelete       => [$this->deleteExecutor->compileSql($ast, $parameters)],
+					default => throw new QuelException("Invalid query type: expected retrieve, create, destroy, index, or write-verb (append/replace/delete) operation"),
+				};
+
+				return new QueryPlan([], $sql);
+			} catch (SemanticException $e) {
+				throw new QuelException($e->getMessage(), 'semantic_error', 0, $e);
+			} catch (EntityResolutionException $e) {
+				throw new QuelException($e->getMessage(), 'resolution_error', 0, $e);
+			} catch (\ReflectionException $e) {
+				throw new QuelException($e->getMessage(), 'resolution_error', 0, $e);
+			}
 		}
 		
 		/**

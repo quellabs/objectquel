@@ -43,7 +43,7 @@
 		 * @throws QuelException On compile or execution failure
 		 */
 		public function execute(AstDelete $statement, array $parameters): QuelResult {
-			$sql = $this->compiler->convertToSQL($statement, $parameters);
+			$sql = $this->compileSql($statement, $parameters);
 
 			// execute() swallows the exception and returns null on failure
 			// rather than throwing — a try/catch here would never fire.
@@ -57,5 +57,17 @@
 			}
 
 			return QuelResult::fromWriteStatement($rs->rowCount());
+		}
+
+		/**
+		 * Compiles a `delete <range> where ...` statement to SQL without
+		 * running it, for QueryExecutor::explainQuery().
+		 * @param AstDelete $statement
+		 * @param array<string, mixed> $parameters
+		 * @return string
+		 * @throws QuelException On compile failure
+		 */
+		public function compileSql(AstDelete $statement, array $parameters): string {
+			return $this->compiler->convertToSQL($statement, $parameters);
 		}
 	}

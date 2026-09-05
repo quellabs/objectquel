@@ -86,14 +86,7 @@
 				return $this->jsonAppendExecutor->execute($statement, $parameters);
 			}
 
-			$entityName = $statement->getEntityName();
-			$metadata = $entityName !== null ? $this->entityStore->getMetadata($entityName) : null;
-			$generatedId = null;
-
-			if ($metadata !== null) {
-				[$statement, $generatedId] = $this->fillGeneratedPrimaryKeys($statement, $metadata, $parameters);
-			}
-
+			[$statement, $metadata, $generatedId] = $this->prepare($statement, $parameters);
 			$sql = $this->compiler->convertToSQL($statement, $parameters);
 
 			// execute() swallows the exception and returns null on failure
@@ -132,6 +125,57 @@
 			}
 
 			return QuelResult::fromWriteStatement($rs->rowCount(), $generatedId);
+		}
+
+		/**
+		 * Compiles an `append to <range> (...)` statement to SQL without
+		 * running it, for QueryExecutor::explainQuery(). Applies the same
+		 * generated-PK side effect on $parameters that execute() has (an
+		 * identity-strategy PK still comes from the database and stays
+		 * absent from both the SQL and the parameters).
+		 *
+		 * Not supported for a JSON-source range target — JsonAppendExecutor
+		 * writes rows straight into the source file and never produces SQL,
+		 * so there is nothing to compile or show.
+		 * @param AstAppend $statement
+		 * @param array<string, mixed> $parameters
+		 * @return string
+		 * @throws QuelException If the target is a JSON-source range, or on compile failure
+		 * @throws \ReflectionException
+		 */
+		public function compileSql(AstAppend $statement, array &$parameters): string {
+			if ($statement->getRange() instanceof AstRangeJsonSource) {
+				throw new QuelException(
+					"append to a JSON-source range has no SQL to explain — it writes directly to the source file",
+					'not_plannable'
+				);
+			}
+
+			[$statement, , ] = $this->prepare($statement, $parameters);
+			return $this->compiler->convertToSQL($statement, $parameters);
+		}
+
+		/**
+		 * Resolves entity metadata (when the target is a declared entity range)
+		 * and fills in any generated primary keys, shared by execute() and
+		 * compileSql() so both compile the exact same statement.
+		 * @param AstAppend $statement
+		 * @param array<string, mixed> $parameters
+		 * @return array{0: AstAppend, 1: ?EntityMetadataRecord, 2: mixed} The (possibly rewritten)
+		 *         statement, its entity metadata (null for a plain-table range), and the
+		 *         generated PK value when the statement is a single row — null otherwise
+		 * @throws \ReflectionException
+		 */
+		private function prepare(AstAppend $statement, array &$parameters): array {
+			$entityName = $statement->getEntityName();
+			$metadata = $entityName !== null ? $this->entityStore->getMetadata($entityName) : null;
+			$generatedId = null;
+
+			if ($metadata !== null) {
+				[$statement, $generatedId] = $this->fillGeneratedPrimaryKeys($statement, $metadata, $parameters);
+			}
+
+			return [$statement, $metadata, $generatedId];
 		}
 
 		/**
