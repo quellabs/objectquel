@@ -17,10 +17,12 @@
 	 * to a single range property.
 	 *
 	 * Runs during semantic checking, after UnqualifiedDatabasePropertyResolver has
-	 * already rewritten all identifiers it could resolve. Any bare identifier that
-	 * is still Unresolved at this point is either unknown (no range owns it) or
-	 * ambiguous (multiple ranges own it). This validator detects both cases and
-	 * throws a SemanticException with a precise error message.
+	 * already rewritten all identifiers it could resolve, and before
+	 * ValidateRangesDeclared so this validator's specific message wins for a bare
+	 * property name. A bare identifier still Unresolved at this point is either
+	 * unknown (no range owns it) or ambiguous (multiple ranges own it). Only the
+	 * ambiguous case is reported here — an unknown property is intentionally left
+	 * alone so ValidateRangesDeclared reports it as an undefined reference.
 	 */
 	class ValidateUnambiguousProperty extends FindPropertyRange implements AstVisitorInterface {
 		
@@ -69,10 +71,16 @@
 			
 			// Collect matches
 			$matches = $this->findRanges($propertyName, $this->ranges);
-			
+
+			// No range owns this property at all — not this validator's concern.
+			// ValidateRangesDeclared reports it as an undefined reference instead.
+			if (empty($matches)) {
+				return;
+			}
+
 			// More than one candidate for replacing. Throw ambiguous error
 			$rangeNames = implode(', ', array_map(fn($r) => $r->getName(), $matches));
-			
+
 			throw new SemanticException(
 				"Unqualified property '{$propertyName}' is ambiguous: " .
 				"it exists in multiple ranges ({$rangeNames}). " .

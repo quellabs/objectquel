@@ -97,23 +97,27 @@
 			//         This range will act as the FROM clause of the SELECT query.
 			$this->validateAtLeastOneRangeWithoutVia($ast);
 			
-			// Step 5: Validate that each root identifier links to a range that exists
+			// Step 5: Check for ambiguous unqualified properties that the prefilter
+			// could not resolve. Must run before Step 6 so a bare property name
+			// that matches multiple ranges gets this validator's specific
+			// "ambiguous" message instead of Step 6's generic "undefined range
+			// reference" — both see the same Unresolved node otherwise.
+			$this->validateUnambiguousProperties($ast);
+
+			// Step 6: Validate that each root identifier links to a range that exists
 			$this->processWithVisitor($ast, ValidateRangesDeclared::class, $this->entityStore);
-			
-			// Step 6: Validate that via clauses do not form circular dependencies
+
+			// Step 7: Validate that via clauses do not form circular dependencies
 			$this->validateNoCircularViaDependencies($ast);
-			
+
 			// ==============================================================================
 			// Property validation
 			// ==============================================================================
-			
-			// Step 1: Check for ambiguous properties that the prefilter could not resolve
-			$this->validateUnambiguousProperties($ast);
-			
-			// Step 2: Validate property references against schema
+
+			// Step 1: Validate property references against schema
 			$this->processWithVisitor($ast, ValidateEntityPropertyExists::class, $this->entityStore);
 			
-			// Step 2b: Validate that JSON path segments only appear after a JSON-typed column
+			// Step 1b: Validate that JSON path segments only appear after a JSON-typed column
 			$this->processWithVisitor($ast, ValidateJsonPropertyChain::class, $this->entityStore);
 			
 			// Step 3: Validate that referenced relationships lead back to the entity
