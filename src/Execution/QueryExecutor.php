@@ -102,8 +102,8 @@
 			
 			// Init the transformers
 			$this->optimizer = new QueryOptimizer($entityManager, $this->capabilities);
-			$this->queryNormalizer = new QueryNormalizer($entityManager->getEntityStore());
-			$this->semanticAnalyser = new SemanticAnalyzer($entityManager->getEntityStore(), $this->capabilities);
+			$this->queryNormalizer = new QueryNormalizer($entityManager->getEntityStore(), $this->connection);
+			$this->semanticAnalyser = new SemanticAnalyzer($entityManager->getEntityStore(), $this->capabilities, $this->connection);
 		}
 		
 		/**

@@ -9,6 +9,7 @@
 	use Quellabs\ObjectQuel\Capabilities\NullPlatformCapabilities;
 	use Quellabs\ObjectQuel\Capabilities\PlatformCapabilitiesInterface;
 	use Quellabs\ObjectQuel\DatabaseAdapter\CastTypeMapper;
+	use Quellabs\ObjectQuel\DatabaseAdapter\DatabaseAdapter;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstCast;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstAggregate;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstIdentifier;
@@ -50,13 +51,28 @@
 		private CastTypeMapper $castTypeMapper;
 
 		/**
+		 * Used to check a plain table's real columns instead of blindly
+		 * matching every table range when validating unqualified properties.
+		 * Null when the caller has no live connection to offer, in which case
+		 * that check falls back to its pre-introspection permissive behavior.
+		 * @var DatabaseAdapter|null
+		 */
+		private ?DatabaseAdapter $databaseAdapter;
+
+		/**
 		 * Constructor - initializes the validator with entity schema information
 		 * @param EntityStore $entityStore The entity store containing schema definitions
 		 * @param PlatformCapabilitiesInterface $platform Platform capabilities for engine-specific cast validation
+		 * @param DatabaseAdapter|null $databaseAdapter Live connection for plain-table column introspection
 		 */
-		public function __construct(EntityStore $entityStore, PlatformCapabilitiesInterface $platform = new NullPlatformCapabilities()) {
+		public function __construct(
+			EntityStore $entityStore,
+			PlatformCapabilitiesInterface $platform = new NullPlatformCapabilities(),
+			?DatabaseAdapter $databaseAdapter = null
+		) {
 			$this->entityStore = $entityStore;
 			$this->castTypeMapper = new CastTypeMapper($platform);
+			$this->databaseAdapter = $databaseAdapter;
 		}
 		
 		/**
@@ -193,7 +209,7 @@
 		 * @param AstRetrieve $ast The AST to validate
 		 */
 		private function validateUnambiguousProperties(AstRetrieve $ast): void {
-			$validator = new ValidateUnambiguousProperty($this->entityStore, $ast->getRanges());
+			$validator = new ValidateUnambiguousProperty($this->entityStore, $ast->getRanges(), $this->databaseAdapter);
 			$ast->accept($validator);
 		}
 		

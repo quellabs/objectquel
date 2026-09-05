@@ -2,6 +2,7 @@
 	
 	namespace Quellabs\ObjectQuel\ObjectQuel;
 	
+	use Quellabs\ObjectQuel\DatabaseAdapter\DatabaseAdapter;
 	use Quellabs\ObjectQuel\EntityStore;
 	use Quellabs\ObjectQuel\Exception\EntityResolutionException;
 	use Quellabs\ObjectQuel\Exception\TransformationException;
@@ -31,13 +32,24 @@
 		 * @var EntityStore
 		 */
 		private EntityStore $entityStore;
-		
+
+		/**
+		 * Used to check a plain table's real columns when resolving unqualified
+		 * property shorthand. Null when the caller has no live connection to
+		 * offer, in which case that resolution falls back to its
+		 * pre-introspection permissive behavior.
+		 * @var DatabaseAdapter|null
+		 */
+		private ?DatabaseAdapter $databaseAdapter;
+
 		/**
 		 * Initialize the query transformer with an entity store.
 		 * @param EntityStore $entityStore Store containing entity definitions and metadata
+		 * @param DatabaseAdapter|null $databaseAdapter Live connection for plain-table column introspection
 		 */
-		public function __construct(EntityStore $entityStore) {
+		public function __construct(EntityStore $entityStore, ?DatabaseAdapter $databaseAdapter = null) {
 			$this->entityStore = $entityStore;
+			$this->databaseAdapter = $databaseAdapter;
 		}
 		
 		/**
@@ -58,7 +70,7 @@
 			
 			// Step 2: Resolve unqualified property names to range-prefixed identifiers
 			// Allows bare names like 'name' to be written instead of 'p.name' when unambiguous
-			$this->processWithVisitor($ast, ResolveUnqualifiedProperty::class, $this->entityStore, $ast->getRanges());
+			$this->processWithVisitor($ast, ResolveUnqualifiedProperty::class, $this->entityStore, $ast->getRanges(), $this->databaseAdapter);
 			
 			// Step 3: Expand alias references from the SELECT list into WHERE / ORDER BY.
 			// Runs after namespace resolution and unqualified-property expansion so that

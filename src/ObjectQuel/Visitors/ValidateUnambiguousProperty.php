@@ -2,6 +2,7 @@
 	
 	namespace Quellabs\ObjectQuel\ObjectQuel\Visitors;
 	
+	use Quellabs\ObjectQuel\DatabaseAdapter\DatabaseAdapter;
 	use Quellabs\ObjectQuel\EntityStore;
 	use Quellabs\ObjectQuel\Exception\EntityResolutionException;
 	use Quellabs\ObjectQuel\Exception\SemanticException;
@@ -32,9 +33,11 @@
 		/**
 		 * @param EntityStore $entityStore Store containing entity/property metadata
 		 * @param AstRange[] $ranges All ranges from the AstRetrieve node
+		 * @param DatabaseAdapter|null $databaseAdapter Used to check a plain table's
+		 *        real columns instead of blindly matching every table range
 		 */
-		public function __construct(EntityStore $entityStore, array $ranges) {
-			parent::__construct($entityStore);
+		public function __construct(EntityStore $entityStore, array $ranges, ?DatabaseAdapter $databaseAdapter = null) {
+			parent::__construct($entityStore, $databaseAdapter);
 			$this->ranges = $ranges;
 		}
 		

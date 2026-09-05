@@ -430,9 +430,9 @@
 
 			$this->resolveIdentifierTypes($source);
 
-			(new QueryNormalizer($this->entityStore))->transform($source);
+			(new QueryNormalizer($this->entityStore, $this->entityManager->getConnection()))->transform($source);
 			$source->accept(new CoerceDateTimeParameters($parameters));
-			(new SemanticAnalyzer($this->entityStore, $this->platform))->validate($source);
+			(new SemanticAnalyzer($this->entityStore, $this->platform, $this->entityManager->getConnection()))->validate($source);
 			(new QueryOptimizer($this->entityManager, $this->platform))->transform($source, $parameters);
 
 			return (new QuelToSQLRetrieve($this->entityStore, $parameters, $this->platform))->convertToSQL($source);

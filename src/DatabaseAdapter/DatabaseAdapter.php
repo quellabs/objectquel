@@ -3,6 +3,7 @@
 	namespace Quellabs\ObjectQuel\DatabaseAdapter;
 	
 	use Cake\Database\Schema\CollectionInterface;
+	use Cake\Database\Schema\Collection as SchemaCollection;
 	use Cake\Database\StatementInterface;
 	use Cake\Database\Connection;
 	use Phinx\Db\Adapter\AdapterInterface;
@@ -165,11 +166,20 @@
 		}
 		
 		/**
-		 * Returns the schema collection for database introspection
+		 * Returns the schema collection for database introspection.
+		 *
+		 * Deliberately builds a plain, uncached SchemaCollection directly
+		 * rather than calling Connection::getSchemaCollection() — that method
+		 * wraps it in a CachedCollection whenever the connection's
+		 * `cacheMetadata` config is truthy, which requires a configured Cache
+		 * pool (the cakephp/cache package). ObjectQuel doesn't depend on
+		 * cakephp/cache, and schema introspection here isn't hot-path enough
+		 * to need cross-request caching, so this sidesteps a hard dependency
+		 * the connection's own config might otherwise silently require.
 		 * @return CollectionInterface Schema collection providing access to table metadata
 		 */
 		public function getSchemaCollection(): CollectionInterface {
-			return $this->connection->getSchemaCollection();
+			return new SchemaCollection($this->connection);
 		}
 		
 		/**
@@ -365,7 +375,7 @@
 		 */
 		public function getPrimaryKeyColumns(string $tableName): array {
 			// Get the schema descriptor for the specified table
-			$schema = $this->connection->getSchemaCollection()->describe($tableName);
+			$schema = $this->getSchemaCollection()->describe($tableName);
 			
 			// Iterate through all constraints defined on the table
 			foreach ($schema->constraints() as $constraint) {

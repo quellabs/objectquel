@@ -2,12 +2,13 @@
 	
 	namespace Quellabs\ObjectQuel\ObjectQuel\Helpers;
 	
+	use Quellabs\ObjectQuel\DatabaseAdapter\DatabaseAdapter;
 	use Quellabs\ObjectQuel\EntityStore;
 	use Quellabs\ObjectQuel\Exception\EntityResolutionException;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRange;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRangeDatabase;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRangeTable;
-	
+
 	/**
 	 * Finds all concrete entity ranges that expose a given property name.
 	 *
@@ -17,27 +18,46 @@
 	 * with zero, one, or multiple matches.
 	 */
 	class FindPropertyRange {
-		
+
 		/** @var EntityStore */
 		private EntityStore $entityStore;
-		
+
+		/**
+		 * Optional live connection used to look up a plain table's real
+		 * columns. Null when the caller has none to offer (e.g. a
+		 * single-range write-verb statement, where ambiguity between table
+		 * ranges can't occur anyway) — findRanges() then falls back to
+		 * treating every table range as a match, same as before this
+		 * introspection existed.
+		 * @var DatabaseAdapter|null
+		 */
+		private ?DatabaseAdapter $databaseAdapter;
+
+		/**
+		 * Per-instance cache of table columns already looked up, keyed by
+		 * table name. Null value means introspection failed (e.g. the table
+		 * doesn't exist yet) and the permissive fallback should be used.
+		 * @var array<string, array<string, mixed>|null>
+		 */
+		private array $tableColumnsCache = [];
+
 		/**
 		 * PropertyRangeFinder constructor
 		 * @param EntityStore $entityStore Store containing entity/property metadata
+		 * @param DatabaseAdapter|null $databaseAdapter Used to check a plain table's
+		 *        real columns instead of blindly matching every table range
 		 */
-		public function __construct(EntityStore $entityStore) {
+		public function __construct(EntityStore $entityStore, ?DatabaseAdapter $databaseAdapter = null) {
 			$this->entityStore = $entityStore;
+			$this->databaseAdapter = $databaseAdapter;
 		}
 		
 		/**
 		 * Returns all ranges that expose the given property, either as a scalar
 		 * column (@Column) or as a relation (@OneToOne, @ManyToOne, @InverseOf)
-		 * on a concrete entity range, or unconditionally for a plain-table range.
-		 * Plain-table ranges have no column catalog to check against, so any
-		 * bare property name is treated as a potential match for them — the
-		 * same way a qualified reference (`x.id`) is accepted without checking
-		 * that the table actually has an `id` column. Subquery and JSON ranges
-		 * are skipped because they have no metadata to inspect either way.
+		 * on a concrete entity range, or by real column lookup for a plain-table
+		 * range (see tableHasColumn()). Subquery and JSON ranges are skipped
+		 * because they have no metadata to inspect either way.
 		 *
 		 * @param string $propertyName The bare property name to look up
 		 * @param AstRange[] $ranges All ranges declared in the query
@@ -48,10 +68,11 @@
 			$matches = [];
 
 			foreach ($ranges as $range) {
-				// Plain-table ranges have no metadata to check the property
-				// against, so treat them as always exposing it.
 				if ($range instanceof AstRangeTable) {
-					$matches[] = $range;
+					if ($this->tableHasColumn($range, $propertyName)) {
+						$matches[] = $range;
+					}
+
 					continue;
 				}
 
@@ -84,5 +105,37 @@
 			}
 
 			return $matches;
+		}
+
+		/**
+		 * Whether a plain-table range actually has the given column, per the
+		 * live database schema. Falls back to treating the property as present
+		 * (the pre-introspection behavior) when no DatabaseAdapter was supplied,
+		 * or when introspection itself fails — e.g. the table doesn't exist yet
+		 * (a `create table` statement earlier in the same request) — so a
+		 * lookup failure can never turn into a harder error than "ambiguous,
+		 * please qualify".
+		 * @param AstRangeTable $range
+		 * @param string $propertyName
+		 * @return bool
+		 */
+		private function tableHasColumn(AstRangeTable $range, string $propertyName): bool {
+			if ($this->databaseAdapter === null) {
+				return true;
+			}
+
+			$tableName = $range->getTableName();
+
+			if (!array_key_exists($tableName, $this->tableColumnsCache)) {
+				try {
+					$this->tableColumnsCache[$tableName] = $this->databaseAdapter->getColumns($tableName);
+				} catch (\Throwable $e) {
+					$this->tableColumnsCache[$tableName] = null;
+				}
+			}
+
+			$columns = $this->tableColumnsCache[$tableName];
+
+			return $columns === null || isset($columns[$propertyName]);
 		}
 	}
