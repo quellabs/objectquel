@@ -29,16 +29,17 @@
 	 */
 	class AstDelete extends Ast implements NodeWithConditions, NodeWithRanges {
 
-		private AstRangeDatabase $range;
+		private AstRangeDatabase|AstRangeTable $range;
 
 		private ?AstInterface $conditions;
 
 		/**
 		 * AstDelete constructor.
-		 * @param AstRangeDatabase $range Target range — a declared, real persisted entity range
+		 * @param AstRangeDatabase|AstRangeTable $range Target range — a declared, real
+		 *        persisted entity range or plain-table range
 		 * @param AstInterface $conditions Mandatory WHERE condition
 		 */
-		public function __construct(AstRangeDatabase $range, AstInterface $conditions) {
+		public function __construct(AstRangeDatabase|AstRangeTable $range, AstInterface $conditions) {
 			$this->range = $range;
 			$this->conditions = $conditions;
 			$this->conditions->setParent($this);
@@ -53,7 +54,7 @@
 			$this->conditions?->accept($visitor);
 		}
 
-		public function getRange(): AstRangeDatabase {
+		public function getRange(): AstRangeDatabase|AstRangeTable {
 			return $this->range;
 		}
 

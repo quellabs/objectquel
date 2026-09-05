@@ -75,7 +75,12 @@
 			if ($ast->getType() === IdentifierType::JsonRoot && $ast->getNext() === null) {
 				return true;
 			}
-			
+
+			// TableRoot is only bare when it has no chained property (a alone, not a.column)
+			if ($ast->getType() === IdentifierType::TableRoot && $ast->getNext() === null) {
+				return true;
+			}
+
 			return false;
 		}
 	}

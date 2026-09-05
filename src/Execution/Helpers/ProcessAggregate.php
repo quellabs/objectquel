@@ -20,7 +20,9 @@
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstMin;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRange;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRangeDatabase;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRangeTable;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstSubquery;
+	use Quellabs\ObjectQuel\ObjectQuel\Helpers\RangeTableName;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstSum;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstSumU;
 	use Quellabs\ObjectQuel\ObjectQuel\AstInterface;
@@ -629,48 +631,49 @@
 			
 			// Separate main range (no join property) from ranges that need joins
 			foreach ($ranges as $range) {
-				if (!$range instanceof AstRangeDatabase) {
+				if (!$range instanceof AstRangeDatabase && !$range instanceof AstRangeTable) {
 					continue;
 				}
-				
+
 				if ($range->getJoinProperty() === null) {
 					$mainRange = $range;
 				} else {
 					$joinRanges[] = $range;
 				}
 			}
-			
+
 			if ($mainRange === null) {
 				throw new \InvalidArgumentException("No main range found - at least one range must not have a join property");
 			}
-			
-			// Start with the main table and its alias
-			$metadata = $this->entityStore->getMetadata($mainRange->getEntityName());
-			
+
+			// Start with the main table and its alias. Entity ranges resolve their
+			// table name via metadata; plain-table ranges already carry it literally.
+			$tableName = RangeTableName::resolve($mainRange, $this->entityStore);
+
 			// Convert to SQL
-			$sql = $this->identifierQuoter->quoteIdentifier($metadata->tableName) . ' ' . $this->identifierQuoter->quoteIdentifier($mainRange->getName());
-			
+			$sql = $this->identifierQuoter->quoteIdentifier($tableName) . ' ' . $this->identifierQuoter->quoteIdentifier($mainRange->getName());
+
 			// Add JOIN clauses for each related range
 			foreach ($joinRanges as $range) {
-				// Fetch metadata of entity
-				$metadata = $this->entityStore->getMetadata($range->getEntityName());
-				
+				// Fetch the joined range's physical table name
+				$tableName = RangeTableName::resolve($range, $this->entityStore);
+
 				// Convert join property to SQL condition
 				$joinProperty = $range->getJoinProperty();
-				
+
 				// If no join property present, throw
 				if ($joinProperty === null) {
 					throw new \InvalidArgumentException("Join range '{$range->getName()}' unexpectedly has no join property");
 				}
-				
+
 				// Convert the expression to SQL
 				$joinCondition = $this->convertExpressionToSql($joinProperty);
-				
+
 				// Determine INNER/LEFT join
 				$joinType = $range->isRequired() ? "INNER" : "LEFT";
-				
+
 				// Add it to the query
-				$sql .= " {$joinType} JOIN " . $this->identifierQuoter->quoteIdentifier($metadata->tableName) . ' ' . $this->identifierQuoter->quoteIdentifier($range->getName()) . " ON {$joinCondition}";
+				$sql .= " {$joinType} JOIN " . $this->identifierQuoter->quoteIdentifier($tableName) . ' ' . $this->identifierQuoter->quoteIdentifier($range->getName()) . " ON {$joinCondition}";
 			}
 			
 			return $sql;
@@ -788,8 +791,10 @@
 			foreach ($identifiers as $identifier) {
 				$range = $identifier->getRange();
 				
-				// Only process database ranges, skip in-memory or other range types
-				if (!$range instanceof AstRangeDatabase) {
+				// Only process database ranges, skip in-memory or other range types.
+				// A plain-table range is SQL-backed exactly like an entity range —
+				// see the aggregate mixing check in SemanticAnalyzer.
+				if (!$range instanceof AstRangeDatabase && !$range instanceof AstRangeTable) {
 					continue;
 				}
 				

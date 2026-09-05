@@ -10,7 +10,9 @@
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRangeDatabaseMaterialized;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRangeDatabaseSubquery;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRangeDatabaseTempTable;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRangeTable;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRetrieve;
+	use Quellabs\ObjectQuel\ObjectQuel\Helpers\RangeTableName;
 	use Quellabs\ObjectQuel\Execution\Visitors\BuildSqlFromAst;
 	use Quellabs\ObjectQuel\Execution\Visitors\DetectPrimaryKeyInClause;
 	use Quellabs\ObjectQuel\Execution\Visitors\DetectPrimaryKeyInClauseException;
@@ -195,30 +197,32 @@
 				// Only use database ranges
 				if (
 					!$range instanceof AstRangeDatabase &&
-					!$range instanceof AstRangeDatabaseSubquery
+					!$range instanceof AstRangeDatabaseSubquery &&
+					!$range instanceof AstRangeTable
 				) {
 					continue;
 				}
-				
+
 				// Skip ranges with JOIN properties. These go in the JOIN.
 				if ($range->getJoinProperty() !== null) {
 					continue;
 				}
-				
+
 				// Get the name of the range
 				$rangeName = $range->getName();
-				
+
 				// Subquery ranges are emitted as derived tables inline in the FROM clause.
 				// Regular ranges reference a physical table looked up from the entity store.
 				if ($range instanceof AstRangeDatabaseSubquery) {
 					$subSQL = $this->convertToSQL($range->getQuery(), $rangeName);
 					$tableNames[] = $this->quoteAsAlias("({$subSQL})", $rangeName);
 				} else {
-					// Get the metadata for the entity.
-					$metadata = $this->entityStore->getMetadata($range->getEntityName());
+					// Entity ranges resolve their table name via metadata; plain-table
+					// ranges already carry it literally (see RangeTableName).
+					$tableName = RangeTableName::resolve($range, $this->entityStore);
 
 					// Add the table name and alias to the list for the FROM clause.
-					$tableNames[] = $this->quoteAsAlias($this->identifierQuoter->quoteIdentifier($metadata->tableName), $rangeName);
+					$tableNames[] = $this->quoteAsAlias($this->identifierQuoter->quoteIdentifier($tableName), $rangeName);
 				}
 			}
 			
@@ -438,11 +442,12 @@
 				if (
 					!$range instanceof AstRangeDatabase &&
 					!$range instanceof AstRangeDatabaseTempTable &&
-					!$range instanceof AstRangeDatabaseMaterialized
+					!$range instanceof AstRangeDatabaseMaterialized &&
+					!$range instanceof AstRangeTable
 				) {
 					continue;
 				}
-				
+
 				// If the entity has no join property, skip it.
 				if ($range->getJoinProperty() === null) {
 					continue;
@@ -472,9 +477,9 @@
 					$result[] = $this->buildJoinClause($joinType, "({$subSQL})", $rangeName, $joinColumn);
 				} elseif ($range instanceof AstRangeDatabaseTempTable) {
 					$result[] = $this->buildJoinClause($joinType, $this->identifierQuoter->quoteIdentifier($range->getTableName()), $rangeName, $joinColumn);
-				} elseif ($range instanceof AstRangeDatabase) {
-					$metadata = $this->entityStore->getMetadata($range->getEntityName());
-					$result[] = $this->buildJoinClause($joinType, $this->identifierQuoter->quoteIdentifier($metadata->tableName), $rangeName, $joinColumn);
+				} elseif ($range instanceof AstRangeDatabase || $range instanceof AstRangeTable) {
+					$tableName = RangeTableName::resolve($range, $this->entityStore);
+					$result[] = $this->buildJoinClause($joinType, $this->identifierQuoter->quoteIdentifier($tableName), $rangeName, $joinColumn);
 				} else {
 					throw new \LogicException(
 						"Unresolved AstRangeDatabaseSubquery '{$rangeName}' reached QuelToSQLRetrieve — planner did not complete substitution"

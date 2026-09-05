@@ -50,9 +50,9 @@
 			}
 			
 			$type = $node->getType();
-			
+
 			if (
-				($type === IdentifierType::EntityRoot || $type === IdentifierType::EntityReference) &&
+				($type === IdentifierType::EntityRoot || $type === IdentifierType::EntityReference || $type === IdentifierType::TableRoot) &&
 				isset($this->knownRangeNames[$node->getName()])
 			) {
 				$this->referenced[] = $node->getName();

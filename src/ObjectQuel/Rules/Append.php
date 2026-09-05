@@ -6,6 +6,7 @@
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstAssignment;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRange;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRangeDatabase;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRangeTable;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstReplace;
 	use Quellabs\ObjectQuel\ObjectQuel\Lexer;
 	use Quellabs\ObjectQuel\ObjectQuel\LexerException;
@@ -64,7 +65,6 @@
 
 			$targetName = $this->lexer->match(Token::Identifier)->getStringValue();
 			$targetRange = TargetRange::resolve($targetName, $ranges, 'append');
-			$entityName = $targetRange->getEntityName();
 
 			$this->lexer->match(Token::ParenthesesOpen);
 
@@ -74,7 +74,7 @@
 				$rows = $this->parseValueRows($firstProperty);
 				$onConflict = $this->parseOptionalOnConflict($targetRange);
 				$this->consumeOptionalSemicolon();
-				return AstAppend::forValues($entityName, $rows, $onConflict);
+				return AstAppend::forValues($targetRange, $rows, $onConflict);
 			}
 
 			$columns = $this->parseColumnList($firstProperty);
@@ -86,7 +86,7 @@
 			$retrieveRule = new Retrieve($this->lexer);
 			$source = $retrieveRule->parse([], $ranges);
 
-			return AstAppend::forSelect($entityName, $columns, $source);
+			return AstAppend::forSelect($targetRange, $columns, $source);
 		}
 
 		/**
@@ -96,11 +96,19 @@
 		 * optional here (unlike a standalone `replace`) — `or replace where
 		 * <cond>` with no list means "on conflict, overwrite with the row
 		 * that would have been inserted"; see QuelToSQLUpsert.
-		 * @param AstRangeDatabase $targetRange
+		 *
+		 * Works for a plain-table target too (see
+		 * objectquel-plain-table-range-plan.md): the conflict-target check
+		 * against a declared unique/primary-key constraint only runs when
+		 * there's entity metadata to check it against — for a plain-table
+		 * range it's skipped, the same "no live-schema validation" policy
+		 * every other plain-table-range check follows (see
+		 * QuelToSQLUpsert::convertToSQL()'s docblock).
+		 * @param AstRangeDatabase|AstRangeTable $targetRange
 		 * @return AstReplace|null
 		 * @throws LexerException|ParserException
 		 */
-		private function parseOptionalOnConflict(AstRangeDatabase $targetRange): ?AstReplace {
+		private function parseOptionalOnConflict(AstRangeDatabase|AstRangeTable $targetRange): ?AstReplace {
 			if (!$this->lexer->optionalMatch(Token::Or)) {
 				return null;
 			}

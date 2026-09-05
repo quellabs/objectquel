@@ -5,6 +5,7 @@
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstAssignment;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRange;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRangeDatabase;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRangeTable;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstReplace;
 	use Quellabs\ObjectQuel\ObjectQuel\Lexer;
 	use Quellabs\ObjectQuel\ObjectQuel\LexerException;
@@ -67,7 +68,7 @@
 		 * upsert's `append ... or replace (...) where ...` on-conflict clause
 		 * (see objectquel-upsert-plan.md), where the leading `replace <range>`
 		 * target is omitted (implied to be the append's own target).
-		 * @param AstRangeDatabase $range
+		 * @param AstRangeDatabase|AstRangeTable $range
 		 * @param bool $assignmentsOptional When true and no parenthesized list
 		 *        follows, the assignment list is left empty rather than being a
 		 *        parse error — upsert's `or replace where <cond>` with no list
@@ -77,7 +78,7 @@
 		 * @return AstReplace
 		 * @throws LexerException|ParserException
 		 */
-		public function parseAssignmentsAndConditions(AstRangeDatabase $range, bool $assignmentsOptional = false): AstReplace {
+		public function parseAssignmentsAndConditions(AstRangeDatabase|AstRangeTable $range, bool $assignmentsOptional = false): AstReplace {
 			$assignments = $assignmentsOptional && $this->lexer->lookahead() !== Token::ParenthesesOpen
 				? []
 				: $this->parseAssignments();

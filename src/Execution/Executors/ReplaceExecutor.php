@@ -55,7 +55,7 @@
 
 			if ($rs === null) {
 				throw new QuelException(
-					"Failed to replace in '{$statement->getRange()->getEntityName()}': {$this->connection->getLastErrorMessage()}",
+					"Failed to replace via range '{$statement->getRange()->getName()}': {$this->connection->getLastErrorMessage()}",
 					'replace_error'
 				);
 			}

@@ -50,7 +50,8 @@
 				$node->getType() !== IdentifierType::EntityRoot &&
 				$node->getType() !== IdentifierType::EntityReference &&
 				$node->getType() !== IdentifierType::JsonRoot &&
-				$node->getType() !== IdentifierType::SubqueryRoot
+				$node->getType() !== IdentifierType::SubqueryRoot &&
+				$node->getType() !== IdentifierType::TableRoot
 			) {
 				return;
 			}

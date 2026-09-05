@@ -27,8 +27,10 @@
 	 *    — $columns holds the bare column list and $source the nested
 	 *    AstRetrieve to select from. $rows is null.
 	 *
-	 * $entityName is already resolved at parse time to the target range's
-	 * entity class name (see objectquel-append-plan.md).
+	 * $range is the already-resolved target range (see objectquel-append-plan.md
+	 * and, for the plain-table case, objectquel-plain-table-range-plan.md).
+	 * getEntityName()/getTableName() derive from it — exactly one is non-null,
+	 * matching the range kind.
 	 *
 	 * $onConflict is the upsert extension (see objectquel-upsert-plan.md):
 	 * `append to u (...) or replace (...) where <cond>` — literally the
@@ -39,7 +41,7 @@
 	 */
 	class AstAppend extends Ast {
 
-		private string $entityName;
+		private AstRangeDatabase|AstRangeTable $range;
 
 		/** @var AstAssignment[][]|null */
 		private ?array $rows;
@@ -52,14 +54,14 @@
 		private ?AstReplace $onConflict;
 
 		/**
-		 * @param string $entityName Resolved target entity class name
+		 * @param AstRangeDatabase|AstRangeTable $range Resolved target range
 		 * @param AstAssignment[][]|null $rows Assignment rows (literal-values form)
 		 * @param string[]|null $columns Bare column list (insert-from-select form)
 		 * @param AstRetrieve|null $source Source query (insert-from-select form)
 		 * @param AstReplace|null $onConflict Upsert's `or replace (...) where ...` clause
 		 */
-		private function __construct(string $entityName, ?array $rows, ?array $columns, ?AstRetrieve $source, ?AstReplace $onConflict = null) {
-			$this->entityName = $entityName;
+		private function __construct(AstRangeDatabase|AstRangeTable $range, ?array $rows, ?array $columns, ?AstRetrieve $source, ?AstReplace $onConflict = null) {
+			$this->range = $range;
 			$this->rows = $rows;
 			$this->columns = $columns;
 			$this->source = $source;
@@ -76,23 +78,23 @@
 		}
 
 		/**
-		 * @param string $entityName
+		 * @param AstRangeDatabase|AstRangeTable $range
 		 * @param AstAssignment[][] $rows
 		 * @param AstReplace|null $onConflict Upsert's `or replace (...) where ...` clause
 		 * @return self
 		 */
-		public static function forValues(string $entityName, array $rows, ?AstReplace $onConflict = null): self {
-			return new self($entityName, $rows, null, null, $onConflict);
+		public static function forValues(AstRangeDatabase|AstRangeTable $range, array $rows, ?AstReplace $onConflict = null): self {
+			return new self($range, $rows, null, null, $onConflict);
 		}
 
 		/**
-		 * @param string $entityName
+		 * @param AstRangeDatabase|AstRangeTable $range
 		 * @param string[] $columns
 		 * @param AstRetrieve $source
 		 * @return self
 		 */
-		public static function forSelect(string $entityName, array $columns, AstRetrieve $source): self {
-			return new self($entityName, null, $columns, $source);
+		public static function forSelect(AstRangeDatabase|AstRangeTable $range, array $columns, AstRetrieve $source): self {
+			return new self($range, null, $columns, $source);
 		}
 
 		public function accept(AstVisitorInterface $visitor): void {
@@ -108,8 +110,24 @@
 			$this->onConflict?->accept($visitor);
 		}
 
-		public function getEntityName(): string {
-			return $this->entityName;
+		public function getRange(): AstRangeDatabase|AstRangeTable {
+			return $this->range;
+		}
+
+		/**
+		 * @return string|null The target entity class name, or null when the
+		 *         target is a plain-table range (see getTableName()).
+		 */
+		public function getEntityName(): ?string {
+			return $this->range instanceof AstRangeDatabase ? $this->range->getEntityName() : null;
+		}
+
+		/**
+		 * @return string|null The target's physical table name, or null when
+		 *         the target is an entity range (see getEntityName()).
+		 */
+		public function getTableName(): ?string {
+			return $this->range instanceof AstRangeTable ? $this->range->getTableName() : null;
 		}
 
 		public function isInsertFromSelect(): bool {
@@ -140,10 +158,11 @@
 
 		public function deepClone(): static {
 			$clonedOnConflict = $this->onConflict?->deepClone();
+			$clonedRange = $this->range->deepClone();
 
 			if ($this->source !== null) {
 				// @phpstan-ignore-next-line new.static
-				$clone = new static($this->entityName, null, $this->columns, $this->source->deepClone(), $clonedOnConflict);
+				$clone = new static($clonedRange, null, $this->columns, $this->source->deepClone(), $clonedOnConflict);
 			} else {
 				$clonedRows = array_map(
 					fn(array $row) => $this->cloneArray($row),
@@ -151,7 +170,7 @@
 				);
 
 				// @phpstan-ignore-next-line new.static
-				$clone = new static($this->entityName, $clonedRows, null, null, $clonedOnConflict);
+				$clone = new static($clonedRange, $clonedRows, null, null, $clonedOnConflict);
 			}
 
 			$clone->setParent($this->getParent());

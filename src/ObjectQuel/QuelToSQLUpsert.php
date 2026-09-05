@@ -7,6 +7,7 @@
 	use Quellabs\ObjectQuel\EntityStore;
 	use Quellabs\ObjectQuel\Exception\SemanticException;
 	use Quellabs\ObjectQuel\Metadata\EntityMetadataRecord;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstAssignment;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstReplace;
 	use Quellabs\ObjectQuel\ObjectQuel\Helpers\ConflictTargetResolver;
 	use Quellabs\ObjectQuel\ObjectQuel\Helpers\WriteVerbIdentifierResolver;
@@ -75,11 +76,24 @@
 		/**
 		 * Resolves and validates the on-conflict clause, then compiles the
 		 * dialect-appropriate insert-or-update statement.
+		 *
+		 * $metadata is null when the target is a plain-table range (see
+		 * objectquel-plain-table-range-plan.md) — there is then no declared
+		 * unique/primary-key constraint to check the conflict target against
+		 * (ConflictTargetResolver::resolveForTable() skips that check
+		 * entirely) and no property-exists/type/@Orm\Version-bump rules to
+		 * apply to an explicit `or replace (...)` list
+		 * (QuelToSQLReplace::buildSetClauseForTable() instead). An incorrect
+		 * conflict target simply surfaces as the database's own error when
+		 * the compiled statement requires a real constraint that isn't
+		 * there — the same "no live-schema validation" policy every other
+		 * plain-table-range check already follows.
 		 * @param string $insertSql The already-compiled base `INSERT INTO
 		 *        table (cols) VALUES (...), (...)` — reused as-is for the
 		 *        Postgres/SQLite/MySQL branches (SQL Server's MERGE has no
 		 *        INSERT of its own, so it doesn't use this).
-		 * @param EntityMetadataRecord $metadata
+		 * @param string $tableName
+		 * @param EntityMetadataRecord|null $metadata Null for a plain-table target
 		 * @param string[] $properties Row property order — determines column order
 		 * @param string[] $columnNames
 		 * @param array<int, array<string, string>> $compiledRows Per-row compiled
@@ -91,7 +105,8 @@
 		 */
 		public function convertToSQL(
 			string $insertSql,
-			EntityMetadataRecord $metadata,
+			string $tableName,
+			?EntityMetadataRecord $metadata,
 			array $properties,
 			array $columnNames,
 			array $compiledRows,
@@ -103,16 +118,22 @@
 			// buildSetClause can read them.
 			WriteVerbIdentifierResolver::resolve($onConflict, $this->entityStore);
 
-			$conflictProperties = ConflictTargetResolver::resolve($onConflict->getConditions(), $metadata);
-			$this->assertConflictPropertiesSuppliedByRow($conflictProperties, $properties, $metadata);
+			$conflictProperties = $metadata !== null
+				? ConflictTargetResolver::resolve($onConflict->getConditions(), $metadata)
+				: ConflictTargetResolver::resolveForTable($onConflict->getConditions());
 
-			$conflictColumns = array_map(fn(string $property) => $metadata->getColumnName($property), $conflictProperties);
+			$this->assertConflictPropertiesSuppliedByRow($conflictProperties, $properties, $metadata?->className ?? $tableName);
+
+			$conflictColumns = $metadata !== null
+				? array_map(fn(string $property) => $metadata->getColumnName($property), $conflictProperties)
+				: $conflictProperties;
+
 			$explicitAssignments = $onConflict->getAssignments();
 			$dialect = $this->platform->getDatabaseType();
 
 			if (in_array($dialect, ['pgsql', 'sqlite'], true)) {
 				$setClauseParts = $explicitAssignments !== []
-					? $this->replaceCompiler->buildSetClause($explicitAssignments, $metadata, $parameters)
+					? $this->buildSetClauseParts($explicitAssignments, $metadata, $parameters)
 					: $this->buildReferencedSetClause($columnNames, 'EXCLUDED', asFunction: false);
 
 				return sprintf(
@@ -125,14 +146,29 @@
 
 			if (in_array($dialect, ['mysql', 'mariadb'], true)) {
 				$setClauseParts = $explicitAssignments !== []
-					? $this->replaceCompiler->buildSetClause($explicitAssignments, $metadata, $parameters)
+					? $this->buildSetClauseParts($explicitAssignments, $metadata, $parameters)
 					: $this->buildReferencedSetClause($columnNames, 'VALUES', asFunction: true);
 
 				return sprintf('%s ON DUPLICATE KEY UPDATE %s', $insertSql, implode(', ', $setClauseParts));
 			}
 
 			// sqlsrv — no ON CONFLICT/ON DUPLICATE KEY UPDATE equivalent at all.
-			return $this->compileMerge($metadata, $properties, $columnNames, $compiledRows, $conflictColumns, $explicitAssignments, $parameters);
+			return $this->compileMerge($tableName, $properties, $columnNames, $compiledRows, $conflictColumns, $explicitAssignments, $metadata, $parameters);
+		}
+
+		/**
+		 * Builds an on-conflict UPDATE SET clause, branching on whether the
+		 * target carries entity metadata — see convertToSQL()'s docblock.
+		 * @param AstAssignment[] $assignments
+		 * @param EntityMetadataRecord|null $metadata
+		 * @param array<string, mixed> $parameters
+		 * @return string[]
+		 * @throws SemanticException
+		 */
+		private function buildSetClauseParts(array $assignments, ?EntityMetadataRecord $metadata, array &$parameters): array {
+			return $metadata !== null
+				? $this->replaceCompiler->buildSetClause($assignments, $metadata, $parameters)
+				: $this->replaceCompiler->buildSetClauseForTable($assignments, $parameters);
 		}
 
 		/**
@@ -149,23 +185,25 @@
 		 * UPDATE SET uses those independently compiled assignment values
 		 * instead — never source.*, since those expressions may differ from
 		 * what was inserted.
-		 * @param EntityMetadataRecord $metadata
+		 * @param string $tableName
 		 * @param string[] $properties
 		 * @param string[] $columnNames
 		 * @param array<int, array<string, string>> $compiledRows
 		 * @param string[] $conflictColumns
 		 * @param \Quellabs\ObjectQuel\ObjectQuel\Ast\AstAssignment[] $explicitAssignments Empty means "default to the inserted row"
+		 * @param EntityMetadataRecord|null $metadata Null for a plain-table target
 		 * @param array<string, mixed> $parameters
 		 * @return string
 		 * @throws SemanticException
 		 */
 		private function compileMerge(
-			EntityMetadataRecord $metadata,
+			string $tableName,
 			array $properties,
 			array $columnNames,
 			array $compiledRows,
 			array $conflictColumns,
 			array $explicitAssignments,
+			?EntityMetadataRecord $metadata,
 			array &$parameters
 		): string {
 			$targetAlias = $this->identifierQuoter->quoteIdentifier('__upsert_target');
@@ -194,12 +232,12 @@
 			);
 
 			$setClauseParts = $explicitAssignments !== []
-				? $this->replaceCompiler->buildSetClause($explicitAssignments, $metadata, $parameters)
+				? $this->buildSetClauseParts($explicitAssignments, $metadata, $parameters)
 				: $this->buildReferencedSetClause($columnNames, $sourceAlias, asFunction: false);
 
 			return sprintf(
 				'MERGE INTO %s AS %s USING (VALUES %s) AS %s (%s) ON %s WHEN MATCHED THEN UPDATE SET %s WHEN NOT MATCHED THEN INSERT (%s) VALUES (%s);',
-				$this->identifierQuoter->quoteIdentifier($metadata->tableName),
+				$this->identifierQuoter->quoteIdentifier($tableName),
 				$targetAlias,
 				implode(', ', $sourceRows),
 				$sourceAlias,
@@ -247,18 +285,18 @@
 		 * Rules\Append — so checking the first row's set covers every row.)
 		 * @param string[] $conflictProperties
 		 * @param string[] $rowProperties
-		 * @param EntityMetadataRecord $metadata
+		 * @param string $label Entity class name, or the table name for a plain-table target
 		 * @return void
 		 * @throws SemanticException
 		 */
-		private function assertConflictPropertiesSuppliedByRow(array $conflictProperties, array $rowProperties, EntityMetadataRecord $metadata): void {
+		private function assertConflictPropertiesSuppliedByRow(array $conflictProperties, array $rowProperties, string $label): void {
 			$missing = array_diff($conflictProperties, $rowProperties);
 
 			if (!empty($missing)) {
 				throw new SemanticException(sprintf(
 					"append ... or replace's conflict target (%s) must also be part of the append's own column list on '%s' — missing: %s",
 					implode(', ', $conflictProperties),
-					$metadata->className,
+					$label,
 					implode(', ', $missing)
 				));
 			}

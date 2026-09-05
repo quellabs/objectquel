@@ -40,7 +40,7 @@
 	 */
 	class AstReplace extends Ast implements NodeWithConditions, NodeWithRanges {
 
-		private AstRangeDatabase $range;
+		private AstRangeDatabase|AstRangeTable $range;
 
 		/** @var AstAssignment[] */
 		private array $assignments;
@@ -49,11 +49,12 @@
 
 		/**
 		 * AstReplace constructor.
-		 * @param AstRangeDatabase $range Target range — a declared, real persisted entity range
+		 * @param AstRangeDatabase|AstRangeTable $range Target range — a declared, real
+		 *        persisted entity range or plain-table range
 		 * @param AstAssignment[] $assignments
 		 * @param AstInterface $conditions Mandatory WHERE condition
 		 */
-		public function __construct(AstRangeDatabase $range, array $assignments, AstInterface $conditions) {
+		public function __construct(AstRangeDatabase|AstRangeTable $range, array $assignments, AstInterface $conditions) {
 			$this->range = $range;
 			$this->assignments = $assignments;
 			$this->conditions = $conditions;
@@ -78,7 +79,7 @@
 			$this->conditions?->accept($visitor);
 		}
 
-		public function getRange(): AstRangeDatabase {
+		public function getRange(): AstRangeDatabase|AstRangeTable {
 			return $this->range;
 		}
 

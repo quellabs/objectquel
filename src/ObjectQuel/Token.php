@@ -93,6 +93,7 @@
 		const int Index = 135;
 		const int On = 136;
 		const int Fulltext = 137;
+		const int Table = 138;
 		
 		protected int $type;
 		protected mixed $value;

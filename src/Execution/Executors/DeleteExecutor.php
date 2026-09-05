@@ -51,7 +51,7 @@
 
 			if ($rs === null) {
 				throw new QuelException(
-					"Failed to delete from '{$statement->getRange()->getEntityName()}': {$this->connection->getLastErrorMessage()}",
+					"Failed to delete via range '{$statement->getRange()->getName()}': {$this->connection->getLastErrorMessage()}",
 					'delete_error'
 				);
 			}

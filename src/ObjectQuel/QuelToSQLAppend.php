@@ -83,13 +83,167 @@
 		 * @throws SemanticException
 		 */
 		public function convertToSQL(AstAppend $statement, array &$parameters): string {
-			$metadata = $this->entityStore->getMetadata($statement->getEntityName());
+			$entityName = $statement->getEntityName();
+
+			if ($entityName === null) {
+				return $this->convertTableAppendToSQL($statement, $parameters);
+			}
+
+			$metadata = $this->entityStore->getMetadata($entityName);
 
 			if ($statement->isInsertFromSelect()) {
 				return $this->compileInsertFromSelect($statement, $metadata, $parameters);
 			}
 
 			return $this->compileInsertValues($statement, $metadata, $parameters);
+		}
+
+		/**
+		 * Compiles an `append to <range> (...)` statement targeting a
+		 * plain-table range (no entity metadata) — see
+		 * objectquel-plain-table-range-plan.md. Property names are used
+		 * literally as column names, with none of compileInsertValues()'s
+		 * metadata-driven checks (property-exists, required-column,
+		 * value-type compatibility): there is no metadata to check against,
+		 * so an invalid column or a missing required one surfaces as the
+		 * database's own error at execution time instead. An upsert's
+		 * `or replace (...) where ...` on-conflict clause is supported here
+		 * too — delegated to QuelToSQLUpsert with a null EntityMetadataRecord,
+		 * which skips the declared-constraint check the entity path runs
+		 * (see QuelToSQLUpsert::convertToSQL()'s docblock).
+		 * @param AstAppend $statement
+		 * @param array<string, mixed> $parameters
+		 * @return string
+		 * @throws SemanticException
+		 */
+		private function convertTableAppendToSQL(AstAppend $statement, array &$parameters): string {
+			$tableName = $statement->getTableName();
+
+			if ($statement->isInsertFromSelect()) {
+				return $this->compileTableInsertFromSelect($statement, $tableName, $parameters);
+			}
+
+			return $this->compileTableInsertValues($statement, $tableName, $parameters);
+		}
+
+		/**
+		 * Compiles the literal-values form (single or multi-row) for a
+		 * plain-table range to `INSERT INTO table (cols) VALUES (...), (...)`.
+		 * @param AstAppend $statement
+		 * @param string $tableName
+		 * @param array<string, mixed> $parameters
+		 * @return string
+		 */
+		private function compileTableInsertValues(AstAppend $statement, string $tableName, array &$parameters): string {
+			$rows = $statement->getRows();
+			$properties = array_map(fn(AstAssignment $assignment) => $assignment->getProperty(), $rows[0]);
+
+			$compiledRows = array_map(
+				fn(array $row) => $this->compileTableRow($row, $parameters),
+				$rows
+			);
+
+			// A plain-table range has no metadata, so column names are just the
+			// property names themselves (property IS column here).
+			$insertSql = $this->compileInsertGeneric($tableName, $properties, $properties, $compiledRows);
+			$onConflict = $statement->getOnConflict();
+
+			if ($onConflict === null) {
+				return $insertSql;
+			}
+
+			return $this->upsertCompiler->convertToSQL($insertSql, $tableName, null, $properties, $properties, $compiledRows, $onConflict, $parameters);
+		}
+
+		/**
+		 * Compiles a single row's assignments to SQL, keyed by property, for a
+		 * plain-table append — no column-type check, since there's no column
+		 * definition to check it against.
+		 * @param AstAssignment[] $row
+		 * @param array<string, mixed> $parameters
+		 * @return array<string, string> property => compiled SQL value
+		 */
+		private function compileTableRow(array $row, array &$parameters): array {
+			$compiled = [];
+
+			foreach ($row as $assignment) {
+				$builder = new BuildSqlFromAst($this->entityStore, $parameters, 'VALUES', $this->platform);
+				$compiled[$assignment->getProperty()] = $builder->visitNodeAndReturnSQL($assignment->getValue());
+			}
+
+			return $compiled;
+		}
+
+		/**
+		 * Compiles the insert-from-select form for a plain-table range to
+		 * `INSERT INTO table (cols) SELECT ...` — see compileInsertFromSelect()
+		 * for why the inner SELECT is wrapped as a derived table.
+		 * @param AstAppend $statement
+		 * @param string $tableName
+		 * @param array<string, mixed> $parameters
+		 * @return string
+		 * @throws SemanticException
+		 */
+		private function compileTableInsertFromSelect(AstAppend $statement, string $tableName, array &$parameters): string {
+			$properties = $statement->getColumns();
+			$source = $statement->getSource();
+
+			$selectSql = $this->compileSourceRetrieve($source, $parameters);
+
+			$visibleAliases = array_values(array_filter(array_map(
+				fn(AstAlias $value) => $value->showInResult() ? $value->getName() : null,
+				$source->getValues()
+			)));
+
+			if (count($visibleAliases) !== count($properties)) {
+				throw new SemanticException(sprintf(
+					"append to '%s': column list has %d column(s) but the source retrieve selects %d",
+					$tableName,
+					count($properties),
+					count($visibleAliases)
+				));
+			}
+
+			$derivedTableAlias = $this->identifierQuoter->quoteIdentifier('__append_source');
+
+			$reprojectedColumns = implode(', ', array_map(
+				fn(string $alias) => $derivedTableAlias . '.' . $this->identifierQuoter->quoteIdentifier($alias),
+				$visibleAliases
+			));
+
+			return sprintf(
+				'INSERT INTO %s (%s) SELECT %s FROM (%s) AS %s',
+				$this->identifierQuoter->quoteIdentifier($tableName),
+				$this->quoteIdentifierList($properties),
+				$reprojectedColumns,
+				$selectSql,
+				$derivedTableAlias
+			);
+		}
+
+		/**
+		 * Shared `INSERT INTO table (cols) VALUES (...), (...)` assembly for
+		 * the plain-table literal-values path — the metadata-driven
+		 * compileInsert() above stays entity-only since it takes an
+		 * EntityMetadataRecord for its table name.
+		 * @param string $tableName
+		 * @param string[] $columnNames
+		 * @param string[] $properties Row property order — determines column order
+		 * @param array<int, array<string, string>> $compiledRows
+		 * @return string
+		 */
+		private function compileInsertGeneric(string $tableName, array $columnNames, array $properties, array $compiledRows): string {
+			$valueTuples = array_map(
+				fn(array $compiledRow) => '(' . implode(', ', array_map(fn(string $property) => $compiledRow[$property], $properties)) . ')',
+				$compiledRows
+			);
+
+			return sprintf(
+				'INSERT INTO %s (%s) VALUES %s',
+				$this->identifierQuoter->quoteIdentifier($tableName),
+				$this->quoteIdentifierList($columnNames),
+				implode(', ', $valueTuples)
+			);
 		}
 
 		/**
@@ -128,7 +282,7 @@
 				return $insertSql;
 			}
 
-			return $this->upsertCompiler->convertToSQL($insertSql, $metadata, $properties, $columnNames, $compiledRows, $onConflict, $parameters);
+			return $this->upsertCompiler->convertToSQL($insertSql, $metadata->tableName, $metadata, $properties, $columnNames, $compiledRows, $onConflict, $parameters);
 		}
 
 		/**
@@ -183,17 +337,7 @@
 		 * @return string
 		 */
 		private function compileInsert(EntityMetadataRecord $metadata, array $columnNames, array $properties, array $compiledRows): string {
-			$valueTuples = array_map(
-				fn(array $compiledRow) => '(' . implode(', ', array_map(fn(string $property) => $compiledRow[$property], $properties)) . ')',
-				$compiledRows
-			);
-
-			return sprintf(
-				'INSERT INTO %s (%s) VALUES %s',
-				$this->identifierQuoter->quoteIdentifier($metadata->tableName),
-				$this->quoteIdentifierList($columnNames),
-				implode(', ', $valueTuples)
-			);
+			return $this->compileInsertGeneric($metadata->tableName, $columnNames, $properties, $compiledRows);
 		}
 
 		/**

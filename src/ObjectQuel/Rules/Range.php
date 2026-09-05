@@ -9,6 +9,7 @@
 	use Quellabs\ObjectQuel\ObjectQuel\ParserException;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRangeDatabase;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRangeJsonSource;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRangeTable;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRangeDatabaseSubquery;
 	
 	/**
@@ -63,6 +64,11 @@
 			// Check if the next token is 'JSON' to determine the type of data source
 			if ($this->lexer->optionalMatch(Token::JsonSource)) {
 				return $this->parseJsonRange($alias->getStringValue());
+			}
+
+			// Check if the next token is 'TABLE' for a plain-table (no entity class) range
+			if ($this->lexer->optionalMatch(Token::Table)) {
+				return $this->parseTableRange($alias->getStringValue());
 			}
 
 			// Otherwise, treat it as a database entity source
@@ -146,6 +152,39 @@
 			return new AstRangeDatabase($alias->getStringValue(), $entityName, $viaIdentifier);
 		}
 		
+		/**
+		 * Parse a plain-table definition in a RANGE clause.
+		 * Format: RANGE OF alias IS TABLE tableName [VIA condition]
+		 * No entity class is involved, so no namespace chain is accepted here.
+		 * Unlike an entity range's `via <relation>` (a relation name resolved
+		 * against entity metadata later), a plain-table range has no relation
+		 * catalog to name anything from — its `via` takes the literal join
+		 * condition directly, parsed as a full expression up front (see
+		 * AstRangeTable's docblock). Always a LEFT JOIN; there's no relation
+		 * annotation to consult for "required", and this deliberately doesn't
+		 * grow QUEL a way to spell INNER for it (see
+		 * objectquel-plain-table-range-plan.md).
+		 * @param string $alias The range alias
+		 * @return AstRangeTable AST node representing a plain-table source
+		 * @throws LexerException|ParserException
+		 */
+		private function parseTableRange(string $alias): AstRangeTable {
+			// Match and consume an 'Identifier' token for the table name
+			$tableName = $this->lexer->match(Token::Identifier)->getStringValue();
+
+			// Parse an optional 'VIA' clause — a literal join condition, not a
+			// relation name (see this method's docblock)
+			$joinCondition = null;
+
+			if ($this->lexer->optionalMatch(Token::Via)) {
+				$conditionRule = new LogicalExpression($this->lexer);
+				$joinCondition = $conditionRule->parse();
+			}
+
+			// Create and return the AST node for a plain-table range
+			return new AstRangeTable($alias, $tableName, $joinCondition);
+		}
+
 		/**
 		 * Parse a JSON source definition in a RANGE clause.
 		 *

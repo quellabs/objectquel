@@ -7,6 +7,7 @@
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRangeDatabase;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRangeDatabaseSubquery;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRangeJsonSource;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRangeTable;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\NodeWithRanges;
 	use Quellabs\ObjectQuel\ObjectQuel\AstInterface;
 	use Quellabs\ObjectQuel\ObjectQuel\AstVisitorInterface;
@@ -55,6 +56,8 @@
 					$node->setType(IdentifierType::SubqueryRoot);
 				} elseif ($range instanceof AstRangeJsonSource) {
 					$node->setType(IdentifierType::JsonRoot);
+				} elseif ($range instanceof AstRangeTable) {
+					$node->setType(IdentifierType::TableRoot);
 				}
 			}
 		}

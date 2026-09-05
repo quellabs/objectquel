@@ -608,7 +608,14 @@
 			if ($identifier->getType() === IdentifierType::SubqueryRoot) {
 				return $this->buildColumnNameForTemporaryTable($identifier, $rangeName);
 			}
-			
+
+			// Plain-table range (no entity metadata) — the column name is whatever
+			// the query literally wrote, passed straight through (see
+			// objectquel-plain-table-range-plan.md's "no live-schema validation").
+			if ($identifier->getType() === IdentifierType::TableRoot) {
+				return $this->buildColumnNameForTable($identifier, $rangeName);
+			}
+
 			// When the first property in the chain is a JSON column, further segments
 			// are JSON path keys and must be emitted as JSON_UNQUOTE(JSON_EXTRACT(...)).
 			if ($this->chainContainsJsonProperty($identifier)) {
@@ -654,7 +661,17 @@
 			$rangeName = $range->getName();
 			$entityName = $ast->getEntityName();
 			$propertyName = $nextNode->getName();
-			
+
+			// Plain-table ranges: the column name is whatever the query literally
+			// wrote — a normal "rangeName.column" reference, not a derived-table
+			// alias (see buildColumnNameForTable's docblock for why this differs
+			// from the subquery branch just below).
+			if ($ast->getType() === IdentifierType::TableRoot) {
+				// No column metadata means no nullability info either, so — unlike
+				// the entity path below — there's nothing to COALESCE.
+				return $this->identifierQuoter->quoteIdentifier($rangeName) . '.' . $this->identifierQuoter->quoteIdentifier($propertyName);
+			}
+
 			if (empty($entityName)) {
 				return "{$rangeName}." . $this->identifierQuoter->quoteIdentifier("{$rangeName}.{$propertyName}");
 			}
@@ -755,6 +772,36 @@
 			return $this->identifierQuoter->quoteIdentifier($rangeName) . '.' . $this->identifierQuoter->quoteIdentifier("{$rangeName}.{$columnName}");
 		}
 		
+		/**
+		 * Builds column name for plain-table ranges (`range of a is table Name`).
+		 * There is no entity metadata to map a property to a column — the name
+		 * written in the query IS the physical column name, passed through
+		 * unchanged (see objectquel-plain-table-range-plan.md).
+		 * @param AstIdentifier $identifier The AST identifier to convert
+		 * @param string $rangeName The table alias
+		 * @return string Fully qualified SQL column name
+		 * @throws \LogicException
+		 */
+		private function buildColumnNameForTable(AstIdentifier $identifier, string $rangeName): string {
+			$next = $identifier->getNext();
+
+			if ($next === null) {
+				throw new \LogicException(
+					"Plain-table identifier '{$rangeName}' has no column node in chain"
+				);
+			}
+
+			$columnName = $next->getName();
+
+			if (empty($columnName)) {
+				throw new \LogicException(
+					"Column node for plain-table range '{$rangeName}' returned an empty name"
+				);
+			}
+
+			return $this->identifierQuoter->quoteIdentifier($rangeName) . '.' . $this->identifierQuoter->quoteIdentifier($columnName);
+		}
+
 		/**
 		 * Builds column name for entity-based ranges using entity metadata.
 		 * Converts entity properties to their corresponding database column names

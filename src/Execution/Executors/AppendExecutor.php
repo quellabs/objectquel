@@ -75,9 +75,13 @@
 		 * @throws \ReflectionException
 		 */
 		public function execute(AstAppend $statement, array $parameters): QuelResult {
-			$metadata = $this->entityStore->getMetadata($statement->getEntityName());
+			$entityName = $statement->getEntityName();
+			$metadata = $entityName !== null ? $this->entityStore->getMetadata($entityName) : null;
+			$generatedId = null;
 
-			[$statement, $generatedId] = $this->fillGeneratedPrimaryKeys($statement, $metadata, $parameters);
+			if ($metadata !== null) {
+				[$statement, $generatedId] = $this->fillGeneratedPrimaryKeys($statement, $metadata, $parameters);
+			}
 
 			$sql = $this->compiler->convertToSQL($statement, $parameters);
 
@@ -86,8 +90,10 @@
 			$rs = $this->connection->execute($sql, $parameters);
 
 			if ($rs === null) {
+				$target = $metadata !== null ? $metadata->tableName : $statement->getTableName();
+
 				throw new QuelException(
-					"Failed to append to '{$metadata->tableName}': {$this->connection->getLastErrorMessage()}",
+					"Failed to append to '{$target}': {$this->connection->getLastErrorMessage()}",
 					'append_error'
 				);
 			}
@@ -95,13 +101,16 @@
 			// An identity column's value is only unambiguous for a single-row
 			// literal-values append — for multi-row appends or insert-from-select,
 			// which row's ID getInsertId() would report is engine-dependent, so
-			// it's left null rather than guessed at.
-			if (
-				$generatedId === null &&
-				$metadata->autoIncrementColumn !== null &&
-				!$statement->isInsertFromSelect() &&
-				count($statement->getRows()) === 1
-			) {
+			// it's left null rather than guessed at. A plain-table range has no
+			// metadata to confirm an auto-increment column exists, but the
+			// readback is a plain connection-level operation with no annotation
+			// dependency (see objectquel-plain-table-range-plan.md's "Open
+			// decisions" — recommended even without entity metadata), so it's
+			// attempted unconditionally there; getInsertId() simply reports
+			// false when there's nothing to report.
+			$eligibleForReadback = $metadata === null || $metadata->autoIncrementColumn !== null;
+
+			if ($generatedId === null && $eligibleForReadback && !$statement->isInsertFromSelect() && count($statement->getRows()) === 1) {
 				$insertId = $this->connection->getInsertId();
 
 				if ($insertId !== false) {
@@ -184,7 +193,7 @@
 
 			$generatedId = count($rows) === 1 ? $firstGeneratedValue : null;
 
-			return [AstAppend::forValues($statement->getEntityName(), $newRows), $generatedId];
+			return [AstAppend::forValues($statement->getRange(), $newRows), $generatedId];
 		}
 
 		/**

@@ -15,6 +15,7 @@
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRangeDatabase;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRangeDatabaseSubquery;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRangeJsonSource;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRangeTable;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRegExp;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRetrieve;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstSearch;
@@ -130,7 +131,12 @@
 			//           retrieve(y) where y in a JSON source produces empty arrays at runtime
 			//           because the engine has no schema to hydrate fields from.
 			$this->validateNoBareJsonSourceInProjection($ast);
-			
+
+			// Step 4b3: Validates that the outer projection does not select a bare
+			//           plain-table range — see validateNoBareTableRangeInProjection's
+			//           docblock.
+			$this->validateNoBareTableRangeInProjection($ast);
+
 			// Step 4c: Validates that WHERE conditions only reference fields that subquery ranges
 			//          actually export. A subquery's projection is its contract.
 			$this->validateSubqueryRangeWhereReferences($ast);
@@ -473,7 +479,35 @@
 				}
 			}
 		}
-		
+
+		/**
+		 * Validates that the outer projection does not select a bare plain-table range.
+		 *
+		 * A plain-table range (`range of a is table Name`) has no entity metadata, so
+		 * there's no known column list to expand `retrieve(a)` into — unlike an entity
+		 * range's `retrieve(a)`, this compiler never introspects the live schema to find
+		 * out (see objectquel-plain-table-range-plan.md). Explicit column selection
+		 * (e.g. retrieve(a.id)) is required instead.
+		 *
+		 * @throws SemanticException If a bare plain-table range identifier is selected
+		 */
+		private function validateNoBareTableRangeInProjection(AstRetrieve $ast): void {
+			foreach ($ast->getValues() as $alias) {
+				$expression = $alias->getExpression();
+
+				if (
+					$expression instanceof AstIdentifier &&
+					$expression->getRange() instanceof AstRangeTable &&
+					!$expression->hasNext()
+				) {
+					throw new SemanticException(
+						"A plain-table range must project explicit columns, not the entire range. " .
+						"Use retrieve(a.column) instead of retrieve(a)."
+					);
+				}
+			}
+		}
+
 		/**
 		 * Validates that the outer projection does not select an entire subquery range.
 		 *
@@ -522,7 +556,8 @@
 				$isDatabaseRange =
 					$range instanceof AstRangeDatabase ||
 					$range instanceof AstRangeDatabaseSubquery ||
-					$range instanceof AstRangeJsonSource;
+					$range instanceof AstRangeJsonSource ||
+					$range instanceof AstRangeTable;
 				
 				if ($isDatabaseRange && $range->getJoinProperty() === null) {
 					return; // Found a valid primary range - validation passes
@@ -934,9 +969,12 @@
 					continue;
 				}
 				
-				// Partition into database and non-database ranges
-				$databaseRanges = array_filter($ranges, fn($r) => $r instanceof AstRangeDatabase);
-				$nonDatabaseRanges = array_filter($ranges, fn($r) => !$r instanceof AstRangeDatabase);
+				// Partition into database and non-database ranges. A plain-table range
+				// is SQL-backed exactly like an entity range (see
+				// objectquel-plain-table-range-plan.md) — it belongs on the database
+				// side of this split, not lumped in with external/JSON ranges.
+				$databaseRanges = array_filter($ranges, fn($r) => $r instanceof AstRangeDatabase || $r instanceof AstRangeTable);
+				$nonDatabaseRanges = array_filter($ranges, fn($r) => !$r instanceof AstRangeDatabase && !$r instanceof AstRangeTable);
 				
 				// Mixed: both sides are non-empty — no execution strategy exists for this
 				if (!empty($databaseRanges) && !empty($nonDatabaseRanges)) {

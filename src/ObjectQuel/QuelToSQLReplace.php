@@ -9,6 +9,7 @@
 	use Quellabs\ObjectQuel\Execution\Visitors\BuildSqlFromAst;
 	use Quellabs\ObjectQuel\Metadata\EntityMetadataRecord;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstAssignment;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRangeTable;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstReplace;
 	use Quellabs\ObjectQuel\ObjectQuel\AstInterface;
 	use Quellabs\ObjectQuel\ObjectQuel\Helpers\AssignmentValidator;
@@ -76,6 +77,11 @@
 			WriteVerbIdentifierResolver::resolve($statement, $this->entityStore);
 
 			$range = $statement->getRange();
+
+			if ($range instanceof AstRangeTable) {
+				return $this->convertTableReplaceToSQL($statement, $range, $parameters);
+			}
+
 			$metadata = $this->entityStore->getMetadata($range->getEntityName());
 			$setClauseParts = $this->buildSetClause($statement->getAssignments(), $metadata, $parameters);
 
@@ -85,6 +91,49 @@
 				$this->identifierQuoter->quoteIdentifier($range->getName()),
 				implode(', ', $setClauseParts),
 				$this->compileExpression($statement->getConditions(), $parameters)
+			);
+		}
+
+		/**
+		 * Compiles a `replace <range> (...) where ...` statement targeting a
+		 * plain-table range (no entity metadata) — see
+		 * objectquel-plain-table-range-plan.md. Property names are used
+		 * literally as column names, with no @Orm\Version bump (there's no
+		 * annotation to drive one) and no value-type check (no column
+		 * definition to check it against).
+		 * @param AstReplace $statement
+		 * @param AstRangeTable $range
+		 * @param array<string, mixed> $parameters
+		 * @return string
+		 */
+		private function convertTableReplaceToSQL(AstReplace $statement, AstRangeTable $range, array &$parameters): string {
+			$setClauseParts = $this->buildSetClauseForTable($statement->getAssignments(), $parameters);
+
+			return sprintf(
+				'UPDATE %s as %s SET %s WHERE %s',
+				$this->identifierQuoter->quoteIdentifier($range->getTableName()),
+				$this->identifierQuoter->quoteIdentifier($range->getName()),
+				implode(', ', $setClauseParts),
+				$this->compileExpression($statement->getConditions(), $parameters)
+			);
+		}
+
+		/**
+		 * Builds the `` `col` = <sql> `` SET-clause fragments for a plain-table
+		 * range — property names are used literally as column names, with no
+		 * property-exists/type check (no column definition to check against)
+		 * and no @Orm\Version bump (no annotation to drive one). Public so
+		 * QuelToSQLUpsert can reuse it unchanged for upsert's `or replace (...)`
+		 * on-conflict UPDATE clause when the target is a plain-table range
+		 * (see objectquel-plain-table-range-plan.md).
+		 * @param AstAssignment[] $assignments
+		 * @param array<string, mixed> $parameters Bound parameters, by reference
+		 * @return string[]
+		 */
+		public function buildSetClauseForTable(array $assignments, array &$parameters): array {
+			return array_map(
+				fn(AstAssignment $assignment) => $this->identifierQuoter->quoteIdentifier($assignment->getProperty()) . ' = ' . $this->compileExpression($assignment->getValue(), $parameters),
+				$assignments
 			);
 		}
 

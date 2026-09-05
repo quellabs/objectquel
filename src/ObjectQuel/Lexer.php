@@ -94,6 +94,7 @@
 		        'index'       => Token::Index,
 		        'on'          => Token::On,
 		        'fulltext'    => Token::Fulltext,
+		        'table'       => Token::Table,
 	        ];
 			
 			$this->single_tokens = [

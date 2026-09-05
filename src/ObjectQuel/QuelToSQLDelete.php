@@ -8,6 +8,7 @@
 	use Quellabs\ObjectQuel\Exception\SemanticException;
 	use Quellabs\ObjectQuel\Execution\Visitors\BuildSqlFromAst;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstDelete;
+	use Quellabs\ObjectQuel\ObjectQuel\Helpers\RangeTableName;
 	use Quellabs\ObjectQuel\ObjectQuel\Helpers\WriteVerbIdentifierResolver;
 
 	/**
@@ -59,12 +60,12 @@
 			WriteVerbIdentifierResolver::resolve($statement, $this->entityStore);
 
 			$range = $statement->getRange();
-			$metadata = $this->entityStore->getMetadata($range->getEntityName());
+			$tableName = RangeTableName::resolve($range, $this->entityStore);
 			$builder = new BuildSqlFromAst($this->entityStore, $parameters, 'VALUES', $this->platform);
 
 			return sprintf(
 				'DELETE FROM %s as %s WHERE %s',
-				$this->identifierQuoter->quoteIdentifier($metadata->tableName),
+				$this->identifierQuoter->quoteIdentifier($tableName),
 				$this->identifierQuoter->quoteIdentifier($range->getName()),
 				$builder->visitNodeAndReturnSQL($statement->getConditions())
 			);

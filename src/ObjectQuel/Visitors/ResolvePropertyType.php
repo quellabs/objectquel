@@ -91,6 +91,14 @@
 					// Once inside a JSON path, all further segments are also JSON.
 					$node->setType(IdentifierType::JsonProperty);
 					break;
+
+				case IdentifierType::TableRoot:
+				case IdentifierType::TableProperty:
+					// Plain-table ranges have no entity metadata to check a column
+					// against (see objectquel-plain-table-range-plan.md) — every
+					// segment is a raw column reference, passed through as-is.
+					$node->setType(IdentifierType::TableProperty);
+					break;
 			}
 		}
 		
