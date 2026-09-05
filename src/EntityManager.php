@@ -175,10 +175,15 @@
 		}
 		
 		/**
-		 * Execute a decomposed query plan
+		 * Execute an ObjectQuel statement — `retrieve`, DDL, or a write verb
+		 * (`append`/`replace`/`delete`) alike; all go through this one entry
+		 * point. A write verb bypasses the identity map and change tracking
+		 * entirely, so its QuelResult carries no fetchable rows, just how many
+		 * rows were affected and, when applicable, a generated primary key
+		 * (see QuelResult::fromWriteStatement() and objectquel-append-plan.md).
 		 * @param string $query The query to execute
 		 * @param array<string, mixed> $parameters Initial parameters for the plan
-		 * @return QuelResult|null The results of the execution plan
+		 * @return QuelResult|null Null for statements with no rows to return (e.g. `create`)
 		 * @throws QuelException
 		 */
 		public function executeQuery(string $query, array $parameters = []): ?QuelResult {
@@ -224,23 +229,6 @@
 			}
 			
 			return $result;
-		}
-		
-		/**
-		 * Executes a bulk, set-based write-verb statement (`append`, and later
-		 * `replace`/`delete`/upsert) — these bypass the identity map and
-		 * change tracking entirely, so unlike a `retrieve` executed through
-		 * executeQuery(), the returned QuelResult carries no fetchable rows,
-		 * just how many rows were affected and, when applicable, a generated
-		 * primary key (see QuelResult::fromWriteStatement() and
-		 * objectquel-append-plan.md).
-		 * @param string $query The ObjectQuel statement string
-		 * @param array<string, mixed> $parameters Query parameters
-		 * @return QuelResult
-		 * @throws QuelException
-		 */
-		public function executeStatement(string $query, array $parameters = []): QuelResult {
-			return $this->queryExecutor->executeStatement($query, $parameters);
 		}
 
 		/**

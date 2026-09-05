@@ -139,7 +139,12 @@
 		}
 		
 		/**
-		 * Executes a query and returns the hydrated result.
+		 * Executes a query and returns the hydrated result. Every ObjectQuel
+		 * statement goes through this single entry point — `retrieve`, DDL
+		 * (`create`/`destroy`/index), and the write verbs (`append`/`replace`/
+		 * `delete`) alike — so slow-query logging and the development-mode
+		 * debug signal in EntityManager::executeQuery() see all of them, not
+		 * just `retrieve`.
 		 * To inspect planner decisions without executing, use explain() instead.
 		 * @param string $query The ObjectQuel query string
 		 * @param array<int|string, mixed> $parameters Query parameters
@@ -179,6 +184,22 @@
 					return null;
 				}
 
+				// Write-verb statements bypass the retrieve pipeline entirely too
+				// (no semantic analysis, no identifier resolution — see each
+				// executor's own docblock) but, unlike DDL, do return a QuelResult
+				// (affected-row count and, for append, a generated primary key).
+				if ($ast instanceof AstAppend) {
+					return $this->appendExecutor->execute($ast, $normalizedParameters);
+				}
+
+				if ($ast instanceof AstReplace) {
+					return $this->replaceExecutor->execute($ast, $normalizedParameters);
+				}
+
+				if ($ast instanceof AstDelete) {
+					return $this->deleteExecutor->execute($ast, $normalizedParameters);
+				}
+
 				// Resolve all identifier types. Note: this does no semantic checking.
 				// It just flags the type based on AST hierarchy
 				$this->resolveAndSetIdentifierTypes($ast);
@@ -216,73 +237,9 @@
 				throw new QuelException($e->getMessage(), 'hydration_error', 0, $e);
 			} catch (EntityResolutionException $e) {
 				throw new QuelException($e->getMessage(), 'resolution_error', 0, $e);
-			}
-		}
-		
-		/**
-		 * Executes a bulk, set-based write-verb statement (`append`,
-		 * `replace`, `delete`, and later upsert) and returns how many rows it
-		 * affected. Deliberately separate from executeQuery(): these
-		 * statements bypass the identity map and change tracking entirely
-		 * and have no rows to hydrate, so the returned QuelResult carries an
-		 * affected-row count and generated primary key (see
-		 * QuelResult::fromWriteStatement()) rather than fetchable rows —
-		 * mirroring the Connection::query() vs. Connection::execute() split
-		 * most DB abstraction layers have (see objectquel-append-plan.md).
-		 * @param string $query The ObjectQuel statement string
-		 * @param array<int|string, mixed> $parameters Query parameters
-		 * @return QuelResult
-		 * @throws QuelException
-		 */
-		public function executeStatement(string $query, array $parameters = []): QuelResult {
-			try {
-				$normalizedParameters = $this->normalizeParams($parameters);
-				$this->databaseExecutor->resetLastExecutedSql();
-
-				$ast = $this->parseStatement($query);
-
-				if ($ast instanceof AstAppend) {
-					return $this->appendExecutor->execute($ast, $normalizedParameters);
-				}
-
-				if ($ast instanceof AstReplace) {
-					return $this->replaceExecutor->execute($ast, $normalizedParameters);
-				}
-
-				if ($ast instanceof AstDelete) {
-					return $this->deleteExecutor->execute($ast, $normalizedParameters);
-				}
-
-				throw new QuelException("Invalid statement type: expected a write-verb statement (e.g. append, replace, delete)");
-			} catch (ParserException|LexerException $e) {
-				throw new QuelException("Syntax error: " . $e->getMessage(), 'syntax_error', 0, $e);
-			} catch (SemanticException $e) {
-				throw new QuelException($e->getMessage(), 'semantic_error', 0, $e);
-			} catch (EntityResolutionException $e) {
-				throw new QuelException($e->getMessage(), 'resolution_error', 0, $e);
 			} catch (\ReflectionException $e) {
 				throw new QuelException($e->getMessage(), 'resolution_error', 0, $e);
 			}
-		}
-
-		/**
-		 * Parses a Quel write-verb statement and returns its AST representation.
-		 * @param string $query The Quel statement string to parse
-		 * @return AstInterface
-		 * @throws LexerException
-		 * @throws ParserException
-		 * @throws QuelException If the parsed statement isn't a write verb
-		 */
-		private function parseStatement(string $query): AstInterface {
-			$lexer = new Lexer($query);
-			$parser = new Parser($lexer);
-			$ast = $parser->parse();
-
-			if (!$ast instanceof AstAppend && !$ast instanceof AstReplace && !$ast instanceof AstDelete) {
-				throw new QuelException("Invalid statement type: expected a write-verb statement (e.g. append, replace, delete)");
-			}
-
-			return $ast;
 		}
 
 		/**
@@ -311,14 +268,17 @@
 				$ast = $this->parse($query);
 
 				// explainQuery()'s dry-run only intercepts the retrieve database
-				// executor, not these — continuing would run real DDL.
+				// executor, not these — continuing would run real DDL/writes.
 				if (
 					$ast instanceof AstCreateTable ||
 					$ast instanceof AstDestroy ||
 					$ast instanceof AstDestroyIndex ||
-					$ast instanceof AstCreateIndex
+					$ast instanceof AstCreateIndex ||
+					$ast instanceof AstAppend ||
+					$ast instanceof AstReplace ||
+					$ast instanceof AstDelete
 				) {
-					throw new QuelException("explain is not supported for DDL statements");
+					throw new QuelException("explain is not supported for DDL or write-verb statements");
 				}
 
 				$this->resolveAndSetIdentifierTypes($ast);
@@ -397,9 +357,12 @@
 				!$ast instanceof AstCreateTable &&
 				!$ast instanceof AstDestroy &&
 				!$ast instanceof AstDestroyIndex &&
-				!$ast instanceof AstCreateIndex
+				!$ast instanceof AstCreateIndex &&
+				!$ast instanceof AstAppend &&
+				!$ast instanceof AstReplace &&
+				!$ast instanceof AstDelete
 			) {
-				throw new QuelException("Invalid query type: expected retrieve, create, destroy, or index operation");
+				throw new QuelException("Invalid query type: expected retrieve, create, destroy, index, or write-verb (append/replace/delete) operation");
 			}
 
 			// The AST is now fully validated
