@@ -91,6 +91,9 @@
 		        'to'          => Token::To,
 		        'replace'     => Token::Replace,
 		        'delete'      => Token::Delete,
+		        'index'       => Token::Index,
+		        'on'          => Token::On,
+		        'fulltext'    => Token::Fulltext,
 	        ];
 			
 			$this->single_tokens = [

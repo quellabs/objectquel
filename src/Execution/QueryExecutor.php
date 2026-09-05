@@ -3,6 +3,7 @@
 	namespace Quellabs\ObjectQuel\Execution;
 	
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstAppend;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstCreateIndex;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstCreateTable;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstDelete;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstDestroy;
@@ -24,6 +25,7 @@
 	use Quellabs\ObjectQuel\ObjectQuel\ParserException;
 	use Quellabs\ObjectQuel\ObjectQuel\QuelResult;
 	use Quellabs\ObjectQuel\Execution\Executors\AppendExecutor;
+	use Quellabs\ObjectQuel\Execution\Executors\CreateIndexExecutor;
 	use Quellabs\ObjectQuel\Execution\Executors\CreateTableExecutor;
 	use Quellabs\ObjectQuel\Execution\Executors\DatabaseQueryExecutor;
 	use Quellabs\ObjectQuel\Execution\Executors\DeleteExecutor;
@@ -61,6 +63,7 @@
 		private DatabaseQueryExecutor $databaseExecutor;
 		private JsonQueryExecutor $jsonExecutor;
 		private CreateTableExecutor $createTableExecutor;
+		private CreateIndexExecutor $createIndexExecutor;
 		private DestroyExecutor $destroyExecutor;
 		private AppendExecutor $appendExecutor;
 		private ReplaceExecutor $replaceExecutor;
@@ -84,6 +87,7 @@
 			$this->databaseExecutor = $databaseExecutor ?? new DatabaseQueryExecutor($entityManager, $this->capabilities);
 			$this->jsonExecutor = new JsonQueryExecutor();
 			$this->createTableExecutor = new CreateTableExecutor($this->connection, $this->capabilities);
+			$this->createIndexExecutor = new CreateIndexExecutor($this->connection, $this->capabilities);
 			$this->destroyExecutor = new DestroyExecutor($this->connection, $this->capabilities);
 			$this->appendExecutor = new AppendExecutor($this->connection, $entityManager->getEntityStore(), $entityManager, $this->capabilities);
 			$this->replaceExecutor = new ReplaceExecutor($this->connection, $entityManager, $this->capabilities);
@@ -158,6 +162,11 @@
 
 				if ($ast instanceof AstDestroy) {
 					$this->destroyExecutor->execute($ast);
+					return null;
+				}
+
+				if ($ast instanceof AstCreateIndex) {
+					$this->createIndexExecutor->execute($ast);
 					return null;
 				}
 
@@ -294,7 +303,7 @@
 
 				// explainQuery()'s dry-run only intercepts the retrieve database
 				// executor, not these — continuing would run real DDL.
-				if ($ast instanceof AstCreateTable || $ast instanceof AstDestroy) {
+				if ($ast instanceof AstCreateTable || $ast instanceof AstDestroy || $ast instanceof AstCreateIndex) {
 					throw new QuelException("explain is not supported for DDL statements");
 				}
 
@@ -351,7 +360,7 @@
 		/**
 		 * Parses a Quel query and returns its AST representation.
 		 * @param string $query The Quel query string to parse
-		 * @return AstInterface The parsed AST (AstRetrieve, AstCreateTable, or AstDestroy)
+		 * @return AstInterface The parsed AST (AstRetrieve, AstCreateTable, AstDestroy, or AstCreateIndex)
 		 * @throws LexerException
 		 * @throws ParserException
 		 * @throws QuelException If parsing, validation, or processing fails
@@ -369,8 +378,8 @@
 			$ast = $parser->parse();
 
 			// Ensure the parsed AST represents a statement type this executor knows how to run
-			if (!$ast instanceof AstRetrieve && !$ast instanceof AstCreateTable && !$ast instanceof AstDestroy) {
-				throw new QuelException("Invalid query type: expected retrieve, create, or destroy operation");
+			if (!$ast instanceof AstRetrieve && !$ast instanceof AstCreateTable && !$ast instanceof AstDestroy && !$ast instanceof AstCreateIndex) {
+				throw new QuelException("Invalid query type: expected retrieve, create, destroy, or index operation");
 			}
 
 			// The AST is now fully validated

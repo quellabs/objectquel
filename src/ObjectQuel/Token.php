@@ -90,6 +90,9 @@
 		const int To = 132;
 		const int Replace = 133;
 		const int Delete = 134;
+		const int Index = 135;
+		const int On = 136;
+		const int Fulltext = 137;
 		
 		protected int $type;
 		protected mixed $value;

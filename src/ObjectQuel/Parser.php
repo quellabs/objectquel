@@ -4,6 +4,7 @@
 
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRange;
 	use Quellabs\ObjectQuel\ObjectQuel\Rules\Append;
+	use Quellabs\ObjectQuel\ObjectQuel\Rules\CreateIndex;
 	use Quellabs\ObjectQuel\ObjectQuel\Rules\CreateTable;
 	use Quellabs\ObjectQuel\ObjectQuel\Rules\Delete;
 	use Quellabs\ObjectQuel\ObjectQuel\Rules\Destroy;
@@ -17,6 +18,7 @@
         private Range $rangeRule;
 		private Retrieve $retrieveRule;
 		private CreateTable $createTableRule;
+		private CreateIndex $createIndexRule;
 		private Destroy $destroyRule;
 		private Append $appendRule;
 		private Replace $replaceRule;
@@ -31,6 +33,7 @@
             $this->rangeRule = new Range($lexer);
             $this->retrieveRule = new Retrieve($lexer);
             $this->createTableRule = new CreateTable($lexer);
+            $this->createIndexRule = new CreateIndex($lexer);
             $this->destroyRule = new Destroy($lexer);
             $this->appendRule = new Append($lexer);
             $this->replaceRule = new Replace($lexer);
@@ -70,6 +73,12 @@
 
 				    case Token::Destroy :
 					    $queries[] = $this->destroyRule->parse();
+					    break;
+
+				    case Token::Index :
+					    // Ranges ahead of `index` (if any) are simply unused,
+					    // same as `create` above.
+					    $queries[] = $this->createIndexRule->parse();
 					    break;
 
 				    case Token::Append :
