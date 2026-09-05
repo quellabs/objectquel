@@ -71,7 +71,7 @@
 		private AppendExecutor $appendExecutor;
 		private ReplaceExecutor $replaceExecutor;
 		private DeleteExecutor $deleteExecutor;
-
+		
 		/**
 		 * Constructor
 		 * @param EntityManager $entityManager
@@ -85,7 +85,7 @@
 			$this->entityManager = $entityManager;
 			$this->connection = $entityManager->getConnection();
 			$this->capabilities = $this->entityManager->getUnitOfWork()->getPlatformCapabilities();
-
+			
 			// Create specialized executors
 			$this->databaseExecutor = $databaseExecutor ?? new DatabaseQueryExecutor($entityManager, $this->capabilities);
 			$this->jsonExecutor = new JsonQueryExecutor();
@@ -96,7 +96,7 @@
 			$this->appendExecutor = new AppendExecutor($this->connection, $entityManager->getEntityStore(), $entityManager, $this->capabilities);
 			$this->replaceExecutor = new ReplaceExecutor($this->connection, $entityManager, $this->capabilities);
 			$this->deleteExecutor = new DeleteExecutor($this->connection, $entityManager->getEntityStore(), $this->capabilities);
-
+			
 			// Init the plan executor
 			$this->planExecutor = new PlanExecutor($this);
 			
@@ -155,13 +155,13 @@
 			try {
 				// Normalize parameters
 				$normalizedParameters = $this->normalizeParams($parameters);
-
+				
 				// Clear SQL list
 				$this->databaseExecutor->resetLastExecutedSql();
-
+				
 				// Parse the input query string into an Abstract Syntax Tree (AST)
 				$ast = $this->parse($query);
-
+				
 				// DDL statements bypass the retrieve pipeline entirely — none
 				// of it applies to a statement with no rows to return.
 				if (
@@ -176,10 +176,10 @@
 						$ast instanceof AstDestroyIndex => $this->destroyIndexExecutor->execute($ast),
 						default => $this->createIndexExecutor->execute($ast),
 					};
-
+					
 					return null;
 				}
-
+				
 				// Write-verb statements bypass the retrieve pipeline entirely too
 				// (no semantic analysis, no identifier resolution — see each
 				// executor's own docblock) but, unlike DDL, do return a QuelResult
@@ -191,7 +191,7 @@
 						default => $this->deleteExecutor->execute($ast, $normalizedParameters),
 					};
 				}
-
+				
 				// Every other AstStatement variant was handled by one of the
 				// two blocks above, so this is always AstRetrieve — parse()'s
 				// return type just can't say so, since AstStatement doesn't
@@ -199,19 +199,19 @@
 				if (!$ast instanceof AstRetrieve) {
 					throw new \LogicException('Unreachable: AstStatement is neither a DDL, write-verb, nor AstRetrieve node — ' . get_class($ast));
 				}
-
+				
 				// Resolve all identifier types. Note: this does no semantic checking.
 				// It just flags the type based on AST hierarchy
 				$this->resolveAndSetIdentifierTypes($ast);
 				
 				// Processing phase #1 - Transform and enhance the AST
 				$this->queryNormalizer->transform($ast);
-
+				
 				// Coerce parameters bound against \DateTime columns (DateTimeInterface,
 				// formatted strings) into Unix timestamps, mirroring the column-side
 				// conversion NormalizeDateTime just applied.
 				$this->coerceDateTimeParameters($ast, $normalizedParameters);
-
+				
 				// Validation phase - Ensure AST integrity and correctness
 				$this->semanticAnalyser->validate($ast);
 				
@@ -233,15 +233,13 @@
 				throw new QuelException($e->getMessage(), 'semantic_error', 0, $e);
 			} catch (TransformationException $e) {
 				throw new QuelException($e->getMessage(), 'transformation_error', 0, $e);
-			} catch (HydrationException $e) {
+			} catch (HydrationException|\DateInvalidTimeZoneException|\DateMalformedStringException $e) {
 				throw new QuelException($e->getMessage(), 'hydration_error', 0, $e);
-			} catch (EntityResolutionException $e) {
-				throw new QuelException($e->getMessage(), 'resolution_error', 0, $e);
-			} catch (\ReflectionException $e) {
+			} catch (EntityResolutionException|\ReflectionException $e) {
 				throw new QuelException($e->getMessage(), 'resolution_error', 0, $e);
 			}
 		}
-
+		
 		/**
 		 * Return the executed SQL
 		 * @return list<string>
@@ -262,10 +260,10 @@
 			try {
 				// Normalize parameters to string keys, matching executeQuery behavior
 				$normalizedParameters = $this->normalizeParams($parameters);
-
+				
 				// Parse and resolve identifiers
 				$ast = $this->parse($query);
-
+				
 				// explainQuery() only calls explain() for a retrieve statement —
 				// DDL and write-verb statements have no optimizer/planner pipeline
 				// to log decisions from, so they're explained via
@@ -274,7 +272,7 @@
 				if (!$ast instanceof AstRetrieve) {
 					throw new QuelException("explain() only supports retrieve statements", 'not_plannable');
 				}
-
+				
 				$this->resolveAndSetIdentifierTypes($ast);
 				
 				// Normalize and validate the AST before handing it to the optimizer
@@ -318,28 +316,70 @@
 			} catch (ParserException|LexerException $e) {
 				throw new QuelException("Syntax error: " . $e->getMessage(), 'syntax_error', 0, $e);
 			}
-
+			
 			// DDL and write-verb statements compile straight to SQL — there's no
 			// optimizer/planner pipeline, and replaying them via the retrieve
 			// pipeline's dry-run executor would re-run the write for real (see
 			// explainNonRetrieveQuery()).
-			if (!$ast instanceof AstRetrieve) {
+			if ($ast instanceof AstRetrieve) {
+				return $this->explainRetrieveQuery($query, $parameters);
+			} else {
 				return $this->explainNonRetrieveQuery($ast, $normalizedParameters);
 			}
-
+		}
+		
+		/**
+		 * Parses a Quel query and returns its AST representation.
+		 * @param string $query The Quel query string to parse
+		 * @return AstStatement The parsed AST — retrieve, DDL, or write-verb
+		 * @throws LexerException
+		 * @throws ParserException
+		 * @throws QuelException|\ReflectionException If parsing, validation, or processing fails
+		 */
+		private function parse(string $query): AstStatement {
+			// Convert the raw query string into an Abstract Syntax Tree
+			// Create a lexer to break the query string into tokens (keywords, identifiers, operators, etc.)
+			$lexer = new Lexer($query);
+			
+			// Create a parser that takes the tokenized input and builds an Abstract Syntax Tree
+			$parser = new Parser($lexer);
+			
+			// Execute the parsing process to generate the AST representation of the query
+			// This transforms the linear token sequence into a hierarchical tree structure
+			$ast = $parser->parse();
+			
+			// Ensure the parsed AST represents a statement type this executor knows how to run
+			if (!$ast instanceof AstStatement) {
+				throw new QuelException("Invalid query type: expected retrieve, create, destroy, index, or write-verb (append/replace/delete) operation");
+			}
+			
+			// The AST is now fully validated
+			return $ast;
+		}
+		
+		/**
+		 * Returns planner decisions and generated SQL for a retrieve query
+		 * without executing it. Combines explain() with a SQL dry-run into
+		 * one coherent result.
+		 * @param string $query The ObjectQuel query string
+		 * @param array<int|string, mixed> $parameters Query parameters
+		 * @return QueryPlan Planning decisions and generated SQL
+		 * @throws QuelException
+		 */
+		private function explainRetrieveQuery(string $query, array $parameters): QueryPlan {
 			// Collect planner decisions by running the optimization pipeline
 			$log = $this->explain($query, $parameters);
-
+			
 			// Run the full pipeline again through a dry-run executor to capture
 			// generated SQL without touching the database. The dry-run is cheap
 			// since it skips all I/O.
 			$dryRun = new DryRunDatabaseQueryExecutor($this->entityManager, $this->capabilities);
 			$dryRunExecutor = new self($this->entityManager, $dryRun);
 			$dryRunExecutor->executeQuery($query, $parameters);
-
+			
 			return new QueryPlan($log->getNotes(), $dryRun->getCapturedSql());
 		}
-
+		
 		/**
 		 * Compiles a DDL or write-verb (append/replace/delete) statement to
 		 * SQL without running it. Each of these bypasses the retrieve
@@ -361,53 +401,22 @@
 		private function explainNonRetrieveQuery(AstStatement $ast, array $parameters): QueryPlan {
 			try {
 				$sql = match (true) {
-					$ast instanceof AstCreateTable  => [$this->createTableExecutor->compileSql($ast)],
-					$ast instanceof AstDestroy      => $this->destroyExecutor->compileSql($ast),
+					$ast instanceof AstCreateTable => [$this->createTableExecutor->compileSql($ast)],
+					$ast instanceof AstDestroy => $this->destroyExecutor->compileSql($ast),
 					$ast instanceof AstDestroyIndex => $this->destroyIndexExecutor->compileSql($ast),
-					$ast instanceof AstCreateIndex  => $this->createIndexExecutor->compileSql($ast),
-					$ast instanceof AstAppend       => [$this->appendExecutor->compileSql($ast, $parameters)],
-					$ast instanceof AstReplace      => [$this->replaceExecutor->compileSql($ast, $parameters)],
-					$ast instanceof AstDelete       => [$this->deleteExecutor->compileSql($ast, $parameters)],
+					$ast instanceof AstCreateIndex => $this->createIndexExecutor->compileSql($ast),
+					$ast instanceof AstAppend => [$this->appendExecutor->compileSql($ast, $parameters)],
+					$ast instanceof AstReplace => [$this->replaceExecutor->compileSql($ast, $parameters)],
+					$ast instanceof AstDelete => [$this->deleteExecutor->compileSql($ast, $parameters)],
 					default => throw new QuelException("Invalid query type: expected retrieve, create, destroy, index, or write-verb (append/replace/delete) operation"),
 				};
-
+				
 				return new QueryPlan([], $sql);
 			} catch (SemanticException $e) {
 				throw new QuelException($e->getMessage(), 'semantic_error', 0, $e);
-			} catch (EntityResolutionException $e) {
-				throw new QuelException($e->getMessage(), 'resolution_error', 0, $e);
 			} catch (\ReflectionException $e) {
 				throw new QuelException($e->getMessage(), 'resolution_error', 0, $e);
 			}
-		}
-		
-		/**
-		 * Parses a Quel query and returns its AST representation.
-		 * @param string $query The Quel query string to parse
-		 * @return AstStatement The parsed AST — retrieve, DDL, or write-verb
-		 * @throws LexerException
-		 * @throws ParserException
-		 * @throws QuelException If parsing, validation, or processing fails
-		 */
-		private function parse(string $query): AstStatement {
-			// Convert the raw query string into an Abstract Syntax Tree
-			// Create a lexer to break the query string into tokens (keywords, identifiers, operators, etc.)
-			$lexer = new Lexer($query);
-
-			// Create a parser that takes the tokenized input and builds an Abstract Syntax Tree
-			$parser = new Parser($lexer);
-
-			// Execute the parsing process to generate the AST representation of the query
-			// This transforms the linear token sequence into a hierarchical tree structure
-			$ast = $parser->parse();
-
-			// Ensure the parsed AST represents a statement type this executor knows how to run
-			if (!$ast instanceof AstStatement) {
-				throw new QuelException("Invalid query type: expected retrieve, create, destroy, index, or write-verb (append/replace/delete) operation");
-			}
-
-			// The AST is now fully validated
-			return $ast;
 		}
 		
 		/**
@@ -445,10 +454,10 @@
 					$this->coerceDateTimeParameters($range->getQuery(), $parameters);
 				}
 			}
-
+			
 			$ast->accept(new CoerceDateTimeParameters($parameters));
 		}
-
+		
 		/**
 		 * Normalizes an array of parameters by casting all keys to strings.
 		 * @param array<int|string, mixed> $params The parameters to normalize.
