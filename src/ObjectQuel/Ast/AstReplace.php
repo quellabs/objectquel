@@ -63,7 +63,7 @@
 				$assignment->setParent($this);
 			}
 
-			$this->conditions->setParent($this);
+			$conditions->setParent($this);
 		}
 
 		public function accept(AstVisitorInterface $visitor): void {
@@ -98,6 +98,22 @@
 		}
 
 		public function getConditions(): ?AstInterface {
+			return $this->conditions;
+		}
+
+		/**
+		 * Same as getConditions(), for call sites relying on the mandatory
+		 * WHERE this class's docblock documents. getConditions() stays
+		 * nullable only because it shares the NodeWithConditions interface
+		 * with AstRetrieve/AstAggregate/AstSubquery, whose optimizers can
+		 * clear conditions to null — a pipeline AstReplace never runs
+		 * through, so a null result here is a genuine bug.
+		 */
+		public function getConditionsOrFail(): AstInterface {
+			if ($this->conditions === null) {
+				throw new \LogicException("REPLACE statement for range '{$this->range->getName()}' has no WHERE conditions");
+			}
+
 			return $this->conditions;
 		}
 

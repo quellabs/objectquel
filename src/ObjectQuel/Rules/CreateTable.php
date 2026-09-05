@@ -54,7 +54,7 @@
 		/**
 		 * Parse an optional trailing `if not exists` qualifier.
 		 * @return bool
-		 * @throws LexerException|ParserException
+		 * @throws LexerException
 		 */
 		private function parseOptionalIfNotExists(): bool {
 			if (!$this->lexer->optionalMatch(Token::If)) {

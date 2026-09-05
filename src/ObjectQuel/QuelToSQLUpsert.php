@@ -119,13 +119,14 @@
 			WriteVerbIdentifierResolver::resolve($onConflict, $this->entityStore);
 
 			$conflictProperties = $metadata !== null
-				? ConflictTargetResolver::resolve($onConflict->getConditions(), $metadata)
-				: ConflictTargetResolver::resolveForTable($onConflict->getConditions());
+				? ConflictTargetResolver::resolve($onConflict->getConditionsOrFail(), $metadata)
+				: ConflictTargetResolver::resolveForTable($onConflict->getConditionsOrFail());
 
-			$this->assertConflictPropertiesSuppliedByRow($conflictProperties, $properties, $metadata?->className ?? $tableName);
+			$targetName = $metadata !== null ? $metadata->className : $tableName;
+			$this->assertConflictPropertiesSuppliedByRow($conflictProperties, $properties, $targetName);
 
 			$conflictColumns = $metadata !== null
-				? array_map(fn(string $property) => $metadata->getColumnName($property), $conflictProperties)
+				? array_map(fn(string $property) => $metadata->getColumnNameOrFail($property), $conflictProperties)
 				: $conflictProperties;
 
 			$explicitAssignments = $onConflict->getAssignments();

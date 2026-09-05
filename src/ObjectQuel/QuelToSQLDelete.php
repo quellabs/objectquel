@@ -67,7 +67,7 @@
 				'DELETE FROM %s as %s WHERE %s',
 				$this->identifierQuoter->quoteIdentifier($tableName),
 				$this->identifierQuoter->quoteIdentifier($range->getName()),
-				$builder->visitNodeAndReturnSQL($statement->getConditions())
+				$builder->visitNodeAndReturnSQL($statement->getConditionsOrFail())
 			);
 		}
 	}

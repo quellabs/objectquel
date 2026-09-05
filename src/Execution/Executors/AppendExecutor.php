@@ -114,7 +114,7 @@
 			// false when there's nothing to report.
 			$eligibleForReadback = $metadata === null || $metadata->autoIncrementColumn !== null;
 
-			if ($generatedId === null && $eligibleForReadback && !$statement->isInsertFromSelect() && count($statement->getRows()) === 1) {
+			if ($generatedId === null && $eligibleForReadback && !$statement->isInsertFromSelect() && count($statement->getRowsOrFail()) === 1) {
 				$insertId = $this->connection->getInsertId();
 
 				if ($insertId !== false) {
@@ -204,7 +204,7 @@
 				return [$statement, null];
 			}
 
-			$rows = $statement->getRows();
+			$rows = $statement->getRowsOrFail();
 			$suppliedProperties = array_map(fn(AstAssignment $assignment) => $assignment->getProperty(), $rows[0]);
 
 			if (in_array($primaryKey, $suppliedProperties, true)) {
@@ -231,6 +231,14 @@
 				// primary key. 'uuid' (and any other strategy) generates fresh
 				// per row instead, since there's no collision to guard against.
 				if ($strategy === 'sequence' && $index > 0) {
+					// SequenceGenerator always generates a numeric (MAX(col)+1)
+					// value — enforced here since PrimaryKeyFactory::generate()
+					// is typed mixed to cover every strategy (uuid returns a
+					// string, identity returns null).
+					if (!is_numeric($firstGeneratedValue)) {
+						throw new \LogicException("Sequence strategy produced a non-numeric primary key value for '{$primaryKey}'");
+					}
+
 					$value = $firstGeneratedValue + $index;
 				} else {
 					$value = $factory->generate($this->entityManager, $blankEntity, $strategy);

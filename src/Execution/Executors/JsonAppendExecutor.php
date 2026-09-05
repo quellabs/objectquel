@@ -55,14 +55,15 @@
 				}
 
 				$rows = $this->loadRows($path);
+				$appendedRows = $statement->getRowsOrFail();
 
-				foreach ($statement->getRows() as $row) {
+				foreach ($appendedRows as $row) {
 					$rows[] = $this->evaluateRow($row, $parameters);
 				}
 
 				$this->writeRowsAtomically($path, $rows);
 
-				return QuelResult::fromWriteStatement(count($statement->getRows()), null);
+				return QuelResult::fromWriteStatement(count($appendedRows), null);
 			} finally {
 				flock($lockHandle, LOCK_UN);
 				fclose($lockHandle);

@@ -65,7 +65,7 @@
 		/**
 		 * Compiles a `destroy Name on Table [if exists]` statement to SQL.
 		 * @param AstDestroyIndex $statement
-		 * @return string[]
+		 * @return list<string>
 		 */
 		public function convertToSQL(AstDestroyIndex $statement): array {
 			$dialect = $this->platform->getDatabaseType();
@@ -91,7 +91,7 @@
 		 * a later fulltext index created on this table starts untagged
 		 * rather than carrying a stale name.
 		 * @param AstDestroyIndex $statement
-		 * @return string[]
+		 * @return list<string>
 		 */
 		public function convertToSqlServerFulltextDropSQL(AstDestroyIndex $statement): array {
 			$tableName = $this->quoteStringLiteral($statement->getTableName());
@@ -126,7 +126,7 @@
 		 * itself, though SQLite would drop them automatically regardless
 		 * (they reference it directly).
 		 * @param AstDestroyIndex $statement
-		 * @return string[]
+		 * @return list<string>
 		 */
 		public function convertToSqliteFts5DropSQL(AstDestroyIndex $statement): array {
 			$ftsTable = $statement->getIndexName();
@@ -160,7 +160,7 @@
 		 * `IF OBJECT_ID(...) ... ELSE ...` — see QuelToSQLDestroy) — a
 		 * conditional drop needs dynamic SQL via prepared statements
 		 * instead, checked against information_schema.statistics.
-		 * @return string[]
+		 * @return list<string>
 		 */
 		private function emulateMysqlIfExists(AstDestroyIndex $statement): array {
 			$dropStatement = $this->plainDrop($statement, true, false);

@@ -47,7 +47,7 @@
 		 * Compiles a `destroy [temporary] Name [if exists]` statement to a
 		 * single `DROP TABLE` statement.
 		 * @param AstDestroy $statement
-		 * @return string[]
+		 * @return list<string>
 		 */
 		public function convertToSQL(AstDestroy $statement): array {
 			$temporary = $statement->isTemporary();

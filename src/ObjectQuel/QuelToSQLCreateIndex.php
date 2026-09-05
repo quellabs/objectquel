@@ -86,7 +86,7 @@
 		 * @param AstCreateIndex $statement
 		 * @param string|null $primaryKeyColumn Base table's primary key column — required only for sqlite fulltext
 		 * @param string|null $sqlServerKeyIndexName An existing unique/primary index on the table — required only for sqlsrv fulltext
-		 * @return string[]
+		 * @return list<string>
 		 */
 		public function convertToSQL(AstCreateIndex $statement, ?string $primaryKeyColumn = null, ?string $sqlServerKeyIndexName = null): array {
 			if ($statement->getType() !== 'fulltext') {
@@ -157,7 +157,7 @@
 		 * yet, then create the table's (unnamed, one-per-table) fulltext
 		 * index against it.
 		 * @param string|null $keyIndexName Resolved by CreateIndexExecutor via schema introspection
-		 * @return string[]
+		 * @return list<string>
 		 */
 		private function compileSqlServerFulltext(AstCreateIndex $statement, ?string $keyIndexName): array {
 			if ($keyIndexName === null) {
@@ -213,7 +213,7 @@
 		 * an external-content FTS5 table is never updated automatically when
 		 * the base table changes.
 		 * @param string|null $primaryKeyColumn Resolved by CreateIndexExecutor via schema introspection
-		 * @return string[]
+		 * @return list<string>
 		 */
 		private function compileSqliteFulltext(AstCreateIndex $statement, ?string $primaryKeyColumn): array {
 			if ($primaryKeyColumn === null) {

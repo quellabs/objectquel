@@ -54,7 +54,7 @@
 		
 		/**
 		 * Constructor for EntityMetadataRecord.
-		 * @param string $className Fully qualified, normalized class name
+		 * @param class-string $className Fully qualified, normalized class name
 		 * @param string $tableName Database table name from @Table annotation
 		 * @param array<int, string> $properties Property names
 		 * @param array<string, AnnotationCollection> $annotations Property name => annotation collection mapping
@@ -156,7 +156,26 @@
 		public function getColumnName(string $property): ?string {
 			return $this->columnMap[$property] ?? null;
 		}
-		
+
+		/**
+		 * Same as getColumnName(), for call sites that already validated
+		 * (typically via AssignmentValidator::assertPropertiesExist() or
+		 * ConflictTargetResolver) that $property exists on this entity, where
+		 * a null result would mean that validation was skipped — a genuine
+		 * bug, not a case to handle.
+		 * @param string $property The entity property name
+		 * @return string The corresponding column name
+		 */
+		public function getColumnNameOrFail(string $property): string {
+			$columnName = $this->getColumnName($property);
+
+			if ($columnName === null) {
+				throw new \LogicException("Property '{$property}' does not exist in entity '{$this->className}'");
+			}
+
+			return $columnName;
+		}
+
 		/**
 		 * Obtains the entity property name for a given database column.
 		 * @param string $columnName The database column name

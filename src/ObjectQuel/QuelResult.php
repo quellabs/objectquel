@@ -30,29 +30,6 @@
 	class QuelResult implements \ArrayAccess, \IteratorAggregate, \JsonSerializable, \Countable {
 
 		/**
-		 * Responsible for converting raw data into entity objects.
-		 * Null for a write-statement result — there's nothing to hydrate.
-		 */
-		private readonly ?EntityHydrator $entityHydrator;
-
-		/**
-		 * Handles loading relationships between entities.
-		 * Null for a write-statement result.
-		 */
-		private readonly ?RelationshipLoader $relationshipLoader;
-
-		/**
-		 * Performs transformations on the result set (like sorting).
-		 * Null for a write-statement result.
-		 */
-		private readonly ?ResultTransformer $resultTransformer;
-
-		/**
-		 * Flag indicating if sorting should be handled in application logic rather than database
-		 */
-		private readonly bool $sortInApplicationLogic;
-
-		/**
 		 * The actual result set containing hydrated entities and data.
 		 * Always empty for a write-statement result — see getAffectedRows().
 		 * @var array<int, array<string, mixed>>
@@ -78,8 +55,12 @@
 
 		/**
 		 * Private — construct via fromRetrieve() or fromWriteStatement().
+		 * @param array<int, array<string, mixed>> $result
 		 */
-		private function __construct() {
+		private function __construct(array $result, int $affectedRows, mixed $generatedId) {
+			$this->result = $result;
+			$this->affectedRows = $affectedRows;
+			$this->generatedId = $generatedId;
 			$this->index = 0;
 		}
 
@@ -98,16 +79,14 @@
 		 * @throws \DateMalformedStringException
 		 */
 		public static function fromRetrieve(EntityManager $entityManager, AstRetrieve $retrieve, array $data): self {
-			$instance = new self();
-
 			// Initialize helper objects
-			$instance->entityHydrator = new EntityHydrator($entityManager);
-			$instance->relationshipLoader = new RelationshipLoader($entityManager, $retrieve);
-			$instance->resultTransformer = new ResultTransformer();
+			$entityHydrator = new EntityHydrator($entityManager);
+			$relationshipLoader = new RelationshipLoader($entityManager, $retrieve);
+			$resultTransformer = new ResultTransformer();
 
 			// Determine if sorting should be done in application logic
 			// This happens when sort contains method calls and InValuesAreFinal directive is not set
-			$instance->sortInApplicationLogic =
+			$sortInApplicationLogic =
 				$retrieve->sortContainsJsonIdentifier() || (
 					$retrieve->getSortInApplicationLogic() &&
 					empty($retrieve->getDirective('InValuesAreFinal'))
@@ -117,25 +96,20 @@
 			$ast = $retrieve->getValues();
 
 			// Process raw data into entity objects
-			$result = $instance->entityHydrator->hydrateEntities($ast, $data);
-
-			// Store the processed result
-			$instance->result = $result['result'];
+			$hydrated = $entityHydrator->hydrateEntities($ast, $data);
+			$result = $hydrated['result'];
 
 			// Load relationships between entities
-			$instance->relationshipLoader->loadRelationships(array_values($result['entities']));
+			$relationshipLoader->loadRelationships(array_values($hydrated['entities']));
 
 			// Sort the results if needed:
 			// 1) A method is called in SORT BY clause
 			// 2) InValuesAreFinal is not set (with InValuesAreFinal, sorting is based on the IN() list)
-			if ($instance->sortInApplicationLogic) {
-				$instance->resultTransformer->sortResults($instance->result, $retrieve->getSort());
+			if ($sortInApplicationLogic) {
+				$resultTransformer->sortResults($result, $retrieve->getSort());
 			}
 
-			$instance->affectedRows = 0;
-			$instance->generatedId = null;
-
-			return $instance;
+			return new self($result, 0, null);
 		}
 
 		/**
@@ -148,15 +122,7 @@
 		 * @return self
 		 */
 		public static function fromWriteStatement(int $affectedRows, mixed $generatedId = null): self {
-			$instance = new self();
-			$instance->entityHydrator = null;
-			$instance->relationshipLoader = null;
-			$instance->resultTransformer = null;
-			$instance->sortInApplicationLogic = false;
-			$instance->result = [];
-			$instance->affectedRows = $affectedRows;
-			$instance->generatedId = $generatedId;
-			return $instance;
+			return new self([], $affectedRows, $generatedId);
 		}
 
 		/**

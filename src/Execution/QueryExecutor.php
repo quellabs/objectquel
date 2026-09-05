@@ -164,23 +164,19 @@
 
 				// DDL statements bypass the retrieve pipeline entirely — none
 				// of it applies to a statement with no rows to return.
-				if ($ast instanceof AstCreateTable) {
-					$this->createTableExecutor->execute($ast);
-					return null;
-				}
+				if (
+					$ast instanceof AstCreateTable ||
+					$ast instanceof AstDestroy ||
+					$ast instanceof AstDestroyIndex ||
+					$ast instanceof AstCreateIndex
+				) {
+					match (true) {
+						$ast instanceof AstCreateTable => $this->createTableExecutor->execute($ast),
+						$ast instanceof AstDestroy => $this->destroyExecutor->execute($ast),
+						$ast instanceof AstDestroyIndex => $this->destroyIndexExecutor->execute($ast),
+						default => $this->createIndexExecutor->execute($ast),
+					};
 
-				if ($ast instanceof AstDestroy) {
-					$this->destroyExecutor->execute($ast);
-					return null;
-				}
-
-				if ($ast instanceof AstDestroyIndex) {
-					$this->destroyIndexExecutor->execute($ast);
-					return null;
-				}
-
-				if ($ast instanceof AstCreateIndex) {
-					$this->createIndexExecutor->execute($ast);
 					return null;
 				}
 
@@ -188,16 +184,12 @@
 				// (no semantic analysis, no identifier resolution — see each
 				// executor's own docblock) but, unlike DDL, do return a QuelResult
 				// (affected-row count and, for append, a generated primary key).
-				if ($ast instanceof AstAppend) {
-					return $this->appendExecutor->execute($ast, $normalizedParameters);
-				}
-
-				if ($ast instanceof AstReplace) {
-					return $this->replaceExecutor->execute($ast, $normalizedParameters);
-				}
-
-				if ($ast instanceof AstDelete) {
-					return $this->deleteExecutor->execute($ast, $normalizedParameters);
+				if ($ast instanceof AstAppend || $ast instanceof AstReplace || $ast instanceof AstDelete) {
+					return match (true) {
+						$ast instanceof AstAppend => $this->appendExecutor->execute($ast, $normalizedParameters),
+						$ast instanceof AstReplace => $this->replaceExecutor->execute($ast, $normalizedParameters),
+						default => $this->deleteExecutor->execute($ast, $normalizedParameters),
+					};
 				}
 
 				// Resolve all identifier types. Note: this does no semantic checking.
@@ -385,12 +377,12 @@
 		/**
 		 * Parses a Quel query and returns its AST representation.
 		 * @param string $query The Quel query string to parse
-		 * @return AstInterface The parsed AST (AstRetrieve, AstCreateTable, AstDestroy, AstDestroyIndex, or AstCreateIndex)
+		 * @return AstRetrieve|AstCreateTable|AstDestroy|AstDestroyIndex|AstCreateIndex|AstAppend|AstReplace|AstDelete The parsed AST
 		 * @throws LexerException
 		 * @throws ParserException
 		 * @throws QuelException If parsing, validation, or processing fails
 		 */
-		private function parse(string $query): AstInterface {
+		private function parse(string $query): AstRetrieve|AstCreateTable|AstDestroy|AstDestroyIndex|AstCreateIndex|AstAppend|AstReplace|AstDelete {
 			// Convert the raw query string into an Abstract Syntax Tree
 			// Create a lexer to break the query string into tokens (keywords, identifiers, operators, etc.)
 			$lexer = new Lexer($query);

@@ -56,6 +56,9 @@
 			return new AstCreateIndex($tableName, $indexName, $columns, $unique, $type);
 		}
 
+		/**
+		 * @return string[]
+		 */
 		private function parseColumnList(): array {
 			$this->lexer->match(Token::ParenthesesOpen);
 			$columns = [];

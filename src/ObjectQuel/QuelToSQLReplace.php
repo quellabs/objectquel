@@ -90,7 +90,7 @@
 				$this->identifierQuoter->quoteIdentifier($metadata->tableName),
 				$this->identifierQuoter->quoteIdentifier($range->getName()),
 				implode(', ', $setClauseParts),
-				$this->compileExpression($statement->getConditions(), $parameters)
+				$this->compileExpression($statement->getConditionsOrFail(), $parameters)
 			);
 		}
 
@@ -114,7 +114,7 @@
 				$this->identifierQuoter->quoteIdentifier($range->getTableName()),
 				$this->identifierQuoter->quoteIdentifier($range->getName()),
 				implode(', ', $setClauseParts),
-				$this->compileExpression($statement->getConditions(), $parameters)
+				$this->compileExpression($statement->getConditionsOrFail(), $parameters)
 			);
 		}
 
@@ -191,8 +191,11 @@
 		 * @throws SemanticException
 		 */
 		private function compileAssignment(AstAssignment $assignment, EntityMetadataRecord $metadata, array &$parameters): string {
-			$columnName = $metadata->getColumnName($assignment->getProperty());
-			$columnDef = $columnName !== null ? ($metadata->columnDefinitions[$columnName] ?? null) : null;
+			// getColumnNameOrFail() is safe here — buildSetClause() already ran
+			// AssignmentValidator::assertPropertiesExist() against the very
+			// same properties before calling this method.
+			$columnName = $metadata->getColumnNameOrFail($assignment->getProperty());
+			$columnDef = $metadata->columnDefinitions[$columnName] ?? null;
 
 			if ($columnDef !== null) {
 				AssignmentValidator::assertValueTypeCompatible($assignment->getProperty(), $assignment->getValue(), $columnDef);

@@ -136,6 +136,24 @@
 		}
 
 		/**
+		 * Same as getTableName(), for call sites already committed to the
+		 * plain-table-range form (typically behind a getEntityName() === null
+		 * check, having already ruled out a JSON-source range target — see
+		 * AppendExecutor, the only production caller of the SQL compilers
+		 * this feeds) where a null result would mean this node targets some
+		 * other range kind — a real bug, not a case to handle.
+		 */
+		public function getTableNameOrFail(): string {
+			$tableName = $this->getTableName();
+
+			if ($tableName === null) {
+				throw new \LogicException('AstAppend::getTableNameOrFail() called on a statement whose target range is not a plain table');
+			}
+
+			return $tableName;
+		}
+
+		/**
 		 * @return string|null The target JSON file's path, or null when the
 		 *         target is an entity or plain-table range (see
 		 *         getEntityName()/getTableName()).
@@ -156,13 +174,57 @@
 		}
 
 		/**
+		 * Same as getRows(), for call sites already committed to the
+		 * literal-values form (typically behind an isInsertFromSelect()
+		 * check) where a null result would mean this node is actually the
+		 * other shape — a real bug, not a case to handle.
+		 * @return AstAssignment[][]
+		 */
+		public function getRowsOrFail(): array {
+			if ($this->rows === null) {
+				throw new \LogicException('AstAppend::getRowsOrFail() called on an insert-from-select statement, which has no rows');
+			}
+
+			return $this->rows;
+		}
+
+		/**
 		 * @return string[]|null
 		 */
 		public function getColumns(): ?array {
 			return $this->columns;
 		}
 
+		/**
+		 * Same as getColumns(), for call sites already committed to the
+		 * insert-from-select form (behind an isInsertFromSelect() check)
+		 * where a null result would mean this node is actually the other
+		 * shape — a real bug, not a case to handle.
+		 * @return string[]
+		 */
+		public function getColumnsOrFail(): array {
+			if ($this->columns === null) {
+				throw new \LogicException('AstAppend::getColumnsOrFail() called on a literal-values statement, which has no columns');
+			}
+
+			return $this->columns;
+		}
+
 		public function getSource(): ?AstRetrieve {
+			return $this->source;
+		}
+
+		/**
+		 * Same as getSource(), for call sites already committed to the
+		 * insert-from-select form (behind an isInsertFromSelect() check)
+		 * where a null result would mean this node is actually the other
+		 * shape — a real bug, not a case to handle.
+		 */
+		public function getSourceOrFail(): AstRetrieve {
+			if ($this->source === null) {
+				throw new \LogicException('AstAppend::getSourceOrFail() called on a literal-values statement, which has no source');
+			}
+
 			return $this->source;
 		}
 

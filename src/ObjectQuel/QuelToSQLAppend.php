@@ -117,7 +117,7 @@
 		 * @throws SemanticException
 		 */
 		private function convertTableAppendToSQL(AstAppend $statement, array &$parameters): string {
-			$tableName = $statement->getTableName();
+			$tableName = $statement->getTableNameOrFail();
 
 			if ($statement->isInsertFromSelect()) {
 				return $this->compileTableInsertFromSelect($statement, $tableName, $parameters);
@@ -135,7 +135,7 @@
 		 * @return string
 		 */
 		private function compileTableInsertValues(AstAppend $statement, string $tableName, array &$parameters): string {
-			$rows = $statement->getRows();
+			$rows = $statement->getRowsOrFail();
 			$properties = array_map(fn(AstAssignment $assignment) => $assignment->getProperty(), $rows[0]);
 
 			$compiledRows = array_map(
@@ -185,8 +185,8 @@
 		 * @throws SemanticException
 		 */
 		private function compileTableInsertFromSelect(AstAppend $statement, string $tableName, array &$parameters): string {
-			$properties = $statement->getColumns();
-			$source = $statement->getSource();
+			$properties = $statement->getColumnsOrFail();
+			$source = $statement->getSourceOrFail();
 
 			$selectSql = $this->compileSourceRetrieve($source, $parameters);
 
@@ -258,13 +258,13 @@
 		 * @throws SemanticException
 		 */
 		private function compileInsertValues(AstAppend $statement, EntityMetadataRecord $metadata, array &$parameters): string {
-			$rows = $statement->getRows();
+			$rows = $statement->getRowsOrFail();
 			$properties = array_map(fn(AstAssignment $assignment) => $assignment->getProperty(), $rows[0]);
 
 			AssignmentValidator::assertPropertiesExist($properties, $metadata);
 			$this->assertRequiredColumnsSupplied($properties, $metadata);
 
-			$columnNames = array_map(fn(string $property) => $metadata->getColumnName($property), $properties);
+			$columnNames = array_map(fn(string $property) => $metadata->getColumnNameOrFail($property), $properties);
 
 			// Compiled once per row, keyed by property, so the plain INSERT
 			// VALUES tuples and (for SQL Server's MERGE) the per-row USING
@@ -370,8 +370,8 @@
 		 * @throws SemanticException
 		 */
 		private function compileInsertFromSelect(AstAppend $statement, EntityMetadataRecord $metadata, array &$parameters): string {
-			$properties = $statement->getColumns();
-			$source = $statement->getSource();
+			$properties = $statement->getColumnsOrFail();
+			$source = $statement->getSourceOrFail();
 
 			AssignmentValidator::assertPropertiesExist($properties, $metadata);
 			$this->assertRequiredColumnsSupplied($properties, $metadata);
@@ -456,7 +456,7 @@
 		 * @return string Comma-separated, quoted column list
 		 */
 		private function quoteColumnList(array $properties, EntityMetadataRecord $metadata): string {
-			return $this->quoteIdentifierList(array_map(fn(string $property) => $metadata->getColumnName($property), $properties));
+			return $this->quoteIdentifierList(array_map(fn(string $property) => $metadata->getColumnNameOrFail($property), $properties));
 		}
 
 		/**

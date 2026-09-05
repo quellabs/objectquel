@@ -69,6 +69,22 @@
 			return $this->conditions;
 		}
 
+		/**
+		 * Same as getConditions(), for call sites relying on the mandatory
+		 * WHERE this class's docblock documents. getConditions() stays
+		 * nullable only because it shares the NodeWithConditions interface
+		 * with AstRetrieve/AstAggregate/AstSubquery, whose optimizers can
+		 * clear conditions to null — a pipeline AstDelete never runs
+		 * through, so a null result here is a genuine bug.
+		 */
+		public function getConditionsOrFail(): AstInterface {
+			if ($this->conditions === null) {
+				throw new \LogicException("DELETE statement for range '{$this->range->getName()}' has no WHERE conditions");
+			}
+
+			return $this->conditions;
+		}
+
 		public function setConditions(?AstInterface $conditions): void {
 			$this->conditions = $conditions;
 			$this->conditions?->setParent($this);

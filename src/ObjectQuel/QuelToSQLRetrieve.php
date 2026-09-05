@@ -477,13 +477,11 @@
 					$result[] = $this->buildJoinClause($joinType, "({$subSQL})", $rangeName, $joinColumn);
 				} elseif ($range instanceof AstRangeDatabaseTempTable) {
 					$result[] = $this->buildJoinClause($joinType, $this->identifierQuoter->quoteIdentifier($range->getTableName()), $rangeName, $joinColumn);
-				} elseif ($range instanceof AstRangeDatabase || $range instanceof AstRangeTable) {
+				} else {
+					// $range is AstRangeDatabase or AstRangeTable here — the earlier
+					// guard already excluded every other AstRange subtype.
 					$tableName = RangeTableName::resolve($range, $this->entityStore);
 					$result[] = $this->buildJoinClause($joinType, $this->identifierQuoter->quoteIdentifier($tableName), $rangeName, $joinColumn);
-				} else {
-					throw new \LogicException(
-						"Unresolved AstRangeDatabaseSubquery '{$rangeName}' reached QuelToSQLRetrieve — planner did not complete substitution"
-					);
 				}
 			}
 			
