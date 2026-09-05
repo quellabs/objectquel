@@ -250,7 +250,6 @@
 			return $this->databaseExecutor->getLastExecutedSql();
 		}
 		
-		
 		/**
 		 * Runs the planning pipeline and returns a log of every decision made.
 		 * Used internally by explainQuery(); not part of the public API.
