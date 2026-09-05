@@ -6,6 +6,7 @@
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstAssignment;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRange;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRangeDatabase;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRangeJsonSource;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRangeTable;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstReplace;
 	use Quellabs\ObjectQuel\ObjectQuel\Lexer;
@@ -64,7 +65,16 @@
 			$this->lexer->match(Token::To);
 
 			$targetName = $this->lexer->match(Token::Identifier)->getStringValue();
-			$targetRange = TargetRange::resolve($targetName, $ranges, 'append');
+			$targetRange = TargetRange::resolveForAppend($targetName, $ranges, 'append');
+
+			// A JSON-source range declared with a JSONPath expression narrows
+			// into a sub-location of the decoded file (see AstRangeJsonSource)
+			// that the JSONPath library in use has no API to write back into —
+			// only a range whose file is itself a flat top-level array of rows
+			// is appendable (see objectquel-json-append-plan.md).
+			if ($targetRange instanceof AstRangeJsonSource && $targetRange->getExpression() !== null) {
+				throw new ParserException("append target '{$targetName}' is a JSON source range declared with a JSONPath expression; only a whole-file JSON array of rows can be appended to");
+			}
 
 			$this->lexer->match(Token::ParenthesesOpen);
 
@@ -75,6 +85,10 @@
 				$onConflict = $this->parseOptionalOnConflict($targetRange);
 				$this->consumeOptionalSemicolon();
 				return AstAppend::forValues($targetRange, $rows, $onConflict);
+			}
+
+			if ($targetRange instanceof AstRangeJsonSource) {
+				throw new ParserException("insert-from-select is not supported for a JSON source range target — use literal values");
 			}
 
 			$columns = $this->parseColumnList($firstProperty);
@@ -104,11 +118,22 @@
 		 * range it's skipped, the same "no live-schema validation" policy
 		 * every other plain-table-range check follows (see
 		 * QuelToSQLUpsert::convertToSQL()'s docblock).
-		 * @param AstRangeDatabase|AstRangeTable $targetRange
+		 * Not supported for a JSON source range target: on-conflict resolution
+		 * needs a conflict target (a declared unique/primary key), which JSON
+		 * has no schema for (see objectquel-json-append-plan.md).
+		 * @param AstRangeDatabase|AstRangeTable|AstRangeJsonSource $targetRange
 		 * @return AstReplace|null
 		 * @throws LexerException|ParserException
 		 */
-		private function parseOptionalOnConflict(AstRangeDatabase|AstRangeTable $targetRange): ?AstReplace {
+		private function parseOptionalOnConflict(AstRangeDatabase|AstRangeTable|AstRangeJsonSource $targetRange): ?AstReplace {
+			if ($targetRange instanceof AstRangeJsonSource) {
+				if ($this->lexer->lookahead() === Token::Or) {
+					throw new ParserException("append with 'or replace' on-conflict is not supported for a JSON source range target");
+				}
+
+				return null;
+			}
+
 			if (!$this->lexer->optionalMatch(Token::Or)) {
 				return null;
 			}

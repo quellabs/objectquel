@@ -12,6 +12,7 @@
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstAppend;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstAssignment;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstParameter;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRangeJsonSource;
 	use Quellabs\ObjectQuel\ObjectQuel\QuelResult;
 	use Quellabs\ObjectQuel\ObjectQuel\QuelToSQLAppend;
 	use Quellabs\ObjectQuel\ObjectQuel\QuelToSQLReplace;
@@ -29,6 +30,10 @@
 	 * Bypasses the `retrieve` pipeline entirely — this is a bulk, set-based,
 	 * direct-SQL statement that never goes through UnitOfWork or the identity
 	 * map (see objectquel-write-verbs-design.md).
+	 *
+	 * A JSON-source range target is diverted to JsonAppendExecutor before any
+	 * of the above — it never reaches QuelToSQLAppend/SQL at all (see
+	 * objectquel-json-append-plan.md).
 	 */
 	class AppendExecutor {
 
@@ -36,6 +41,7 @@
 		private EntityStore $entityStore;
 		private EntityManager $entityManager;
 		private QuelToSQLAppend $compiler;
+		private JsonAppendExecutor $jsonAppendExecutor;
 
 		/**
 		 * AppendExecutor constructor
@@ -64,6 +70,7 @@
 			$replaceCompiler = new QuelToSQLReplace($entityStore, $platform, $entityManager->getUnitOfWork()->getVersionValueHandler());
 			$upsertCompiler = new QuelToSQLUpsert($entityStore, $platform, $replaceCompiler);
 			$this->compiler = new QuelToSQLAppend($entityStore, $entityManager, $platform, $upsertCompiler);
+			$this->jsonAppendExecutor = new JsonAppendExecutor();
 		}
 
 		/**
@@ -75,6 +82,10 @@
 		 * @throws \ReflectionException
 		 */
 		public function execute(AstAppend $statement, array $parameters): QuelResult {
+			if ($statement->getRange() instanceof AstRangeJsonSource) {
+				return $this->jsonAppendExecutor->execute($statement, $parameters);
+			}
+
 			$entityName = $statement->getEntityName();
 			$metadata = $entityName !== null ? $this->entityStore->getMetadata($entityName) : null;
 			$generatedId = null;
