@@ -2,6 +2,7 @@
 
 	namespace Quellabs\ObjectQuel\Execution\Executors;
 
+	use Quellabs\ObjectQuel\Exception\SemanticException;
 	use Quellabs\ObjectQuel\Capabilities\PlatformCapabilitiesInterface;
 	use Quellabs\ObjectQuel\DatabaseAdapter\DatabaseAdapter;
 	use Quellabs\ObjectQuel\EntityManager;
@@ -44,7 +45,7 @@
 		 * @param AstReplace $statement
 		 * @param array<string, mixed> $parameters
 		 * @return QuelResult
-		 * @throws QuelException On compile or execution failure
+		 * @throws QuelException|SemanticException On compile or execution failure
 		 */
 		public function execute(AstReplace $statement, array $parameters): QuelResult {
 			$sql = $this->compileSql($statement, $parameters);
@@ -69,7 +70,7 @@
 		 * @param AstReplace $statement
 		 * @param array<string, mixed> $parameters
 		 * @return string
-		 * @throws QuelException On compile failure
+		 * @throws QuelException|SemanticException On compile failure
 		 */
 		public function compileSql(AstReplace $statement, array $parameters): string {
 			return $this->compiler->convertToSQL($statement, $parameters);
