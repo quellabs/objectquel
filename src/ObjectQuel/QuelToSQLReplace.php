@@ -190,7 +190,7 @@
 			if (!empty($versionColumnsToBump)) {
 				$setClauseParts = array_merge(
 					$setClauseParts,
-					$this->versionValueHandler->buildVersionSetClause($versionColumnsToBump, $parameters)
+					$this->versionValueHandler->buildVersionSetClause($versionColumnsToBump, $parameters, $qualifyWithAlias)
 				);
 			}
 

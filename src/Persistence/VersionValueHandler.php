@@ -87,37 +87,66 @@
 		 * UPDATE) and QuelToSQLReplace (QUEL-level `replace`), so version
 		 * columns bump identically on both paths instead of the QUEL path
 		 * silently skipping them.
+		 *
+		 * $qualifyWithAlias mirrors QuelToSQLReplace::quoteSetTargetColumn():
+		 * UpdatePersister's UPDATE has no alias at all (its target table is
+		 * never aliased), so it always passes null and gets the fully bare
+		 * form, same as before this parameter existed. A standalone `replace`
+		 * does have a real alias in scope, so its SET target is qualified
+		 * with it on every dialect except PostgreSQL/SQLite, which reject a
+		 * qualified column on the LEFT side of a SET assignment. The integer/
+		 * bigint bump's self-reference on the RIGHT side has no such
+		 * restriction — like a WHERE clause or assignment value, it's
+		 * qualified whenever an alias is given, on every dialect, for
+		 * consistency with how a manually-written `count = count + 1` would
+		 * compile through BuildSqlFromAst.
 		 * @param array<string, array{name: string, column: Column, version: Version}> $versionColumns
 		 * @param array<string, mixed> $params Reference to parameters array to add version parameters to
+		 * @param string|null $qualifyWithAlias The UPDATE's own range alias, or
+		 *        null when the target table isn't aliased at all.
 		 * @return array<int, string> Array of SQL SET clause parts
 		 * @throws OrmException
 		 * @throws \Exception
 		 */
-		public function buildVersionSetClause(array $versionColumns, array &$params): array {
+		public function buildVersionSetClause(array $versionColumns, array &$params, ?string $qualifyWithAlias = null): array {
 			$setClauseParts = [];
+
+			$targetAllowsQualification = $qualifyWithAlias !== null
+				&& !in_array($this->platformCapabilities->getDatabaseType(), ['pgsql', 'sqlite'], true);
 
 			// Process each version column according to its type
 			foreach ($versionColumns as $property => $versionColumn) {
-				$columnName = $this->identifierQuoter->quoteIdentifier($versionColumn['name']);
+				$bareColumnName = $this->identifierQuoter->quoteIdentifier($versionColumn['name']);
+
+				$targetColumnName = $targetAllowsQualification
+					? $this->identifierQuoter->quoteIdentifier($qualifyWithAlias) . '.' . $bareColumnName
+					: $bareColumnName;
 
 				switch ($versionColumn['column']->getType()) {
 					case 'integer':
 					case 'bigint':
-						// Integer/bigint versions increment by 1
-						$setClauseParts[] = "{$columnName}={$columnName} + 1";
+						// Integer/bigint versions increment by 1. The RHS
+						// self-reference is always safe to qualify (see this
+						// method's docblock), independent of whether the LHS
+						// target could be.
+						$referenceColumnName = $qualifyWithAlias !== null
+							? $this->identifierQuoter->quoteIdentifier($qualifyWithAlias) . '.' . $bareColumnName
+							: $bareColumnName;
+
+						$setClauseParts[] = "{$targetColumnName}={$referenceColumnName} + 1";
 						break;
 
 					case 'datetime':
 						// Use the engine-appropriate "current datetime" expression rather
 						// than hardcoding MySQL's NOW() — SQLite and SQL Server use
 						// different syntax for this.
-						$setClauseParts[] = "{$columnName}=" . $this->platformCapabilities->getCurrentDatetimeFunction();
+						$setClauseParts[] = "{$targetColumnName}=" . $this->platformCapabilities->getCurrentDatetimeFunction();
 						break;
 
 					case 'uuid':
 						// UUID versions get a new generated GUID
 						$paramName = "version_{$versionColumn['name']}";
-						$setClauseParts[] = "{$columnName}=:{$paramName}";
+						$setClauseParts[] = "{$targetColumnName}=:{$paramName}";
 						$params[$paramName] = Tools::createUUIDv7();
 						break;
 
