@@ -9,13 +9,13 @@
 	use Quellabs\ObjectQuel\ObjectQuel\QuelToSQLDestroy;
 
 	/**
-	 * Executes an AstDestroy statement: compiles it via QuelToSQLDestroy (one
-	 * `DROP TABLE` per target, `IF EXISTS` only when the statement's `if
-	 * exists` qualifier is present) and runs each statement directly against
-	 * the connection, in order, stopping at the first failure.
+	 * Executes an AstDestroy statement: compiles it via QuelToSQLDestroy (a
+	 * single `DROP TABLE`, `IF EXISTS` only when the statement's `if
+	 * exists` qualifier is present) and runs it directly against the
+	 * connection.
 	 *
-	 * Table-only — index destroy needs a name→owning-table registry that
-	 * doesn't exist yet (see objectquel-destroy-plan.md).
+	 * Table-only — see Execution\Executors\DestroyIndexExecutor for the
+	 * `destroy Name on Table` index form.
 	 *
 	 * Bypasses the retrieve pipeline entirely — none of it applies to a DDL
 	 * statement with no rows to return.
@@ -45,20 +45,18 @@
 		}
 
 		/**
-		 * Compile and execute a `destroy [temporary] Name {, Name} [if exists]` statement.
+		 * Compile and execute a `destroy [temporary] Name [if exists]` statement.
 		 * @param AstDestroy $statement
 		 * @return void
-		 * @throws QuelException On the first DDL failure
+		 * @throws QuelException On DDL failure
 		 */
 		public function execute(AstDestroy $statement): void {
-			$names = $statement->getNames();
-
-			foreach ($this->compiler->convertToSQL($statement) as $index => $sql) {
+			foreach ($this->compiler->convertToSQL($statement) as $sql) {
 				// execute() swallows the exception and returns null on failure
 				// rather than throwing (same as CreateTableExecutor).
 				if ($this->connection->execute($sql) === null) {
 					throw new QuelException(
-						"Failed to destroy '{$names[$index]}': {$this->connection->getLastErrorMessage()}",
+						"Failed to destroy '{$statement->getName()}': {$this->connection->getLastErrorMessage()}",
 						'table_destruction_error'
 					);
 				}

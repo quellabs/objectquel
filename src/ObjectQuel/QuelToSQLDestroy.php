@@ -8,8 +8,8 @@
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstDestroy;
 
 	/**
-	 * Compiles an AstDestroy statement to one `DROP TABLE <name>` per target.
-	 * Sibling to QuelToSQLRetrieve/QuelToSQLCreate.
+	 * Compiles an AstDestroy statement to a single `DROP TABLE <name>`
+	 * statement. Sibling to QuelToSQLRetrieve/QuelToSQLCreate.
 	 *
 	 * `IF EXISTS` is included only when the statement's `if exists`
 	 * qualifier is present; by default a missing name must fail loudly, not
@@ -44,9 +44,8 @@
 		}
 
 		/**
-		 * Compiles a `destroy [temporary] Name {, Name} [if exists]`
-		 * statement to SQL — one `DROP TABLE` statement per name, in the
-		 * order they were named.
+		 * Compiles a `destroy [temporary] Name [if exists]` statement to a
+		 * single `DROP TABLE` statement.
 		 * @param AstDestroy $statement
 		 * @return string[]
 		 */
@@ -54,21 +53,17 @@
 			$temporary = $statement->isTemporary();
 			$isSqlServer = $this->platform->getDatabaseType() === 'sqlsrv';
 			$ifExists = $statement->isIfExists();
+			$name = $statement->getName();
 
-			return array_map(
-				function (string $name) use ($temporary, $isSqlServer, $ifExists) {
-					if ($temporary) {
-						// `temporary` resolves directly to the physical name and drops it,
-						// matching the non-sqlsrv case below (except SQL Server).
-						return $this->plainDrop($this->ddlTypeMapper->getTempTableName($name), $ifExists);
-					} elseif ($isSqlServer) {
-						return $this->sqlServerUnqualifiedDrop($name, $ifExists);
-					} else {
-						return $this->plainDrop($name, $ifExists);
-					}
-				},
-				$statement->getNames()
-			);
+			if ($temporary) {
+				// `temporary` resolves directly to the physical name and drops it,
+				// matching the non-sqlsrv case below (except SQL Server).
+				return [$this->plainDrop($this->ddlTypeMapper->getTempTableName($name), $ifExists)];
+			} elseif ($isSqlServer) {
+				return [$this->sqlServerUnqualifiedDrop($name, $ifExists)];
+			} else {
+				return [$this->plainDrop($name, $ifExists)];
+			}
 		}
 
 		/**

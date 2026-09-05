@@ -3,15 +3,23 @@
 	namespace Quellabs\ObjectQuel\ObjectQuel\Rules;
 
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstDestroy;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstDestroyIndex;
 	use Quellabs\ObjectQuel\ObjectQuel\Lexer;
 	use Quellabs\ObjectQuel\ObjectQuel\LexerException;
-	use Quellabs\ObjectQuel\ObjectQuel\ParserException;
 	use Quellabs\ObjectQuel\ObjectQuel\Token;
 
 	/**
-	 * Parser for `destroy [temporary] Name {, Name} [if exists]` statements
-	 * in the ObjectQuel language. Table-only for now — index destroy isn't
-	 * implemented (see objectquel-destroy-plan.md).
+	 * Parser for `destroy` statements in the ObjectQuel language. Both forms
+	 * share the `destroy Name` prefix parsed here; what follows decides the
+	 * shape, not a keyword (see objectquel-destroy-index-plan.md):
+	 *
+	 *   destroy [temporary] Name [if exists]        -> AstDestroy (table)
+	 *   destroy Name on Table [if exists]            -> AstDestroyIndex
+	 *
+	 * `temporary` only makes sense for the table form, so seeing it commits
+	 * to that form immediately; otherwise the token right after the name
+	 * (`on`, or not) decides. The index form's own trailing clause is
+	 * parsed by Rules\DestroyIndex.
 	 */
 	class Destroy {
 
@@ -30,33 +38,25 @@
 
 		/**
 		 * Parse a complete `destroy` statement.
-		 * @return AstDestroy
-		 * @throws LexerException|ParserException
+		 * @return AstDestroy|AstDestroyIndex
+		 * @throws LexerException
 		 */
-		public function parse(): AstDestroy {
+		public function parse(): AstDestroy|AstDestroyIndex {
 			$this->lexer->match(Token::Destroy);
 
 			$temporary = $this->lexer->optionalMatch(Token::Temporary) !== null;
+			$name = $this->lexer->match(Token::Identifier)->getStringValue();
 
-			$names = [];
-			$seenNames = [];
-
-			do {
-				$name = $this->lexer->match(Token::Identifier)->getStringValue();
-
-				if (isset($seenNames[$name])) {
-					throw new ParserException("Duplicate name '{$name}' in destroy statement");
-				}
-
-				$seenNames[$name] = true;
-				$names[] = $name;
-			} while ($this->lexer->optionalMatch(Token::Comma));
+			if (!$temporary && $this->lexer->lookahead() === Token::On) {
+				$destroyIndexRule = new DestroyIndex($this->lexer);
+				return $destroyIndexRule->parse($name);
+			}
 
 			$ifExists = $this->parseOptionalIfExists();
 
 			$this->consumeOptionalSemicolon();
 
-			return new AstDestroy($names, $temporary, $ifExists);
+			return new AstDestroy($name, $temporary, $ifExists);
 		}
 
 		/**

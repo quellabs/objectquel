@@ -3,17 +3,23 @@
 	namespace Quellabs\ObjectQuel\ObjectQuel\Ast;
 
 	/**
-	 * A `destroy [temporary] Name {, Name} [if exists]` statement — a
-	 * top-level statement, drops one or more tables (index destroy isn't
-	 * implemented yet, see objectquel-destroy-plan.md). Flat name list,
-	 * mirroring the grammar directly; `temporary` and `if exists` both apply
-	 * to every name in the statement, not per-name.
+	 * A `destroy [temporary] Name [if exists]` statement — a top-level
+	 * statement, drops one table. See AstDestroyIndex for the `destroy Name
+	 * on Table [if exists]` index form (objectquel-destroy-index-plan.md) —
+	 * a bare `destroy Name` always means this table form.
 	 *
-	 * `temporary` (mirrors `create temporary`) tells the compiler every
-	 * named target is a session-temp table, so it can resolve each to its
-	 * real physical name unambiguously — needed because on SQL Server a
-	 * local temp table's physical name (`#Name`) differs from its logical
-	 * one, unlike every other supported engine. Without `temporary`, a
+	 * Targets exactly one name per statement — the comma-separated
+	 * multi-name list this statement used to support was removed so that
+	 * every `destroy` form (table, index, and later procedure) targets
+	 * exactly one object per statement, matching `create`'s own one-object
+	 * precedent (see objectquel-destroy-index-plan.md, "No list support
+	 * anywhere, not just for indexes").
+	 *
+	 * `temporary` (mirrors `create temporary`) tells the compiler the named
+	 * target is a session-temp table, so it can resolve it to its real
+	 * physical name unambiguously — needed because on SQL Server a local
+	 * temp table's physical name (`#Name`) differs from its logical one,
+	 * unlike every other supported engine. Without `temporary`, a
 	 * SQL-Server target is resolved by emulating the same "a same-named
 	 * session temp table shadows the permanent one" priority the other
 	 * three engines already give unqualified names natively — see
@@ -27,30 +33,20 @@
 	 */
 	class AstDestroy extends Ast {
 
-		/** @var string[] */
-		private array $names;
+		private string $name;
 
 		private bool $temporary;
 
 		private bool $ifExists;
 
-		/**
-		 * AstDestroy constructor.
-		 * @param string[] $names
-		 * @param bool $temporary
-		 * @param bool $ifExists
-		 */
-		public function __construct(array $names, bool $temporary = false, bool $ifExists = false) {
-			$this->names = $names;
+		public function __construct(string $name, bool $temporary = false, bool $ifExists = false) {
+			$this->name = $name;
 			$this->temporary = $temporary;
 			$this->ifExists = $ifExists;
 		}
 
-		/**
-		 * @return string[]
-		 */
-		public function getNames(): array {
-			return $this->names;
+		public function getName(): string {
+			return $this->name;
 		}
 
 		public function isTemporary(): bool {
@@ -63,7 +59,7 @@
 
 		public function deepClone(): static {
 			// @phpstan-ignore-next-line new.static
-			$clone = new static($this->names, $this->temporary, $this->ifExists);
+			$clone = new static($this->name, $this->temporary, $this->ifExists);
 			$clone->setParent($this->getParent());
 			return $clone;
 		}

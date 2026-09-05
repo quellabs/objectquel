@@ -35,7 +35,16 @@
 	 *   CreateIndexExecutor) since it requires schema introspection this
 	 *   compiler has no connection to do itself. T-SQL fulltext indexes are
 	 *   also unnamed (one per table) — $statement->getIndexName() has no
-	 *   equivalent here and is simply not emitted.
+	 *   equivalent in the `CREATE FULLTEXT INDEX` syntax itself, so it's
+	 *   instead recorded as a table-level extended property (see
+	 *   tagFulltextIndexName()) — SQL Server's standard, inspectable
+	 *   object-annotation mechanism — so a later `destroy Name on Table`
+	 *   can verify $name actually refers to this table's fulltext index
+	 *   rather than accepting any name typed against a table that merely
+	 *   has one (see objectquel-destroy-index-plan.md's "Fulltext index
+	 *   destroy on sqlsrv/sqlite" section, and QuelToSQLDestroyIndex,
+	 *   which reads this tag back via
+	 *   DatabaseAdapter::getSqlServerExtendedProperty()).
 	 * - sqlite: has no fulltext index concept on an ordinary table at all —
 	 *   an FTS5 *virtual table* is created instead (using the index name as
 	 *   its physical name), kept in sync with the base table via three
@@ -51,6 +60,15 @@
 	class QuelToSQLCreateIndex {
 
 		private const string SQL_SERVER_FULLTEXT_CATALOG = 'quel_fulltext_catalog';
+
+		/**
+		 * Extended-property name a sqlsrv fulltext index's QUEL name is
+		 * tagged under (see tagFulltextIndexName()). Public: read back by
+		 * QuelToSQLDestroyIndex/DestroyIndexExecutor via
+		 * DatabaseAdapter::getSqlServerExtendedProperty() — both sides must
+		 * agree on the exact same property name.
+		 */
+		public const string SQL_SERVER_FULLTEXT_INDEX_NAME_PROPERTY = 'quel_fulltext_index_name';
 
 		private SqlIdentifierQuoter $identifierQuoter;
 
@@ -162,7 +180,30 @@
 				$catalog
 			);
 
-			return [$bootstrapCatalog, $createIndex];
+			return [$bootstrapCatalog, $createIndex, $this->tagFulltextIndexName($statement)];
+		}
+
+		/**
+		 * Tags the table with an extended property recording the QUEL
+		 * index name (see this class's docblock, "sqlsrv" bullet).
+		 * Idempotent — updates the property instead of erroring when a
+		 * prior tag already exists (sp_addextendedproperty fails on a
+		 * duplicate), which matters if a fulltext index was previously
+		 * dropped and recreated with a different name.
+		 */
+		private function tagFulltextIndexName(AstCreateIndex $statement): string {
+			$tableName = $this->quoteStringLiteral($statement->getTableName());
+			$propertyName = $this->quoteStringLiteral(self::SQL_SERVER_FULLTEXT_INDEX_NAME_PROPERTY);
+			$indexName = $this->quoteStringLiteral($statement->getIndexName());
+
+			return sprintf(
+				"IF EXISTS (SELECT 1 FROM sys.extended_properties WHERE major_id = OBJECT_ID(%s) AND minor_id = 0 AND name = %s) " .
+				"EXEC sp_updateextendedproperty @name = %s, @value = %s, @level0type = N'SCHEMA', @level0name = N'dbo', @level1type = N'TABLE', @level1name = %s " .
+				"ELSE EXEC sp_addextendedproperty @name = %s, @value = %s, @level0type = N'SCHEMA', @level0name = N'dbo', @level1type = N'TABLE', @level1name = %s",
+				$tableName, $propertyName,
+				$propertyName, $indexName, $tableName,
+				$propertyName, $indexName, $tableName
+			);
 		}
 
 		/**
