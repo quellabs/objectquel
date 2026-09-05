@@ -21,18 +21,27 @@
 	 * to QuelToSQLAppend/QuelToSQLCreate/QuelToSQLDestroy — each QUEL
 	 * statement kind gets its own compiler here.
 	 *
-	 * The target table is never aliased with the QUEL range alias in the
-	 * generated `UPDATE <table> as <alias> SET ... WHERE ...` for no reason
-	 * beyond matching QuelToSQLRetrieve's own `as`-alias convention — it IS
-	 * aliased, deliberately: PostgreSQL/SQLite reject a table-or-alias-
-	 * qualified column on the LEFT side of a SET assignment (`SET
-	 * alias.col = ...` is a syntax error there), but happily accept it on
-	 * the RIGHT side and in WHERE. So SET's target column is always rendered
-	 * bare, directly from the assignment's property name via metadata — it
-	 * never goes through an AstIdentifier/BuildSqlFromAst at all — while
-	 * everything else (SET values, WHERE) reuses BuildSqlFromAst exactly as
-	 * the retrieve pipeline does, alias-qualified, which is valid everywhere
-	 * once the range is aliased in the UPDATE clause.
+	 * The target table is aliased in the generated `UPDATE <table> as
+	 * <alias> SET ... WHERE ...` for no reason beyond matching
+	 * QuelToSQLRetrieve's own `as`-alias convention, but SET's target column
+	 * can't always be qualified with it: PostgreSQL/SQLite reject a table-
+	 * or-alias-qualified column on the LEFT side of a SET assignment (`SET
+	 * alias.col = ...` is a syntax error there), while MySQL/MariaDB/SQL
+	 * Server accept it there same as anywhere else. So a standalone
+	 * `replace`'s own UPDATE — which really does have a real alias in
+	 * scope — qualifies the SET target with it everywhere except
+	 * pgsql/sqlite, where it stays bare; the column name always comes
+	 * directly from the assignment's property name via metadata, never
+	 * through an AstIdentifier/BuildSqlFromAst. Everything else (SET
+	 * values, WHERE) reuses BuildSqlFromAst exactly as the retrieve
+	 * pipeline does, alias-qualified, which is valid everywhere once the
+	 * range is aliased in the UPDATE clause.
+	 *
+	 * buildSetClause()/buildSetClauseForTable() are also reused by
+	 * QuelToSQLUpsert for an `append ... or replace (...)` on-conflict
+	 * UPDATE, which has no table alias in scope at all (the INSERT it's
+	 * attached to never aliases its target) — those call sites pass no
+	 * alias and always get the bare form, regardless of dialect.
 	 *
 	 * Unlike QuelToSQLAppend's insert-from-select, `replace`'s WHERE clause
 	 * only ever has one range to resolve against (see AstReplace's
@@ -83,7 +92,7 @@
 			}
 
 			$metadata = $this->entityStore->getMetadata($range->getEntityName());
-			$setClauseParts = $this->buildSetClause($statement->getAssignments(), $metadata, $parameters);
+			$setClauseParts = $this->buildSetClause($statement->getAssignments(), $metadata, $parameters, $range->getName());
 
 			return sprintf(
 				'UPDATE %s as %s SET %s WHERE %s',
@@ -107,7 +116,7 @@
 		 * @return string
 		 */
 		private function convertTableReplaceToSQL(AstReplace $statement, AstRangeTable $range, array &$parameters): string {
-			$setClauseParts = $this->buildSetClauseForTable($statement->getAssignments(), $parameters);
+			$setClauseParts = $this->buildSetClauseForTable($statement->getAssignments(), $parameters, $range->getName());
 
 			return sprintf(
 				'UPDATE %s as %s SET %s WHERE %s',
@@ -125,14 +134,18 @@
 		 * and no @Orm\Version bump (no annotation to drive one). Public so
 		 * QuelToSQLUpsert can reuse it unchanged for upsert's `or replace (...)`
 		 * on-conflict UPDATE clause when the target is a plain-table range
-		 * (see objectquel-plain-table-range-plan.md).
+		 * (see objectquel-plain-table-range-plan.md) — those call sites pass
+		 * no $qualifyWithAlias (see this class's docblock for why).
 		 * @param AstAssignment[] $assignments
 		 * @param array<string, mixed> $parameters Bound parameters, by reference
+		 * @param string|null $qualifyWithAlias The UPDATE's own range alias, to
+		 *        qualify each target column with where the dialect allows it
+		 *        (see quoteSetTargetColumn()); null to always render bare.
 		 * @return string[]
 		 */
-		public function buildSetClauseForTable(array $assignments, array &$parameters): array {
+		public function buildSetClauseForTable(array $assignments, array &$parameters, ?string $qualifyWithAlias = null): array {
 			return array_map(
-				fn(AstAssignment $assignment) => $this->identifierQuoter->quoteIdentifier($assignment->getProperty()) . ' = ' . $this->compileExpression($assignment->getValue(), $parameters),
+				fn(AstAssignment $assignment) => $this->quoteSetTargetColumn($assignment->getProperty(), $qualifyWithAlias) . ' = ' . $this->compileExpression($assignment->getValue(), $parameters),
 				$assignments
 			);
 		}
@@ -150,16 +163,21 @@
 		 * @param AstAssignment[] $assignments
 		 * @param EntityMetadataRecord $metadata
 		 * @param array<string, mixed> $parameters Bound parameters, by reference
+		 * @param string|null $qualifyWithAlias The UPDATE's own range alias, to
+		 *        qualify each target column with where the dialect allows it
+		 *        (see quoteSetTargetColumn()); null to always render bare —
+		 *        used by QuelToSQLUpsert's on-conflict reuse, which has no
+		 *        alias in scope at all (see this class's docblock).
 		 * @return string[]
 		 * @throws SemanticException
 		 */
-		public function buildSetClause(array $assignments, EntityMetadataRecord $metadata, array &$parameters): array {
+		public function buildSetClause(array $assignments, EntityMetadataRecord $metadata, array &$parameters, ?string $qualifyWithAlias = null): array {
 			$properties = array_map(fn(AstAssignment $assignment) => $assignment->getProperty(), $assignments);
 
 			AssignmentValidator::assertPropertiesExist($properties, $metadata);
 
 			$setClauseParts = array_map(
-				fn(AstAssignment $assignment) => $this->compileAssignment($assignment, $metadata, $parameters),
+				fn(AstAssignment $assignment) => $this->compileAssignment($assignment, $metadata, $parameters, $qualifyWithAlias),
 				$assignments
 			);
 
@@ -182,15 +200,16 @@
 		/**
 		 * Compiles a single `property = value` assignment to a `` `col` = <sql> ``
 		 * SET fragment, after checking the value against the column's declared
-		 * type. The target column is always rendered bare (see this class's
-		 * docblock) — deliberately not through BuildSqlFromAst/AstIdentifier.
+		 * type. The target column goes through quoteSetTargetColumn() (see this
+		 * class's docblock) rather than BuildSqlFromAst/AstIdentifier.
 		 * @param AstAssignment $assignment
 		 * @param EntityMetadataRecord $metadata
 		 * @param array<string, mixed> $parameters
+		 * @param string|null $qualifyWithAlias See buildSetClause()'s docblock.
 		 * @return string
 		 * @throws SemanticException
 		 */
-		private function compileAssignment(AstAssignment $assignment, EntityMetadataRecord $metadata, array &$parameters): string {
+		private function compileAssignment(AstAssignment $assignment, EntityMetadataRecord $metadata, array &$parameters, ?string $qualifyWithAlias): string {
 			// getColumnNameOrFail() is safe here — buildSetClause() already ran
 			// AssignmentValidator::assertPropertiesExist() against the very
 			// same properties before calling this method.
@@ -201,7 +220,26 @@
 				AssignmentValidator::assertValueTypeCompatible($assignment->getProperty(), $assignment->getValue(), $columnDef);
 			}
 
-			return $this->identifierQuoter->quoteIdentifier($columnName) . ' = ' . $this->compileExpression($assignment->getValue(), $parameters);
+			return $this->quoteSetTargetColumn($columnName, $qualifyWithAlias) . ' = ' . $this->compileExpression($assignment->getValue(), $parameters);
+		}
+
+		/**
+		 * Quotes a SET-clause target column, qualifying it with the UPDATE's
+		 * own range alias when both a non-null $qualifyWithAlias was given and
+		 * the connected engine allows a qualified column on the LEFT side of a
+		 * SET assignment — PostgreSQL and SQLite reject it there (`SET
+		 * alias.col = ...` is a syntax error), so those always get the bare
+		 * column regardless of $qualifyWithAlias (see this class's docblock).
+		 * @param string $columnName
+		 * @param string|null $qualifyWithAlias
+		 * @return string
+		 */
+		private function quoteSetTargetColumn(string $columnName, ?string $qualifyWithAlias): string {
+			if ($qualifyWithAlias === null || in_array($this->platform->getDatabaseType(), ['pgsql', 'sqlite'], true)) {
+				return $this->identifierQuoter->quoteIdentifier($columnName);
+			}
+
+			return $this->identifierQuoter->quoteIdentifier($qualifyWithAlias) . '.' . $this->identifierQuoter->quoteIdentifier($columnName);
 		}
 
 		/**
