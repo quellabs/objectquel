@@ -11,6 +11,11 @@
 	 * Execution\Executors\CreateTableExecutor), bypassing the retrieve
 	 * pipeline entirely. `if not exists` is the trailing-qualifier
 	 * counterpart to `destroy`'s `if exists`.
+	 *
+	 * The primary key is carried separately from $columns, as an ordered
+	 * list of column names sourced from a table-level `primary key (...)`
+	 * clause (empty when the table has no PK) — see
+	 * objectquel-primary-key-design.md.
 	 */
 	class AstCreateTable extends Ast implements AstStatement {
 
@@ -23,18 +28,23 @@
 
 		private bool $ifNotExists;
 
+		/** @var string[] */
+		private array $primaryKeyColumns;
+
 		/**
 		 * AstCreateTable constructor.
 		 * @param string $tableName
 		 * @param AstColumnDefinition[] $columns
 		 * @param bool $temporary
 		 * @param bool $ifNotExists
+		 * @param string[] $primaryKeyColumns Ordered PK column names, empty when the table has no PK
 		 */
-		public function __construct(string $tableName, array $columns, bool $temporary, bool $ifNotExists = false) {
+		public function __construct(string $tableName, array $columns, bool $temporary, bool $ifNotExists = false, array $primaryKeyColumns = []) {
 			$this->tableName = $tableName;
 			$this->columns = $columns;
 			$this->temporary = $temporary;
 			$this->ifNotExists = $ifNotExists;
+			$this->primaryKeyColumns = $primaryKeyColumns;
 
 			foreach ($this->columns as $column) {
 				$column->setParent($this);
@@ -68,11 +78,18 @@
 			return $this->ifNotExists;
 		}
 
+		/**
+		 * @return string[] Ordered PK column names, empty when the table has no PK
+		 */
+		public function getPrimaryKeyColumns(): array {
+			return $this->primaryKeyColumns;
+		}
+
 		public function deepClone(): static {
 			$clonedColumns = $this->cloneArray($this->columns);
 
 			// @phpstan-ignore-next-line new.static
-			$clone = new static($this->tableName, $clonedColumns, $this->temporary, $this->ifNotExists);
+			$clone = new static($this->tableName, $clonedColumns, $this->temporary, $this->ifNotExists, $this->primaryKeyColumns);
 			$clone->setParent($this->getParent());
 			return $clone;
 		}

@@ -104,19 +104,23 @@
 
 		/**
 		 * Renders a complete column definition — type plus the minimal
-		 * constraint set QUEL's `create` supports (NOT NULL, PRIMARY KEY,
-		 * identity) — for the connected engine. Unlike getTempTableColumnType()
-		 * (type only, used by TempTableExecutor which never needs constraints),
-		 * this is for `create`, where the author writes constraints explicitly.
+		 * constraint set QUEL's `create` supports (NOT NULL, identity) — for
+		 * the connected engine. Unlike getTempTableColumnType() (type only,
+		 * used by TempTableExecutor which never needs constraints), this is
+		 * for `create`, where the author writes constraints explicitly.
 		 *
-		 * $identity is only ever true alongside $primaryKey — Rules\CreateTable
-		 * rejects the combination at parse time, since e.g. SQLite's
-		 * AUTOINCREMENT only exists on `INTEGER PRIMARY KEY`.
+		 * Primary key is not rendered here: it's a table-level
+		 * `primary key (...)` clause (see objectquel-primary-key-design.md),
+		 * appended as a trailing constraint by QuelToSQLCreate — except
+		 * SQLite's single-column identity case, which still needs the
+		 * historical inline `INTEGER PRIMARY KEY AUTOINCREMENT` idiom (see
+		 * renderSqliteColumnDefinition()). $notNull passed in already
+		 * accounts for "is this column part of the primary key" — computed
+		 * by the caller, not derived here.
 		 *
 		 * @param string $quotedColumnName Already-quoted column identifier
 		 * @param array{type: string, limit: int|array<int,int>|null, unsigned: bool, precision: int|null, scale: int|null} $columnDefinition
 		 * @param bool $notNull
-		 * @param bool $primaryKey
 		 * @param bool $identity
 		 * @return string
 		 */
@@ -124,28 +128,26 @@
 			string $quotedColumnName,
 			array $columnDefinition,
 			bool $notNull,
-			bool $primaryKey,
 			bool $identity
 		): string {
 			return match ($this->platform->getDatabaseType()) {
-				'pgsql' => $this->renderPostgresColumnDefinition($quotedColumnName, $columnDefinition, $notNull, $primaryKey, $identity),
-				'sqlite' => $this->renderSqliteColumnDefinition($quotedColumnName, $columnDefinition, $notNull, $primaryKey, $identity),
-				'sqlsrv' => $this->renderSqlServerColumnDefinition($quotedColumnName, $columnDefinition, $notNull, $primaryKey, $identity),
-				default => $this->renderMysqlColumnDefinition($quotedColumnName, $columnDefinition, $notNull, $primaryKey, $identity),
+				'pgsql' => $this->renderPostgresColumnDefinition($quotedColumnName, $columnDefinition, $notNull, $identity),
+				'sqlite' => $this->renderSqliteColumnDefinition($quotedColumnName, $columnDefinition, $notNull, $identity),
+				'sqlsrv' => $this->renderSqlServerColumnDefinition($quotedColumnName, $columnDefinition, $notNull, $identity),
+				default => $this->renderMysqlColumnDefinition($quotedColumnName, $columnDefinition, $notNull, $identity),
 			};
 		}
 
 		/**
 		 * MySQL/MariaDB column definition. AUTO_INCREMENT columns must be NOT
-		 * NULL and require a key — since $identity implies $primaryKey (see
-		 * renderColumnDefinition() docblock), PRIMARY KEY always follows.
+		 * NULL and require a key — the trailing PRIMARY KEY table constraint
+		 * QuelToSQLCreate appends satisfies that requirement.
 		 * @param array{type: string, limit: int|array<int,int>|null, unsigned: bool, precision: int|null, scale: int|null} $columnDefinition
 		 */
 		private function renderMysqlColumnDefinition(
 			string $quotedColumnName,
 			array $columnDefinition,
 			bool $notNull,
-			bool $primaryKey,
 			bool $identity
 		): string {
 			$type = $this->getMysqlTempTableColumnType($columnDefinition);
@@ -157,10 +159,6 @@
 
 			if ($identity) {
 				$fragment .= ' AUTO_INCREMENT';
-			}
-
-			if ($primaryKey) {
-				$fragment .= ' PRIMARY KEY';
 			}
 
 			return $fragment;
@@ -177,7 +175,6 @@
 			string $quotedColumnName,
 			array $columnDefinition,
 			bool $notNull,
-			bool $primaryKey,
 			bool $identity
 		): string {
 			$type = $this->getPostgresTempTableColumnType($columnDefinition);
@@ -189,10 +186,6 @@
 				$fragment .= ' NOT NULL';
 			}
 
-			if ($primaryKey) {
-				$fragment .= ' PRIMARY KEY';
-			}
-
 			return $fragment;
 		}
 
@@ -201,14 +194,16 @@
 		 * idiom `INTEGER PRIMARY KEY AUTOINCREMENT`, overriding the mapped type —
 		 * this is the only column shape SQLite recognises as a rowid alias with
 		 * autoincrementing behaviour, regardless of the abstract integer subtype
-		 * declared (SQLite's INTEGER affinity covers all of them anyway).
+		 * declared (SQLite's INTEGER affinity covers all of them anyway). Every
+		 * other PK shape — including a composite PK with no identity column —
+		 * is rendered by QuelToSQLCreate as a trailing PRIMARY KEY (...)
+		 * table constraint instead, same as the other three dialects.
 		 * @param array{type: string, limit: int|array<int,int>|null, unsigned: bool, precision: int|null, scale: int|null} $columnDefinition
 		 */
 		private function renderSqliteColumnDefinition(
 			string $quotedColumnName,
 			array $columnDefinition,
 			bool $notNull,
-			bool $primaryKey,
 			bool $identity
 		): string {
 			if ($identity) {
@@ -220,10 +215,6 @@
 
 			if ($notNull) {
 				$fragment .= ' NOT NULL';
-			}
-
-			if ($primaryKey) {
-				$fragment .= ' PRIMARY KEY';
 			}
 
 			return $fragment;
@@ -238,7 +229,6 @@
 			string $quotedColumnName,
 			array $columnDefinition,
 			bool $notNull,
-			bool $primaryKey,
 			bool $identity
 		): string {
 			$type = $this->getSqlServerTempTableColumnType($columnDefinition);
@@ -250,10 +240,6 @@
 
 			if ($notNull || $identity) {
 				$fragment .= ' NOT NULL';
-			}
-
-			if ($primaryKey) {
-				$fragment .= ' PRIMARY KEY';
 			}
 
 			return $fragment;

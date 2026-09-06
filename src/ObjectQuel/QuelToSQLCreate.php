@@ -56,17 +56,38 @@
 				$keyword .= ' IF NOT EXISTS';
 			}
 
-			// Build the SQL query
+			// Build the SQL query. A column's effective NOT NULL-ness folds
+			// in PK membership here rather than being stored back onto the
+			// column — PK is a separate, possibly-out-of-order clause, not a
+			// per-column flag (see objectquel-primary-key-design.md).
+			$primaryKeyColumns = $statement->getPrimaryKeyColumns();
+
 			$columnDefs = array_map(
 				fn($column) => $this->ddlTypeMapper->renderColumnDefinition(
 					$this->identifierQuoter->quoteIdentifier($column->getName()),
 					$column->toColumnDefinitionArray(),
-					$column->isNotNull(),
-					$column->isPrimaryKey(),
+					$column->isNotNull() || in_array($column->getName(), $primaryKeyColumns, true),
 					$column->isIdentity()
 				),
 				$statement->getColumns()
 			);
+
+			// SQLite's single-column identity PK is rendered inline by
+			// DDLTypeMapper (INTEGER PRIMARY KEY AUTOINCREMENT) — adding a
+			// trailing PRIMARY KEY constraint on top of that is invalid
+			// SQLite syntax. Every other PK shape, on every dialect
+			// including SQLite, gets a trailing table constraint.
+			$isSqlite = $this->platform->getDatabaseType() === 'sqlite';
+			$hasIdentityColumn = array_filter($statement->getColumns(), fn($column) => $column->isIdentity()) !== [];
+
+			if ($primaryKeyColumns !== [] && !($isSqlite && $hasIdentityColumn)) {
+				$quotedPkColumns = array_map(
+					fn($name) => $this->identifierQuoter->quoteIdentifier($name),
+					$primaryKeyColumns
+				);
+
+				$columnDefs[] = sprintf('PRIMARY KEY (%s)', implode(', ', $quotedPkColumns));
+			}
 
 			$createStatement = sprintf(
 				'%s %s (%s)',

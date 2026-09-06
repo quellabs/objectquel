@@ -8,8 +8,13 @@
 	 * A single column definition inside `create [temporary] Name (...)`: a
 	 * name, an abstract type (the @Orm\Column vocabulary — see
 	 * DatabaseAdapter\TypeMapper), optional limit/precision/scale, and the
-	 * minimal constraint set supported (`not null`, `primary key`,
-	 * `identity`). No nested AstInterface children.
+	 * minimal constraint set supported (`not null`, `identity`). No nested
+	 * AstInterface children.
+	 *
+	 * Primary key is not a per-column constraint here — it's declared via a
+	 * table-level `primary key (...)` clause instead (see
+	 * AstCreateTable::getPrimaryKeyColumns() and
+	 * objectquel-primary-key-design.md).
 	 */
 	class AstColumnDefinition extends Ast {
 
@@ -20,7 +25,6 @@
 		private ?int $scale;
 		private bool $unsigned;
 		private bool $notNull;
-		private bool $primaryKey;
 		private bool $identity;
 
 		/**
@@ -32,7 +36,6 @@
 		 * @param int|null $scale Optional scale (decimal)
 		 * @param bool $unsigned Whether the column is unsigned
 		 * @param bool $notNull Whether the column rejects NULL values
-		 * @param bool $primaryKey Whether the column is the table's primary key
 		 * @param bool $identity Whether the column auto-increments
 		 */
 		public function __construct(
@@ -43,7 +46,6 @@
 			?int $scale = null,
 			bool $unsigned = false,
 			bool $notNull = false,
-			bool $primaryKey = false,
 			bool $identity = false
 		) {
 			$this->name = $name;
@@ -53,7 +55,6 @@
 			$this->scale = $scale;
 			$this->unsigned = $unsigned;
 			$this->notNull = $notNull;
-			$this->primaryKey = $primaryKey;
 			$this->identity = $identity;
 		}
 
@@ -89,10 +90,6 @@
 			return $this->notNull;
 		}
 
-		public function isPrimaryKey(): bool {
-			return $this->primaryKey;
-		}
-
 		public function isIdentity(): bool {
 			return $this->identity;
 		}
@@ -123,7 +120,6 @@
 				$this->scale,
 				$this->unsigned,
 				$this->notNull,
-				$this->primaryKey,
 				$this->identity
 			);
 

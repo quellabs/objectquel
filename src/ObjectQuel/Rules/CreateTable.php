@@ -16,6 +16,10 @@
 	 *
 	 * Authentic QUEL has no `table` keyword in this statement at all (see
 	 * objectquel-create-table-plan.md).
+	 *
+	 * The primary key is declared via a standalone table-level
+	 * `primary key (col {, col})` clause inside the column list, not an
+	 * inline per-column constraint — see objectquel-primary-key-design.md.
 	 */
 	class CreateTable {
 
@@ -43,12 +47,12 @@
 			$temporary = $this->lexer->optionalMatch(Token::Temporary) !== null;
 			$tableName = $this->lexer->match(Token::Identifier)->getStringValue();
 
-			$columns = $this->parseColumnList($tableName);
+			['columns' => $columns, 'primaryKeyColumns' => $primaryKeyColumns] = $this->parseColumnList($tableName);
 			$ifNotExists = $this->parseOptionalIfNotExists();
 
 			$this->consumeOptionalSemicolon();
 
-			return new AstCreateTable($tableName, $columns, $temporary, $ifNotExists);
+			return new AstCreateTable($tableName, $columns, $temporary, $ifNotExists, $primaryKeyColumns);
 		}
 
 		/**
@@ -67,19 +71,30 @@
 		}
 
 		/**
-		 * Parse the parenthesized, comma-separated column definition list.
-		 * @param string $tableName Used only to produce a readable error message
-		 * @return AstColumnDefinition[]
+		 * Parse the parenthesized, comma-separated column definition list,
+		 * which may contain at most one `primary key (...)` clause alongside
+		 * the column definitions (in any position).
+		 * @param string $tableName Used only to produce readable error messages
+		 * @return array{columns: AstColumnDefinition[], primaryKeyColumns: string[]}
 		 * @throws LexerException|ParserException
 		 */
 		private function parseColumnList(string $tableName): array {
 			$this->lexer->match(Token::ParenthesesOpen);
 
 			$columns = [];
-			$seenPrimaryKey = false;
+			$primaryKeyColumns = null;
 			$seenNames = [];
 
 			do {
+				if ($this->lexer->lookahead() === Token::Primary) {
+					if ($primaryKeyColumns !== null) {
+						throw new ParserException("Table '{$tableName}' declares more than one primary key clause");
+					}
+
+					$primaryKeyColumns = PrimaryKeyClause::parse($this->lexer);
+					continue;
+				}
+
 				$column = $this->parseColumnDefinition();
 
 				if (isset($seenNames[$column->getName()])) {
@@ -87,21 +102,51 @@
 				}
 
 				$seenNames[$column->getName()] = true;
-
-				if ($column->isPrimaryKey()) {
-					if ($seenPrimaryKey) {
-						throw new ParserException("Table '{$tableName}' declares more than one primary key column");
-					}
-
-					$seenPrimaryKey = true;
-				}
-
 				$columns[] = $column;
 			} while ($this->lexer->optionalMatch(Token::Comma));
 
 			$this->lexer->match(Token::ParenthesesClose);
 
-			return $columns;
+			$primaryKeyColumns ??= [];
+			$this->validatePrimaryKeyClause($tableName, $columns, $seenNames, $primaryKeyColumns);
+
+			return ['columns' => $columns, 'primaryKeyColumns' => $primaryKeyColumns];
+		}
+
+		/**
+		 * Cross-references a parsed `primary key (...)` clause against the
+		 * table's declared columns, and enforces the identity/PK
+		 * co-occurrence rule: an identity column must be the sole entry in
+		 * the clause (every supported dialect ties auto-increment/identity
+		 * semantics to being the sole PK column).
+		 * @param string $tableName Used only to produce readable error messages
+		 * @param AstColumnDefinition[] $columns
+		 * @param array<string, bool> $seenNames Declared column names, keyed for lookup
+		 * @param string[] $primaryKeyColumns
+		 * @throws ParserException
+		 */
+		private function validatePrimaryKeyClause(string $tableName, array $columns, array $seenNames, array $primaryKeyColumns): void {
+			foreach ($primaryKeyColumns as $pkColumn) {
+				if (!isset($seenNames[$pkColumn])) {
+					throw new ParserException("Table '{$tableName}' declares primary key on unknown column '{$pkColumn}'");
+				}
+			}
+
+			$identityColumns = array_values(array_filter($columns, fn(AstColumnDefinition $column) => $column->isIdentity()));
+
+			if (count($identityColumns) > 1) {
+				throw new ParserException("Table '{$tableName}' declares more than one identity column");
+			}
+
+			if ($identityColumns === []) {
+				return;
+			}
+
+			$identityColumnName = $identityColumns[0]->getName();
+
+			if ($primaryKeyColumns !== [$identityColumnName]) {
+				throw new ParserException("Column '{$identityColumnName}' declares 'identity' but is not the sole column in the table's primary key clause");
+			}
 		}
 
 		/**
@@ -121,9 +166,9 @@
 			}
 
 			[$limit, $precision, $scale] = $this->parseOptionalTypeArguments();
-			[$notNull, $primaryKey, $identity] = $this->parseColumnConstraints($name);
+			[$notNull, $identity] = $this->parseColumnConstraints();
 
-			return new AstColumnDefinition($name, $type, $limit, $precision, $scale, false, $notNull, $primaryKey, $identity);
+			return new AstColumnDefinition($name, $type, $limit, $precision, $scale, false, $notNull, $identity);
 		}
 
 		/**
@@ -150,14 +195,14 @@
 
 		/**
 		 * Parse the constraint keywords following a column's type: any combination
-		 * of `not null`, `null`, `primary key`, `identity`, in any order.
-		 * @param string $columnName Used only to produce a readable error message
-		 * @return array{0: bool, 1: bool, 2: bool} [notNull, primaryKey, identity]
-		 * @throws LexerException|ParserException
+		 * of `not null`, `null`, `identity`, in any order. `primary key` is not a
+		 * column-level constraint — see the table-level clause parsed in
+		 * parseColumnList()/PrimaryKeyClause.
+		 * @return array{0: bool, 1: bool} [notNull, identity]
+		 * @throws LexerException
 		 */
-		private function parseColumnConstraints(string $columnName): array {
+		private function parseColumnConstraints(): array {
 			$notNull = false;
-			$primaryKey = false;
 			$identity = false;
 
 			while (true) {
@@ -172,13 +217,6 @@
 					continue;
 				}
 
-				if ($this->lexer->optionalMatch(Token::Primary)) {
-					$this->lexer->match(Token::Key);
-					$primaryKey = true;
-					$notNull = true; // A primary key is implicitly NOT NULL.
-					continue;
-				}
-
 				if ($this->lexer->optionalMatch(Token::Identity)) {
 					$identity = true;
 					continue;
@@ -187,13 +225,7 @@
 				break;
 			}
 
-			// Identity columns are rendered assuming they're the primary key
-			// (e.g. SQLite's AUTOINCREMENT only exists on INTEGER PRIMARY KEY).
-			if ($identity && !$primaryKey) {
-				throw new ParserException("Column '{$columnName}' declares 'identity' without 'primary key' — identity columns must be the table's primary key");
-			}
-
-			return [$notNull, $primaryKey, $identity];
+			return [$notNull, $identity];
 		}
 
 		/**
