@@ -56,7 +56,6 @@
 
 		/**
 		 * QuelToSQLAppend constructor
-		 * @param EntityStore $entityStore
 		 * @param EntityManager $entityManager Needed only for insert-from-select's
 		 *        nested retrieve, which is prepared through the same
 		 *        normalize/validate/optimize pipeline a top-level retrieve goes
@@ -66,9 +65,9 @@
 		 *        extension when an AstAppend carries one — see this class's
 		 *        docblock and QuelToSQLUpsert's own.
 		 */
-		public function __construct(EntityStore $entityStore, EntityManager $entityManager, PlatformCapabilitiesInterface $platform, QuelToSQLUpsert $upsertCompiler) {
-			$this->entityStore = $entityStore;
+		public function __construct(EntityManager $entityManager, PlatformCapabilitiesInterface $platform, QuelToSQLUpsert $upsertCompiler) {
 			$this->entityManager = $entityManager;
+			$this->entityStore = $entityManager->getEntityStore();
 			$this->identifierQuoter = new SqlIdentifierQuoter($platform);
 			$this->platform = $platform;
 			$this->upsertCompiler = $upsertCompiler;

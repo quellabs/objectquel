@@ -93,7 +93,7 @@
 			$this->createIndexExecutor = new CreateIndexExecutor($this->connection, $this->capabilities);
 			$this->destroyExecutor = new DestroyExecutor($this->connection, $this->capabilities);
 			$this->destroyIndexExecutor = new DestroyIndexExecutor($this->connection, $this->capabilities);
-			$this->appendExecutor = new AppendExecutor($this->connection, $entityManager->getEntityStore(), $entityManager, $this->capabilities);
+			$this->appendExecutor = new AppendExecutor($this->connection, $entityManager, $this->capabilities);
 			$this->replaceExecutor = new ReplaceExecutor($this->connection, $entityManager, $this->capabilities);
 			$this->deleteExecutor = new DeleteExecutor($this->connection, $entityManager->getEntityStore(), $this->capabilities);
 			

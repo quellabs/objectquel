@@ -46,19 +46,17 @@
 		/**
 		 * AppendExecutor constructor
 		 * @param DatabaseAdapter $connection
-		 * @param EntityStore $entityStore
 		 * @param EntityManager $entityManager
 		 * @param PlatformCapabilitiesInterface $platform
 		 */
 		public function __construct(
 			DatabaseAdapter $connection,
-			EntityStore $entityStore,
 			EntityManager $entityManager,
 			PlatformCapabilitiesInterface $platform
 		) {
 			$this->connection = $connection;
-			$this->entityStore = $entityStore;
 			$this->entityManager = $entityManager;
+			$this->entityStore = $entityManager->getEntityStore();
 
 			// QuelToSQLReplace is reused (not reconstructed) so upsert's
 			// on-conflict UPDATE SET clause is built by the exact same
@@ -67,9 +65,9 @@
 			// itself isn't a compiler for its own AST node (there's no
 			// AstUpsert — see QuelToSQLAppend's docblock); it just keeps the
 			// on-conflict dialect-branching logic out of QuelToSQLAppend.
-			$replaceCompiler = new QuelToSQLReplace($entityStore, $platform, $entityManager->getUnitOfWork()->getVersionValueHandler());
-			$upsertCompiler = new QuelToSQLUpsert($entityStore, $platform, $replaceCompiler);
-			$this->compiler = new QuelToSQLAppend($entityStore, $entityManager, $platform, $upsertCompiler);
+			$replaceCompiler = new QuelToSQLReplace($this->entityStore, $platform, $entityManager->getUnitOfWork()->getVersionValueHandler());
+			$upsertCompiler = new QuelToSQLUpsert($this->entityStore, $platform, $replaceCompiler);
+			$this->compiler = new QuelToSQLAppend($entityManager, $platform, $upsertCompiler);
 			$this->jsonAppendExecutor = new JsonAppendExecutor();
 		}
 
