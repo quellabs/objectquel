@@ -9,13 +9,15 @@
 	 * Represents a range in the AST that sources data directly from a plain
 	 * database table by name, with no backing entity class.
 	 *
-	 * `via` is supported, but means something different here than it does for
-	 * an entity range: an entity's `via <relation>` names a declared relation
-	 * (`@OneToOne`/`@ManyToOne`/`@InverseOf`) that gets rewritten into a join
-	 * condition by RewriteViaRelationToJoinCondition. A plain-table range has
-	 * no relation catalog to name anything from, so its `via <condition>`
-	 * takes the literal join condition directly — parsed once, up front, and
-	 * never rewritten (see Rules\Range::parseTableRangeTail()). It's always a
+	 * `via` is supported, but has no relation catalog to name anything from
+	 * here the way an entity range's `via <relation>` does (a declared
+	 * `@OneToOne`/`@ManyToOne`/`@InverseOf`, rewritten into a join condition
+	 * by RewriteViaRelationToJoinCondition — an entity range's `via` also
+	 * accepts a literal condition the same way this class does, see
+	 * Rules\Range::parseEntityRangeTail(), but a plain-table range has no
+	 * relation-name form at all). Its `via <condition>` always takes the
+	 * literal join condition directly — parsed once, up front, and never
+	 * rewritten (see Rules\Range::parseTableRangeTail()). It's always a
 	 * LEFT JOIN: there's no relation annotation to consult for "required", and
 	 * this deliberately doesn't grow QUEL a way to spell INNER — the same
 	 * default a bare entity `via` uses before any @RequiredRelation upgrades

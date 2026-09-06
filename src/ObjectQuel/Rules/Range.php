@@ -161,11 +161,24 @@
 		 * Parse the remainder of an entity range once `Name` has already been
 		 * resolved as an entity: an optional `via <relation>` naming a declared
 		 * relation (`@OneToOne`/`@ManyToOne`/`@InverseOf`), resolved into a join
-		 * condition later by RewriteViaRelationToJoinCondition.
+		 * condition later by RewriteViaRelationToJoinCondition — or, when what
+		 * follows doesn't stop at a bare property chain, `via <condition>`
+		 * naming a literal join condition directly, the same ad hoc form a
+		 * plain-table range's `via` already supports. Both share one grammar
+		 * slot: parsing the full expression grammar (not just a property
+		 * chain) and then inspecting the result's shape distinguishes them —
+		 * a bare identifier chain with nothing else parsed is indistinguishable
+		 * from what parsePropertyChain() alone used to produce, so the relation
+		 * form is unaffected; anything beyond that (an operator followed) is
+		 * only ever meaningful as a literal condition. RewriteViaRelationToJoinCondition
+		 * only ever rewrites a bare identifier chain (see its processNodeSide()
+		 * guard) and leaves anything else untouched, so a literal condition
+		 * passes through unchanged, unrewritten, exactly like a plain-table
+		 * range's.
 		 * @param string $alias The range alias
 		 * @param string $entityName The resolved entity name
 		 * @return AstRangeDatabase
-		 * @throws LexerException
+		 * @throws LexerException|ParserException
 		 */
 		private function parseEntityRangeTail(string $alias, string $entityName): AstRangeDatabase {
 			// Parse an optional 'VIA' statement (for filtering)
@@ -174,8 +187,8 @@
 			if ($this->lexer->lookahead() == Token::Via) {
 				$this->lexer->match(Token::Via);
 
-				$logicalExpressionRule = new ArithmeticExpression($this->lexer);
-				$viaIdentifier = $logicalExpressionRule->parsePropertyChain();
+				$logicalExpressionRule = new LogicalExpression($this->lexer);
+				$viaIdentifier = $logicalExpressionRule->parse();
 			}
 
 			// Match an optional semicolon at the end of the statement

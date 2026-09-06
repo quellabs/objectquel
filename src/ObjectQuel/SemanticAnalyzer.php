@@ -295,8 +295,16 @@
 		 * still holds a raw AstIdentifier at this point, normalisation could not resolve it,
 		 * meaning the property is a column rather than a relation.
 		 *
+		 * An entity range's 'via' can also be a literal join condition instead of a relation
+		 * name (e.g. `via o.customer_id = c.id`, the same ad hoc form a plain-table range's
+		 * `via <condition>` already supports — see Rules\Range::parseEntityRangeTail()). That
+		 * form is never a bare AstIdentifier once parsed (it's already an AstExpression), so
+		 * it passes this check unchanged without needing a separate branch here.
+		 *
 		 * @param AstRetrieve $ast The AST to validate
-		 * @throws SemanticException When a 'via' clause references a column instead of a relation
+		 * @throws SemanticException When a 'via' clause names an undeclared relation — a bare
+		 *         property reference normalisation couldn't resolve. Does not fire for the
+		 *         literal-condition form, which was never a bare identifier to begin with.
 		 */
 		private function validateViaClauseNormalisationPassed(AstRetrieve $ast): void {
 			foreach ($ast->getRanges() as $range) {
@@ -304,10 +312,12 @@
 				if ($range->getJoinProperty() === null) {
 					continue;
 				}
-				
+
 				// A successful normalisation transforms the via AstIdentifier into an AstExpression.
 				// If the join property is still an AstIdentifier, normalisation could not resolve
 				// it as a relation — meaning the property is a plain column, which is not allowed.
+				// (A literal-condition via, e.g. `via o.customer_id = c.id`, was already an
+				// AstExpression at parse time and never reaches this branch.)
 				if ($range->getJoinProperty() instanceof AstIdentifier) {
 					throw new SemanticException("The 'via' property in range '{$range->getName()}' must be a relation, not a column.");
 				}
