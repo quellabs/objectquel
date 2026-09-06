@@ -342,7 +342,7 @@
 			$lexer = new Lexer($query);
 			
 			// Create a parser that takes the tokenized input and builds an Abstract Syntax Tree
-			$parser = new Parser($lexer);
+			$parser = new Parser($lexer, $this->entityManager->getEntityStore());
 			
 			// Execute the parsing process to generate the AST representation of the query
 			// This transforms the linear token sequence into a hierarchical tree structure

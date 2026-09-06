@@ -14,8 +14,9 @@
 	 * `append`) always need a concrete range to resolve their mandatory WHERE
 	 * clause's identifiers against, so neither supports append's
 	 * bare-entity-name fallback: the target must already be declared via
-	 * `range of <name> is <Entity>`/`range of <name> is table <Name>`, and
-	 * must be a real persisted entity range or plain-table range, not a
+	 * `range of <name> is <Name>` — the same syntax declares a plain-table
+	 * range when `<Name>` doesn't resolve as an entity (see Rules\Range) —
+	 * and must be a real persisted entity range or plain-table range, not a
 	 * subquery/temp-table/JSON range (see objectquel-replace-plan.md /
 	 * objectquel-delete-plan.md / objectquel-plain-table-range-plan.md).
 	 */

@@ -12,7 +12,8 @@
 
 	/**
 	 * Validates that a column reference on a plain-table range (`range of a
-	 * is table Name`) actually exists on the live table, the same role
+	 * is Name`, where `Name` doesn't resolve as an entity) actually exists
+	 * on the live table, the same role
 	 * ValidateEntityPropertyExists plays for entity ranges.
 	 *
 	 * A plain-table range has no annotation-derived metadata to check a
@@ -72,7 +73,7 @@
 				return;
 			}
 
-			$columns = $this->getColumns($range->getTableName());
+			$columns = $this->getColumns($this->databaseAdapter, $range->getTableName());
 
 			// Introspection failed (e.g. table doesn't exist yet) — skip rather than
 			// turn a lookup failure into a false positive.
@@ -93,13 +94,16 @@
 		/**
 		 * Returns the given table's columns, keyed by column name, or null when
 		 * introspection failed. Cached per table name for the lifetime of this visitor.
+		 * @param DatabaseAdapter $databaseAdapter Passed explicitly (rather than
+		 *        reading $this->databaseAdapter) so this method's signature itself
+		 *        proves the null-check already happened in the caller
 		 * @param string $tableName
 		 * @return array<string, mixed>|null
 		 */
-		private function getColumns(string $tableName): ?array {
+		private function getColumns(DatabaseAdapter $databaseAdapter, string $tableName): ?array {
 			if (!array_key_exists($tableName, $this->tableColumnsCache)) {
 				try {
-					$this->tableColumnsCache[$tableName] = $this->databaseAdapter->getColumns($tableName);
+					$this->tableColumnsCache[$tableName] = $databaseAdapter->getColumns($tableName);
 				} catch (\Throwable $e) {
 					$this->tableColumnsCache[$tableName] = null;
 				}

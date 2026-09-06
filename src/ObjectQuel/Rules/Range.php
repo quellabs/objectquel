@@ -2,6 +2,7 @@
 	
 	namespace Quellabs\ObjectQuel\ObjectQuel\Rules;
 	
+	use Quellabs\ObjectQuel\EntityStore;
 	use Quellabs\ObjectQuel\ObjectQuel\Lexer;
 	use Quellabs\ObjectQuel\ObjectQuel\Token;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRange;
@@ -11,27 +12,41 @@
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRangeJsonSource;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRangeTable;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRangeDatabaseSubquery;
-	
+
 	/**
 	 * Class Range
 	 *
 	 * This class is responsible for parsing the RANGE clause in ObjectQuel queries.
 	 * A RANGE clause defines the data sources and their aliases used in a query.
 	 * Example: RANGE OF x IS Entity or RANGE OF y IS JSON_SOURCE("path/to/file.json")
+	 *
+	 * There is no `table` keyword: `RANGE OF x IS Name` is an entity range when
+	 * `Name` resolves against the EntityStore, and a plain-table range (looked
+	 * up against the live schema instead) when it doesn't. A table can't be
+	 * targeted if it's shadowed by an entity of the exact same name — that's
+	 * by design, not a gap.
 	 */
 	class Range {
-		
+
 		/**
 		 * The lexer instance used for tokenizing and processing the input
 		 */
 		private Lexer $lexer;
-		
+
+		/**
+		 * Used to decide whether `RANGE OF x IS Name` names an entity or a
+		 * plain table — see this class's docblock.
+		 */
+		private EntityStore $entityStore;
+
 		/**
 		 * Range parser constructor
 		 * @param Lexer $lexer The lexer instance to use for tokenization
+		 * @param EntityStore $entityStore Used to distinguish entity ranges from plain-table ranges
 		 */
-		public function __construct(Lexer $lexer) {
+		public function __construct(Lexer $lexer, EntityStore $entityStore) {
 			$this->lexer = $lexer;
+			$this->entityStore = $entityStore;
 		}
 		
 		/**
@@ -66,13 +81,11 @@
 				return $this->parseJsonRange($alias->getStringValue());
 			}
 
-			// Check if the next token is 'TABLE' for a plain-table (no entity class) range
-			if ($this->lexer->optionalMatch(Token::Table)) {
-				return $this->parseTableRange($alias->getStringValue());
-			}
-
-			// Otherwise, treat it as a database entity source
-			return $this->parseEntityRange($alias);
+			// Otherwise, it's a bare name — an entity range if it resolves against
+			// the EntityStore, a plain-table range (resolved against the live
+			// schema instead) if it doesn't. No keyword decides this; the lookup
+			// does (see this class's docblock).
+			return $this->parseEntityOrTableRange($alias);
 		}
 
 		/**
@@ -83,7 +96,7 @@
 		protected function parseRanges(): array {
 			$ranges = [];
 
-			$rangeRule = new Range($this->lexer);
+			$rangeRule = new Range($this->lexer, $this->entityStore);
 
 			while ($this->lexer->peek()->getType() == Token::Range) {
 				$ranges[] = $rangeRule->parse();
@@ -118,60 +131,78 @@
 		}
 		
 		/**
-		 * Parse an entity (database) definition in a RANGE clause
-		 * Format: RANGE OF alias IS Entity[\SubEntity] [VIA condition]
+		 * Parse `RANGE OF alias IS Name[\SubName] [VIA ...]`, dispatching on
+		 * whether `Name` resolves against the EntityStore: an entity range if
+		 * so, a plain-table range if not. This is the one place that decision
+		 * gets made — see this class's docblock.
 		 * @param Token $alias The token containing the alias identifier
-		 * @return AstRangeDatabase AST node representing a database entity source
+		 * @return AstRangeDatabase|AstRangeTable
+		 * @throws LexerException|ParserException
+		 */
+		private function parseEntityOrTableRange(Token $alias): AstRangeDatabase|AstRangeTable {
+			// Match and consume an 'Identifier' token for the entity/table name
+			$name = $this->lexer->match(Token::Identifier)->getStringValue();
+
+			// Handle namespaced names (Entity\SubEntity\SubSubEntity) — only ever
+			// meaningful for an entity; a plain table name never legitimately
+			// contains one
+			while ($this->lexer->optionalMatch(Token::Backslash)) {
+				$name .= "\\" . $this->lexer->match(Token::Identifier)->getStringValue();
+			}
+
+			if ($this->entityStore->exists($name)) {
+				return $this->parseEntityRangeTail($alias->getStringValue(), $name);
+			}
+
+			return $this->parseTableRangeTail($alias->getStringValue(), $name);
+		}
+
+		/**
+		 * Parse the remainder of an entity range once `Name` has already been
+		 * resolved as an entity: an optional `via <relation>` naming a declared
+		 * relation (`@OneToOne`/`@ManyToOne`/`@InverseOf`), resolved into a join
+		 * condition later by RewriteViaRelationToJoinCondition.
+		 * @param string $alias The range alias
+		 * @param string $entityName The resolved entity name
+		 * @return AstRangeDatabase
 		 * @throws LexerException
 		 */
-		private function parseEntityRange(Token $alias): AstRangeDatabase {
-			// Match and consume an 'Identifier' token for the entity name
-			$entityName = $this->lexer->match(Token::Identifier)->getStringValue();
-			
-			// Handle namespaced entity names (Entity\SubEntity\SubSubEntity)
-			while ($this->lexer->optionalMatch(Token::Backslash)) {
-				$entityName .= "\\" . $this->lexer->match(Token::Identifier)->getStringValue();
-			}
-			
+		private function parseEntityRangeTail(string $alias, string $entityName): AstRangeDatabase {
 			// Parse an optional 'VIA' statement (for filtering)
 			$viaIdentifier = null;
-			
+
 			if ($this->lexer->lookahead() == Token::Via) {
 				$this->lexer->match(Token::Via);
 
 				$logicalExpressionRule = new ArithmeticExpression($this->lexer);
 				$viaIdentifier = $logicalExpressionRule->parsePropertyChain();
 			}
-			
+
 			// Match an optional semicolon at the end of the statement
 			if ($this->lexer->lookahead() == Token::Semicolon) {
 				$this->lexer->match(Token::Semicolon);
 			}
-			
+
 			// Create and return the AST node for a database entity with alias, entity name, and optional VIA condition
-			return new AstRangeDatabase($alias->getStringValue(), $entityName, $viaIdentifier);
+			return new AstRangeDatabase($alias, $entityName, $viaIdentifier);
 		}
-		
+
 		/**
-		 * Parse a plain-table definition in a RANGE clause.
-		 * Format: RANGE OF alias IS TABLE tableName [VIA condition]
-		 * No entity class is involved, so no namespace chain is accepted here.
-		 * Unlike an entity range's `via <relation>` (a relation name resolved
-		 * against entity metadata later), a plain-table range has no relation
-		 * catalog to name anything from — its `via` takes the literal join
-		 * condition directly, parsed as a full expression up front (see
-		 * AstRangeTable's docblock). Always a LEFT JOIN; there's no relation
-		 * annotation to consult for "required", and this deliberately doesn't
-		 * grow QUEL a way to spell INNER for it (see
-		 * objectquel-plain-table-range-plan.md).
+		 * Parse the remainder of a plain-table range once `Name` has already
+		 * been resolved as *not* an entity. Unlike an entity range's
+		 * `via <relation>` (a relation name resolved against entity metadata
+		 * later), a plain-table range has no relation catalog to name anything
+		 * from — its `via` takes the literal join condition directly, parsed as
+		 * a full expression up front (see AstRangeTable's docblock). Always a
+		 * LEFT JOIN; there's no relation annotation to consult for "required",
+		 * and this deliberately doesn't grow QUEL a way to spell INNER for it
+		 * (see objectquel-plain-table-range-plan.md).
 		 * @param string $alias The range alias
+		 * @param string $tableName The physical table name
 		 * @return AstRangeTable AST node representing a plain-table source
 		 * @throws LexerException|ParserException
 		 */
-		private function parseTableRange(string $alias): AstRangeTable {
-			// Match and consume an 'Identifier' token for the table name
-			$tableName = $this->lexer->match(Token::Identifier)->getStringValue();
-
+		private function parseTableRangeTail(string $alias, string $tableName): AstRangeTable {
 			// Parse an optional 'VIA' clause — a literal join condition, not a
 			// relation name (see this method's docblock)
 			$joinCondition = null;
@@ -179,6 +210,11 @@
 			if ($this->lexer->optionalMatch(Token::Via)) {
 				$conditionRule = new LogicalExpression($this->lexer);
 				$joinCondition = $conditionRule->parse();
+			}
+
+			// Match an optional semicolon at the end of the statement
+			if ($this->lexer->lookahead() == Token::Semicolon) {
+				$this->lexer->match(Token::Semicolon);
 			}
 
 			// Create and return the AST node for a plain-table range

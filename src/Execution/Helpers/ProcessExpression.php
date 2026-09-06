@@ -773,7 +773,7 @@
 		}
 		
 		/**
-		 * Builds column name for plain-table ranges (`range of a is table Name`).
+		 * Builds column name for plain-table ranges (`range of a is Name`).
 		 * There is no entity metadata to map a property to a column — the name
 		 * written in the query IS the physical column name, passed through
 		 * unchanged (see objectquel-plain-table-range-plan.md).

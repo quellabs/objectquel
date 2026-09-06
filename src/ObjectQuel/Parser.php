@@ -2,6 +2,7 @@
     
     namespace Quellabs\ObjectQuel\ObjectQuel;
 
+	use Quellabs\ObjectQuel\EntityStore;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRange;
 	use Quellabs\ObjectQuel\ObjectQuel\Rules\Append;
 	use Quellabs\ObjectQuel\ObjectQuel\Rules\CreateIndex;
@@ -27,10 +28,11 @@
 		/**
          * Parser constructor.
          * @param Lexer $lexer
+         * @param EntityStore $entityStore Used by the Range rule to distinguish entity ranges from plain-table ranges
          */
-        public function __construct(Lexer $lexer) {
+        public function __construct(Lexer $lexer, EntityStore $entityStore) {
             $this->lexer = $lexer;
-            $this->rangeRule = new Range($lexer);
+            $this->rangeRule = new Range($lexer, $entityStore);
             $this->retrieveRule = new Retrieve($lexer);
             $this->createTableRule = new CreateTable($lexer);
             $this->createIndexRule = new CreateIndex($lexer);

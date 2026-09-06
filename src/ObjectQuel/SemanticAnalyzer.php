@@ -509,7 +509,7 @@
 		/**
 		 * Validates that the outer projection does not select a bare plain-table range.
 		 *
-		 * A plain-table range (`range of a is table Name`) has no entity metadata, so
+		 * A plain-table range (`range of a is Name`) has no entity metadata, so
 		 * there's no known column list to expand `retrieve(a)` into — unlike an entity
 		 * range's `retrieve(a)`, this compiler never introspects the live schema to find
 		 * out (see objectquel-plain-table-range-plan.md). Explicit column selection
