@@ -5,9 +5,9 @@
 	use Quellabs\ObjectQuel\EntityStore;
 	use Quellabs\ObjectQuel\Planner\ExecutionStageInterface;
 	use Quellabs\ObjectQuel\Exception\EntityResolutionException;
-	use Quellabs\ObjectQuel\Execution\Executors\ConstantQueryExecutor;
-	use Quellabs\ObjectQuel\Execution\Executors\DatabaseQueryExecutor;
-	use Quellabs\ObjectQuel\Execution\Executors\JsonQueryExecutor;
+	use Quellabs\ObjectQuel\Execution\Executors\ConstantRetrieveExecutor;
+	use Quellabs\ObjectQuel\Execution\Executors\RetrieveExecutor;
+	use Quellabs\ObjectQuel\Execution\Executors\JsonRetrieveExecutor;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRangeJsonSource;
 	use Quellabs\ObjectQuel\ObjectQuel\AstInterface;
 	use Quellabs\ObjectQuel\Exception\QuelException;
@@ -48,9 +48,9 @@
 		
 		/**
 		 * Executor responsible for regular database queries
-		 * @var DatabaseQueryExecutor
+		 * @var RetrieveExecutor
 		 */
-		private DatabaseQueryExecutor $databaseExecutor;
+		private RetrieveExecutor $databaseExecutor;
 		
 		/**
 		 * Executor responsible for materializing external-source subqueries as temp tables.
@@ -60,15 +60,15 @@
 		
 		/**
 		 * Executor responsible for executing and materializing JSON data
-		 * @var JsonQueryExecutor
+		 * @var JsonRetrieveExecutor
 		 */
-		private JsonQueryExecutor $jsonExecutor;
+		private JsonRetrieveExecutor $jsonExecutor;
 		
 		/**
 		 * Executor responsible for evaluating constant-only (rangeless) queries
-		 * @var ConstantQueryExecutor
+		 * @var ConstantRetrieveExecutor
 		 */
-		private ConstantQueryExecutor $constantExecutor;
+		private ConstantRetrieveExecutor $constantExecutor;
 		
 		/**
 		 * Create a new plan executor
@@ -78,7 +78,7 @@
 			$this->queryExecutor = $queryExecutor;
 			$this->databaseExecutor = $queryExecutor->getDatabaseExecutor();
 			$this->jsonExecutor = $queryExecutor->getJsonExecutor();
-			$this->constantExecutor = new ConstantQueryExecutor();
+			$this->constantExecutor = new ConstantRetrieveExecutor();
 			$this->tempTableExecutor = new TempTableExecutor(
 				$queryExecutor->getConnection(),
 				$queryExecutor->getEntityManager()->getEntityStore(),

@@ -17,7 +17,7 @@
 	 * parse time in Rules\Append, so none of them ever reach this class).
 	 *
 	 * Bypasses QuelToSQLAppend/SQL entirely — JSON ranges are never sent to
-	 * the database, mirroring JsonQueryExecutor's read-side separation. The
+	 * the database, mirroring JsonRetrieveExecutor's read-side separation. The
 	 * target file must already exist (append never creates it), matching the
 	 * DB precedent that `append` never creates the table it targets.
 	 *
@@ -74,7 +74,7 @@
 		/**
 		 * Loads and decodes the target JSON file, validating it holds a flat
 		 * top-level array of row-objects — the same shape
-		 * JsonQueryExecutor::loadAndFilterJsonFile() requires for a range with
+		 * JsonRetrieveExecutor::loadAndFilterJsonFile() requires for a range with
 		 * no JSONPath expression (the only shape an append target may have,
 		 * enforced at parse time in Rules\Append).
 		 * @param string $path
@@ -104,7 +104,7 @@
 		/**
 		 * Evaluates one assignment row into a plain PHP assoc array, keyed by
 		 * property name. Assignment values (literals, parameters, casts,
-		 * arithmetic, etc.) are evaluated the same way JsonQueryExecutor
+		 * arithmetic, etc.) are evaluated the same way JsonRetrieveExecutor
 		 * evaluates a retrieve() projection list — there is no other range in
 		 * scope for an append's assignment values, so an empty row/contents
 		 * context is correct here.

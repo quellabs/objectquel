@@ -12,7 +12,7 @@
 	/**
 	 * Handles JSON file query execution
 	 */
-	class JsonQueryExecutor {
+	class JsonRetrieveExecutor {
 		
 		/**
 		 * Execute a JSON query and returns the result

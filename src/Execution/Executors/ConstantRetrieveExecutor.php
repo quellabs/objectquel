@@ -16,7 +16,7 @@
 	 * already handles all of these node types, so this executor simply drives it
 	 * once per alias and assembles the result.
 	 */
-	class ConstantQueryExecutor {
+	class ConstantRetrieveExecutor {
 		
 		/**
 		 * Evaluates all projections in the stage and returns a one-row result.

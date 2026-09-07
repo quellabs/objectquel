@@ -28,11 +28,11 @@
 	use Quellabs\ObjectQuel\Execution\Executors\AppendExecutor;
 	use Quellabs\ObjectQuel\Execution\Executors\CreateIndexExecutor;
 	use Quellabs\ObjectQuel\Execution\Executors\CreateTableExecutor;
-	use Quellabs\ObjectQuel\Execution\Executors\DatabaseQueryExecutor;
+	use Quellabs\ObjectQuel\Execution\Executors\RetrieveExecutor;
 	use Quellabs\ObjectQuel\Execution\Executors\DeleteExecutor;
 	use Quellabs\ObjectQuel\Execution\Executors\DestroyExecutor;
 	use Quellabs\ObjectQuel\Execution\Executors\DestroyIndexExecutor;
-	use Quellabs\ObjectQuel\Execution\Executors\JsonQueryExecutor;
+	use Quellabs\ObjectQuel\Execution\Executors\JsonRetrieveExecutor;
 	use Quellabs\ObjectQuel\Execution\Executors\ReplaceExecutor;
 	use Quellabs\ObjectQuel\ObjectQuel\QueryNormalizer;
 	use Quellabs\ObjectQuel\ObjectQuel\SemanticAnalyzer;
@@ -42,7 +42,7 @@
 	use Quellabs\ObjectQuel\ObjectQuel\Visitors\ResolveRootIdentifierType;
 	use Quellabs\ObjectQuel\Planner\ExecutionPlanBuilder;
 	use Quellabs\ObjectQuel\Planner\QueryOptimizer;
-	use Quellabs\ObjectQuel\Execution\Executors\DryRunDatabaseQueryExecutor;
+	use Quellabs\ObjectQuel\Execution\Executors\DryRunRetrieveExecutor;
 	use Quellabs\ObjectQuel\Planner\QueryPlan\PlanLog;
 	use Quellabs\ObjectQuel\Planner\QueryPlan\QueryPlan;
 	
@@ -62,8 +62,8 @@
 		private QueryOptimizer $optimizer;
 		private QueryNormalizer $queryNormalizer;
 		private SemanticAnalyzer $semanticAnalyser;
-		private DatabaseQueryExecutor $databaseExecutor;
-		private JsonQueryExecutor $jsonExecutor;
+		private RetrieveExecutor $databaseExecutor;
+		private JsonRetrieveExecutor $jsonExecutor;
 		private CreateTableExecutor $createTableExecutor;
 		private CreateIndexExecutor $createIndexExecutor;
 		private DestroyExecutor $destroyExecutor;
@@ -75,11 +75,11 @@
 		/**
 		 * Constructor
 		 * @param EntityManager $entityManager
-		 * @param DatabaseQueryExecutor|null $databaseExecutor
+		 * @param RetrieveExecutor|null $databaseExecutor
 		 */
 		public function __construct(
 			EntityManager $entityManager,
-			?DatabaseQueryExecutor $databaseExecutor = null
+			?RetrieveExecutor $databaseExecutor = null
 		) {
 			// Init the capabilities class for engine specific optimizations
 			$this->entityManager = $entityManager;
@@ -87,8 +87,8 @@
 			$this->capabilities = $this->entityManager->getUnitOfWork()->getPlatformCapabilities();
 			
 			// Create specialized executors
-			$this->databaseExecutor = $databaseExecutor ?? new DatabaseQueryExecutor($entityManager, $this->capabilities);
-			$this->jsonExecutor = new JsonQueryExecutor();
+			$this->databaseExecutor = $databaseExecutor ?? new RetrieveExecutor($entityManager, $this->capabilities);
+			$this->jsonExecutor = new JsonRetrieveExecutor();
 			$this->createTableExecutor = new CreateTableExecutor($this->connection, $this->capabilities);
 			$this->createIndexExecutor = new CreateIndexExecutor($this->connection, $this->capabilities);
 			$this->destroyExecutor = new DestroyExecutor($this->connection, $this->capabilities);
@@ -124,17 +124,17 @@
 		
 		/**
 		 * Returns the database executor
-		 * @return DatabaseQueryExecutor
+		 * @return RetrieveExecutor
 		 */
-		public function getDatabaseExecutor(): DatabaseQueryExecutor {
+		public function getDatabaseExecutor(): RetrieveExecutor {
 			return $this->databaseExecutor;
 		}
 		
 		/**
 		 * Return the JSON executor
-		 * @return JsonQueryExecutor
+		 * @return JsonRetrieveExecutor
 		 */
-		public function getJsonExecutor(): JsonQueryExecutor {
+		public function getJsonExecutor(): JsonRetrieveExecutor {
 			return $this->jsonExecutor;
 		}
 		
@@ -373,7 +373,7 @@
 			// Run the full pipeline again through a dry-run executor to capture
 			// generated SQL without touching the database. The dry-run is cheap
 			// since it skips all I/O.
-			$dryRun = new DryRunDatabaseQueryExecutor($this->entityManager, $this->capabilities);
+			$dryRun = new DryRunRetrieveExecutor($this->entityManager, $this->capabilities);
 			$dryRunExecutor = new self($this->entityManager, $dryRun);
 			$dryRunExecutor->executeQuery($query, $parameters);
 			
@@ -388,7 +388,7 @@
 		 * would run.
 		 *
 		 * Unlike the retrieve path, this never touches
-		 * DryRunDatabaseQueryExecutor: these statements always run through
+		 * DryRunRetrieveExecutor: these statements always run through
 		 * their own connection (see each Executor's docblock), so the only
 		 * way to avoid a real write is to compile the SQL directly instead of
 		 * calling execute().

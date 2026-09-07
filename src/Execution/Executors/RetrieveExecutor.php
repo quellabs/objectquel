@@ -16,7 +16,7 @@
 	/**
 	 * Handles database-specific query execution including SQL conversion and temp tables
 	 */
-	class DatabaseQueryExecutor {
+	class RetrieveExecutor {
 		
 		/** @var EntityManager Orchestrator for ObjectQuel queries and ORM */
 		protected EntityManager $entityManager;

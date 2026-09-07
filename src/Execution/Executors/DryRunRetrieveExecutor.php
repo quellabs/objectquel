@@ -15,7 +15,7 @@
 	 * Used by the demo endpoint to show visitors what SQL ObjectQuel produces
 	 * for a given query, including all stages of a decomposed execution plan.
 	 */
-	class DryRunDatabaseQueryExecutor extends DatabaseQueryExecutor {
+	class DryRunRetrieveExecutor extends RetrieveExecutor {
 		
 		/** @var QueryOptimizer Optimizing code */
 		private QueryOptimizer $queryOptimizer;
@@ -24,7 +24,7 @@
 		private array $capturedSql = [];
 		
 		/**
-		 * DryRunDatabaseQueryExecutor
+		 * DryRunRetrieveExecutor
 		 * @param EntityManager $entityManager
 		 * @param PlatformCapabilities $capabilities
 		 */
