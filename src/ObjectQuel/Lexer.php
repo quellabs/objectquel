@@ -94,6 +94,7 @@
 		        'index'       => Token::Index,
 		        'on'          => Token::On,
 		        'fulltext'    => Token::Fulltext,
+		        'unsigned'    => Token::Unsigned,
 	        ];
 			
 			$this->single_tokens = [

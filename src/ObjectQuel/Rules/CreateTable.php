@@ -150,7 +150,20 @@
 		}
 
 		/**
-		 * Parse a single `attr = type[(limit)|(precision,scale)] [constraints]` definition.
+		 * Parse a single `attr = [unsigned] type[(limit)|(precision,scale)] [constraints]`
+		 * definition. `unsigned` precedes the type name, matching C's `unsigned int`
+		 * order rather than MySQL's inline `INT UNSIGNED` suffix.
+		 *
+		 * `unsigned` on a type that can never be signed or unsigned in the
+		 * first place (e.g. `string`) is a genuine authoring mistake and is
+		 * rejected here at parse time, regardless of target engine. Whether
+		 * the target engine actually *has* an UNSIGNED modifier is a separate,
+		 * platform-level question this parser has no opinion on — the AST is
+		 * engine-agnostic, and the same `create` statement here is compiled
+		 * for whichever platform QuelToSQLCreate targets. An engine without
+		 * UNSIGNED support (see PlatformCapabilitiesInterface::
+		 * supportsUnsignedIntegers()) simply never renders it, silently,
+		 * rather than failing to parse; see DDLTypeMapper.
 		 * @return AstColumnDefinition
 		 * @throws LexerException|ParserException
 		 */
@@ -158,17 +171,42 @@
 			$name = $this->lexer->match(Token::Identifier)->getStringValue();
 			$this->lexer->match(Token::Equals);
 
-			$typeToken = $this->lexer->match(Token::Identifier);
-			$type = strtolower($typeToken->getStringValue());
+			$unsigned = $this->lexer->optionalMatch(Token::Unsigned) !== null;
+			$type = $this->parseColumnType($unsigned, $name);
 
-			if (!TypeMapper::isValidColumnType($type)) {
-				throw new ParserException("Unknown column type '{$type}' for column '{$name}'");
+			if ($unsigned && !TypeMapper::supportsUnsigned($type)) {
+				throw new ParserException("Column '{$name}' declares 'unsigned' but type '{$type}' does not support it");
 			}
 
 			[$limit, $precision, $scale] = $this->parseOptionalTypeArguments();
 			[$notNull, $identity] = $this->parseColumnConstraints();
 
-			return new AstColumnDefinition($name, $type, $limit, $precision, $scale, false, $notNull, $identity);
+			return new AstColumnDefinition($name, $type, $limit, $precision, $scale, $unsigned, $notNull, $identity);
+		}
+
+		/**
+		 * Parses the column's type name. Mirrors C's `unsigned` shorthand: when
+		 * `unsigned` was just consumed and no type name follows it, the type
+		 * defaults to `integer` (i.e. bare `unsigned` means `unsigned integer`,
+		 * the same way C's bare `unsigned` means `unsigned int`).
+		 * @param bool $unsigned Whether the `unsigned` keyword was just consumed
+		 * @param string $columnName Used only to produce readable error messages
+		 * @return string
+		 * @throws LexerException|ParserException
+		 */
+		private function parseColumnType(bool $unsigned, string $columnName): string {
+			if ($unsigned && $this->lexer->lookahead() !== Token::Identifier) {
+				return 'integer';
+			}
+
+			$typeToken = $this->lexer->match(Token::Identifier);
+			$type = strtolower($typeToken->getStringValue());
+
+			if (!TypeMapper::isValidColumnType($type)) {
+				throw new ParserException("Unknown column type '{$type}' for column '{$columnName}'");
+			}
+
+			return $type;
 		}
 
 		/**
@@ -195,9 +233,10 @@
 
 		/**
 		 * Parse the constraint keywords following a column's type: any combination
-		 * of `not null`, `null`, `identity`, in any order. `primary key` is not a
-		 * column-level constraint — see the table-level clause parsed in
-		 * parseColumnList()/PrimaryKeyClause.
+		 * of `not null`, `null`, `identity`, in any order. `unsigned` is not parsed
+		 * here — it precedes the type name instead (see parseColumnDefinition()).
+		 * `primary key` is not a column-level constraint either — see the
+		 * table-level clause parsed in parseColumnList()/PrimaryKeyClause.
 		 * @return array{0: bool, 1: bool} [notNull, identity]
 		 * @throws LexerException
 		 */

@@ -262,13 +262,17 @@
 
 		/**
 		 * MySQL/MariaDB DDL type mapping. Also the fallback for any database
-		 * type value this class doesn't otherwise recognise.
+		 * type value this class doesn't otherwise recognise — which is why the
+		 * UNSIGNED suffix is gated on supportsUnsignedIntegers() rather than
+		 * assumed: an unrecognised engine reaching this branch is not
+		 * guaranteed to have MySQL's UNSIGNED modifier, and 'unsigned' on a
+		 * column definition is a request, not a promise the engine keeps.
 		 * @param array{type: string, limit: int|array<int,int>|null, unsigned: bool, precision: int|null, scale: int|null} $columnDefinition
 		 * @return string
 		 */
 		private function getMysqlTempTableColumnType(array $columnDefinition): string {
 			$limit = is_int($columnDefinition['limit']) ? $columnDefinition['limit'] : (TypeMapper::getDefaultLimit($columnDefinition['type']) ?? 255);
-			$unsigned = $columnDefinition['unsigned'] ? ' UNSIGNED' : '';
+			$unsigned = ($columnDefinition['unsigned'] && $this->platform->supportsUnsignedIntegers()) ? ' UNSIGNED' : '';
 
 			return match ($columnDefinition['type']) {
 				'tinyinteger' => "TINYINT{$unsigned}",

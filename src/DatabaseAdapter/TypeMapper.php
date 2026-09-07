@@ -125,6 +125,21 @@
 		public static function isValidColumnType(string $type): bool {
 			return array_key_exists($type, self::TYPE_MAP);
 		}
+
+		/**
+		 * Whether $type is the kind of thing that can be signed or unsigned at
+		 * all (the integer/float/decimal types) — a type-level question,
+		 * independent of whether the target database engine actually has an
+		 * UNSIGNED modifier (see PlatformCapabilitiesInterface::
+		 * supportsUnsignedIntegers() for that). Used by `create` to reject
+		 * nonsensical combinations like `name = unsigned string` at parse
+		 * time, regardless of target engine.
+		 * @param string $type Column type name (already lowercased)
+		 * @return bool
+		 */
+		public static function supportsUnsigned(string $type): bool {
+			return in_array('unsigned', self::RELEVANT_PROPERTIES[$type] ?? [], true);
+		}
 		
 		/**
 		 * Convert a Phinx column type to a corresponding PHP type
