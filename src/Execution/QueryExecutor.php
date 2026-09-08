@@ -89,17 +89,22 @@
 			// Create specialized executors
 			$this->databaseExecutor = $databaseExecutor ?? new RetrieveExecutor($entityManager, $this->capabilities);
 			$this->jsonExecutor = new JsonRetrieveExecutor();
+
+			// Init the plan executor. Built here — before AppendExecutor — because
+			// AppendExecutor needs it (for insert-from-select sources that require
+			// JSON/temp-table materialization; see AppendExecutor::executeInsertFromSelectViaPlanner())
+			// and PlanExecutor's constructor only needs getDatabaseExecutor()/getJsonExecutor()/
+			// getConnection()/getEntityManager(), all already available at this point.
+			$this->planExecutor = new PlanExecutor($this);
+
 			$this->createTableExecutor = new CreateTableExecutor($this->connection, $this->capabilities);
 			$this->createIndexExecutor = new CreateIndexExecutor($this->connection, $this->capabilities);
 			$this->destroyExecutor = new DestroyExecutor($this->connection, $this->capabilities);
 			$this->destroyIndexExecutor = new DestroyIndexExecutor($this->connection, $this->capabilities);
-			$this->appendExecutor = new AppendExecutor($this->connection, $entityManager, $this->capabilities);
+			$this->appendExecutor = new AppendExecutor($this->connection, $entityManager, $this->capabilities, $this->planExecutor);
 			$this->replaceExecutor = new ReplaceExecutor($this->connection, $entityManager, $this->capabilities);
 			$this->deleteExecutor = new DeleteExecutor($this->connection, $entityManager->getEntityStore(), $this->capabilities);
-			
-			// Init the plan executor
-			$this->planExecutor = new PlanExecutor($this);
-			
+
 			// Init the transformers
 			$this->optimizer = new QueryOptimizer($entityManager, $this->capabilities);
 			$this->queryNormalizer = new QueryNormalizer($entityManager->getEntityStore(), $this->connection);

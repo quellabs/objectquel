@@ -13,6 +13,7 @@
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstAppend;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstAssignment;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRangeDatabaseSubquery;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRangeDatabaseTempTable;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRetrieve;
 	use Quellabs\ObjectQuel\ObjectQuel\Helpers\AssignmentValidator;
 	use Quellabs\ObjectQuel\ObjectQuel\Visitors\CoerceDateTimeParameters;
@@ -187,21 +188,8 @@
 			$properties = $statement->getColumnsOrFail();
 			$source = $statement->getSourceOrFail();
 
-			$selectSql = $this->compileSourceRetrieve($source, $parameters);
-
-			$visibleAliases = array_values(array_filter(array_map(
-				fn(AstAlias $value) => $value->showInResult() ? $value->getName() : null,
-				$source->getValues()
-			)));
-
-			if (count($visibleAliases) !== count($properties)) {
-				throw new SemanticException(sprintf(
-					"append to '%s': column list has %d column(s) but the source retrieve selects %d",
-					$tableName,
-					count($properties),
-					count($visibleAliases)
-				));
-			}
+			$selectSql = $this->finalizeSourceRetrieveSql($source, $parameters);
+			$visibleAliases = $this->resolveVisibleAliases($properties, $source, $tableName);
 
 			$derivedTableAlias = $this->identifierQuoter->quoteIdentifier('__append_source');
 
@@ -375,24 +363,11 @@
 			AssignmentValidator::assertPropertiesExist($properties, $metadata);
 			$this->assertRequiredColumnsSupplied($properties, $metadata);
 
-			// Visibility flags are only set by the optimizer pass inside
-			// compileSourceRetrieve(), so the requested-columns list can only
-			// be read off $source afterward.
-			$selectSql = $this->compileSourceRetrieve($source, $parameters);
-
-			$visibleAliases = array_values(array_filter(array_map(
-				fn(AstAlias $value) => $value->showInResult() ? $value->getName() : null,
-				$source->getValues()
-			)));
-
-			if (count($visibleAliases) !== count($properties)) {
-				throw new SemanticException(sprintf(
-					"append to '%s': column list has %d column(s) but the source retrieve selects %d",
-					$metadata->className,
-					count($properties),
-					count($visibleAliases)
-				));
-			}
+			// Visibility flags are only set by prepareSource()'s optimizer pass
+			// (already run by the caller — see AppendExecutor::prepareInsertFromSelectSource()),
+			// so the requested-columns list can only be read off $source afterward.
+			$selectSql = $this->finalizeSourceRetrieveSql($source, $parameters);
+			$visibleAliases = $this->resolveVisibleAliases($properties, $source, $metadata->className);
 
 			$derivedTableAlias = $this->identifierQuoter->quoteIdentifier('__append_source');
 
@@ -412,15 +387,24 @@
 		}
 
 		/**
-		 * Prepares and compiles the nested `retrieve` of an insert-from-select
-		 * append, through the same normalize/validate/optimize pipeline
+		 * Resolves identifiers, normalizes, validates, and optimizes the nested
+		 * `retrieve` of an insert-from-select append — the same pipeline
 		 * QueryExecutor runs for a top-level retrieve before handing it to
-		 * QuelToSQLRetrieve.
+		 * QuelToSQLRetrieve. Mutates $source in place (identifier types, range
+		 * rewrites, promotion of subquery ranges that need temp-table
+		 * materialization to AstRangeDatabaseTempTable, etc.).
+		 *
+		 * Must run exactly once per statement — the caller
+		 * (AppendExecutor::prepareInsertFromSelectSource()) is responsible for
+		 * that, since re-running the optimizer on an already-optimized AST is
+		 * not safe. Once this has run, needsPlanner() and
+		 * finalizeSourceRetrieveSql()/resolveVisibleAliases() can be called any
+		 * number of times against the same $source.
 		 * @param AstRetrieve $source
 		 * @param array<string, mixed> $parameters
-		 * @return string
+		 * @return void
 		 */
-		private function compileSourceRetrieve(AstRetrieve $source, array &$parameters): string {
+		public function prepareSource(AstRetrieve $source, array &$parameters): void {
 			foreach ($source->getRanges() as $range) {
 				if ($range instanceof AstRangeDatabaseSubquery) {
 					$this->resolveIdentifierTypes($range->getQuery());
@@ -433,8 +417,84 @@
 			$source->accept(new CoerceDateTimeParameters($parameters));
 			(new SemanticAnalyzer($this->entityStore, $this->platform, $this->entityManager->getConnection()))->validate($source);
 			(new QueryOptimizer($this->entityManager, $this->platform))->transform($source, $parameters);
+		}
 
+		/**
+		 * Compiles an already-prepared (see prepareSource()) source retrieve to
+		 * a plain SQL SELECT string, for embedding in `INSERT INTO ... SELECT ...`.
+		 * Only valid when needsPlanner($source) is false — QuelToSQLRetrieve
+		 * silently drops any range it doesn't understand (JSON-source ranges,
+		 * temp-table-promoted subquery ranges), so this must never be called on
+		 * a source that needs the planner instead (see
+		 * AppendExecutor::executeInsertFromSelectViaPlanner()).
+		 * @param AstRetrieve $source
+		 * @param array<string, mixed> $parameters
+		 * @return string
+		 */
+		private function finalizeSourceRetrieveSql(AstRetrieve $source, array &$parameters): string {
 			return (new QuelToSQLRetrieve($this->entityStore, $parameters, $this->platform))->convertToSQL($source);
+		}
+
+		/**
+		 * Whether an already-prepared (see prepareSource()) source retrieve
+		 * needs the full ExecutionPlanBuilder/PlanExecutor pipeline instead of
+		 * a plain inline SQL SELECT — true when it has a JSON-source range, or a
+		 * subquery range the optimizer promoted to AstRangeDatabaseTempTable for
+		 * temp-table materialization.
+		 *
+		 * No recursion into subquery ranges: by the time prepareSource()'s
+		 * optimizer pass has run, DatabaseRangePromotor has already resolved
+		 * every AstRangeDatabaseSubquery at this level to either
+		 * AstRangeDatabaseTempTable (caught below) or AstRangeDatabaseMaterialized
+		 * (provably free of external sources — safe to inline), mirroring the
+		 * same non-recursive assumption ExecutionPlanBuilder::extractTemporaryRanges()
+		 * already makes for a top-level retrieve.
+		 * @param AstRetrieve $source
+		 * @return bool
+		 */
+		public function needsPlanner(AstRetrieve $source): bool {
+			if (!empty($source->getOtherRanges())) {
+				return true;
+			}
+
+			foreach ($source->getRanges() as $range) {
+				if ($range instanceof AstRangeDatabaseTempTable) {
+					return true;
+				}
+			}
+
+			return false;
+		}
+
+		/**
+		 * Returns the source retrieve's visible (showInResult() === true)
+		 * projection aliases, in declaration order, positionally matching
+		 * $properties — shared by the inline INSERT...SELECT path above and
+		 * AppendExecutor::executeInsertFromSelectViaPlanner(), both of which
+		 * need the same column<->alias mapping to reproject the source's
+		 * result columns onto the append's declared column list.
+		 * @param string[] $properties
+		 * @param AstRetrieve $source
+		 * @param string $targetLabel Table or entity class name, for the error message
+		 * @return string[] Visible alias names, in order
+		 * @throws SemanticException
+		 */
+		public function resolveVisibleAliases(array $properties, AstRetrieve $source, string $targetLabel): array {
+			$visibleAliases = array_values(array_filter(array_map(
+				fn(AstAlias $value) => $value->showInResult() ? $value->getName() : null,
+				$source->getValues()
+			)));
+
+			if (count($visibleAliases) !== count($properties)) {
+				throw new SemanticException(sprintf(
+					"append to '%s': column list has %d column(s) but the source retrieve selects %d",
+					$targetLabel,
+					count($properties),
+					count($visibleAliases)
+				));
+			}
+
+			return $visibleAliases;
 		}
 
 		/**

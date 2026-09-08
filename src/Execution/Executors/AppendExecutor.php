@@ -8,15 +8,18 @@
 	use Quellabs\ObjectQuel\EntityManager;
 	use Quellabs\ObjectQuel\EntityStore;
 	use Quellabs\ObjectQuel\Exception\QuelException;
+	use Quellabs\ObjectQuel\Execution\PlanExecutor;
 	use Quellabs\ObjectQuel\Metadata\EntityMetadataRecord;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstAppend;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstAssignment;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstParameter;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRangeJsonSource;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRetrieve;
 	use Quellabs\ObjectQuel\ObjectQuel\QuelResult;
 	use Quellabs\ObjectQuel\ObjectQuel\QuelToSQLAppend;
 	use Quellabs\ObjectQuel\ObjectQuel\QuelToSQLReplace;
 	use Quellabs\ObjectQuel\ObjectQuel\QuelToSQLUpsert;
+	use Quellabs\ObjectQuel\Planner\ExecutionPlanBuilder;
 	use Quellabs\ObjectQuel\PrimaryKeys\PrimaryKeyFactory;
 
 	/**
@@ -37,26 +40,40 @@
 	 */
 	class AppendExecutor {
 
+		/**
+		 * Number of rows inserted per batch when an insert-from-select's
+		 * source needs the planner (see executeInsertFromSelectViaPlanner()),
+		 * mirroring TempTableExecutor::INSERT_BATCH_SIZE — avoids hitting
+		 * per-statement/packet size limits on large fetched result sets.
+		 */
+		private const int INSERT_BATCH_SIZE = 500;
+
 		private DatabaseAdapter $connection;
 		private EntityStore $entityStore;
 		private EntityManager $entityManager;
 		private QuelToSQLAppend $compiler;
 		private JsonAppendExecutor $jsonAppendExecutor;
+		private PlanExecutor $planExecutor;
 
 		/**
 		 * AppendExecutor constructor
 		 * @param DatabaseAdapter $connection
 		 * @param EntityManager $entityManager
 		 * @param PlatformCapabilitiesInterface $platform
+		 * @param PlanExecutor $planExecutor Used only when an insert-from-select's
+		 *        source retrieve needs JSON/temp-table materialization — see
+		 *        executeInsertFromSelectViaPlanner().
 		 */
 		public function __construct(
 			DatabaseAdapter $connection,
 			EntityManager $entityManager,
-			PlatformCapabilitiesInterface $platform
+			PlatformCapabilitiesInterface $platform,
+			PlanExecutor $planExecutor
 		) {
 			$this->connection = $connection;
 			$this->entityManager = $entityManager;
 			$this->entityStore = $entityManager->getEntityStore();
+			$this->planExecutor = $planExecutor;
 
 			// QuelToSQLReplace is reused (not reconstructed) so upsert's
 			// on-conflict UPDATE SET clause is built by the exact same
@@ -82,6 +99,14 @@
 		public function execute(AstAppend $statement, array $parameters): QuelResult {
 			if ($statement->getRange() instanceof AstRangeJsonSource) {
 				return $this->jsonAppendExecutor->execute($statement, $parameters);
+			}
+
+			if ($statement->isInsertFromSelect()) {
+				$source = $this->prepareInsertFromSelectSource($statement, $parameters);
+
+				if ($this->compiler->needsPlanner($source)) {
+					return $this->executeInsertFromSelectViaPlanner($statement, $source, $parameters);
+				}
 			}
 
 			[$statement, $metadata, $generatedId] = $this->prepare($statement, $parameters);
@@ -149,8 +174,131 @@
 				);
 			}
 
+			if ($statement->isInsertFromSelect()) {
+				$source = $this->prepareInsertFromSelectSource($statement, $parameters);
+
+				if ($this->compiler->needsPlanner($source)) {
+					// A chunked, data-dependent number of INSERT statements can't be
+					// shown without actually running the source SELECT — same
+					// "nothing to compile or show" reasoning as the JSON-target
+					// case above.
+					throw new QuelException(
+						"append ... retrieve whose source requires JSON-source or temp-table materialization has no static SQL to explain — the number of INSERT statements depends on the fetched row count; run the query to see actual behavior",
+						'not_plannable'
+					);
+				}
+			}
+
 			[$statement, , ] = $this->prepare($statement, $parameters);
 			return $this->compiler->convertToSQL($statement, $parameters);
+		}
+
+		/**
+		 * Runs an insert-from-select statement's source retrieve through
+		 * resolve/normalize/validate/optimize (see QuelToSQLAppend::prepareSource()),
+		 * shared by execute() and compileSql() so both decide the fast-path-vs-
+		 * planner branch off the exact same prepared AST, and so the optimizer
+		 * pipeline runs exactly once per statement — running it twice on an
+		 * already-optimized AST is not safe.
+		 * @param AstAppend $statement
+		 * @param array<string, mixed> $parameters
+		 * @return AstRetrieve The statement's source retrieve, mutated in place
+		 */
+		private function prepareInsertFromSelectSource(AstAppend $statement, array &$parameters): AstRetrieve {
+			$source = $statement->getSourceOrFail();
+			$this->compiler->prepareSource($source, $parameters);
+			return $source;
+		}
+
+		/**
+		 * Executes an insert-from-select append whose source retrieve needs
+		 * JSON-source or temp-table materialization — a plain inline
+		 * `INSERT ... SELECT ...` can't express that (QuelToSQLRetrieve silently
+		 * drops any range it doesn't understand), so instead: run the source
+		 * through the same ExecutionPlanBuilder/PlanExecutor pipeline a
+		 * top-level retrieve uses, then re-insert the fetched rows as a
+		 * literal-values append, chunked and wrapped in one transaction so the
+		 * whole statement stays atomic despite being two separate DB
+		 * round-trips instead of one.
+		 *
+		 * Deliberately bypasses prepare()/fillGeneratedPrimaryKeys() for the
+		 * synthetic per-chunk statements: fillGeneratedPrimaryKeys() only skips
+		 * PK generation when isInsertFromSelect() is true, which is false for a
+		 * forValues()-built node — routing through prepare() here would
+		 * therefore auto-generate PKs, silently diverging from the fast path's
+		 * existing behavior (plain insert-from-select never generates PKs) for
+		 * the exact same QUEL statement shape, purely because a JSON range
+		 * happened to be present. Calling $this->compiler->convertToSQL()
+		 * directly keeps PK handling identical to the fast path.
+		 *
+		 * Known limitation: unlike the single INSERT...SELECT this replaces,
+		 * the entire source result set is read into PHP memory
+		 * (PlanExecutor::execute()'s return is fully materialized) before any
+		 * row is inserted, and that read happens before the transaction opens
+		 * — there is no DB-side snapshot linking the SELECT and the INSERTs the
+		 * way one atomic SQL statement provides, and very large sources are
+		 * buffered rather than streamed. Inherent to supporting in-memory JSON
+		 * joins at all — a JSON-joined result can't be streamed through a
+		 * single SQL statement.
+		 * @param AstAppend $statement
+		 * @param AstRetrieve $source Already prepared via prepareInsertFromSelectSource()
+		 * @param array<string, mixed> $parameters
+		 * @return QuelResult
+		 * @throws QuelException On compile or execution failure
+		 */
+		private function executeInsertFromSelectViaPlanner(AstAppend $statement, AstRetrieve $source, array $parameters): QuelResult {
+			$properties = $statement->getColumnsOrFail();
+			$targetLabel = $statement->getEntityName() ?? $statement->getTableNameOrFail();
+			$visibleAliases = $this->compiler->resolveVisibleAliases($properties, $source, $targetLabel);
+
+			$plan = (new ExecutionPlanBuilder())->build($source, $parameters);
+			$rows = $this->planExecutor->execute($plan);
+
+			if (empty($rows)) {
+				return QuelResult::fromWriteStatement(0, null);
+			}
+
+			$totalAffected = 0;
+			$this->connection->beginTrans();
+
+			try {
+				foreach (array_chunk($rows, self::INSERT_BATCH_SIZE) as $batchIndex => $batch) {
+					$chunkParams = [];
+					$assignmentRows = [];
+
+					foreach ($batch as $rowIndex => $row) {
+						$assignmentRow = [];
+
+						foreach ($properties as $i => $property) {
+							$paramName = "__append_source_{$batchIndex}_{$rowIndex}_{$property}";
+							$chunkParams[$paramName] = $row[$visibleAliases[$i]];
+							$assignmentRow[] = new AstAssignment($property, new AstParameter($paramName));
+						}
+
+						$assignmentRows[] = $assignmentRow;
+					}
+
+					$chunkStatement = AstAppend::forValues($statement->getRange(), $assignmentRows);
+					$sql = $this->compiler->convertToSQL($chunkStatement, $chunkParams);
+					$rs = $this->connection->execute($sql, $chunkParams);
+
+					if ($rs === null) {
+						throw new QuelException(
+							"Failed to append to '{$targetLabel}': {$this->connection->getLastErrorMessage()}",
+							'append_error'
+						);
+					}
+
+					$totalAffected += $rs->rowCount();
+				}
+
+				$this->connection->commitTrans();
+			} catch (\Throwable $e) {
+				$this->connection->rollbackTrans();
+				throw $e;
+			}
+
+			return QuelResult::fromWriteStatement($totalAffected, null);
 		}
 
 		/**
