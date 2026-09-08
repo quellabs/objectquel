@@ -134,6 +134,7 @@
 					properties: $properties,
 					annotations: $annotations,
 					columnMap: $columnData->columnMap,
+					columnAnnotations: $columnData->columnAnnotations,
 					identifierKeys: $columnData->identifierKeys,
 					identifierColumns: $columnData->identifierColumns,
 					versionColumns: $columnData->versionColumns,
@@ -164,6 +165,7 @@
 		 */
 		private function extractColumnData(array $annotations): ColumnData {
 			$columnMap = [];
+			$columnAnnotations = [];
 			$identifierKeys = [];
 			$identifierColumns = [];
 			$versionColumns = [];
@@ -196,10 +198,11 @@
 				if ($column === null) {
 					continue;
 				}
-				
+
 				// Map property name — database column name for query building
 				$columnName = $column->getName();
 				$columnMap[$property] = $columnName;
+				$columnAnnotations[$property] = $column;
 				
 				if ($column->isPrimaryKey()) {
 					$identifierKeys[] = $property;   // PHP property name of the PK
@@ -239,6 +242,7 @@
 			
 			return new ColumnData(
 				columnMap: $columnMap,
+				columnAnnotations: $columnAnnotations,
 				identifierKeys: $identifierKeys,
 				identifierColumns: $identifierColumns,
 				versionColumns: $versionColumns,

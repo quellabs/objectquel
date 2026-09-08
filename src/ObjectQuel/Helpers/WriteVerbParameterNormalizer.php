@@ -12,41 +12,45 @@
 	use Quellabs\ObjectQuel\Serialization\Serializers\Serializer;
 
 	/**
-	 * Normalizes bound-parameter (`:param`) values that end up written to, or
-	 * compared against, an entity column — the single place every write verb
-	 * (`append`, `replace`, `delete`) goes through Serializer::denormalizeValue()
-	 * instead of each one growing its own copy of the same "resolve the
-	 * property's Column annotation, denormalize its bound value" logic.
-	 * Mirrors what InsertPersister/UpdatePersister already do when persisting
-	 * a whole entity, applied to the QUEL write verbs' raw-SQL statements,
-	 * which bypass UnitOfWork/persist() entirely and so never got that
-	 * treatment on their own.
+	 * Converts a bound `:param`'s PHP value to its database storage
+	 * representation, for a write verb (`append`, `replace`, `delete`) that
+	 * compiles straight to SQL instead of going through persist().
 	 *
-	 * One instance is scoped to a single write-verb statement (constructed
-	 * with that statement's target entity metadata and bound-parameter
-	 * array), and covers both halves of it:
-	 *  - normalizeAssignments() — a flat `property = :param` list (append's
-	 *    literal-values rows, replace's SET clause, upsert's explicit
-	 *    `or replace (...)` on-conflict SET clause).
-	 *  - As an AstVisitorInterface, passed to a WHERE clause's accept() —
-	 *    walks every comparison in the tree and normalizes a bound parameter
-	 *    compared against a real entity column (`delete`/`replace`'s WHERE;
-	 *    `append`/upsert have no WHERE clause with a live runtime comparison
-	 *    to normalize — see each caller's own docblock).
+	 * Example: `replace u (createdAt = :t) where u.id = :id`, bound with
+	 * `['t' => new \DateTime(...), 'id' => 5]`. Without this class, the raw
+	 * \DateTime object would be handed to the database driver as-is and the
+	 * query would fail — the driver has no idea `createdAt` is a datetime
+	 * column. This class looks up the target column's @Orm\Column
+	 * annotation and runs the bound value through
+	 * Serializer::denormalizeValue() — the exact conversion persist() already
+	 * applies to every entity property via InsertPersister/UpdatePersister —
+	 * mutating the parameter array in place so the SQL executes with a value
+	 * the database can actually store.
 	 *
-	 * Sharing one instance (and so one dedup set) across both halves of a
-	 * single statement means a parameter reused between an assignment and a
-	 * condition (or across multiple rows/conditions) is still normalized at
-	 * most once — several normalizers (e.g. DatetimeNormalizer) aren't
-	 * idempotent and would corrupt an already-denormalized value on a second
-	 * pass.
+	 * One instance is created per statement, and can be fed values two ways
+	 * (a statement's parameters show up in two different shapes):
+	 *  - normalizeAssignments($assignments) — a flat `property = :param`
+	 *    list: append's row(s), replace's SET clause, upsert's explicit
+	 *    `or replace (...)` SET clause.
+	 *  - As an AstVisitorInterface: pass the instance to a WHERE clause's
+	 *    accept() (`$conditions->accept($normalizer)`) to walk every
+	 *    comparison in it and convert a parameter compared against a real
+	 *    column (e.g. `p.deletedAt > :since`) — used by `delete` and
+	 *    `replace`'s WHERE clause.
 	 *
-	 * Only ever touches genuine AstParameter bindings — a QUEL literal
-	 * written directly in the statement (true, 'foo', 123) is already
-	 * SQL-ready as parsed and carries no PHP value to normalize. Plain-table
-	 * ranges (no EntityMetadataRecord) have no Column annotations to
-	 * normalize against, so callers simply never construct this for that
-	 * case — same convention AssignmentValidator's checks follow.
+	 * Both entry points share the same internal state, so calling both on
+	 * one instance (e.g. replace's SET clause and its WHERE clause) is safe
+	 * even if the same parameter name appears in both — it's only converted
+	 * once. That matters because some conversions aren't safely repeatable:
+	 * running denormalizeValue() a second time on an already-converted value
+	 * can produce garbage (e.g. the datetime converter expects a \DateTime
+	 * object and returns null when handed the string it already produced).
+	 *
+	 * Skipped entirely: a QUEL literal written directly in the statement
+	 * (true, 'foo', 123) — already valid SQL as parsed, no PHP value behind
+	 * it to convert. Plain-table ranges (no entity, no @Orm\Column
+	 * annotations) are also skipped — callers simply never construct this
+	 * class for that case.
 	 */
 	class WriteVerbParameterNormalizer implements AstVisitorInterface {
 
