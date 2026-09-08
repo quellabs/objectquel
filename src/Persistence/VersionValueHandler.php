@@ -159,6 +159,66 @@
 		}
 		
 		/**
+		 * Builds the INSERT-time initial value for a set of `@Orm\Version`
+		 * columns — each version column type (integer, datetime, uuid) gets
+		 * its own starting value, matching buildVersionSetClause()'s
+		 * per-type bump logic but for a fresh row instead of an UPDATE bump.
+		 * Shared by InsertPersister (object-persistence INSERT) and
+		 * QuelToSQLAppend (QUEL-level `append`), so version columns
+		 * initialize identically on both paths instead of the QUEL path
+		 * silently requiring the caller to supply them by hand.
+		 * @param array<string, array{name: string, column: Column, version: Version}> $versionColumns
+		 * @return array<string, int|string> property => raw SQL value expression
+		 *         (bare literal, quoted literal, or SQL function call — never
+		 *         a bound parameter, since a version column's initial value is
+		 *         never user-controlled input; keyed by the same property name
+		 *         $versionColumns is keyed by, same as buildVersionSetClause()'s
+		 *         input)
+		 * @throws OrmException
+		 */
+		public function buildVersionInsertValues(array $versionColumns): array {
+			$values = [];
+
+			foreach ($versionColumns as $property => $versionColumn) {
+				$values[$property] = $this->getInitialVersionValue($versionColumn['column']->getType());
+			}
+
+			return $values;
+		}
+
+		/**
+		 * Returns the initial value for a single @Orm\Version column on
+		 * INSERT. Moved here from InsertPersister's former private method of
+		 * the same name so persist() and `append` compute identical initial
+		 * values instead of each maintaining its own copy.
+		 * @param string $columnType
+		 * @return int|string
+		 * @throws OrmException
+		 */
+		public function getInitialVersionValue(string $columnType): int|string {
+			switch ($columnType) {
+				case 'int':
+				case 'integer':
+				case 'bigint':
+					return 1;
+
+				case 'datetime':
+				case 'timestamp':
+					// Use the engine-appropriate "current datetime" expression rather
+					// than hardcoding MySQL's NOW() — SQLite and SQL Server use
+					// different syntax for this.
+					return $this->platformCapabilities->getCurrentDatetimeFunction();
+
+				case 'uuid':
+				case 'guid':
+					return "'" . Tools::createUUIDv7() . "'";
+
+				default:
+					throw new OrmException("Invalid column type {$columnType} for Version annotation");
+			}
+		}
+
+		/**
 		 * Fetches version values back from the database after update
 		 * Required to ensure in-memory entity matches database state exactly
 		 * @param string $tableName Raw (unescaped) table name

@@ -20,6 +20,7 @@
 	use Quellabs\ObjectQuel\ObjectQuel\Visitors\ResolveIdentifierRange;
 	use Quellabs\ObjectQuel\ObjectQuel\Visitors\ResolvePropertyType;
 	use Quellabs\ObjectQuel\ObjectQuel\Visitors\ResolveRootIdentifierType;
+	use Quellabs\ObjectQuel\Persistence\VersionValueHandler;
 	use Quellabs\ObjectQuel\Planner\QueryOptimizer;
 
 	/**
@@ -61,6 +62,7 @@
 		private SqlIdentifierQuoter $identifierQuoter;
 		private PlatformCapabilitiesInterface $platform;
 		private QuelToSQLUpsert $upsertCompiler;
+		private VersionValueHandler $versionValueHandler;
 
 		/**
 		 * QuelToSQLAppend constructor
@@ -72,13 +74,18 @@
 		 * @param QuelToSQLUpsert $upsertCompiler Handles the on-conflict
 		 *        extension when an AstAppend carries one — see this class's
 		 *        docblock and QuelToSQLUpsert's own.
+		 * @param VersionValueHandler $versionValueHandler Reused as-is (not
+		 *        reconstructed) so the literal-values form initializes
+		 *        @Orm\Version columns using the exact same logic
+		 *        InsertPersister's INSERT path does — see compileValues().
 		 */
-		public function __construct(EntityManager $entityManager, PlatformCapabilitiesInterface $platform, QuelToSQLUpsert $upsertCompiler) {
+		public function __construct(EntityManager $entityManager, PlatformCapabilitiesInterface $platform, QuelToSQLUpsert $upsertCompiler, VersionValueHandler $versionValueHandler) {
 			$this->entityManager = $entityManager;
 			$this->entityStore = $entityManager->getEntityStore();
 			$this->identifierQuoter = new SqlIdentifierQuoter($platform);
 			$this->platform = $platform;
 			$this->upsertCompiler = $upsertCompiler;
+			$this->versionValueHandler = $versionValueHandler;
 		}
 
 		/**
@@ -125,7 +132,25 @@
 
 			if ($metadata !== null) {
 				AssignmentValidator::assertPropertiesExist($properties, $metadata);
-				$this->assertRequiredColumnsSupplied($properties, $metadata);
+				// The literal-values form auto-initializes any @Orm\Version
+				// column the caller didn't explicitly assign (below), so it's
+				// never "missing" here even though it's typically non-nullable
+				// with no column-level default.
+				$this->assertRequiredColumnsSupplied($properties, $metadata, skipVersionColumns: true);
+			}
+
+			// Any @Orm\Version column not explicitly assigned gets its INSERT
+			// initial value (mirrors InsertPersister::persist() — see
+			// VersionValueHandler::buildVersionInsertValues()) appended as if
+			// the caller had written it themselves, so `append` and persist()
+			// initialize version columns identically instead of the QUEL path
+			// silently requiring the caller to supply them by hand.
+			$versionColumnsToInit = $metadata !== null
+				? array_diff_key($metadata->versionColumns, array_flip($properties))
+				: [];
+
+			if (!empty($versionColumnsToInit)) {
+				$properties = array_merge($properties, array_keys($versionColumnsToInit));
 			}
 
 			$columnNames = $metadata !== null
@@ -137,7 +162,7 @@
 			// source can both be built from the same compiled expressions
 			// without recompiling them.
 			$compiledRows = array_map(
-				fn(array $row) => $this->compileRow($row, $metadata, $parameters),
+				fn(array $row) => $this->compileRow($row, $metadata, $parameters, $versionColumnsToInit),
 				$rows
 			);
 
@@ -156,13 +181,16 @@
 		 * $metadata is non-null, each value is checked against its target
 		 * column's declared type first — a plain-table range has no column
 		 * definitions to check against, so that step is skipped entirely.
+		 * Every column in $versionColumnsToInit also gets its INSERT initial
+		 * value added, keyed by the same property name — see compileValues().
 		 * @param AstAssignment[] $row
 		 * @param EntityMetadataRecord|null $metadata
 		 * @param array<string, mixed> $parameters
+		 * @param array<string, array{name: string, column: \Quellabs\ObjectQuel\Annotations\Orm\Column, version: \Quellabs\ObjectQuel\Annotations\Orm\Version}> $versionColumnsToInit
 		 * @return array<string, string> property => compiled SQL value
 		 * @throws SemanticException
 		 */
-		private function compileRow(array $row, ?EntityMetadataRecord $metadata, array &$parameters): array {
+		private function compileRow(array $row, ?EntityMetadataRecord $metadata, array &$parameters, array $versionColumnsToInit = []): array {
 			$compiled = [];
 
 			foreach ($row as $assignment) {
@@ -172,6 +200,10 @@
 
 				$builder = new BuildSqlFromAst($this->entityStore, $parameters, 'VALUES', $this->platform);
 				$compiled[$assignment->getProperty()] = $builder->visitNodeAndReturnSQL($assignment->getValue());
+			}
+
+			foreach ($this->versionValueHandler->buildVersionInsertValues($versionColumnsToInit) as $property => $value) {
+				$compiled[$property] = (string)$value;
 			}
 
 			return $compiled;
@@ -396,10 +428,16 @@
 		 * plain-table range has no column definitions to check against.
 		 * @param string[] $properties
 		 * @param EntityMetadataRecord $metadata
+		 * @param bool $skipVersionColumns Whether to also exempt @Orm\Version
+		 *        columns from this check — true for the literal-values form,
+		 *        which auto-initializes them (see compileValues()); false
+		 *        (default) for insert-from-select, which has no per-row
+		 *        initial-value step and so still requires the caller to
+		 *        explicitly select a required version column.
 		 * @return void
 		 * @throws SemanticException
 		 */
-		private function assertRequiredColumnsSupplied(array $properties, EntityMetadataRecord $metadata): void {
+		private function assertRequiredColumnsSupplied(array $properties, EntityMetadataRecord $metadata, bool $skipVersionColumns = false): void {
 			$supplied = array_flip($properties);
 			$missing = [];
 
@@ -411,6 +449,10 @@
 				$property = $metadata->getPropertyName($columnName);
 
 				if ($property === null || isset($supplied[$property])) {
+					continue;
+				}
+
+				if ($skipVersionColumns && $metadata->isVersioned($property)) {
 					continue;
 				}
 

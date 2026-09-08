@@ -17,6 +17,7 @@
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstAssignment;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstParameter;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRangeJsonSource;
+	use Quellabs\ObjectQuel\ObjectQuel\Helpers\AssignmentNormalizer;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRetrieve;
 	use Quellabs\ObjectQuel\ObjectQuel\QuelResult;
 	use Quellabs\ObjectQuel\ObjectQuel\QuelToSQLAppend;
@@ -26,10 +27,12 @@
 	use Quellabs\ObjectQuel\PrimaryKeys\PrimaryKeyFactory;
 
 	/**
-	 * Executes an AstAppend statement: fills in an auto-generated primary key
-	 * for the literal-values form (mirroring what InsertPersister does for
-	 * persist(), so `append` and `persist()` generate PKs identically for the
-	 * same entity — see objectquel-append-plan.md), compiles it via
+	 * Executes an AstAppend statement: for the literal-values form, runs every
+	 * bound-parameter value through the same Column-type normalizer persist()
+	 * uses (see normalizeParameterValues()) and fills in an auto-generated
+	 * primary key (mirroring what InsertPersister does for persist(), so
+	 * `append` and `persist()` generate PKs and normalize values identically
+	 * for the same entity — see objectquel-append-plan.md), compiles it via
 	 * QuelToSQLAppend, and runs the resulting INSERT directly against the
 	 * connection.
 	 *
@@ -85,9 +88,10 @@
 			// itself isn't a compiler for its own AST node (there's no
 			// AstUpsert — see QuelToSQLAppend's docblock); it just keeps the
 			// on-conflict dialect-branching logic out of QuelToSQLAppend.
-			$replaceCompiler = new QuelToSQLReplace($this->entityStore, $platform, $entityManager->getUnitOfWork()->getVersionValueHandler());
+			$versionValueHandler = $entityManager->getUnitOfWork()->getVersionValueHandler();
+			$replaceCompiler = new QuelToSQLReplace($this->entityStore, $platform, $versionValueHandler);
 			$upsertCompiler = new QuelToSQLUpsert($this->entityStore, $platform, $replaceCompiler);
-			$this->compiler = new QuelToSQLAppend($entityManager, $platform, $upsertCompiler);
+			$this->compiler = new QuelToSQLAppend($entityManager, $platform, $upsertCompiler, $versionValueHandler);
 			$this->jsonAppendExecutor = new JsonAppendExecutor();
 		}
 
@@ -164,9 +168,9 @@
 		/**
 		 * Compiles an `append to <range> (...)` statement to SQL without
 		 * running it, for QueryExecutor::explainQuery(). Applies the same
-		 * generated-PK side effect on $parameters that execute() has (an
-		 * identity-strategy PK still comes from the database and stays
-		 * absent from both the SQL and the parameters).
+		 * parameter-normalization and generated-PK side effects on $parameters
+		 * that execute() has (an identity-strategy PK still comes from the
+		 * database and stays absent from both the SQL and the parameters).
 		 *
 		 * Not supported for a JSON-source range target — JsonAppendExecutor
 		 * writes rows straight into the source file and never produces SQL,
@@ -341,9 +345,10 @@
 		}
 
 		/**
-		 * Resolves entity metadata (when the target is a declared entity range)
-		 * and fills in any generated primary keys, shared by execute() and
-		 * compileSql() so both compile the exact same statement.
+		 * Resolves entity metadata (when the target is a declared entity range),
+		 * normalizes bound-parameter values, and fills in any generated primary
+		 * keys, shared by execute() and compileSql() so both compile the exact
+		 * same statement.
 		 * @param AstAppend $statement
 		 * @param array<string, mixed> $parameters
 		 * @throws \ReflectionException|EntityResolutionException
@@ -356,7 +361,43 @@
 				return new PreparedAppend($statement, null, null);
 			}
 
+			// Insert-from-select has no literal rows to normalize — see this
+			// method's callers, both of which only reach here for the
+			// literal-values form's static-SQL/direct-insert paths.
+			if (!$statement->isInsertFromSelect()) {
+				$this->normalizeParameterValues($statement, $metadata, $parameters);
+			}
+
 			return $this->fillGeneratedPrimaryKeys($statement, $metadata, $parameters);
+		}
+
+		/**
+		 * Runs every literal-values row's bound-parameter value through
+		 * AssignmentNormalizer — the same Column-type normalizer persist()
+		 * applies via Serializer::denormalizeValue() (see
+		 * InsertPersister::persist(), which serializes the whole entity
+		 * through it), shared here rather than reimplemented so `append` and
+		 * `replace` (see QuelToSQLReplace) normalize identically. Without
+		 * this, append's raw-SQL path would hand the driver an unconverted
+		 * PHP value for anything but plain scalars, silently diverging from
+		 * persist()'s behavior for the same entity.
+		 *
+		 * A single dedup set is threaded across every row so a multi-row
+		 * append that reuses the same parameter name across rows (e.g. a
+		 * shared literal bound once) isn't denormalized twice — see
+		 * AssignmentNormalizer's docblock.
+		 * @param AstAppend $statement Literal-values form (not insert-from-select)
+		 * @param EntityMetadataRecord $metadata
+		 * @param array<string, mixed> $parameters
+		 * @throws EntityResolutionException
+		 */
+		private function normalizeParameterValues(AstAppend $statement, EntityMetadataRecord $metadata, array &$parameters): void {
+			$serializer = $this->entityManager->getUnitOfWork()->getSerializer();
+			$normalizedParamNames = [];
+
+			foreach ($statement->getRowsOrFail() as $row) {
+				AssignmentNormalizer::normalize($row, $metadata, $serializer, $parameters, $normalizedParamNames);
+			}
 		}
 
 		/**

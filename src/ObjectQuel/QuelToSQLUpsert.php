@@ -9,8 +9,10 @@
 	use Quellabs\ObjectQuel\Metadata\EntityMetadataRecord;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstAssignment;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstReplace;
+	use Quellabs\ObjectQuel\ObjectQuel\Helpers\AssignmentNormalizer;
 	use Quellabs\ObjectQuel\ObjectQuel\Helpers\ConflictTargetResolver;
 	use Quellabs\ObjectQuel\ObjectQuel\Helpers\WriteVerbIdentifierResolver;
+	use Quellabs\ObjectQuel\Serialization\Serializers\SQLSerializer;
 
 	/**
 	 * Compiles upsert's on-conflict extension of `append` (see
@@ -56,6 +58,7 @@
 		private SqlIdentifierQuoter $identifierQuoter;
 		private PlatformCapabilitiesInterface $platform;
 		private QuelToSQLReplace $replaceCompiler;
+		private SQLSerializer $serializer;
 
 		/**
 		 * QuelToSQLUpsert constructor
@@ -71,6 +74,10 @@
 			$this->identifierQuoter = new SqlIdentifierQuoter($platform);
 			$this->platform = $platform;
 			$this->replaceCompiler = $replaceCompiler;
+			// Same reasoning as QuelToSQLReplace's own — an explicit `or
+			// replace (...)` list is assignments too, and must denormalize
+			// its bound-parameter values identically (see buildSetClauseParts()).
+			$this->serializer = new SQLSerializer($entityStore);
 		}
 
 		/**
@@ -167,9 +174,20 @@
 		 * @throws SemanticException
 		 */
 		private function buildSetClauseParts(array $assignments, ?EntityMetadataRecord $metadata, array &$parameters): array {
-			return $metadata !== null
-				? $this->replaceCompiler->buildSetClause($assignments, $metadata, $parameters)
-				: $this->replaceCompiler->buildSetClauseForTable($assignments, $parameters);
+			if ($metadata === null) {
+				return $this->replaceCompiler->buildSetClauseForTable($assignments, $parameters);
+			}
+
+			// Normalize bound-parameter assignment values before compiling
+			// them to SQL — see AssignmentNormalizer's docblock. An explicit
+			// `or replace (...)` list is compiled straight to SQL here, never
+			// through QuelToSQLReplace::convertToSQL() (that's only a
+			// standalone `replace` statement's entry point), so it needs its
+			// own call to stay covered.
+			$normalizedParamNames = [];
+			AssignmentNormalizer::normalize($assignments, $metadata, $this->serializer, $parameters, $normalizedParamNames);
+
+			return $this->replaceCompiler->buildSetClause($assignments, $metadata, $parameters);
 		}
 
 		/**

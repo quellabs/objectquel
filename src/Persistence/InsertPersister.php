@@ -6,7 +6,6 @@
 	use Quellabs\ObjectQuel\Annotations\Orm\PrimaryKeyStrategy;
 	use Quellabs\ObjectQuel\Annotations\Orm\DiscriminatorColumn;
 	use Quellabs\ObjectQuel\Annotations\Orm\DiscriminatorValue;
-	use Quellabs\ObjectQuel\Capabilities\PlatformCapabilities;
 	use Quellabs\ObjectQuel\DatabaseAdapter\DatabaseAdapter;
 	use Quellabs\ObjectQuel\EntityManager;
 	use Quellabs\ObjectQuel\EntityStore;
@@ -16,7 +15,6 @@
 	use Quellabs\ObjectQuel\PrimaryKeys\PrimaryKeyFactory;
 	use Quellabs\ObjectQuel\ReflectionManagement\PropertyHandler;
 	use Quellabs\ObjectQuel\UnitOfWork;
-	use Quellabs\Support\Tools;
 	
 	/**
 	 * Specialized persister class responsible for inserting new entities into the database
@@ -54,13 +52,6 @@
 		private DatabaseAdapter $connection;
 		
 		/**
-		 * Used to generate engine-appropriate SQL fragments (e.g. the correct
-		 * "current datetime" expression) instead of hardcoding MySQL syntax.
-		 * @var PlatformCapabilities
-		 */
-		private PlatformCapabilities $platformCapabilities;
-		
-		/**
 		 * Factory for creating primary key values
 		 * @var PrimaryKeyFactory
 		 */
@@ -88,7 +79,6 @@
 			$this->entityStore = $unitOfWork->getEntityStore();
 			$this->propertyHandler = $unitOfWork->getPropertyHandler();
 			$this->connection = $unitOfWork->getConnection();
-			$this->platformCapabilities = $unitOfWork->getPlatformCapabilities();
 			$this->valueHandler = $unitOfWork->getVersionValueHandler();
 			$this->primaryKeyFactory = $factory ?? new PrimaryKeyFactory();
 			$this->strategyColumnCache = [];
@@ -184,7 +174,7 @@
 					$columnName = $columnMap[$key];
 					
 					// Fetch the value
-					$initialVersion = $this->getInitialVersionValue($versionColumns[$columnName]["column"]->getType());
+					$initialVersion = $this->valueHandler->getInitialVersionValue($versionColumns[$columnName]["column"]->getType());
 					
 					// Remove version column from the bound parameters, since its value is
 					// inlined as a raw SQL expression below rather than bound — it has no
@@ -286,36 +276,6 @@
 			
 			// No PrimaryKeyStrategy annotation found for this primary key
 			return $this->strategyColumnCache[$metadata->tableName][$primaryKey] = "identity";
-		}
-		
-		/**
-		 * Returns the initial version column for new entities
-		 * @param string $columnType
-		 * @return int|string
-		 * @throws \Exception
-		 */
-		protected function getInitialVersionValue(string $columnType): int|string {
-			/** @noinspection PhpSwitchCanBeReplacedWithMatchExpressionInspection */
-			switch ($columnType) {
-				case 'int':
-				case 'integer':
-				case 'bigint':
-					return 1;
-				
-				case 'datetime':
-				case 'timestamp':
-					// Use the engine-appropriate "current datetime" expression rather
-					// than hardcoding MySQL's NOW() — SQLite and SQL Server use
-					// different syntax for this.
-					return $this->platformCapabilities->getCurrentDatetimeFunction();
-				
-				case 'uuid':
-				case 'guid':
-					return "'" . Tools::createUUIDv7() . "'";
-				
-				default:
-					throw new \RuntimeException("Invalid column type {$columnType} for Version annotation");
-			}
 		}
 		
 		/**

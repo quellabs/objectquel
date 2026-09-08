@@ -12,9 +12,11 @@
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRangeTable;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstReplace;
 	use Quellabs\ObjectQuel\ObjectQuel\AstInterface;
+	use Quellabs\ObjectQuel\ObjectQuel\Helpers\AssignmentNormalizer;
 	use Quellabs\ObjectQuel\ObjectQuel\Helpers\AssignmentValidator;
 	use Quellabs\ObjectQuel\ObjectQuel\Helpers\WriteVerbIdentifierResolver;
 	use Quellabs\ObjectQuel\Persistence\VersionValueHandler;
+	use Quellabs\ObjectQuel\Serialization\Serializers\SQLSerializer;
 
 	/**
 	 * Compiles an AstReplace statement to dialect-correct UPDATE SQL. Sibling
@@ -56,6 +58,7 @@
 		private SqlIdentifierQuoter $identifierQuoter;
 		private PlatformCapabilitiesInterface $platform;
 		private VersionValueHandler $versionValueHandler;
+		private SQLSerializer $serializer;
 
 		/**
 		 * QuelToSQLReplace constructor
@@ -70,6 +73,11 @@
 			$this->identifierQuoter = new SqlIdentifierQuoter($platform);
 			$this->platform = $platform;
 			$this->versionValueHandler = $versionValueHandler;
+			// Only needs EntityStore (see Serializer's constructor) — built
+			// here rather than threaded in from EntityManager, so
+			// AssignmentNormalizer::normalize() denormalizes bound-parameter
+			// assignment values exactly like InsertPersister/append do.
+			$this->serializer = new SQLSerializer($entityStore);
 		}
 
 		/**
@@ -92,6 +100,16 @@
 			}
 
 			$metadata = $this->entityStore->getMetadata($range->getEntityName());
+
+			// Normalize bound-parameter assignment values before compiling
+			// them to SQL — see AssignmentNormalizer's docblock. A `replace`
+			// bypasses UnitOfWork entirely (see this class's docblock), so
+			// without this a raw PHP value (a \DateTime object, a json
+			// column's array, a backed enum) would reach the driver
+			// unconverted.
+			$normalizedParamNames = [];
+			AssignmentNormalizer::normalize($statement->getAssignments(), $metadata, $this->serializer, $parameters, $normalizedParamNames);
+
 			$setClauseParts = $this->buildSetClause($statement->getAssignments(), $metadata, $parameters, $range->getName());
 
 			return sprintf(

@@ -44,6 +44,12 @@
 		 * @throws QuelException On compile or execution failure
 		 */
 		public function execute(AstDelete $statement, array $parameters): QuelResult {
+			// compileSql() takes $parameters by reference — see
+			// ReplaceExecutor::execute()'s equivalent comment. convertToSQL()
+			// doesn't currently mutate $parameters for `delete` (no
+			// assignments, no version columns), but this keeps the same
+			// compile-then-execute wiring correct across all three write
+			// verbs rather than delete being the odd one out by coincidence.
 			$sql = $this->compileSql($statement, $parameters);
 
 			// execute() swallows the exception and returns null on failure
@@ -64,11 +70,11 @@
 		 * Compiles a `delete <range> where ...` statement to SQL without
 		 * running it, for QueryExecutor::explainQuery().
 		 * @param AstDelete $statement
-		 * @param array<string, mixed> $parameters
+		 * @param array<string, mixed> $parameters Bound parameters, by reference
 		 * @return string
 		 * @throws QuelException|SemanticException On compile failure
 		 */
-		public function compileSql(AstDelete $statement, array $parameters): string {
+		public function compileSql(AstDelete $statement, array &$parameters): string {
 			return $this->compiler->convertToSQL($statement, $parameters);
 		}
 	}

@@ -48,6 +48,12 @@
 		 * @throws QuelException|SemanticException On compile or execution failure
 		 */
 		public function execute(AstReplace $statement, array $parameters): QuelResult {
+			// compileSql() takes $parameters by reference, so this local
+			// variable picks up every mutation convertToSQL() makes
+			// (AssignmentNormalizer's denormalized values, an added uuid
+			// @Orm\Version bump parameter) before it's bound below — without
+			// that, execute() would silently run the SQL against the
+			// original, unmutated parameters.
 			$sql = $this->compileSql($statement, $parameters);
 
 			// execute() swallows the exception and returns null on failure
@@ -68,11 +74,11 @@
 		 * Compiles a `replace <range> (...) where ...` statement to SQL
 		 * without running it, for QueryExecutor::explainQuery().
 		 * @param AstReplace $statement
-		 * @param array<string, mixed> $parameters
+		 * @param array<string, mixed> $parameters Bound parameters, by reference
 		 * @return string
 		 * @throws QuelException|SemanticException On compile failure
 		 */
-		public function compileSql(AstReplace $statement, array $parameters): string {
+		public function compileSql(AstReplace $statement, array &$parameters): string {
 			return $this->compiler->convertToSQL($statement, $parameters);
 		}
 	}
