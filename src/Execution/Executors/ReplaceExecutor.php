@@ -50,9 +50,9 @@
 		public function execute(AstReplace $statement, array $parameters): QuelResult {
 			// compileSql() takes $parameters by reference, so this local
 			// variable picks up every mutation convertToSQL() makes
-			// (AssignmentNormalizer's denormalized values, an added uuid
-			// @Orm\Version bump parameter) before it's bound below — without
-			// that, execute() would silently run the SQL against the
+			// (WriteVerbParameterNormalizer's denormalized values, an added
+			// uuid @Orm\Version bump parameter) before it's bound below —
+			// without that, execute() would silently run the SQL against the
 			// original, unmutated parameters.
 			$sql = $this->compileSql($statement, $parameters);
 

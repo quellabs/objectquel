@@ -185,7 +185,27 @@
 			$flipped = array_flip($this->columnMap);
 			return $flipped[$columnName] ?? null;
 		}
-		
+
+		/**
+		 * Returns the single @Orm\Column annotation for a property, or null
+		 * when the property carries none (a non-persisted property, or a
+		 * relation-only property like @ManyToOne). A property maps to at
+		 * most one Column annotation, so this is the single place every call
+		 * site that needs "the Column annotation for property X" should go
+		 * through — Serializer::normalizeValue()/denormalizeValue() both take
+		 * one directly, so every caller resolving a value for a specific
+		 * property (EntityHydrator, VersionValueHandler,
+		 * WriteVerbParameterNormalizer) used to each re-derive it with its
+		 * own `getAnnotationsOfType(Column::class)[$property][0] ?? null` (or
+		 * an equivalent manual foreach) instead of sharing this lookup.
+		 * @param string $property The entity property name
+		 * @return Column|null
+		 */
+		public function getColumnAnnotation(string $property): ?Column {
+			$annotation = ($this->annotations[$property] ?? null)?->getFirst(Column::class);
+			return $annotation instanceof Column ? $annotation : null;
+		}
+
 		/**
 		 * Checks if a property is part of the entity's primary key.
 		 * @param string $property The property name to check

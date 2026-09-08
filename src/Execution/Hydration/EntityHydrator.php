@@ -2,7 +2,6 @@
 	
 	namespace Quellabs\ObjectQuel\Execution\Hydration;
 	
-	use Quellabs\ObjectQuel\Annotations\Orm\Column;
 	use Quellabs\ObjectQuel\Annotations\Orm\SourceField;
 	use Quellabs\ObjectQuel\EntityManager;
 	use Quellabs\ObjectQuel\EntityStore;
@@ -581,18 +580,14 @@
 			// Find the @Column annotation and use it to cast the raw database value
 			// to its proper PHP type
 			$metadata = $this->entityStore->getMetadata($entityName);
-			$annotations = $metadata->getAnnotations();
-			
-			foreach ($annotations[$propertyName] ?? [] as $annotation) {
-				if (!$annotation instanceof Column) {
-					continue;
-				}
-				
-				return $this->unitOfWork->getSerializer()->normalizeValue($annotation, $rawValue);
+			$annotation = $metadata->getColumnAnnotation($propertyName);
+
+			if ($annotation === null) {
+				// No column annotation. Should never happen. Semantic analyzer already detected it.
+				throw new HydrationException("No @Column annotation found for property '{$propertyName}' on '{$entityName}'");
 			}
-			
-			// No column annotation. Should never happen. Semantic analyzer already detected it.
-			throw new HydrationException("No @Column annotation found for property '{$propertyName}' on '{$entityName}'");
+
+			return $this->unitOfWork->getSerializer()->normalizeValue($annotation, $rawValue);
 		}
 		
 		// =========================================================================
@@ -757,17 +752,11 @@
 			
 			// Both 'date' and 'datetime' map to \DateTime in PHP, so phinxTypeToPhpType()
 			// cannot distinguish them. Inspect the raw annotation type instead.
-			$annotations = $this->entityStore->getMetadata($entityName)->getAnnotations();
-			
-			foreach ($annotations[$inner->getName()] ?? [] as $annotation) {
-				// DATE columns produce bare "Y-m-d" strings; DateNormalizer handles that format.
-				// DATETIME and TIMESTAMP produce "Y-m-d H:i:s"; DatetimeNormalizer handles those.
-				if ($annotation instanceof Column && $annotation->getType() === 'date') {
-					return $this->dateNormalizer;
-				}
-			}
-			
-			return $this->datetimeNormalizer;
+			// DATE columns produce bare "Y-m-d" strings; DateNormalizer handles that
+			// format. DATETIME and TIMESTAMP produce "Y-m-d H:i:s"; DatetimeNormalizer
+			// handles those.
+			$annotation = $this->entityStore->getMetadata($entityName)->getColumnAnnotation($inner->getName());
+			return $annotation?->getType() === 'date' ? $this->dateNormalizer : $this->datetimeNormalizer;
 		}
 		
 		/**

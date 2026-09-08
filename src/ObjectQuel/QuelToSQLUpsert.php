@@ -9,9 +9,9 @@
 	use Quellabs\ObjectQuel\Metadata\EntityMetadataRecord;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstAssignment;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstReplace;
-	use Quellabs\ObjectQuel\ObjectQuel\Helpers\AssignmentNormalizer;
 	use Quellabs\ObjectQuel\ObjectQuel\Helpers\ConflictTargetResolver;
 	use Quellabs\ObjectQuel\ObjectQuel\Helpers\WriteVerbIdentifierResolver;
+	use Quellabs\ObjectQuel\ObjectQuel\Helpers\WriteVerbParameterNormalizer;
 	use Quellabs\ObjectQuel\Serialization\Serializers\SQLSerializer;
 
 	/**
@@ -179,13 +179,12 @@
 			}
 
 			// Normalize bound-parameter assignment values before compiling
-			// them to SQL — see AssignmentNormalizer's docblock. An explicit
-			// `or replace (...)` list is compiled straight to SQL here, never
-			// through QuelToSQLReplace::convertToSQL() (that's only a
-			// standalone `replace` statement's entry point), so it needs its
-			// own call to stay covered.
-			$normalizedParamNames = [];
-			AssignmentNormalizer::normalize($assignments, $metadata, $this->serializer, $parameters, $normalizedParamNames);
+			// them to SQL — see WriteVerbParameterNormalizer's docblock. An
+			// explicit `or replace (...)` list is compiled straight to SQL
+			// here, never through QuelToSQLReplace::convertToSQL() (that's
+			// only a standalone `replace` statement's entry point), so it
+			// needs its own call to stay covered.
+			(new WriteVerbParameterNormalizer($metadata, $this->serializer, $parameters))->normalizeAssignments($assignments);
 
 			return $this->replaceCompiler->buildSetClause($assignments, $metadata, $parameters);
 		}

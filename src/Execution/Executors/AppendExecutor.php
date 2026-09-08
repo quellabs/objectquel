@@ -17,7 +17,7 @@
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstAssignment;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstParameter;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRangeJsonSource;
-	use Quellabs\ObjectQuel\ObjectQuel\Helpers\AssignmentNormalizer;
+	use Quellabs\ObjectQuel\ObjectQuel\Helpers\WriteVerbParameterNormalizer;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRetrieve;
 	use Quellabs\ObjectQuel\ObjectQuel\QuelResult;
 	use Quellabs\ObjectQuel\ObjectQuel\QuelToSQLAppend;
@@ -373,19 +373,19 @@
 
 		/**
 		 * Runs every literal-values row's bound-parameter value through
-		 * AssignmentNormalizer — the same Column-type normalizer persist()
-		 * applies via Serializer::denormalizeValue() (see
+		 * WriteVerbParameterNormalizer — the same Column-type normalizer
+		 * persist() applies via Serializer::denormalizeValue() (see
 		 * InsertPersister::persist(), which serializes the whole entity
 		 * through it), shared here rather than reimplemented so `append` and
-		 * `replace` (see QuelToSQLReplace) normalize identically. Without
-		 * this, append's raw-SQL path would hand the driver an unconverted
-		 * PHP value for anything but plain scalars, silently diverging from
-		 * persist()'s behavior for the same entity.
+		 * `replace`/`delete` (see QuelToSQLReplace/QuelToSQLDelete) normalize
+		 * identically. Without this, append's raw-SQL path would hand the
+		 * driver an unconverted PHP value for anything but plain scalars,
+		 * silently diverging from persist()'s behavior for the same entity.
 		 *
-		 * A single dedup set is threaded across every row so a multi-row
+		 * One normalizer instance is shared across every row so a multi-row
 		 * append that reuses the same parameter name across rows (e.g. a
 		 * shared literal bound once) isn't denormalized twice — see
-		 * AssignmentNormalizer's docblock.
+		 * WriteVerbParameterNormalizer's docblock.
 		 * @param AstAppend $statement Literal-values form (not insert-from-select)
 		 * @param EntityMetadataRecord $metadata
 		 * @param array<string, mixed> $parameters
@@ -393,10 +393,10 @@
 		 */
 		private function normalizeParameterValues(AstAppend $statement, EntityMetadataRecord $metadata, array &$parameters): void {
 			$serializer = $this->entityManager->getUnitOfWork()->getSerializer();
-			$normalizedParamNames = [];
+			$normalizer = new WriteVerbParameterNormalizer($metadata, $serializer, $parameters);
 
 			foreach ($statement->getRowsOrFail() as $row) {
-				AssignmentNormalizer::normalize($row, $metadata, $serializer, $parameters, $normalizedParamNames);
+				$normalizer->normalizeAssignments($row);
 			}
 		}
 

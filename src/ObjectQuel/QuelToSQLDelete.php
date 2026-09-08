@@ -8,8 +8,11 @@
 	use Quellabs\ObjectQuel\Exception\SemanticException;
 	use Quellabs\ObjectQuel\Execution\Visitors\BuildSqlFromAst;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstDelete;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRangeDatabase;
 	use Quellabs\ObjectQuel\ObjectQuel\Helpers\RangeTableName;
 	use Quellabs\ObjectQuel\ObjectQuel\Helpers\WriteVerbIdentifierResolver;
+	use Quellabs\ObjectQuel\ObjectQuel\Helpers\WriteVerbParameterNormalizer;
+	use Quellabs\ObjectQuel\Serialization\Serializers\SQLSerializer;
 
 	/**
 	 * Compiles an AstDelete statement to dialect-correct DELETE SQL. Sibling
@@ -35,6 +38,7 @@
 		private EntityStore $entityStore;
 		private SqlIdentifierQuoter $identifierQuoter;
 		private PlatformCapabilitiesInterface $platform;
+		private SQLSerializer $serializer;
 
 		/**
 		 * QuelToSQLDelete constructor
@@ -45,6 +49,10 @@
 			$this->entityStore = $entityStore;
 			$this->identifierQuoter = new SqlIdentifierQuoter($platform);
 			$this->platform = $platform;
+			// Only needs EntityStore (see Serializer's constructor) — built
+			// here so WriteVerbParameterNormalizer denormalizes a WHERE
+			// clause's bound-parameter values exactly like append/replace do.
+			$this->serializer = new SQLSerializer($entityStore);
 		}
 
 		/**
@@ -60,6 +68,21 @@
 			WriteVerbIdentifierResolver::resolve($statement, $this->entityStore);
 
 			$range = $statement->getRange();
+
+			// Normalize bound-parameter values compared against a real entity
+			// column (e.g. `where u.deletedAt > :since`) before compiling the
+			// WHERE clause to SQL — see WriteVerbParameterNormalizer's
+			// docblock. `delete` bypasses UnitOfWork entirely, so without
+			// this a raw PHP value (a \DateTime object, a json column's
+			// array, a backed enum) would reach the driver unconverted.
+			// Plain-table ranges have no Column annotations to normalize
+			// against, so this is skipped entirely for that case.
+			if ($range instanceof AstRangeDatabase) {
+				$metadata = $this->entityStore->getMetadata($range->getEntityName());
+				$normalizer = new WriteVerbParameterNormalizer($metadata, $this->serializer, $parameters);
+				$statement->getConditionsOrFail()->accept($normalizer);
+			}
+
 			$tableName = RangeTableName::resolve($range, $this->entityStore);
 			$builder = new BuildSqlFromAst($this->entityStore, $parameters, 'VALUES', $this->platform);
 

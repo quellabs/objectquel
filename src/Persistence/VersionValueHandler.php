@@ -282,16 +282,15 @@
 				return;
 			}
 			
-			// Fetch Column annotations so the serializer can normalize each raw database value
-			// to the correct PHP type (e.g. datetime string → DateTimeImmutable)
 			$metadata = $this->entityStore->getMetadata($entity);
-			$annotations = $metadata->getAnnotationsOfType(Column::class);
-			
+
 			foreach ($fetchedValues as $property => $newValue) {
-				// Fetch first column annotation
-				$columnAnnotation = $annotations[$property][0] ?? null;
-				
-				// If none found, continue to the next
+				// Fetch the property's Column annotation so the serializer can
+				// normalize the raw database value to the correct PHP type
+				// (e.g. datetime string → DateTimeImmutable). If none found,
+				// continue to the next.
+				$columnAnnotation = $metadata->getColumnAnnotation($property);
+
 				if ($columnAnnotation === null) {
 					continue;
 				}
