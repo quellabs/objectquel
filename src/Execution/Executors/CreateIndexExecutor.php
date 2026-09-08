@@ -100,9 +100,14 @@
 		 * table's primary key column). Both null for every other case
 		 * (plain/unique indexes, and fulltext on mysql/mariadb/pgsql, none
 		 * of which need this).
-		 * @throws QuelException
+		 * @param AstCreateIndex $statement
+		 * @return FulltextPrerequisites
+		 * @throws QuelException If a fulltext index's required schema
+		 *         prerequisite (sqlsrv: an existing unique/primary index;
+		 *         sqlite: a primary key) is missing
 		 */
 		private function resolveFulltextPrerequisites(AstCreateIndex $statement): FulltextPrerequisites {
+			// Plain/unique indexes never need this lookup, regardless of dialect.
 			if ($statement->getType() !== 'fulltext') {
 				return new FulltextPrerequisites(null, null);
 			}
@@ -111,6 +116,8 @@
 			$tableName = $statement->getTableName();
 
 			if ($dialect === 'sqlite') {
+				// FTS5 virtual tables need an explicit content_rowid pointing at
+				// the base table's primary key to avoid duplicating its content.
 				$primaryKeyColumn = $this->connection->getPrimaryKey($tableName);
 
 				if ($primaryKeyColumn === '') {
@@ -125,9 +132,12 @@
 			}
 
 			if ($dialect === 'sqlsrv') {
+				// sqlsrv's CREATE FULLTEXT INDEX syntax mandates a KEY INDEX
+				// clause naming an existing unique/primary index on the table.
 				return new FulltextPrerequisites(null, $this->resolveSqlServerKeyIndexName($statement));
 			}
 
+			// mysql/mariadb/pgsql fulltext indexes need no extra schema lookup.
 			return new FulltextPrerequisites(null, null);
 		}
 
@@ -136,6 +146,8 @@
 		 * sqlsrv's `KEY INDEX` — a fulltext index requires one, and the
 		 * compiler has no connection of its own to look it up. Primary key
 		 * index preferred; falls back to any unique index.
+		 * @param AstCreateIndex $statement
+		 * @return string
 		 * @throws QuelException If the table has neither
 		 */
 		private function resolveSqlServerKeyIndexName(AstCreateIndex $statement): string {

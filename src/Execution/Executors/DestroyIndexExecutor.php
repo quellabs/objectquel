@@ -104,6 +104,7 @@
 		 * typo) falls through to the ordinary path, whose own native `DROP
 		 * INDEX [IF EXISTS]` handles it exactly as before this method
 		 * existed.
+		 * @param AstDestroyIndex $statement
 		 * @return list<string>
 		 */
 		private function resolveSqlServerStatements(AstDestroyIndex $statement): array {
@@ -113,10 +114,7 @@
 			if (
 				!isset($indexes[$statement->getIndexName()]) &&
 				$this->connection->hasSqlServerFulltextIndex($tableName) &&
-				$this->connection->getSqlServerExtendedProperty(
-					$tableName,
-					QuelToSQLCreateIndex::SQL_SERVER_FULLTEXT_INDEX_NAME_PROPERTY
-				) === $statement->getIndexName()
+				$this->isSqlServerFulltextIndexName($tableName, $statement->getIndexName())
 			) {
 				return $this->compiler->convertToSqlServerFulltextDropSQL($statement);
 			}
@@ -125,11 +123,27 @@
 		}
 
 		/**
+		 * Whether $indexName is the QUEL name tagged onto the table's
+		 * (unnamed) T-SQL fulltext index — see
+		 * QuelToSQLCreateIndex::tagFulltextIndexName().
+		 * @param string $tableName
+		 * @param string $indexName
+		 * @return bool
+		 */
+		private function isSqlServerFulltextIndexName(string $tableName, string $indexName): bool {
+			return $this->connection->getSqlServerExtendedProperty(
+				$tableName,
+				QuelToSQLCreateIndex::SQL_SERVER_FULLTEXT_INDEX_NAME_PROPERTY
+			) === $indexName;
+		}
+
+		/**
 		 * SQLite's fulltext "index" is an FTS5 external-content virtual
 		 * table plus three sync triggers (see
 		 * QuelToSQLCreateIndex::compileSqliteFulltext()), not a row in
 		 * getIndexes() at all. Same "only intercept a confirmed match"
 		 * rationale as resolveSqlServerStatements().
+		 * @param AstDestroyIndex $statement
 		 * @return list<string>
 		 */
 		private function resolveSqliteStatements(AstDestroyIndex $statement): array {
@@ -148,7 +162,9 @@
 		}
 
 		/**
+		 * @param AstDestroyIndex $statement
 		 * @param string[] $statements
+		 * @return void
 		 * @throws QuelException On the first failing statement
 		 */
 		private function runStatements(AstDestroyIndex $statement, array $statements): void {
