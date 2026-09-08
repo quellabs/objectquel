@@ -112,7 +112,7 @@
 				
 				// Extract the relations and indexes
 				$indexes = $this->extractIndexes($className);
-				$columnDefinitions = $this->extractColumnDefinitions($className, $annotations);
+				$columnDefinitions = $this->extractColumnDefinitions($className, $annotations, $columnData->autoIncrementColumn);
 				$manyToOneRelations = $this->extractRelations($annotations, ManyToOne::class);
 				$oneToOneRelations = $this->extractRelations($annotations, OneToOne::class);
 				$inverseOfRelations = $this->extractRelations($annotations, InverseOf::class);
@@ -450,49 +450,54 @@
 		 *
 		 * @param class-string $className Fully qualified name of the entity class to inspect.
 		 * @param array<string, AnnotationCollection> $annotations Pre-extracted annotations keyed by property name.
+		 * @param string|null $autoIncrementColumn Property name of the entity's sole
+		 *        auto-increment column, as already resolved (with composite-PK
+		 *        exclusion applied) by {@see extractColumnData}) — reused here so
+		 *        a column's `identity` flag agrees with that single source of truth
+		 *        instead of being recomputed per-property.
 		 * @return array<string, ColumnDefinitionRecord> Column definitions keyed by column name.
 		 * @throws AnnotationReaderException If annotation reading fails for any property.
 		 * @throws \ReflectionException      If the class does not exist or cannot be reflected.
 		 */
-		private function extractColumnDefinitions(string $className, array $annotations): array {
+		private function extractColumnDefinitions(string $className, array $annotations, ?string $autoIncrementColumn): array {
 			$definitions = [];
 			$reflection = new \ReflectionClass($className);
-			
+
 			foreach ($reflection->getProperties() as $property) {
 				$propertyAnnotations = $this->annotationReader->getPropertyAnnotations(
 					$className,
 					$property->getName(),
 					Column::class
 				);
-				
+
 				$columnAnnotation = $propertyAnnotations->getFirst(Column::class);
-				
+
 				if (!$columnAnnotation instanceof Column || empty($columnAnnotation->getName())) {
 					continue;
 				}
-				
+
 				$columnName = $columnAnnotation->getName();
-				$definitions[$columnName] = $this->buildColumnDefinition($columnAnnotation, $property, $propertyAnnotations);
+				$isIdentity = $property->getName() === $autoIncrementColumn;
+				$definitions[$columnName] = $this->buildColumnDefinition($columnAnnotation, $property, $isIdentity);
 			}
-			
+
 			return $definitions;
 		}
-		
+
 		/**
 		 * Builds the definition array for a single mapped column.
 		 *
-		 * Combines metadata from the {@see Column} annotation, the PHP reflection of
-		 * the property, and the full annotation collection on that property. Type
-		 * defaults and enum cases are resolved via {@see TypeMapper}.
+		 * Combines metadata from the {@see Column} annotation and the PHP reflection
+		 * of the property. Type defaults and enum cases are resolved via {@see TypeMapper}.
 		 *
 		 * @param Column $column The column annotation carrying mapping metadata.
 		 * @param \ReflectionProperty $property The reflected property this column maps to.
-		 * @param AnnotationCollection $annotations All annotations on the property, used to determine identity columns.
+		 * @param bool $isIdentity Whether this property is the entity's resolved auto-increment column.
 		 * @return ColumnDefinitionRecord
 		 */
-		private function buildColumnDefinition(Column $column, \ReflectionProperty $property, AnnotationCollection $annotations): array {
+		private function buildColumnDefinition(Column $column, \ReflectionProperty $property, bool $isIdentity): array {
 			$columnType = $column->getType();
-			
+
 			return [
 				'property_name' => $property->getName(),
 				'type'          => $columnType,
@@ -504,40 +509,9 @@
 				'primary_key'   => $column->isPrimaryKey(),
 				'scale'         => $column->getScale(),
 				'precision'     => $column->getPrecision(),
-				'identity'      => $this->isIdentityColumn($annotations->toArray()),
+				'identity'      => $isIdentity,
 				'values'        => TypeMapper::getEnumCases($column->getEnumType()),
 			];
-		}
-		
-		/**
-		 * Determines if a property represents an auto-increment column.
-		 * True when: primary key AND (strategy = 'identity' OR no strategy defined).
-		 * @param array<int|string, object> $propertyAnnotations $propertyAnnotations The annotations attached to the property
-		 * @return bool
-		 */
-		private function isIdentityColumn(array $propertyAnnotations): bool {
-			$isPrimaryKey = false;
-			$hasStrategy = false;
-			$isIdentityStrategy = false;
-			
-			foreach ($propertyAnnotations as $annotation) {
-				if ($annotation instanceof Column && $annotation->isPrimaryKey()) {
-					$isPrimaryKey = true;
-				}
-				
-				if ($annotation instanceof PrimaryKeyStrategy) {
-					$hasStrategy = true;
-					
-					// 'identity' maps to AUTO_INCREMENT / SERIAL in the database
-					if ($annotation->getValue() === 'identity') {
-						$isIdentityStrategy = true;
-					}
-				}
-			}
-			
-			// Must be a primary key, and either explicitly marked as identity
-			// or left without any strategy (which defaults to auto-increment)
-			return $isPrimaryKey && ($isIdentityStrategy || !$hasStrategy);
 		}
 		
 		/**

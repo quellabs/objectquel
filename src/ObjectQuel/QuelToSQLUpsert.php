@@ -3,6 +3,7 @@
 	namespace Quellabs\ObjectQuel\ObjectQuel;
 
 	use Quellabs\ObjectQuel\Capabilities\PlatformCapabilitiesInterface;
+	use Quellabs\ObjectQuel\DatabaseAdapter\DatabaseAdapter;
 	use Quellabs\ObjectQuel\DatabaseAdapter\SqlIdentifierQuoter;
 	use Quellabs\ObjectQuel\EntityStore;
 	use Quellabs\ObjectQuel\Exception\SemanticException;
@@ -59,6 +60,7 @@
 		private PlatformCapabilitiesInterface $platform;
 		private QuelToSQLReplace $replaceCompiler;
 		private SQLSerializer $serializer;
+		private ?DatabaseAdapter $databaseAdapter;
 
 		/**
 		 * QuelToSQLUpsert constructor
@@ -68,12 +70,16 @@
 		 *        an explicit on-conflict UPDATE SET clause, so it's built with the
 		 *        exact same property-exists/type/@Orm\Version-bump rules a
 		 *        standalone `replace` uses — see QuelToSQLReplace::buildSetClause().
+		 * @param DatabaseAdapter|null $databaseAdapter Live connection used to
+		 *        validate a plain-table range's bare column against the real
+		 *        schema — see WriteVerbIdentifierResolver::resolve().
 		 */
-		public function __construct(EntityStore $entityStore, PlatformCapabilitiesInterface $platform, QuelToSQLReplace $replaceCompiler) {
+		public function __construct(EntityStore $entityStore, PlatformCapabilitiesInterface $platform, QuelToSQLReplace $replaceCompiler, ?DatabaseAdapter $databaseAdapter = null) {
 			$this->entityStore = $entityStore;
 			$this->identifierQuoter = new SqlIdentifierQuoter($platform);
 			$this->platform = $platform;
 			$this->replaceCompiler = $replaceCompiler;
+			$this->databaseAdapter = $databaseAdapter;
 			// Same reasoning as QuelToSQLReplace's own — an explicit `or
 			// replace (...)` list is assignments too, and must denormalize
 			// its bound-parameter values identically (see buildSetClauseParts()).
@@ -123,7 +129,7 @@
 			// The on-conflict clause's own WHERE/assignment identifiers need a
 			// resolved type/range before ConflictTargetResolver or
 			// buildSetClause can read them.
-			WriteVerbIdentifierResolver::resolve($onConflict, $this->entityStore);
+			WriteVerbIdentifierResolver::resolve($onConflict, $this->entityStore, $this->databaseAdapter);
 
 			$conflictProperties = $metadata !== null
 				? ConflictTargetResolver::resolve($onConflict->getConditionsOrFail(), $metadata)

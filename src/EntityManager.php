@@ -216,8 +216,12 @@
 				// delete) can't go through explain() — replaying them via a dry
 				// run would re-execute the write for real — so fall back to a
 				// plan with no planning notes, just the SQL that was actually run.
+				// afterRealExecution: true additionally stops append/replace from
+				// recompiling (and so re-generating a fresh, mismatched primary
+				// key/@Orm\Version value) now that this statement already ran for
+				// real above — see QueryExecutor::explainQuery()'s docblock.
 				try {
-					$plan = $this->queryExecutor->explainQuery($query, $parameters);
+					$plan = $this->queryExecutor->explainQuery($query, $parameters, afterRealExecution: true);
 				} catch (QuelException $e) {
 					if ($e->type !== 'not_plannable') {
 						throw $e;

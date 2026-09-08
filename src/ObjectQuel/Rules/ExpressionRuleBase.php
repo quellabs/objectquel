@@ -86,15 +86,15 @@
 			
 			do {
 				$next = $this->lexer->lookahead();
-				
+
 				if ($next !== Token::Identifier) {
 					if (!empty($identifiers) && $next === Token::ParenthesesClose) {
 						throw new ParserException("Unexpected token after comma in identifier list. Expected a field identifier.");
 					}
-					
+
 					break;
 				}
-				
+
 				$identifiers[] = $this->parsePropertyChain();
 			} while ($this->lexer->optionalMatch(Token::Comma));
 			

@@ -67,7 +67,6 @@
 			} finally {
 				flock($lockHandle, LOCK_UN);
 				fclose($lockHandle);
-				@unlink($lockFile);
 			}
 		}
 

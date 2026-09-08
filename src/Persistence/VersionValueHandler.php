@@ -174,7 +174,7 @@
 		 *         never user-controlled input; keyed by the same property name
 		 *         $versionColumns is keyed by, same as buildVersionSetClause()'s
 		 *         input)
-		 * @throws OrmException
+		 * @throws \RuntimeException
 		 */
 		public function buildVersionInsertValues(array $versionColumns): array {
 			$values = [];
@@ -193,7 +193,7 @@
 		 * values instead of each maintaining its own copy.
 		 * @param string $columnType
 		 * @return int|string
-		 * @throws OrmException
+		 * @throws \RuntimeException
 		 */
 		public function getInitialVersionValue(string $columnType): int|string {
 			switch ($columnType) {
@@ -214,7 +214,11 @@
 					return "'" . Tools::createUUIDv7() . "'";
 
 				default:
-					throw new OrmException("Invalid column type {$columnType} for Version annotation");
+					// Matches the \RuntimeException InsertPersister's former copy of
+					// this method threw for the same failure (see this method's
+					// docblock) — callers that catch \RuntimeException around
+					// persist()/append must keep catching it here too.
+					throw new \RuntimeException("Invalid column type {$columnType} for Version annotation");
 			}
 		}
 

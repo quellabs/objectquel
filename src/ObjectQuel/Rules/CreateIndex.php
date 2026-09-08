@@ -32,18 +32,18 @@
 		}
 
 		public function parse(): AstCreateIndex {
-			$this->lexer->match(Token::Index);
+			$this->lexer->matchKeyword('index');
 
 			$unique = false;
 			$type = null;
 
 			if ($this->lexer->optionalMatch(Token::Unique) !== null) {
 				$unique = true;
-			} elseif ($this->lexer->optionalMatch(Token::Fulltext) !== null) {
+			} elseif ($this->lexer->optionalMatchKeyword('fulltext') !== null) {
 				$type = 'fulltext';
 			}
 
-			$this->lexer->match(Token::On);
+			$this->lexer->matchKeyword('on');
 			$tableName = $this->lexer->match(Token::Identifier)->getStringValue();
 
 			$this->lexer->match(Token::Is);

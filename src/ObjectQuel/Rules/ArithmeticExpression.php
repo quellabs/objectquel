@@ -66,7 +66,7 @@
 			$token = $this->lexer->peek();
 			$tokenType = $token->getType();
 			$tokenExtraData = $token->getExtraData();
-			
+
 			switch ($tokenType) {
 				case Token::Number :
 					$this->lexer->match($tokenType);

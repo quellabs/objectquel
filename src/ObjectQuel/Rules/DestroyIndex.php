@@ -26,7 +26,7 @@
 		 * @throws LexerException
 		 */
 		public function parse(string $indexName): AstDestroyIndex {
-			$this->lexer->match(Token::On);
+			$this->lexer->matchKeyword('on');
 			$tableName = $this->lexer->match(Token::Identifier)->getStringValue();
 
 			$ifExists = $this->parseOptionalIfExists();
@@ -40,11 +40,11 @@
 		 * @throws LexerException
 		 */
 		private function parseOptionalIfExists(): bool {
-			if (!$this->lexer->optionalMatch(Token::If)) {
+			if (!$this->lexer->optionalMatchKeyword('if')) {
 				return false;
 			}
 
-			$this->lexer->match(Token::Exists);
+			$this->lexer->matchKeyword('exists');
 			return true;
 		}
 

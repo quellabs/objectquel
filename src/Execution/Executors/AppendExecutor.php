@@ -89,8 +89,8 @@
 			// AstUpsert — see QuelToSQLAppend's docblock); it just keeps the
 			// on-conflict dialect-branching logic out of QuelToSQLAppend.
 			$versionValueHandler = $entityManager->getUnitOfWork()->getVersionValueHandler();
-			$replaceCompiler = new QuelToSQLReplace($this->entityStore, $platform, $versionValueHandler);
-			$upsertCompiler = new QuelToSQLUpsert($this->entityStore, $platform, $replaceCompiler);
+			$replaceCompiler = new QuelToSQLReplace($this->entityStore, $platform, $versionValueHandler, $connection);
+			$upsertCompiler = new QuelToSQLUpsert($this->entityStore, $platform, $replaceCompiler, $connection);
 			$this->compiler = new QuelToSQLAppend($entityManager, $platform, $upsertCompiler, $versionValueHandler);
 			$this->jsonAppendExecutor = new JsonAppendExecutor();
 		}
@@ -150,6 +150,24 @@
 			// null. Plain-table ranges lack metadata but can safely attempt the
 			// connection-level readback; getInsertId() returns false if unavailable.
 			$eligibleForReadback = $metadata === null || $metadata->autoIncrementColumn !== null;
+
+			// An upsert's on-conflict branch may have run an UPDATE instead of an
+			// INSERT (the row already existed), in which case the driver's
+			// last-insert-id reflects a stale, unrelated prior INSERT on the
+			// connection rather than this statement. MySQL/MariaDB's `ON DUPLICATE
+			// KEY UPDATE` is the one dialect whose affected-row count reliably says
+			// which branch fired — exactly 1 means a fresh INSERT happened (an
+			// UPDATE reports 2 when a value changed, 0 when it didn't; see MySQL's
+			// documented ON DUPLICATE KEY UPDATE row-count semantics) — so readback
+			// stays eligible only for that case. Postgres/SQLite's `ON CONFLICT DO
+			// UPDATE` and SQL Server's MERGE report the same affected-row count for
+			// either branch, so readback is skipped entirely for those dialects
+			// whenever an on-conflict clause is present.
+			if ($eligibleForReadback && $statement->getOnConflict() !== null) {
+				$eligibleForReadback = in_array($this->connection->getDatabaseType(), ['mysql', 'mariadb'], true)
+					&& $rs->rowCount() === 1;
+			}
+
 			$generatedId = $prepared->getGeneratedId();
 
 			if ($generatedId === null && $eligibleForReadback && !$statement->isInsertFromSelect() && count($statement->getRowsOrFail()) === 1) {
@@ -177,11 +195,25 @@
 		 * so there is nothing to compile or show.
 		 * @param AstAppend $statement
 		 * @param array<string, mixed> $parameters
+		 * @param bool $afterRealExecution True when this statement has already
+		 *        been executed for real moments earlier (EntityManager's own
+		 *        post-execution debug signal — see QueryExecutor::explainQuery()'s
+		 *        docblock) rather than a standalone "explain without running"
+		 *        request. A non-identity primary key strategy (e.g. uuid, or a
+		 *        sequence's live MAX(col)+1 lookup) generates a fresh value on
+		 *        every call to prepare() below — correct for a standalone
+		 *        explain with nothing real to compare against, but misleading
+		 *        here, since it would show a different value than what the
+		 *        real execution actually persisted. When true and this call
+		 *        would generate such a value, no SQL is compiled at all,
+		 *        instead of a wrong one.
 		 * @return string
-		 * @throws QuelException If the target is a JSON-source range, or on compile failure
+		 * @throws QuelException If the target is a JSON-source range, on compile
+		 *         failure, or (when $afterRealExecution) if compiling would
+		 *         regenerate a fresh non-identity primary key
 		 * @throws \ReflectionException|SemanticException
 		 */
-		public function compileSql(AstAppend $statement, array &$parameters): string {
+		public function compileSql(AstAppend $statement, array &$parameters, bool $afterRealExecution = false): string {
 			if ($statement->getRange() instanceof AstRangeJsonSource) {
 				throw new QuelException(
 					"append to a JSON-source range has no SQL to explain — it writes directly to the source file",
@@ -203,8 +235,16 @@
 				}
 			}
 
-			$statement = $this->prepare($statement, $parameters)->getStatement();
-			return $this->compiler->convertToSQL($statement, $parameters);
+			$prepared = $this->prepare($statement, $parameters);
+
+			if ($afterRealExecution && $prepared->getGeneratedId() !== null) {
+				throw new QuelException(
+					"append with a non-identity generated primary key can't be shown again after real execution without misrepresenting the value that was actually persisted",
+					'not_plannable'
+				);
+			}
+
+			return $this->compiler->convertToSQL($prepared->getStatement(), $parameters);
 		}
 
 		/**

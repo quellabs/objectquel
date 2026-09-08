@@ -2,6 +2,8 @@
 
 	namespace Quellabs\ObjectQuel\ObjectQuel;
 
+	use Quellabs\ObjectQuel\Annotations\Orm\DiscriminatorColumn;
+	use Quellabs\ObjectQuel\Annotations\Orm\DiscriminatorValue;
 	use Quellabs\ObjectQuel\Capabilities\PlatformCapabilitiesInterface;
 	use Quellabs\ObjectQuel\DatabaseAdapter\SqlIdentifierQuoter;
 	use Quellabs\ObjectQuel\EntityManager;
@@ -157,12 +159,27 @@
 				? array_map(fn(string $property) => $metadata->getColumnNameOrFail($property), $properties)
 				: $properties;
 
+			// If this entity is a Single-Table Inheritance subclass, inject the
+			// discriminator column value so `append` writes the same type marker
+			// InsertPersister::persist() would for the same entity class — unless
+			// the caller already supplied it explicitly via a mapped property.
+			$discriminatorInfo = $metadata !== null ? $this->resolveDiscriminatorInfo($metadata) : null;
+
+			if ($discriminatorInfo !== null && in_array($discriminatorInfo['column'], $columnNames, true)) {
+				$discriminatorInfo = null;
+			}
+
+			if ($discriminatorInfo !== null) {
+				$properties[] = $discriminatorInfo['column'];
+				$columnNames[] = $discriminatorInfo['column'];
+			}
+
 			// Compiled once per row, keyed by property, so the plain INSERT
 			// VALUES tuples and (for SQL Server's MERGE) the per-row USING
 			// source can both be built from the same compiled expressions
 			// without recompiling them.
 			$compiledRows = array_map(
-				fn(array $row) => $this->compileRow($row, $metadata, $parameters, $versionColumnsToInit),
+				fn(array $row) => $this->compileRow($row, $metadata, $parameters, $versionColumnsToInit, $discriminatorInfo),
 				$rows
 			);
 
@@ -187,10 +204,12 @@
 		 * @param EntityMetadataRecord|null $metadata
 		 * @param array<string, mixed> $parameters
 		 * @param array<string, array{name: string, column: \Quellabs\ObjectQuel\Annotations\Orm\Column, version: \Quellabs\ObjectQuel\Annotations\Orm\Version}> $versionColumnsToInit
-		 * @return array<string, string> property => compiled SQL value
+		 * @param array{column: non-empty-string, value: non-empty-string}|null $discriminatorInfo STI
+		 *        discriminator column/value to add, keyed by column name — see compileValues()
+		 * @return array<string, string> property (or, for the discriminator column, column name) => compiled SQL value
 		 * @throws SemanticException
 		 */
-		private function compileRow(array $row, ?EntityMetadataRecord $metadata, array &$parameters, array $versionColumnsToInit = []): array {
+		private function compileRow(array $row, ?EntityMetadataRecord $metadata, array &$parameters, array $versionColumnsToInit = [], ?array $discriminatorInfo = null): array {
 			$compiled = [];
 
 			foreach ($row as $assignment) {
@@ -206,7 +225,55 @@
 				$compiled[$property] = (string)$value;
 			}
 
+			if ($discriminatorInfo !== null) {
+				$compiled[$discriminatorInfo['column']] = $this->quoteStringLiteral($discriminatorInfo['value']);
+			}
+
 			return $compiled;
+		}
+
+		/**
+		 * Resolves the STI discriminator column name and value for a metadata's
+		 * entity class, mirroring InsertPersister::getDiscriminatorInfo() so
+		 * `append` and persist() agree on the discriminator marker for the same
+		 * entity class. Returns null when the class isn't an STI subclass.
+		 * @param EntityMetadataRecord $metadata
+		 * @return array{column: non-empty-string, value: non-empty-string}|null
+		 * @throws SemanticException When STI annotations are present but empty
+		 */
+		private function resolveDiscriminatorInfo(EntityMetadataRecord $metadata): ?array {
+			$classAnnotations = $this->entityStore->getAnnotationReader()->getClassAnnotations($metadata->className);
+
+			$discriminatorValue = $classAnnotations[DiscriminatorValue::class] ?? null;
+			$discriminatorColumn = $classAnnotations[DiscriminatorColumn::class] ?? null;
+
+			if (!$discriminatorValue instanceof DiscriminatorValue || !$discriminatorColumn instanceof DiscriminatorColumn) {
+				return null;
+			}
+
+			$value = $discriminatorValue->getValue();
+			$columnName = $discriminatorColumn->getName();
+
+			if ($value === '' || $columnName === '') {
+				throw new SemanticException(sprintf(
+					'Entity "%s" has STI annotations but %s is empty. Check your @DiscriminatorValue and @DiscriminatorColumn definitions.',
+					$metadata->className,
+					$value === '' ? '@DiscriminatorValue' : '@DiscriminatorColumn'
+				));
+			}
+
+			return ['column' => $columnName, 'value' => $value];
+		}
+
+		/**
+		 * Quotes a literal string value for direct embedding in compiled SQL,
+		 * matching BuildSqlFragments::handleString()'s convention for AstString
+		 * literals (same addslashes() stopgap — see that method's docblock).
+		 * @param string $value
+		 * @return string
+		 */
+		private function quoteStringLiteral(string $value): string {
+			return '"' . addslashes($value) . '"';
 		}
 
 		/**
@@ -442,7 +509,10 @@
 			$missing = [];
 
 			foreach ($metadata->columnDefinitions as $columnName => $columnDef) {
-				if ($columnDef['nullable'] || $columnDef['primary_key'] || !empty($columnDef['default'])) {
+				// A declared default of 0, '0', '', or false is still a default —
+				// only the absence of one (null, per Column::getDefault()) means
+				// the column is actually required.
+				if ($columnDef['nullable'] || $columnDef['primary_key'] || $columnDef['default'] !== null) {
 					continue;
 				}
 

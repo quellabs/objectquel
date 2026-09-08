@@ -3,6 +3,7 @@
 	namespace Quellabs\ObjectQuel\ObjectQuel;
 
 	use Quellabs\ObjectQuel\Capabilities\PlatformCapabilitiesInterface;
+	use Quellabs\ObjectQuel\DatabaseAdapter\DatabaseAdapter;
 	use Quellabs\ObjectQuel\DatabaseAdapter\SqlIdentifierQuoter;
 	use Quellabs\ObjectQuel\EntityStore;
 	use Quellabs\ObjectQuel\Exception\SemanticException;
@@ -59,6 +60,7 @@
 		private PlatformCapabilitiesInterface $platform;
 		private VersionValueHandler $versionValueHandler;
 		private SQLSerializer $serializer;
+		private ?DatabaseAdapter $databaseAdapter;
 
 		/**
 		 * QuelToSQLReplace constructor
@@ -67,12 +69,16 @@
 		 * @param VersionValueHandler $versionValueHandler Reused as-is (not
 		 *        reconstructed) so `replace` bumps @Orm\Version columns using
 		 *        the exact same logic persist()'s UPDATE path does.
+		 * @param DatabaseAdapter|null $databaseAdapter Live connection used to
+		 *        validate a plain-table range's bare column against the real
+		 *        schema — see WriteVerbIdentifierResolver::resolve().
 		 */
-		public function __construct(EntityStore $entityStore, PlatformCapabilitiesInterface $platform, VersionValueHandler $versionValueHandler) {
+		public function __construct(EntityStore $entityStore, PlatformCapabilitiesInterface $platform, VersionValueHandler $versionValueHandler, ?DatabaseAdapter $databaseAdapter = null) {
 			$this->entityStore = $entityStore;
 			$this->identifierQuoter = new SqlIdentifierQuoter($platform);
 			$this->platform = $platform;
 			$this->versionValueHandler = $versionValueHandler;
+			$this->databaseAdapter = $databaseAdapter;
 			// Only needs EntityStore (see Serializer's constructor) — built
 			// here rather than threaded in from EntityManager, so
 			// WriteVerbParameterNormalizer denormalizes bound-parameter
@@ -91,7 +97,7 @@
 			// Identifiers in the WHERE clause and assignment values (e.g.
 			// `count = count + 1`) need a resolved type/range before anything
 			// below can compile them to SQL.
-			WriteVerbIdentifierResolver::resolve($statement, $this->entityStore);
+			WriteVerbIdentifierResolver::resolve($statement, $this->entityStore, $this->databaseAdapter);
 
 			$range = $statement->getRange();
 

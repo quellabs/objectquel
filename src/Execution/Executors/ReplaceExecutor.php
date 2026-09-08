@@ -36,7 +36,8 @@
 			$this->compiler = new QuelToSQLReplace(
 				$entityManager->getEntityStore(),
 				$platform,
-				$entityManager->getUnitOfWork()->getVersionValueHandler()
+				$entityManager->getUnitOfWork()->getVersionValueHandler(),
+				$connection
 			);
 		}
 

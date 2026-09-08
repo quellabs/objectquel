@@ -51,7 +51,7 @@
 		 * @throws LexerException|ParserException
 		 */
 		public function parse(array $ranges): AstReplace {
-			$this->lexer->match(Token::Replace);
+			$this->lexer->matchKeyword('replace');
 
 			$targetName = $this->lexer->match(Token::Identifier)->getStringValue();
 			$range = TargetRange::resolve($targetName, $ranges, 'replace');

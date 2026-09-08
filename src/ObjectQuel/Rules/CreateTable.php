@@ -42,9 +42,9 @@
 		 * @throws LexerException|ParserException
 		 */
 		public function parse(): AstCreateTable {
-			$this->lexer->match(Token::Create);
+			$this->lexer->matchKeyword('create');
 
-			$temporary = $this->lexer->optionalMatch(Token::Temporary) !== null;
+			$temporary = $this->lexer->optionalMatchKeyword('temporary') !== null;
 			$tableName = $this->lexer->match(Token::Identifier)->getStringValue();
 
 			['columns' => $columns, 'primaryKeyColumns' => $primaryKeyColumns] = $this->parseColumnList($tableName);
@@ -61,12 +61,12 @@
 		 * @throws LexerException
 		 */
 		private function parseOptionalIfNotExists(): bool {
-			if (!$this->lexer->optionalMatch(Token::If)) {
+			if (!$this->lexer->optionalMatchKeyword('if')) {
 				return false;
 			}
 
 			$this->lexer->match(Token::Not);
-			$this->lexer->match(Token::Exists);
+			$this->lexer->matchKeyword('exists');
 			return true;
 		}
 
@@ -86,7 +86,7 @@
 			$seenNames = [];
 
 			do {
-				if ($this->lexer->lookahead() === Token::Primary) {
+				if ($this->lexer->peekKeyword('primary')) {
 					if ($primaryKeyColumns !== null) {
 						throw new ParserException("Table '{$tableName}' declares more than one primary key clause");
 					}
@@ -171,7 +171,7 @@
 			$name = $this->lexer->match(Token::Identifier)->getStringValue();
 			$this->lexer->match(Token::Equals);
 
-			$unsigned = $this->lexer->optionalMatch(Token::Unsigned) !== null;
+			$unsigned = $this->lexer->optionalMatchKeyword('unsigned') !== null;
 			$type = $this->parseColumnType($unsigned, $name);
 
 			if ($unsigned && !TypeMapper::supportsUnsigned($type)) {
@@ -256,7 +256,7 @@
 					continue;
 				}
 
-				if ($this->lexer->optionalMatch(Token::Identity)) {
+				if ($this->lexer->optionalMatchKeyword('identity')) {
 					$identity = true;
 					continue;
 				}

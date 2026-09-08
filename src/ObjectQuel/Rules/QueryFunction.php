@@ -447,7 +447,7 @@
 			do {
 				// Not an identifier — stop here, the caller will parse the search term next
 				$next = $this->lexer->lookahead();
-				
+
 				if ($next !== Token::Identifier) {
 					// A closing paren after a comma is a genuine trailing comma error: search(p.content, )
 					if (!empty($identifiers) && $next === Token::ParenthesesClose) {

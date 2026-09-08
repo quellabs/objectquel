@@ -111,9 +111,14 @@
 		}
 
 		/**
-		 * When $identifierSide is a property reference on this normalizer's
-		 * target entity and $paramSide is a bare parameter, normalize that
-		 * parameter's bound value.
+		 * When $identifierSide is a direct property reference (e.g.
+		 * `p.deletedAt`) on this normalizer's target entity and $paramSide is
+		 * a bare parameter, normalize that parameter's bound value. A chain
+		 * that continues past the property (e.g. `p.metadata.status`, a JSON
+		 * path into a JSON-typed column) is deliberately skipped: the
+		 * compiled comparison targets a JSON_EXTRACT'd scalar sub-path, not
+		 * the column's own value, so running it through the column's
+		 * denormalizer would convert it as if it were the whole column.
 		 * @param AstInterface $identifierSide
 		 * @param AstInterface $paramSide
 		 * @return void
@@ -123,13 +128,13 @@
 				return;
 			}
 
-			$property = $identifierSide->getNext()?->getName();
+			$propertyNode = $identifierSide->getNext();
 
-			if ($property === null) {
+			if ($propertyNode === null || $propertyNode->hasNext()) {
 				return;
 			}
 
-			$this->normalizeIfParameter($property, $paramSide);
+			$this->normalizeIfParameter($propertyNode->getName(), $paramSide);
 		}
 
 		/**

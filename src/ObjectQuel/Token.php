@@ -78,22 +78,10 @@
 		const int WindowSize = 119;
 		const int JsonSource = 120;
 		const int Filter = 121;
-		const int Create = 122;
-		const int Temporary = 123;
-		const int Identity = 124;
-		const int Primary = 125;
-		const int Key = 126;
-		const int Destroy = 128;
-		const int If = 129;
-		const int Exists = 130;
 		const int Append = 131;
-		const int To = 132;
-		const int Replace = 133;
-		const int Delete = 134;
-		const int Index = 135;
-		const int On = 136;
-		const int Fulltext = 137;
-		const int Unsigned = 138;
+		// create, temporary, identity, primary, key, destroy, if, exists, to,
+		// replace, delete, index, on, fulltext, and unsigned deliberately have
+		// no token type of their own — see Lexer::peekKeyword()'s docblock.
 		
 		protected int $type;
 		protected mixed $value;

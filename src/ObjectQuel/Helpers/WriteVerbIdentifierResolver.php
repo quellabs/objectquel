@@ -2,6 +2,7 @@
 
 	namespace Quellabs\ObjectQuel\ObjectQuel\Helpers;
 
+	use Quellabs\ObjectQuel\DatabaseAdapter\DatabaseAdapter;
 	use Quellabs\ObjectQuel\EntityStore;
 	use Quellabs\ObjectQuel\Exception\SemanticException;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\NodeWithRanges;
@@ -10,6 +11,7 @@
 	use Quellabs\ObjectQuel\ObjectQuel\Visitors\ResolveRootIdentifierType;
 	use Quellabs\ObjectQuel\ObjectQuel\Visitors\ValidateEntityPropertyExists;
 	use Quellabs\ObjectQuel\ObjectQuel\Visitors\ValidateRangesDeclared;
+	use Quellabs\ObjectQuel\ObjectQuel\Visitors\ValidateTablePropertyExists;
 	use Quellabs\ObjectQuel\ObjectQuel\Visitors\ValidateUnambiguousProperty;
 
 	/**
@@ -36,16 +38,23 @@
 		/**
 		 * @param NodeWithRanges $statement
 		 * @param EntityStore $entityStore
+		 * @param DatabaseAdapter|null $databaseAdapter Live connection used to
+		 *        validate a plain-table range's bare column (see
+		 *        FindPropertyRange::tableHasColumn()) and qualified column (see
+		 *        ValidateTablePropertyExists) against the real schema — the same
+		 *        introspection the retrieve pipeline's SemanticAnalyzer applies.
+		 *        Null falls back to assuming the column exists, surfacing an
+		 *        invalid one only as the database's own error at execution time.
 		 * @return void
 		 * @throws SemanticException
 		 */
-		public static function resolve(NodeWithRanges $statement, EntityStore $entityStore): void {
+		public static function resolve(NodeWithRanges $statement, EntityStore $entityStore, ?DatabaseAdapter $databaseAdapter = null): void {
 			$ranges = $statement->getRanges();
 
 			$statement->accept(new ResolveRootIdentifierType($statement));
 			$statement->accept(new ResolvePropertyType($entityStore));
 			$statement->accept(new ResolveIdentifierRange($statement));
-			$statement->accept(new ResolveUnqualifiedProperty($entityStore, $ranges));
+			$statement->accept(new ResolveUnqualifiedProperty($entityStore, $ranges, $databaseAdapter));
 
 			// Ambiguity check before the declared-range check, so a bare
 			// property matching more than one range gets this validator's
@@ -54,8 +63,14 @@
 			// ordering for the retrieve pipeline. A single-range write-verb can
 			// never actually be ambiguous today, but this keeps the two
 			// pipelines consistent.
-			$statement->accept(new ValidateUnambiguousProperty($entityStore, $ranges));
+			$statement->accept(new ValidateUnambiguousProperty($entityStore, $ranges, $databaseAdapter));
 			$statement->accept(new ValidateRangesDeclared());
 			$statement->accept(new ValidateEntityPropertyExists($entityStore));
+
+			// Qualified plain-table column references (e.g. `a.does_not_exist`)
+			// have no entity metadata for ValidateEntityPropertyExists to check
+			// against — this is the plain-table equivalent, mirroring
+			// SemanticAnalyzer::validate()'s retrieve-pipeline ordering.
+			$statement->accept(new ValidateTablePropertyExists($databaseAdapter));
 		}
 	}

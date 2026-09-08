@@ -3,6 +3,7 @@
 	namespace Quellabs\ObjectQuel\ObjectQuel;
 
 	use Quellabs\ObjectQuel\Capabilities\PlatformCapabilitiesInterface;
+	use Quellabs\ObjectQuel\DatabaseAdapter\DatabaseAdapter;
 	use Quellabs\ObjectQuel\DatabaseAdapter\SqlIdentifierQuoter;
 	use Quellabs\ObjectQuel\EntityStore;
 	use Quellabs\ObjectQuel\Exception\SemanticException;
@@ -39,16 +40,21 @@
 		private SqlIdentifierQuoter $identifierQuoter;
 		private PlatformCapabilitiesInterface $platform;
 		private SQLSerializer $serializer;
+		private ?DatabaseAdapter $databaseAdapter;
 
 		/**
 		 * QuelToSQLDelete constructor
 		 * @param EntityStore $entityStore
 		 * @param PlatformCapabilitiesInterface $platform
+		 * @param DatabaseAdapter|null $databaseAdapter Live connection used to
+		 *        validate a plain-table range's bare column against the real
+		 *        schema — see WriteVerbIdentifierResolver::resolve().
 		 */
-		public function __construct(EntityStore $entityStore, PlatformCapabilitiesInterface $platform) {
+		public function __construct(EntityStore $entityStore, PlatformCapabilitiesInterface $platform, ?DatabaseAdapter $databaseAdapter = null) {
 			$this->entityStore = $entityStore;
 			$this->identifierQuoter = new SqlIdentifierQuoter($platform);
 			$this->platform = $platform;
+			$this->databaseAdapter = $databaseAdapter;
 			// Only needs EntityStore (see Serializer's constructor) — built
 			// here so WriteVerbParameterNormalizer denormalizes a WHERE
 			// clause's bound-parameter values exactly like append/replace do.
@@ -65,7 +71,7 @@
 		public function convertToSQL(AstDelete $statement, array &$parameters): string {
 			// The WHERE clause's identifiers need a resolved type/range
 			// before they can compile to SQL.
-			WriteVerbIdentifierResolver::resolve($statement, $this->entityStore);
+			WriteVerbIdentifierResolver::resolve($statement, $this->entityStore, $this->databaseAdapter);
 
 			$range = $statement->getRange();
 

@@ -62,7 +62,7 @@
 		 */
 		public function parse(array $ranges): AstAppend {
 			$this->lexer->match(Token::Append);
-			$this->lexer->match(Token::To);
+			$this->lexer->matchKeyword('to');
 
 			$targetName = $this->lexer->match(Token::Identifier)->getStringValue();
 			$targetRange = TargetRange::resolveForAppend($targetName, $ranges, 'append');
@@ -146,7 +146,7 @@
 				return null;
 			}
 
-			$this->lexer->match(Token::Replace);
+			$this->lexer->matchKeyword('replace');
 
 			$replaceRule = new Replace($this->lexer);
 			return $replaceRule->parseAssignmentsAndConditions($targetRange, assignmentsOptional: true);

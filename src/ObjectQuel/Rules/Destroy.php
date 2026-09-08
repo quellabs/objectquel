@@ -42,12 +42,12 @@
 		 * @throws LexerException
 		 */
 		public function parse(): AstDestroy|AstDestroyIndex {
-			$this->lexer->match(Token::Destroy);
+			$this->lexer->matchKeyword('destroy');
 
-			$temporary = $this->lexer->optionalMatch(Token::Temporary) !== null;
+			$temporary = $this->lexer->optionalMatchKeyword('temporary') !== null;
 			$name = $this->lexer->match(Token::Identifier)->getStringValue();
 
-			if (!$temporary && $this->lexer->lookahead() === Token::On) {
+			if (!$temporary && $this->lexer->peekKeyword('on')) {
 				$destroyIndexRule = new DestroyIndex($this->lexer);
 				return $destroyIndexRule->parse($name);
 			}
@@ -65,11 +65,11 @@
 		 * @throws LexerException
 		 */
 		private function parseOptionalIfExists(): bool {
-			if (!$this->lexer->optionalMatch(Token::If)) {
+			if (!$this->lexer->optionalMatchKeyword('if')) {
 				return false;
 			}
 
-			$this->lexer->match(Token::Exists);
+			$this->lexer->matchKeyword('exists');
 			return true;
 		}
 

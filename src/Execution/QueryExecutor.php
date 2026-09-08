@@ -310,26 +310,39 @@
 		 * Combines explain() with a SQL dry-run into one coherent result.
 		 * @param string $query The ObjectQuel query string
 		 * @param array<int|string, mixed> $parameters Query parameters
+		 * @param bool $afterRealExecution True when this is called for a
+		 *        statement that has already been executed for real moments
+		 *        earlier (EntityManager::executeQuery()'s own post-execution
+		 *        debug signal) rather than as a standalone "explain without
+		 *        running" request. A literal-values AstAppend targeting a
+		 *        non-identity (e.g. uuid) primary key strategy generates a
+		 *        fresh value on every compile (see
+		 *        AppendExecutor::fillGeneratedPrimaryKeys()) — harmless, and
+		 *        the expected behavior, for a standalone explain with nothing
+		 *        real to compare against, but misleading here: recompiling
+		 *        would show a value that no longer matches what was actually
+		 *        persisted. When true, AppendExecutor::compileSql() reports no
+		 *        SQL instead in that specific case — see its own docblock.
 		 * @return QueryPlan Planning decisions and generated SQL
 		 * @throws QuelException
 		 */
-		public function explainQuery(string $query, array $parameters = []): QueryPlan {
+		public function explainQuery(string $query, array $parameters = [], bool $afterRealExecution = false): QueryPlan {
 			try {
 				$normalizedParameters = $this->normalizeParams($parameters);
 				$ast = $this->parse($query);
 			} catch (ParserException|LexerException $e) {
 				throw new QuelException("Syntax error: " . $e->getMessage(), 'syntax_error', 0, $e);
 			}
-			
+
 			// DDL and write-verb statements compile straight to SQL — there's no
 			// optimizer/planner pipeline, and replaying them via the retrieve
 			// pipeline's dry-run executor would re-run the write for real (see
 			// explainNonRetrieveQuery()).
 			if ($ast instanceof AstRetrieve) {
 				return $this->explainRetrieveQuery($query, $parameters);
-			} else {
-				return $this->explainNonRetrieveQuery($ast, $normalizedParameters);
 			}
+
+			return $this->explainNonRetrieveQuery($ast, $normalizedParameters, $afterRealExecution);
 		}
 		
 		/**
@@ -398,23 +411,26 @@
 		 * calling execute().
 		 * @param AstStatement $ast Parsed statement — anything but AstRetrieve
 		 * @param array<string, mixed> $parameters Normalized query parameters
+		 * @param bool $afterRealExecution See explainQuery()'s docblock —
+		 *        forwarded only to AppendExecutor::compileSql(), the one
+		 *        compile path that can regenerate a fresh, mismatched value.
 		 * @return QueryPlan Empty planning notes, plus the compiled SQL
 		 * @throws QuelException On compile failure, or if the statement (a
 		 *         JSON-source-range append) produces no SQL at all
 		 */
-		private function explainNonRetrieveQuery(AstStatement $ast, array $parameters): QueryPlan {
+		private function explainNonRetrieveQuery(AstStatement $ast, array $parameters, bool $afterRealExecution = false): QueryPlan {
 			try {
 				$sql = match (true) {
 					$ast instanceof AstCreateTable => [$this->createTableExecutor->compileSql($ast)],
 					$ast instanceof AstDestroy => $this->destroyExecutor->compileSql($ast),
 					$ast instanceof AstDestroyIndex => $this->destroyIndexExecutor->compileSql($ast),
 					$ast instanceof AstCreateIndex => $this->createIndexExecutor->compileSql($ast),
-					$ast instanceof AstAppend => [$this->appendExecutor->compileSql($ast, $parameters)],
+					$ast instanceof AstAppend => [$this->appendExecutor->compileSql($ast, $parameters, $afterRealExecution)],
 					$ast instanceof AstReplace => [$this->replaceExecutor->compileSql($ast, $parameters)],
 					$ast instanceof AstDelete => [$this->deleteExecutor->compileSql($ast, $parameters)],
 					default => throw new QuelException("Invalid query type: expected retrieve, create, destroy, index, or write-verb (append/replace/delete) operation"),
 				};
-				
+
 				return new QueryPlan([], $sql);
 			} catch (SemanticException $e) {
 				throw new QuelException($e->getMessage(), 'semantic_error', 0, $e);

@@ -60,48 +60,35 @@
 		    do {
 		    // Get the next token without changing the position in the lexer.
 			    $token = $this->lexer->peek();
-			    
-			    // Check if the token is a 'Retrieve' type.
-			    switch($token->getType()) {
-				    case Token::Retrieve :
-					    $queries[] = $this->retrieveRule->parse($directives, $ranges);
-					    break;
 
-				    case Token::Create :
-					    // Ranges ahead of `create` (if any) are simply unused —
-					    // still available to any `retrieve` elsewhere in this loop.
-					    $queries[] = $this->createTableRule->parse();
-					    break;
-
-				    case Token::Destroy :
-					    $queries[] = $this->destroyRule->parse();
-					    break;
-
-				    case Token::Index :
-					    // Ranges ahead of `index` (if any) are simply unused,
-					    // same as `create` above.
-					    $queries[] = $this->createIndexRule->parse();
-					    break;
-
-				    case Token::Append :
-					    $queries[] = $this->appendRule->parse($ranges);
-					    break;
-
-				    case Token::Replace :
-					    $queries[] = $this->replaceRule->parse($ranges);
-					    break;
-
-				    case Token::Delete :
-					    // No lookahead/dispatch needed — unlike a `delete table Name`
-					    // spelling some designs assume, authentic QUEL's drop verb is
-					    // `destroy`, a completely separate keyword and token, so
-					    // Token::Delete always means this DML verb.
-					    $queries[] = $this->deleteRule->parse($ranges);
-					    break;
-
-				    default :
-					    $tokenName = Token::toString($token->getType()) ?: 'unknown';
-					    throw new ParserException("Unexpected token '{$tokenName}' on line {$this->lexer->getLineNumber()}");
+			    // create/destroy/index/replace/delete have no token type of
+			    // their own (see Lexer::peekKeyword()'s docblock), so — unlike
+			    // Retrieve/Append below — they're recognized by text, not type.
+			    if ($token->getType() === Token::Retrieve) {
+				    $queries[] = $this->retrieveRule->parse($directives, $ranges);
+			    } elseif ($token->getType() === Token::Append) {
+				    $queries[] = $this->appendRule->parse($ranges);
+			    } elseif ($this->lexer->peekKeyword('create')) {
+				    // Ranges ahead of `create` (if any) are simply unused —
+				    // still available to any `retrieve` elsewhere in this loop.
+				    $queries[] = $this->createTableRule->parse();
+			    } elseif ($this->lexer->peekKeyword('destroy')) {
+				    $queries[] = $this->destroyRule->parse();
+			    } elseif ($this->lexer->peekKeyword('index')) {
+				    // Ranges ahead of `index` (if any) are simply unused,
+				    // same as `create` above.
+				    $queries[] = $this->createIndexRule->parse();
+			    } elseif ($this->lexer->peekKeyword('replace')) {
+				    $queries[] = $this->replaceRule->parse($ranges);
+			    } elseif ($this->lexer->peekKeyword('delete')) {
+				    // No lookahead/dispatch needed — unlike a `delete table Name`
+				    // spelling some designs assume, authentic QUEL's drop verb is
+				    // `destroy`, a completely separate keyword, so the literal
+				    // word `delete` always means this DML verb.
+				    $queries[] = $this->deleteRule->parse($ranges);
+			    } else {
+				    $tokenName = Token::toString($token->getType()) ?: 'unknown';
+				    throw new ParserException("Unexpected token '{$tokenName}' on line {$this->lexer->getLineNumber()}");
 			    }
 		    } while ($this->lexer->peek()->getType() !== Token::Eof);
 		    

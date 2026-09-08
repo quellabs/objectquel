@@ -44,7 +44,7 @@
 		 * @throws LexerException|ParserException
 		 */
 		public function parse(array $ranges): AstDelete {
-			$this->lexer->match(Token::Delete);
+			$this->lexer->matchKeyword('delete');
 
 			$targetName = $this->lexer->match(Token::Identifier)->getStringValue();
 			$range = TargetRange::resolve($targetName, $ranges, 'delete');

@@ -14,7 +14,7 @@
 
 	    /** @var array<string, int> */
         protected array $keywords;
-	    
+
 	    /** @var array<string, int> */
         protected array $single_tokens;
 	    
@@ -79,22 +79,14 @@
 		        'window_size' => Token::WindowSize,
 		        'json_source' => Token::JsonSource,
 		        'filter'      => Token::Filter,
-		        'create'      => Token::Create,
-		        'temporary'   => Token::Temporary,
-		        'identity'    => Token::Identity,
-		        'primary'     => Token::Primary,
-		        'key'         => Token::Key,
-		        'destroy'     => Token::Destroy,
-		        'if'          => Token::If,
-		        'exists'      => Token::Exists,
 		        'append'      => Token::Append,
-		        'to'          => Token::To,
-		        'replace'     => Token::Replace,
-		        'delete'      => Token::Delete,
-		        'index'       => Token::Index,
-		        'on'          => Token::On,
-		        'fulltext'    => Token::Fulltext,
-		        'unsigned'    => Token::Unsigned,
+		        // create, temporary, identity, primary, key, destroy, if,
+		        // exists, to, replace, delete, index, on, fulltext, and
+		        // unsigned are deliberately absent here — each only means
+		        // something special at its own dedicated grammar position
+		        // (see matchKeyword()'s docblock), so none of them get a
+		        // distinct token type the way a genuinely reserved word like
+		        // `where`/`retrieve`/`append` above does.
 	        ];
 			
 			$this->single_tokens = [
@@ -354,10 +346,10 @@
                 $this->lookahead = $this->nextToken();
                 return $currentToken;
             }
-            
+
             throw new LexerException("Unexpected token");
         }
-	    
+
 	    /**
 	     * Match the next token
 	     * @param int $token
@@ -368,10 +360,64 @@
 		    if ($this->next_token->getType() === $token) {
 			    return $this->match($token);
 		    }
-		    
+
 		    return null;
 	    }
-		
+
+		/**
+		 * Whether the upcoming token is an identifier whose text matches
+		 * $keyword, case-insensitively.
+		 *
+		 * This is how the parser recognizes a *contextual* keyword — create,
+		 * temporary, identity, primary, key, destroy, if, exists, to,
+		 * replace, delete, index, on, fulltext, unsigned — none of which get
+		 * a distinct token type the way a genuinely reserved word (`where`,
+		 * `retrieve`, `append`, ...) does. Each of those 15 words only means
+		 * something special at its own dedicated grammar position (right
+		 * after `append`, at the start of a column-constraint list, etc.);
+		 * everywhere else — a property, column, table, index, or range-alias
+		 * name literally spelled `key` or `to` or `on` — it must still parse
+		 * as a plain identifier. Giving it a distinct token type at the lexer
+		 * level would make that impossible (every occurrence would tokenize
+		 * as the keyword, whether the query meant it that way or not), so
+		 * instead the lexer always emits Token::Identifier for these words
+		 * and the parser itself checks the text, only at the few positions
+		 * where the literal word actually matters.
+		 * @param string $keyword
+		 * @return bool
+		 */
+		public function peekKeyword(string $keyword): bool {
+			return $this->next_token->getType() === Token::Identifier
+				&& strcasecmp($this->next_token->getStringValue(), $keyword) === 0;
+		}
+
+		/**
+		 * Consumes the upcoming token if it's an identifier matching $keyword
+		 * (see peekKeyword()) and returns it, or throws otherwise.
+		 * @param string $keyword
+		 * @return Token
+		 * @throws LexerException
+		 */
+		public function matchKeyword(string $keyword): Token {
+			if (!$this->peekKeyword($keyword)) {
+				throw new LexerException("Expected '{$keyword}'");
+			}
+
+			return $this->match(Token::Identifier);
+		}
+
+		/**
+		 * Consumes and returns the upcoming token if it's an identifier
+		 * matching $keyword (see peekKeyword()); returns null without
+		 * consuming anything otherwise.
+		 * @param string $keyword
+		 * @return Token|null
+		 * @throws LexerException
+		 */
+		public function optionalMatchKeyword(string $keyword): ?Token {
+			return $this->peekKeyword($keyword) ? $this->matchKeyword($keyword) : null;
+		}
+
 		/**
 		 * Returns the position of the next token in the source text
 		 * @return int

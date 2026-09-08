@@ -33,8 +33,8 @@
 		 * @throws LexerException|ParserException
 		 */
 		public static function parse(Lexer $lexer): array {
-			$lexer->match(Token::Primary);
-			$lexer->match(Token::Key);
+			$lexer->matchKeyword('primary');
+			$lexer->matchKeyword('key');
 			$lexer->match(Token::ParenthesesOpen);
 
 			$columns = [];
