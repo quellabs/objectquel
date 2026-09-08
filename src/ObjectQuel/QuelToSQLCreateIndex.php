@@ -4,6 +4,7 @@
 
 	use Quellabs\ObjectQuel\Capabilities\PlatformCapabilitiesInterface;
 	use Quellabs\ObjectQuel\DatabaseAdapter\SqlIdentifierQuoter;
+	use Quellabs\ObjectQuel\Exception\SemanticException;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstCreateIndex;
 
 	/**
@@ -72,12 +73,15 @@
 
 		private SqlIdentifierQuoter $identifierQuoter;
 
+		private PlatformCapabilitiesInterface $platform;
+
 		/**
 		 * QuelToSQLCreateIndex constructor
 		 * @param PlatformCapabilitiesInterface $platform
 		 */
-		public function __construct(private readonly PlatformCapabilitiesInterface $platform) {
+		public function __construct(PlatformCapabilitiesInterface $platform) {
 			$this->identifierQuoter = new SqlIdentifierQuoter($platform);
+			$this->platform = $platform;
 		}
 
 		/**
@@ -112,7 +116,7 @@
 				$keyword,
 				$this->identifierQuoter->quoteIdentifier($statement->getIndexName()),
 				$this->identifierQuoter->quoteIdentifier($statement->getTableName()),
-				$this->quotedColumnList($statement->getColumns())
+				$this->identifierQuoter->quoteIdentifierList($statement->getColumns())
 			);
 		}
 
@@ -125,7 +129,7 @@
 				'CREATE FULLTEXT INDEX %s ON %s (%s)',
 				$this->identifierQuoter->quoteIdentifier($statement->getIndexName()),
 				$this->identifierQuoter->quoteIdentifier($statement->getTableName()),
-				$this->quotedColumnList($statement->getColumns())
+				$this->identifierQuoter->quoteIdentifierList($statement->getColumns())
 			);
 		}
 
@@ -161,21 +165,21 @@
 		 */
 		private function compileSqlServerFulltext(AstCreateIndex $statement, ?string $keyIndexName): array {
 			if ($keyIndexName === null) {
-				throw new \InvalidArgumentException('compileSqlServerFulltext() requires $sqlServerKeyIndexName to be resolved first');
+				throw new SemanticException('compileSqlServerFulltext() requires $sqlServerKeyIndexName to be resolved first');
 			}
 
 			$catalog = $this->identifierQuoter->quoteIdentifier(self::SQL_SERVER_FULLTEXT_CATALOG);
 
 			$bootstrapCatalog = sprintf(
 				"IF NOT EXISTS (SELECT 1 FROM sys.fulltext_catalogs WHERE name = %s) CREATE FULLTEXT CATALOG %s AS DEFAULT",
-				$this->quoteStringLiteral(self::SQL_SERVER_FULLTEXT_CATALOG),
+				$this->identifierQuoter->quoteStringLiteral(self::SQL_SERVER_FULLTEXT_CATALOG),
 				$catalog
 			);
 
 			$createIndex = sprintf(
 				'CREATE FULLTEXT INDEX ON %s (%s) KEY INDEX %s ON %s',
 				$this->identifierQuoter->quoteIdentifier($statement->getTableName()),
-				$this->quotedColumnList($statement->getColumns()),
+				$this->identifierQuoter->quoteIdentifierList($statement->getColumns()),
 				$this->identifierQuoter->quoteIdentifier($keyIndexName),
 				$catalog
 			);
@@ -192,9 +196,9 @@
 		 * dropped and recreated with a different name.
 		 */
 		private function tagFulltextIndexName(AstCreateIndex $statement): string {
-			$tableName = $this->quoteStringLiteral($statement->getTableName());
-			$propertyName = $this->quoteStringLiteral(self::SQL_SERVER_FULLTEXT_INDEX_NAME_PROPERTY);
-			$indexName = $this->quoteStringLiteral($statement->getIndexName());
+			$tableName = $this->identifierQuoter->quoteStringLiteral($statement->getTableName());
+			$propertyName = $this->identifierQuoter->quoteStringLiteral(self::SQL_SERVER_FULLTEXT_INDEX_NAME_PROPERTY);
+			$indexName = $this->identifierQuoter->quoteStringLiteral($statement->getIndexName());
 
 			return sprintf(
 				"IF EXISTS (SELECT 1 FROM sys.extended_properties WHERE major_id = OBJECT_ID(%s) AND minor_id = 0 AND name = %s) " .
@@ -217,7 +221,7 @@
 		 */
 		private function compileSqliteFulltext(AstCreateIndex $statement, ?string $primaryKeyColumn): array {
 			if ($primaryKeyColumn === null) {
-				throw new \InvalidArgumentException('compileSqliteFulltext() requires $primaryKeyColumn to be resolved first');
+				throw new SemanticException('compileSqliteFulltext() requires $primaryKeyColumn to be resolved first');
 			}
 
 			$ftsTable = $statement->getIndexName();
@@ -225,14 +229,14 @@
 			$quotedBaseTable = $this->identifierQuoter->quoteIdentifier($statement->getTableName());
 			$quotedPrimaryKeyColumn = $this->identifierQuoter->quoteIdentifier($primaryKeyColumn);
 			$columns = $statement->getColumns();
-			$quotedColumns = $this->quotedColumnList($columns);
+			$quotedColumns = $this->identifierQuoter->quoteIdentifierList($columns);
 
 			$createVirtualTable = sprintf(
 				'CREATE VIRTUAL TABLE %s USING fts5(%s, content=%s, content_rowid=%s)',
 				$quotedFtsTable,
 				$quotedColumns,
-				$this->quoteStringLiteral($statement->getTableName()),
-				$this->quoteStringLiteral($primaryKeyColumn)
+				$this->identifierQuoter->quoteStringLiteral($statement->getTableName()),
+				$this->identifierQuoter->quoteStringLiteral($primaryKeyColumn)
 			);
 
 			$newColumnValues = implode(', ', array_map(fn(string $column) => 'new.' . $this->identifierQuoter->quoteIdentifier($column), $columns));
@@ -277,21 +281,5 @@
 			);
 
 			return [$createVirtualTable, $insertTrigger, $deleteTrigger, $updateTrigger];
-		}
-
-		/**
-		 * @param string[] $columns
-		 */
-		private function quotedColumnList(array $columns): string {
-			return implode(', ', array_map(fn(string $column) => $this->identifierQuoter->quoteIdentifier($column), $columns));
-		}
-
-		/**
-		 * Escapes and wraps a value as a single-quoted SQL string literal
-		 * (doubling embedded quotes, the ANSI SQL escaping rule) — same
-		 * convention QuelToSQLCreate/QuelToSQLDestroy use.
-		 */
-		private function quoteStringLiteral(string $value): string {
-			return "'" . str_replace("'", "''", $value) . "'";
 		}
 	}

@@ -94,8 +94,8 @@
 		 * @return list<string>
 		 */
 		public function convertToSqlServerFulltextDropSQL(AstDestroyIndex $statement): array {
-			$tableName = $this->quoteStringLiteral($statement->getTableName());
-			$propertyName = $this->quoteStringLiteral(QuelToSQLCreateIndex::SQL_SERVER_FULLTEXT_INDEX_NAME_PROPERTY);
+			$tableName = $this->identifierQuoter->quoteStringLiteral($statement->getTableName());
+			$propertyName = $this->identifierQuoter->quoteStringLiteral(QuelToSQLCreateIndex::SQL_SERVER_FULLTEXT_INDEX_NAME_PROPERTY);
 
 			$dropProperty = sprintf(
 				"IF EXISTS (SELECT 1 FROM sys.extended_properties WHERE major_id = OBJECT_ID(%s) AND minor_id = 0 AND name = %s) " .
@@ -168,25 +168,16 @@
 			return [
 				sprintf(
 					'SET @idx_exists = (SELECT COUNT(*) FROM information_schema.statistics WHERE table_schema = DATABASE() AND table_name = %s AND index_name = %s)',
-					$this->quoteStringLiteral($statement->getTableName()),
-					$this->quoteStringLiteral($statement->getIndexName())
+					$this->identifierQuoter->quoteStringLiteral($statement->getTableName()),
+					$this->identifierQuoter->quoteStringLiteral($statement->getIndexName())
 				),
 				sprintf(
 					"SET @sql = IF(@idx_exists > 0, %s, 'DO 0')",
-					$this->quoteStringLiteral($dropStatement)
+					$this->identifierQuoter->quoteStringLiteral($dropStatement)
 				),
 				'PREPARE stmt FROM @sql',
 				'EXECUTE stmt',
 				'DEALLOCATE PREPARE stmt',
 			];
-		}
-
-		/**
-		 * Escapes and wraps a value as a single-quoted SQL string literal
-		 * (doubling embedded quotes, the ANSI SQL escaping rule) — same
-		 * convention QuelToSQLCreate/QuelToSQLDestroy/QuelToSQLCreateIndex use.
-		 */
-		private function quoteStringLiteral(string $value): string {
-			return "'" . str_replace("'", "''", $value) . "'";
 		}
 	}

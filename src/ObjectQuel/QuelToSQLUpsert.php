@@ -140,7 +140,7 @@
 				return sprintf(
 					'%s ON CONFLICT (%s) DO UPDATE SET %s',
 					$insertSql,
-					$this->quoteIdentifierList($conflictColumns),
+					$this->identifierQuoter->quoteIdentifierList($conflictColumns),
 					implode(', ', $setClauseParts)
 				);
 			}
@@ -209,7 +209,7 @@
 		): string {
 			$targetAlias = $this->identifierQuoter->quoteIdentifier('__upsert_target');
 			$sourceAlias = $this->identifierQuoter->quoteIdentifier('__upsert_source');
-			$quotedColumnList = $this->quoteIdentifierList($columnNames);
+			$quotedColumnList = $this->identifierQuoter->quoteIdentifierList($columnNames);
 
 			$sourceRows = array_map(
 				fn(array $compiledRow) => '(' . implode(', ', array_map(fn(string $property) => $compiledRow[$property], $properties)) . ')',
@@ -301,16 +301,5 @@
 					implode(', ', $missing)
 				));
 			}
-		}
-
-		/**
-		 * @param string[] $identifiers Unquoted identifiers
-		 * @return string Comma-separated, quoted identifier list
-		 */
-		private function quoteIdentifierList(array $identifiers): string {
-			return implode(', ', array_map(
-				fn(string $identifier) => $this->identifierQuoter->quoteIdentifier($identifier),
-				$identifiers
-			));
 		}
 	}

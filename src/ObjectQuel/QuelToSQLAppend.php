@@ -214,20 +214,9 @@
 			return sprintf(
 				'INSERT INTO %s (%s) VALUES %s',
 				$this->identifierQuoter->quoteIdentifier($tableName),
-				$this->quoteIdentifierList($columnNames),
+				$this->identifierQuoter->quoteIdentifierList($columnNames),
 				implode(', ', $valueTuples)
 			);
-		}
-
-		/**
-		 * @param string[] $identifiers Unquoted identifiers
-		 * @return string Comma-separated, quoted identifier list
-		 */
-		private function quoteIdentifierList(array $identifiers): string {
-			return implode(', ', array_map(
-				fn(string $identifier) => $this->identifierQuoter->quoteIdentifier($identifier),
-				$identifiers
-			));
 		}
 
 		/**
@@ -278,7 +267,7 @@
 			return sprintf(
 				'INSERT INTO %s (%s) SELECT %s FROM (%s) AS %s',
 				$this->identifierQuoter->quoteIdentifier($tableName),
-				$this->quoteIdentifierList($columnNames),
+				$this->identifierQuoter->quoteIdentifierList($columnNames),
 				$reprojectedColumns,
 				$selectSql,
 				$derivedTableAlias

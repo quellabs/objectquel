@@ -101,8 +101,8 @@
 			// statement is wrapped in an existence check instead, the standard
 			// T-SQL workaround for this gap.
 			if ($statement->isIfNotExists() && $isSqlServer) {
-				$tableNameRes = $this->escapeStringLiteral($tableName);
-				
+				$tableNameRes = $this->identifierQuoter->escapeStringLiteral($tableName);
+
 				return sprintf(
 					"IF %s IS NULL %s",
 					$statement->isTemporary()
@@ -113,15 +113,5 @@
 			}
 
 			return $createStatement;
-		}
-
-		/**
-		 * Escapes a value for inclusion in a single-quoted T-SQL string
-		 * literal (doubling embedded quotes, the ANSI SQL escaping rule).
-		 * @param string $value
-		 * @return string
-		 */
-		private function escapeStringLiteral(string $value): string {
-			return str_replace("'", "''", $value);
 		}
 	}

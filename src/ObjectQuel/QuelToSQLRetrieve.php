@@ -20,6 +20,23 @@
 	use Quellabs\ObjectQuel\Capabilities\NullPlatformCapabilities;
 	use Quellabs\ObjectQuel\DatabaseAdapter\SqlIdentifierQuoter;
 
+	/**
+	 * Compiles an AstRetrieve statement to dialect-correct SELECT SQL. Sibling
+	 * to QuelToSQLAppend/QuelToSQLReplace/QuelToSQLDelete/QuelToSQLCreate —
+	 * each QUEL statement kind gets its own compiler here — but the oldest
+	 * and most involved of them: retrieve's JOIN/subquery/aggregate/sort
+	 * machinery is why QueryNormalizer/SemanticAnalyzer/QueryOptimizer exist
+	 * at all, machinery none of the single-range write verbs need (see e.g.
+	 * QuelToSQLDelete/QuelToSQLReplace's own docblocks for why they skip it).
+	 *
+	 * Recursive by design: subquery/materialized ranges are compiled by
+	 * calling convertToSQL() again on their nested AstRetrieve and inlining
+	 * the result as a derived table (see getFrom()/getJoins()), which is why
+	 * $parameters is bound once in the constructor and reused across the
+	 * whole recursive call tree, rather than threaded through each method
+	 * call the way the write-verb compilers pass `array &$parameters` per
+	 * convertToSQL() call.
+	 */
 	class QuelToSQLRetrieve {
 
 		private EntityStore $entityStore;
@@ -82,7 +99,7 @@
 		 * @param AstRetrieve $retrieve
 		 * @return string
 		 */
-		protected function getUnique(AstRetrieve $retrieve): string {
+		private function getUnique(AstRetrieve $retrieve): string {
 			return $retrieve->isUnique() ? "DISTINCT " : "";
 		}
 
@@ -119,7 +136,7 @@
 		 * @param AstInterface $ast
 		 * @return bool
 		 */
-		protected function identifierIsEntity(AstInterface $ast): bool {
+		private function identifierIsEntity(AstInterface $ast): bool {
 			return (
 				$ast instanceof AstIdentifier &&
 				$ast->getRange() instanceof AstRangeDatabase &&
@@ -132,7 +149,7 @@
 		 * @param AstRetrieve $retrieve The AstRetrieve object to process.
 		 * @return string The formatted field names as a single string.
 		 */
-		protected function getFieldNames(AstRetrieve $retrieve, ?string $outerRangeName = null): string {
+		private function getFieldNames(AstRetrieve $retrieve, ?string $outerRangeName = null): string {
 			// Initialize an empty array to store the result
 			$result = [];
 			
@@ -183,7 +200,7 @@
 		 * @throws EntityResolutionException
 		 * @throws QuelException
 		 */
-		protected function getFrom(AstRetrieve $retrieve): string {
+		private function getFrom(AstRetrieve $retrieve): string {
 			// Obtain all entities used in the retrieve query.
 			// This includes identifying the tables and their aliases for use in the query.
 			$ranges = $retrieve->getRanges();
@@ -248,7 +265,7 @@
 		 * @param AstRetrieve $retrieve The retrieve object from which conditions are extracted.
 		 * @return string The WHERE part of the SQL query. Returns an empty string if there are no conditions.
 		 */
-		protected function getWhere(AstRetrieve $retrieve): string {
+		private function getWhere(AstRetrieve $retrieve): string {
 			// Get the conditions of the retrieve operation.
 			$conditions = $retrieve->getConditions();
 			
@@ -350,7 +367,7 @@
 		 * @param AstRetrieve $retrieve
 		 * @return string
 		 */
-		protected function getSortDefault(AstRetrieve $retrieve): string {
+		private function getSortDefault(AstRetrieve $retrieve): string {
 			// Get the conditions of the retrieve operation.
 			$sort = $retrieve->getSort();
 			
@@ -392,7 +409,7 @@
 		 * @throws EntityResolutionException
 		 * @throws QuelException
 		 */
-		protected function getSort(AstRetrieve $retrieve): string {
+		private function getSort(AstRetrieve $retrieve): string {
 			// If the compiler directive @InValuesAreFinal is provided, then we need to sort based on
 			// the order within the IN() list
 			$compilerDirectives = $retrieve->getDirectives();
@@ -410,7 +427,7 @@
 		 * @param AstRetrieve $retrieve
 		 * @return string
 		 */
-		protected function getGroupBy(AstRetrieve $retrieve): string {
+		private function getGroupBy(AstRetrieve $retrieve): string {
 			$groupBy = $retrieve->getGroupBy();
 			
 			if (empty($groupBy)) {
@@ -437,7 +454,7 @@
 		 * @throws EntityResolutionException
 		 * @throws QuelException
 		 */
-		protected function getJoins(AstRetrieve $retrieve): string {
+		private function getJoins(AstRetrieve $retrieve): string {
 			$result = [];
 			
 			// Get the list of entities involved in the retrieve operation.
@@ -445,7 +462,16 @@
 			
 			// Loop through all entities (ranges) and process those with join properties.
 			foreach ($ranges as $range) {
-				// Only use database ranges
+				// Only use database ranges. Deliberately excludes a bare
+				// AstRangeDatabaseSubquery (as opposed to its
+				// AstRangeDatabaseTempTable/AstRangeDatabaseMaterialized
+				// subtypes, which ARE included): by the time a retrieve
+				// reaches this compiler, DatabaseRangePromotor has already
+				// resolved every subquery range with a join property to one
+				// of those two subtypes (see QuelToSQLAppend::needsPlanner()'s
+				// docblock for the same non-recursive assumption spelled out
+				// in more detail) — a bare Subquery range here would silently
+				// be dropped from the JOIN clause instead of erroring.
 				if (
 					!$range instanceof AstRangeDatabase &&
 					!$range instanceof AstRangeDatabaseTempTable &&
@@ -515,7 +541,7 @@
 		 *   strings in $result rather than joining them in buildEntityColumns(), making
 		 *   a plain in_array() check sufficient and eliminating the split entirely.
 		 */
-		protected function isDuplicateField(array $existingFields, string $fieldToCheck): bool {
+		private function isDuplicateField(array $existingFields, string $fieldToCheck): bool {
 			// Normalize the field to check (trim whitespace)
 			$fieldToCheck = trim($fieldToCheck);
 			

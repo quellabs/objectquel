@@ -101,17 +101,7 @@
 			$quotedCandidateTempTableName = $this->identifierQuoter->quoteIdentifier($candidateTempTableName);
 			$permanentDrop = $this->plainDrop($name, $ifExists);
 
-			return "IF OBJECT_ID('tempdb..{$this->escapeStringLiteral($candidateTempTableName)}') IS NOT NULL "
+			return "IF OBJECT_ID('tempdb..{$this->identifierQuoter->escapeStringLiteral($candidateTempTableName)}') IS NOT NULL "
 				. "DROP TABLE {$quotedCandidateTempTableName} ELSE {$permanentDrop}";
-		}
-
-		/**
-		 * Escapes a value for inclusion in a single-quoted T-SQL string
-		 * literal (doubling embedded quotes, the ANSI SQL escaping rule).
-		 * @param string $value
-		 * @return string
-		 */
-		private function escapeStringLiteral(string $value): string {
-			return str_replace("'", "''", $value);
 		}
 	}

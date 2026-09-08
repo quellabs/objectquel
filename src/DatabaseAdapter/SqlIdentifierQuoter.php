@@ -92,4 +92,36 @@
 				default => '`' . str_replace('`', '``', $identifier) . '`',
 			};
 		}
+
+		/**
+		 * Quotes a comma-separated list of identifiers — the "N columns, each
+		 * individually quoted" shape used throughout column-list/conflict-target
+		 * rendering (INSERT's column list, CREATE INDEX's column list, etc).
+		 * @param string[] $identifiers Unquoted identifiers
+		 * @return string Comma-separated, quoted identifier list
+		 */
+		public function quoteIdentifierList(array $identifiers): string {
+			return implode(', ', array_map(fn(string $identifier) => $this->quoteIdentifier($identifier), $identifiers));
+		}
+
+		/**
+		 * Escapes a value for inclusion in a single-quoted SQL string literal,
+		 * by doubling embedded quotes — the ANSI SQL escaping rule, identical
+		 * across every dialect this class supports. Does not add the
+		 * surrounding quotes itself; see quoteStringLiteral() for that.
+		 * @param string $value
+		 * @return string
+		 */
+		public function escapeStringLiteral(string $value): string {
+			return str_replace("'", "''", $value);
+		}
+
+		/**
+		 * Escapes and wraps a value as a single-quoted SQL string literal.
+		 * @param string $value
+		 * @return string
+		 */
+		public function quoteStringLiteral(string $value): string {
+			return "'" . $this->escapeStringLiteral($value) . "'";
+		}
 	}
