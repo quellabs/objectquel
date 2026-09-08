@@ -46,6 +46,15 @@
 	 * QuelToSQLUpsert isn't a sibling compiler for its own node the way
 	 * QuelToSQLReplace/QuelToSQLDelete are; it exists purely to keep that
 	 * dialect-branching logic out of this file.
+	 *
+	 * Every compile path below takes a nullable EntityMetadataRecord rather
+	 * than being duplicated once for an entity-backed target range and once
+	 * for a plain-table one: entity-backed means a property maps to a column
+	 * via metadata and the property-exists/required-column/value-type checks
+	 * apply; a plain-table range (see objectquel-plain-table-range-plan.md)
+	 * has no metadata to check against, so a property name IS the column
+	 * name and none of those checks run — every `$metadata !== null` branch
+	 * below is that same distinction, not a separate code path.
 	 */
 	class QuelToSQLAppend {
 
@@ -86,87 +95,83 @@
 			$entityName = $statement->getEntityName();
 
 			if ($entityName === null) {
-				return $this->convertTableAppendToSQL($statement, $parameters);
+				$tableName = $statement->getTableNameOrFail();
+
+				return $statement->isInsertFromSelect()
+					? $this->compileFromSelect($statement, null, $tableName, $tableName, $parameters)
+					: $this->compileValues($statement, null, $tableName, $parameters);
 			}
 
 			$metadata = $this->entityStore->getMetadata($entityName);
 
-			if ($statement->isInsertFromSelect()) {
-				return $this->compileInsertFromSelect($statement, $metadata, $parameters);
-			}
-
-			return $this->compileInsertValues($statement, $metadata, $parameters);
+			return $statement->isInsertFromSelect()
+				? $this->compileFromSelect($statement, $metadata, $metadata->tableName, $metadata->className, $parameters)
+				: $this->compileValues($statement, $metadata, $metadata->tableName, $parameters);
 		}
 
 		/**
-		 * Compiles an `append to <range> (...)` statement targeting a
-		 * plain-table range (no entity metadata) — see
-		 * objectquel-plain-table-range-plan.md. Property names are used
-		 * literally as column names, with none of compileInsertValues()'s
-		 * metadata-driven checks (property-exists, required-column,
-		 * value-type compatibility): there is no metadata to check against,
-		 * so an invalid column or a missing required one surfaces as the
-		 * database's own error at execution time instead. An upsert's
-		 * `or replace (...) where ...` on-conflict clause is supported here
-		 * too — delegated to QuelToSQLUpsert with a null EntityMetadataRecord,
-		 * which skips the declared-constraint check the entity path runs
-		 * (see QuelToSQLUpsert::convertToSQL()'s docblock).
+		 * Compiles the literal-values form (single or multi-row) to
+		 * `INSERT INTO table (cols) VALUES (...), (...)`, or — when an
+		 * upsert on-conflict clause is present — the dialect-appropriate
+		 * insert-or-update statement built around the same compiled rows.
 		 * @param AstAppend $statement
+		 * @param EntityMetadataRecord|null $metadata Null for a plain-table range
+		 * @param string $tableName
 		 * @param array<string, mixed> $parameters
 		 * @return string
 		 * @throws SemanticException
 		 */
-		private function convertTableAppendToSQL(AstAppend $statement, array &$parameters): string {
-			$tableName = $statement->getTableNameOrFail();
-
-			if ($statement->isInsertFromSelect()) {
-				return $this->compileTableInsertFromSelect($statement, $tableName, $parameters);
-			}
-
-			return $this->compileTableInsertValues($statement, $tableName, $parameters);
-		}
-
-		/**
-		 * Compiles the literal-values form (single or multi-row) for a
-		 * plain-table range to `INSERT INTO table (cols) VALUES (...), (...)`.
-		 * @param AstAppend $statement
-		 * @param string $tableName
-		 * @param array<string, mixed> $parameters
-		 * @return string
-		 */
-		private function compileTableInsertValues(AstAppend $statement, string $tableName, array &$parameters): string {
+		private function compileValues(AstAppend $statement, ?EntityMetadataRecord $metadata, string $tableName, array &$parameters): string {
 			$rows = $statement->getRowsOrFail();
 			$properties = array_map(fn(AstAssignment $assignment) => $assignment->getProperty(), $rows[0]);
 
+			if ($metadata !== null) {
+				AssignmentValidator::assertPropertiesExist($properties, $metadata);
+				$this->assertRequiredColumnsSupplied($properties, $metadata);
+			}
+
+			$columnNames = $metadata !== null
+				? array_map(fn(string $property) => $metadata->getColumnNameOrFail($property), $properties)
+				: $properties;
+
+			// Compiled once per row, keyed by property, so the plain INSERT
+			// VALUES tuples and (for SQL Server's MERGE) the per-row USING
+			// source can both be built from the same compiled expressions
+			// without recompiling them.
 			$compiledRows = array_map(
-				fn(array $row) => $this->compileTableRow($row, $parameters),
+				fn(array $row) => $this->compileRow($row, $metadata, $parameters),
 				$rows
 			);
 
-			// A plain-table range has no metadata, so column names are just the
-			// property names themselves (property IS column here).
-			$insertSql = $this->compileInsertGeneric($tableName, $properties, $properties, $compiledRows);
+			$insertSql = $this->compileInsertGeneric($tableName, $columnNames, $properties, $compiledRows);
 			$onConflict = $statement->getOnConflict();
 
 			if ($onConflict === null) {
 				return $insertSql;
 			}
 
-			return $this->upsertCompiler->convertToSQL($insertSql, $tableName, null, $properties, $properties, $compiledRows, $onConflict, $parameters);
+			return $this->upsertCompiler->convertToSQL($insertSql, $tableName, $metadata, $properties, $columnNames, $compiledRows, $onConflict, $parameters);
 		}
 
 		/**
-		 * Compiles a single row's assignments to SQL, keyed by property, for a
-		 * plain-table append — no column-type check, since there's no column
-		 * definition to check it against.
+		 * Compiles a single row's assignments to SQL, keyed by property. When
+		 * $metadata is non-null, each value is checked against its target
+		 * column's declared type first — a plain-table range has no column
+		 * definitions to check against, so that step is skipped entirely.
 		 * @param AstAssignment[] $row
+		 * @param EntityMetadataRecord|null $metadata
 		 * @param array<string, mixed> $parameters
 		 * @return array<string, string> property => compiled SQL value
+		 * @throws SemanticException
 		 */
-		private function compileTableRow(array $row, array &$parameters): array {
+		private function compileRow(array $row, ?EntityMetadataRecord $metadata, array &$parameters): array {
 			$compiled = [];
 
 			foreach ($row as $assignment) {
+				if ($metadata !== null) {
+					$this->assertAssignmentValueTypeCompatible($assignment, $metadata);
+				}
+
 				$builder = new BuildSqlFromAst($this->entityStore, $parameters, 'VALUES', $this->platform);
 				$compiled[$assignment->getProperty()] = $builder->visitNodeAndReturnSQL($assignment->getValue());
 			}
@@ -175,44 +180,27 @@
 		}
 
 		/**
-		 * Compiles the insert-from-select form for a plain-table range to
-		 * `INSERT INTO table (cols) SELECT ...` — see compileInsertFromSelect()
-		 * for why the inner SELECT is wrapped as a derived table.
-		 * @param AstAppend $statement
-		 * @param string $tableName
-		 * @param array<string, mixed> $parameters
-		 * @return string
+		 * Checks a single assignment's value against its target column's
+		 * declared type, when the property maps to one.
+		 * @param AstAssignment $assignment
+		 * @param EntityMetadataRecord $metadata
+		 * @return void
 		 * @throws SemanticException
 		 */
-		private function compileTableInsertFromSelect(AstAppend $statement, string $tableName, array &$parameters): string {
-			$properties = $statement->getColumnsOrFail();
-			$source = $statement->getSourceOrFail();
+		private function assertAssignmentValueTypeCompatible(AstAssignment $assignment, EntityMetadataRecord $metadata): void {
+			$columnName = $metadata->getColumnName($assignment->getProperty());
+			$columnDef = $columnName !== null ? ($metadata->columnDefinitions[$columnName] ?? null) : null;
 
-			$selectSql = $this->finalizeSourceRetrieveSql($source, $parameters);
-			$visibleAliases = $this->resolveVisibleAliases($properties, $source, $tableName);
-
-			$derivedTableAlias = $this->identifierQuoter->quoteIdentifier('__append_source');
-
-			$reprojectedColumns = implode(', ', array_map(
-				fn(string $alias) => $derivedTableAlias . '.' . $this->identifierQuoter->quoteIdentifier($alias),
-				$visibleAliases
-			));
-
-			return sprintf(
-				'INSERT INTO %s (%s) SELECT %s FROM (%s) AS %s',
-				$this->identifierQuoter->quoteIdentifier($tableName),
-				$this->quoteIdentifierList($properties),
-				$reprojectedColumns,
-				$selectSql,
-				$derivedTableAlias
-			);
+			if ($columnDef !== null) {
+				AssignmentValidator::assertValueTypeCompatible($assignment->getProperty(), $assignment->getValue(), $columnDef);
+			}
 		}
 
 		/**
-		 * Shared `INSERT INTO table (cols) VALUES (...), (...)` assembly for
-		 * the plain-table literal-values path — the metadata-driven
-		 * compileInsert() above stays entity-only since it takes an
-		 * EntityMetadataRecord for its table name.
+		 * Compiles the plain `INSERT INTO table (cols) VALUES (...), (...)`
+		 * shared by the non-upsert path and as the base every upsert dialect
+		 * branch (except SQL Server's MERGE, which has no INSERT of its own)
+		 * builds on.
 		 * @param string $tableName
 		 * @param string[] $columnNames
 		 * @param string[] $properties Row property order — determines column order
@@ -231,100 +219,6 @@
 				$this->quoteIdentifierList($columnNames),
 				implode(', ', $valueTuples)
 			);
-		}
-
-		/**
-		 * Compiles the literal-values form (single or multi-row) to
-		 * `INSERT INTO table (cols) VALUES (...), (...)`, or — when an
-		 * upsert on-conflict clause is present — the dialect-appropriate
-		 * insert-or-update statement built around the same compiled rows.
-		 * @param AstAppend $statement
-		 * @param EntityMetadataRecord $metadata
-		 * @param array<string, mixed> $parameters
-		 * @return string
-		 * @throws SemanticException
-		 */
-		private function compileInsertValues(AstAppend $statement, EntityMetadataRecord $metadata, array &$parameters): string {
-			$rows = $statement->getRowsOrFail();
-			$properties = array_map(fn(AstAssignment $assignment) => $assignment->getProperty(), $rows[0]);
-
-			AssignmentValidator::assertPropertiesExist($properties, $metadata);
-			$this->assertRequiredColumnsSupplied($properties, $metadata);
-
-			$columnNames = array_map(fn(string $property) => $metadata->getColumnNameOrFail($property), $properties);
-
-			// Compiled once per row, keyed by property, so the plain INSERT
-			// VALUES tuples and (for SQL Server's MERGE) the per-row USING
-			// source can both be built from the same compiled expressions
-			// without recompiling them.
-			$compiledRows = array_map(
-				fn(array $row) => $this->compileRow($row, $metadata, $parameters),
-				$rows
-			);
-
-			$insertSql = $this->compileInsert($metadata, $columnNames, $properties, $compiledRows);
-			$onConflict = $statement->getOnConflict();
-
-			if ($onConflict === null) {
-				return $insertSql;
-			}
-
-			return $this->upsertCompiler->convertToSQL($insertSql, $metadata->tableName, $metadata, $properties, $columnNames, $compiledRows, $onConflict, $parameters);
-		}
-
-		/**
-		 * Compiles a single row's assignments to SQL, keyed by property, after
-		 * checking each value against its target column's declared type.
-		 * @param AstAssignment[] $row
-		 * @param EntityMetadataRecord $metadata
-		 * @param array<string, mixed> $parameters
-		 * @return array<string, string> property => compiled SQL value
-		 * @throws SemanticException
-		 */
-		private function compileRow(array $row, EntityMetadataRecord $metadata, array &$parameters): array {
-			$compiled = [];
-
-			foreach ($row as $assignment) {
-				$compiled[$assignment->getProperty()] = $this->compileAssignmentValue($assignment, $metadata, $parameters);
-			}
-
-			return $compiled;
-		}
-
-		/**
-		 * Compiles a single assignment's value expression to a SQL fragment,
-		 * after checking it against the target column's declared type.
-		 * @param AstAssignment $assignment
-		 * @param EntityMetadataRecord $metadata
-		 * @param array<string, mixed> $parameters
-		 * @return string
-		 * @throws SemanticException
-		 */
-		private function compileAssignmentValue(AstAssignment $assignment, EntityMetadataRecord $metadata, array &$parameters): string {
-			$columnName = $metadata->getColumnName($assignment->getProperty());
-			$columnDef = $columnName !== null ? ($metadata->columnDefinitions[$columnName] ?? null) : null;
-
-			if ($columnDef !== null) {
-				AssignmentValidator::assertValueTypeCompatible($assignment->getProperty(), $assignment->getValue(), $columnDef);
-			}
-
-			$builder = new BuildSqlFromAst($this->entityStore, $parameters, 'VALUES', $this->platform);
-			return $builder->visitNodeAndReturnSQL($assignment->getValue());
-		}
-
-		/**
-		 * Compiles the plain `INSERT INTO table (cols) VALUES (...), (...)`
-		 * shared by the non-upsert path and as the base every upsert dialect
-		 * branch (except SQL Server's MERGE, which has no INSERT of its own)
-		 * builds on.
-		 * @param EntityMetadataRecord $metadata
-		 * @param string[] $columnNames
-		 * @param string[] $properties Row property order — determines column order
-		 * @param array<int, array<string, string>> $compiledRows
-		 * @return string
-		 */
-		private function compileInsert(EntityMetadataRecord $metadata, array $columnNames, array $properties, array $compiledRows): string {
-			return $this->compileInsertGeneric($metadata->tableName, $columnNames, $properties, $compiledRows);
 		}
 
 		/**
@@ -351,23 +245,31 @@
 		 * originally-requested (showInResult() === true) columns are
 		 * re-projected in the outer SELECT.
 		 * @param AstAppend $statement
-		 * @param EntityMetadataRecord $metadata
+		 * @param EntityMetadataRecord|null $metadata Null for a plain-table range
+		 * @param string $tableName
+		 * @param string $targetLabel Entity class name or table name, for error messages
 		 * @param array<string, mixed> $parameters
 		 * @return string
 		 * @throws SemanticException
 		 */
-		private function compileInsertFromSelect(AstAppend $statement, EntityMetadataRecord $metadata, array &$parameters): string {
+		private function compileFromSelect(AstAppend $statement, ?EntityMetadataRecord $metadata, string $tableName, string $targetLabel, array &$parameters): string {
 			$properties = $statement->getColumnsOrFail();
 			$source = $statement->getSourceOrFail();
 
-			AssignmentValidator::assertPropertiesExist($properties, $metadata);
-			$this->assertRequiredColumnsSupplied($properties, $metadata);
+			if ($metadata !== null) {
+				AssignmentValidator::assertPropertiesExist($properties, $metadata);
+				$this->assertRequiredColumnsSupplied($properties, $metadata);
+			}
 
 			// Visibility flags are only set by prepareSource()'s optimizer pass
 			// (already run by the caller — see AppendExecutor::prepareInsertFromSelectSource()),
 			// so the requested-columns list can only be read off $source afterward.
 			$selectSql = $this->finalizeSourceRetrieveSql($source, $parameters);
-			$visibleAliases = $this->resolveVisibleAliases($properties, $source, $metadata->className);
+			$visibleAliases = $this->resolveVisibleAliases($properties, $source, $targetLabel);
+
+			$columnNames = $metadata !== null
+				? array_map(fn(string $property) => $metadata->getColumnNameOrFail($property), $properties)
+				: $properties;
 
 			$derivedTableAlias = $this->identifierQuoter->quoteIdentifier('__append_source');
 
@@ -378,8 +280,8 @@
 
 			return sprintf(
 				'INSERT INTO %s (%s) SELECT %s FROM (%s) AS %s',
-				$this->identifierQuoter->quoteIdentifier($metadata->tableName),
-				$this->quoteColumnList($properties, $metadata),
+				$this->identifierQuoter->quoteIdentifier($tableName),
+				$this->quoteIdentifierList($columnNames),
 				$reprojectedColumns,
 				$selectSql,
 				$derivedTableAlias
@@ -510,19 +412,11 @@
 		}
 
 		/**
-		 * @param string[] $properties
-		 * @param EntityMetadataRecord $metadata
-		 * @return string Comma-separated, quoted column list
-		 */
-		private function quoteColumnList(array $properties, EntityMetadataRecord $metadata): string {
-			return $this->quoteIdentifierList(array_map(fn(string $property) => $metadata->getColumnNameOrFail($property), $properties));
-		}
-
-		/**
 		 * Every non-nullable, non-defaulted, non-generated (primary key) column
 		 * must be supplied, or the database would reject the INSERT at runtime
 		 * — this catches that at compile time instead (see
-		 * objectquel-append-plan.md).
+		 * objectquel-append-plan.md). Entity-backed targets only — a
+		 * plain-table range has no column definitions to check against.
 		 * @param string[] $properties
 		 * @param EntityMetadataRecord $metadata
 		 * @return void
