@@ -3,6 +3,7 @@
 	namespace Quellabs\ObjectQuel\Execution\Executors;
 
 	use Cake\Database\StatementInterface;
+	use Quellabs\ObjectQuel\Exception\SemanticException;
 	use Quellabs\ObjectQuel\Annotations\Orm\PrimaryKeyStrategy;
 	use Quellabs\ObjectQuel\Capabilities\PlatformCapabilitiesInterface;
 	use Quellabs\ObjectQuel\DatabaseAdapter\DatabaseAdapter;
@@ -95,7 +96,7 @@
 		 * @param array<string, mixed> $parameters
 		 * @return QuelResult
 		 * @throws QuelException On compile or execution failure
-		 * @throws \ReflectionException
+		 * @throws \ReflectionException|SemanticException
 		 */
 		public function execute(AstAppend $statement, array $parameters): QuelResult {
 			if ($statement->getRange() instanceof AstRangeJsonSource) {
@@ -110,6 +111,21 @@
 				}
 			}
 
+			return $this->executeDirectInsert($statement, $parameters);
+		}
+
+		/**
+		 * Prepares, compiles, and runs the literal-values (or planner-ineligible
+		 * insert-from-select) form of an append statement directly against the
+		 * connection. Split out of execute() so the JSON-source and
+		 * planner-routed diversions above stay easy to read.
+		 * @param AstAppend $statement
+		 * @param array<string, mixed> $parameters
+		 * @return QuelResult
+		 * @throws QuelException On compile or execution failure
+		 * @throws \ReflectionException
+		 */
+		private function executeDirectInsert(AstAppend $statement, array $parameters): QuelResult {
 			$prepared = $this->prepare($statement, $parameters);
 			$statement = $prepared->getStatement();
 			$metadata = $prepared->getMetadata();
