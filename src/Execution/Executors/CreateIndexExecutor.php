@@ -85,8 +85,13 @@
 		 *         sqlite: a primary key) is missing
 		 */
 		public function compileSql(AstCreateIndex $statement): array {
-			[$primaryKeyColumn, $sqlServerKeyIndexName] = $this->resolveFulltextPrerequisites($statement);
-			return $this->compiler->convertToSQL($statement, $primaryKeyColumn, $sqlServerKeyIndexName);
+			$prerequisites = $this->resolveFulltextPrerequisites($statement);
+
+			return $this->compiler->convertToSQL(
+				$statement,
+				$prerequisites->getPrimaryKeyColumn(),
+				$prerequisites->getSqlServerKeyIndexName()
+			);
 		}
 
 		/**
@@ -95,12 +100,11 @@
 		 * table's primary key column). Both null for every other case
 		 * (plain/unique indexes, and fulltext on mysql/mariadb/pgsql, none
 		 * of which need this).
-		 * @return array{0: string|null, 1: string|null} [$primaryKeyColumn, $sqlServerKeyIndexName]
 		 * @throws QuelException
 		 */
-		private function resolveFulltextPrerequisites(AstCreateIndex $statement): array {
+		private function resolveFulltextPrerequisites(AstCreateIndex $statement): FulltextPrerequisites {
 			if ($statement->getType() !== 'fulltext') {
-				return [null, null];
+				return new FulltextPrerequisites(null, null);
 			}
 
 			$dialect = $this->platform->getDatabaseType();
@@ -117,14 +121,14 @@
 					);
 				}
 
-				return [$primaryKeyColumn, null];
+				return new FulltextPrerequisites($primaryKeyColumn, null);
 			}
 
 			if ($dialect === 'sqlsrv') {
-				return [null, $this->resolveSqlServerKeyIndexName($statement)];
+				return new FulltextPrerequisites(null, $this->resolveSqlServerKeyIndexName($statement));
 			}
 
-			return [null, null];
+			return new FulltextPrerequisites(null, null);
 		}
 
 		/**
