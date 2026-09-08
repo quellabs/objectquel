@@ -2,6 +2,7 @@
 
 	namespace Quellabs\ObjectQuel\Execution\Executors;
 
+	use Quellabs\ObjectQuel\Exception\SemanticException;
 	use Quellabs\ObjectQuel\Capabilities\PlatformCapabilitiesInterface;
 	use Quellabs\ObjectQuel\DatabaseAdapter\DatabaseAdapter;
 	use Quellabs\ObjectQuel\EntityStore;
@@ -65,7 +66,7 @@
 		 * @param AstDelete $statement
 		 * @param array<string, mixed> $parameters
 		 * @return string
-		 * @throws QuelException On compile failure
+		 * @throws QuelException|SemanticException On compile failure
 		 */
 		public function compileSql(AstDelete $statement, array $parameters): string {
 			return $this->compiler->convertToSQL($statement, $parameters);

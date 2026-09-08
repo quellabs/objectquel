@@ -5,6 +5,7 @@
 	use Cake\Database\StatementInterface;
 	use Quellabs\ObjectQuel\Exception\SemanticException;
 	use Quellabs\ObjectQuel\Annotations\Orm\PrimaryKeyStrategy;
+	use Quellabs\ObjectQuel\Exception\EntityResolutionException;
 	use Quellabs\ObjectQuel\Capabilities\PlatformCapabilitiesInterface;
 	use Quellabs\ObjectQuel\DatabaseAdapter\DatabaseAdapter;
 	use Quellabs\ObjectQuel\EntityManager;
@@ -123,7 +124,7 @@
 		 * @param array<string, mixed> $parameters
 		 * @return QuelResult
 		 * @throws QuelException On compile or execution failure
-		 * @throws \ReflectionException
+		 * @throws \ReflectionException|SemanticException
 		 */
 		private function executeDirectInsert(AstAppend $statement, array $parameters): QuelResult {
 			$prepared = $this->prepare($statement, $parameters);
@@ -174,7 +175,7 @@
 		 * @param array<string, mixed> $parameters
 		 * @return string
 		 * @throws QuelException If the target is a JSON-source range, or on compile failure
-		 * @throws \ReflectionException
+		 * @throws \ReflectionException|SemanticException
 		 */
 		public function compileSql(AstAppend $statement, array &$parameters): string {
 			if ($statement->getRange() instanceof AstRangeJsonSource) {
@@ -215,7 +216,7 @@
 			$this->compiler->prepareSource($source, $parameters);
 			return $source;
 		}
-
+		
 		/**
 		 * Handles insert-from-select when the source needs JSON-source or
 		 * temp-table materialization — QuelToSQLRetrieve can't express that as
@@ -239,9 +240,11 @@
 		 * @param AstRetrieve $source Already prepared via prepareInsertFromSelectSource()
 		 * @param array<string, mixed> $parameters
 		 * @return QuelResult
-		 * @throws QuelException On compile or execution failure
+		 * @throws QuelException|SemanticException|EntityResolutionException|\Throwable
 		 */
 		private function executeInsertFromSelectViaPlanner(AstAppend $statement, AstRetrieve $source, array $parameters): QuelResult {
+			// The append's declared column list, e.g. `append to Foo (bar, baz) ...`
+			// — positionally matched against the source's visible aliases below.
 			$properties = $statement->getColumnsOrFail();
 
 			// Two different labels, deliberately: resolveVisibleAliases()
@@ -252,8 +255,14 @@
 			$targetLabel = $entityName ?? $statement->getTableNameOrFail();
 			$tableName = $metadata !== null ? $metadata->tableName : $statement->getTableNameOrFail();
 
+			// Maps $properties[$i] to the source retrieve's $i-th visible
+			// projection alias, so a fetched row's column ($row[$alias]) can be
+			// read back out under the target property name below.
 			$visibleAliases = $this->compiler->resolveVisibleAliases($properties, $source, $targetLabel);
 
+			// Runs the source retrieve exactly like a top-level `retrieve`
+			// query (JSON joins, temp-table promotion and all) and materializes
+			// every row in memory — see the "known limitation" note above.
 			$plan = (new ExecutionPlanBuilder())->build($source, $parameters);
 			$rows = $this->planExecutor->execute($plan);
 
@@ -265,6 +274,10 @@
 			$this->connection->beginTrans();
 
 			try {
+				// Re-insert the fetched rows as chunked literal-values appends
+				// (INSERT_BATCH_SIZE per statement) inside one transaction, so a
+				// failure partway through rolls back everything instead of
+				// leaving a partially-inserted result set.
 				foreach (array_chunk($rows, self::INSERT_BATCH_SIZE) as $batchIndex => $batch) {
 					$chunkParams = [];
 					$assignmentRows = [];
@@ -273,6 +286,9 @@
 						$assignmentRow = [];
 
 						foreach ($properties as $i => $property) {
+							// Parameter names are namespaced by batch and row index
+							// so two different chunks (or two rows in the same
+							// chunk) never collide on the same bound parameter.
 							$paramName = "__append_source_{$batchIndex}_{$rowIndex}_{$property}";
 							$chunkParams[$paramName] = $row[$visibleAliases[$i]];
 							$assignmentRow[] = new AstAssignment($property, new AstParameter($paramName));
@@ -281,6 +297,11 @@
 						$assignmentRows[] = $assignmentRow;
 					}
 
+					// Synthesizes a literal-values AstAppend for this chunk and
+					// compiles/runs it through the same QuelToSQLAppend path as
+					// executeDirectInsert() — see this method's docblock for why
+					// prepare()/fillGeneratedPrimaryKeys() are deliberately
+					// skipped here.
 					$chunkStatement = AstAppend::forValues($statement->getRange(), $assignmentRows);
 					$sql = $this->compiler->convertToSQL($chunkStatement, $chunkParams);
 					$rs = $this->assertInsertSucceeded($this->connection->execute($sql, $chunkParams), $tableName);
@@ -293,6 +314,9 @@
 				throw $e;
 			}
 
+			// No single-row insert ID to report — an insert-from-select can
+			// touch many rows across many batches, so this mirrors
+			// executeDirectInsert()'s isInsertFromSelect() case (id left null).
 			return QuelResult::fromWriteStatement($totalAffected, null);
 		}
 
@@ -322,7 +346,7 @@
 		 * compileSql() so both compile the exact same statement.
 		 * @param AstAppend $statement
 		 * @param array<string, mixed> $parameters
-		 * @throws \ReflectionException
+		 * @throws \ReflectionException|EntityResolutionException
 		 */
 		private function prepare(AstAppend $statement, array &$parameters): PreparedAppend {
 			$entityName = $statement->getEntityName();
@@ -349,29 +373,46 @@
 		 * @throws \ReflectionException
 		 */
 		private function fillGeneratedPrimaryKeys(AstAppend $statement, EntityMetadataRecord $metadata, array &$parameters): PreparedAppend {
+			// Insert-from-select has no literal rows to generate PKs into —
+			// executeInsertFromSelectViaPlanner() handles its own PK story (or
+			// lack of one, since it deliberately bypasses this method entirely
+			// for its synthetic per-chunk statements — see that method's docblock).
 			if ($statement->isInsertFromSelect()) {
 				return new PreparedAppend($statement, $metadata, null);
 			}
 
+			// No declared primary key on this entity — nothing to generate.
 			$primaryKey = $metadata->getPrimaryKey();
 
 			if ($primaryKey === null) {
 				return new PreparedAppend($statement, $metadata, null);
 			}
 
+			// Only the first row is checked: append's rows all share the same
+			// column shape (see AstAppend), so if row 0 supplies the PK, every
+			// row does.
 			$rows = $statement->getRowsOrFail();
 			$suppliedProperties = array_map(fn(AstAssignment $assignment) => $assignment->getProperty(), $rows[0]);
 
+			// Caller already supplied a value for every row — respect it rather
+			// than overwriting with a generated one.
 			if (in_array($primaryKey, $suppliedProperties, true)) {
 				return new PreparedAppend($statement, $metadata, null);
 			}
 
+			// 'identity' means an auto-increment/serial column — the database
+			// assigns it on insert, so there's nothing to generate here (and
+			// nothing to add to the SQL or $parameters).
 			$strategy = $this->resolvePrimaryKeyStrategy($metadata, $primaryKey);
 
 			if ($strategy === 'identity') {
 				return new PreparedAppend($statement, $metadata, null);
 			}
 
+			// Constructor-bypassed: PrimaryKeyFactory's generators only read the
+			// entity's metadata off the instance (e.g. table/column info for a
+			// 'sequence' MAX(col)+1 lookup) — they never touch instance state a
+			// real constructor would set up, and nothing here is persisted.
 			$blankEntity = (new \ReflectionClass($metadata->className))->newInstanceWithoutConstructor();
 			$factory = new PrimaryKeyFactory();
 
@@ -409,6 +450,8 @@
 				$newRows[] = $row;
 			}
 
+			// Matches executeDirectInsert()'s single-row-only rule for reporting
+			// a generated ID — ambiguous which row's value to report otherwise.
 			$generatedId = count($rows) === 1 ? $firstGeneratedValue : null;
 
 			return new PreparedAppend(AstAppend::forValues($statement->getRange(), $newRows), $metadata, $generatedId);
