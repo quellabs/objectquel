@@ -2,6 +2,7 @@
 
 	namespace Quellabs\ObjectQuel\Execution\Executors;
 
+	use Cake\Database\StatementInterface;
 	use Quellabs\ObjectQuel\Annotations\Orm\PrimaryKeyStrategy;
 	use Quellabs\ObjectQuel\Capabilities\PlatformCapabilitiesInterface;
 	use Quellabs\ObjectQuel\DatabaseAdapter\DatabaseAdapter;
@@ -112,18 +113,17 @@
 			[$statement, $metadata, $generatedId] = $this->prepare($statement, $parameters);
 			$sql = $this->compiler->convertToSQL($statement, $parameters);
 
+			// getTableName() is nullable in general (null for an entity or
+			// JSON-source range target — see its docblock), but JSON was
+			// already excluded above and $metadata === null here means this
+			// isn't an entity range either, so it must be a plain-table one —
+			// getTableNameOrFail() is the right accessor for that already-
+			// established case (see its own docblock).
+			$target = $metadata !== null ? $metadata->tableName : $statement->getTableNameOrFail();
+
 			// execute() swallows the exception and returns null on failure
 			// rather than throwing — a try/catch here would never fire.
-			$rs = $this->connection->execute($sql, $parameters);
-
-			if ($rs === null) {
-				$target = $metadata !== null ? $metadata->tableName : $statement->getTableName();
-
-				throw new QuelException(
-					"Failed to append to '{$target}': {$this->connection->getLastErrorMessage()}",
-					'append_error'
-				);
-			}
+			$rs = $this->assertInsertSucceeded($this->connection->execute($sql, $parameters), $target);
 
 			// An identity column's value is only unambiguous for a single-row
 			// literal-values append — for multi-row appends or insert-from-select,
@@ -248,7 +248,18 @@
 		 */
 		private function executeInsertFromSelectViaPlanner(AstAppend $statement, AstRetrieve $source, array $parameters): QuelResult {
 			$properties = $statement->getColumnsOrFail();
-			$targetLabel = $statement->getEntityName() ?? $statement->getTableNameOrFail();
+
+			// resolveVisibleAliases() wants the same label convention its other
+			// caller (compileInsertFromSelect()/compileTableInsertFromSelect())
+			// uses: entity class name when entity-backed, physical table name
+			// for a plain-table range. assertInsertSucceeded()'s error message
+			// wants the physical table name either way, matching execute() —
+			// so these are deliberately two different labels, not one reused.
+			$entityName = $statement->getEntityName();
+			$metadata = $entityName !== null ? $this->entityStore->getMetadata($entityName) : null;
+			$targetLabel = $entityName ?? $statement->getTableNameOrFail();
+			$tableName = $metadata !== null ? $metadata->tableName : $statement->getTableNameOrFail();
+
 			$visibleAliases = $this->compiler->resolveVisibleAliases($properties, $source, $targetLabel);
 
 			$plan = (new ExecutionPlanBuilder())->build($source, $parameters);
@@ -280,15 +291,7 @@
 
 					$chunkStatement = AstAppend::forValues($statement->getRange(), $assignmentRows);
 					$sql = $this->compiler->convertToSQL($chunkStatement, $chunkParams);
-					$rs = $this->connection->execute($sql, $chunkParams);
-
-					if ($rs === null) {
-						throw new QuelException(
-							"Failed to append to '{$targetLabel}': {$this->connection->getLastErrorMessage()}",
-							'append_error'
-						);
-					}
-
+					$rs = $this->assertInsertSucceeded($this->connection->execute($sql, $chunkParams), $tableName);
 					$totalAffected += $rs->rowCount();
 				}
 
@@ -299,6 +302,28 @@
 			}
 
 			return QuelResult::fromWriteStatement($totalAffected, null);
+		}
+
+		/**
+		 * Throws when an execute() call returned null (its documented failure
+		 * signal — see execute()'s own comment on why a try/catch here would
+		 * never fire), naming the physical target table. Shared by execute()
+		 * and executeInsertFromSelectViaPlanner() so both statements report an
+		 * insert failure identically, single-row-append or chunked-from-planner.
+		 * @param StatementInterface|null $rs
+		 * @param string $tableName Physical table name, for the error message
+		 * @return StatementInterface The same $rs, narrowed to non-null
+		 * @throws QuelException When $rs is null
+		 */
+		private function assertInsertSucceeded(?StatementInterface $rs, string $tableName): StatementInterface {
+			if ($rs === null) {
+				throw new QuelException(
+					"Failed to append to '{$tableName}': {$this->connection->getLastErrorMessage()}",
+					'append_error'
+				);
+			}
+
+			return $rs;
 		}
 
 		/**
