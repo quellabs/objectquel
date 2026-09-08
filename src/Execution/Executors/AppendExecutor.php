@@ -110,7 +110,9 @@
 				}
 			}
 
-			[$statement, $metadata, $generatedId] = $this->prepare($statement, $parameters);
+			$prepared = $this->prepare($statement, $parameters);
+			$statement = $prepared->getStatement();
+			$metadata = $prepared->getMetadata();
 			$sql = $this->compiler->convertToSQL($statement, $parameters);
 
 			// getTableName() is nullable in general, but JSON is already
@@ -121,17 +123,13 @@
 			// execute() swallows the exception and returns null on failure
 			// rather than throwing — a try/catch here would never fire.
 			$rs = $this->assertInsertSucceeded($this->connection->execute($sql, $parameters), $target);
-			// An identity column's value is only unambiguous for a single-row
-			// literal-values append — for multi-row appends or insert-from-select,
-			// which row's ID getInsertId() would report is engine-dependent, so
-			// it's left null rather than guessed at. A plain-table range has no
-			// metadata to confirm an auto-increment column exists, but the
-			// readback is a plain connection-level operation with no annotation
-			// dependency (see objectquel-plain-table-range-plan.md's "Open
-			// decisions" — recommended even without entity metadata), so it's
-			// attempted unconditionally there; getInsertId() simply reports
-			// false when there's nothing to report.
+
+			// Insert ID is only unambiguous for single-row literal appends.
+			// Multi-row or insert-from-select is engine-dependent, so leave it
+			// null. Plain-table ranges lack metadata but can safely attempt the
+			// connection-level readback; getInsertId() returns false if unavailable.
 			$eligibleForReadback = $metadata === null || $metadata->autoIncrementColumn !== null;
+			$generatedId = $prepared->getGeneratedId();
 
 			if ($generatedId === null && $eligibleForReadback && !$statement->isInsertFromSelect() && count($statement->getRowsOrFail()) === 1) {
 				$insertId = $this->connection->getInsertId();
@@ -184,7 +182,7 @@
 				}
 			}
 
-			[$statement, , ] = $this->prepare($statement, $parameters);
+			$statement = $this->prepare($statement, $parameters)->getStatement();
 			return $this->compiler->convertToSQL($statement, $parameters);
 		}
 
@@ -308,21 +306,17 @@
 		 * compileSql() so both compile the exact same statement.
 		 * @param AstAppend $statement
 		 * @param array<string, mixed> $parameters
-		 * @return array{0: AstAppend, 1: ?EntityMetadataRecord, 2: mixed} The (possibly rewritten)
-		 *         statement, its entity metadata (null for a plain-table range), and the
-		 *         generated PK value when the statement is a single row — null otherwise
 		 * @throws \ReflectionException
 		 */
-		private function prepare(AstAppend $statement, array &$parameters): array {
+		private function prepare(AstAppend $statement, array &$parameters): PreparedAppend {
 			$entityName = $statement->getEntityName();
 			$metadata = $entityName !== null ? $this->entityStore->getMetadata($entityName) : null;
-			$generatedId = null;
 
-			if ($metadata !== null) {
-				[$statement, $generatedId] = $this->fillGeneratedPrimaryKeys($statement, $metadata, $parameters);
+			if ($metadata === null) {
+				return new PreparedAppend($statement, null, null);
 			}
 
-			return [$statement, $metadata, $generatedId];
+			return $this->fillGeneratedPrimaryKeys($statement, $metadata, $parameters);
 		}
 
 		/**
@@ -336,32 +330,30 @@
 		 * @param AstAppend $statement
 		 * @param EntityMetadataRecord $metadata
 		 * @param array<string, mixed> $parameters
-		 * @return array{0: AstAppend, 1: mixed} The (possibly rewritten) statement, and the
-		 *         generated PK value when the statement is a single row — null otherwise
 		 * @throws \ReflectionException
 		 */
-		private function fillGeneratedPrimaryKeys(AstAppend $statement, EntityMetadataRecord $metadata, array &$parameters): array {
+		private function fillGeneratedPrimaryKeys(AstAppend $statement, EntityMetadataRecord $metadata, array &$parameters): PreparedAppend {
 			if ($statement->isInsertFromSelect()) {
-				return [$statement, null];
+				return new PreparedAppend($statement, $metadata, null);
 			}
 
 			$primaryKey = $metadata->getPrimaryKey();
 
 			if ($primaryKey === null) {
-				return [$statement, null];
+				return new PreparedAppend($statement, $metadata, null);
 			}
 
 			$rows = $statement->getRowsOrFail();
 			$suppliedProperties = array_map(fn(AstAssignment $assignment) => $assignment->getProperty(), $rows[0]);
 
 			if (in_array($primaryKey, $suppliedProperties, true)) {
-				return [$statement, null];
+				return new PreparedAppend($statement, $metadata, null);
 			}
 
 			$strategy = $this->resolvePrimaryKeyStrategy($metadata, $primaryKey);
 
 			if ($strategy === 'identity') {
-				return [$statement, null];
+				return new PreparedAppend($statement, $metadata, null);
 			}
 
 			$blankEntity = (new \ReflectionClass($metadata->className))->newInstanceWithoutConstructor();
@@ -403,7 +395,7 @@
 
 			$generatedId = count($rows) === 1 ? $firstGeneratedValue : null;
 
-			return [AstAppend::forValues($statement->getRange(), $newRows), $generatedId];
+			return new PreparedAppend(AstAppend::forValues($statement->getRange(), $newRows), $metadata, $generatedId);
 		}
 
 		/**
