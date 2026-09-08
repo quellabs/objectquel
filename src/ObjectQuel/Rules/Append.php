@@ -97,13 +97,9 @@
 				throw new ParserException("Expected 'retrieve' after the column list in an insert-from-select append, on line {$this->lexer->getLineNumber()}");
 			}
 
-			// The append's own target isn't a source of rows to select — excluded
-			// here rather than left for the nested retrieve to stumble over, so
-			// it can't silently end up as an unreferenced, unjoined range in the
-			// source SELECT's FROM clause (a phantom cross join against
-			// whatever the target table currently holds, multiplying or
-			// dropping rows depending on its size at the time — not something
-			// the source retrieve should ever see).
+			// Exclude the append's own target — it isn't a row source, and left
+			// in would silently become an unjoined phantom cross join against
+			// whatever the target table currently holds.
 			$sourceRanges = array_values(array_filter(
 				$ranges,
 				fn(AstRange $range) => $range->getName() !== $targetName

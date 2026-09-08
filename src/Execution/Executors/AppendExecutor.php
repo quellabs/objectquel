@@ -42,10 +42,10 @@
 	class AppendExecutor {
 
 		/**
-		 * Number of rows inserted per batch when an insert-from-select's
-		 * source needs the planner (see executeInsertFromSelectViaPlanner()),
-		 * mirroring TempTableExecutor::INSERT_BATCH_SIZE — avoids hitting
-		 * per-statement/packet size limits on large fetched result sets.
+		 * Rows per batch for planner-routed insert-from-select (see
+		 * executeInsertFromSelectViaPlanner()) — mirrors
+		 * TempTableExecutor::INSERT_BATCH_SIZE to avoid per-statement/packet
+		 * size limits on large results.
 		 */
 		private const int INSERT_BATCH_SIZE = 500;
 
@@ -113,18 +113,14 @@
 			[$statement, $metadata, $generatedId] = $this->prepare($statement, $parameters);
 			$sql = $this->compiler->convertToSQL($statement, $parameters);
 
-			// getTableName() is nullable in general (null for an entity or
-			// JSON-source range target — see its docblock), but JSON was
-			// already excluded above and $metadata === null here means this
-			// isn't an entity range either, so it must be a plain-table one —
-			// getTableNameOrFail() is the right accessor for that already-
-			// established case (see its own docblock).
+			// getTableName() is nullable in general, but JSON is already
+			// excluded and $metadata === null rules out entity too — must be
+			// plain-table, so getTableNameOrFail() is the right accessor.
 			$target = $metadata !== null ? $metadata->tableName : $statement->getTableNameOrFail();
 
 			// execute() swallows the exception and returns null on failure
 			// rather than throwing — a try/catch here would never fire.
 			$rs = $this->assertInsertSucceeded($this->connection->execute($sql, $parameters), $target);
-
 			// An identity column's value is only unambiguous for a single-row
 			// literal-values append — for multi-row appends or insert-from-select,
 			// which row's ID getInsertId() would report is engine-dependent, so
@@ -178,10 +174,9 @@
 				$source = $this->prepareInsertFromSelectSource($statement, $parameters);
 
 				if ($this->compiler->needsPlanner($source)) {
-					// A chunked, data-dependent number of INSERT statements can't be
-					// shown without actually running the source SELECT — same
-					// "nothing to compile or show" reasoning as the JSON-target
-					// case above.
+					// Row count is data-dependent — can't show static SQL
+					// without running the SELECT, same reasoning as the
+					// JSON-target case above.
 					throw new QuelException(
 						"append ... retrieve whose source requires JSON-source or temp-table materialization has no static SQL to explain — the number of INSERT statements depends on the fetched row count; run the query to see actual behavior",
 						'not_plannable'
@@ -194,12 +189,9 @@
 		}
 
 		/**
-		 * Runs an insert-from-select statement's source retrieve through
-		 * resolve/normalize/validate/optimize (see QuelToSQLAppend::prepareSource()),
-		 * shared by execute() and compileSql() so both decide the fast-path-vs-
-		 * planner branch off the exact same prepared AST, and so the optimizer
-		 * pipeline runs exactly once per statement — running it twice on an
-		 * already-optimized AST is not safe.
+		 * Prepares the source retrieve (see QuelToSQLAppend::prepareSource()).
+		 * Shared by execute()/compileSql() so the optimizer runs exactly once
+		 * per statement — re-running it on an already-optimized AST isn't safe.
 		 * @param AstAppend $statement
 		 * @param array<string, mixed> $parameters
 		 * @return AstRetrieve The statement's source retrieve, mutated in place
@@ -211,35 +203,24 @@
 		}
 
 		/**
-		 * Executes an insert-from-select append whose source retrieve needs
-		 * JSON-source or temp-table materialization — a plain inline
-		 * `INSERT ... SELECT ...` can't express that (QuelToSQLRetrieve silently
-		 * drops any range it doesn't understand), so instead: run the source
-		 * through the same ExecutionPlanBuilder/PlanExecutor pipeline a
-		 * top-level retrieve uses, then re-insert the fetched rows as a
-		 * literal-values append, chunked and wrapped in one transaction so the
-		 * whole statement stays atomic despite being two separate DB
-		 * round-trips instead of one.
+		 * Handles insert-from-select when the source needs JSON-source or
+		 * temp-table materialization — QuelToSQLRetrieve can't express that as
+		 * a single INSERT...SELECT (it silently drops ranges it doesn't
+		 * understand), so instead: run the source through
+		 * ExecutionPlanBuilder/PlanExecutor like a top-level retrieve, then
+		 * re-insert the fetched rows as a chunked, transactional
+		 * literal-values append.
 		 *
-		 * Deliberately bypasses prepare()/fillGeneratedPrimaryKeys() for the
-		 * synthetic per-chunk statements: fillGeneratedPrimaryKeys() only skips
-		 * PK generation when isInsertFromSelect() is true, which is false for a
-		 * forValues()-built node — routing through prepare() here would
-		 * therefore auto-generate PKs, silently diverging from the fast path's
-		 * existing behavior (plain insert-from-select never generates PKs) for
-		 * the exact same QUEL statement shape, purely because a JSON range
-		 * happened to be present. Calling $this->compiler->convertToSQL()
-		 * directly keeps PK handling identical to the fast path.
+		 * Deliberately skips prepare()/fillGeneratedPrimaryKeys(): it only
+		 * skips PK generation for isInsertFromSelect() statements, which a
+		 * synthetic forValues() chunk isn't — routing through it would
+		 * auto-generate PKs here but not on the fast path, diverging behavior
+		 * for the same QUEL shape purely because JSON was involved.
 		 *
-		 * Known limitation: unlike the single INSERT...SELECT this replaces,
-		 * the entire source result set is read into PHP memory
-		 * (PlanExecutor::execute()'s return is fully materialized) before any
-		 * row is inserted, and that read happens before the transaction opens
-		 * — there is no DB-side snapshot linking the SELECT and the INSERTs the
-		 * way one atomic SQL statement provides, and very large sources are
-		 * buffered rather than streamed. Inherent to supporting in-memory JSON
-		 * joins at all — a JSON-joined result can't be streamed through a
-		 * single SQL statement.
+		 * Known limitation: unlike a single INSERT...SELECT, the full source
+		 * result is read into memory before the transaction opens — no
+		 * DB-side snapshot links the SELECT and the INSERTs, and large
+		 * sources aren't streamed. Unavoidable for in-memory JSON joins.
 		 * @param AstAppend $statement
 		 * @param AstRetrieve $source Already prepared via prepareInsertFromSelectSource()
 		 * @param array<string, mixed> $parameters
@@ -249,12 +230,9 @@
 		private function executeInsertFromSelectViaPlanner(AstAppend $statement, AstRetrieve $source, array $parameters): QuelResult {
 			$properties = $statement->getColumnsOrFail();
 
-			// resolveVisibleAliases() wants the same label convention its other
-			// caller (compileInsertFromSelect()/compileTableInsertFromSelect())
-			// uses: entity class name when entity-backed, physical table name
-			// for a plain-table range. assertInsertSucceeded()'s error message
-			// wants the physical table name either way, matching execute() —
-			// so these are deliberately two different labels, not one reused.
+			// Two different labels, deliberately: resolveVisibleAliases()
+			// wants entity class name (entity) or table name (plain-table);
+			// the error message always wants the physical table name.
 			$entityName = $statement->getEntityName();
 			$metadata = $entityName !== null ? $this->entityStore->getMetadata($entityName) : null;
 			$targetLabel = $entityName ?? $statement->getTableNameOrFail();
@@ -305,11 +283,9 @@
 		}
 
 		/**
-		 * Throws when an execute() call returned null (its documented failure
-		 * signal — see execute()'s own comment on why a try/catch here would
-		 * never fire), naming the physical target table. Shared by execute()
-		 * and executeInsertFromSelectViaPlanner() so both statements report an
-		 * insert failure identically, single-row-append or chunked-from-planner.
+		 * Throws when execute() returned null (its documented failure
+		 * signal), naming the physical target table. Shared by execute() and
+		 * executeInsertFromSelectViaPlanner() for identical failure reporting.
 		 * @param StatementInterface|null $rs
 		 * @param string $tableName Physical table name, for the error message
 		 * @return StatementInterface The same $rs, narrowed to non-null

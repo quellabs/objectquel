@@ -211,17 +211,12 @@
 				// Get the name of the range
 				$rangeName = $range->getName();
 
-				// A temp-table-promoted range (AstRangeDatabaseTempTable — a
-				// AstRangeDatabaseSubquery subtype, so it must be checked before
-				// the generic subquery branch below) has already been
-				// materialized into a real physical table by TempTableStage by
-				// the time this runs, so it's referenced by name like any other
-				// table, not inlined as a derived table — mirroring getJoin()'s
-				// identical special-case for the same range kind.
-				// Non-promoted subquery ranges (plain AstRangeDatabaseSubquery,
-				// or AstRangeDatabaseMaterialized) are emitted as derived tables
-				// inline in the FROM clause. Regular ranges reference a physical
-				// table looked up from the entity store.
+				// A temp-table-promoted range is already materialized as a real
+				// table by the time this runs, so reference it by name like any
+				// other table (mirrors getJoin()'s same special-case) — checked
+				// before the generic subquery branch since it's a subtype of it.
+				// Non-promoted subquery/materialized ranges are inlined as
+				// derived tables; regular ranges resolve via the entity store.
 				if ($range instanceof AstRangeDatabaseTempTable) {
 					$tableName = $range->getTableName();
 					$tableNames[] = $this->quoteAsAlias($this->identifierQuoter->quoteIdentifier($tableName), $rangeName);

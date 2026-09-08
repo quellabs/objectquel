@@ -48,16 +48,12 @@
 		/**
 		 * Create a deep copy of this range including all child nodes.
 		 *
-		 * Overrides AstRangeDatabaseSubquery::deepClone() — that implementation
-		 * calls `new static(...)` with only its own constructor's parameter
-		 * list (name, query, joinProperty, required, includeAsJoin), which
-		 * doesn't supply this subclass's required $tableName, so cloning a
-		 * AstRangeDatabaseTempTable through the inherited method fails with a
-		 * TypeError. StageFactory::createDatabaseExecutionStage() clones every
-		 * range in the query it's building a stage from — including a
-		 * not-yet-materialized temp-table range, whose $tableName has already
-		 * been assigned by DatabaseRangePromotor by that point — so this needs
-		 * to preserve it explicitly.
+		 * Overrides AstRangeDatabaseSubquery::deepClone() — its `new static(...)`
+		 * only supplies the parent constructor's parameters, missing this
+		 * subclass's required $tableName, so cloning through the inherited
+		 * method throws a TypeError. StageFactory::createDatabaseExecutionStage()
+		 * clones every range in a query, including not-yet-materialized
+		 * temp-table ranges, so $tableName must be preserved here.
 		 * @return static A new instance with cloned child nodes
 		 */
 		public function deepClone(): static {

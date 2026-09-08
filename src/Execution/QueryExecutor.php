@@ -90,11 +90,10 @@
 			$this->databaseExecutor = $databaseExecutor ?? new RetrieveExecutor($entityManager, $this->capabilities);
 			$this->jsonExecutor = new JsonRetrieveExecutor();
 
-			// Init the plan executor. Built here — before AppendExecutor — because
-			// AppendExecutor needs it (for insert-from-select sources that require
-			// JSON/temp-table materialization; see AppendExecutor::executeInsertFromSelectViaPlanner())
-			// and PlanExecutor's constructor only needs getDatabaseExecutor()/getJsonExecutor()/
-			// getConnection()/getEntityManager(), all already available at this point.
+			// Built before AppendExecutor, which needs it (for insert-from-select
+			// sources requiring JSON/temp-table materialization) — its
+			// dependencies (databaseExecutor, jsonExecutor, connection) are
+			// already set above.
 			$this->planExecutor = new PlanExecutor($this);
 
 			$this->createTableExecutor = new CreateTableExecutor($this->connection, $this->capabilities);

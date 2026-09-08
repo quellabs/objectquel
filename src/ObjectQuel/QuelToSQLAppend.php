@@ -47,14 +47,12 @@
 	 * QuelToSQLReplace/QuelToSQLDelete are; it exists purely to keep that
 	 * dialect-branching logic out of this file.
 	 *
-	 * Every compile path below takes a nullable EntityMetadataRecord rather
-	 * than being duplicated once for an entity-backed target range and once
-	 * for a plain-table one: entity-backed means a property maps to a column
-	 * via metadata and the property-exists/required-column/value-type checks
-	 * apply; a plain-table range (see objectquel-plain-table-range-plan.md)
-	 * has no metadata to check against, so a property name IS the column
-	 * name and none of those checks run — every `$metadata !== null` branch
-	 * below is that same distinction, not a separate code path.
+	 * Every compile path below takes a nullable EntityMetadataRecord instead
+	 * of being duplicated per target kind: non-null means a property maps to
+	 * a column via metadata and the property-exists/required-column/
+	 * value-type checks apply; null (plain-table range, see
+	 * objectquel-plain-table-range-plan.md) means the property name IS the
+	 * column name and none of those checks run.
 	 */
 	class QuelToSQLAppend {
 
@@ -261,9 +259,8 @@
 				$this->assertRequiredColumnsSupplied($properties, $metadata);
 			}
 
-			// Visibility flags are only set by prepareSource()'s optimizer pass
-			// (already run by the caller — see AppendExecutor::prepareInsertFromSelectSource()),
-			// so the requested-columns list can only be read off $source afterward.
+			// Visibility flags are set by prepareSource()'s optimizer pass
+			// (already run by the caller), so aliases can only be read afterward.
 			$selectSql = $this->finalizeSourceRetrieveSql($source, $parameters);
 			$visibleAliases = $this->resolveVisibleAliases($properties, $source, $targetLabel);
 
@@ -289,19 +286,13 @@
 		}
 
 		/**
-		 * Resolves identifiers, normalizes, validates, and optimizes the nested
-		 * `retrieve` of an insert-from-select append — the same pipeline
-		 * QueryExecutor runs for a top-level retrieve before handing it to
-		 * QuelToSQLRetrieve. Mutates $source in place (identifier types, range
-		 * rewrites, promotion of subquery ranges that need temp-table
-		 * materialization to AstRangeDatabaseTempTable, etc.).
-		 *
-		 * Must run exactly once per statement — the caller
-		 * (AppendExecutor::prepareInsertFromSelectSource()) is responsible for
-		 * that, since re-running the optimizer on an already-optimized AST is
-		 * not safe. Once this has run, needsPlanner() and
-		 * finalizeSourceRetrieveSql()/resolveVisibleAliases() can be called any
-		 * number of times against the same $source.
+		 * Resolves identifiers, normalizes, validates, and optimizes the
+		 * insert-from-select source — the same pipeline a top-level retrieve
+		 * goes through. Mutates $source in place (identifier types, range
+		 * rewrites, temp-table promotion). Must run exactly once per
+		 * statement (the caller, AppendExecutor::prepareInsertFromSelectSource(),
+		 * owns that) — after that, needsPlanner()/finalizeSourceRetrieveSql()/
+		 * resolveVisibleAliases() can all be called freely.
 		 * @param AstRetrieve $source
 		 * @param array<string, mixed> $parameters
 		 * @return void
@@ -338,19 +329,16 @@
 		}
 
 		/**
-		 * Whether an already-prepared (see prepareSource()) source retrieve
-		 * needs the full ExecutionPlanBuilder/PlanExecutor pipeline instead of
-		 * a plain inline SQL SELECT — true when it has a JSON-source range, or a
-		 * subquery range the optimizer promoted to AstRangeDatabaseTempTable for
-		 * temp-table materialization.
+		 * Whether a prepared (see prepareSource()) source retrieve needs the
+		 * full ExecutionPlanBuilder/PlanExecutor pipeline instead of a plain
+		 * inline SQL SELECT — true for a JSON-source range or a subquery
+		 * range promoted to AstRangeDatabaseTempTable.
 		 *
-		 * No recursion into subquery ranges: by the time prepareSource()'s
-		 * optimizer pass has run, DatabaseRangePromotor has already resolved
-		 * every AstRangeDatabaseSubquery at this level to either
-		 * AstRangeDatabaseTempTable (caught below) or AstRangeDatabaseMaterialized
-		 * (provably free of external sources — safe to inline), mirroring the
-		 * same non-recursive assumption ExecutionPlanBuilder::extractTemporaryRanges()
-		 * already makes for a top-level retrieve.
+		 * No recursion: DatabaseRangePromotor has already resolved every
+		 * AstRangeDatabaseSubquery at this level to either TempTable (caught
+		 * below) or Materialized (provably external-source-free, safe to
+		 * inline) — same non-recursive assumption
+		 * ExecutionPlanBuilder::extractTemporaryRanges() makes.
 		 * @param AstRetrieve $source
 		 * @return bool
 		 */

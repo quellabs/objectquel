@@ -774,21 +774,16 @@
 
 		/**
 		 * Resolves a subquery-family range's column reference. Shared by
-		 * buildColumnNameForTemporaryTable() and buildSortableColumn(), which
-		 * both need the same distinction:
+		 * buildColumnNameForTemporaryTable() and buildSortableColumn().
 		 *
-		 * A temp-table-promoted range (AstRangeDatabaseTempTable) has been
-		 * materialized into a real physical table by TempTableStage, whose
-		 * columns are named directly from the inner query's own aliases —
-		 * already range-prefix-stripped by Rules\Retrieve's isTemporaryTable
-		 * handling (e.g. bare "username", not "t.username"), since that inner
-		 * query is compiled independently via ExecutionPlanBuilder/
-		 * PlanExecutor, never through QuelToSQLRetrieve::getFieldNames()'s
-		 * $outerRangeName rewrite. A plain (non-promoted) subquery or
-		 * materialized range, by contrast, IS compiled through that rewrite
-		 * (see getFrom()/getJoin() inlining it via
-		 * convertToSQL($range->getQuery(), $rangeName)) — only that case's
-		 * column aliases are actually dotted ("rangeName.property", e.g. "x.id").
+		 * A temp-table-promoted range is materialized into a real physical
+		 * table whose columns are named from the inner query's own
+		 * (already range-prefix-stripped, e.g. bare "username") aliases,
+		 * since that query is compiled independently, never through
+		 * QuelToSQLRetrieve::getFieldNames()'s $outerRangeName rewrite. A
+		 * plain (non-promoted) subquery/materialized range IS compiled
+		 * through that rewrite (getFrom()/getJoin() inline it) — only there
+		 * are column aliases actually dotted ("rangeName.property").
 		 * @param AstRange|null $range
 		 * @param string $rangeName
 		 * @param string $columnName

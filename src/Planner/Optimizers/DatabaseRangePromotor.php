@@ -64,13 +64,9 @@
 					);
 				}
 				
-				// Every AstIdentifier's range pointer (e.g. the `t` in `t.username`)
-				// was captured by ResolveIdentifierRange earlier in the pipeline,
-				// before this promotion ever runs — getRange() returns that stored
-				// reference, not a live lookup by name. Left unrelinked, every
-				// reference to this range throughout the query (projections,
-				// WHERE, sort) would keep pointing at the discarded pre-promotion
-				// $range object instead of $replacement.
+				// getRange() returns a stored reference (set by ResolveIdentifierRange
+				// earlier), not a live lookup — left unrelinked, every reference to
+				// this range would keep pointing at the discarded $range object.
 				$this->relinkIdentifiers($retrieve, $range, $replacement);
 				$ranges[] = $replacement;
 			}
