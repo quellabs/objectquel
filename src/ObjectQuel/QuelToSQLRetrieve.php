@@ -462,16 +462,11 @@
 			
 			// Loop through all entities (ranges) and process those with join properties.
 			foreach ($ranges as $range) {
-				// Only use database ranges. Deliberately excludes a bare
-				// AstRangeDatabaseSubquery (as opposed to its
-				// AstRangeDatabaseTempTable/AstRangeDatabaseMaterialized
-				// subtypes, which ARE included): by the time a retrieve
-				// reaches this compiler, DatabaseRangePromotor has already
-				// resolved every subquery range with a join property to one
-				// of those two subtypes (see QuelToSQLAppend::needsPlanner()'s
-				// docblock for the same non-recursive assumption spelled out
-				// in more detail) — a bare Subquery range here would silently
-				// be dropped from the JOIN clause instead of erroring.
+				// Only use database ranges. Bare AstRangeDatabaseSubquery is
+				// excluded because DatabaseRangePromotor has already resolved
+				// every subquery range with a join property to a temp-table or
+				// materialized subtype before compilation. A bare Subquery here
+				// would otherwise be silently omitted from the JOIN clause.
 				if (
 					!$range instanceof AstRangeDatabase &&
 					!$range instanceof AstRangeDatabaseTempTable &&
@@ -525,7 +520,6 @@
 		
 		/**
 		 * Checks if a SQL field name is already present in the list of fields.
-		 *
 		 * @param array<string> $existingFields
 		 *   Array of existing field names or field groups.
 		 *   Some entries may be comma-separated strings produced by buildEntityColumns()
