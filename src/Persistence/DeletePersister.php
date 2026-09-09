@@ -67,6 +67,10 @@
 		/**
 		 * Builds the WHERE conditions and parameters that identify the row
 		 * to delete by its primary key.
+		 * @param object $entity
+		 * @param EntityMetadataRecord $metadata
+		 * @param string $alias
+		 * @return QuelFragment
 		 */
 		private function buildPrimaryKeyConditions(object $entity, EntityMetadataRecord $metadata, string $alias): QuelFragment {
 			$conditions = [];
@@ -85,7 +89,9 @@
 
 		/**
 		 * Executes the generated `delete` statement.
+		 * @param string $quel
 		 * @param array<string, mixed> $parameters
+		 * @return void
 		 * @throws OrmException
 		 */
 		private function executeDelete(string $quel, array $parameters): void {

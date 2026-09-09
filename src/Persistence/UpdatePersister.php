@@ -124,8 +124,10 @@
 		 * Builds the `prop = :param` assignment list and its bound parameters for the
 		 * changed columns. Falls back to a harmless self-assignment when nothing
 		 * changed, since the grammar requires at least one assignment.
+		 * @param EntityMetadataRecord $metadata
 		 * @param object $entity
 		 * @param array<string, mixed> $changedColumns Changed fields as column => value pairs
+		 * @return QuelFragment
 		 */
 		private function buildAssignments(EntityMetadataRecord $metadata, object $entity, array $changedColumns): QuelFragment {
 			$assignments = [];
@@ -160,8 +162,11 @@
 		/**
 		 * Builds the WHERE conditions and parameters that identify the row and
 		 * enforce the optimistic-lock check against the original snapshot.
+		 * @param EntityMetadataRecord $metadata
 		 * @param object $entity
 		 * @param array<string, mixed> $originalData
+		 * @param string $alias
+		 * @return QuelFragment
 		 */
 		private function buildLockConditions(EntityMetadataRecord $metadata, object $entity, array $originalData, string $alias): QuelFragment {
 			$conditions = [];
@@ -186,7 +191,9 @@
 
 		/**
 		 * Executes the generated `replace` statement.
+		 * @param string $quel
 		 * @param array<string, mixed> $parameters
+		 * @return QuelResult
 		 * @throws OrmException
 		 */
 		private function executeReplace(string $quel, array $parameters): QuelResult {
@@ -207,8 +214,10 @@
 		 * Detects a lost update: zero rows affected means either the row was
 		 * deleted by another process, or the version column no longer matches
 		 * the snapshot (concurrent modification).
+		 * @param QuelResult $result
 		 * @param array<string, mixed> $originalData
 		 * @param array<int, string> $versionColumnNames
+		 * @return void
 		 * @throws OrmException
 		 */
 		private function assertRowUpdated(QuelResult $result, array $originalData, array $versionColumnNames): void {
@@ -229,6 +238,9 @@
 		/**
 		 * Re-fetches and applies any database-generated version values (e.g.
 		 * updated_at) onto the live entity after a successful update.
+		 * @param object $entity
+		 * @param EntityMetadataRecord $metadata
+		 * @return void
 		 */
 		private function readBackVersionValues(object $entity, EntityMetadataRecord $metadata): void {
 			$primaryKeyValues = [];

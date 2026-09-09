@@ -110,6 +110,9 @@
 		 * Assigns a generated value to every non-identity primary key that's
 		 * still unset. Identity-strategy keys are left alone for the database
 		 * (or {@see applyGeneratedId}) to assign.
+		 * @param object $entity
+		 * @param EntityMetadataRecord $metadata
+		 * @return void
 		 * @throws OrmException If a generator returns null
 		 * @throws EntityResolutionException
 		 */
@@ -141,6 +144,9 @@
 		 * and any still-unset identity PK. Falls back to a NULL-bound
 		 * auto-increment column when nothing else is left to insert, since
 		 * the grammar requires at least one assignment.
+		 * @param object $entity
+		 * @param EntityMetadataRecord $metadata
+		 * @return QuelFragment
 		 */
 		private function buildAssignments(object $entity, EntityMetadataRecord $metadata): QuelFragment {
 			$assignments = [];
@@ -183,7 +189,9 @@
 
 		/**
 		 * Executes the generated `append to` statement.
+		 * @param string $quel
 		 * @param array<string, mixed> $parameters
+		 * @return QuelResult
 		 * @throws OrmException
 		 */
 		private function executeAppend(string $quel, array $parameters): QuelResult {
@@ -203,6 +211,10 @@
 		/**
 		 * Applies the database-generated auto-increment id onto the live
 		 * entity, when the entity has one and the statement produced one.
+		 * @param object $entity
+		 * @param EntityMetadataRecord $metadata
+		 * @param QuelResult $result
+		 * @return void
 		 */
 		private function applyGeneratedId(object $entity, EntityMetadataRecord $metadata, QuelResult $result): void {
 			if ($metadata->autoIncrementColumn === null) {
@@ -219,6 +231,9 @@
 		/**
 		 * Re-fetches and applies any database-generated version values (e.g.
 		 * created_at) onto the live entity after a successful insert.
+		 * @param object $entity
+		 * @param EntityMetadataRecord $metadata
+		 * @return void
 		 */
 		private function readBackVersionValues(object $entity, EntityMetadataRecord $metadata): void {
 			$primaryKeyValues = [];
