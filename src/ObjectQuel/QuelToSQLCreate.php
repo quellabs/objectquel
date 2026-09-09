@@ -5,6 +5,7 @@
 	use Quellabs\ObjectQuel\Capabilities\PlatformCapabilitiesInterface;
 	use Quellabs\ObjectQuel\DatabaseAdapter\DDLTypeMapper;
 	use Quellabs\ObjectQuel\DatabaseAdapter\SqlIdentifierQuoter;
+	use Quellabs\ObjectQuel\Exception\QuelException;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstCreateTable;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstCreateTableForeignKey;
 
@@ -52,6 +53,7 @@
 		 * statement to SQL.
 		 * @param AstCreateTable $statement
 		 * @return string
+		 * @throws QuelException If an embedded foreign key's derived constraint name exceeds the identifier length limit
 		 */
 		public function convertToSQL(AstCreateTable $statement): string {
 			// SQL Server needs special syntax
@@ -147,16 +149,27 @@
 		 * objectquel-foreign-key-design.md, "Implementation surface").
 		 */
 		private function renderForeignKeyConstraint(string $tableName, AstCreateTableForeignKey $foreignKey): string {
-			$name = ForeignKeyConstraintNamer::name($tableName, $foreignKey->getColumn());
+			$referencedColumn = $foreignKey->getReferencedColumn();
+
+			if ($referencedColumn === null) {
+				throw new \LogicException(
+					"Cannot compile foreign key on '{$tableName}.{$foreignKey->getColumn()}': the referenced column " .
+					"was never resolved — callers must resolve a column-less 'references Table' via " .
+					"ForeignKeyReferenceResolver before compiling"
+				);
+			}
+
+			$name = ForeignKeyConstraintNamer::nameOrThrow($tableName, $foreignKey->getColumn());
+			$dialect = $this->platform->getDatabaseType();
 
 			return sprintf(
 				'CONSTRAINT %s FOREIGN KEY (%s) REFERENCES %s (%s) ON DELETE %s ON UPDATE %s',
 				$this->identifierQuoter->quoteIdentifier($name),
 				$this->identifierQuoter->quoteIdentifier($foreignKey->getColumn()),
 				$this->identifierQuoter->quoteIdentifier($foreignKey->getReferencedTable()),
-				$this->identifierQuoter->quoteIdentifier($foreignKey->getReferencedColumn()),
-				$foreignKey->getOnDelete(),
-				$foreignKey->getOnUpdate()
+				$this->identifierQuoter->quoteIdentifier($referencedColumn),
+				ForeignKeyActionNormalizer::forDialect($foreignKey->getOnDelete(), $dialect),
+				ForeignKeyActionNormalizer::forDialect($foreignKey->getOnUpdate(), $dialect)
 			);
 		}
 	}

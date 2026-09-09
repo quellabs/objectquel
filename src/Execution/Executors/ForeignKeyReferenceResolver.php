@@ -16,7 +16,22 @@
 	class ForeignKeyReferenceResolver {
 
 		public static function resolveReferencedColumn(DatabaseAdapter $connection, string $referencedTable): string {
-			$columns = $connection->getPrimaryKeyColumns($referencedTable);
+			// getPrimaryKeyColumns() throws its own (non-QuelException) error
+			// when $referencedTable doesn't exist yet (e.g. a self-referencing
+			// foreign key resolved before its own CREATE TABLE runs) — rewrap
+			// so every failure on this path is a QuelException.
+			try {
+				$columns = $connection->getPrimaryKeyColumns($referencedTable);
+			} catch (QuelException $e) {
+				throw $e;
+			} catch (\Throwable $e) {
+				throw new QuelException(
+					"Cannot default the referenced column for a foreign key to '{$referencedTable}': " .
+					"the table's schema could not be read — {$e->getMessage()}",
+					'foreign_key_reference_unresolved',
+					previous: $e
+				);
+			}
 
 			if (count($columns) !== 1) {
 				throw new QuelException(

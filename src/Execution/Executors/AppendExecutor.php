@@ -316,8 +316,7 @@
 		/**
 		 * Resolves entity metadata (when the target is a declared entity range),
 		 * normalizes bound-parameter values, and fills in any generated primary
-		 * keys, shared by execute() and compileSql() so both compile the exact
-		 * same statement.
+		 * keys. Called by executeDirectInsert() before compiling the statement.
 		 * @param AstAppend $statement
 		 * @param array<string, mixed> $parameters
 		 * @throws \ReflectionException|EntityResolutionException

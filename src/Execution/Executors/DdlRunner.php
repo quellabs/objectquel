@@ -51,6 +51,7 @@
 		 * @param string $failureMessage
 		 * @param string $errorCode
 		 * @throws QuelException On the first failing statement
+		 * @throws \Throwable Any other exception raised while running $statements — rolled back before rethrowing
 		 */
 		public function runTransactionally(array $statements, PlatformCapabilitiesInterface $platform, string $failureMessage, string $errorCode): void {
 			if (!$platform->supportsTransactionalDDL()) {
@@ -62,7 +63,7 @@
 
 			try {
 				$this->run($statements, $failureMessage, $errorCode);
-			} catch (QuelException $e) {
+			} catch (\Throwable $e) {
 				$this->connection->rollbackTrans();
 				throw $e;
 			}

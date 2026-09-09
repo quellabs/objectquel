@@ -9,6 +9,7 @@
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstAlterAddIndex;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstAlterDropIndex;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstAlterDropPrimaryKey;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstAlterOperation;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstAlterSetPrimaryKey;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstAlterTable;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstCreateIndex;
@@ -136,11 +137,19 @@
 		}
 
 		/**
-		 * Defaults a column-less `references Table` to the target's primary key.
+		 * Defaults a column-less `references Table` to the target's primary
+		 * key. Skipped on engines with no named-foreign-key support
+		 * (SQLite): QuelToSQLAlter rejects `add foreign key` there
+		 * regardless of the referenced column, so resolving it first would
+		 * be a wasted round trip that can also mask the real error.
 		 * @param AstAlterOperation[] $operations
 		 * @return AstAlterOperation[]
 		 */
 		private function resolveForeignKeyOperations(array $operations): array {
+			if (!$this->platform->supportsNamedForeignKeys()) {
+				return $operations;
+			}
+
 			$resolved = [];
 
 			foreach ($operations as $operation) {

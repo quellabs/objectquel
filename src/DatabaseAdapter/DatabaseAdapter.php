@@ -8,6 +8,7 @@
 	use Cake\Database\Connection;
 	use Phinx\Db\Adapter\AdapterInterface;
 	use Phinx\Db\Adapter\AdapterFactory;
+	use Quellabs\ObjectQuel\ObjectQuel\ForeignKeyConstraintNamer;
 	
 	/**
 	 * Database adapter that ties ObjectQuel and CakePHP Database together
@@ -69,7 +70,10 @@
 		
 		/** @var int Current nesting level of active transactions (0 = no active transaction) */
 		protected int $transaction_depth;
-		
+
+		/** @var bool Set when a nested rollbackTrans() marks the transaction rollback-only — see beginTrans()/commitTrans() */
+		protected bool $transaction_rollback_only;
+
 		/** @var string|null Cached database type identifier (null = not yet determined) */
 		private ?string $databaseTypeCache;
 		
@@ -94,6 +98,7 @@
 			$this->last_error = 0;
 			$this->last_error_message = '';
 			$this->transaction_depth = 0;
+			$this->transaction_rollback_only = false;
 			$this->databaseTypeCache = null;
 			$this->phinxAdapterCache = null;
 			$this->sqlServerCompatibilityLevelCache = null;
@@ -660,9 +665,10 @@
 		/**
 		 * Begins a new database transaction.
 		 *
-		 * Nesting is depth-counted, not savepoint-based: an inner
-		 * rollbackTrans() does not roll back immediately, it only rolls
-		 * back once the outermost call unwinds.
+		 * Nesting is depth-counted, not savepoint-based: a nested
+		 * rollbackTrans() marks the whole transaction rollback-only rather
+		 * than rolling back immediately, so an outer commitTrans() still
+		 * rolls back instead of silently committing.
 		 *
 		 * @return void
 		 */
@@ -670,28 +676,35 @@
 			if ($this->transaction_depth == 0) {
 				$this->connection->begin();
 			}
-			
+
 			$this->transaction_depth++;
 		}
-		
+
 		/**
 		 * Commits the current transaction.
 		 * See beginTrans() for notes on logical (depth-counted) nesting.
 		 * @return void
 		 * @throws \LogicException If called without a matching beginTrans()
+		 * @throws \LogicException If a nested rollbackTrans() had already marked the transaction rollback-only — rolled back, not committed, before this throws
 		 */
 		public function commitTrans(): void {
 			if ($this->transaction_depth <= 0) {
 				throw new \LogicException('commitTrans() called without an active transaction');
 			}
-			
+
 			$this->transaction_depth--;
-			
+
 			if ($this->transaction_depth == 0) {
+				if ($this->transaction_rollback_only) {
+					$this->transaction_rollback_only = false;
+					$this->connection->rollback();
+					throw new \LogicException('commitTrans() called on a transaction a nested rollbackTrans() had already marked rollback-only — the transaction was rolled back, not committed');
+				}
+
 				$this->connection->commit();
 			}
 		}
-		
+
 		/**
 		 * Rolls back the current transaction.
 		 * See beginTrans() for notes on logical (depth-counted) nesting.
@@ -702,11 +715,14 @@
 			if ($this->transaction_depth <= 0) {
 				throw new \LogicException('rollbackTrans() called without an active transaction');
 			}
-			
+
 			$this->transaction_depth--;
-			
+
 			if ($this->transaction_depth == 0) {
+				$this->transaction_rollback_only = false;
 				$this->connection->rollback();
+			} else {
+				$this->transaction_rollback_only = true;
 			}
 		}
 		
@@ -946,7 +962,7 @@
 				$definition['columns'] = array_values($definition['columns']);
 				$definition['referencedColumns'] = array_values($definition['referencedColumns']);
 				
-				$name = 'fk_' . $tableName . '_' . implode('_', $definition['columns']);
+				$name = ForeignKeyConstraintNamer::nameForColumns($tableName, $definition['columns']);
 				$result[$name] = $definition;
 			}
 			

@@ -147,7 +147,7 @@
 			if (in_array($dialect, ['pgsql', 'sqlite'], true)) {
 				$setClauseParts = $explicitAssignments !== []
 					? $this->buildSetClauseParts($explicitAssignments, $metadata, $parameters)
-					: $this->buildReferencedSetClause($columnNames, 'EXCLUDED', asFunction: false);
+					: $this->buildReferencedSetClause($columnNames, 'EXCLUDED', asFunction: false, metadata: $metadata, targetLabel: $targetName);
 
 				return sprintf(
 					'%s ON CONFLICT (%s) DO UPDATE SET %s',
@@ -160,7 +160,7 @@
 			if (in_array($dialect, ['mysql', 'mariadb'], true)) {
 				$setClauseParts = $explicitAssignments !== []
 					? $this->buildSetClauseParts($explicitAssignments, $metadata, $parameters)
-					: $this->buildReferencedSetClause($columnNames, 'VALUES', asFunction: true);
+					: $this->buildReferencedSetClause($columnNames, 'VALUES', asFunction: true, metadata: $metadata, targetLabel: $targetName);
 
 				return sprintf('%s ON DUPLICATE KEY UPDATE %s', $insertSql, implode(', ', $setClauseParts));
 			}
@@ -256,7 +256,7 @@
 
 			$setClauseParts = $explicitAssignments !== []
 				? $this->buildSetClauseParts($explicitAssignments, $metadata, $parameters)
-				: $this->buildReferencedSetClause($columnNames, $sourceAlias, asFunction: false);
+				: $this->buildReferencedSetClause($columnNames, $sourceAlias, asFunction: false, metadata: $metadata, targetLabel: $metadata !== null ? $metadata->className : $tableName);
 
 			return sprintf(
 				'MERGE INTO %s AS %s USING (VALUES %s) AS %s (%s) ON %s WHEN MATCHED THEN UPDATE SET %s WHEN NOT MATCHED THEN INSERT (%s) VALUES (%s);',
@@ -277,17 +277,35 @@
 		 * inserted" SET clause fragments — used whenever `or replace` has no
 		 * explicit assignment list. Every appended column is included
 		 * unconditionally, conflict columns too (re-setting a column to its
-		 * own value is a harmless no-op, and excluding it would be an extra
-		 * rule to state for no real benefit).
+		 * own value is a harmless no-op) — except the target entity's own
+		 * primary key, which is always excluded: for a generated
+		 * (non-identity) primary-key strategy, `$reference.col` is a value
+		 * freshly generated for a row that, on conflict, was never actually
+		 * inserted, so writing it onto the existing row would silently
+		 * reassign that row's identity.
 		 * @param string[] $columnNames
 		 * @param string $reference Either a pseudo-table name to qualify
 		 *        each column with (`EXCLUDED`, or a USING source alias for
 		 *        MERGE), or — when $asFunction is true — a function name
 		 *        each column is passed to (MySQL's `VALUES(col)`).
 		 * @param bool $asFunction
+		 * @param EntityMetadataRecord|null $metadata Null for a plain-table target, which has no ORM-declared primary key to exclude
+		 * @param string $targetLabel Entity class name, or table name for a plain-table target — for the error message below
 		 * @return string[]
+		 * @throws SemanticException When excluding the primary key leaves nothing to update — every appended column was the primary key itself
 		 */
-		private function buildReferencedSetClause(array $columnNames, string $reference, bool $asFunction): array {
+		private function buildReferencedSetClause(array $columnNames, string $reference, bool $asFunction, ?EntityMetadataRecord $metadata, string $targetLabel): array {
+			$primaryKeyColumn = $this->resolvePrimaryKeyColumn($metadata);
+			$updatableColumns = array_values(array_filter($columnNames, fn(string $column) => $column !== $primaryKeyColumn));
+
+			if ($updatableColumns === [] && $primaryKeyColumn !== null) {
+				throw new SemanticException(
+					"append ... or replace's default on-conflict update has nothing to set on '{$targetLabel}': " .
+					"every appended column is the primary key ('{$primaryKeyColumn}'), which is always excluded from " .
+					"the default update — write an explicit 'or replace (...)' assignment list instead"
+				);
+			}
+
 			return array_map(
 				function (string $column) use ($reference, $asFunction) {
 					$quotedColumn = $this->identifierQuoter->quoteIdentifier($column);
@@ -296,8 +314,23 @@
 						? "{$quotedColumn} = {$reference}({$quotedColumn})"
 						: "{$quotedColumn} = {$reference}.{$quotedColumn}";
 				},
-				$columnNames
+				$updatableColumns
 			);
+		}
+
+		/**
+		 * Resolves the target entity's primary-key column name, or null when
+		 * there is none to exclude (a plain-table target, or an entity with
+		 * no declared primary key).
+		 * @param EntityMetadataRecord|null $metadata
+		 * @return string|null
+		 */
+		private function resolvePrimaryKeyColumn(?EntityMetadataRecord $metadata): ?string {
+			if ($metadata === null || $metadata->getPrimaryKey() === null) {
+				return null;
+			}
+
+			return $metadata->getColumnNameOrFail($metadata->getPrimaryKey());
 		}
 
 		/**

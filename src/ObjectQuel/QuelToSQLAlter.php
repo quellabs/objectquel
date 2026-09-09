@@ -74,10 +74,14 @@
 		}
 
 		/**
-		 * Compiles every column and primary-key sub-operation of an `alter`
-		 * statement to SQL, in declaration order. Index sub-operations are
-		 * silently skipped here (see class docblock) — the caller compiles
-		 * those separately and appends them after this method's result.
+		 * Compiles every column, primary-key, and foreign-key sub-operation
+		 * of an `alter` statement to SQL, in three fixed phases rather than
+		 * declaration order: `drop foreign key` first (so a column it
+		 * constrains can be dropped afterward in the same statement),
+		 * column/primary-key ops next in declaration order, `add foreign
+		 * key` last (so it can reference a column added earlier in the
+		 * same statement). Index sub-operations are silently skipped here
+		 * (see class docblock) — the caller compiles those separately.
 		 * @param AstAlterTable $statement
 		 * @param string[] $existingPrimaryKeyColumns Resolved by the caller via schema introspection; only consulted when the statement contains a primary-key sub-operation
 		 * @param string|null $existingPrimaryKeyConstraintName Resolved by the caller; required only on pgsql/sqlsrv when a primary-key sub-operation must first drop an existing key
@@ -87,8 +91,20 @@
 		public function convertToSQL(AstAlterTable $statement, array $existingPrimaryKeyColumns = [], ?string $existingPrimaryKeyConstraintName = null): array {
 			$tableName = $statement->getTableName();
 			$statements = [];
+			$dropForeignKeyStatements = [];
+			$addForeignKeyStatements = [];
 
 			foreach ($statement->getOperations() as $operation) {
+				if ($operation instanceof AstAlterDropForeignKey) {
+					$dropForeignKeyStatements[] = $this->compileDropForeignKey($tableName, $operation);
+					continue;
+				}
+
+				if ($operation instanceof AstAlterAddForeignKey) {
+					$addForeignKeyStatements[] = $this->compileAddForeignKey($tableName, $operation);
+					continue;
+				}
+
 				$statements = [
 					...$statements,
 					...match (true) {
@@ -98,15 +114,13 @@
 						$operation instanceof AstAlterRetypeColumn => $this->compileRetypeColumn($tableName, $operation),
 						$operation instanceof AstAlterSetPrimaryKey => $this->compileSetPrimaryKey($tableName, $operation, $existingPrimaryKeyColumns, $existingPrimaryKeyConstraintName),
 						$operation instanceof AstAlterDropPrimaryKey => $this->compileDropPrimaryKey($tableName, $existingPrimaryKeyColumns, $existingPrimaryKeyConstraintName),
-						$operation instanceof AstAlterAddForeignKey => [$this->compileAddForeignKey($tableName, $operation)],
-						$operation instanceof AstAlterDropForeignKey => [$this->compileDropForeignKey($tableName, $operation)],
 						// Index sub-operations: compiled by the caller instead.
 						default => [],
 					},
 				];
 			}
 
-			return $statements;
+			return [...$dropForeignKeyStatements, ...$statements, ...$addForeignKeyStatements];
 		}
 
 		private function quotedTable(string $tableName): string {
@@ -325,7 +339,7 @@
 		 * the name the caller resolved via schema introspection.
 		 */
 		private function compileDropExistingPrimaryKey(string $tableName, ?string $existingPrimaryKeyConstraintName): string {
-			if (in_array($this->platform->getDatabaseType(), ['mysql', 'mariadb'], true)) {
+			if ($this->usesNativeDropClause()) {
 				return sprintf('ALTER TABLE %s DROP PRIMARY KEY', $this->quotedTable($tableName));
 			}
 
@@ -355,7 +369,18 @@
 		private function compileAddForeignKey(string $tableName, AstAlterAddForeignKey $operation): string {
 			$this->assertForeignKeyChangesSupported($tableName);
 
-			$name = ForeignKeyConstraintNamer::name($tableName, $operation->getColumn());
+			$referencedColumn = $operation->getReferencedColumn();
+
+			if ($referencedColumn === null) {
+				throw new \LogicException(
+					"Cannot compile foreign key on '{$tableName}.{$operation->getColumn()}': the referenced column " .
+					"was never resolved — callers must resolve a column-less 'references Table' via " .
+					"ForeignKeyReferenceResolver before compiling"
+				);
+			}
+
+			$name = ForeignKeyConstraintNamer::nameOrThrow($tableName, $operation->getColumn());
+			$dialect = $this->platform->getDatabaseType();
 
 			return sprintf(
 				'ALTER TABLE %s ADD CONSTRAINT %s FOREIGN KEY (%s) REFERENCES %s (%s) ON DELETE %s ON UPDATE %s',
@@ -363,9 +388,9 @@
 				$this->identifierQuoter->quoteIdentifier($name),
 				$this->identifierQuoter->quoteIdentifier($operation->getColumn()),
 				$this->identifierQuoter->quoteIdentifier($operation->getReferencedTable()),
-				$this->identifierQuoter->quoteIdentifier($operation->getReferencedColumn()),
-				$operation->getOnDelete(),
-				$operation->getOnUpdate()
+				$this->identifierQuoter->quoteIdentifier($referencedColumn),
+				ForeignKeyActionNormalizer::forDialect($operation->getOnDelete(), $dialect),
+				ForeignKeyActionNormalizer::forDialect($operation->getOnUpdate(), $dialect)
 			);
 		}
 
@@ -381,10 +406,10 @@
 			$this->assertForeignKeyChangesSupported($tableName);
 
 			$quotedName = $this->identifierQuoter->quoteIdentifier(
-				ForeignKeyConstraintNamer::name($tableName, $operation->getColumn())
+				ForeignKeyConstraintNamer::nameOrThrow($tableName, $operation->getColumn())
 			);
 
-			if (in_array($this->platform->getDatabaseType(), ['mysql', 'mariadb'], true)) {
+			if ($this->usesNativeDropClause()) {
 				return sprintf('ALTER TABLE %s DROP FOREIGN KEY %s', $this->quotedTable($tableName), $quotedName);
 			}
 
@@ -392,15 +417,23 @@
 		}
 
 		/**
-		 * SQLite's ALTER TABLE cannot add or drop a foreign key at all,
-		 * ever — not even via a rebuild-avoiding trick; FK constraints on
-		 * SQLite can only be declared inline in CREATE TABLE (see
-		 * objectquel-foreign-key-design.md, "Dialect reality"). Same
-		 * 'alter_unsupported' treatment retype/primary-key changes already
-		 * get.
+		 * Whether the connected engine drops a named constraint via its own
+		 * dedicated clause (`DROP PRIMARY KEY`/`DROP FOREIGN KEY`) rather
+		 * than the general-purpose `DROP CONSTRAINT` every other dialect
+		 * uses. True only for MySQL/MariaDB.
+		 */
+		private function usesNativeDropClause(): bool {
+			return in_array($this->platform->getDatabaseType(), ['mysql', 'mariadb'], true);
+		}
+
+		/**
+		 * SQLite's ALTER TABLE cannot add or drop a foreign key at all —
+		 * FK constraints there can only be declared inline in CREATE TABLE
+		 * (see objectquel-foreign-key-design.md, "Dialect reality"). Same
+		 * 'alter_unsupported' treatment retype/primary-key changes get.
 		 */
 		private function assertForeignKeyChangesSupported(string $tableName): void {
-			if ($this->platform->getDatabaseType() === 'sqlite') {
+			if (!$this->platform->supportsNamedForeignKeys()) {
 				throw new QuelException(
 					"Cannot change foreign keys on '{$tableName}': SQLite has no ALTER TABLE support for " .
 					"adding or dropping foreign keys — they can only be declared inline in CREATE TABLE, " .

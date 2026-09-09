@@ -7,6 +7,7 @@
 	use Quellabs\ObjectQuel\DatabaseAdapter\DatabaseAdapter;
 	use Quellabs\ObjectQuel\EntityStore;
 	use Quellabs\ObjectQuel\Exception\EntityResolutionException;
+	use Quellabs\ObjectQuel\ObjectQuel\ForeignKeyConstraintNamer;
 	use Quellabs\ObjectQuel\Sculpt\SculptTypes;
 
 	/**
@@ -110,7 +111,7 @@
 				// ForeignKeyAction is optional and independent of ForeignKey itself —
 				// its absence means the safe defaults apply, not that nothing was declared.
 				$action = $metadata->getForeignKeyActionForColumn($columnName);
-				$name = 'fk_' . $metadata->tableName . '_' . $columnName;
+				$name = ForeignKeyConstraintNamer::name($metadata->tableName, $columnName);
 
 				$result[$name] = [
 					'columns'           => [$columnName],

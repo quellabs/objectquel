@@ -3,10 +3,10 @@
 	namespace Quellabs\ObjectQuel\Planner\Helpers;
 	
 	use Quellabs\AnnotationReader\Exception\AnnotationReaderException;
-	use Quellabs\ObjectQuel\Annotations\Orm\DiscriminatorColumn;
-	use Quellabs\ObjectQuel\Annotations\Orm\DiscriminatorValue;
 	use Quellabs\ObjectQuel\EntityStore;
+	use Quellabs\ObjectQuel\Exception\QuelException;
 	use Quellabs\ObjectQuel\Exception\TransformationException;
+	use Quellabs\ObjectQuel\Metadata\DiscriminatorInfoResolver;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstBinaryOperator;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstExpression;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstIdentifier;
@@ -48,6 +48,7 @@
 		 * @param AstRetrieve $retrieve The query whose conditions will be updated
 		 * @return void
 		 * @throws TransformationException
+		 * @throws QuelException If the range's entity declares STI annotations that are incomplete or empty
 		 */
 		public function process(AstRangeDatabase $range, AstRetrieve $retrieve): void {
 			// Ranges backed by subqueries have no entity name — nothing to check
@@ -101,46 +102,17 @@
 		}
 		
 		/**
-		 * Resolve discriminator metadata for a given entity class.
-		 *
-		 * getClassAnnotations() already traverses the full inheritance chain (parent to
-		 * child), so a single call on the subclass returns both @DiscriminatorValue
-		 * (declared on the subclass) and @DiscriminatorColumn (declared on the parent).
-		 *
+		 * Resolve discriminator metadata for a given entity class. Delegates
+		 * to DiscriminatorInfoResolver, shared with InsertPersister and
+		 * QuelToSQLAppend.
 		 * @param class-string $entityName Fully qualified entity class name
 		 * @return array{column: string, value: string}|null
-		 * @throws TransformationException
+		 * @throws TransformationException If annotation metadata cannot be read
+		 * @throws QuelException If STI annotations are present but incomplete or contain empty values, indicating a misconfigured entity class
 		 */
 		private function getDiscriminatorInfo(string $entityName): ?array {
-			/**
-			 * A single getClassAnnotations() call returns annotations from the entire
-			 * inheritance chain, so @DiscriminatorColumn on the parent class and
-			 * @DiscriminatorValue on the subclass are both available here
-			 */
 			try {
-				$classAnnotations = $this->entityStore->getAnnotationReader()->getClassAnnotations($entityName);
-				$discriminatorValue = $classAnnotations->getFirst(DiscriminatorValue::class);
-				$discriminatorColumn = $classAnnotations->getFirst(DiscriminatorColumn::class);
-				
-				// If either annotation is absent the entity is not an STI subclass —
-				// @DiscriminatorColumn alone means this is the base class (no filter needed),
-				// @DiscriminatorValue alone would be a misconfigured entity
-				if (
-					!$discriminatorValue instanceof DiscriminatorValue ||
-					!$discriminatorColumn instanceof DiscriminatorColumn
-				) {
-					return null;
-				}
-				
-				// Guard against incomplete annotation declarations
-				$value = $discriminatorValue->getValue();
-				$columnName = $discriminatorColumn->getName();
-				
-				if ($value === '' || $columnName === '') {
-					return null;
-				}
-				
-				return ['column' => $columnName, 'value' => $value];
+				return DiscriminatorInfoResolver::resolve($this->entityStore, $entityName);
 			} catch (AnnotationReaderException $e) {
 				throw new TransformationException($e->getMessage(), $e->getCode(), $e);
 			}

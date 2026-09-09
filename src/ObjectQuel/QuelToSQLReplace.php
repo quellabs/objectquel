@@ -127,7 +127,7 @@
 				$this->identifierQuoter->quoteIdentifier($metadata->tableName),
 				$this->identifierQuoter->quoteIdentifier($range->getName()),
 				implode(', ', $setClauseParts),
-				$this->compileExpression($statement->getConditionsOrFail(), $parameters)
+				$this->compileCondition($statement->getConditionsOrFail(), $parameters)
 			);
 		}
 
@@ -151,7 +151,7 @@
 				$this->identifierQuoter->quoteIdentifier($range->getTableName()),
 				$this->identifierQuoter->quoteIdentifier($range->getName()),
 				implode(', ', $setClauseParts),
-				$this->compileExpression($statement->getConditionsOrFail(), $parameters)
+				$this->compileCondition($statement->getConditionsOrFail(), $parameters)
 			);
 		}
 
@@ -271,11 +271,11 @@
 		}
 
 		/**
-		 * Renders an arbitrary expression (assignment value or WHERE
-		 * condition) to SQL via BuildSqlFromAst — the same expression-to-SQL
-		 * visitor the retrieve pipeline uses, so comparisons/AND/OR/functions/
-		 * casts/arithmetic all work exactly as they do in a `retrieve`'s
-		 * WHERE clause.
+		 * Renders an assignment's value expression to SQL via BuildSqlFromAst
+		 * — the same expression-to-SQL visitor the retrieve pipeline uses.
+		 * Compiled in 'VALUES' mode, not 'WHERE': a SET target's value is an
+		 * ordinary scalar expression, never a boolean predicate (see
+		 * compileCondition() for the WHERE-clause counterpart).
 		 * @param AstInterface $expression
 		 * @param array<string, mixed> $parameters
 		 * @return string
@@ -283,5 +283,21 @@
 		private function compileExpression(AstInterface $expression, array &$parameters): string {
 			$builder = new BuildSqlFromAst($this->entityStore, $parameters, 'VALUES', $this->platform);
 			return $builder->visitNodeAndReturnSQL($expression);
+		}
+
+		/**
+		 * Renders the WHERE clause's condition to SQL via BuildSqlFromAst,
+		 * in 'WHERE' mode — same as QuelToSQLRetrieve's own WHERE clause —
+		 * so a boolean-position predicate like `any(...)` compiles to a
+		 * bare `EXISTS(...)` rather than the `CASE WHEN EXISTS(...) THEN 1
+		 * ELSE 0 END` 'VALUES' mode produces (see ProcessAggregate::
+		 * handleAny()), which PostgreSQL rejects in a WHERE clause.
+		 * @param AstInterface $condition
+		 * @param array<string, mixed> $parameters
+		 * @return string
+		 */
+		private function compileCondition(AstInterface $condition, array &$parameters): string {
+			$builder = new BuildSqlFromAst($this->entityStore, $parameters, 'WHERE', $this->platform);
+			return $builder->visitNodeAndReturnSQL($condition);
 		}
 	}

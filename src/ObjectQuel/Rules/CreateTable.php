@@ -176,17 +176,29 @@
 		 * check validateIndexEntries() already does, extended to foreign
 		 * keys since the full column set is known within this one
 		 * statement (unlike alter's `add foreign key`, which has no such
-		 * declared-columns list to check against).
+		 * declared-columns list to check against). Also rejects two entries
+		 * on the same local column, same as validateIndexEntries() rejects
+		 * a repeated index name — the derived constraint name is table+
+		 * column only, so two such entries would otherwise collide at DDL
+		 * time instead of failing at parse time.
 		 * @param string $tableName Used only to produce readable error messages
 		 * @param array<string, bool> $seenNames Declared column names, keyed for lookup
 		 * @param AstCreateTableForeignKey[] $foreignKeys
 		 * @throws ParserException
 		 */
 		private function validateForeignKeyEntries(string $tableName, array $seenNames, array $foreignKeys): void {
+			$seenForeignKeyColumns = [];
+
 			foreach ($foreignKeys as $foreignKey) {
 				if (!isset($seenNames[$foreignKey->getColumn()])) {
 					throw new ParserException("Table '{$tableName}' declares a foreign key on unknown column '{$foreignKey->getColumn()}'");
 				}
+
+				if (isset($seenForeignKeyColumns[$foreignKey->getColumn()])) {
+					throw new ParserException("Table '{$tableName}' declares more than one foreign key on column '{$foreignKey->getColumn()}'");
+				}
+
+				$seenForeignKeyColumns[$foreignKey->getColumn()] = true;
 			}
 		}
 

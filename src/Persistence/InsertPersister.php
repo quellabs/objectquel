@@ -4,13 +4,12 @@
 	
 	use Quellabs\AnnotationReader\Exception\AnnotationReaderException;
 	use Quellabs\ObjectQuel\Annotations\Orm\PrimaryKeyStrategy;
-	use Quellabs\ObjectQuel\Annotations\Orm\DiscriminatorColumn;
-	use Quellabs\ObjectQuel\Annotations\Orm\DiscriminatorValue;
 	use Quellabs\ObjectQuel\DatabaseAdapter\DatabaseAdapter;
 	use Quellabs\ObjectQuel\EntityManager;
 	use Quellabs\ObjectQuel\EntityStore;
 	use Quellabs\ObjectQuel\Exception\EntityResolutionException;
 	use Quellabs\ObjectQuel\Exception\QuelException;
+	use Quellabs\ObjectQuel\Metadata\DiscriminatorInfoResolver;
 	use Quellabs\ObjectQuel\OrmException;
 	use Quellabs\ObjectQuel\PrimaryKeys\PrimaryKeyFactory;
 	use Quellabs\ObjectQuel\ReflectionManagement\PropertyHandler;
@@ -280,10 +279,8 @@
 		
 		/**
 		 * Resolves the discriminator column name and value for STI (Single Table Inheritance) subclasses.
-		 *
-		 * Both @DiscriminatorValue and @DiscriminatorColumn must be present with non-empty values
-		 * for STI persistence to function. Either annotation may be defined on the class itself or
-		 * on any ancestor — getClassAnnotations() walks the full inheritance chain.
+		 * Delegates to DiscriminatorInfoResolver, shared with QuelToSQLAppend
+		 * and Planner\Helpers\InjectDiscriminatorCondition.
 		 *
 		 * Returns null when the class is not participating in STI (the common case), allowing
 		 * the caller to short-circuit with a simple null check.
@@ -292,48 +289,10 @@
 		 * @return array{column: non-empty-string, value: non-empty-string}|null
 		 *     Null if the entity is not an STI subclass.
 		 * @throws AnnotationReaderException If annotation metadata cannot be read.
-		 * @throws \InvalidArgumentException If STI annotations are present but contain empty values,
-		 * @throws QuelException
+		 * @throws QuelException If STI annotations are present but incomplete or contain empty values,
 		 *     indicating a misconfigured entity class.
 		 */
 		protected function getDiscriminatorInfo(object $entity): ?array {
-			// Fetch class annotations
-			$classAnnotations = $this->entityStore
-				->getAnnotationReader()
-				->getClassAnnotations(get_class($entity));
-			
-			// Retrieve DiscriminatorValue and DiscriminatorColumn
-			$discriminatorValue = $classAnnotations[DiscriminatorValue::class] ?? null;
-			$discriminatorColumn = $classAnnotations[DiscriminatorColumn::class] ?? null;
-			
-			// Both annotations must be present for this to be a valid STI subclass.
-			// If neither is defined, this is a regular (non-STI) entity — not an error.
-			if (
-				!$discriminatorValue instanceof DiscriminatorValue ||
-				!$discriminatorColumn instanceof DiscriminatorColumn
-			) {
-				return null;
-			}
-			
-			// Fetch the discriminator values
-			$value = $discriminatorValue->getValue();
-			$columnName = $discriminatorColumn->getName();
-			
-			// Annotations exist but have empty values — this is a configuration error,
-			// not a "not an STI entity" situation. Fail loudly rather than silently
-			// returning null and causing a hard-to-trace persistence bug downstream.
-			if ($value === '' || $columnName === '') {
-				throw new QuelException(sprintf(
-					'Entity "%s" has STI annotations but %s is empty. Check your @DiscriminatorValue and @DiscriminatorColumn definitions.',
-					get_class($entity),
-					$value === '' ? '@DiscriminatorValue' : '@DiscriminatorColumn'
-				));
-			}
-			
-			// Return the values
-			return [
-				'column' => $columnName,
-				'value'  => $value
-			];
+			return DiscriminatorInfoResolver::resolve($this->entityStore, get_class($entity));
 		}
 	}

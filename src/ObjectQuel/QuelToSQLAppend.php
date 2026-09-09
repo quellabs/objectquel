@@ -2,14 +2,15 @@
 
 	namespace Quellabs\ObjectQuel\ObjectQuel;
 
-	use Quellabs\ObjectQuel\Annotations\Orm\DiscriminatorColumn;
-	use Quellabs\ObjectQuel\Annotations\Orm\DiscriminatorValue;
+	use Quellabs\AnnotationReader\Exception\AnnotationReaderException;
 	use Quellabs\ObjectQuel\Capabilities\PlatformCapabilitiesInterface;
 	use Quellabs\ObjectQuel\DatabaseAdapter\SqlIdentifierQuoter;
 	use Quellabs\ObjectQuel\EntityManager;
 	use Quellabs\ObjectQuel\EntityStore;
+	use Quellabs\ObjectQuel\Exception\QuelException;
 	use Quellabs\ObjectQuel\Exception\SemanticException;
 	use Quellabs\ObjectQuel\Execution\Visitors\BuildSqlFromAst;
+	use Quellabs\ObjectQuel\Metadata\DiscriminatorInfoResolver;
 	use Quellabs\ObjectQuel\Metadata\EntityMetadataRecord;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstAlias;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstAppend;
@@ -231,35 +232,22 @@
 		}
 
 		/**
-		 * Resolves the STI discriminator column/value, mirroring
-		 * InsertPersister::getDiscriminatorInfo() so `append` and persist()
-		 * agree. Null when the class isn't an STI subclass.
+		 * Resolves the STI discriminator column/value via DiscriminatorInfoResolver,
+		 * shared with InsertPersister and Planner\Helpers\InjectDiscriminatorCondition
+		 * so `append` and persist() agree. Null when the class isn't an STI subclass.
+		 * A QuelException from the resolver is rethrown as SemanticException, this
+		 * compiler's own exception contract.
 		 * @param EntityMetadataRecord $metadata
 		 * @return array{column: non-empty-string, value: non-empty-string}|null
-		 * @throws SemanticException When STI annotations are present but empty
+		 * @throws AnnotationReaderException If annotation metadata cannot be read
+		 * @throws SemanticException When STI annotations are present but incomplete or empty
 		 */
 		private function resolveDiscriminatorInfo(EntityMetadataRecord $metadata): ?array {
-			$classAnnotations = $this->entityStore->getAnnotationReader()->getClassAnnotations($metadata->className);
-
-			$discriminatorValue = $classAnnotations[DiscriminatorValue::class] ?? null;
-			$discriminatorColumn = $classAnnotations[DiscriminatorColumn::class] ?? null;
-
-			if (!$discriminatorValue instanceof DiscriminatorValue || !$discriminatorColumn instanceof DiscriminatorColumn) {
-				return null;
+			try {
+				return DiscriminatorInfoResolver::resolve($this->entityStore, $metadata->className);
+			} catch (QuelException $e) {
+				throw new SemanticException($e->getMessage(), $e->getCode(), $e);
 			}
-
-			$value = $discriminatorValue->getValue();
-			$columnName = $discriminatorColumn->getName();
-
-			if ($value === '' || $columnName === '') {
-				throw new SemanticException(sprintf(
-					'Entity "%s" has STI annotations but %s is empty. Check your @DiscriminatorValue and @DiscriminatorColumn definitions.',
-					$metadata->className,
-					$value === '' ? '@DiscriminatorValue' : '@DiscriminatorColumn'
-				));
-			}
-
-			return ['column' => $columnName, 'value' => $value];
 		}
 
 		/**
@@ -354,16 +342,26 @@
 
 			$derivedTableAlias = $this->identifierQuoter->quoteIdentifier('__append_source');
 
-			$reprojectedColumns = implode(', ', array_map(
+			$selectColumns = array_map(
 				fn(string $alias) => $derivedTableAlias . '.' . $this->identifierQuoter->quoteIdentifier($alias),
 				$visibleAliases
-			));
+			);
+
+			// STI subclass: inject the discriminator column as a literal
+			// SELECT expression, same rule compileValues() applies to its
+			// VALUES rows — there's no source column to read it from.
+			$discriminatorInfo = $metadata !== null ? $this->resolveDiscriminatorInfo($metadata) : null;
+
+			if ($discriminatorInfo !== null && !in_array($discriminatorInfo['column'], $columnNames, true)) {
+				$columnNames[] = $discriminatorInfo['column'];
+				$selectColumns[] = $this->quoteStringLiteral($discriminatorInfo['value']);
+			}
 
 			return sprintf(
 				'INSERT INTO %s (%s) SELECT %s FROM (%s) AS %s',
 				$this->identifierQuoter->quoteIdentifier($tableName),
 				$this->identifierQuoter->quoteIdentifierList($columnNames),
-				$reprojectedColumns,
+				implode(', ', $selectColumns),
 				$selectSql,
 				$derivedTableAlias
 			);

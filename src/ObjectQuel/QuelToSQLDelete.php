@@ -89,7 +89,7 @@
 			}
 
 			$tableName = RangeTableName::resolve($range, $this->entityStore);
-			$builder = new BuildSqlFromAst($this->entityStore, $parameters, 'VALUES', $this->platform);
+			$builder = new BuildSqlFromAst($this->entityStore, $parameters, 'WHERE', $this->platform);
 
 			return sprintf(
 				'DELETE FROM %s as %s WHERE %s',

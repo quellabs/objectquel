@@ -145,6 +145,7 @@
 		 * @param AstRetrieve $ast
 		 * @return void
 		 * @throws TransformationException
+		 * @throws QuelException
 		 */
 		private function injectDiscriminatorConditions(AstRetrieve $ast): void {
 			$injector = new InjectDiscriminatorCondition($this->entityStore);
