@@ -6,6 +6,7 @@
 	use Quellabs\ObjectQuel\DatabaseAdapter\SqlIdentifierQuoter;
 	use Quellabs\ObjectQuel\EntityStore;
 	use Quellabs\ObjectQuel\Exception\SemanticException;
+	use Quellabs\ObjectQuel\Execution\Visitors\BuildSqlFromAst;
 	use Quellabs\ObjectQuel\Metadata\EntityMetadataRecord;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstAssignment;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstReplace;
@@ -51,6 +52,14 @@
 	 *     MATCHED THEN INSERT ...`, the default SET referencing the USING
 	 *     source's own `source.col` (already computed there for the INSERT
 	 *     branch).
+	 *
+	 * The on-conflict WHERE clause isn't restricted to a declared unique/
+	 * primary-key constraint — see ConflictTargetResolver's docblock. When
+	 * it doesn't match one, there's no dialect-native atomic form to
+	 * compile to, so convertToSQL() returns a two-statement fallback
+	 * instead (see compileNonAtomicFallback()): an ordinary `UPDATE ...
+	 * WHERE <cond>` runs first, and the plain INSERT runs only if that
+	 * affected 0 rows. CompiledAppendSql carries either shape uniformly.
 	 */
 	class QuelToSQLUpsert {
 
@@ -95,7 +104,7 @@
 		 *        values keyed by property, as produced by QuelToSQLAppend
 		 * @param AstReplace $onConflict
 		 * @param array<string, mixed> $parameters Bound parameters, by reference
-		 * @return string
+		 * @return CompiledAppendSql
 		 * @throws SemanticException
 		 */
 		public function convertToSQL(
@@ -107,13 +116,18 @@
 			array $compiledRows,
 			AstReplace $onConflict,
 			array &$parameters
-		): string {
+		): CompiledAppendSql {
 			// The on-conflict clause's own WHERE/assignment identifiers need a
 			// resolved type/range before ConflictTargetResolver or
 			// buildSetClause can read them.
 			WriteVerbIdentifierResolver::resolve($onConflict, $this->entityStore);
 
-			$conflictProperties = ConflictTargetResolver::resolve($onConflict->getConditionsOrFail(), $metadata);
+			$conflictProperties = ConflictTargetResolver::tryResolve($onConflict->getConditionsOrFail(), $metadata);
+
+			if ($conflictProperties === null) {
+				return $this->compileNonAtomicFallback($insertSql, $tableName, $metadata, $onConflict, $properties, $columnNames, $compiledRows, $parameters);
+			}
+
 			$targetName = $metadata->className;
 			$this->assertConflictPropertiesSuppliedByRow($conflictProperties, $properties, $targetName);
 
@@ -127,12 +141,12 @@
 					? $this->buildSetClauseParts($explicitAssignments, $metadata, $parameters)
 					: $this->buildReferencedSetClause($columnNames, 'EXCLUDED', asFunction: false, metadata: $metadata, targetLabel: $targetName);
 
-				return sprintf(
+				return CompiledAppendSql::single(sprintf(
 					'%s ON CONFLICT (%s) DO UPDATE SET %s',
 					$insertSql,
 					$this->identifierQuoter->quoteIdentifierList($conflictColumns),
 					implode(', ', $setClauseParts)
-				);
+				));
 			}
 
 			if (in_array($dialect, ['mysql', 'mariadb'], true)) {
@@ -140,11 +154,134 @@
 					? $this->buildSetClauseParts($explicitAssignments, $metadata, $parameters)
 					: $this->buildReferencedSetClause($columnNames, 'VALUES', asFunction: true, metadata: $metadata, targetLabel: $targetName);
 
-				return sprintf('%s ON DUPLICATE KEY UPDATE %s', $insertSql, implode(', ', $setClauseParts));
+				return CompiledAppendSql::single(sprintf('%s ON DUPLICATE KEY UPDATE %s', $insertSql, implode(', ', $setClauseParts)));
 			}
 
 			// sqlsrv — no ON CONFLICT/ON DUPLICATE KEY UPDATE equivalent at all.
-			return $this->compileMerge($tableName, $properties, $columnNames, $compiledRows, $conflictColumns, $explicitAssignments, $metadata, $parameters);
+			return CompiledAppendSql::single(
+				$this->compileMerge($tableName, $properties, $columnNames, $compiledRows, $conflictColumns, $explicitAssignments, $metadata, $parameters)
+			);
+		}
+
+		/**
+		 * Compiles the WHERE-fallback branch: `or replace`'s WHERE doesn't match
+		 * a declared unique/primary-key constraint, so there's no dialect-native
+		 * atomic form to compile to (see this class's docblock — ON
+		 * CONFLICT/ON DUPLICATE KEY/MERGE are only atomic because the database
+		 * enforces the uniqueness itself). Instead: an ordinary `UPDATE ...
+		 * WHERE <cond>` — any predicate, any field, the same grammar and set/
+		 * where-clause building a standalone `replace` uses — runs first; if it
+		 * affects 0 rows, the plain INSERT already compiled by QuelToSQLAppend
+		 * ($insertSql) runs instead. AppendExecutor runs both inside one
+		 * transaction — see its docblock. If more than one row matches the
+		 * UPDATE's WHERE, all of them are updated; that's intentional set-based
+		 * behavior, not an error.
+		 *
+		 * Multi-row is rejected here at compile time: a single shared WHERE
+		 * predicate can't identify "this literal row's" match independently per
+		 * row the way a real unique constraint lets the database do per-row
+		 * conflict detection natively.
+		 * @param string $insertSql The already-compiled plain `INSERT INTO table
+		 *        (cols) VALUES (...)` — always exactly one row here (multi-row is
+		 *        rejected below before this matters).
+		 * @param string $tableName
+		 * @param EntityMetadataRecord $metadata
+		 * @param string[] $properties Row property order, parallel to $columnNames
+		 * @param string[] $columnNames Parallel to $properties — includes the STI
+		 *        discriminator's column (itself, not a real property) when present,
+		 *        same as QuelToSQLAppend::compileValues() builds it
+		 * @param array<int, array<string, string>> $compiledRows Exactly one row here
+		 * @param AstReplace $onConflict Already identifier-resolved by the caller
+		 * @param array<string, mixed> $parameters Bound parameters, by reference
+		 * @return CompiledAppendSql
+		 * @throws SemanticException
+		 */
+		private function compileNonAtomicFallback(
+			string $insertSql,
+			string $tableName,
+			EntityMetadataRecord $metadata,
+			AstReplace $onConflict,
+			array $properties,
+			array $columnNames,
+			array $compiledRows,
+			array &$parameters
+		): CompiledAppendSql {
+			if (count($compiledRows) > 1) {
+				throw new SemanticException(sprintf(
+					"append ... or replace's WHERE clause doesn't match a declared unique or primary-key constraint on '%s' — a multi-row append can't fall back to a plain update-or-insert, since a single shared WHERE can't identify each literal row's own match the way a real constraint lets the database do per row. Write single-row append ... or replace statements instead, or back the WHERE with a real unique/primary-key constraint for a multi-row atomic upsert.",
+					$metadata->className
+				));
+			}
+
+			// The on-conflict clause's WHERE/assignment values need denormalizing
+			// exactly once before compiling (see WriteVerbParameterNormalizer's
+			// docblock) — not done by calling QuelToSQLReplace::convertToSQL()
+			// directly, since that would re-run WriteVerbIdentifierResolver a
+			// second time on $onConflict (already resolved above).
+			$normalizer = new WriteVerbParameterNormalizer($metadata, $this->serializer, $parameters);
+			$normalizer->normalizeAssignments($onConflict->getAssignments());
+			$onConflict->getConditionsOrFail()->accept($normalizer);
+
+			$assignments = $onConflict->getAssignments();
+
+			$setClauseParts = $assignments !== []
+				? $this->replaceCompiler->buildSetClause($assignments, $metadata, $parameters, $onConflict->getRange()->getName())
+				: $this->buildDefaultFallbackSetClause($metadata, $properties, $columnNames, $compiledRows[0]);
+
+			$whereSql = (new BuildSqlFromAst($this->entityStore, $parameters, 'WHERE', $this->platform))
+				->visitNodeAndReturnSQL($onConflict->getConditionsOrFail());
+
+			$updateSql = sprintf(
+				'UPDATE %s as %s SET %s WHERE %s',
+				$this->identifierQuoter->quoteIdentifier($tableName),
+				$this->identifierQuoter->quoteIdentifier($onConflict->getRange()->getName()),
+				implode(', ', $setClauseParts),
+				$whereSql
+			);
+
+			return CompiledAppendSql::withFallbackUpdate($insertSql, $updateSql);
+		}
+
+		/**
+		 * Default (no explicit `or replace (...)` list) SET clause for the
+		 * fallback UPDATE: every appended column except the target's own primary
+		 * key, set to the exact value compiled for the INSERT — the plain-UPDATE
+		 * equivalent of the atomic path's EXCLUDED/VALUES()/source.* reference
+		 * (see buildReferencedSetClause()), which has no meaning outside an
+		 * INSERT statement. Always a bare column name: unlike buildSetClause()'s
+		 * explicit-list case, this never needs QuelToSQLReplace's per-dialect
+		 * alias-qualification (see that class's docblock) — a bare SET target is
+		 * valid on every dialect.
+		 * @param EntityMetadataRecord $metadata
+		 * @param string[] $properties Parallel to $columnNames
+		 * @param string[] $columnNames Parallel to $properties
+		 * @param array<string, string> $compiledRow property => compiled SQL value
+		 * @return string[]
+		 * @throws SemanticException When excluding the primary key leaves nothing to update
+		 */
+		private function buildDefaultFallbackSetClause(EntityMetadataRecord $metadata, array $properties, array $columnNames, array $compiledRow): array {
+			$primaryKeyColumn = $this->resolvePrimaryKeyColumn($metadata);
+			$setClauseParts = [];
+
+			foreach ($properties as $i => $property) {
+				$column = $columnNames[$i];
+
+				if ($column === $primaryKeyColumn) {
+					continue;
+				}
+
+				$setClauseParts[] = $this->identifierQuoter->quoteIdentifier($column) . ' = ' . $compiledRow[$property];
+			}
+
+			if ($setClauseParts === []) {
+				throw new SemanticException(
+					"append ... or replace's default on-conflict update has nothing to set on '{$metadata->className}': " .
+					"every appended column is the primary key, which is always excluded from the default update — write " .
+					"an explicit 'or replace (...)' assignment list instead"
+				);
+			}
+
+			return $setClauseParts;
 		}
 
 		/**

@@ -17,6 +17,7 @@
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstAssignment;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstParameter;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRangeJsonSource;
+	use Quellabs\ObjectQuel\ObjectQuel\CompiledAppendSql;
 	use Quellabs\ObjectQuel\ObjectQuel\Helpers\WriteVerbParameterNormalizer;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRetrieve;
 	use Quellabs\ObjectQuel\ObjectQuel\QuelResult;
@@ -134,12 +135,16 @@
 			$prepared = $this->prepare($statement, $parameters);
 			$statement = $prepared->getStatement();
 			$metadata = $prepared->getMetadata();
-			$sql = $this->compiler->convertToSQL($statement, $parameters);
+			$compiled = $this->compiler->convertToSQL($statement, $parameters);
 			$target = $metadata->tableName;
+
+			if ($compiled->hasFallbackUpdate()) {
+				return $this->executeUpsertFallback($compiled, $parameters, $metadata);
+			}
 
 			// execute() swallows the exception and returns null on failure
 			// rather than throwing — a try/catch here would never fire.
-			$rs = $this->assertInsertSucceeded($this->connection->execute($sql, $parameters), $target);
+			$rs = $this->assertInsertSucceeded($this->connection->execute($compiled->primarySql, $parameters), $target);
 
 			// Insert ID is only unambiguous for single-row literal appends.
 			// Multi-row or insert-from-select is engine-dependent, so leave it null.
@@ -168,6 +173,85 @@
 			}
 
 			return QuelResult::fromWriteStatement($rs->rowCount(), $generatedId);
+		}
+
+		/**
+		 * Runs the WHERE-fallback branch of an upsert whose conflict target
+		 * doesn't match a declared unique/primary-key constraint (see
+		 * QuelToSQLUpsert::compileNonAtomicFallback()): the UPDATE first, and —
+		 * only if it affects 0 rows — the plain INSERT, both inside one
+		 * transaction so a failure partway through rolls back cleanly. Unlike
+		 * the dialect-native path's ambiguous last-insert-id/affected-row
+		 * guessing above (only MySQL/MariaDB's affected-row count can
+		 * distinguish insert from update there), which branch actually ran is
+		 * known exactly here, so generated-id readback is unconditional rather
+		 * than dialect-restricted.
+		 * @param CompiledAppendSql $compiled
+		 * @param array<string, mixed> $parameters The full set compiled for the
+		 *        combined append+on-conflict statement — each of the two
+		 *        statements executed here only references a subset of it, so
+		 *        every call is filtered down first (see filterParametersForSql()).
+		 * @param EntityMetadataRecord $metadata
+		 * @return QuelResult
+		 * @throws QuelException
+		 */
+		private function executeUpsertFallback(CompiledAppendSql $compiled, array $parameters, EntityMetadataRecord $metadata): QuelResult {
+			$this->connection->beginTrans();
+
+			try {
+				$updateSql = $compiled->getFallbackUpdateSqlOrFail();
+
+				$updateRs = $this->assertInsertSucceeded(
+					$this->connection->execute($updateSql, $this->filterParametersForSql($updateSql, $parameters)),
+					$metadata->tableName
+				);
+
+				if ($updateRs->rowCount() > 0) {
+					$this->connection->commitTrans();
+					return QuelResult::fromWriteStatement($updateRs->rowCount(), null);
+				}
+
+				$insertRs = $this->assertInsertSucceeded(
+					$this->connection->execute($compiled->primarySql, $this->filterParametersForSql($compiled->primarySql, $parameters)),
+					$metadata->tableName
+				);
+
+				$generatedId = null;
+
+				if ($metadata->autoIncrementColumn !== null) {
+					$insertId = $this->connection->getInsertId();
+
+					if ($insertId !== false) {
+						$generatedId = (int)$insertId;
+					}
+				}
+
+				$this->connection->commitTrans();
+				return QuelResult::fromWriteStatement($insertRs->rowCount(), $generatedId);
+			} catch (\Throwable $e) {
+				$this->connection->rollbackTrans();
+				throw $e;
+			}
+		}
+
+		/**
+		 * Narrows $parameters down to only the names $sql actually
+		 * references — the underlying driver rejects extra, unreferenced
+		 * bound parameters (`SQLSTATE[HY093]`) once native prepares split a
+		 * single compiled parameter set across more than one statement, which
+		 * only happens here (see executeUpsertFallback()); every other
+		 * write-verb execution path compiles its whole $parameters set into
+		 * one statement, where this mismatch can't occur. Mirrors the
+		 * placeholder regex DatabaseAdapter::deduplicateParameters() already
+		 * uses to avoid matching inside string literals.
+		 * @param string $sql
+		 * @param array<string, mixed> $parameters
+		 * @return array<string, mixed>
+		 */
+		private function filterParametersForSql(string $sql, array $parameters): array {
+			preg_match_all("/'[^']*'|\"[^\"]*\"|:([a-zA-Z_][a-zA-Z0-9_]*)/", $sql, $matches);
+			$names = array_unique(array_filter($matches[1], fn(string $name) => $name !== ''));
+			return array_intersect_key($parameters, array_flip($names));
 		}
 
 		/**
@@ -273,7 +357,7 @@
 					// prepare()/fillGeneratedPrimaryKeys() are deliberately
 					// skipped here.
 					$chunkStatement = AstAppend::forValues($statement->getRange(), $assignmentRows);
-					$sql = $this->compiler->convertToSQL($chunkStatement, $chunkParams);
+					$sql = $this->compiler->convertToSQL($chunkStatement, $chunkParams)->primarySql;
 					$rs = $this->assertInsertSucceeded($this->connection->execute($sql, $chunkParams), $tableName);
 					$totalAffected += $rs->rowCount();
 				}

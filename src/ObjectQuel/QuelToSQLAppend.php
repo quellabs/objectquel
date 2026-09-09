@@ -93,10 +93,10 @@
 		 * @param AstAppend $statement
 		 * @param array<string, mixed> $parameters Bound parameters, by reference
 		 *        (mutated only for insert-from-select's nested retrieve)
-		 * @return string
+		 * @return CompiledAppendSql
 		 * @throws SemanticException
 		 */
-		public function convertToSQL(AstAppend $statement, array &$parameters): string {
+		public function convertToSQL(AstAppend $statement, array &$parameters): CompiledAppendSql {
 			$entityName = $statement->getEntityName();
 
 			if ($entityName === null) {
@@ -109,7 +109,7 @@
 			$metadata = $this->entityStore->getMetadata($entityName);
 
 			return $statement->isInsertFromSelect()
-				? $this->compileFromSelect($statement, $metadata, $metadata->tableName, $metadata->className, $parameters)
+				? CompiledAppendSql::single($this->compileFromSelect($statement, $metadata, $metadata->tableName, $metadata->className, $parameters))
 				: $this->compileValues($statement, $metadata, $metadata->tableName, $parameters);
 		}
 
@@ -122,10 +122,10 @@
 		 * @param EntityMetadataRecord $metadata
 		 * @param string $tableName
 		 * @param array<string, mixed> $parameters
-		 * @return string
+		 * @return CompiledAppendSql
 		 * @throws SemanticException
 		 */
-		private function compileValues(AstAppend $statement, EntityMetadataRecord $metadata, string $tableName, array &$parameters): string {
+		private function compileValues(AstAppend $statement, EntityMetadataRecord $metadata, string $tableName, array &$parameters): CompiledAppendSql {
 			$rows = $statement->getRowsOrFail();
 			$properties = array_map(fn(AstAssignment $assignment) => $assignment->getProperty(), $rows[0]);
 
@@ -176,7 +176,7 @@
 			$onConflict = $statement->getOnConflict();
 
 			if ($onConflict === null) {
-				return $insertSql;
+				return CompiledAppendSql::single($insertSql);
 			}
 
 			return $this->upsertCompiler->convertToSQL($insertSql, $tableName, $metadata, $properties, $columnNames, $compiledRows, $onConflict, $parameters);

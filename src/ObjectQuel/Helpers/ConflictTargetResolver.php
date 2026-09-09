@@ -3,7 +3,6 @@
 	namespace Quellabs\ObjectQuel\ObjectQuel\Helpers;
 
 	use Quellabs\ObjectQuel\Annotations\Orm\UniqueIndex;
-	use Quellabs\ObjectQuel\Exception\SemanticException;
 	use Quellabs\ObjectQuel\Metadata\EntityMetadataRecord;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstBinaryOperator;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstExpression;
@@ -12,19 +11,20 @@
 	use Quellabs\ObjectQuel\ObjectQuel\IdentifierType;
 
 	/**
-	 * Resolves an upsert's `append ... or replace (...) where <cond>` conflict
-	 * target and validates it against a real declared unique/primary-key
-	 * constraint — the one genuinely new piece of semantic work upsert needs
-	 * (see objectquel-upsert-plan.md).
+	 * Determines whether an upsert's `append ... or replace (...) where <cond>`
+	 * WHERE clause's equality columns exactly match a declared unique or
+	 * primary-key constraint, making the dialect-native atomic upsert form
+	 * (`ON CONFLICT`/`ON DUPLICATE KEY UPDATE`/`MERGE`) compilable.
 	 *
-	 * `ON CONFLICT`/`ON DUPLICATE KEY UPDATE`/`MERGE` are only atomic because
-	 * the database enforces the uniqueness itself during the single
-	 * statement; without a real constraint backing the WHERE's equality
-	 * columns, there is no atomic native form to compile to in any target
-	 * dialect, and silently falling back to a check-then-branch would make
-	 * the statement racy under concurrent writes. So an arbitrary,
-	 * non-unique-backed predicate is rejected here at compile time rather
-	 * than accepted and quietly weakened.
+	 * Returns null (not an exception) when they don't — that's not an
+	 * error, it's the signal `QuelToSQLUpsert` uses to fall back to a plain
+	 * `UPDATE`-then-`INSERT`-if-unmatched instead (see
+	 * QuelToSQLUpsert::compileNonAtomicFallback()). `ON CONFLICT`/`ON
+	 * DUPLICATE KEY UPDATE`/`MERGE` are only atomic because the database
+	 * enforces the uniqueness itself during the single statement; without a
+	 * real constraint backing the WHERE's equality columns, there is no
+	 * atomic native form to compile to in any target dialect, so the
+	 * fallback path takes over instead.
 	 */
 	class ConflictTargetResolver {
 
@@ -32,15 +32,19 @@
 		 * Resolves `<cond>`'s equality columns and checks them against a
 		 * declared unique or primary key constraint covering exactly those
 		 * columns (order doesn't matter; the column *set* must match exactly
-		 * — not a subset or superset).
+		 * — not a subset or superset). Returns null when the WHERE clause
+		 * isn't a plain conjunction of equality checks at all, or when it is
+		 * but doesn't match any declared constraint.
 		 * @param AstInterface $conditions The onConflict AstReplace's WHERE condition
 		 * @param EntityMetadataRecord $metadata
-		 * @return string[] The matched property names, in WHERE-clause order
-		 * @throws SemanticException
+		 * @return string[]|null The matched property names, in WHERE-clause order, or null
 		 */
-		public static function resolve(AstInterface $conditions, EntityMetadataRecord $metadata): array {
+		public static function tryResolve(AstInterface $conditions, EntityMetadataRecord $metadata): ?array {
 			$properties = [];
-			self::collectEqualityProperties($conditions, $properties);
+
+			if (!self::tryCollectEqualityProperties($conditions, $properties)) {
+				return null;
+			}
 
 			$propertySet = $properties;
 			sort($propertySet);
@@ -53,11 +57,7 @@
 				}
 			}
 
-			throw new SemanticException(sprintf(
-				"append ... or replace's WHERE clause (%s) doesn't match any declared unique or primary key constraint on '%s' — an upsert's conflict target must be backed by a real constraint the database enforces, or no dialect can compile it to a single atomic statement.",
-				implode(', ', $properties),
-				$metadata->className
-			));
+			return null;
 		}
 
 		/**
@@ -83,19 +83,17 @@
 		 * checks, collecting the left-hand property names. Anything else
 		 * (`OR`, a non-`=` comparison, a function call, a value-vs-value
 		 * comparison with no property on either side) means the predicate
-		 * isn't a fixed conflict-target set the compiler can resolve
-		 * unambiguously, so it's rejected outright — the compiler doesn't
-		 * guess which unique constraint is meant.
+		 * isn't a fixed conflict-target set the compiler can resolve to an
+		 * atomic form — that's not an error, it just means the WHERE clause
+		 * isn't eligible for the atomic path (see this class's docblock).
 		 * @param AstInterface $node
 		 * @param string[] $properties
-		 * @return void
-		 * @throws SemanticException
+		 * @return bool Whether $node (and everything under it) decomposed into equalities
 		 */
-		private static function collectEqualityProperties(AstInterface $node, array &$properties): void {
+		private static function tryCollectEqualityProperties(AstInterface $node, array &$properties): bool {
 			if ($node instanceof AstBinaryOperator && $node->getOperator() === 'AND') {
-				self::collectEqualityProperties($node->getLeft(), $properties);
-				self::collectEqualityProperties($node->getRight(), $properties);
-				return;
+				return self::tryCollectEqualityProperties($node->getLeft(), $properties)
+					&& self::tryCollectEqualityProperties($node->getRight(), $properties);
 			}
 
 			if ($node instanceof AstExpression && $node->getOperator() === '=') {
@@ -103,13 +101,11 @@
 
 				if ($property !== null) {
 					$properties[] = $property;
-					return;
+					return true;
 				}
 			}
 
-			throw new SemanticException(
-				"append ... or replace's WHERE clause must be a conjunction ('and') of plain 'property = value' equality checks against the target range — the compiler doesn't guess which unique constraint is meant."
-			);
+			return false;
 		}
 
 		/**
