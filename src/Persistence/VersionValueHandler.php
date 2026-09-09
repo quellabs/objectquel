@@ -215,8 +215,7 @@
 
 				default:
 					// Matches the \RuntimeException InsertPersister's former copy of
-					// this method threw for the same failure (see this method's
-					// docblock) — callers that catch \RuntimeException around
+					// this method threw — callers catching \RuntimeException around
 					// persist()/append must keep catching it here too.
 					throw new \RuntimeException("Invalid column type {$columnType} for Version annotation");
 			}

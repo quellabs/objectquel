@@ -80,10 +80,10 @@
 		}
 
 		/**
-		 * Compiles a `destroy Name on Table [if exists]` statement to SQL
-		 * without running it, for QueryExecutor::explainQuery(). Still
-		 * performs the sqlsrv/sqlite fulltext lookups (schema introspection —
-		 * read-only) since those determine which SQL is generated.
+		 * Compiles a `destroy Name on Table [if exists]` statement to SQL,
+		 * used by execute() before running it. Still performs the
+		 * sqlsrv/sqlite fulltext lookups (schema introspection — read-only)
+		 * since those determine which SQL is generated.
 		 * @param AstDestroyIndex $statement
 		 * @return list<string>
 		 */

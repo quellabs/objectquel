@@ -46,9 +46,8 @@
 		 * QuelToSQLDelete constructor
 		 * @param EntityStore $entityStore
 		 * @param PlatformCapabilitiesInterface $platform
-		 * @param DatabaseAdapter|null $databaseAdapter Live connection used to
-		 *        validate a plain-table range's bare column against the real
-		 *        schema — see WriteVerbIdentifierResolver::resolve().
+		 * @param DatabaseAdapter|null $databaseAdapter Live connection for
+		 *        plain-table column validation — see WriteVerbIdentifierResolver::resolve().
 		 */
 		public function __construct(EntityStore $entityStore, PlatformCapabilitiesInterface $platform, ?DatabaseAdapter $databaseAdapter = null) {
 			$this->entityStore = $entityStore;

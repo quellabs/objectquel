@@ -74,10 +74,9 @@
 
 		/**
 		 * Compiles an `index [unique|fulltext] on Table is index_name (...)`
-		 * statement to SQL without running it, for
-		 * QueryExecutor::explainQuery(). Still performs the fulltext
-		 * prerequisite lookup (schema introspection — read-only) since that
-		 * determines the SQL itself.
+		 * statement to SQL, used by execute() before running it. Still
+		 * performs the fulltext prerequisite lookup (schema introspection —
+		 * read-only) since that determines the SQL itself.
 		 * @param AstCreateIndex $statement
 		 * @return list<string>
 		 * @throws QuelException If a fulltext index's required schema

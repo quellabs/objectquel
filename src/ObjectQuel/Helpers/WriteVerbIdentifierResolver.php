@@ -39,12 +39,9 @@
 		 * @param NodeWithRanges $statement
 		 * @param EntityStore $entityStore
 		 * @param DatabaseAdapter|null $databaseAdapter Live connection used to
-		 *        validate a plain-table range's bare column (see
-		 *        FindPropertyRange::tableHasColumn()) and qualified column (see
-		 *        ValidateTablePropertyExists) against the real schema — the same
-		 *        introspection the retrieve pipeline's SemanticAnalyzer applies.
-		 *        Null falls back to assuming the column exists, surfacing an
-		 *        invalid one only as the database's own error at execution time.
+		 *        validate a plain-table range's column against the real schema —
+		 *        same introspection the retrieve pipeline's SemanticAnalyzer
+		 *        applies. Null falls back to assuming the column exists.
 		 * @return void
 		 * @throws SemanticException
 		 */
@@ -67,10 +64,8 @@
 			$statement->accept(new ValidateRangesDeclared());
 			$statement->accept(new ValidateEntityPropertyExists($entityStore));
 
-			// Qualified plain-table column references (e.g. `a.does_not_exist`)
-			// have no entity metadata for ValidateEntityPropertyExists to check
-			// against — this is the plain-table equivalent, mirroring
-			// SemanticAnalyzer::validate()'s retrieve-pipeline ordering.
+			// Plain-table equivalent of ValidateEntityPropertyExists above,
+			// mirroring SemanticAnalyzer::validate()'s retrieve-pipeline ordering.
 			$statement->accept(new ValidateTablePropertyExists($databaseAdapter));
 		}
 	}

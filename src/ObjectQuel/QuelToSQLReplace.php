@@ -69,9 +69,8 @@
 		 * @param VersionValueHandler $versionValueHandler Reused as-is (not
 		 *        reconstructed) so `replace` bumps @Orm\Version columns using
 		 *        the exact same logic persist()'s UPDATE path does.
-		 * @param DatabaseAdapter|null $databaseAdapter Live connection used to
-		 *        validate a plain-table range's bare column against the real
-		 *        schema — see WriteVerbIdentifierResolver::resolve().
+		 * @param DatabaseAdapter|null $databaseAdapter Live connection for
+		 *        plain-table column validation — see WriteVerbIdentifierResolver::resolve().
 		 */
 		public function __construct(EntityStore $entityStore, PlatformCapabilitiesInterface $platform, VersionValueHandler $versionValueHandler, ?DatabaseAdapter $databaseAdapter = null) {
 			$this->entityStore = $entityStore;

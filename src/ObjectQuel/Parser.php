@@ -61,9 +61,9 @@
 		    // Get the next token without changing the position in the lexer.
 			    $token = $this->lexer->peek();
 
-			    // create/destroy/index/replace/delete have no token type of
-			    // their own (see Lexer::peekKeyword()'s docblock), so — unlike
-			    // Retrieve/Append below — they're recognized by text, not type.
+			    // create/destroy/index/replace/delete have no token type (see
+			    // Lexer::peekKeyword()) so — unlike Retrieve/Append — they're
+			    // recognized by text.
 			    if ($token->getType() === Token::Retrieve) {
 				    $queries[] = $this->retrieveRule->parse($directives, $ranges);
 			    } elseif ($token->getType() === Token::Append) {
@@ -81,10 +81,9 @@
 			    } elseif ($this->lexer->peekKeyword('replace')) {
 				    $queries[] = $this->replaceRule->parse($ranges);
 			    } elseif ($this->lexer->peekKeyword('delete')) {
-				    // No lookahead/dispatch needed — unlike a `delete table Name`
-				    // spelling some designs assume, authentic QUEL's drop verb is
-				    // `destroy`, a completely separate keyword, so the literal
-				    // word `delete` always means this DML verb.
+				    // No lookahead needed — QUEL's drop verb is `destroy`, a
+				    // separate keyword; the literal word `delete` always
+				    // means this DML verb.
 				    $queries[] = $this->deleteRule->parse($ranges);
 			    } else {
 				    $tokenName = Token::toString($token->getType()) ?: 'unknown';

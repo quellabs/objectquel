@@ -450,11 +450,10 @@
 		 *
 		 * @param class-string $className Fully qualified name of the entity class to inspect.
 		 * @param array<string, AnnotationCollection> $annotations Pre-extracted annotations keyed by property name.
-		 * @param string|null $autoIncrementColumn Property name of the entity's sole
-		 *        auto-increment column, as already resolved (with composite-PK
-		 *        exclusion applied) by {@see extractColumnData}) — reused here so
-		 *        a column's `identity` flag agrees with that single source of truth
-		 *        instead of being recomputed per-property.
+		 * @param string|null $autoIncrementColumn The entity's sole auto-increment
+		 *        column, already resolved (with composite-PK exclusion) by
+		 *        {@see extractColumnData} — reused so `identity` isn't
+		 *        recomputed per-property from a second source of truth.
 		 * @return array<string, ColumnDefinitionRecord> Column definitions keyed by column name.
 		 * @throws AnnotationReaderException If annotation reading fails for any property.
 		 * @throws \ReflectionException      If the class does not exist or cannot be reflected.

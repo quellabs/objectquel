@@ -151,18 +151,11 @@
 			// connection-level readback; getInsertId() returns false if unavailable.
 			$eligibleForReadback = $metadata === null || $metadata->autoIncrementColumn !== null;
 
-			// An upsert's on-conflict branch may have run an UPDATE instead of an
-			// INSERT (the row already existed), in which case the driver's
-			// last-insert-id reflects a stale, unrelated prior INSERT on the
-			// connection rather than this statement. MySQL/MariaDB's `ON DUPLICATE
-			// KEY UPDATE` is the one dialect whose affected-row count reliably says
-			// which branch fired — exactly 1 means a fresh INSERT happened (an
-			// UPDATE reports 2 when a value changed, 0 when it didn't; see MySQL's
-			// documented ON DUPLICATE KEY UPDATE row-count semantics) — so readback
-			// stays eligible only for that case. Postgres/SQLite's `ON CONFLICT DO
-			// UPDATE` and SQL Server's MERGE report the same affected-row count for
-			// either branch, so readback is skipped entirely for those dialects
-			// whenever an on-conflict clause is present.
+			// An upsert's on-conflict branch may have run an UPDATE, not an INSERT,
+			// leaving the driver's last-insert-id stale. Only MySQL/MariaDB's
+			// affected-row count reliably distinguishes the two (1 = inserted,
+			// 2/0 = updated); Postgres/SQLite/SQL Server report the same count
+			// either way, so readback is skipped entirely for those dialects.
 			if ($eligibleForReadback && $statement->getOnConflict() !== null) {
 				$eligibleForReadback = in_array($this->connection->getDatabaseType(), ['mysql', 'mariadb'], true)
 					&& $rs->rowCount() === 1;
@@ -184,73 +177,9 @@
 		}
 
 		/**
-		 * Compiles an `append to <range> (...)` statement to SQL without
-		 * running it, for QueryExecutor::explainQuery(). Applies the same
-		 * parameter-normalization and generated-PK side effects on $parameters
-		 * that execute() has (an identity-strategy PK still comes from the
-		 * database and stays absent from both the SQL and the parameters).
-		 *
-		 * Not supported for a JSON-source range target — JsonAppendExecutor
-		 * writes rows straight into the source file and never produces SQL,
-		 * so there is nothing to compile or show.
-		 * @param AstAppend $statement
-		 * @param array<string, mixed> $parameters
-		 * @param bool $afterRealExecution True when this statement has already
-		 *        been executed for real moments earlier (EntityManager's own
-		 *        post-execution debug signal — see QueryExecutor::explainQuery()'s
-		 *        docblock) rather than a standalone "explain without running"
-		 *        request. A non-identity primary key strategy (e.g. uuid, or a
-		 *        sequence's live MAX(col)+1 lookup) generates a fresh value on
-		 *        every call to prepare() below — correct for a standalone
-		 *        explain with nothing real to compare against, but misleading
-		 *        here, since it would show a different value than what the
-		 *        real execution actually persisted. When true and this call
-		 *        would generate such a value, no SQL is compiled at all,
-		 *        instead of a wrong one.
-		 * @return string
-		 * @throws QuelException If the target is a JSON-source range, on compile
-		 *         failure, or (when $afterRealExecution) if compiling would
-		 *         regenerate a fresh non-identity primary key
-		 * @throws \ReflectionException|SemanticException
-		 */
-		public function compileSql(AstAppend $statement, array &$parameters, bool $afterRealExecution = false): string {
-			if ($statement->getRange() instanceof AstRangeJsonSource) {
-				throw new QuelException(
-					"append to a JSON-source range has no SQL to explain — it writes directly to the source file",
-					'not_plannable'
-				);
-			}
-
-			if ($statement->isInsertFromSelect()) {
-				$source = $this->prepareInsertFromSelectSource($statement, $parameters);
-
-				if ($this->compiler->needsPlanner($source)) {
-					// Row count is data-dependent — can't show static SQL
-					// without running the SELECT, same reasoning as the
-					// JSON-target case above.
-					throw new QuelException(
-						"append ... retrieve whose source requires JSON-source or temp-table materialization has no static SQL to explain — the number of INSERT statements depends on the fetched row count; run the query to see actual behavior",
-						'not_plannable'
-					);
-				}
-			}
-
-			$prepared = $this->prepare($statement, $parameters);
-
-			if ($afterRealExecution && $prepared->getGeneratedId() !== null) {
-				throw new QuelException(
-					"append with a non-identity generated primary key can't be shown again after real execution without misrepresenting the value that was actually persisted",
-					'not_plannable'
-				);
-			}
-
-			return $this->compiler->convertToSQL($prepared->getStatement(), $parameters);
-		}
-
-		/**
 		 * Prepares the source retrieve (see QuelToSQLAppend::prepareSource()).
-		 * Shared by execute()/compileSql() so the optimizer runs exactly once
-		 * per statement — re-running it on an already-optimized AST isn't safe.
+		 * Called once per statement from execute() — re-running it on an
+		 * already-optimized AST isn't safe.
 		 * @param AstAppend $statement
 		 * @param array<string, mixed> $parameters
 		 * @return AstRetrieve The statement's source retrieve, mutated in place

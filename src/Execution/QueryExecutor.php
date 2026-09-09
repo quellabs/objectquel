@@ -268,10 +268,8 @@
 				// Parse and resolve identifiers
 				$ast = $this->parse($query);
 				
-				// explainQuery() only calls explain() for a retrieve statement —
-				// DDL and write-verb statements have no optimizer/planner pipeline
-				// to log decisions from, so they're explained via
-				// explainNonRetrieveQuery() instead. This check is a defensive
+				// explainQuery() already rejects anything but a retrieve statement
+				// before ever calling explain() — this check is a defensive
 				// backstop, not a reachable path.
 				if (!$ast instanceof AstRetrieve) {
 					throw new QuelException("explain() only supports retrieve statements", 'not_plannable');
@@ -306,43 +304,31 @@
 		}
 		
 		/**
-		 * Returns planner decisions and generated SQL for a query without executing it.
-		 * Combines explain() with a SQL dry-run into one coherent result.
+		 * Returns planner decisions and generated SQL for a retrieve query
+		 * without executing it. Combines explain() with a SQL dry-run into one
+		 * coherent result.
+		 *
+		 * DDL and write-verb statements have no optimizer/planner pipeline to
+		 * report decisions from, and replaying them via the retrieve
+		 * pipeline's dry-run executor would re-run the write for real — so
+		 * they're rejected outright rather than explained.
 		 * @param string $query The ObjectQuel query string
 		 * @param array<int|string, mixed> $parameters Query parameters
-		 * @param bool $afterRealExecution True when this is called for a
-		 *        statement that has already been executed for real moments
-		 *        earlier (EntityManager::executeQuery()'s own post-execution
-		 *        debug signal) rather than as a standalone "explain without
-		 *        running" request. A literal-values AstAppend targeting a
-		 *        non-identity (e.g. uuid) primary key strategy generates a
-		 *        fresh value on every compile (see
-		 *        AppendExecutor::fillGeneratedPrimaryKeys()) — harmless, and
-		 *        the expected behavior, for a standalone explain with nothing
-		 *        real to compare against, but misleading here: recompiling
-		 *        would show a value that no longer matches what was actually
-		 *        persisted. When true, AppendExecutor::compileSql() reports no
-		 *        SQL instead in that specific case — see its own docblock.
 		 * @return QueryPlan Planning decisions and generated SQL
-		 * @throws QuelException
+		 * @throws QuelException If $query isn't a retrieve statement, or on a syntax error
 		 */
-		public function explainQuery(string $query, array $parameters = [], bool $afterRealExecution = false): QueryPlan {
+		public function explainQuery(string $query, array $parameters = []): QueryPlan {
 			try {
-				$normalizedParameters = $this->normalizeParams($parameters);
 				$ast = $this->parse($query);
 			} catch (ParserException|LexerException $e) {
 				throw new QuelException("Syntax error: " . $e->getMessage(), 'syntax_error', 0, $e);
 			}
 
-			// DDL and write-verb statements compile straight to SQL — there's no
-			// optimizer/planner pipeline, and replaying them via the retrieve
-			// pipeline's dry-run executor would re-run the write for real (see
-			// explainNonRetrieveQuery()).
-			if ($ast instanceof AstRetrieve) {
-				return $this->explainRetrieveQuery($query, $parameters);
+			if (!$ast instanceof AstRetrieve) {
+				throw new QuelException("explain is not supported for DDL or write-verb statements", 'not_plannable');
 			}
 
-			return $this->explainNonRetrieveQuery($ast, $normalizedParameters, $afterRealExecution);
+			return $this->explainRetrieveQuery($query, $parameters);
 		}
 		
 		/**
@@ -395,48 +381,6 @@
 			$dryRunExecutor->executeQuery($query, $parameters);
 			
 			return new QueryPlan($log->getNotes(), $dryRun->getCapturedSql());
-		}
-		
-		/**
-		 * Compiles a DDL or write-verb (append/replace/delete) statement to
-		 * SQL without running it. Each of these bypasses the retrieve
-		 * pipeline's optimizer/planner entirely (see executeQuery()), so
-		 * there are no planning notes to report — only the SQL the statement
-		 * would run.
-		 *
-		 * Unlike the retrieve path, this never touches
-		 * DryRunRetrieveExecutor: these statements always run through
-		 * their own connection (see each Executor's docblock), so the only
-		 * way to avoid a real write is to compile the SQL directly instead of
-		 * calling execute().
-		 * @param AstStatement $ast Parsed statement — anything but AstRetrieve
-		 * @param array<string, mixed> $parameters Normalized query parameters
-		 * @param bool $afterRealExecution See explainQuery()'s docblock —
-		 *        forwarded only to AppendExecutor::compileSql(), the one
-		 *        compile path that can regenerate a fresh, mismatched value.
-		 * @return QueryPlan Empty planning notes, plus the compiled SQL
-		 * @throws QuelException On compile failure, or if the statement (a
-		 *         JSON-source-range append) produces no SQL at all
-		 */
-		private function explainNonRetrieveQuery(AstStatement $ast, array $parameters, bool $afterRealExecution = false): QueryPlan {
-			try {
-				$sql = match (true) {
-					$ast instanceof AstCreateTable => [$this->createTableExecutor->compileSql($ast)],
-					$ast instanceof AstDestroy => $this->destroyExecutor->compileSql($ast),
-					$ast instanceof AstDestroyIndex => $this->destroyIndexExecutor->compileSql($ast),
-					$ast instanceof AstCreateIndex => $this->createIndexExecutor->compileSql($ast),
-					$ast instanceof AstAppend => [$this->appendExecutor->compileSql($ast, $parameters, $afterRealExecution)],
-					$ast instanceof AstReplace => [$this->replaceExecutor->compileSql($ast, $parameters)],
-					$ast instanceof AstDelete => [$this->deleteExecutor->compileSql($ast, $parameters)],
-					default => throw new QuelException("Invalid query type: expected retrieve, create, destroy, index, or write-verb (append/replace/delete) operation"),
-				};
-
-				return new QueryPlan([], $sql);
-			} catch (SemanticException $e) {
-				throw new QuelException($e->getMessage(), 'semantic_error', 0, $e);
-			} catch (\ReflectionException $e) {
-				throw new QuelException($e->getMessage(), 'resolution_error', 0, $e);
-			}
 		}
 		
 		/**

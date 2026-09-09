@@ -159,10 +159,8 @@
 				? array_map(fn(string $property) => $metadata->getColumnNameOrFail($property), $properties)
 				: $properties;
 
-			// If this entity is a Single-Table Inheritance subclass, inject the
-			// discriminator column value so `append` writes the same type marker
-			// InsertPersister::persist() would for the same entity class — unless
-			// the caller already supplied it explicitly via a mapped property.
+			// STI subclass: inject the discriminator column value so `append`
+			// writes the same type marker persist() would, unless already supplied.
 			$discriminatorInfo = $metadata !== null ? $this->resolveDiscriminatorInfo($metadata) : null;
 
 			if ($discriminatorInfo !== null && in_array($discriminatorInfo['column'], $columnNames, true)) {
@@ -204,9 +202,9 @@
 		 * @param EntityMetadataRecord|null $metadata
 		 * @param array<string, mixed> $parameters
 		 * @param array<string, array{name: string, column: \Quellabs\ObjectQuel\Annotations\Orm\Column, version: \Quellabs\ObjectQuel\Annotations\Orm\Version}> $versionColumnsToInit
-		 * @param array{column: non-empty-string, value: non-empty-string}|null $discriminatorInfo STI
-		 *        discriminator column/value to add, keyed by column name — see compileValues()
-		 * @return array<string, string> property (or, for the discriminator column, column name) => compiled SQL value
+		 * @param array{column: non-empty-string, value: non-empty-string}|null $discriminatorInfo
+		 *        STI discriminator column/value to add — see compileValues()
+		 * @return array<string, string> property (or discriminator column name) => compiled SQL value
 		 * @throws SemanticException
 		 */
 		private function compileRow(array $row, ?EntityMetadataRecord $metadata, array &$parameters, array $versionColumnsToInit = [], ?array $discriminatorInfo = null): array {
@@ -233,10 +231,9 @@
 		}
 
 		/**
-		 * Resolves the STI discriminator column name and value for a metadata's
-		 * entity class, mirroring InsertPersister::getDiscriminatorInfo() so
-		 * `append` and persist() agree on the discriminator marker for the same
-		 * entity class. Returns null when the class isn't an STI subclass.
+		 * Resolves the STI discriminator column/value, mirroring
+		 * InsertPersister::getDiscriminatorInfo() so `append` and persist()
+		 * agree. Null when the class isn't an STI subclass.
 		 * @param EntityMetadataRecord $metadata
 		 * @return array{column: non-empty-string, value: non-empty-string}|null
 		 * @throws SemanticException When STI annotations are present but empty
@@ -266,9 +263,8 @@
 		}
 
 		/**
-		 * Quotes a literal string value for direct embedding in compiled SQL,
-		 * matching BuildSqlFragments::handleString()'s convention for AstString
-		 * literals (same addslashes() stopgap — see that method's docblock).
+		 * Quotes a literal string for direct embedding in compiled SQL,
+		 * matching BuildSqlFragments::handleString()'s addslashes() convention.
 		 * @param string $value
 		 * @return string
 		 */
@@ -509,9 +505,8 @@
 			$missing = [];
 
 			foreach ($metadata->columnDefinitions as $columnName => $columnDef) {
-				// A declared default of 0, '0', '', or false is still a default —
-				// only the absence of one (null, per Column::getDefault()) means
-				// the column is actually required.
+				// A declared default of 0, '0', '', or false is still a default;
+				// only null (no default, per Column::getDefault()) is required.
 				if ($columnDef['nullable'] || $columnDef['primary_key'] || $columnDef['default'] !== null) {
 					continue;
 				}

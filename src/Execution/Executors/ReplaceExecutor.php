@@ -72,8 +72,8 @@
 		}
 
 		/**
-		 * Compiles a `replace <range> (...) where ...` statement to SQL
-		 * without running it, for QueryExecutor::explainQuery().
+		 * Compiles a `replace <range> (...) where ...` statement to SQL, used
+		 * by execute() before running it.
 		 * @param AstReplace $statement
 		 * @param array<string, mixed> $parameters Bound parameters, by reference
 		 * @return string

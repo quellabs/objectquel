@@ -62,8 +62,8 @@
 		}
 
 		/**
-		 * Compiles a `create [temporary] Name (...)` statement to SQL
-		 * without running it, for QueryExecutor::explainQuery().
+		 * Compiles a `create [temporary] Name (...)` statement to SQL, used
+		 * by execute() before running it.
 		 * @param AstCreateTable $statement
 		 * @return string
 		 */

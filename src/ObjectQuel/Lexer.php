@@ -82,11 +82,9 @@
 		        'append'      => Token::Append,
 		        // create, temporary, identity, primary, key, destroy, if,
 		        // exists, to, replace, delete, index, on, fulltext, and
-		        // unsigned are deliberately absent here — each only means
-		        // something special at its own dedicated grammar position
-		        // (see matchKeyword()'s docblock), so none of them get a
-		        // distinct token type the way a genuinely reserved word like
-		        // `where`/`retrieve`/`append` above does.
+		        // unsigned are deliberately absent — each is a keyword only
+		        // at its own grammar position (see peekKeyword()), unlike
+		        // `where`/`retrieve`/`append` above.
 	        ];
 			
 			$this->single_tokens = [
@@ -369,20 +367,14 @@
 		 * $keyword, case-insensitively.
 		 *
 		 * This is how the parser recognizes a *contextual* keyword — create,
-		 * temporary, identity, primary, key, destroy, if, exists, to,
-		 * replace, delete, index, on, fulltext, unsigned — none of which get
-		 * a distinct token type the way a genuinely reserved word (`where`,
-		 * `retrieve`, `append`, ...) does. Each of those 15 words only means
-		 * something special at its own dedicated grammar position (right
-		 * after `append`, at the start of a column-constraint list, etc.);
-		 * everywhere else — a property, column, table, index, or range-alias
-		 * name literally spelled `key` or `to` or `on` — it must still parse
-		 * as a plain identifier. Giving it a distinct token type at the lexer
-		 * level would make that impossible (every occurrence would tokenize
-		 * as the keyword, whether the query meant it that way or not), so
-		 * instead the lexer always emits Token::Identifier for these words
-		 * and the parser itself checks the text, only at the few positions
-		 * where the literal word actually matters.
+		 * temporary, identity, primary, key, destroy, if, exists, to, replace,
+		 * delete, index, on, fulltext, unsigned — none of which get a
+		 * distinct token type the way `where`/`retrieve`/`append` do. Each
+		 * only means something special at its own grammar position;
+		 * everywhere else (a property, column, table, or alias literally
+		 * named `key` or `on`) it must still parse as a plain identifier, so
+		 * the lexer always emits Token::Identifier for these words and the
+		 * parser checks the text only where the literal word actually matters.
 		 * @param string $keyword
 		 * @return bool
 		 */

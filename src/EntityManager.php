@@ -212,22 +212,20 @@
 				$memoryUsage = memory_get_usage(true) / 1024;
 				$memoryPeakUsage = memory_get_peak_usage(true) / 1024;
 				
-				// Explain the query. DDL and write-verb statements (append/replace/
-				// delete) can't go through explain() — replaying them via a dry
-				// run would re-execute the write for real — so fall back to a
-				// plan with no planning notes, just the SQL that was actually run.
-				// afterRealExecution: true additionally stops append/replace from
-				// recompiling (and so re-generating a fresh, mismatched primary
-				// key/@Orm\Version value) now that this statement already ran for
-				// real above — see QueryExecutor::explainQuery()'s docblock.
+				// Explain the query. QueryExecutor::explainQuery() only supports
+				// a retrieve statement — a DDL/write-verb statement already ran
+				// for real above, so there's nothing safe to show for it without
+				// either misrepresenting a generated value or running the write
+				// again; fall back to an empty plan for those instead of letting
+				// the rejection bubble up and fail an otherwise-successful call.
 				try {
-					$plan = $this->queryExecutor->explainQuery($query, $parameters, afterRealExecution: true);
+					$plan = $this->queryExecutor->explainQuery($query, $parameters);
 				} catch (QuelException $e) {
 					if ($e->type !== 'not_plannable') {
 						throw $e;
 					}
 
-					$plan = new QueryPlan([], $this->queryExecutor->getLastExecutedSql());
+					$plan = new QueryPlan([], []);
 				}
 
 				// Emit the query plan + additional query info

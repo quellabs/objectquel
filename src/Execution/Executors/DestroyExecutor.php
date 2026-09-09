@@ -64,8 +64,8 @@
 		}
 
 		/**
-		 * Compiles a `destroy [temporary] Name [if exists]` statement to SQL
-		 * without running it, for QueryExecutor::explainQuery().
+		 * Compiles a `destroy [temporary] Name [if exists]` statement to SQL,
+		 * used by execute() before running it.
 		 * @param AstDestroy $statement
 		 * @return list<string>
 		 */
