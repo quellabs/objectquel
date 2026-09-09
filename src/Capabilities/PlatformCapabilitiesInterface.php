@@ -229,6 +229,24 @@
 		public function supportsForeignKeyIntrospection(): bool;
 
 		/**
+		 * Returns true if the database engine treats DDL as transactional —
+		 * a CREATE/ALTER/DROP statement issued inside a BEGIN/COMMIT can be
+		 * rolled back like any other write. MySQL/MariaDB DDL auto-commits
+		 * per statement regardless of an open transaction, so this is false
+		 * there; PostgreSQL, SQLite, and SQL Server all honor DDL rollback,
+		 * so it's true for them.
+		 *
+		 * Exists so callers issuing more than one DDL statement for a single
+		 * ObjectQuel statement (CreateTableExecutor, AlterTableExecutor) can
+		 * wrap the whole sequence in a transaction where that's meaningful,
+		 * rather than leaving a partial result behind on a mid-sequence
+		 * failure (see objectquel-index-clause-design.md, decision 4).
+		 *
+		 * @return bool
+		 */
+		public function supportsTransactionalDDL(): bool;
+
+		/**
 		 * Returns the connected database engine's type identifier.
 		 *
 		 * This is the most basic fact PlatformCapabilities reports — every other

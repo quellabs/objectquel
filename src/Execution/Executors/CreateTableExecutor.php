@@ -27,6 +27,17 @@
 	 * The table is created first, then embedded indexes run in declaration
 	 * order (see objectquel-index-clause-design.md, decision 3) — there's
 	 * nothing to index before the table exists.
+	 *
+	 * Where the platform supports transactional DDL
+	 * (PlatformCapabilitiesInterface::supportsTransactionalDDL() — PostgreSQL,
+	 * SQLite, SQL Server), the whole statement sequence wraps in one
+	 * transaction, so a mid-sequence failure (e.g. the table succeeds but an
+	 * embedded index fails) leaves nothing behind. Where it doesn't
+	 * (MySQL/MariaDB — DDL auto-commits per statement), the sequence still
+	 * runs best-effort, statement by statement: a failure partway through
+	 * leaves earlier statements applied, same as a hand-written migration
+	 * issuing several separate `$this->execute()` calls already would (see
+	 * objectquel-index-clause-design.md, decision 4).
 	 */
 	class CreateTableExecutor {
 
@@ -42,6 +53,8 @@
 		 */
 		private QuelToSQLCreate $compiler;
 
+		private PlatformCapabilitiesInterface $platform;
+
 		private CreateIndexExecutor $createIndexExecutor;
 
 		/**
@@ -51,6 +64,7 @@
 		 */
 		public function __construct(DatabaseAdapter $connection, PlatformCapabilitiesInterface $platform) {
 			$this->connection = $connection;
+			$this->platform = $platform;
 			$this->compiler = new QuelToSQLCreate($platform);
 			$this->createIndexExecutor = new CreateIndexExecutor($connection, $platform);
 		}
@@ -62,12 +76,37 @@
 		 * @throws QuelException On DDL failure
 		 */
 		public function execute(AstCreateTable $statement): void {
-			foreach ($this->compileSql($statement) as $sql) {
+			$statements = $this->compileSql($statement);
+
+			if (!$this->platform->supportsTransactionalDDL()) {
+				$this->runStatements($statement->getTableName(), $statements);
+				return;
+			}
+
+			$this->connection->beginTrans();
+
+			try {
+				$this->runStatements($statement->getTableName(), $statements);
+			} catch (QuelException $e) {
+				$this->connection->rollbackTrans();
+				throw $e;
+			}
+
+			$this->connection->commitTrans();
+		}
+
+		/**
+		 * @param string $tableName Used only to produce a readable error message
+		 * @param list<string> $statements
+		 * @throws QuelException On DDL failure
+		 */
+		private function runStatements(string $tableName, array $statements): void {
+			foreach ($statements as $sql) {
 				// execute() swallows the exception and returns null on failure
 				// rather than throwing — a try/catch here would never fire.
 				if ($this->connection->execute($sql) === null) {
 					throw new QuelException(
-						"Failed to create table '{$statement->getTableName()}': {$this->connection->getLastErrorMessage()}",
+						"Failed to create table '{$tableName}': {$this->connection->getLastErrorMessage()}",
 						'table_creation_error'
 					);
 				}

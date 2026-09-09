@@ -321,6 +321,17 @@
 
 		/**
 		 * @inheritDoc
+		 *
+		 * MySQL/MariaDB are the only supported engines whose DDL auto-commits
+		 * per statement; PostgreSQL, SQLite, and SQL Server all support
+		 * transactional DDL.
+		 */
+		public function supportsTransactionalDDL(): bool {
+			return !in_array($this->adapter->getDatabaseType(), ['mysql', 'mariadb'], true);
+		}
+
+		/**
+		 * @inheritDoc
 		 */
 		public function getDatabaseType(): string {
 			return $this->adapter->getDatabaseType();

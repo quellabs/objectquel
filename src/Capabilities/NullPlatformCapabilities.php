@@ -158,6 +158,17 @@
 		/**
 		 * @inheritDoc
 		 *
+		 * Conservative default: false, so callers never wrap a DDL sequence
+		 * in a transaction without knowing whether this engine actually
+		 * honors DDL rollback.
+		 */
+		public function supportsTransactionalDDL(): bool {
+			return false;
+		}
+
+		/**
+		 * @inheritDoc
+		 *
 		 * Defaults to 'mysql', the most widely deployed engine in the
 		 * Canvas/ObjectQuel target stack. Callers that need the real engine must
 		 * inject a real PlatformCapabilities instance instead of relying on this
