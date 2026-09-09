@@ -22,6 +22,10 @@
 	 * SET NULL/NO ACTION by the parser (Rules\ForeignKeyClause), defaulting
 	 * to RESTRICT/NO ACTION when omitted — same defaults
 	 * @Orm\ForeignKeyAction falls back to when absent.
+	 *
+	 * $referencedColumn is null when `references Table` omitted its column
+	 * list; CreateTableExecutor resolves it via withReferencedColumn()
+	 * before compiling.
 	 */
 	class AstCreateTableForeignKey extends Ast {
 
@@ -29,13 +33,13 @@
 
 		private string $referencedTable;
 
-		private string $referencedColumn;
+		private ?string $referencedColumn;
 
 		private string $onDelete;
 
 		private string $onUpdate;
 
-		public function __construct(string $column, string $referencedTable, string $referencedColumn, string $onDelete, string $onUpdate) {
+		public function __construct(string $column, string $referencedTable, ?string $referencedColumn, string $onDelete, string $onUpdate) {
 			$this->column = $column;
 			$this->referencedTable = $referencedTable;
 			$this->referencedColumn = $referencedColumn;
@@ -55,7 +59,7 @@
 			return $this->referencedTable;
 		}
 
-		public function getReferencedColumn(): string {
+		public function getReferencedColumn(): ?string {
 			return $this->referencedColumn;
 		}
 
@@ -65,6 +69,13 @@
 
 		public function getOnUpdate(): string {
 			return $this->onUpdate;
+		}
+
+		/** Returns a clone with $referencedColumn resolved. */
+		public function withReferencedColumn(string $referencedColumn): self {
+			$clone = new self($this->column, $this->referencedTable, $referencedColumn, $this->onDelete, $this->onUpdate);
+			$clone->setParent($this->getParent());
+			return $clone;
 		}
 
 		public function deepClone(): static {

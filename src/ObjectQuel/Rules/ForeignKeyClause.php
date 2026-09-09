@@ -26,6 +26,11 @@
 	 * No name is parsed here at all: the constraint name is always derived
 	 * by the caller, never author-supplied (see
 	 * objectquel-foreign-key-design.md, decision 1).
+	 *
+	 * `references Table` may omit the column list, mirroring
+	 * @Orm\ForeignKey's optional referencedColumn — this returns `null`
+	 * for it then, and the caller (AlterTableExecutor/CreateTableExecutor)
+	 * resolves it to the target's primary key via schema introspection.
 	 */
 	class ForeignKeyClause {
 
@@ -33,11 +38,10 @@
 		private const array VALID_ACTIONS = ['RESTRICT', 'CASCADE', 'SET NULL', 'NO ACTION'];
 
 		/**
-		 * Parses a `foreign key (col) references Table (col) [on delete
+		 * Parses a `foreign key (col) references Table [(col)] [on delete
 		 * action] [on update action]` clause, assuming `foreign` is the
 		 * current lookahead token.
-		 * @param Lexer $lexer
-		 * @return array{column: string, referencedTable: string, referencedColumn: string, onDelete: string, onUpdate: string}
+		 * @return array{column: string, referencedTable: string, referencedColumn: ?string, onDelete: string, onUpdate: string}
 		 * @throws LexerException|ParserException
 		 */
 		public static function parse(Lexer $lexer): array {
@@ -47,7 +51,9 @@
 
 			$lexer->matchKeyword('references');
 			$referencedTable = $lexer->match(Token::Identifier)->getStringValue();
-			$referencedColumn = self::parseSingleColumn($lexer);
+			$referencedColumn = $lexer->peek()->getType() === Token::ParenthesesOpen
+				? self::parseSingleColumn($lexer)
+				: null;
 
 			$onDelete = 'RESTRICT';
 			$onUpdate = 'NO ACTION';

@@ -40,6 +40,8 @@
 	 */
 	class CreateTableExecutor {
 
+		private DatabaseAdapter $connection;
+
 		/**
 		 * Compiles the AstCreateTable statement to dialect-correct SQL.
 		 * @var QuelToSQLCreate
@@ -58,6 +60,7 @@
 		 * @param PlatformCapabilitiesInterface $platform
 		 */
 		public function __construct(DatabaseAdapter $connection, PlatformCapabilitiesInterface $platform) {
+			$this->connection = $connection;
 			$this->platform = $platform;
 			$this->compiler = new QuelToSQLCreate($platform);
 			$this->createIndexExecutor = new CreateIndexExecutor($connection, $platform);
@@ -90,6 +93,7 @@
 		 *         the connected engine
 		 */
 		public function compileSql(AstCreateTable $statement): array {
+			$statement = $this->resolveForeignKeys($statement);
 			$statements = [$this->compiler->convertToSQL($statement)];
 
 			if ($statement->getIndexes() !== []) {
@@ -104,5 +108,37 @@
 			}
 
 			return $statements;
+		}
+
+		/**
+		 * Defaults a column-less `references Table` to the target's primary key.
+		 */
+		private function resolveForeignKeys(AstCreateTable $statement): AstCreateTable {
+			$foreignKeys = $statement->getForeignKeys();
+
+			if ($foreignKeys === []) {
+				return $statement;
+			}
+
+			$resolvedForeignKeys = [];
+
+			foreach ($foreignKeys as $foreignKey) {
+				if ($foreignKey->getReferencedColumn() === null) {
+					$referencedColumn = ForeignKeyReferenceResolver::resolveReferencedColumn($this->connection, $foreignKey->getReferencedTable());
+					$foreignKey = $foreignKey->withReferencedColumn($referencedColumn);
+				}
+
+				$resolvedForeignKeys[] = $foreignKey;
+			}
+
+			return new AstCreateTable(
+				$statement->getTableName(),
+				$statement->getColumns(),
+				$statement->isTemporary(),
+				$statement->isIfNotExists(),
+				$statement->getPrimaryKeyColumns(),
+				$statement->getIndexes(),
+				$resolvedForeignKeys
+			);
 		}
 	}

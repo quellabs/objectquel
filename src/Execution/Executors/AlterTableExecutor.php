@@ -5,6 +5,7 @@
 	use Quellabs\ObjectQuel\Capabilities\PlatformCapabilitiesInterface;
 	use Quellabs\ObjectQuel\DatabaseAdapter\DatabaseAdapter;
 	use Quellabs\ObjectQuel\Exception\QuelException;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstAlterAddForeignKey;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstAlterAddIndex;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstAlterDropIndex;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstAlterDropPrimaryKey;
@@ -112,7 +113,7 @@
 				: new AlterTablePrimaryKeyState([], null);
 
 			$statements = $this->compiler->convertToSQL(
-				$statement,
+				new AstAlterTable($statement->getTableName(), $this->resolveForeignKeyOperations($statement->getOperations())),
 				$primaryKeyState->getColumns(),
 				$primaryKeyState->getConstraintName()
 			);
@@ -132,6 +133,26 @@
 			}
 
 			return $statements;
+		}
+
+		/**
+		 * Defaults a column-less `references Table` to the target's primary key.
+		 * @param AstAlterOperation[] $operations
+		 * @return AstAlterOperation[]
+		 */
+		private function resolveForeignKeyOperations(array $operations): array {
+			$resolved = [];
+
+			foreach ($operations as $operation) {
+				if ($operation instanceof AstAlterAddForeignKey && $operation->getReferencedColumn() === null) {
+					$referencedColumn = ForeignKeyReferenceResolver::resolveReferencedColumn($this->connection, $operation->getReferencedTable());
+					$operation = $operation->withReferencedColumn($referencedColumn);
+				}
+
+				$resolved[] = $operation;
+			}
+
+			return $resolved;
 		}
 
 		private function needsPrimaryKeyState(AstAlterTable $statement): bool {
