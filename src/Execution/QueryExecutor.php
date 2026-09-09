@@ -9,7 +9,6 @@
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstDelete;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstDestroy;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstDestroyIndex;
-	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRangeDatabaseSubquery;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstReplace;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstStatement;
 	use Quellabs\ObjectQuel\Capabilities\PlatformCapabilities;
@@ -36,12 +35,10 @@
 	use Quellabs\ObjectQuel\Execution\Executors\DestroyIndexExecutor;
 	use Quellabs\ObjectQuel\Execution\Executors\JsonRetrieveExecutor;
 	use Quellabs\ObjectQuel\Execution\Executors\ReplaceExecutor;
+	use Quellabs\ObjectQuel\ObjectQuel\DateTimeParameterCoercer;
+	use Quellabs\ObjectQuel\ObjectQuel\IdentifierTypeResolver;
 	use Quellabs\ObjectQuel\ObjectQuel\QueryNormalizer;
 	use Quellabs\ObjectQuel\ObjectQuel\SemanticAnalyzer;
-	use Quellabs\ObjectQuel\ObjectQuel\Visitors\CoerceDateTimeParameters;
-	use Quellabs\ObjectQuel\ObjectQuel\Visitors\ResolveIdentifierRange;
-	use Quellabs\ObjectQuel\ObjectQuel\Visitors\ResolvePropertyType;
-	use Quellabs\ObjectQuel\ObjectQuel\Visitors\ResolveRootIdentifierType;
 	use Quellabs\ObjectQuel\Planner\ExecutionPlanBuilder;
 	use Quellabs\ObjectQuel\Planner\QueryOptimizer;
 	use Quellabs\ObjectQuel\Execution\Executors\DryRunRetrieveExecutor;
@@ -64,6 +61,8 @@
 		private QueryOptimizer $optimizer;
 		private QueryNormalizer $queryNormalizer;
 		private SemanticAnalyzer $semanticAnalyser;
+		private IdentifierTypeResolver $identifierTypeResolver;
+		private DateTimeParameterCoercer $dateTimeParameterCoercer;
 		private RetrieveExecutor $databaseExecutor;
 		private JsonRetrieveExecutor $jsonExecutor;
 		private CreateTableExecutor $createTableExecutor;
@@ -112,6 +111,8 @@
 			$this->optimizer = new QueryOptimizer($entityManager, $this->capabilities);
 			$this->queryNormalizer = new QueryNormalizer($entityManager->getEntityStore(), $this->connection);
 			$this->semanticAnalyser = new SemanticAnalyzer($entityManager->getEntityStore(), $this->capabilities, $this->connection);
+			$this->identifierTypeResolver = new IdentifierTypeResolver($entityManager->getEntityStore());
+			$this->dateTimeParameterCoercer = new DateTimeParameterCoercer();
 		}
 		
 		/**
@@ -212,15 +213,15 @@
 				
 				// Resolve all identifier types. Note: this does no semantic checking.
 				// It just flags the type based on AST hierarchy
-				$this->resolveAndSetIdentifierTypes($ast);
-				
+				$this->identifierTypeResolver->resolve($ast);
+
 				// Processing phase #1 - Transform and enhance the AST
 				$this->queryNormalizer->transform($ast);
-				
+
 				// Coerce parameters bound against \DateTime columns (DateTimeInterface,
 				// formatted strings) into Unix timestamps, mirroring the column-side
 				// conversion NormalizeDateTime just applied.
-				$this->coerceDateTimeParameters($ast, $normalizedParameters);
+				$this->dateTimeParameterCoercer->coerce($ast, $normalizedParameters);
 				
 				// Validation phase - Ensure AST integrity and correctness
 				$this->semanticAnalyser->validate($ast);
@@ -281,11 +282,11 @@
 					throw new QuelException("explain() only supports retrieve statements", 'not_plannable');
 				}
 				
-				$this->resolveAndSetIdentifierTypes($ast);
-				
+				$this->identifierTypeResolver->resolve($ast);
+
 				// Normalize and validate the AST before handing it to the optimizer
 				$this->queryNormalizer->transform($ast);
-				$this->coerceDateTimeParameters($ast, $normalizedParameters);
+				$this->dateTimeParameterCoercer->coerce($ast, $normalizedParameters);
 				$this->semanticAnalyser->validate($ast);
 				
 				// Run the optimizer and planner with an active log so every decision is recorded
@@ -387,45 +388,6 @@
 			$dryRunExecutor->executeQuery($query, $parameters);
 			
 			return new QueryPlan($log->getNotes(), $dryRun->getCapturedSql());
-		}
-		
-		/**
-		 * Walk through all identifiers and set their type
-		 * @param AstRetrieve $retrieve
-		 * @return void
-		 */
-		private function resolveAndSetIdentifierTypes(AstRetrieve $retrieve): void {
-			// First, recursively set types all nested queries in temporary ranges
-			// This ensures inner queries are fully resolved before outer query processing
-			foreach ($retrieve->getRanges() as $range) {
-				if ($range instanceof AstRangeDatabaseSubquery) {
-					$this->resolveAndSetIdentifierTypes($range->getQuery());
-				}
-			}
-			
-			// Then set types on current query
-			$retrieve->accept(new ResolveRootIdentifierType($retrieve));
-			$retrieve->accept(new ResolvePropertyType($this->entityManager->getEntityStore()));
-			$retrieve->accept(new ResolveIdentifierRange($retrieve));
-		}
-		
-		/**
-		 * Recursively applies CoerceDateTimeParameters to the given query and every
-		 * nested subquery range, mirroring how QueryNormalizer::transform() recurses
-		 * into nested queries before processing the outer one.
-		 * @param AstRetrieve $ast
-		 * @param array<string, mixed> $parameters Reference to the query's bound parameters
-		 * @return void
-		 * @throws QuelException
-		 */
-		private function coerceDateTimeParameters(AstRetrieve $ast, array &$parameters): void {
-			foreach ($ast->getRanges() as $range) {
-				if ($range instanceof AstRangeDatabaseSubquery) {
-					$this->coerceDateTimeParameters($range->getQuery(), $parameters);
-				}
-			}
-			
-			$ast->accept(new CoerceDateTimeParameters($parameters));
 		}
 		
 		/**
