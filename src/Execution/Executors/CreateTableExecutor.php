@@ -4,6 +4,7 @@
 
 	use Quellabs\ObjectQuel\Capabilities\PlatformCapabilitiesInterface;
 	use Quellabs\ObjectQuel\DatabaseAdapter\DatabaseAdapter;
+	use Quellabs\ObjectQuel\DatabaseAdapter\SqlIdentifierQuoter;
 	use Quellabs\ObjectQuel\Exception\QuelException;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstCreateIndex;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstCreateTable;
@@ -30,13 +31,16 @@
 	 * Where the platform supports transactional DDL
 	 * (PlatformCapabilitiesInterface::supportsTransactionalDDL() — PostgreSQL,
 	 * SQLite, SQL Server), the whole statement sequence wraps in one
-	 * transaction, so a mid-sequence failure (e.g. the table succeeds but an
-	 * embedded index fails) leaves nothing behind. Where it doesn't
-	 * (MySQL/MariaDB — DDL auto-commits per statement), the sequence still
-	 * runs best-effort, statement by statement: a failure partway through
-	 * leaves earlier statements applied, same as a hand-written migration
-	 * issuing several separate `$this->execute()` calls already would (see
-	 * objectquel-index-clause-design.md, decision 4).
+	 * transaction. Where it doesn't (MySQL/MariaDB — DDL auto-commits per
+	 * statement), execute() compensates instead: a failure anywhere in the
+	 * sequence drops the table it just created, unless `if not exists`
+	 * matched a table that already existed (in which case `CREATE TABLE` was
+	 * a no-op and dropping it would destroy pre-existing data). That check
+	 * reads information_schema, which never lists MySQL session-temp tables
+	 * — so a `create temporary ... if not exists` re-matching a same-session
+	 * temp table is indistinguishable from "didn't exist" and would still be
+	 * dropped on a later failure. Left out of scope: narrow, session-scoped,
+	 * lower blast radius than the permanent-table case this guards against.
 	 */
 	class CreateTableExecutor {
 
@@ -54,6 +58,8 @@
 
 		private DdlRunner $ddlRunner;
 
+		private SqlIdentifierQuoter $identifierQuoter;
+
 		/**
 		 * CreateTableExecutor constructor
 		 * @param DatabaseAdapter $connection
@@ -65,6 +71,7 @@
 			$this->compiler = new QuelToSQLCreate($platform);
 			$this->createIndexExecutor = new CreateIndexExecutor($connection, $platform);
 			$this->ddlRunner = new DdlRunner($connection);
+			$this->identifierQuoter = new SqlIdentifierQuoter($platform);
 		}
 
 		/**
@@ -74,12 +81,39 @@
 		 * @throws QuelException On DDL failure
 		 */
 		public function execute(AstCreateTable $statement): void {
-			$this->ddlRunner->runTransactionally(
-				$this->compileSql($statement),
-				$this->platform,
-				"Failed to create table '{$statement->getTableName()}'",
-				'table_creation_error'
-			);
+			$statements = $this->compileSql($statement);
+			$failureMessage = "Failed to create table '{$statement->getTableName()}'";
+			$errorCode = 'table_creation_error';
+
+			if ($this->platform->supportsTransactionalDDL()) {
+				$this->ddlRunner->runTransactionally($statements, $this->platform, $failureMessage, $errorCode);
+				return;
+			}
+
+			$physicalTableName = $this->compiler->getPhysicalTableName($statement);
+			$tableExistedBefore = in_array($physicalTableName, $this->connection->getTables(), true);
+
+			try {
+				$this->ddlRunner->run($statements, $failureMessage, $errorCode);
+			} catch (\Throwable $e) {
+				if (!$tableExistedBefore) {
+					$this->compensateByDroppingTable($physicalTableName);
+				}
+
+				throw $e;
+			}
+		}
+
+		/**
+		 * Best-effort cleanup after a failed MySQL/MariaDB `create` sequence.
+		 * Failures here are silently ignored — execute()'s original exception
+		 * is what surfaces either way, and masking it with a cleanup failure
+		 * would only hide the real error.
+		 * @param string $physicalTableName
+		 * @return void
+		 */
+		private function compensateByDroppingTable(string $physicalTableName): void {
+			$this->connection->execute('DROP TABLE IF EXISTS ' . $this->identifierQuoter->quoteIdentifier($physicalTableName));
 		}
 
 		/**
