@@ -1,18 +1,17 @@
 <?php
-	
+
 	namespace Quellabs\ObjectQuel\Persistence;
-	
-	use Quellabs\ObjectQuel\Annotations\Orm\Column;
-	use Quellabs\ObjectQuel\Annotations\Orm\Version;
-	use Quellabs\ObjectQuel\DatabaseAdapter\DatabaseAdapter;
+
+	use Quellabs\ObjectQuel\EntityManager;
 	use Quellabs\ObjectQuel\EntityStore;
 	use Quellabs\ObjectQuel\Exception\EntityResolutionException;
+	use Quellabs\ObjectQuel\Exception\QuelException;
 	use Quellabs\ObjectQuel\OrmException;
+	use Quellabs\ObjectQuel\ReflectionManagement\PropertyHandler;
 	use Quellabs\ObjectQuel\UnitOfWork;
 
 	/**
 	 * Specialized persister class responsible for updating existing entities in the database
-	 * Extends the PersisterBase to inherit common persistence functionality
 	 * This class handles the process of detecting and persisting changes to existing entities
 	 */
 	class UpdatePersister {
@@ -29,16 +28,18 @@
 		private EntityStore $entityStore;
 
 		/**
-		 * Database connection adapter used for executing SQL queries
-		 * Abstracts the underlying database system and provides a unified interface
+		 * Utility for handling entity property access and manipulation
+		 * Provides methods to get and set entity properties regardless of their visibility
 		 */
-		private DatabaseAdapter $connection;
+		private PropertyHandler $propertyHandler;
 
 		/**
-		 * Handles values with @Orm\Version annotations, including building the
-		 * SET clause fragments that bump them (buildVersionSetClause()) —
-		 * shared with QuelToSQLReplace so QUEL-level `replace` bumps version
-		 * columns the same way object-level updates do.
+		 * Executes the generated `replace` statement (see persist()).
+		 */
+		private EntityManager $entityManager;
+
+		/**
+		 * Handles the post-update version readback (see persist()).
 		 * @var VersionValueHandler
 		 */
 		private VersionValueHandler $valueHandler;
@@ -50,21 +51,25 @@
 		public function __construct(UnitOfWork $unitOfWork) {
 			$this->unitOfWork = $unitOfWork;
 			$this->entityStore = $unitOfWork->getEntityStore();
-			$this->connection = $unitOfWork->getConnection();
+			$this->propertyHandler = $unitOfWork->getPropertyHandler();
+			$this->entityManager = $unitOfWork->getEntityManager();
 			$this->valueHandler = $unitOfWork->getVersionValueHandler();
 		}
-		
+
 		/**
-		 * Persists changes to an entity into the database
+		 * Updates an entity by generating and executing a `replace <alias>
+		 * (prop = :prop, ...) where <alias>.<pk> = :pk [and ...] [and
+		 * <alias>.<version> = :origVersion]` statement. Dirty-checking and the
+		 * optimistic-lock WHERE stay a persister concern; QuelToSQLReplace
+		 * handles identifier quoting, value serialization, and the
+		 * @Orm\Version bump.
 		 * @param object $entity The entity to be updated in the database
 		 * @return void
-		 * @throws OrmException If the database query fails or version mismatch is detected
+		 * @throws OrmException If the update fails or a version mismatch is detected
 		 * @throws EntityResolutionException
 		 */
 		public function persist(object $entity): void {
-			// Retrieve metadata
 			$metadata = $this->entityStore->getMetadata($entity);
-			$tableName = $this->connection->escapeIdentifier($metadata->tableName);
 			$serializedEntity = $this->unitOfWork->getSerializer()->serialize($entity);
 			$originalData = $this->unitOfWork->getEntitySnapshot($entity);
 
@@ -76,72 +81,98 @@
 					"The entity must be loaded from the database before it can be updated."
 				);
 			}
-			
-			// Get the column names that make up the primary key
+
 			$primaryKeyColumnNames = $metadata->identifierColumns;
-			
-			// Get the version column names. These will auto update
 			$versionColumns = $metadata->versionColumns;
 			$versionColumnNames = array_column($versionColumns, 'name');
-			
-			// Extract the primary key values from the original data
-			// These will be used in the WHERE clause to identify the record to update
-			$primaryKeyValues = array_intersect_key($originalData, array_flip($primaryKeyColumnNames));
-			
-			// Extract only fields that have actually changed (excluding version columns)
-			$changedFields = $this->extractChangedFields($serializedEntity, $originalData, $primaryKeyColumnNames, $versionColumnNames);
-			
-			// Build the complete UPDATE statement components
-			$params = [];
-			
-			// Build SET clause for version columns and regular changed fields
-			$setClauseParts = array_merge(
-				$this->valueHandler->buildVersionSetClause($versionColumns, $params),
-				$this->buildFieldsSetClause($changedFields, $params)
-			);
-			
-			// Build WHERE clause with primary keys and version checks for optimistic locking
-			$whereClause = $this->buildWhereClause($primaryKeyColumnNames, $primaryKeyValues, $versionColumns, $originalData, $params);
-			
-			// Build query
-			$query = "UPDATE {$tableName} SET " . implode(", ", $setClauseParts) . " WHERE {$whereClause}";
-			
-			// Execute the UPDATE query with the merged parameters
-			$rs = $this->connection->Execute($query, $params);
-			
-			// If the query fails, throw an exception with error details
-			if (!$rs) {
-				throw new OrmException($this->connection->getLastErrorMessage(), $this->connection->getLastError());
+
+			$changedColumns = $this->extractChangedFields($serializedEntity, $originalData, $primaryKeyColumnNames, $versionColumnNames);
+
+			$alias = 'e';
+			$assignments = [];
+			$parameters = [];
+
+			foreach (array_keys($changedColumns) as $columnName) {
+				$property = $metadata->getPropertyName($columnName);
+
+				if ($property === null) {
+					throw new \LogicException("Changed column '{$columnName}' has no mapped property on '{$metadata->className}'");
+				}
+
+				$paramName = "set_{$property}";
+				$assignments[] = "{$property} = :{$paramName}";
+
+				// Raw, not serialized — the compiler denormalizes it once.
+				$parameters[$paramName] = $this->propertyHandler->get($entity, $property);
 			}
-			
-			// Check if the update actually affected a row
-			// If 0 rows were affected, it means either:
+
+			// The grammar requires at least one assignment — only unmet if
+			// nothing changed besides identifier/version columns. A harmless
+			// self-assignment satisfies it without altering the row.
+			if (empty($assignments)) {
+				$noopKey = $metadata->identifierKeys[0];
+				$assignments[] = "{$noopKey} = :noop_{$noopKey}";
+				$parameters["noop_{$noopKey}"] = $this->propertyHandler->get($entity, $noopKey);
+			}
+
+			$conditions = [];
+
+			foreach ($metadata->identifierKeys as $index => $primaryKey) {
+				$paramName = "pk{$index}";
+				$conditions[] = "{$alias}.{$primaryKey} = :{$paramName}";
+				$parameters[$paramName] = $this->propertyHandler->get($entity, $primaryKey);
+			}
+
+			// Against the original snapshot, not the live property — the
+			// lock must check the value as loaded, not whatever it is now.
+			foreach ($versionColumns as $versionProperty => $versionColumn) {
+				$paramName = "origversion_{$versionProperty}";
+				$conditions[] = "{$alias}.{$versionProperty} = :{$paramName}";
+				$parameters[$paramName] = $originalData[$versionColumn['name']];
+			}
+
+			$quel = "range of {$alias} is {$metadata->className} replace {$alias} (" . implode(', ', $assignments) . ') where ' . implode(' and ', $conditions);
+
+			try {
+				$result = $this->entityManager->executeQuery($quel, $parameters);
+			} catch (QuelException $e) {
+				throw new OrmException($e->getMessage(), $e->getCode(), $e);
+			}
+
+			if ($result === null) {
+				throw new \LogicException('replace returned no QuelResult');
+			}
+
+			// 0 rows affected means either:
 			// 1. The record was deleted by another process, or
 			// 2. The version number changed (concurrent modification - race condition)
-			if ($rs->rowCount() === 0) {
+			if ($result->getAffectedRows() === 0) {
 				if (empty($versionColumnNames)) {
 					$message = "Update failed: the row no longer exists (it may have been deleted by another process).";
 				} else {
 					$version = json_encode(array_intersect_key($originalData, array_flip($versionColumnNames)));
 					$message = "Optimistic lock conflict: the entity was modified concurrently. Expected version: {$version}";
 				}
-				
+
 				throw new OrmException($message);
 			}
-			
-			// Fetch version values from the database (if any)
+
+			$primaryKeyValues = [];
+
+			foreach ($metadata->identifierKeys as $index => $primaryKey) {
+				$primaryKeyValues[$primaryKeyColumnNames[$index]] = $this->propertyHandler->get($entity, $primaryKey);
+			}
+
 			$fetchedDatetimeValues = $this->valueHandler->fetchUpdatedVersionValues(
 				$metadata->tableName,
 				$versionColumns,
 				$primaryKeyColumnNames,
 				$primaryKeyValues,
 			);
-			
-			// Update the entity with the new version values so the in-memory object
-			// matches the database state and can be used for subsequent operations
+
 			$this->valueHandler->updateEntityVersionValues($entity, $fetchedDatetimeValues);
 		}
-		
+
 		/**
 		 * Extracts only the fields that have changed compared to the original entity data
 		 * Version columns are excluded as they are handled separately
@@ -159,80 +190,22 @@
 				if (in_array($key, $versionColumnNames)) {
 					return false;
 				}
-				
+
 				// Skip primary key columns; they identify the row, not data to update
 				if (in_array($key, $primaryKeyColumnNames)) {
 					return false;
 				}
-				
+
 				// If the snapshot doesn't have this key at all, treat it as changed rather
 				// than risk silently dropping a real change due to an undefined-index warning
 				// or accidental null-coercion equality.
 				if (!array_key_exists($key, $originalData)) {
 					return true;
 				}
-				
+
 				// Strict comparison avoids PHP's loose-equality pitfalls, e.g. "1" == 1,
 				// 0 == false, and null == "" all evaluating true and masking real changes.
 				return $value !== $originalData[$key];
 			}, ARRAY_FILTER_USE_BOTH);
-		}
-
-		/**
-		 * Builds the SET clause for regular changed fields
-		 * Each field gets a prefixed parameter name to avoid collisions with other parameters
-		 * @param array<string, mixed> $changedFields Changed fields as column => value pairs
-		 * @param array<string, mixed> $params Reference to parameters array to add field parameters to
-		 * @return array<int, string> Array of SQL SET clause parts
-		 */
-		protected function buildFieldsSetClause(array $changedFields, array &$params): array {
-			// Add the regular changed fields to the SET clause
-			// Each field gets a prefixed parameter name to avoid collisions
-			$setClauseParts = [];
-			
-			foreach ($changedFields as $columnName => $value) {
-				$paramName = "field_{$columnName}";
-				$setClauseParts[] = $this->connection->escapeIdentifier($columnName) . "=:{$paramName}";
-				$params[$paramName] = $value;
-			}
-			
-			return $setClauseParts;
-		}
-		
-		/**
-		 * Builds the WHERE clause for the UPDATE statement
-		 * Includes primary key conditions and version column conditions for optimistic locking
-		 * @param array<int, string> $primaryKeyColumnNames Primary key column names
-		 * @param array<string, mixed> $primaryKeyValues Primary key values
-		 * @param array<string, array{name: string, column: Column, version: Version}> $versionColumns Version column metadata
-		 * @param array<string, mixed> $originalData Original entity data for version values
-		 * @param array<string, mixed> $params Reference to parameters array to add WHERE parameters to
-		 * @return string Complete WHERE clause SQL
-		 */
-		protected function buildWhereClause(array $primaryKeyColumnNames, array $primaryKeyValues, array $versionColumns, array $originalData, array &$params): string {
-			$whereClauseParts = [];
-			
-			// Build the WHERE clause to target the specific record
-			// This includes primary key columns to identify the record
-			foreach ($primaryKeyColumnNames as $columnName) {
-				$paramName = "pk_{$columnName}";
-				$whereClauseParts[] = $this->connection->escapeIdentifier($columnName) . "=:{$paramName}";
-				$params[$paramName] = $primaryKeyValues[$columnName];
-			}
-			
-			// Add version columns to WHERE clause for optimistic locking
-			// If the version in the database doesn't match our original snapshot,
-			// the UPDATE will affect 0 rows, indicating a concurrent modification
-			foreach ($versionColumns as $property => $versionColumn) {
-				$columnName = $versionColumn['name'];
-				$paramName = "where_version_{$columnName}";
-				$whereClauseParts[] = $this->connection->escapeIdentifier($columnName) . "=:{$paramName}";
-				
-				// Use the original version value from our snapshot
-				$params[$paramName] = $originalData[$columnName];
-			}
-			
-			// Combine all WHERE clause parts
-			return implode(" AND ", $whereClauseParts);
 		}
 	}

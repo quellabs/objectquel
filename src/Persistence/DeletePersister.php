@@ -1,38 +1,38 @@
 <?php
-	
+
 	namespace Quellabs\ObjectQuel\Persistence;
-	
-	use Quellabs\ObjectQuel\DatabaseAdapter\DatabaseAdapter;
+
+	use Quellabs\ObjectQuel\EntityManager;
 	use Quellabs\ObjectQuel\EntityStore;
 	use Quellabs\ObjectQuel\Exception\EntityResolutionException;
+	use Quellabs\ObjectQuel\Exception\QuelException;
 	use Quellabs\ObjectQuel\OrmException;
 	use Quellabs\ObjectQuel\ReflectionManagement\PropertyHandler;
 	use Quellabs\ObjectQuel\UnitOfWork;
-	
+
 	/**
 	 * Specialized persister class responsible for handling entity deletion operations
 	 * This class specifically manages the process of removing entities from the database
 	 */
 	class DeletePersister {
-		
+
 		/**
 		 * The EntityStore that maintains metadata about entities and their mappings
 		 * Used to retrieve information about entity tables, columns and identifiers
 		 */
 		private EntityStore $entityStore;
-		
+
 		/**
 		 * Utility for handling entity property access and manipulation
 		 * Provides methods to get and set entity properties regardless of their visibility
 		 */
 		private PropertyHandler $propertyHandler;
-		
+
 		/**
-		 * Database connection adapter used for executing SQL queries
-		 * Abstracts the underlying database system and provides a unified interface
+		 * Executes the generated `delete` statement (see persist()).
 		 */
-		private DatabaseAdapter $connection;
-		
+		private EntityManager $entityManager;
+
 		/**
 		 * DeletePersister constructor
 		 * Initializes all necessary components for entity deletion operations
@@ -41,65 +41,36 @@
 		public function __construct(UnitOfWork $unitOfWork) {
 			$this->entityStore = $unitOfWork->getEntityStore();
 			$this->propertyHandler = $unitOfWork->getPropertyHandler();
-			$this->connection = $unitOfWork->getConnection();
+			$this->entityManager = $unitOfWork->getEntityManager();
 		}
-		
+
 		/**
-		 * Extracts primary key values from an entity into a column-to-value mapping
-		 * This mapping is used to build the WHERE clause for the DELETE statement
-		 * @param object $entity The entity from which to extract primary key values
-		 * @param string[] $primaryKeys The property names that represent primary keys in the entity
-		 * @param string[] $primaryKeyColumns The corresponding database column names for the primary keys
-		 * @return array<string, mixed> Associative array with column names as keys and their values from the entity
-		 */
-		private function extractPrimaryKeyValueMap(object $entity, array $primaryKeys, array $primaryKeyColumns): array {
-			$result = [];
-			
-			foreach($primaryKeys as $index => $key) {
-				$result[$primaryKeyColumns[$index]] = $this->propertyHandler->get($entity, $key);
-			}
-			
-			return $result;
-		}
-		
-		/**
-		 * Deletes an entity from the database based on its primary keys
-		 * This function first retrieves the necessary table and key information and then
-		 * constructs a DELETE SQL query to remove the specific entity
+		 * Deletes an entity by generating and executing a `delete <alias>
+		 * where <alias>.<pk> = :pk [and ...]` statement for its primary key.
 		 * @param object $entity The entity to be removed from the database
-		 * @throws OrmException If the DELETE operation fails, an exception is thrown
+		 * @throws OrmException If the DELETE operation fails
 		 * @throws EntityResolutionException
 		 */
 		public function persist(object $entity): void {
-			// Fetch metadata
 			$metadata = $this->entityStore->getMetadata($entity);
-			$tableName = $this->connection->escapeIdentifier($metadata->tableName);
-			
-			// Create a mapping of primary key column names to their values for this specific entity
-			$primaryKeyValues = $this->extractPrimaryKeyValueMap($entity, $metadata->identifierKeys, $metadata->identifierColumns);
-			
-			// Construct the SQL query for deleting the entity, using each primary key value
-			// in the WHERE clause to target this specific entity.
-			// Parameters are prefixed with "pk_" to ensure valid PDO parameter names
-			// regardless of the underlying column name (consistent with UpdatePersister).
-			$params = [];
-			$whereParts = [];
-			
-			foreach ($primaryKeyValues as $columnName => $value) {
-				$paramName = "pk_{$columnName}";
-				$whereParts[] = $this->connection->escapeIdentifier($columnName) . "=:{$paramName}";
-				$params[$paramName] = $value;
+			$alias = 'e';
+			$conditions = [];
+			$parameters = [];
+
+			foreach ($metadata->identifierKeys as $index => $primaryKey) {
+				$paramName = "pk{$index}";
+				$conditions[] = "{$alias}.{$primaryKey} = :{$paramName}";
+
+				// Raw, not serialized — the compiler denormalizes it once.
+				$parameters[$paramName] = $this->propertyHandler->get($entity, $primaryKey);
 			}
-			
-			// Put all WHERE parts in a string to use in the query
-			$sql = implode(" AND ", $whereParts);
-			
-			// Execute the DELETE query with the constructed conditions
-			// Use the primary key values as parameters for the prepared statement to prevent SQL injection
-			if (!$this->connection->execute("DELETE FROM {$tableName} WHERE {$sql}", $params)) {
-				// If execution fails, throw an exception with the last error message and error code
-				// from the database connection to help identify and resolve the issue
-				throw new OrmException("Error deleting entity: " . $this->connection->getLastErrorMessage(), $this->connection->getLastError());
+
+			$quel = "range of {$alias} is {$metadata->className} delete {$alias} where " . implode(' and ', $conditions);
+
+			try {
+				$this->entityManager->executeQuery($quel, $parameters);
+			} catch (QuelException $e) {
+				throw new OrmException($e->getMessage(), $e->getCode(), $e);
 			}
 		}
 	}
