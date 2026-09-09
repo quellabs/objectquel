@@ -7,6 +7,8 @@
 	use Quellabs\ObjectQuel\EntityStore;
 	use Quellabs\ObjectQuel\Exception\EntityResolutionException;
 	use Quellabs\ObjectQuel\Exception\QuelException;
+	use Quellabs\ObjectQuel\Metadata\EntityMetadataRecord;
+	use Quellabs\ObjectQuel\ObjectQuel\QuelResult;
 	use Quellabs\ObjectQuel\OrmException;
 	use Quellabs\ObjectQuel\PrimaryKeys\PrimaryKeyFactory;
 	use Quellabs\ObjectQuel\ReflectionManagement\PropertyHandler;
@@ -82,13 +84,37 @@
 		 */
 		public function persist(object $entity): void {
 			$metadata = $this->entityStore->getMetadata($entity);
-			$primaryKeys = $metadata->identifierKeys;
-			$primaryKeyColumnNames = $metadata->identifierColumns;
 
 			// Generate non-identity PK values up front (composite keys
 			// included) — append's own auto-generation only handles a
 			// single-column key.
-			foreach ($primaryKeys as $primaryKey) {
+			$this->generatePrimaryKeyValues($entity, $metadata);
+
+			$alias = 'e';
+
+			// Column list for the append: every mapped column except the auto-initialized version column.
+			$assignments = $this->buildAssignments($entity, $metadata);
+
+			// Compile and run the `append to` statement.
+			$quel = "range of {$alias} is {$metadata->className} append to {$alias} (" . implode(', ', $assignments->clauses) . ')';
+			$result = $this->executeAppend($quel, $assignments->parameters);
+
+			// Write the DB-assigned auto-increment id, if any, back onto the entity.
+			$this->applyGeneratedId($entity, $metadata, $result);
+
+			// Pull any DB-generated version value (e.g. created_at) back onto the entity.
+			$this->readBackVersionValues($entity, $metadata);
+		}
+
+		/**
+		 * Assigns a generated value to every non-identity primary key that's
+		 * still unset. Identity-strategy keys are left alone for the database
+		 * (or {@see applyGeneratedId}) to assign.
+		 * @throws OrmException If a generator returns null
+		 * @throws EntityResolutionException
+		 */
+		private function generatePrimaryKeyValues(object $entity, EntityMetadataRecord $metadata): void {
+			foreach ($metadata->identifierKeys as $primaryKey) {
 				$currentValue = $this->propertyHandler->get($entity, $primaryKey);
 
 				if ($currentValue === null || $currentValue === '') {
@@ -107,8 +133,16 @@
 					$this->propertyHandler->set($entity, $primaryKey, $value);
 				}
 			}
+		}
 
-			$alias = 'e';
+		/**
+		 * Builds the `prop = :prop` assignment list and its bound parameters
+		 * for every mapped column. Skips the auto-initialized version column
+		 * and any still-unset identity PK. Falls back to a NULL-bound
+		 * auto-increment column when nothing else is left to insert, since
+		 * the grammar requires at least one assignment.
+		 */
+		private function buildAssignments(object $entity, EntityMetadataRecord $metadata): QuelFragment {
 			$assignments = [];
 			$parameters = [];
 
@@ -144,8 +178,15 @@
 				$parameters[$metadata->autoIncrementColumn] = null;
 			}
 
-			$quel = "range of {$alias} is {$metadata->className} append to {$alias} (" . implode(', ', $assignments) . ')';
+			return new QuelFragment($assignments, $parameters);
+		}
 
+		/**
+		 * Executes the generated `append to` statement.
+		 * @param array<string, mixed> $parameters
+		 * @throws OrmException
+		 */
+		private function executeAppend(string $quel, array $parameters): QuelResult {
 			try {
 				$result = $this->entityManager->executeQuery($quel, $parameters);
 			} catch (QuelException $e) {
@@ -156,24 +197,40 @@
 				throw new \LogicException('append returned no QuelResult for a literal-values insert');
 			}
 
-			if ($metadata->autoIncrementColumn !== null) {
-				$generatedId = $result->getGeneratedId();
+			return $result;
+		}
 
-				if (is_numeric($generatedId) && (int)$generatedId > 0) {
-					$this->propertyHandler->set($entity, $metadata->autoIncrementColumn, (int)$generatedId);
-				}
+		/**
+		 * Applies the database-generated auto-increment id onto the live
+		 * entity, when the entity has one and the statement produced one.
+		 */
+		private function applyGeneratedId(object $entity, EntityMetadataRecord $metadata, QuelResult $result): void {
+			if ($metadata->autoIncrementColumn === null) {
+				return;
 			}
 
+			$generatedId = $result->getGeneratedId();
+
+			if (is_numeric($generatedId) && (int)$generatedId > 0) {
+				$this->propertyHandler->set($entity, $metadata->autoIncrementColumn, (int)$generatedId);
+			}
+		}
+
+		/**
+		 * Re-fetches and applies any database-generated version values (e.g.
+		 * created_at) onto the live entity after a successful insert.
+		 */
+		private function readBackVersionValues(object $entity, EntityMetadataRecord $metadata): void {
 			$primaryKeyValues = [];
 
-			foreach ($primaryKeys as $index => $primaryKey) {
-				$primaryKeyValues[$primaryKeyColumnNames[$index]] = $this->propertyHandler->get($entity, $primaryKey);
+			foreach ($metadata->identifierKeys as $index => $primaryKey) {
+				$primaryKeyValues[$metadata->identifierColumns[$index]] = $this->propertyHandler->get($entity, $primaryKey);
 			}
 
 			$fetchedDatetimeValues = $this->valueHandler->fetchUpdatedVersionValues(
 				$metadata->tableName,
 				$metadata->versionColumns,
-				$primaryKeyColumnNames,
+				$metadata->identifierColumns,
 				$primaryKeyValues,
 			);
 

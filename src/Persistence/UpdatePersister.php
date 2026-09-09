@@ -6,6 +6,8 @@
 	use Quellabs\ObjectQuel\EntityStore;
 	use Quellabs\ObjectQuel\Exception\EntityResolutionException;
 	use Quellabs\ObjectQuel\Exception\QuelException;
+	use Quellabs\ObjectQuel\Metadata\EntityMetadataRecord;
+	use Quellabs\ObjectQuel\ObjectQuel\QuelResult;
 	use Quellabs\ObjectQuel\OrmException;
 	use Quellabs\ObjectQuel\ReflectionManagement\PropertyHandler;
 	use Quellabs\ObjectQuel\UnitOfWork;
@@ -70,25 +72,62 @@
 		 */
 		public function persist(object $entity): void {
 			$metadata = $this->entityStore->getMetadata($entity);
-			$serializedEntity = $this->unitOfWork->getSerializer()->serialize($entity);
 			$originalData = $this->unitOfWork->getEntitySnapshot($entity);
 
-			// If there's no original data, this entity was never loaded from the database.
-			// Updating an untracked entity is a programming error.
+			// Bail out early if this entity was never loaded from the database.
+			$this->assertHasSnapshot($entity, $originalData);
+
+			$alias = 'e';
+			$versionColumnNames = array_column($metadata->versionColumns, 'name');
+
+			// Diff live entity state against its snapshot to find what actually changed.
+			$changedColumns = $this->extractChangedFields(
+				$this->unitOfWork->getSerializer()->serialize($entity),
+				$originalData,
+				$metadata->identifierColumns,
+				$versionColumnNames
+			);
+
+			// SET clause: the changed columns. WHERE clause: primary key + optimistic-lock version check.
+			$assignments = $this->buildAssignments($metadata, $entity, $changedColumns);
+			$conditions = $this->buildLockConditions($metadata, $entity, $originalData, $alias);
+			$parameters = $assignments->parameters + $conditions->parameters;
+
+			// Compile and run the `replace` statement.
+			$quel = "range of {$alias} is {$metadata->className} replace {$alias} (" . implode(', ', $assignments->clauses) . ') where ' . implode(' and ', $conditions->clauses);
+			$result = $this->executeReplace($quel, $parameters);
+
+			// Zero affected rows means the row vanished or the lock was lost — fail loudly instead of silently no-op-ing.
+			$this->assertRowUpdated($result, $originalData, $versionColumnNames);
+
+			// Pull any DB-generated version value (e.g. updated_at) back onto the entity.
+			$this->readBackVersionValues($entity, $metadata);
+		}
+
+		/**
+		 * Guards against updating an entity that was never loaded from the database.
+		 * @param object $entity
+		 * @param array|null $originalData
+		 * @return void
+		 * @throws OrmException
+		 */
+		private function assertHasSnapshot(object $entity, ?array $originalData): void {
 			if ($originalData === null) {
 				throw new OrmException(
 					"Cannot update entity of type '" . get_class($entity) . "': no original data found. " .
 					"The entity must be loaded from the database before it can be updated."
 				);
 			}
+		}
 
-			$primaryKeyColumnNames = $metadata->identifierColumns;
-			$versionColumns = $metadata->versionColumns;
-			$versionColumnNames = array_column($versionColumns, 'name');
-
-			$changedColumns = $this->extractChangedFields($serializedEntity, $originalData, $primaryKeyColumnNames, $versionColumnNames);
-
-			$alias = 'e';
+		/**
+		 * Builds the `prop = :param` assignment list and its bound parameters for the
+		 * changed columns. Falls back to a harmless self-assignment when nothing
+		 * changed, since the grammar requires at least one assignment.
+		 * @param object $entity
+		 * @param array<string, mixed> $changedColumns Changed fields as column => value pairs
+		 */
+		private function buildAssignments(EntityMetadataRecord $metadata, object $entity, array $changedColumns): QuelFragment {
 			$assignments = [];
 			$parameters = [];
 
@@ -115,7 +154,18 @@
 				$parameters["noop_{$noopKey}"] = $this->propertyHandler->get($entity, $noopKey);
 			}
 
+			return new QuelFragment($assignments, $parameters);
+		}
+
+		/**
+		 * Builds the WHERE conditions and parameters that identify the row and
+		 * enforce the optimistic-lock check against the original snapshot.
+		 * @param object $entity
+		 * @param array<string, mixed> $originalData
+		 */
+		private function buildLockConditions(EntityMetadataRecord $metadata, object $entity, array $originalData, string $alias): QuelFragment {
 			$conditions = [];
+			$parameters = [];
 
 			foreach ($metadata->identifierKeys as $index => $primaryKey) {
 				$paramName = "pk{$index}";
@@ -125,14 +175,21 @@
 
 			// Against the original snapshot, not the live property — the
 			// lock must check the value as loaded, not whatever it is now.
-			foreach ($versionColumns as $versionProperty => $versionColumn) {
+			foreach ($metadata->versionColumns as $versionProperty => $versionColumn) {
 				$paramName = "origversion_{$versionProperty}";
 				$conditions[] = "{$alias}.{$versionProperty} = :{$paramName}";
 				$parameters[$paramName] = $originalData[$versionColumn['name']];
 			}
 
-			$quel = "range of {$alias} is {$metadata->className} replace {$alias} (" . implode(', ', $assignments) . ') where ' . implode(' and ', $conditions);
+			return new QuelFragment($conditions, $parameters);
+		}
 
+		/**
+		 * Executes the generated `replace` statement.
+		 * @param array<string, mixed> $parameters
+		 * @throws OrmException
+		 */
+		private function executeReplace(string $quel, array $parameters): QuelResult {
 			try {
 				$result = $this->entityManager->executeQuery($quel, $parameters);
 			} catch (QuelException $e) {
@@ -143,30 +200,47 @@
 				throw new \LogicException('replace returned no QuelResult');
 			}
 
-			// 0 rows affected means either:
-			// 1. The record was deleted by another process, or
-			// 2. The version number changed (concurrent modification - race condition)
-			if ($result->getAffectedRows() === 0) {
-				if (empty($versionColumnNames)) {
-					$message = "Update failed: the row no longer exists (it may have been deleted by another process).";
-				} else {
-					$version = json_encode(array_intersect_key($originalData, array_flip($versionColumnNames)));
-					$message = "Optimistic lock conflict: the entity was modified concurrently. Expected version: {$version}";
-				}
+			return $result;
+		}
 
-				throw new OrmException($message);
+		/**
+		 * Detects a lost update: zero rows affected means either the row was
+		 * deleted by another process, or the version column no longer matches
+		 * the snapshot (concurrent modification).
+		 * @param array<string, mixed> $originalData
+		 * @param array<int, string> $versionColumnNames
+		 * @throws OrmException
+		 */
+		private function assertRowUpdated(QuelResult $result, array $originalData, array $versionColumnNames): void {
+			if ($result->getAffectedRows() !== 0) {
+				return;
 			}
 
+			if (empty($versionColumnNames)) {
+				$message = "Update failed: the row no longer exists (it may have been deleted by another process).";
+			} else {
+				$version = json_encode(array_intersect_key($originalData, array_flip($versionColumnNames)));
+				$message = "Optimistic lock conflict: the entity was modified concurrently. Expected version: {$version}";
+			}
+
+			throw new OrmException($message);
+		}
+
+		/**
+		 * Re-fetches and applies any database-generated version values (e.g.
+		 * updated_at) onto the live entity after a successful update.
+		 */
+		private function readBackVersionValues(object $entity, EntityMetadataRecord $metadata): void {
 			$primaryKeyValues = [];
 
 			foreach ($metadata->identifierKeys as $index => $primaryKey) {
-				$primaryKeyValues[$primaryKeyColumnNames[$index]] = $this->propertyHandler->get($entity, $primaryKey);
+				$primaryKeyValues[$metadata->identifierColumns[$index]] = $this->propertyHandler->get($entity, $primaryKey);
 			}
 
 			$fetchedDatetimeValues = $this->valueHandler->fetchUpdatedVersionValues(
 				$metadata->tableName,
-				$versionColumns,
-				$primaryKeyColumnNames,
+				$metadata->versionColumns,
+				$metadata->identifierColumns,
 				$primaryKeyValues,
 			);
 

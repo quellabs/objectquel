@@ -6,6 +6,7 @@
 	use Quellabs\ObjectQuel\EntityStore;
 	use Quellabs\ObjectQuel\Exception\EntityResolutionException;
 	use Quellabs\ObjectQuel\Exception\QuelException;
+	use Quellabs\ObjectQuel\Metadata\EntityMetadataRecord;
 	use Quellabs\ObjectQuel\OrmException;
 	use Quellabs\ObjectQuel\ReflectionManagement\PropertyHandler;
 	use Quellabs\ObjectQuel\UnitOfWork;
@@ -54,6 +55,20 @@
 		public function persist(object $entity): void {
 			$metadata = $this->entityStore->getMetadata($entity);
 			$alias = 'e';
+
+			// WHERE clause: match the row by its primary key.
+			$conditions = $this->buildPrimaryKeyConditions($entity, $metadata, $alias);
+
+			// Compile and run the `delete` statement.
+			$quel = "range of {$alias} is {$metadata->className} delete {$alias} where " . implode(' and ', $conditions->clauses);
+			$this->executeDelete($quel, $conditions->parameters);
+		}
+
+		/**
+		 * Builds the WHERE conditions and parameters that identify the row
+		 * to delete by its primary key.
+		 */
+		private function buildPrimaryKeyConditions(object $entity, EntityMetadataRecord $metadata, string $alias): QuelFragment {
 			$conditions = [];
 			$parameters = [];
 
@@ -65,8 +80,15 @@
 				$parameters[$paramName] = $this->propertyHandler->get($entity, $primaryKey);
 			}
 
-			$quel = "range of {$alias} is {$metadata->className} delete {$alias} where " . implode(' and ', $conditions);
+			return new QuelFragment($conditions, $parameters);
+		}
 
+		/**
+		 * Executes the generated `delete` statement.
+		 * @param array<string, mixed> $parameters
+		 * @throws OrmException
+		 */
+		private function executeDelete(string $quel, array $parameters): void {
 			try {
 				$this->entityManager->executeQuery($quel, $parameters);
 			} catch (QuelException $e) {
