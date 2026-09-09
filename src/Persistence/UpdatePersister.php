@@ -101,15 +101,16 @@
 			$this->assertRowUpdated($result, $originalData, $versionColumnNames);
 
 			// Pull any DB-generated version value (e.g. updated_at) back onto the entity.
-			$this->readBackVersionValues($entity, $metadata);
+			$this->valueHandler->readBackVersionValues($entity, $metadata);
 		}
 
 		/**
 		 * Guards against updating an entity that was never loaded from the database.
 		 * @param object $entity
-		 * @param array|null $originalData
+		 * @param array<string, mixed>|null $originalData
 		 * @return void
 		 * @throws OrmException
+		 * @phpstan-assert !null $originalData
 		 */
 		private function assertHasSnapshot(object $entity, ?array $originalData): void {
 			if ($originalData === null) {
@@ -234,31 +235,7 @@
 
 			throw new OrmException($message);
 		}
-
-		/**
-		 * Re-fetches and applies any database-generated version values (e.g.
-		 * updated_at) onto the live entity after a successful update.
-		 * @param object $entity
-		 * @param EntityMetadataRecord $metadata
-		 * @return void
-		 */
-		private function readBackVersionValues(object $entity, EntityMetadataRecord $metadata): void {
-			$primaryKeyValues = [];
-
-			foreach ($metadata->identifierKeys as $index => $primaryKey) {
-				$primaryKeyValues[$metadata->identifierColumns[$index]] = $this->propertyHandler->get($entity, $primaryKey);
-			}
-
-			$fetchedDatetimeValues = $this->valueHandler->fetchUpdatedVersionValues(
-				$metadata->tableName,
-				$metadata->versionColumns,
-				$metadata->identifierColumns,
-				$primaryKeyValues,
-			);
-
-			$this->valueHandler->updateEntityVersionValues($entity, $fetchedDatetimeValues);
-		}
-
+		
 		/**
 		 * Extracts only the fields that have changed compared to the original entity data
 		 * Version columns are excluded as they are handled separately

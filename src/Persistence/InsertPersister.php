@@ -90,12 +90,11 @@
 			// single-column key.
 			$this->generatePrimaryKeyValues($entity, $metadata);
 
-			$alias = 'e';
-
 			// Column list for the append: every mapped column except the auto-initialized version column.
 			$assignments = $this->buildAssignments($entity, $metadata);
 
 			// Compile and run the `append to` statement.
+			$alias = 'e';
 			$quel = "range of {$alias} is {$metadata->className} append to {$alias} (" . implode(', ', $assignments->clauses) . ')';
 			$result = $this->executeAppend($quel, $assignments->parameters);
 
@@ -103,7 +102,7 @@
 			$this->applyGeneratedId($entity, $metadata, $result);
 
 			// Pull any DB-generated version value (e.g. created_at) back onto the entity.
-			$this->readBackVersionValues($entity, $metadata);
+			$this->valueHandler->readBackVersionValues($entity, $metadata);
 		}
 
 		/**
@@ -227,31 +226,7 @@
 				$this->propertyHandler->set($entity, $metadata->autoIncrementColumn, (int)$generatedId);
 			}
 		}
-
-		/**
-		 * Re-fetches and applies any database-generated version values (e.g.
-		 * created_at) onto the live entity after a successful insert.
-		 * @param object $entity
-		 * @param EntityMetadataRecord $metadata
-		 * @return void
-		 */
-		private function readBackVersionValues(object $entity, EntityMetadataRecord $metadata): void {
-			$primaryKeyValues = [];
-
-			foreach ($metadata->identifierKeys as $index => $primaryKey) {
-				$primaryKeyValues[$metadata->identifierColumns[$index]] = $this->propertyHandler->get($entity, $primaryKey);
-			}
-
-			$fetchedDatetimeValues = $this->valueHandler->fetchUpdatedVersionValues(
-				$metadata->tableName,
-				$metadata->versionColumns,
-				$metadata->identifierColumns,
-				$primaryKeyValues,
-			);
-
-			$this->valueHandler->updateEntityVersionValues($entity, $fetchedDatetimeValues);
-		}
-
+		
 		/**
 		 * Retrieves the primary key generation strategy for a given entity and primary key.
 		 * @param object $entity The entity object to examine

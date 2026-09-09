@@ -9,6 +9,7 @@
 	use Quellabs\ObjectQuel\DatabaseAdapter\SqlIdentifierQuoter;
 	use Quellabs\ObjectQuel\EntityStore;
 	use Quellabs\ObjectQuel\Exception\EntityResolutionException;
+	use Quellabs\ObjectQuel\Metadata\EntityMetadataRecord;
 	use Quellabs\ObjectQuel\OrmException;
 	use Quellabs\ObjectQuel\ReflectionManagement\PropertyHandler;
 	use Quellabs\ObjectQuel\UnitOfWork;
@@ -272,6 +273,33 @@
 			return $resultValues;
 		}
 		
+		/**
+		 * Re-fetches and applies any database-generated version values (e.g.
+		 * created_at/updated_at) onto the live entity after a successful
+		 * insert or update. Shared by InsertPersister and UpdatePersister so
+		 * both read back version columns identically.
+		 * @param object $entity
+		 * @param EntityMetadataRecord $metadata
+		 * @return void
+		 * @throws EntityResolutionException
+		 */
+		public function readBackVersionValues(object $entity, EntityMetadataRecord $metadata): void {
+			$primaryKeyValues = [];
+
+			foreach ($metadata->identifierKeys as $index => $primaryKey) {
+				$primaryKeyValues[$metadata->identifierColumns[$index]] = $this->propertyHandler->get($entity, $primaryKey);
+			}
+
+			$fetchedDatetimeValues = $this->fetchUpdatedVersionValues(
+				$metadata->tableName,
+				$metadata->versionColumns,
+				$metadata->identifierColumns,
+				$primaryKeyValues,
+			);
+
+			$this->updateEntityVersionValues($entity, $fetchedDatetimeValues);
+		}
+
 		/**
 		 * Updates the entity with new version values from the database
 		 * @param object $entity The entity to update
