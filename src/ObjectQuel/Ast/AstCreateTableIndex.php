@@ -17,7 +17,7 @@
 	 * minus the `on Table is`/`add` phrasing, which is redundant once
 	 * already scoped to one table by the enclosing `create` statement.
 	 */
-	class AstCreateTableIndex extends Ast {
+	class AstCreateTableIndex extends Ast implements AstIndexEntry {
 
 		private string $indexName;
 

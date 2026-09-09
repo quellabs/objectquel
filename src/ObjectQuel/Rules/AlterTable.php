@@ -150,20 +150,13 @@
 		 * @throws LexerException|ParserException
 		 */
 		private function parseAddIndex(): AstAlterAddIndex {
-			$unique = false;
-			$type = null;
-
-			if ($this->lexer->optionalMatch(Token::Unique) !== null) {
-				$unique = true;
-			} elseif ($this->lexer->optionalMatchKeyword('fulltext') !== null) {
-				$type = 'fulltext';
-			}
+			$modifiers = IndexClause::parseModifiers($this->lexer);
 
 			$this->lexer->matchKeyword('index');
 			$indexName = $this->lexer->match(Token::Identifier)->getStringValue();
-			$columns = $this->parseColumnNameList();
+			$columns = IndexClause::parseColumnList($this->lexer);
 
-			return new AstAlterAddIndex($indexName, $columns, $unique, $type);
+			return new AstAlterAddIndex($indexName, $columns, $modifiers['unique'], $modifiers['type']);
 		}
 
 		/**
@@ -225,32 +218,6 @@
 			$newName = $this->lexer->match(Token::Identifier)->getStringValue();
 
 			return new AstAlterRenameColumn($oldName, $newName);
-		}
-
-		/**
-		 * @return string[]
-		 * @throws LexerException|ParserException
-		 */
-		private function parseColumnNameList(): array {
-			$this->lexer->match(Token::ParenthesesOpen);
-
-			$columns = [];
-			$seenColumns = [];
-
-			do {
-				$column = $this->lexer->match(Token::Identifier)->getStringValue();
-
-				if (isset($seenColumns[$column])) {
-					throw new ParserException("Duplicate column '{$column}' in index column list, on line {$this->lexer->getLineNumber()}");
-				}
-
-				$seenColumns[$column] = true;
-				$columns[] = $column;
-			} while ($this->lexer->optionalMatch(Token::Comma));
-
-			$this->lexer->match(Token::ParenthesesClose);
-
-			return $columns;
 		}
 
 		/**

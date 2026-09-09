@@ -7,7 +7,6 @@
 	use Quellabs\ObjectQuel\Exception\QuelException;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstCreateIndex;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstCreateTable;
-	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstCreateTableIndex;
 	use Quellabs\ObjectQuel\ObjectQuel\QuelToSQLCreate;
 
 	/**
@@ -42,12 +41,6 @@
 	class CreateTableExecutor {
 
 		/**
-		 * Database connection used to execute the generated DDL
-		 * @var DatabaseAdapter
-		 */
-		private DatabaseAdapter $connection;
-
-		/**
 		 * Compiles the AstCreateTable statement to dialect-correct SQL.
 		 * @var QuelToSQLCreate
 		 */
@@ -57,16 +50,18 @@
 
 		private CreateIndexExecutor $createIndexExecutor;
 
+		private DdlRunner $ddlRunner;
+
 		/**
 		 * CreateTableExecutor constructor
 		 * @param DatabaseAdapter $connection
 		 * @param PlatformCapabilitiesInterface $platform
 		 */
 		public function __construct(DatabaseAdapter $connection, PlatformCapabilitiesInterface $platform) {
-			$this->connection = $connection;
 			$this->platform = $platform;
 			$this->compiler = new QuelToSQLCreate($platform);
 			$this->createIndexExecutor = new CreateIndexExecutor($connection, $platform);
+			$this->ddlRunner = new DdlRunner($connection);
 		}
 
 		/**
@@ -76,41 +71,12 @@
 		 * @throws QuelException On DDL failure
 		 */
 		public function execute(AstCreateTable $statement): void {
-			$statements = $this->compileSql($statement);
-
-			if (!$this->platform->supportsTransactionalDDL()) {
-				$this->runStatements($statement->getTableName(), $statements);
-				return;
-			}
-
-			$this->connection->beginTrans();
-
-			try {
-				$this->runStatements($statement->getTableName(), $statements);
-			} catch (QuelException $e) {
-				$this->connection->rollbackTrans();
-				throw $e;
-			}
-
-			$this->connection->commitTrans();
-		}
-
-		/**
-		 * @param string $tableName Used only to produce a readable error message
-		 * @param list<string> $statements
-		 * @throws QuelException On DDL failure
-		 */
-		private function runStatements(string $tableName, array $statements): void {
-			foreach ($statements as $sql) {
-				// execute() swallows the exception and returns null on failure
-				// rather than throwing — a try/catch here would never fire.
-				if ($this->connection->execute($sql) === null) {
-					throw new QuelException(
-						"Failed to create table '{$tableName}': {$this->connection->getLastErrorMessage()}",
-						'table_creation_error'
-					);
-				}
-			}
+			$this->ddlRunner->runTransactionally(
+				$this->compileSql($statement),
+				$this->platform,
+				"Failed to create table '{$statement->getTableName()}'",
+				'table_creation_error'
+			);
 		}
 
 		/**
@@ -132,15 +98,11 @@
 				foreach ($statement->getIndexes() as $index) {
 					$statements = [
 						...$statements,
-						...$this->createIndexExecutor->compileSql($this->toCreateIndex($physicalTableName, $index)),
+						...$this->createIndexExecutor->compileSql(AstCreateIndex::fromEntry($physicalTableName, $index)),
 					];
 				}
 			}
 
 			return $statements;
-		}
-
-		private function toCreateIndex(string $tableName, AstCreateTableIndex $index): AstCreateIndex {
-			return new AstCreateIndex($tableName, $index->getIndexName(), $index->getColumns(), $index->isUnique(), $index->getType());
 		}
 	}

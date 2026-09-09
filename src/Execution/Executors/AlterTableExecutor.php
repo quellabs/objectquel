@@ -61,6 +61,8 @@
 
 		private DestroyIndexExecutor $destroyIndexExecutor;
 
+		private DdlRunner $ddlRunner;
+
 		/**
 		 * AlterTableExecutor constructor
 		 * @param DatabaseAdapter $connection
@@ -72,6 +74,7 @@
 			$this->compiler = new QuelToSQLAlter($platform);
 			$this->createIndexExecutor = new CreateIndexExecutor($connection, $platform);
 			$this->destroyIndexExecutor = new DestroyIndexExecutor($connection, $platform);
+			$this->ddlRunner = new DdlRunner($connection);
 		}
 
 		/**
@@ -82,41 +85,12 @@
 		 *         representable on the connected engine
 		 */
 		public function execute(AstAlterTable $statement): void {
-			$statements = $this->compileSql($statement);
-
-			if (!$this->platform->supportsTransactionalDDL()) {
-				$this->runStatements($statement->getTableName(), $statements);
-				return;
-			}
-
-			$this->connection->beginTrans();
-
-			try {
-				$this->runStatements($statement->getTableName(), $statements);
-			} catch (QuelException $e) {
-				$this->connection->rollbackTrans();
-				throw $e;
-			}
-
-			$this->connection->commitTrans();
-		}
-
-		/**
-		 * @param string $tableName Used only to produce a readable error message
-		 * @param list<string> $statements
-		 * @throws QuelException On DDL failure
-		 */
-		private function runStatements(string $tableName, array $statements): void {
-			foreach ($statements as $sql) {
-				// execute() swallows the exception and returns null on failure
-				// rather than throwing — a try/catch here would never fire.
-				if ($this->connection->execute($sql) === null) {
-					throw new QuelException(
-						"Failed to alter table '{$tableName}': {$this->connection->getLastErrorMessage()}",
-						'table_alteration_error'
-					);
-				}
-			}
+			$this->ddlRunner->runTransactionally(
+				$this->compileSql($statement),
+				$this->platform,
+				"Failed to alter table '{$statement->getTableName()}'",
+				'table_alteration_error'
+			);
 		}
 
 		/**
@@ -147,7 +121,7 @@
 				if ($operation instanceof AstAlterAddIndex) {
 					$statements = [
 						...$statements,
-						...$this->createIndexExecutor->compileSql($this->toCreateIndex($statement->getTableName(), $operation)),
+						...$this->createIndexExecutor->compileSql(AstCreateIndex::fromEntry($statement->getTableName(), $operation)),
 					];
 				} elseif ($operation instanceof AstAlterDropIndex) {
 					$statements = [
@@ -158,10 +132,6 @@
 			}
 
 			return $statements;
-		}
-
-		private function toCreateIndex(string $tableName, AstAlterAddIndex $operation): AstCreateIndex {
-			return new AstCreateIndex($tableName, $operation->getIndexName(), $operation->getColumns(), $operation->isUnique(), $operation->getType());
 		}
 
 		private function needsPrimaryKeyState(AstAlterTable $statement): bool {

@@ -51,6 +51,19 @@
 			$this->type = $type;
 		}
 
+		/**
+		 * Assembles an embedded `create`/`alter` index entry (AstCreateTableIndex/
+		 * AstAlterAddIndex, both AstIndexEntry) into a real AstCreateIndex
+		 * against $tableName — see objectquel-index-clause-design.md, "Sugar,
+		 * not reimplementation".
+		 * @param string $tableName
+		 * @param AstIndexEntry $entry
+		 * @return self
+		 */
+		public static function fromEntry(string $tableName, AstIndexEntry $entry): self {
+			return new self($tableName, $entry->getIndexName(), $entry->getColumns(), $entry->isUnique(), $entry->getType());
+		}
+
 		public function getTableName(): string {
 			return $this->tableName;
 		}

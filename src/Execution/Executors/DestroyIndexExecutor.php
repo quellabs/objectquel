@@ -58,6 +58,8 @@
 
 		private PlatformCapabilitiesInterface $platform;
 
+		private DdlRunner $ddlRunner;
+
 		/**
 		 * DestroyIndexExecutor constructor
 		 * @param DatabaseAdapter $connection
@@ -67,6 +69,7 @@
 			$this->connection = $connection;
 			$this->platform = $platform;
 			$this->compiler = new QuelToSQLDestroyIndex($platform);
+			$this->ddlRunner = new DdlRunner($connection);
 		}
 
 		/**
@@ -76,7 +79,11 @@
 		 * @throws QuelException On DDL failure
 		 */
 		public function execute(AstDestroyIndex $statement): void {
-			$this->runStatements($statement, $this->compileSql($statement));
+			$this->ddlRunner->run(
+				$this->compileSql($statement),
+				"Failed to destroy index '{$statement->getIndexName()}' on '{$statement->getTableName()}'",
+				'index_destruction_error'
+			);
 		}
 
 		/**
@@ -159,24 +166,5 @@
 			}
 
 			return $this->compiler->convertToSQL($statement);
-		}
-
-		/**
-		 * @param AstDestroyIndex $statement
-		 * @param string[] $statements
-		 * @return void
-		 * @throws QuelException On the first failing statement
-		 */
-		private function runStatements(AstDestroyIndex $statement, array $statements): void {
-			foreach ($statements as $sql) {
-				// execute() swallows the exception and returns null on failure
-				// rather than throwing (same as CreateIndexExecutor).
-				if ($this->connection->execute($sql) === null) {
-					throw new QuelException(
-						"Failed to destroy index '{$statement->getIndexName()}' on '{$statement->getTableName()}': {$this->connection->getLastErrorMessage()}",
-						'index_destruction_error'
-					);
-				}
-			}
 		}
 	}

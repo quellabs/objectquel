@@ -14,7 +14,7 @@
 	 * name (...)`, minus the `on Table is` phrasing, which is redundant
 	 * once already scoped to one table by the enclosing `alter` statement.
 	 */
-	class AstAlterAddIndex extends Ast implements AstAlterOperation {
+	class AstAlterAddIndex extends Ast implements AstAlterOperation, AstIndexEntry {
 
 		private string $indexName;
 

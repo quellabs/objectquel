@@ -4,7 +4,6 @@
 
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstCreateIndex;
 	use Quellabs\ObjectQuel\ObjectQuel\Lexer;
-	use Quellabs\ObjectQuel\ObjectQuel\ParserException;
 	use Quellabs\ObjectQuel\ObjectQuel\Token;
 
 	/**
@@ -34,14 +33,7 @@
 		public function parse(): AstCreateIndex {
 			$this->lexer->matchKeyword('index');
 
-			$unique = false;
-			$type = null;
-
-			if ($this->lexer->optionalMatch(Token::Unique) !== null) {
-				$unique = true;
-			} elseif ($this->lexer->optionalMatchKeyword('fulltext') !== null) {
-				$type = 'fulltext';
-			}
+			$modifiers = IndexClause::parseModifiers($this->lexer);
 
 			$this->lexer->matchKeyword('on');
 			$tableName = $this->lexer->match(Token::Identifier)->getStringValue();
@@ -49,30 +41,11 @@
 			$this->lexer->match(Token::Is);
 			$indexName = $this->lexer->match(Token::Identifier)->getStringValue();
 
-			$columns = $this->parseColumnList();
+			$columns = IndexClause::parseColumnList($this->lexer);
 
 			$this->consumeOptionalSemicolon();
 
-			return new AstCreateIndex($tableName, $indexName, $columns, $unique, $type);
-		}
-
-		/**
-		 * @return string[]
-		 */
-		private function parseColumnList(): array {
-			$this->lexer->match(Token::ParenthesesOpen);
-			$columns = [];
-			$seenColumns = [];
-			do {
-				$column = $this->lexer->match(Token::Identifier)->getStringValue();
-				if (isset($seenColumns[$column])) {
-					throw new ParserException("Duplicate column '{$column}' in index column list, on line {$this->lexer->getLineNumber()}");
-				}
-				$seenColumns[$column] = true;
-				$columns[] = $column;
-			} while ($this->lexer->optionalMatch(Token::Comma));
-			$this->lexer->match(Token::ParenthesesClose);
-			return $columns;
+			return new AstCreateIndex($tableName, $indexName, $columns, $modifiers['unique'], $modifiers['type']);
 		}
 
 		private function consumeOptionalSemicolon(): void {

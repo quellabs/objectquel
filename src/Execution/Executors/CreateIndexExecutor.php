@@ -39,6 +39,8 @@
 
 		private PlatformCapabilitiesInterface $platform;
 
+		private DdlRunner $ddlRunner;
+
 		/**
 		 * CreateIndexExecutor constructor
 		 * @param DatabaseAdapter $connection
@@ -48,6 +50,7 @@
 			$this->connection = $connection;
 			$this->platform = $platform;
 			$this->compiler = new QuelToSQLCreateIndex($platform);
+			$this->ddlRunner = new DdlRunner($connection);
 		}
 
 		/**
@@ -60,16 +63,11 @@
 		 *         unique/primary index; sqlite: a primary key) is missing
 		 */
 		public function execute(AstCreateIndex $statement): void {
-			foreach ($this->compileSql($statement) as $sql) {
-				// execute() swallows the exception and returns null on failure
-				// rather than throwing — a try/catch here would never fire.
-				if ($this->connection->execute($sql) === null) {
-					throw new QuelException(
-						"Failed to create index '{$statement->getIndexName()}' on '{$statement->getTableName()}': {$this->connection->getLastErrorMessage()}",
-						'index_creation_error'
-					);
-				}
-			}
+			$this->ddlRunner->run(
+				$this->compileSql($statement),
+				"Failed to create index '{$statement->getIndexName()}' on '{$statement->getTableName()}'",
+				'index_creation_error'
+			);
 		}
 
 		/**
