@@ -72,10 +72,12 @@
 		 */
 		public function persist(object $entity): void {
 			$metadata = $this->entityStore->getMetadata($entity);
-			$originalData = $this->unitOfWork->getEntitySnapshot($entity);
 
-			// Bail out early if this entity was never loaded from the database.
-			$this->assertHasSnapshot($entity, $originalData);
+			// UnitOfWork::getEntityState() only reaches the Dirty branch (the sole
+			// caller of this method) once it has confirmed a snapshot exists for
+			// this entity, so a missing snapshot here means that invariant broke.
+			$originalData = $this->unitOfWork->getEntitySnapshot($entity)
+				?? throw new \LogicException("UpdatePersister::persist() called for entity of type '" . get_class($entity) . "' with no snapshot.");
 
 			$alias = 'e';
 			$versionColumnNames = array_column($metadata->versionColumns, 'name');
@@ -102,23 +104,6 @@
 
 			// Pull any DB-generated version value (e.g. updated_at) back onto the entity.
 			$this->valueHandler->readBackVersionValues($entity, $metadata);
-		}
-
-		/**
-		 * Guards against updating an entity that was never loaded from the database.
-		 * @param object $entity
-		 * @param array<string, mixed>|null $originalData
-		 * @return void
-		 * @throws OrmException
-		 * @phpstan-assert !null $originalData
-		 */
-		private function assertHasSnapshot(object $entity, ?array $originalData): void {
-			if ($originalData === null) {
-				throw new OrmException(
-					"Cannot update entity of type '" . get_class($entity) . "': no original data found. " .
-					"The entity must be loaded from the database before it can be updated."
-				);
-			}
 		}
 
 		/**
