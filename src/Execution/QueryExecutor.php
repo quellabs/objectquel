@@ -2,6 +2,7 @@
 	
 	namespace Quellabs\ObjectQuel\Execution;
 	
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstAlterTable;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstAppend;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstCreateIndex;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstCreateTable;
@@ -25,6 +26,7 @@
 	use Quellabs\ObjectQuel\ObjectQuel\Parser;
 	use Quellabs\ObjectQuel\ObjectQuel\ParserException;
 	use Quellabs\ObjectQuel\ObjectQuel\QuelResult;
+	use Quellabs\ObjectQuel\Execution\Executors\AlterTableExecutor;
 	use Quellabs\ObjectQuel\Execution\Executors\AppendExecutor;
 	use Quellabs\ObjectQuel\Execution\Executors\CreateIndexExecutor;
 	use Quellabs\ObjectQuel\Execution\Executors\CreateTableExecutor;
@@ -66,6 +68,7 @@
 		private JsonRetrieveExecutor $jsonExecutor;
 		private CreateTableExecutor $createTableExecutor;
 		private CreateIndexExecutor $createIndexExecutor;
+		private AlterTableExecutor $alterTableExecutor;
 		private DestroyExecutor $destroyExecutor;
 		private DestroyIndexExecutor $destroyIndexExecutor;
 		private AppendExecutor $appendExecutor;
@@ -98,6 +101,7 @@
 
 			$this->createTableExecutor = new CreateTableExecutor($this->connection, $this->capabilities);
 			$this->createIndexExecutor = new CreateIndexExecutor($this->connection, $this->capabilities);
+			$this->alterTableExecutor = new AlterTableExecutor($this->connection, $this->capabilities);
 			$this->destroyExecutor = new DestroyExecutor($this->connection, $this->capabilities);
 			$this->destroyIndexExecutor = new DestroyIndexExecutor($this->connection, $this->capabilities);
 			$this->appendExecutor = new AppendExecutor($this->connection, $entityManager, $this->capabilities, $this->planExecutor);
@@ -170,17 +174,19 @@
 				// of it applies to a statement with no rows to return.
 				if (
 					$ast instanceof AstCreateTable ||
+					$ast instanceof AstAlterTable ||
 					$ast instanceof AstDestroy ||
 					$ast instanceof AstDestroyIndex ||
 					$ast instanceof AstCreateIndex
 				) {
 					match (true) {
 						$ast instanceof AstCreateTable => $this->createTableExecutor->execute($ast),
+						$ast instanceof AstAlterTable => $this->alterTableExecutor->execute($ast),
 						$ast instanceof AstDestroy => $this->destroyExecutor->execute($ast),
 						$ast instanceof AstDestroyIndex => $this->destroyIndexExecutor->execute($ast),
 						default => $this->createIndexExecutor->execute($ast),
 					};
-					
+
 					return null;
 				}
 				
@@ -353,7 +359,7 @@
 			
 			// Ensure the parsed AST represents a statement type this executor knows how to run
 			if (!$ast instanceof AstStatement) {
-				throw new QuelException("Invalid query type: expected retrieve, create, destroy, index, or write-verb (append/replace/delete) operation");
+				throw new QuelException("Invalid query type: expected retrieve, create, alter, destroy, index, or write-verb (append/replace/delete) operation");
 			}
 			
 			// The AST is now fully validated

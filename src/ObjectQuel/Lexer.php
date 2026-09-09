@@ -368,8 +368,9 @@
 		 *
 		 * This is how the parser recognizes a *contextual* keyword — create,
 		 * temporary, identity, primary, key, destroy, if, exists, to, replace,
-		 * delete, index, on, fulltext, unsigned — none of which get a
-		 * distinct token type the way `where`/`retrieve`/`append` do. Each
+		 * delete, index, on, fulltext, unsigned, alter, add, drop, rename,
+		 * retype — none of which get a distinct token type the way
+		 * `where`/`retrieve`/`append` do. Each
 		 * only means something special at its own grammar position;
 		 * everywhere else (a property, column, table, or alias literally
 		 * named `key` or `on`) it must still parse as a plain identifier, so

@@ -4,6 +4,7 @@
 
 	use Quellabs\ObjectQuel\EntityStore;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRange;
+	use Quellabs\ObjectQuel\ObjectQuel\Rules\AlterTable;
 	use Quellabs\ObjectQuel\ObjectQuel\Rules\Append;
 	use Quellabs\ObjectQuel\ObjectQuel\Rules\CreateIndex;
 	use Quellabs\ObjectQuel\ObjectQuel\Rules\CreateTable;
@@ -20,6 +21,7 @@
 		private Retrieve $retrieveRule;
 		private CreateTable $createTableRule;
 		private CreateIndex $createIndexRule;
+		private AlterTable $alterTableRule;
 		private Destroy $destroyRule;
 		private Append $appendRule;
 		private Replace $replaceRule;
@@ -36,6 +38,7 @@
             $this->retrieveRule = new Retrieve($lexer);
             $this->createTableRule = new CreateTable($lexer);
             $this->createIndexRule = new CreateIndex($lexer);
+            $this->alterTableRule = new AlterTable($lexer);
             $this->destroyRule = new Destroy($lexer);
             $this->appendRule = new Append($lexer);
             $this->replaceRule = new Replace($lexer);
@@ -72,6 +75,10 @@
 				    // Ranges ahead of `create` (if any) are simply unused —
 				    // still available to any `retrieve` elsewhere in this loop.
 				    $queries[] = $this->createTableRule->parse();
+			    } elseif ($this->lexer->peekKeyword('alter')) {
+				    // Ranges ahead of `alter` (if any) are simply unused,
+				    // same as `create` above.
+				    $queries[] = $this->alterTableRule->parse();
 			    } elseif ($this->lexer->peekKeyword('destroy')) {
 				    $queries[] = $this->destroyRule->parse();
 			    } elseif ($this->lexer->peekKeyword('index')) {

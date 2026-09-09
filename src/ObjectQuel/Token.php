@@ -80,8 +80,9 @@
 		const int Filter = 121;
 		const int Append = 131;
 		// create, temporary, identity, primary, key, destroy, if, exists, to,
-		// replace, delete, index, on, fulltext, unsigned have no token type of
-		// their own — see Lexer::peekKeyword().
+		// replace, delete, index, on, fulltext, unsigned, alter, add, drop,
+		// rename, retype have no token type of their own — see
+		// Lexer::peekKeyword().
 		
 		protected int $type;
 		protected mixed $value;
