@@ -6,6 +6,7 @@
 	use Quellabs\ObjectQuel\DatabaseAdapter\DDLTypeMapper;
 	use Quellabs\ObjectQuel\DatabaseAdapter\SqlIdentifierQuoter;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstCreateTable;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstCreateTableForeignKey;
 
 	/**
 	 * Compiles an AstCreateTable statement to dialect-correct CREATE TABLE DDL.
@@ -102,6 +103,14 @@
 				$columnDefs[] = sprintf('PRIMARY KEY (%s)', implode(', ', $quotedPkColumns));
 			}
 
+			// Embedded `foreign key (...) references ...` entries append as
+			// trailing table constraints too — SQLite's only way to declare
+			// one at all (see objectquel-foreign-key-design.md, "Dialect
+			// reality"), and uniform across every other dialect as well.
+			foreach ($statement->getForeignKeys() as $foreignKey) {
+				$columnDefs[] = $this->renderForeignKeyConstraint($tableName, $foreignKey);
+			}
+
 			$createStatement = sprintf(
 				'%s %s (%s)',
 				$keyword,
@@ -126,5 +135,28 @@
 			}
 
 			return $createStatement;
+		}
+
+		/**
+		 * Renders one embedded `foreign key (...) references ...` entry as
+		 * a trailing `CONSTRAINT name FOREIGN KEY (...) REFERENCES
+		 * other(...)` table constraint. The derived name is always emitted
+		 * explicitly — even on SQLite, where it's parsed but never
+		 * addressable afterward — keeping one code path across all four
+		 * dialects instead of a SQLite carve-out (see
+		 * objectquel-foreign-key-design.md, "Implementation surface").
+		 */
+		private function renderForeignKeyConstraint(string $tableName, AstCreateTableForeignKey $foreignKey): string {
+			$name = ForeignKeyConstraintNamer::name($tableName, $foreignKey->getColumn());
+
+			return sprintf(
+				'CONSTRAINT %s FOREIGN KEY (%s) REFERENCES %s (%s) ON DELETE %s ON UPDATE %s',
+				$this->identifierQuoter->quoteIdentifier($name),
+				$this->identifierQuoter->quoteIdentifier($foreignKey->getColumn()),
+				$this->identifierQuoter->quoteIdentifier($foreignKey->getReferencedTable()),
+				$this->identifierQuoter->quoteIdentifier($foreignKey->getReferencedColumn()),
+				$foreignKey->getOnDelete(),
+				$foreignKey->getOnUpdate()
+			);
 		}
 	}

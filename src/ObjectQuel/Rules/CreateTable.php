@@ -4,6 +4,7 @@
 
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstColumnDefinition;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstCreateTable;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstCreateTableForeignKey;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstCreateTableIndex;
 	use Quellabs\ObjectQuel\ObjectQuel\Lexer;
 	use Quellabs\ObjectQuel\ObjectQuel\LexerException;
@@ -29,6 +30,13 @@
 	 * the `add` keyword, which is redundant here — every entry in a
 	 * `create` column list is additive by construction. See
 	 * objectquel-index-clause-design.md.
+	 *
+	 * The column list may also contain `foreign key (col) references Table
+	 * (col) [on delete action] [on update action]` entries (any number, in
+	 * any position) — compiled directly by QuelToSQLCreate as trailing
+	 * table constraints, same grammar as alter's `add foreign key`
+	 * sub-operation, minus the `add` keyword, for the same reason indexes
+	 * omit it here. See objectquel-foreign-key-design.md.
 	 */
 	class CreateTable {
 
@@ -60,13 +68,14 @@
 				'columns'           => $columns,
 				'primaryKeyColumns' => $primaryKeyColumns,
 				'indexes'           => $indexes,
+				'foreignKeys'       => $foreignKeys,
 			] = $this->parseColumnList($tableName);
 
 			$ifNotExists = $this->parseOptionalIfNotExists();
 
 			$this->consumeOptionalSemicolon();
 
-			return new AstCreateTable($tableName, $columns, $temporary, $ifNotExists, $primaryKeyColumns, $indexes);
+			return new AstCreateTable($tableName, $columns, $temporary, $ifNotExists, $primaryKeyColumns, $indexes, $foreignKeys);
 		}
 
 		/**
@@ -87,10 +96,11 @@
 		/**
 		 * Parse the parenthesized, comma-separated column definition list,
 		 * which may contain at most one `primary key (...)` clause and any
-		 * number of `[unique|fulltext] index name (...)` entries alongside
-		 * the column definitions (in any position).
+		 * number of `[unique|fulltext] index name (...)`/`foreign key
+		 * (...) references ...` entries alongside the column definitions
+		 * (in any position).
 		 * @param string $tableName Used only to produce readable error messages
-		 * @return array{columns: AstColumnDefinition[], primaryKeyColumns: string[], indexes: AstCreateTableIndex[]}
+		 * @return array{columns: AstColumnDefinition[], primaryKeyColumns: string[], indexes: AstCreateTableIndex[], foreignKeys: AstCreateTableForeignKey[]}
 		 * @throws LexerException|ParserException
 		 */
 		private function parseColumnList(string $tableName): array {
@@ -98,6 +108,7 @@
 
 			$columns = [];
 			$indexes = [];
+			$foreignKeys = [];
 			$primaryKeyColumns = null;
 			$seenNames = [];
 
@@ -116,6 +127,11 @@
 					continue;
 				}
 
+				if ($this->lexer->peekKeyword('foreign')) {
+					$foreignKeys[] = $this->parseForeignKeyEntry();
+					continue;
+				}
+
 				$column = ColumnDefinitionClause::parse($this->lexer);
 
 				if (isset($seenNames[$column->getName()])) {
@@ -131,8 +147,47 @@
 			$primaryKeyColumns ??= [];
 			$this->validatePrimaryKeyClause($tableName, $columns, $seenNames, $primaryKeyColumns);
 			$this->validateIndexEntries($tableName, $seenNames, $indexes);
+			$this->validateForeignKeyEntries($tableName, $seenNames, $foreignKeys);
 
-			return ['columns' => $columns, 'primaryKeyColumns' => $primaryKeyColumns, 'indexes' => $indexes];
+			return ['columns' => $columns, 'primaryKeyColumns' => $primaryKeyColumns, 'indexes' => $indexes, 'foreignKeys' => $foreignKeys];
+		}
+
+		/**
+		 * `foreign key (col) references Table (col) [on delete action] [on
+		 * update action]` — same grammar as alter's `add foreign key`,
+		 * minus the `add` keyword.
+		 * @throws LexerException|ParserException
+		 */
+		private function parseForeignKeyEntry(): AstCreateTableForeignKey {
+			$foreignKey = ForeignKeyClause::parse($this->lexer);
+
+			return new AstCreateTableForeignKey(
+				$foreignKey['column'],
+				$foreignKey['referencedTable'],
+				$foreignKey['referencedColumn'],
+				$foreignKey['onDelete'],
+				$foreignKey['onUpdate']
+			);
+		}
+
+		/**
+		 * Cross-references embedded foreign key entries' local column
+		 * against the table's declared columns — the same self-consistency
+		 * check validateIndexEntries() already does, extended to foreign
+		 * keys since the full column set is known within this one
+		 * statement (unlike alter's `add foreign key`, which has no such
+		 * declared-columns list to check against).
+		 * @param string $tableName Used only to produce readable error messages
+		 * @param array<string, bool> $seenNames Declared column names, keyed for lookup
+		 * @param AstCreateTableForeignKey[] $foreignKeys
+		 * @throws ParserException
+		 */
+		private function validateForeignKeyEntries(string $tableName, array $seenNames, array $foreignKeys): void {
+			foreach ($foreignKeys as $foreignKey) {
+				if (!isset($seenNames[$foreignKey->getColumn()])) {
+					throw new ParserException("Table '{$tableName}' declares a foreign key on unknown column '{$foreignKey->getColumn()}'");
+				}
+			}
 		}
 
 		/**

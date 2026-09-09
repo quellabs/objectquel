@@ -22,6 +22,12 @@
 	 * order — sugar assembled into real AstCreateIndex statements by
 	 * Execution\Executors\CreateTableExecutor, not a second implementation
 	 * of index lifecycle (see objectquel-index-clause-design.md).
+	 *
+	 * Embedded `foreign key (col) references Table (col) ...` entries are
+	 * carried separately too, as AstCreateTableForeignKey descriptors in
+	 * declaration order — compiled directly by QuelToSQLCreate as trailing
+	 * table constraints, not sugar over a separate statement (see
+	 * objectquel-foreign-key-design.md, decision 2).
 	 */
 	class AstCreateTable extends Ast implements AstStatement {
 
@@ -40,6 +46,9 @@
 		/** @var AstCreateTableIndex[] */
 		private array $indexes;
 
+		/** @var AstCreateTableForeignKey[] */
+		private array $foreignKeys;
+
 		/**
 		 * AstCreateTable constructor.
 		 * @param string $tableName
@@ -48,14 +57,16 @@
 		 * @param bool $ifNotExists
 		 * @param string[] $primaryKeyColumns Ordered PK column names, empty when the table has no PK
 		 * @param AstCreateTableIndex[] $indexes Embedded index entries, in declaration order
+		 * @param AstCreateTableForeignKey[] $foreignKeys Embedded foreign key entries, in declaration order
 		 */
-		public function __construct(string $tableName, array $columns, bool $temporary, bool $ifNotExists = false, array $primaryKeyColumns = [], array $indexes = []) {
+		public function __construct(string $tableName, array $columns, bool $temporary, bool $ifNotExists = false, array $primaryKeyColumns = [], array $indexes = [], array $foreignKeys = []) {
 			$this->tableName = $tableName;
 			$this->columns = $columns;
 			$this->temporary = $temporary;
 			$this->ifNotExists = $ifNotExists;
 			$this->primaryKeyColumns = $primaryKeyColumns;
 			$this->indexes = $indexes;
+			$this->foreignKeys = $foreignKeys;
 
 			foreach ($this->columns as $column) {
 				$column->setParent($this);
@@ -63,6 +74,10 @@
 
 			foreach ($this->indexes as $index) {
 				$index->setParent($this);
+			}
+
+			foreach ($this->foreignKeys as $foreignKey) {
+				$foreignKey->setParent($this);
 			}
 		}
 
@@ -75,6 +90,10 @@
 
 			foreach ($this->indexes as $index) {
 				$index->accept($visitor);
+			}
+
+			foreach ($this->foreignKeys as $foreignKey) {
+				$foreignKey->accept($visitor);
 			}
 		}
 
@@ -111,12 +130,20 @@
 			return $this->indexes;
 		}
 
+		/**
+		 * @return AstCreateTableForeignKey[] Embedded foreign key entries, in declaration order
+		 */
+		public function getForeignKeys(): array {
+			return $this->foreignKeys;
+		}
+
 		public function deepClone(): static {
 			$clonedColumns = $this->cloneArray($this->columns);
 			$clonedIndexes = $this->cloneArray($this->indexes);
+			$clonedForeignKeys = $this->cloneArray($this->foreignKeys);
 
 			// @phpstan-ignore-next-line new.static
-			$clone = new static($this->tableName, $clonedColumns, $this->temporary, $this->ifNotExists, $this->primaryKeyColumns, $clonedIndexes);
+			$clone = new static($this->tableName, $clonedColumns, $this->temporary, $this->ifNotExists, $this->primaryKeyColumns, $clonedIndexes, $clonedForeignKeys);
 			$clone->setParent($this->getParent());
 			return $clone;
 		}

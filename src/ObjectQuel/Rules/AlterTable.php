@@ -3,8 +3,10 @@
 	namespace Quellabs\ObjectQuel\ObjectQuel\Rules;
 
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstAlterAddColumn;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstAlterAddForeignKey;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstAlterAddIndex;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstAlterDropColumn;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstAlterDropForeignKey;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstAlterDropIndex;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstAlterDropPrimaryKey;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstAlterOperation;
@@ -35,6 +37,8 @@
 	 *   drop primary key                     -> AstAlterDropPrimaryKey
 	 *   add [unique|fulltext] index name (…) -> AstAlterAddIndex
 	 *   drop index name                      -> AstAlterDropIndex
+	 *   add foreign key (col) references ... -> AstAlterAddForeignKey
+	 *   drop foreign key (col)               -> AstAlterDropForeignKey
 	 *
 	 * matching QUEL's preference for explicit single-purpose verbs
 	 * (`append`/`replace`/`delete`) over SQL's do-everything `MODIFY`/
@@ -121,13 +125,18 @@
 		}
 
 		/**
-		 * `add` is followed by either a plain column definition or an index
-		 * clause (`[unique|fulltext] index name (...)`).
+		 * `add` is followed by a plain column definition, an index clause
+		 * (`[unique|fulltext] index name (...)`), or a foreign key clause
+		 * (`foreign key (...) references ...`).
 		 * @throws LexerException|ParserException
 		 */
 		private function parseAdd(): AstAlterOperation {
 			if ($this->lexer->peekKeyword('index') || $this->lexer->peek()->getType() === Token::Unique || $this->lexer->peekKeyword('fulltext')) {
 				return $this->parseAddIndex();
+			}
+
+			if ($this->lexer->peekKeyword('foreign')) {
+				return $this->parseAddForeignKey();
 			}
 
 			return new AstAlterAddColumn(ColumnDefinitionClause::parse($this->lexer));
@@ -158,8 +167,27 @@
 		}
 
 		/**
-		 * `drop` is followed by either a bare column name, `primary key`, or
-		 * `index name`.
+		 * `add foreign key (col) references Table (col) [on delete action]
+		 * [on update action]` — same grammar as `create`'s embedded
+		 * foreign key entry, minus the redundant `add` handled by the
+		 * caller. Shared with Rules\CreateTable via Rules\ForeignKeyClause.
+		 * @throws LexerException|ParserException
+		 */
+		private function parseAddForeignKey(): AstAlterAddForeignKey {
+			$foreignKey = ForeignKeyClause::parse($this->lexer);
+
+			return new AstAlterAddForeignKey(
+				$foreignKey['column'],
+				$foreignKey['referencedTable'],
+				$foreignKey['referencedColumn'],
+				$foreignKey['onDelete'],
+				$foreignKey['onUpdate']
+			);
+		}
+
+		/**
+		 * `drop` is followed by a bare column name, `primary key`, `index
+		 * name`, or `foreign key (col)`.
 		 * @throws LexerException|ParserException
 		 */
 		private function parseDrop(): AstAlterOperation {
@@ -172,6 +200,14 @@
 			if ($this->lexer->optionalMatchKeyword('index') !== null) {
 				$indexName = $this->lexer->match(Token::Identifier)->getStringValue();
 				return new AstAlterDropIndex($indexName);
+			}
+
+			if ($this->lexer->optionalMatchKeyword('foreign') !== null) {
+				$this->lexer->matchKeyword('key');
+				$this->lexer->match(Token::ParenthesesOpen);
+				$column = $this->lexer->match(Token::Identifier)->getStringValue();
+				$this->lexer->match(Token::ParenthesesClose);
+				return new AstAlterDropForeignKey($column);
 			}
 
 			$columnName = $this->lexer->match(Token::Identifier)->getStringValue();

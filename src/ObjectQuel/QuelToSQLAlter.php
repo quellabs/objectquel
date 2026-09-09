@@ -7,7 +7,9 @@
 	use Quellabs\ObjectQuel\DatabaseAdapter\SqlIdentifierQuoter;
 	use Quellabs\ObjectQuel\Exception\QuelException;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstAlterAddColumn;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstAlterAddForeignKey;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstAlterDropColumn;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstAlterDropForeignKey;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstAlterDropPrimaryKey;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstAlterRenameColumn;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstAlterRetypeColumn;
@@ -16,10 +18,10 @@
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstColumnDefinition;
 
 	/**
-	 * Compiles an AstAlterTable statement's column and primary-key
-	 * sub-operations to dialect-correct DDL. Sibling to QuelToSQLCreate/
-	 * QuelToSQLCreateIndex/QuelToSQLDestroy — each QUEL statement kind gets
-	 * its own compiler here.
+	 * Compiles an AstAlterTable statement's column, primary-key, and
+	 * foreign-key sub-operations to dialect-correct DDL. Sibling to
+	 * QuelToSQLCreate/QuelToSQLCreateIndex/QuelToSQLDestroy — each QUEL
+	 * statement kind gets its own compiler here.
 	 *
 	 * Index sub-operations (`add index`/`drop index`) are NOT compiled by
 	 * this class — they're sugar assembled into real AstCreateIndex/
@@ -28,7 +30,12 @@
 	 * objectquel-index-clause-design.md, "Sugar, not reimplementation"), by
 	 * Execution\Executors\AlterTableExecutor, which also owns the
 	 * column/PK-before-index execution ordering (see
-	 * objectquel-index-clause-design.md, decision 3).
+	 * objectquel-index-clause-design.md, decision 3). Foreign-key
+	 * sub-operations (`add foreign key`/`drop foreign key`), by contrast,
+	 * ARE compiled directly here — unlike index, three of four dialects
+	 * support FK add/drop as one native `ALTER TABLE` statement, so there's
+	 * no multi-statement compiler to centralize (see
+	 * objectquel-foreign-key-design.md, decision 2).
 	 *
 	 * One ObjectQuel `alter` statement compiling to several SQL statements
 	 * is normal here, same as QuelToSQLCreateIndex/QuelToSQLDestroyIndex —
@@ -38,10 +45,11 @@
 	 * dialects wins over that micro-optimization (see
 	 * objectquel-index-clause-design.md, decision 2).
 	 *
-	 * `retype` and primary-key changes are unsupported on SQLite (no
-	 * `ALTER COLUMN`/`ADD`/`DROP CONSTRAINT` — both require rebuilding the
-	 * table, which this compiler does not attempt — see
-	 * objectquel-alter-table-design.md, "Multi-engine retype safety").
+	 * `retype`, primary-key changes, and foreign-key changes are all
+	 * unsupported on SQLite (no `ALTER COLUMN`/`ADD`/`DROP CONSTRAINT` —
+	 * all three require rebuilding the table, which this compiler does not
+	 * attempt — see objectquel-alter-table-design.md, "Multi-engine retype
+	 * safety", and objectquel-foreign-key-design.md, "Dialect reality").
 	 * Adding IDENTITY to an existing column via `retype` is unsupported on
 	 * SQL Server (`ALTER COLUMN` cannot add IDENTITY; the column would need
 	 * to be recreated). Both cases throw a QuelException loudly rather than
@@ -90,6 +98,8 @@
 						$operation instanceof AstAlterRetypeColumn => $this->compileRetypeColumn($tableName, $operation),
 						$operation instanceof AstAlterSetPrimaryKey => $this->compileSetPrimaryKey($tableName, $operation, $existingPrimaryKeyColumns, $existingPrimaryKeyConstraintName),
 						$operation instanceof AstAlterDropPrimaryKey => $this->compileDropPrimaryKey($tableName, $existingPrimaryKeyColumns, $existingPrimaryKeyConstraintName),
+						$operation instanceof AstAlterAddForeignKey => [$this->compileAddForeignKey($tableName, $operation)],
+						$operation instanceof AstAlterDropForeignKey => [$this->compileDropForeignKey($tableName, $operation)],
 						// Index sub-operations: compiled by the caller instead.
 						default => [],
 					},
@@ -331,6 +341,73 @@
 				$this->quotedTable($tableName),
 				$this->identifierQuoter->quoteIdentifier($existingPrimaryKeyConstraintName)
 			);
+		}
+
+		/**
+		 * `add foreign key (col) references Table (col) [on delete action]
+		 * [on update action]` — one native `ALTER TABLE ... ADD CONSTRAINT
+		 * ... FOREIGN KEY ...` statement, same as three of the four
+		 * supported dialects natively support (see
+		 * objectquel-foreign-key-design.md, "Dialect reality"). The
+		 * constraint name is always the derived one — never
+		 * author-supplied (see objectquel-foreign-key-design.md, decision 1).
+		 */
+		private function compileAddForeignKey(string $tableName, AstAlterAddForeignKey $operation): string {
+			$this->assertForeignKeyChangesSupported($tableName);
+
+			$name = ForeignKeyConstraintNamer::name($tableName, $operation->getColumn());
+
+			return sprintf(
+				'ALTER TABLE %s ADD CONSTRAINT %s FOREIGN KEY (%s) REFERENCES %s (%s) ON DELETE %s ON UPDATE %s',
+				$this->quotedTable($tableName),
+				$this->identifierQuoter->quoteIdentifier($name),
+				$this->identifierQuoter->quoteIdentifier($operation->getColumn()),
+				$this->identifierQuoter->quoteIdentifier($operation->getReferencedTable()),
+				$this->identifierQuoter->quoteIdentifier($operation->getReferencedColumn()),
+				$operation->getOnDelete(),
+				$operation->getOnUpdate()
+			);
+		}
+
+		/**
+		 * `drop foreign key (col)` — targets by column, per
+		 * objectquel-foreign-key-design.md, decision 1, resolving to the
+		 * same derived name `add foreign key` would have used for that
+		 * column. MySQL/MariaDB use the dedicated `DROP FOREIGN KEY`
+		 * clause; pgsql/sqlsrv use the general-purpose `DROP CONSTRAINT`
+		 * (both name their FK as an ordinary named constraint).
+		 */
+		private function compileDropForeignKey(string $tableName, AstAlterDropForeignKey $operation): string {
+			$this->assertForeignKeyChangesSupported($tableName);
+
+			$quotedName = $this->identifierQuoter->quoteIdentifier(
+				ForeignKeyConstraintNamer::name($tableName, $operation->getColumn())
+			);
+
+			if (in_array($this->platform->getDatabaseType(), ['mysql', 'mariadb'], true)) {
+				return sprintf('ALTER TABLE %s DROP FOREIGN KEY %s', $this->quotedTable($tableName), $quotedName);
+			}
+
+			return sprintf('ALTER TABLE %s DROP CONSTRAINT %s', $this->quotedTable($tableName), $quotedName);
+		}
+
+		/**
+		 * SQLite's ALTER TABLE cannot add or drop a foreign key at all,
+		 * ever — not even via a rebuild-avoiding trick; FK constraints on
+		 * SQLite can only be declared inline in CREATE TABLE (see
+		 * objectquel-foreign-key-design.md, "Dialect reality"). Same
+		 * 'alter_unsupported' treatment retype/primary-key changes already
+		 * get.
+		 */
+		private function assertForeignKeyChangesSupported(string $tableName): void {
+			if ($this->platform->getDatabaseType() === 'sqlite') {
+				throw new QuelException(
+					"Cannot change foreign keys on '{$tableName}': SQLite has no ALTER TABLE support for " .
+					"adding or dropping foreign keys — they can only be declared inline in CREATE TABLE, " .
+					"which 'alter' does not attempt (see objectquel-foreign-key-design.md, 'Dialect reality')",
+					'alter_unsupported'
+				);
+			}
 		}
 
 		/**
