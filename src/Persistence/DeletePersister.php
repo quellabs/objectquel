@@ -53,8 +53,8 @@
 		 * @throws EntityResolutionException
 		 */
 		public function persist(object $entity): void {
-			$metadata = $this->entityStore->getMetadata($entity);
 			$alias = 'e';
+			$metadata = $this->entityStore->getMetadata($entity);
 
 			// WHERE clause: match the row by its primary key.
 			$conditions = $this->buildPrimaryKeyConditions($entity, $metadata, $alias);

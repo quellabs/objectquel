@@ -80,31 +80,21 @@
 			$this->platformCapabilities = $platformCapabilities;
 			$this->identifierQuoter = new SqlIdentifierQuoter($platformCapabilities);
 		}
-
+		
 		/**
-		 * Builds the SET clause fragments that bump a set of `@Orm\Version`
-		 * columns — each version column type (integer, datetime, uuid) has
-		 * its own bump logic. Shared by UpdatePersister (object-persistence
-		 * UPDATE) and QuelToSQLReplace (QUEL-level `replace`), so version
-		 * columns bump identically on both paths instead of the QUEL path
-		 * silently skipping them.
+		 * Builds SET fragments that bump @Orm\Version columns by type
+		 * (integer, datetime, uuid). Shared by UpdatePersister and
+		 * QuelToSQLReplace so both paths bump versions identically.
 		 *
-		 * $qualifyWithAlias mirrors QuelToSQLReplace::quoteSetTargetColumn():
-		 * UpdatePersister's UPDATE has no alias at all (its target table is
-		 * never aliased), so it always passes null and gets the fully bare
-		 * form, same as before this parameter existed. A standalone `replace`
-		 * does have a real alias in scope, so its SET target is qualified
-		 * with it on every dialect except PostgreSQL/SQLite, which reject a
-		 * qualified column on the LEFT side of a SET assignment. The integer/
-		 * bigint bump's self-reference on the RIGHT side has no such
-		 * restriction — like a WHERE clause or assignment value, it's
-		 * qualified whenever an alias is given, on every dialect, for
-		 * consistency with how a manually-written `count = count + 1` would
-		 * compile through BuildSqlFromAst.
+		 * $qualifyWithAlias controls column qualification. UpdatePersister
+		 * passes null because its UPDATE has no alias. A standalone replace
+		 * qualifies SET targets when an alias exists, except on PostgreSQL/
+		 * SQLite, which reject qualified columns on the left side of SET.
+		 * Integer/bigint self-references on the right are always qualified
+		 * when an alias is given.
 		 * @param array<string, array{name: string, column: Column, version: Version}> $versionColumns
 		 * @param array<string, mixed> $params Reference to parameters array to add version parameters to
-		 * @param string|null $qualifyWithAlias The UPDATE's own range alias, or
-		 *        null when the target table isn't aliased at all.
+		 * @param string|null $qualifyWithAlias The UPDATE's own range alias or null when the target isn't aliased.
 		 * @return array<int, string> Array of SQL SET clause parts
 		 * @throws OrmException
 		 * @throws \Exception
@@ -118,10 +108,12 @@
 			// Process each version column according to its type
 			foreach ($versionColumns as $property => $versionColumn) {
 				$bareColumnName = $this->identifierQuoter->quoteIdentifier($versionColumn['name']);
-
-				$targetColumnName = $targetAllowsQualification
-					? $this->identifierQuoter->quoteIdentifier($qualifyWithAlias) . '.' . $bareColumnName
-					: $bareColumnName;
+				
+				if ($targetAllowsQualification) {
+					$targetColumnName = $this->identifierQuoter->quoteIdentifier($qualifyWithAlias) . '.' . $bareColumnName;
+				} else {
+					$targetColumnName = $bareColumnName;
+				}
 
 				switch ($versionColumn['column']->getType()) {
 					case 'integer':
@@ -130,9 +122,11 @@
 						// self-reference is always safe to qualify (see this
 						// method's docblock), independent of whether the LHS
 						// target could be.
-						$referenceColumnName = $qualifyWithAlias !== null
-							? $this->identifierQuoter->quoteIdentifier($qualifyWithAlias) . '.' . $bareColumnName
-							: $bareColumnName;
+						if ($qualifyWithAlias !== null) {
+							$referenceColumnName = $this->identifierQuoter->quoteIdentifier($qualifyWithAlias) . '.' . $bareColumnName;
+						} else {
+							$referenceColumnName = $bareColumnName;
+						}
 
 						$setClauseParts[] = "{$targetColumnName}={$referenceColumnName} + 1";
 						break;
@@ -160,33 +154,26 @@
 		}
 		
 		/**
-		 * Builds the INSERT-time initial value for a set of `@Orm\Version`
-		 * columns — each version column type (integer, datetime, uuid) gets
-		 * its own starting value, matching buildVersionSetClause()'s
-		 * per-type bump logic but for a fresh row instead of an UPDATE bump.
-		 * Shared by InsertPersister (object-persistence INSERT) and
-		 * QuelToSQLAppend (QUEL-level `append`), so version columns
-		 * initialize identically on both paths instead of the QUEL path
-		 * silently requiring the caller to supply them by hand.
+		 * Builds INSERT-time initial values for @Orm\Version columns
+		 * (integer, datetime, uuid). Mirrors buildVersionSetClause()'s
+		 * per-type bump logic for fresh rows. Shared by InsertPersister
+		 * and QuelToSQLAppend so both paths initialize versions identically.
 		 * @param array<string, array{name: string, column: Column, version: Version}> $versionColumns
 		 * @return array<string, int|string> property => raw SQL value expression
-		 *         (bare literal, quoted literal, or SQL function call — never
-		 *         a bound parameter, since a version column's initial value is
-		 *         never user-controlled input; keyed by the same property name
-		 *         $versionColumns is keyed by, same as buildVersionSetClause()'s
-		 *         input)
+		 *         (literal, quoted literal, or SQL function; never a parameter)
 		 * @throws \RuntimeException
 		 */
 		public function buildVersionInsertValues(array $versionColumns): array {
 			$values = [];
-
+			
+			/** @noinspection PhpLoopCanBeConvertedToArrayMapInspection */
 			foreach ($versionColumns as $property => $versionColumn) {
 				$values[$property] = $this->getInitialVersionValue($versionColumn['column']->getType());
 			}
 
 			return $values;
 		}
-
+		
 		/**
 		 * Returns the initial value for a single @Orm\Version column on
 		 * INSERT. Moved here from InsertPersister's former private method of
@@ -195,31 +182,15 @@
 		 * @param string $columnType
 		 * @return int|string
 		 * @throws \RuntimeException
+		 * @throws \Exception
 		 */
 		public function getInitialVersionValue(string $columnType): int|string {
-			switch ($columnType) {
-				case 'int':
-				case 'integer':
-				case 'bigint':
-					return 1;
-
-				case 'datetime':
-				case 'timestamp':
-					// Use the engine-appropriate "current datetime" expression rather
-					// than hardcoding MySQL's NOW() — SQLite and SQL Server use
-					// different syntax for this.
-					return $this->platformCapabilities->getCurrentDatetimeFunction();
-
-				case 'uuid':
-				case 'guid':
-					return "'" . Tools::createUUIDv7() . "'";
-
-				default:
-					// Matches the \RuntimeException InsertPersister's former copy of
-					// this method threw — callers catching \RuntimeException around
-					// persist()/append must keep catching it here too.
-					throw new \RuntimeException("Invalid column type {$columnType} for Version annotation");
-			}
+			return match ($columnType) {
+				'int', 'integer', 'bigint' => 1,
+				'datetime', 'timestamp' => $this->platformCapabilities->getCurrentDatetimeFunction(),
+				'uuid', 'guid' => "'" . Tools::createUUIDv7() . "'",
+				default => throw new \RuntimeException("Invalid column type {$columnType} for Version annotation"),
+			};
 		}
 
 		/**
@@ -313,6 +284,7 @@
 				return;
 			}
 			
+			// Fetch metadata
 			$metadata = $this->entityStore->getMetadata($entity);
 
 			foreach ($fetchedValues as $property => $newValue) {
