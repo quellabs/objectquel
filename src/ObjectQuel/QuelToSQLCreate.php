@@ -31,6 +31,22 @@
 		}
 
 		/**
+		 * Resolves the physical table name a `create [temporary] Name (...)`
+		 * statement targets — the '#'-prefixed sqlsrv temp-table name when
+		 * temporary, the logical name unchanged otherwise. Exposed
+		 * separately from convertToSQL() so callers assembling further DDL
+		 * against the same table (e.g. CreateTableExecutor's embedded
+		 * indexes) target the same physical name, not the logical one.
+		 * @param AstCreateTable $statement
+		 * @return string
+		 */
+		public function getPhysicalTableName(AstCreateTable $statement): string {
+			return $statement->isTemporary()
+				? $this->ddlTypeMapper->getTempTableName($statement->getTableName())
+				: $this->ddlTypeMapper->getTableName($statement->getTableName());
+		}
+
+		/**
 		 * Compiles a `create [temporary] Name (...) [if not exists]`
 		 * statement to SQL.
 		 * @param AstCreateTable $statement
@@ -39,16 +55,13 @@
 		public function convertToSQL(AstCreateTable $statement): string {
 			// SQL Server needs special syntax
 			$isSqlServer = $this->platform->getDatabaseType() === 'sqlsrv';
-			
+
 			// SQL Server has no CREATE TEMPORARY TABLE keyword — temp-ness comes
 			// from a '#' prefix in the physical name instead (see DDLTypeMapper).
-			if ($statement->isTemporary()) {
-				$keyword = $this->ddlTypeMapper->getTemporaryCreateTableKeyword();
-				$tableName = $this->ddlTypeMapper->getTempTableName($statement->getTableName());
-			} else {
-				$keyword = $this->ddlTypeMapper->getCreateTableKeyword();
-				$tableName = $this->ddlTypeMapper->getTableName($statement->getTableName());
-			}
+			$keyword = $statement->isTemporary()
+				? $this->ddlTypeMapper->getTemporaryCreateTableKeyword()
+				: $this->ddlTypeMapper->getCreateTableKeyword();
+			$tableName = $this->getPhysicalTableName($statement);
 
 			// mysql/mariadb/pgsql/sqlite all accept IF NOT EXISTS inline, right
 			// after the CREATE [TEMPORARY] TABLE keyword.

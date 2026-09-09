@@ -16,6 +16,12 @@
 	 * list of column names sourced from a table-level `primary key (...)`
 	 * clause (empty when the table has no PK) — see
 	 * objectquel-primary-key-design.md.
+	 *
+	 * Embedded `[unique|fulltext] index name (...)` entries are carried
+	 * separately as well, as AstCreateTableIndex descriptors in declaration
+	 * order — sugar assembled into real AstCreateIndex statements by
+	 * Execution\Executors\CreateTableExecutor, not a second implementation
+	 * of index lifecycle (see objectquel-index-clause-design.md).
 	 */
 	class AstCreateTable extends Ast implements AstStatement {
 
@@ -31,6 +37,9 @@
 		/** @var string[] */
 		private array $primaryKeyColumns;
 
+		/** @var AstCreateTableIndex[] */
+		private array $indexes;
+
 		/**
 		 * AstCreateTable constructor.
 		 * @param string $tableName
@@ -38,16 +47,22 @@
 		 * @param bool $temporary
 		 * @param bool $ifNotExists
 		 * @param string[] $primaryKeyColumns Ordered PK column names, empty when the table has no PK
+		 * @param AstCreateTableIndex[] $indexes Embedded index entries, in declaration order
 		 */
-		public function __construct(string $tableName, array $columns, bool $temporary, bool $ifNotExists = false, array $primaryKeyColumns = []) {
+		public function __construct(string $tableName, array $columns, bool $temporary, bool $ifNotExists = false, array $primaryKeyColumns = [], array $indexes = []) {
 			$this->tableName = $tableName;
 			$this->columns = $columns;
 			$this->temporary = $temporary;
 			$this->ifNotExists = $ifNotExists;
 			$this->primaryKeyColumns = $primaryKeyColumns;
+			$this->indexes = $indexes;
 
 			foreach ($this->columns as $column) {
 				$column->setParent($this);
+			}
+
+			foreach ($this->indexes as $index) {
+				$index->setParent($this);
 			}
 		}
 
@@ -56,6 +71,10 @@
 
 			foreach ($this->columns as $column) {
 				$column->accept($visitor);
+			}
+
+			foreach ($this->indexes as $index) {
+				$index->accept($visitor);
 			}
 		}
 
@@ -85,11 +104,19 @@
 			return $this->primaryKeyColumns;
 		}
 
+		/**
+		 * @return AstCreateTableIndex[] Embedded index entries, in declaration order
+		 */
+		public function getIndexes(): array {
+			return $this->indexes;
+		}
+
 		public function deepClone(): static {
 			$clonedColumns = $this->cloneArray($this->columns);
+			$clonedIndexes = $this->cloneArray($this->indexes);
 
 			// @phpstan-ignore-next-line new.static
-			$clone = new static($this->tableName, $clonedColumns, $this->temporary, $this->ifNotExists, $this->primaryKeyColumns);
+			$clone = new static($this->tableName, $clonedColumns, $this->temporary, $this->ifNotExists, $this->primaryKeyColumns, $clonedIndexes);
 			$clone->setParent($this->getParent());
 			return $clone;
 		}

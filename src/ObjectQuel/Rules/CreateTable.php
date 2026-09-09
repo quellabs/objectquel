@@ -4,6 +4,7 @@
 
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstColumnDefinition;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstCreateTable;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstCreateTableIndex;
 	use Quellabs\ObjectQuel\ObjectQuel\Lexer;
 	use Quellabs\ObjectQuel\ObjectQuel\LexerException;
 	use Quellabs\ObjectQuel\ObjectQuel\ParserException;
@@ -19,6 +20,15 @@
 	 * The primary key is declared via a standalone table-level
 	 * `primary key (col {, col})` clause inside the column list, not an
 	 * inline per-column constraint — see objectquel-primary-key-design.md.
+	 *
+	 * The column list may also contain `[unique|fulltext] index name
+	 * (col {, col})` entries (any number, in any position relative to
+	 * columns/primary key) — sugar assembled into real AstCreateIndex
+	 * statements by Execution\Executors\CreateTableExecutor, same
+	 * name+column-list grammar as alter's `add index` sub-operation, minus
+	 * the `add` keyword, which is redundant here — every entry in a
+	 * `create` column list is additive by construction. See
+	 * objectquel-index-clause-design.md.
 	 */
 	class CreateTable {
 
@@ -46,12 +56,17 @@
 			$temporary = $this->lexer->optionalMatchKeyword('temporary') !== null;
 			$tableName = $this->lexer->match(Token::Identifier)->getStringValue();
 
-			['columns' => $columns, 'primaryKeyColumns' => $primaryKeyColumns] = $this->parseColumnList($tableName);
+			[
+				'columns'           => $columns,
+				'primaryKeyColumns' => $primaryKeyColumns,
+				'indexes'           => $indexes,
+			] = $this->parseColumnList($tableName);
+
 			$ifNotExists = $this->parseOptionalIfNotExists();
 
 			$this->consumeOptionalSemicolon();
 
-			return new AstCreateTable($tableName, $columns, $temporary, $ifNotExists, $primaryKeyColumns);
+			return new AstCreateTable($tableName, $columns, $temporary, $ifNotExists, $primaryKeyColumns, $indexes);
 		}
 
 		/**
@@ -71,16 +86,18 @@
 
 		/**
 		 * Parse the parenthesized, comma-separated column definition list,
-		 * which may contain at most one `primary key (...)` clause alongside
+		 * which may contain at most one `primary key (...)` clause and any
+		 * number of `[unique|fulltext] index name (...)` entries alongside
 		 * the column definitions (in any position).
 		 * @param string $tableName Used only to produce readable error messages
-		 * @return array{columns: AstColumnDefinition[], primaryKeyColumns: string[]}
+		 * @return array{columns: AstColumnDefinition[], primaryKeyColumns: string[], indexes: AstCreateTableIndex[]}
 		 * @throws LexerException|ParserException
 		 */
 		private function parseColumnList(string $tableName): array {
 			$this->lexer->match(Token::ParenthesesOpen);
 
 			$columns = [];
+			$indexes = [];
 			$primaryKeyColumns = null;
 			$seenNames = [];
 
@@ -91,6 +108,11 @@
 					}
 
 					$primaryKeyColumns = PrimaryKeyClause::parse($this->lexer);
+					continue;
+				}
+
+				if ($this->isIndexEntryStart()) {
+					$indexes[] = $this->parseIndexEntry();
 					continue;
 				}
 
@@ -108,8 +130,100 @@
 
 			$primaryKeyColumns ??= [];
 			$this->validatePrimaryKeyClause($tableName, $columns, $seenNames, $primaryKeyColumns);
+			$this->validateIndexEntries($tableName, $seenNames, $indexes);
 
-			return ['columns' => $columns, 'primaryKeyColumns' => $primaryKeyColumns];
+			return ['columns' => $columns, 'primaryKeyColumns' => $primaryKeyColumns, 'indexes' => $indexes];
+		}
+
+		/**
+		 * Whether the lexer is positioned at the start of a
+		 * `[unique|fulltext] index name (...)` entry — same lookahead style
+		 * as Rules\AlterTable::parseAdd().
+		 */
+		private function isIndexEntryStart(): bool {
+			return $this->lexer->peekKeyword('index')
+				|| $this->lexer->peek()->getType() === Token::Unique
+				|| $this->lexer->peekKeyword('fulltext');
+		}
+
+		/**
+		 * `[unique|fulltext] index index_name (col {, col})` — same
+		 * name+column-list grammar as standalone `index ... on Table is
+		 * name (...)` and alter's `add index`, minus the `on Table is`/`add`
+		 * phrasing.
+		 * @throws LexerException|ParserException
+		 */
+		private function parseIndexEntry(): AstCreateTableIndex {
+			$unique = false;
+			$type = null;
+
+			if ($this->lexer->optionalMatch(Token::Unique) !== null) {
+				$unique = true;
+			} elseif ($this->lexer->optionalMatchKeyword('fulltext') !== null) {
+				$type = 'fulltext';
+			}
+
+			$this->lexer->matchKeyword('index');
+			$indexName = $this->lexer->match(Token::Identifier)->getStringValue();
+			$columns = $this->parseIndexColumnNameList();
+
+			return new AstCreateTableIndex($indexName, $columns, $unique, $type);
+		}
+
+		/**
+		 * @return string[]
+		 * @throws LexerException|ParserException
+		 */
+		private function parseIndexColumnNameList(): array {
+			$this->lexer->match(Token::ParenthesesOpen);
+
+			$columns = [];
+			$seenColumns = [];
+
+			do {
+				$column = $this->lexer->match(Token::Identifier)->getStringValue();
+
+				if (isset($seenColumns[$column])) {
+					throw new ParserException("Duplicate column '{$column}' in index column list, on line {$this->lexer->getLineNumber()}");
+				}
+
+				$seenColumns[$column] = true;
+				$columns[] = $column;
+			} while ($this->lexer->optionalMatch(Token::Comma));
+
+			$this->lexer->match(Token::ParenthesesClose);
+
+			return $columns;
+		}
+
+		/**
+		 * Cross-references embedded index entries against the table's
+		 * declared columns — the same self-consistency check
+		 * validatePrimaryKeyClause() already does for the primary key
+		 * clause, extended to indexes since the full column set is known
+		 * within this one statement (unlike alter's `add index`, which has
+		 * no such declared-columns list to check against).
+		 * @param string $tableName Used only to produce readable error messages
+		 * @param array<string, bool> $seenNames Declared column names, keyed for lookup
+		 * @param AstCreateTableIndex[] $indexes
+		 * @throws ParserException
+		 */
+		private function validateIndexEntries(string $tableName, array $seenNames, array $indexes): void {
+			$seenIndexNames = [];
+
+			foreach ($indexes as $index) {
+				if (isset($seenIndexNames[$index->getIndexName()])) {
+					throw new ParserException("Table '{$tableName}' declares more than one index named '{$index->getIndexName()}'");
+				}
+
+				$seenIndexNames[$index->getIndexName()] = true;
+
+				foreach ($index->getColumns() as $column) {
+					if (!isset($seenNames[$column])) {
+						throw new ParserException("Table '{$tableName}' declares index '{$index->getIndexName()}' on unknown column '{$column}'");
+					}
+				}
+			}
 		}
 
 		/**
