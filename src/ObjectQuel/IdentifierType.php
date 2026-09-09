@@ -38,10 +38,4 @@
 		/** Path expression into a JSON root. */
 		case JsonProperty;
 
-		/** Root alias of a plain-table range variable (no entity metadata). */
-		case TableRoot;
-
-		/** Column reference on a plain-table range variable. */
-		case TableProperty;
-
 	}

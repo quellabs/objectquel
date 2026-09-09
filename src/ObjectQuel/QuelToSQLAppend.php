@@ -37,26 +37,23 @@
 	 * unknown property, a missing non-nullable/non-defaulted/non-generated
 	 * column, or a statically-incompatible literal value all raise a
 	 * SemanticException here, at compile time, rather than letting the
-	 * database reject the statement at runtime (see
-	 * objectquel-append-plan.md). Value expressions (literals, parameters,
-	 * casts, arithmetic) are rendered via BuildSqlFromAst, the same
-	 * expression-to-SQL visitor the retrieve pipeline uses for WHERE/VALUES.
+	 * database reject the statement at runtime. Value expressions (literals,
+	 * parameters, casts, arithmetic) are rendered via BuildSqlFromAst, the
+	 * same expression-to-SQL visitor the retrieve pipeline uses for
+	 * WHERE/VALUES.
 	 *
 	 * When the literal-values form carries an upsert's `or replace (...)
-	 * where ...` on-conflict clause (see objectquel-upsert-plan.md),
-	 * compiling it is delegated to QuelToSQLUpsert once the base INSERT and
-	 * per-row values are ready — there's no separate `AstUpsert` node (an
-	 * upsert *is* an AstAppend with an optional AstReplace slot), so
-	 * QuelToSQLUpsert isn't a sibling compiler for its own node the way
-	 * QuelToSQLReplace/QuelToSQLDelete are; it exists purely to keep that
-	 * dialect-branching logic out of this file.
+	 * where ...` on-conflict clause, compiling it is delegated to
+	 * QuelToSQLUpsert once the base INSERT and per-row values are ready —
+	 * there's no separate `AstUpsert` node (an upsert *is* an AstAppend with
+	 * an optional AstReplace slot), so QuelToSQLUpsert isn't a sibling
+	 * compiler for its own node the way QuelToSQLReplace/QuelToSQLDelete
+	 * are; it exists purely to keep that dialect-branching logic out of this
+	 * file.
 	 *
-	 * Every compile path below takes a nullable EntityMetadataRecord instead
-	 * of being duplicated per target kind: non-null means a property maps to
-	 * a column via metadata and the property-exists/required-column/
-	 * value-type checks apply; null (plain-table range, see
-	 * objectquel-plain-table-range-plan.md) means the property name IS the
-	 * column name and none of those checks run.
+	 * The target is always an entity range — JSON-source targets are
+	 * diverted to JsonAppendExecutor before reaching this class (see
+	 * AppendExecutor::execute()).
 	 */
 	class QuelToSQLAppend {
 
@@ -103,11 +100,10 @@
 			$entityName = $statement->getEntityName();
 
 			if ($entityName === null) {
-				$tableName = $statement->getTableNameOrFail();
-
-				return $statement->isInsertFromSelect()
-					? $this->compileFromSelect($statement, null, $tableName, $tableName, $parameters)
-					: $this->compileValues($statement, null, $tableName, $parameters);
+				throw new \LogicException(
+					'QuelToSQLAppend::convertToSQL() called on a statement whose target range is not an entity range — ' .
+					'a JSON-source range is compiled by JsonAppendExecutor instead, and no other range kind is possible'
+				);
 			}
 
 			$metadata = $this->entityStore->getMetadata($entityName);
@@ -123,24 +119,22 @@
 		 * upsert on-conflict clause is present — the dialect-appropriate
 		 * insert-or-update statement built around the same compiled rows.
 		 * @param AstAppend $statement
-		 * @param EntityMetadataRecord|null $metadata Null for a plain-table range
+		 * @param EntityMetadataRecord $metadata
 		 * @param string $tableName
 		 * @param array<string, mixed> $parameters
 		 * @return string
 		 * @throws SemanticException
 		 */
-		private function compileValues(AstAppend $statement, ?EntityMetadataRecord $metadata, string $tableName, array &$parameters): string {
+		private function compileValues(AstAppend $statement, EntityMetadataRecord $metadata, string $tableName, array &$parameters): string {
 			$rows = $statement->getRowsOrFail();
 			$properties = array_map(fn(AstAssignment $assignment) => $assignment->getProperty(), $rows[0]);
 
-			if ($metadata !== null) {
-				AssignmentValidator::assertPropertiesExist($properties, $metadata);
-				// The literal-values form auto-initializes any @Orm\Version
-				// column the caller didn't explicitly assign (below), so it's
-				// never "missing" here even though it's typically non-nullable
-				// with no column-level default.
-				$this->assertRequiredColumnsSupplied($properties, $metadata, skipVersionColumns: true);
-			}
+			AssignmentValidator::assertPropertiesExist($properties, $metadata);
+			// The literal-values form auto-initializes any @Orm\Version
+			// column the caller didn't explicitly assign (below), so it's
+			// never "missing" here even though it's typically non-nullable
+			// with no column-level default.
+			$this->assertRequiredColumnsSupplied($properties, $metadata, skipVersionColumns: true);
 
 			// Any @Orm\Version column not explicitly assigned gets its INSERT
 			// initial value (mirrors InsertPersister::persist() — see
@@ -148,21 +142,17 @@
 			// the caller had written it themselves, so `append` and persist()
 			// initialize version columns identically instead of the QUEL path
 			// silently requiring the caller to supply them by hand.
-			$versionColumnsToInit = $metadata !== null
-				? array_diff_key($metadata->versionColumns, array_flip($properties))
-				: [];
+			$versionColumnsToInit = array_diff_key($metadata->versionColumns, array_flip($properties));
 
 			if (!empty($versionColumnsToInit)) {
 				$properties = array_merge($properties, array_keys($versionColumnsToInit));
 			}
 
-			$columnNames = $metadata !== null
-				? array_map(fn(string $property) => $metadata->getColumnNameOrFail($property), $properties)
-				: $properties;
+			$columnNames = array_map(fn(string $property) => $metadata->getColumnNameOrFail($property), $properties);
 
 			// STI subclass: inject the discriminator column value so `append`
 			// writes the same type marker persist() would, unless already supplied.
-			$discriminatorInfo = $metadata !== null ? $this->resolveDiscriminatorInfo($metadata) : null;
+			$discriminatorInfo = $this->resolveDiscriminatorInfo($metadata);
 
 			if ($discriminatorInfo !== null && in_array($discriminatorInfo['column'], $columnNames, true)) {
 				$discriminatorInfo = null;
@@ -193,14 +183,12 @@
 		}
 
 		/**
-		 * Compiles a single row's assignments to SQL, keyed by property. When
-		 * $metadata is non-null, each value is checked against its target
-		 * column's declared type first — a plain-table range has no column
-		 * definitions to check against, so that step is skipped entirely.
+		 * Compiles a single row's assignments to SQL, keyed by property. Each
+		 * value is checked against its target column's declared type first.
 		 * Every column in $versionColumnsToInit also gets its INSERT initial
 		 * value added, keyed by the same property name — see compileValues().
 		 * @param AstAssignment[] $row
-		 * @param EntityMetadataRecord|null $metadata
+		 * @param EntityMetadataRecord $metadata
 		 * @param array<string, mixed> $parameters
 		 * @param array<string, array{name: string, column: \Quellabs\ObjectQuel\Annotations\Orm\Column, version: \Quellabs\ObjectQuel\Annotations\Orm\Version}> $versionColumnsToInit
 		 * @param array{column: non-empty-string, value: non-empty-string}|null $discriminatorInfo
@@ -208,13 +196,11 @@
 		 * @return array<string, string> property (or discriminator column name) => compiled SQL value
 		 * @throws SemanticException
 		 */
-		private function compileRow(array $row, ?EntityMetadataRecord $metadata, array &$parameters, array $versionColumnsToInit = [], ?array $discriminatorInfo = null): array {
+		private function compileRow(array $row, EntityMetadataRecord $metadata, array &$parameters, array $versionColumnsToInit = [], ?array $discriminatorInfo = null): array {
 			$compiled = [];
 
 			foreach ($row as $assignment) {
-				if ($metadata !== null) {
-					$this->assertAssignmentValueTypeCompatible($assignment, $metadata);
-				}
+				$this->assertAssignmentValueTypeCompatible($assignment, $metadata);
 
 				$builder = new BuildSqlFromAst($this->entityStore, $parameters, 'VALUES', $this->platform);
 				$compiled[$assignment->getProperty()] = $builder->visitNodeAndReturnSQL($assignment->getValue());
@@ -315,30 +301,26 @@
 		 * originally-requested (showInResult() === true) columns are
 		 * re-projected in the outer SELECT.
 		 * @param AstAppend $statement
-		 * @param EntityMetadataRecord|null $metadata Null for a plain-table range
+		 * @param EntityMetadataRecord $metadata
 		 * @param string $tableName
-		 * @param string $targetLabel Entity class name or table name, for error messages
+		 * @param string $targetLabel Entity class name, for error messages
 		 * @param array<string, mixed> $parameters
 		 * @return string
 		 * @throws SemanticException
 		 */
-		private function compileFromSelect(AstAppend $statement, ?EntityMetadataRecord $metadata, string $tableName, string $targetLabel, array &$parameters): string {
+		private function compileFromSelect(AstAppend $statement, EntityMetadataRecord $metadata, string $tableName, string $targetLabel, array &$parameters): string {
 			$properties = $statement->getColumnsOrFail();
 			$source = $statement->getSourceOrFail();
 
-			if ($metadata !== null) {
-				AssignmentValidator::assertPropertiesExist($properties, $metadata);
-				$this->assertRequiredColumnsSupplied($properties, $metadata);
-			}
+			AssignmentValidator::assertPropertiesExist($properties, $metadata);
+			$this->assertRequiredColumnsSupplied($properties, $metadata);
 
 			// Visibility flags are set by prepareSource()'s optimizer pass
 			// (already run by the caller), so aliases can only be read afterward.
 			$selectSql = $this->finalizeSourceRetrieveSql($source, $parameters);
 			$visibleAliases = $this->resolveVisibleAliases($properties, $source, $targetLabel);
 
-			$columnNames = $metadata !== null
-				? array_map(fn(string $property) => $metadata->getColumnNameOrFail($property), $properties)
-				: $properties;
+			$columnNames = array_map(fn(string $property) => $metadata->getColumnNameOrFail($property), $properties);
 
 			$derivedTableAlias = $this->identifierQuoter->quoteIdentifier('__append_source');
 
@@ -350,7 +332,7 @@
 			// STI subclass: inject the discriminator column as a literal
 			// SELECT expression, same rule compileValues() applies to its
 			// VALUES rows — there's no source column to read it from.
-			$discriminatorInfo = $metadata !== null ? $this->resolveDiscriminatorInfo($metadata) : null;
+			$discriminatorInfo = $this->resolveDiscriminatorInfo($metadata);
 
 			if ($discriminatorInfo !== null && !in_array($discriminatorInfo['column'], $columnNames, true)) {
 				$columnNames[] = $discriminatorInfo['column'];
@@ -388,9 +370,9 @@
 
 			$this->resolveIdentifierTypes($source);
 
-			(new QueryNormalizer($this->entityStore, $this->entityManager->getConnection()))->transform($source);
+			(new QueryNormalizer($this->entityStore))->transform($source);
 			$source->accept(new CoerceDateTimeParameters($parameters));
-			(new SemanticAnalyzer($this->entityStore, $this->platform, $this->entityManager->getConnection()))->validate($source);
+			(new SemanticAnalyzer($this->entityStore, $this->platform))->validate($source);
 			(new QueryOptimizer($this->entityManager, $this->platform))->transform($source, $parameters);
 		}
 
@@ -483,10 +465,8 @@
 
 		/**
 		 * Every non-nullable, non-defaulted, non-generated (primary key) column
-		 * must be supplied, or the database would reject the INSERT at runtime
-		 * — this catches that at compile time instead (see
-		 * objectquel-append-plan.md). Entity-backed targets only — a
-		 * plain-table range has no column definitions to check against.
+		 * must be supplied, or the database would reject the INSERT at
+		 * runtime — this catches that at compile time instead.
 		 * @param string[] $properties
 		 * @param EntityMetadataRecord $metadata
 		 * @param bool $skipVersionColumns Whether to also exempt @Orm\Version

@@ -30,7 +30,7 @@
 		/**
          * Parser constructor.
          * @param Lexer $lexer
-         * @param EntityStore $entityStore Used by the Range rule to distinguish entity ranges from plain-table ranges
+         * @param EntityStore $entityStore Used by the Range rule to resolve `range of x is Name` against declared entities
          */
         public function __construct(Lexer $lexer, EntityStore $entityStore) {
             $this->lexer = $lexer;

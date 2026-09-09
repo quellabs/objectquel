@@ -40,7 +40,7 @@
 		 */
 		public static function resolve(AstInterface $conditions, EntityMetadataRecord $metadata): array {
 			$properties = [];
-			self::collectEqualityProperties($conditions, $properties, IdentifierType::EntityProperty);
+			self::collectEqualityProperties($conditions, $properties);
 
 			$propertySet = $properties;
 			sort($propertySet);
@@ -58,26 +58,6 @@
 				implode(', ', $properties),
 				$metadata->className
 			));
-		}
-
-		/**
-		 * Plain-table variant: there is no entity metadata, so there is no
-		 * declared unique/primary-key constraint to check the conflict target
-		 * against — the same "no live-schema validation" policy every other
-		 * plain-table-range check already follows (see
-		 * objectquel-plain-table-range-plan.md). If the named columns aren't
-		 * actually backed by a real constraint, the database rejects the
-		 * compiled ON CONFLICT/ON DUPLICATE KEY UPDATE/MERGE statement itself
-		 * at execution time — the same place an unknown column already
-		 * surfaces its error for a plain-table range.
-		 * @param AstInterface $conditions The onConflict AstReplace's WHERE condition
-		 * @return string[] The matched column names, in WHERE-clause order
-		 * @throws SemanticException
-		 */
-		public static function resolveForTable(AstInterface $conditions): array {
-			$properties = [];
-			self::collectEqualityProperties($conditions, $properties, IdentifierType::TableProperty);
-			return $properties;
 		}
 
 		/**
@@ -111,15 +91,15 @@
 		 * @return void
 		 * @throws SemanticException
 		 */
-		private static function collectEqualityProperties(AstInterface $node, array &$properties, IdentifierType $propertyType): void {
+		private static function collectEqualityProperties(AstInterface $node, array &$properties): void {
 			if ($node instanceof AstBinaryOperator && $node->getOperator() === 'AND') {
-				self::collectEqualityProperties($node->getLeft(), $properties, $propertyType);
-				self::collectEqualityProperties($node->getRight(), $properties, $propertyType);
+				self::collectEqualityProperties($node->getLeft(), $properties);
+				self::collectEqualityProperties($node->getRight(), $properties);
 				return;
 			}
 
 			if ($node instanceof AstExpression && $node->getOperator() === '=') {
-				$property = self::extractProperty($node->getLeft(), $propertyType) ?? self::extractProperty($node->getRight(), $propertyType);
+				$property = self::extractProperty($node->getLeft()) ?? self::extractProperty($node->getRight());
 
 				if ($property !== null) {
 					$properties[] = $property;
@@ -144,7 +124,7 @@
 		 * @param AstInterface $node
 		 * @return string|null
 		 */
-		private static function extractProperty(AstInterface $node, IdentifierType $propertyType): ?string {
+		private static function extractProperty(AstInterface $node): ?string {
 			if (!$node instanceof AstIdentifier) {
 				return null;
 			}
@@ -155,7 +135,7 @@
 				return null;
 			}
 
-			if ($property->getType() !== $propertyType) {
+			if ($property->getType() !== IdentifierType::EntityProperty) {
 				return null;
 			}
 

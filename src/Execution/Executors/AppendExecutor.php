@@ -89,8 +89,8 @@
 			// AstUpsert — see QuelToSQLAppend's docblock); it just keeps the
 			// on-conflict dialect-branching logic out of QuelToSQLAppend.
 			$versionValueHandler = $entityManager->getUnitOfWork()->getVersionValueHandler();
-			$replaceCompiler = new QuelToSQLReplace($this->entityStore, $platform, $versionValueHandler, $connection);
-			$upsertCompiler = new QuelToSQLUpsert($this->entityStore, $platform, $replaceCompiler, $connection);
+			$replaceCompiler = new QuelToSQLReplace($this->entityStore, $platform, $versionValueHandler);
+			$upsertCompiler = new QuelToSQLUpsert($this->entityStore, $platform, $replaceCompiler);
 			$this->compiler = new QuelToSQLAppend($entityManager, $platform, $upsertCompiler, $versionValueHandler);
 			$this->jsonAppendExecutor = new JsonAppendExecutor();
 		}
@@ -135,21 +135,15 @@
 			$statement = $prepared->getStatement();
 			$metadata = $prepared->getMetadata();
 			$sql = $this->compiler->convertToSQL($statement, $parameters);
-
-			// getTableName() is nullable in general, but JSON is already
-			// excluded and $metadata === null rules out entity too — must be
-			// plain-table, so getTableNameOrFail() is the right accessor.
-			$target = $metadata !== null ? $metadata->tableName : $statement->getTableNameOrFail();
+			$target = $metadata->tableName;
 
 			// execute() swallows the exception and returns null on failure
 			// rather than throwing — a try/catch here would never fire.
 			$rs = $this->assertInsertSucceeded($this->connection->execute($sql, $parameters), $target);
 
 			// Insert ID is only unambiguous for single-row literal appends.
-			// Multi-row or insert-from-select is engine-dependent, so leave it
-			// null. Plain-table ranges lack metadata but can safely attempt the
-			// connection-level readback; getInsertId() returns false if unavailable.
-			$eligibleForReadback = $metadata === null || $metadata->autoIncrementColumn !== null;
+			// Multi-row or insert-from-select is engine-dependent, so leave it null.
+			$eligibleForReadback = $metadata->autoIncrementColumn !== null;
 
 			// An upsert's on-conflict branch may have run an UPDATE, not an INSERT,
 			// leaving the driver's last-insert-id stale. Only MySQL/MariaDB's
@@ -220,13 +214,16 @@
 			// — positionally matched against the source's visible aliases below.
 			$properties = $statement->getColumnsOrFail();
 
-			// Two different labels, deliberately: resolveVisibleAliases()
-			// wants entity class name (entity) or table name (plain-table);
-			// the error message always wants the physical table name.
+			// Always an entity range here — JSON is diverted in execute().
 			$entityName = $statement->getEntityName();
-			$metadata = $entityName !== null ? $this->entityStore->getMetadata($entityName) : null;
-			$targetLabel = $entityName ?? $statement->getTableNameOrFail();
-			$tableName = $metadata !== null ? $metadata->tableName : $statement->getTableNameOrFail();
+
+			if ($entityName === null) {
+				throw new \LogicException('AppendExecutor::executeInsertFromSelectViaPlanner() called on a statement whose target range is not an entity range');
+			}
+
+			$metadata = $this->entityStore->getMetadata($entityName);
+			$targetLabel = $entityName;
+			$tableName = $metadata->tableName;
 
 			// Maps $properties[$i] to the source retrieve's $i-th visible
 			// projection alias, so a fetched row's column ($row[$alias]) can be
@@ -314,20 +311,21 @@
 		}
 
 		/**
-		 * Resolves entity metadata (when the target is a declared entity range),
-		 * normalizes bound-parameter values, and fills in any generated primary
-		 * keys. Called by executeDirectInsert() before compiling the statement.
+		 * Resolves entity metadata, normalizes bound-parameter values, and
+		 * fills in any generated primary keys. Called by executeDirectInsert()
+		 * before compiling the statement.
 		 * @param AstAppend $statement
 		 * @param array<string, mixed> $parameters
 		 * @throws \ReflectionException|EntityResolutionException
 		 */
 		private function prepare(AstAppend $statement, array &$parameters): PreparedAppend {
 			$entityName = $statement->getEntityName();
-			$metadata = $entityName !== null ? $this->entityStore->getMetadata($entityName) : null;
 
-			if ($metadata === null) {
-				return new PreparedAppend($statement, null, null);
+			if ($entityName === null) {
+				throw new \LogicException('AppendExecutor::prepare() called on a statement whose target range is not an entity range');
 			}
+
+			$metadata = $this->entityStore->getMetadata($entityName);
 
 			// Insert-from-select has no literal rows to normalize — see this
 			// method's callers, both of which only reach here for the

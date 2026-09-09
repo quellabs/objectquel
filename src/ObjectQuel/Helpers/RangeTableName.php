@@ -4,28 +4,20 @@
 
 	use Quellabs\ObjectQuel\EntityStore;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRangeDatabase;
-	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRangeTable;
 
 	/**
-	 * Resolves the physical table name for a range that is directly SQL-backed
-	 * (an entity range or a plain-table range) — the two range kinds that can
-	 * appear in a real FROM/JOIN clause, and the two write-verb targets
-	 * (see objectquel-plain-table-range-plan.md). An entity range's table name
-	 * comes from EntityStore metadata; a plain-table range already carries its
-	 * own table name literally, with no metadata lookup at all.
+	 * Resolves the physical table name for an entity range's EntityStore
+	 * metadata — the range kind that can appear in a real FROM/JOIN clause
+	 * and as a write-verb target.
 	 */
 	class RangeTableName {
 
 		/**
-		 * @param AstRangeDatabase|AstRangeTable $range
+		 * @param AstRangeDatabase $range
 		 * @param EntityStore $entityStore
 		 * @return string
 		 */
-		public static function resolve(AstRangeDatabase|AstRangeTable $range, EntityStore $entityStore): string {
-			if ($range instanceof AstRangeTable) {
-				return $range->getTableName();
-			}
-
+		public static function resolve(AstRangeDatabase $range, EntityStore $entityStore): string {
 			return $entityStore->getMetadata($range->getEntityName())->tableName;
 		}
 	}

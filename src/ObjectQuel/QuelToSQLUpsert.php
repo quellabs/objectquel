@@ -3,7 +3,6 @@
 	namespace Quellabs\ObjectQuel\ObjectQuel;
 
 	use Quellabs\ObjectQuel\Capabilities\PlatformCapabilitiesInterface;
-	use Quellabs\ObjectQuel\DatabaseAdapter\DatabaseAdapter;
 	use Quellabs\ObjectQuel\DatabaseAdapter\SqlIdentifierQuoter;
 	use Quellabs\ObjectQuel\EntityStore;
 	use Quellabs\ObjectQuel\Exception\SemanticException;
@@ -60,7 +59,6 @@
 		private PlatformCapabilitiesInterface $platform;
 		private QuelToSQLReplace $replaceCompiler;
 		private SQLSerializer $serializer;
-		private ?DatabaseAdapter $databaseAdapter;
 
 		/**
 		 * QuelToSQLUpsert constructor
@@ -70,15 +68,12 @@
 		 *        an explicit on-conflict UPDATE SET clause, so it's built with the
 		 *        exact same property-exists/type/@Orm\Version-bump rules a
 		 *        standalone `replace` uses — see QuelToSQLReplace::buildSetClause().
-		 * @param DatabaseAdapter|null $databaseAdapter Live connection for
-		 *        plain-table column validation — see WriteVerbIdentifierResolver::resolve().
 		 */
-		public function __construct(EntityStore $entityStore, PlatformCapabilitiesInterface $platform, QuelToSQLReplace $replaceCompiler, ?DatabaseAdapter $databaseAdapter = null) {
+		public function __construct(EntityStore $entityStore, PlatformCapabilitiesInterface $platform, QuelToSQLReplace $replaceCompiler) {
 			$this->entityStore = $entityStore;
 			$this->identifierQuoter = new SqlIdentifierQuoter($platform);
 			$this->platform = $platform;
 			$this->replaceCompiler = $replaceCompiler;
-			$this->databaseAdapter = $databaseAdapter;
 			// Same reasoning as QuelToSQLReplace's own — an explicit `or
 			// replace (...)` list is assignments too, and must denormalize
 			// its bound-parameter values identically (see buildSetClauseParts()).
@@ -88,24 +83,12 @@
 		/**
 		 * Resolves and validates the on-conflict clause, then compiles the
 		 * dialect-appropriate insert-or-update statement.
-		 *
-		 * $metadata is null when the target is a plain-table range (see
-		 * objectquel-plain-table-range-plan.md) — there is then no declared
-		 * unique/primary-key constraint to check the conflict target against
-		 * (ConflictTargetResolver::resolveForTable() skips that check
-		 * entirely) and no property-exists/type/@Orm\Version-bump rules to
-		 * apply to an explicit `or replace (...)` list
-		 * (QuelToSQLReplace::buildSetClauseForTable() instead). An incorrect
-		 * conflict target simply surfaces as the database's own error when
-		 * the compiled statement requires a real constraint that isn't
-		 * there — the same "no live-schema validation" policy every other
-		 * plain-table-range check already follows.
 		 * @param string $insertSql The already-compiled base `INSERT INTO
 		 *        table (cols) VALUES (...), (...)` — reused as-is for the
 		 *        Postgres/SQLite/MySQL branches (SQL Server's MERGE has no
 		 *        INSERT of its own, so it doesn't use this).
 		 * @param string $tableName
-		 * @param EntityMetadataRecord|null $metadata Null for a plain-table target
+		 * @param EntityMetadataRecord $metadata
 		 * @param string[] $properties Row property order — determines column order
 		 * @param string[] $columnNames
 		 * @param array<int, array<string, string>> $compiledRows Per-row compiled
@@ -118,7 +101,7 @@
 		public function convertToSQL(
 			string $insertSql,
 			string $tableName,
-			?EntityMetadataRecord $metadata,
+			EntityMetadataRecord $metadata,
 			array $properties,
 			array $columnNames,
 			array $compiledRows,
@@ -128,18 +111,13 @@
 			// The on-conflict clause's own WHERE/assignment identifiers need a
 			// resolved type/range before ConflictTargetResolver or
 			// buildSetClause can read them.
-			WriteVerbIdentifierResolver::resolve($onConflict, $this->entityStore, $this->databaseAdapter);
+			WriteVerbIdentifierResolver::resolve($onConflict, $this->entityStore);
 
-			$conflictProperties = $metadata !== null
-				? ConflictTargetResolver::resolve($onConflict->getConditionsOrFail(), $metadata)
-				: ConflictTargetResolver::resolveForTable($onConflict->getConditionsOrFail());
-
-			$targetName = $metadata !== null ? $metadata->className : $tableName;
+			$conflictProperties = ConflictTargetResolver::resolve($onConflict->getConditionsOrFail(), $metadata);
+			$targetName = $metadata->className;
 			$this->assertConflictPropertiesSuppliedByRow($conflictProperties, $properties, $targetName);
 
-			$conflictColumns = $metadata !== null
-				? array_map(fn(string $property) => $metadata->getColumnNameOrFail($property), $conflictProperties)
-				: $conflictProperties;
+			$conflictColumns = array_map(fn(string $property) => $metadata->getColumnNameOrFail($property), $conflictProperties);
 
 			$explicitAssignments = $onConflict->getAssignments();
 			$dialect = $this->platform->getDatabaseType();
@@ -170,19 +148,14 @@
 		}
 
 		/**
-		 * Builds an on-conflict UPDATE SET clause, branching on whether the
-		 * target carries entity metadata — see convertToSQL()'s docblock.
+		 * Builds an on-conflict UPDATE SET clause.
 		 * @param AstAssignment[] $assignments
-		 * @param EntityMetadataRecord|null $metadata
+		 * @param EntityMetadataRecord $metadata
 		 * @param array<string, mixed> $parameters
 		 * @return string[]
 		 * @throws SemanticException
 		 */
-		private function buildSetClauseParts(array $assignments, ?EntityMetadataRecord $metadata, array &$parameters): array {
-			if ($metadata === null) {
-				return $this->replaceCompiler->buildSetClauseForTable($assignments, $parameters);
-			}
-
+		private function buildSetClauseParts(array $assignments, EntityMetadataRecord $metadata, array &$parameters): array {
 			// Normalize bound-parameter assignment values before compiling
 			// them to SQL — see WriteVerbParameterNormalizer's docblock. An
 			// explicit `or replace (...)` list is compiled straight to SQL
@@ -214,7 +187,7 @@
 		 * @param array<int, array<string, string>> $compiledRows
 		 * @param string[] $conflictColumns
 		 * @param \Quellabs\ObjectQuel\ObjectQuel\Ast\AstAssignment[] $explicitAssignments Empty means "default to the inserted row"
-		 * @param EntityMetadataRecord|null $metadata Null for a plain-table target
+		 * @param EntityMetadataRecord $metadata
 		 * @param array<string, mixed> $parameters
 		 * @return string
 		 * @throws SemanticException
@@ -226,7 +199,7 @@
 			array $compiledRows,
 			array $conflictColumns,
 			array $explicitAssignments,
-			?EntityMetadataRecord $metadata,
+			EntityMetadataRecord $metadata,
 			array &$parameters
 		): string {
 			$targetAlias = $this->identifierQuoter->quoteIdentifier('__upsert_target');
@@ -256,7 +229,7 @@
 
 			$setClauseParts = $explicitAssignments !== []
 				? $this->buildSetClauseParts($explicitAssignments, $metadata, $parameters)
-				: $this->buildReferencedSetClause($columnNames, $sourceAlias, asFunction: false, metadata: $metadata, targetLabel: $metadata !== null ? $metadata->className : $tableName);
+				: $this->buildReferencedSetClause($columnNames, $sourceAlias, asFunction: false, metadata: $metadata, targetLabel: $metadata->className);
 
 			return sprintf(
 				'MERGE INTO %s AS %s USING (VALUES %s) AS %s (%s) ON %s WHEN MATCHED THEN UPDATE SET %s WHEN NOT MATCHED THEN INSERT (%s) VALUES (%s);',
@@ -289,12 +262,12 @@
 		 *        MERGE), or — when $asFunction is true — a function name
 		 *        each column is passed to (MySQL's `VALUES(col)`).
 		 * @param bool $asFunction
-		 * @param EntityMetadataRecord|null $metadata Null for a plain-table target, which has no ORM-declared primary key to exclude
-		 * @param string $targetLabel Entity class name, or table name for a plain-table target — for the error message below
+		 * @param EntityMetadataRecord $metadata
+		 * @param string $targetLabel Entity class name — for the error message below
 		 * @return string[]
 		 * @throws SemanticException When excluding the primary key leaves nothing to update — every appended column was the primary key itself
 		 */
-		private function buildReferencedSetClause(array $columnNames, string $reference, bool $asFunction, ?EntityMetadataRecord $metadata, string $targetLabel): array {
+		private function buildReferencedSetClause(array $columnNames, string $reference, bool $asFunction, EntityMetadataRecord $metadata, string $targetLabel): array {
 			$primaryKeyColumn = $this->resolvePrimaryKeyColumn($metadata);
 			$updatableColumns = array_values(array_filter($columnNames, fn(string $column) => $column !== $primaryKeyColumn));
 
@@ -320,13 +293,12 @@
 
 		/**
 		 * Resolves the target entity's primary-key column name, or null when
-		 * there is none to exclude (a plain-table target, or an entity with
-		 * no declared primary key).
-		 * @param EntityMetadataRecord|null $metadata
+		 * it has no declared primary key.
+		 * @param EntityMetadataRecord $metadata
 		 * @return string|null
 		 */
-		private function resolvePrimaryKeyColumn(?EntityMetadataRecord $metadata): ?string {
-			if ($metadata === null || $metadata->getPrimaryKey() === null) {
+		private function resolvePrimaryKeyColumn(EntityMetadataRecord $metadata): ?string {
+			if ($metadata->getPrimaryKey() === null) {
 				return null;
 			}
 
@@ -341,7 +313,7 @@
 		 * Rules\Append — so checking the first row's set covers every row.)
 		 * @param string[] $conflictProperties
 		 * @param string[] $rowProperties
-		 * @param string $label Entity class name, or the table name for a plain-table target
+		 * @param string $label Entity class name
 		 * @return void
 		 * @throws SemanticException
 		 */

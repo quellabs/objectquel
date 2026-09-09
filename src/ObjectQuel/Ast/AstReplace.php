@@ -13,12 +13,12 @@
 	 * entirely, same as AstAppend/AstCreateTable/AstDestroy.
 	 *
 	 * Single target range only — no `replace` driven by a join across
-	 * multiple ranges (see objectquel-replace-plan.md's scope cut). The
-	 * target must already be a declared, real persisted entity range (not a
-	 * bare entity name — unlike `append`, there's a WHERE clause that needs
-	 * a concrete range to resolve identifiers against — and not a subquery/
-	 * temp-table/JSON range either), which is why it's stored as a concrete
-	 * AstRangeDatabase rather than just an entity name string.
+	 * multiple ranges. The target must already be a declared, real persisted
+	 * entity range (not a bare entity name — unlike `append`, there's a
+	 * WHERE clause that needs a concrete range to resolve identifiers
+	 * against — and not a subquery/temp-table/JSON range either), which is
+	 * why it's stored as a concrete AstRangeDatabase rather than just an
+	 * entity name string.
 	 *
 	 * Implements NodeWithRanges (a one-element ranges list, this statement's
 	 * single target) so the existing identifier-resolution visitors
@@ -40,7 +40,7 @@
 	 */
 	class AstReplace extends Ast implements AstStatement, NodeWithConditions, NodeWithRanges {
 
-		private AstRangeDatabase|AstRangeTable $range;
+		private AstRangeDatabase $range;
 
 		/** @var AstAssignment[] */
 		private array $assignments;
@@ -49,12 +49,12 @@
 
 		/**
 		 * AstReplace constructor.
-		 * @param AstRangeDatabase|AstRangeTable $range Target range — a declared, real
-		 *        persisted entity range or plain-table range
+		 * @param AstRangeDatabase $range Target range — a declared, real
+		 *        persisted entity range
 		 * @param AstAssignment[] $assignments
 		 * @param AstInterface $conditions Mandatory WHERE condition
 		 */
-		public function __construct(AstRangeDatabase|AstRangeTable $range, array $assignments, AstInterface $conditions) {
+		public function __construct(AstRangeDatabase $range, array $assignments, AstInterface $conditions) {
 			$this->range = $range;
 			$this->assignments = $assignments;
 			$this->conditions = $conditions;
@@ -79,7 +79,7 @@
 			$this->conditions?->accept($visitor);
 		}
 
-		public function getRange(): AstRangeDatabase|AstRangeTable {
+		public function getRange(): AstRangeDatabase {
 			return $this->range;
 		}
 

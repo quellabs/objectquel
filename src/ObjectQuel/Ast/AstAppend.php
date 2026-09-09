@@ -27,24 +27,23 @@
 	 *    — $columns holds the bare column list and $source the nested
 	 *    AstRetrieve to select from. $rows is null.
 	 *
-	 * $range is the already-resolved target range (see objectquel-append-plan.md,
-	 * for the plain-table case objectquel-plain-table-range-plan.md, and for
-	 * the JSON-source case objectquel-json-append-plan.md — JSON only reaches
-	 * the literal-values constructor below, never forSelect(), since
-	 * insert-from-select into a JSON range is rejected at parse time).
-	 * getEntityName()/getTableName()/getJsonSourcePath() derive from it —
-	 * exactly one is non-null, matching the range kind.
+	 * $range is the already-resolved target range — an entity range, or (for
+	 * the literal-values form only) a JSON-source range. getEntityName()/
+	 * getJsonSourcePath() derive from it — exactly one is non-null, matching
+	 * the range kind. JSON only reaches the literal-values constructor below,
+	 * never forSelect(), since insert-from-select into a JSON range is
+	 * rejected at parse time.
 	 *
-	 * $onConflict is the upsert extension (see objectquel-upsert-plan.md):
-	 * `append to u (...) or replace (...) where <cond>` — literally the
-	 * already-defined AstReplace node, minus its own target range (implied
-	 * to be this statement's own target range — see Rules\Append). Only
-	 * meaningful for the literal-values form; the insert-from-select form's
-	 * grammar never reaches an `or` token, so this is always null there.
+	 * $onConflict is the upsert extension: `append to u (...) or replace
+	 * (...) where <cond>` — literally the already-defined AstReplace node,
+	 * minus its own target range (implied to be this statement's own target
+	 * range — see Rules\Append). Only meaningful for the literal-values
+	 * form; the insert-from-select form's grammar never reaches an `or`
+	 * token, so this is always null there.
 	 */
 	class AstAppend extends Ast implements AstStatement {
 
-		private AstRangeDatabase|AstRangeTable|AstRangeJsonSource $range;
+		private AstRangeDatabase|AstRangeJsonSource $range;
 
 		/** @var AstAssignment[][]|null */
 		private ?array $rows;
@@ -57,13 +56,13 @@
 		private ?AstReplace $onConflict;
 
 		/**
-		 * @param AstRangeDatabase|AstRangeTable|AstRangeJsonSource $range Resolved target range
+		 * @param AstRangeDatabase|AstRangeJsonSource $range Resolved target range
 		 * @param AstAssignment[][]|null $rows Assignment rows (literal-values form)
 		 * @param string[]|null $columns Bare column list (insert-from-select form)
 		 * @param AstRetrieve|null $source Source query (insert-from-select form)
 		 * @param AstReplace|null $onConflict Upsert's `or replace (...) where ...` clause
 		 */
-		private function __construct(AstRangeDatabase|AstRangeTable|AstRangeJsonSource $range, ?array $rows, ?array $columns, ?AstRetrieve $source, ?AstReplace $onConflict = null) {
+		private function __construct(AstRangeDatabase|AstRangeJsonSource $range, ?array $rows, ?array $columns, ?AstRetrieve $source, ?AstReplace $onConflict = null) {
 			$this->range = $range;
 			$this->rows = $rows;
 			$this->columns = $columns;
@@ -81,22 +80,22 @@
 		}
 
 		/**
-		 * @param AstRangeDatabase|AstRangeTable|AstRangeJsonSource $range
+		 * @param AstRangeDatabase|AstRangeJsonSource $range
 		 * @param AstAssignment[][] $rows
 		 * @param AstReplace|null $onConflict Upsert's `or replace (...) where ...` clause
 		 * @return self
 		 */
-		public static function forValues(AstRangeDatabase|AstRangeTable|AstRangeJsonSource $range, array $rows, ?AstReplace $onConflict = null): self {
+		public static function forValues(AstRangeDatabase|AstRangeJsonSource $range, array $rows, ?AstReplace $onConflict = null): self {
 			return new self($range, $rows, null, null, $onConflict);
 		}
 
 		/**
-		 * @param AstRangeDatabase|AstRangeTable $range
+		 * @param AstRangeDatabase $range
 		 * @param string[] $columns
 		 * @param AstRetrieve $source
 		 * @return self
 		 */
-		public static function forSelect(AstRangeDatabase|AstRangeTable $range, array $columns, AstRetrieve $source): self {
+		public static function forSelect(AstRangeDatabase $range, array $columns, AstRetrieve $source): self {
 			return new self($range, null, $columns, $source);
 		}
 
@@ -113,50 +112,21 @@
 			$this->onConflict?->accept($visitor);
 		}
 
-		public function getRange(): AstRangeDatabase|AstRangeTable|AstRangeJsonSource {
+		public function getRange(): AstRangeDatabase|AstRangeJsonSource {
 			return $this->range;
 		}
 
 		/**
 		 * @return string|null The target entity class name, or null when the
-		 *         target is a plain-table or JSON-source range (see
-		 *         getTableName()/getJsonSourcePath()).
+		 *         target is a JSON-source range (see getJsonSourcePath()).
 		 */
 		public function getEntityName(): ?string {
 			return $this->range instanceof AstRangeDatabase ? $this->range->getEntityName() : null;
 		}
 
 		/**
-		 * @return string|null The target's physical table name, or null when
-		 *         the target is an entity or JSON-source range (see
-		 *         getEntityName()/getJsonSourcePath()).
-		 */
-		public function getTableName(): ?string {
-			return $this->range instanceof AstRangeTable ? $this->range->getTableName() : null;
-		}
-
-		/**
-		 * Same as getTableName(), for call sites already committed to the
-		 * plain-table-range form (typically behind a getEntityName() === null
-		 * check, having already ruled out a JSON-source range target — see
-		 * AppendExecutor, the only production caller of the SQL compilers
-		 * this feeds) where a null result would mean this node targets some
-		 * other range kind — a real bug, not a case to handle.
-		 */
-		public function getTableNameOrFail(): string {
-			$tableName = $this->getTableName();
-
-			if ($tableName === null) {
-				throw new \LogicException('AstAppend::getTableNameOrFail() called on a statement whose target range is not a plain table');
-			}
-
-			return $tableName;
-		}
-
-		/**
 		 * @return string|null The target JSON file's path, or null when the
-		 *         target is an entity or plain-table range (see
-		 *         getEntityName()/getTableName()).
+		 *         target is an entity range (see getEntityName()).
 		 */
 		public function getJsonSourcePath(): ?string {
 			return $this->range instanceof AstRangeJsonSource ? $this->range->getPath() : null;

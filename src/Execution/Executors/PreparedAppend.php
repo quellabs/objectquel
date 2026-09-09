@@ -7,17 +7,17 @@
 
 	/**
 	 * Typed carrier for AppendExecutor::prepare()/fillGeneratedPrimaryKeys()'s
-	 * result: the (possibly rewritten) statement, its entity metadata (null
-	 * for a plain-table range), and the primary key generated for a
-	 * single-row literal-values append (null otherwise).
+	 * result: the (possibly rewritten) statement, its entity metadata, and
+	 * the primary key generated for a single-row literal-values append
+	 * (null otherwise).
 	 */
 	final class PreparedAppend {
 
 		private AstAppend $statement;
-		private ?EntityMetadataRecord $metadata;
+		private EntityMetadataRecord $metadata;
 		private mixed $generatedId;
 
-		public function __construct(AstAppend $statement, ?EntityMetadataRecord $metadata, mixed $generatedId) {
+		public function __construct(AstAppend $statement, EntityMetadataRecord $metadata, mixed $generatedId) {
 			$this->statement = $statement;
 			$this->metadata = $metadata;
 			$this->generatedId = $generatedId;
@@ -27,7 +27,7 @@
 			return $this->statement;
 		}
 
-		public function getMetadata(): ?EntityMetadataRecord {
+		public function getMetadata(): EntityMetadataRecord {
 			return $this->metadata;
 		}
 

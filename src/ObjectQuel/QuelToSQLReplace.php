@@ -3,14 +3,12 @@
 	namespace Quellabs\ObjectQuel\ObjectQuel;
 
 	use Quellabs\ObjectQuel\Capabilities\PlatformCapabilitiesInterface;
-	use Quellabs\ObjectQuel\DatabaseAdapter\DatabaseAdapter;
 	use Quellabs\ObjectQuel\DatabaseAdapter\SqlIdentifierQuoter;
 	use Quellabs\ObjectQuel\EntityStore;
 	use Quellabs\ObjectQuel\Exception\SemanticException;
 	use Quellabs\ObjectQuel\Execution\Visitors\BuildSqlFromAst;
 	use Quellabs\ObjectQuel\Metadata\EntityMetadataRecord;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstAssignment;
-	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRangeTable;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstReplace;
 	use Quellabs\ObjectQuel\ObjectQuel\AstInterface;
 	use Quellabs\ObjectQuel\ObjectQuel\Helpers\AssignmentValidator;
@@ -40,11 +38,11 @@
 	 * pipeline does, alias-qualified, which is valid everywhere once the
 	 * range is aliased in the UPDATE clause.
 	 *
-	 * buildSetClause()/buildSetClauseForTable() are also reused by
-	 * QuelToSQLUpsert for an `append ... or replace (...)` on-conflict
-	 * UPDATE, which has no table alias in scope at all (the INSERT it's
-	 * attached to never aliases its target) — those call sites pass no
-	 * alias and always get the bare form, regardless of dialect.
+	 * buildSetClause() is also reused by QuelToSQLUpsert for an `append ...
+	 * or replace (...)` on-conflict UPDATE, which has no table alias in
+	 * scope at all (the INSERT it's attached to never aliases its target) —
+	 * that call site passes no alias and always gets the bare form,
+	 * regardless of dialect.
 	 *
 	 * Unlike QuelToSQLAppend's insert-from-select, `replace`'s WHERE clause
 	 * only ever has one range to resolve against (see AstReplace's
@@ -60,7 +58,6 @@
 		private PlatformCapabilitiesInterface $platform;
 		private VersionValueHandler $versionValueHandler;
 		private SQLSerializer $serializer;
-		private ?DatabaseAdapter $databaseAdapter;
 
 		/**
 		 * QuelToSQLReplace constructor
@@ -69,15 +66,12 @@
 		 * @param VersionValueHandler $versionValueHandler Reused as-is (not
 		 *        reconstructed) so `replace` bumps @Orm\Version columns using
 		 *        the exact same logic persist()'s UPDATE path does.
-		 * @param DatabaseAdapter|null $databaseAdapter Live connection for
-		 *        plain-table column validation — see WriteVerbIdentifierResolver::resolve().
 		 */
-		public function __construct(EntityStore $entityStore, PlatformCapabilitiesInterface $platform, VersionValueHandler $versionValueHandler, ?DatabaseAdapter $databaseAdapter = null) {
+		public function __construct(EntityStore $entityStore, PlatformCapabilitiesInterface $platform, VersionValueHandler $versionValueHandler) {
 			$this->entityStore = $entityStore;
 			$this->identifierQuoter = new SqlIdentifierQuoter($platform);
 			$this->platform = $platform;
 			$this->versionValueHandler = $versionValueHandler;
-			$this->databaseAdapter = $databaseAdapter;
 			// Only needs EntityStore (see Serializer's constructor) — built
 			// here rather than threaded in from EntityManager, so
 			// WriteVerbParameterNormalizer denormalizes bound-parameter
@@ -96,14 +90,9 @@
 			// Identifiers in the WHERE clause and assignment values (e.g.
 			// `count = count + 1`) need a resolved type/range before anything
 			// below can compile them to SQL.
-			WriteVerbIdentifierResolver::resolve($statement, $this->entityStore, $this->databaseAdapter);
+			WriteVerbIdentifierResolver::resolve($statement, $this->entityStore);
 
 			$range = $statement->getRange();
-
-			if ($range instanceof AstRangeTable) {
-				return $this->convertTableReplaceToSQL($statement, $range, $parameters);
-			}
-
 			$metadata = $this->entityStore->getMetadata($range->getEntityName());
 
 			// Normalize bound-parameter values before compiling them to SQL —
@@ -132,62 +121,14 @@
 		}
 
 		/**
-		 * Compiles a `replace <range> (...) where ...` statement targeting a
-		 * plain-table range (no entity metadata) — see
-		 * objectquel-plain-table-range-plan.md. Property names are used
-		 * literally as column names, with no @Orm\Version bump (there's no
-		 * annotation to drive one) and no value-type check (no column
-		 * definition to check it against).
-		 * @param AstReplace $statement
-		 * @param AstRangeTable $range
-		 * @param array<string, mixed> $parameters
-		 * @return string
-		 */
-		private function convertTableReplaceToSQL(AstReplace $statement, AstRangeTable $range, array &$parameters): string {
-			$setClauseParts = $this->buildSetClauseForTable($statement->getAssignments(), $parameters, $range->getName());
-
-			return sprintf(
-				'UPDATE %s as %s SET %s WHERE %s',
-				$this->identifierQuoter->quoteIdentifier($range->getTableName()),
-				$this->identifierQuoter->quoteIdentifier($range->getName()),
-				implode(', ', $setClauseParts),
-				$this->compileCondition($statement->getConditionsOrFail(), $parameters)
-			);
-		}
-
-		/**
-		 * Builds the `` `col` = <sql> `` SET-clause fragments for a plain-table
-		 * range — property names are used literally as column names, with no
-		 * property-exists/type check (no column definition to check against)
-		 * and no @Orm\Version bump (no annotation to drive one). Public so
-		 * QuelToSQLUpsert can reuse it unchanged for upsert's `or replace (...)`
-		 * on-conflict UPDATE clause when the target is a plain-table range
-		 * (see objectquel-plain-table-range-plan.md) — those call sites pass
-		 * no $qualifyWithAlias (see this class's docblock for why).
-		 * @param AstAssignment[] $assignments
-		 * @param array<string, mixed> $parameters Bound parameters, by reference
-		 * @param string|null $qualifyWithAlias The UPDATE's own range alias, to
-		 *        qualify each target column with where the dialect allows it
-		 *        (see quoteSetTargetColumn()); null to always render bare.
-		 * @return string[]
-		 */
-		public function buildSetClauseForTable(array $assignments, array &$parameters, ?string $qualifyWithAlias = null): array {
-			return array_map(
-				fn(AstAssignment $assignment) => $this->quoteSetTargetColumn($assignment->getProperty(), $qualifyWithAlias) . ' = ' . $this->compileExpression($assignment->getValue(), $parameters),
-				$assignments
-			);
-		}
-
-		/**
 		 * Builds the `` `col` = <sql> `` SET-clause fragments for a set of
 		 * assignments against $metadata's entity — property-exists/type
 		 * checks, bare (unqualified) target columns (see this class's
 		 * docblock for why), and an automatic bump for any @Orm\Version
 		 * column not explicitly assigned. Public so QuelToSQLAppend can reuse
 		 * it unchanged for upsert's `or replace (...)` on-conflict UPDATE
-		 * clause (see objectquel-upsert-plan.md) — the exact same rules
-		 * apply there, just folded into an INSERT instead of a standalone
-		 * UPDATE statement.
+		 * clause — the exact same rules apply there, just folded into an
+		 * INSERT instead of a standalone UPDATE statement.
 		 * @param AstAssignment[] $assignments
 		 * @param EntityMetadataRecord $metadata
 		 * @param array<string, mixed> $parameters Bound parameters, by reference

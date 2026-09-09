@@ -20,7 +20,6 @@
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstMin;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRange;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRangeDatabase;
-	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRangeTable;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstSubquery;
 	use Quellabs\ObjectQuel\ObjectQuel\Helpers\RangeTableName;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstSum;
@@ -631,7 +630,7 @@
 			
 			// Separate main range (no join property) from ranges that need joins
 			foreach ($ranges as $range) {
-				if (!$range instanceof AstRangeDatabase && !$range instanceof AstRangeTable) {
+				if (!$range instanceof AstRangeDatabase) {
 					continue;
 				}
 
@@ -646,8 +645,7 @@
 				throw new \InvalidArgumentException("No main range found - at least one range must not have a join property");
 			}
 
-			// Start with the main table and its alias. Entity ranges resolve their
-			// table name via metadata; plain-table ranges already carry it literally.
+			// Start with the main table and its alias.
 			$tableName = RangeTableName::resolve($mainRange, $this->entityStore);
 
 			// Convert to SQL
@@ -792,9 +790,7 @@
 				$range = $identifier->getRange();
 				
 				// Only process database ranges, skip in-memory or other range types.
-				// A plain-table range is SQL-backed exactly like an entity range —
-				// see the aggregate mixing check in SemanticAnalyzer.
-				if (!$range instanceof AstRangeDatabase && !$range instanceof AstRangeTable) {
+				if (!$range instanceof AstRangeDatabase) {
 					continue;
 				}
 				

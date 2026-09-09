@@ -203,8 +203,7 @@
 			return array_filter($this->ranges, function ($range) {
 				return
 					!$range instanceof AstRangeDatabase &&
-					!$range instanceof AstRangeDatabaseSubquery &&
-					!$range instanceof AstRangeTable;
+					!$range instanceof AstRangeDatabaseSubquery;
 			});
 		}
 		

@@ -3,13 +3,11 @@
 	namespace Quellabs\ObjectQuel\ObjectQuel;
 
 	use Quellabs\ObjectQuel\Capabilities\PlatformCapabilitiesInterface;
-	use Quellabs\ObjectQuel\DatabaseAdapter\DatabaseAdapter;
 	use Quellabs\ObjectQuel\DatabaseAdapter\SqlIdentifierQuoter;
 	use Quellabs\ObjectQuel\EntityStore;
 	use Quellabs\ObjectQuel\Exception\SemanticException;
 	use Quellabs\ObjectQuel\Execution\Visitors\BuildSqlFromAst;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstDelete;
-	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRangeDatabase;
 	use Quellabs\ObjectQuel\ObjectQuel\Helpers\RangeTableName;
 	use Quellabs\ObjectQuel\ObjectQuel\Helpers\WriteVerbIdentifierResolver;
 	use Quellabs\ObjectQuel\ObjectQuel\Helpers\WriteVerbParameterNormalizer;
@@ -40,20 +38,16 @@
 		private SqlIdentifierQuoter $identifierQuoter;
 		private PlatformCapabilitiesInterface $platform;
 		private SQLSerializer $serializer;
-		private ?DatabaseAdapter $databaseAdapter;
 
 		/**
 		 * QuelToSQLDelete constructor
 		 * @param EntityStore $entityStore
 		 * @param PlatformCapabilitiesInterface $platform
-		 * @param DatabaseAdapter|null $databaseAdapter Live connection for
-		 *        plain-table column validation — see WriteVerbIdentifierResolver::resolve().
 		 */
-		public function __construct(EntityStore $entityStore, PlatformCapabilitiesInterface $platform, ?DatabaseAdapter $databaseAdapter = null) {
+		public function __construct(EntityStore $entityStore, PlatformCapabilitiesInterface $platform) {
 			$this->entityStore = $entityStore;
 			$this->identifierQuoter = new SqlIdentifierQuoter($platform);
 			$this->platform = $platform;
-			$this->databaseAdapter = $databaseAdapter;
 			// Only needs EntityStore (see Serializer's constructor) — built
 			// here so WriteVerbParameterNormalizer denormalizes a WHERE
 			// clause's bound-parameter values exactly like append/replace do.
@@ -70,7 +64,7 @@
 		public function convertToSQL(AstDelete $statement, array &$parameters): string {
 			// The WHERE clause's identifiers need a resolved type/range
 			// before they can compile to SQL.
-			WriteVerbIdentifierResolver::resolve($statement, $this->entityStore, $this->databaseAdapter);
+			WriteVerbIdentifierResolver::resolve($statement, $this->entityStore);
 
 			$range = $statement->getRange();
 
@@ -80,13 +74,9 @@
 			// docblock. `delete` bypasses UnitOfWork entirely, so without
 			// this a raw PHP value (a \DateTime object, a json column's
 			// array, a backed enum) would reach the driver unconverted.
-			// Plain-table ranges have no Column annotations to normalize
-			// against, so this is skipped entirely for that case.
-			if ($range instanceof AstRangeDatabase) {
-				$metadata = $this->entityStore->getMetadata($range->getEntityName());
-				$normalizer = new WriteVerbParameterNormalizer($metadata, $this->serializer, $parameters);
-				$statement->getConditionsOrFail()->accept($normalizer);
-			}
+			$metadata = $this->entityStore->getMetadata($range->getEntityName());
+			$normalizer = new WriteVerbParameterNormalizer($metadata, $this->serializer, $parameters);
+			$statement->getConditionsOrFail()->accept($normalizer);
 
 			$tableName = RangeTableName::resolve($range, $this->entityStore);
 			$builder = new BuildSqlFromAst($this->entityStore, $parameters, 'WHERE', $this->platform);

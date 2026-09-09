@@ -7,7 +7,6 @@
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRange;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRangeDatabase;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRangeJsonSource;
-	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRangeTable;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstReplace;
 	use Quellabs\ObjectQuel\ObjectQuel\Lexer;
 	use Quellabs\ObjectQuel\ObjectQuel\LexerException;
@@ -119,21 +118,14 @@
 		 * <cond>` with no list means "on conflict, overwrite with the row
 		 * that would have been inserted"; see QuelToSQLUpsert.
 		 *
-		 * Works for a plain-table target too (see
-		 * objectquel-plain-table-range-plan.md): the conflict-target check
-		 * against a declared unique/primary-key constraint only runs when
-		 * there's entity metadata to check it against — for a plain-table
-		 * range it's skipped, the same "no live-schema validation" policy
-		 * every other plain-table-range check follows (see
-		 * QuelToSQLUpsert::convertToSQL()'s docblock).
 		 * Not supported for a JSON source range target: on-conflict resolution
 		 * needs a conflict target (a declared unique/primary key), which JSON
-		 * has no schema for (see objectquel-json-append-plan.md).
-		 * @param AstRangeDatabase|AstRangeTable|AstRangeJsonSource $targetRange
+		 * has no schema for.
+		 * @param AstRangeDatabase|AstRangeJsonSource $targetRange
 		 * @return AstReplace|null
 		 * @throws LexerException|ParserException
 		 */
-		private function parseOptionalOnConflict(AstRangeDatabase|AstRangeTable|AstRangeJsonSource $targetRange): ?AstReplace {
+		private function parseOptionalOnConflict(AstRangeDatabase|AstRangeJsonSource $targetRange): ?AstReplace {
 			if ($targetRange instanceof AstRangeJsonSource) {
 				if ($this->lexer->lookahead() === Token::Or) {
 					throw new ParserException("append with 'or replace' on-conflict is not supported for a JSON source range target");

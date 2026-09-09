@@ -33,7 +33,7 @@
 		 */
 		public function __construct(DatabaseAdapter $connection, EntityStore $entityStore, PlatformCapabilitiesInterface $platform) {
 			$this->connection = $connection;
-			$this->compiler = new QuelToSQLDelete($entityStore, $platform, $connection);
+			$this->compiler = new QuelToSQLDelete($entityStore, $platform);
 		}
 
 		/**

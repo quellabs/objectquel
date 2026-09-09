@@ -10,7 +10,6 @@
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRange;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRangeDatabase;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRangeJsonSource;
-	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRangeTable;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRetrieve;
 	
 	/**
@@ -58,8 +57,7 @@
 				return
 					$range instanceof AstRangeDatabase ||
 					$range instanceof AstRangeDatabaseMaterialized ||
-					$range instanceof AstRangeDatabaseTempTable ||
-					$range instanceof AstRangeTable;
+					$range instanceof AstRangeDatabaseTempTable;
 			});
 		}
 		
@@ -206,8 +204,7 @@
 			assert(
 				$range instanceof AstRangeDatabase ||
 				$range instanceof AstRangeDatabaseSubquery ||
-				$range instanceof AstRangeJsonSource ||
-				$range instanceof AstRangeTable
+				$range instanceof AstRangeJsonSource
 			);
 			
 			// Return the optimized query that can be fully executed by the database

@@ -10,7 +10,6 @@
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRangeDatabaseMaterialized;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRangeDatabaseSubquery;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRangeDatabaseTempTable;
-	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRangeTable;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRetrieve;
 	use Quellabs\ObjectQuel\ObjectQuel\Helpers\RangeTableName;
 	use Quellabs\ObjectQuel\Execution\Visitors\BuildSqlFromAst;
@@ -214,8 +213,7 @@
 				// Only use database ranges
 				if (
 					!$range instanceof AstRangeDatabase &&
-					!$range instanceof AstRangeDatabaseSubquery &&
-					!$range instanceof AstRangeTable
+					!$range instanceof AstRangeDatabaseSubquery
 				) {
 					continue;
 				}
@@ -241,8 +239,7 @@
 					$subSQL = $this->convertToSQL($range->getQuery(), $rangeName);
 					$tableNames[] = $this->quoteAsAlias("({$subSQL})", $rangeName);
 				} else {
-					// Entity ranges resolve their table name via metadata; plain-table
-					// ranges already carry it literally (see RangeTableName).
+					// Entity ranges resolve their table name via metadata (see RangeTableName).
 					$tableName = RangeTableName::resolve($range, $this->entityStore);
 
 					// Add the table name and alias to the list for the FROM clause.
@@ -470,8 +467,7 @@
 				if (
 					!$range instanceof AstRangeDatabase &&
 					!$range instanceof AstRangeDatabaseTempTable &&
-					!$range instanceof AstRangeDatabaseMaterialized &&
-					!$range instanceof AstRangeTable
+					!$range instanceof AstRangeDatabaseMaterialized
 				) {
 					continue;
 				}
@@ -506,8 +502,8 @@
 				} elseif ($range instanceof AstRangeDatabaseTempTable) {
 					$result[] = $this->buildJoinClause($joinType, $this->identifierQuoter->quoteIdentifier($range->getTableName()), $rangeName, $joinColumn);
 				} else {
-					// $range is AstRangeDatabase or AstRangeTable here — the earlier
-					// guard already excluded every other AstRange subtype.
+					// $range is AstRangeDatabase here — the earlier guard already
+					// excluded every other AstRange subtype.
 					$tableName = RangeTableName::resolve($range, $this->entityStore);
 					$result[] = $this->buildJoinClause($joinType, $this->identifierQuoter->quoteIdentifier($tableName), $rangeName, $joinColumn);
 				}

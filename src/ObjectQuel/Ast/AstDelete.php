@@ -12,11 +12,10 @@
 	 * bypassing the retrieve pipeline entirely, same as AstAppend/AstReplace.
 	 *
 	 * Single target range only — no `delete` driven by a join across
-	 * multiple ranges (see objectquel-delete-plan.md's scope cut). The
-	 * target must already be a declared, real persisted entity range (not a
-	 * subquery/temp-table/JSON range), same restriction as AstReplace, and
-	 * for the same reason: the mandatory WHERE clause needs a concrete range
-	 * to resolve identifiers against.
+	 * multiple ranges. The target must already be a declared, real persisted
+	 * entity range (not a subquery/temp-table/JSON range), same restriction
+	 * as AstReplace, and for the same reason: the mandatory WHERE clause
+	 * needs a concrete range to resolve identifiers against.
 	 *
 	 * Implements NodeWithRanges (a one-element ranges list, this statement's
 	 * single target) so the existing identifier-resolution visitors
@@ -29,17 +28,17 @@
 	 */
 	class AstDelete extends Ast implements AstStatement, NodeWithConditions, NodeWithRanges {
 
-		private AstRangeDatabase|AstRangeTable $range;
+		private AstRangeDatabase $range;
 
 		private ?AstInterface $conditions;
 
 		/**
 		 * AstDelete constructor.
-		 * @param AstRangeDatabase|AstRangeTable $range Target range — a declared, real
-		 *        persisted entity range or plain-table range
+		 * @param AstRangeDatabase $range Target range — a declared, real
+		 *        persisted entity range
 		 * @param AstInterface $conditions Mandatory WHERE condition
 		 */
-		public function __construct(AstRangeDatabase|AstRangeTable $range, AstInterface $conditions) {
+		public function __construct(AstRangeDatabase $range, AstInterface $conditions) {
 			$this->range = $range;
 			$this->conditions = $conditions;
 			$this->conditions->setParent($this);
@@ -54,7 +53,7 @@
 			$this->conditions?->accept($visitor);
 		}
 
-		public function getRange(): AstRangeDatabase|AstRangeTable {
+		public function getRange(): AstRangeDatabase {
 			return $this->range;
 		}
 
