@@ -6,17 +6,18 @@
 	use Quellabs\ObjectQuel\EntityManager;
 	use Quellabs\ObjectQuel\DatabaseAdapter\DatabaseAdapter;
 	use Quellabs\ObjectQuel\Exception\EntityResolutionException;
+	use Quellabs\ObjectQuel\Execution\ExecutionContext;
 	use Quellabs\ObjectQuel\Planner\ExecutionStageInterface;
-	use Quellabs\ObjectQuel\Capabilities\PlatformCapabilities;
+	use Quellabs\ObjectQuel\Capabilities\PlatformCapabilitiesInterface;
 	use Quellabs\ObjectQuel\Execution\Transformers\PaginationTransformer;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRetrieve;
 	use Quellabs\ObjectQuel\Exception\QuelException;
 	use Quellabs\ObjectQuel\ObjectQuel\QuelToSQLRetrieve;
-	
+
 	/**
 	 * Handles database-specific query execution including SQL conversion and temp tables
 	 */
-	class RetrieveExecutor {
+	class RetrieveExecutor implements StageExecutorInterface {
 		
 		/** @var EntityManager Orchestrator for ObjectQuel queries and ORM */
 		protected EntityManager $entityManager;
@@ -24,8 +25,8 @@
 		/** @var DatabaseAdapter Database connection */
 		protected DatabaseAdapter $connection;
 		
-		/** @var PlatformCapabilities Shows capabilities and nuances of database system */
-		protected PlatformCapabilities $capabilities;
+		/** @var PlatformCapabilitiesInterface Shows capabilities and nuances of database system */
+		protected PlatformCapabilitiesInterface $capabilities;
 		
 		/** @var PaginationTransformer Transformer adds pagination (LIMIT, OFFSET) */
 		protected PaginationTransformer $queryTransformer;
@@ -37,7 +38,7 @@
 		 * Constructor
 		 * @param EntityManager $entityManager
 		 */
-		public function __construct(EntityManager $entityManager, PlatformCapabilities $capabilities) {
+		public function __construct(EntityManager $entityManager, PlatformCapabilitiesInterface $capabilities) {
 			$this->entityManager = $entityManager;
 			$this->connection = $entityManager->getConnection();
 			$this->capabilities = $capabilities;
@@ -47,21 +48,23 @@
 		/**
 		 * Execute a database query stage
 		 * @param ExecutionStageInterface $stage
-		 * @param array<string, mixed> $initialParams
+		 * @param ExecutionContext $context
 		 * @return list<array<string, mixed>>
 		 * @throws QuelException
 		 * @throws EntityResolutionException
 		 */
-		public function execute(ExecutionStageInterface $stage, array $initialParams = []): array {
+		public function execute(ExecutionStageInterface $stage, ExecutionContext $context): array {
+			$initialParams = $context->getParameters();
+
 			// Transform the query
 			$this->queryTransformer->transform($stage->getQuery(), $initialParams);
-			
+
 			// Convert the query to SQL
 			$sql = $this->convertToSQL($stage->getQuery(), $initialParams);
-			
+
 			// Store SQL
 			$this->lastExecutedSql[] = $sql;
-			
+
 			// Execute the SQL query
 			$rs = $this->connection->execute($sql, $initialParams);
 			

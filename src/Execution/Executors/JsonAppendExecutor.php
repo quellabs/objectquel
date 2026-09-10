@@ -2,10 +2,12 @@
 
 	namespace Quellabs\ObjectQuel\Execution\Executors;
 
+	use Quellabs\ObjectQuel\Execution\ExecutionContext;
 	use Quellabs\ObjectQuel\Execution\Helpers\ConditionEvaluator;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstAppend;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstAssignment;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRangeJsonSource;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstStatement;
 	use Quellabs\ObjectQuel\ObjectQuel\QuelResult;
 	use Quellabs\ObjectQuel\Exception\QuelException;
 
@@ -27,17 +29,20 @@
 	 * file writes: lock a `<path>.lock` file, not the target file itself, so
 	 * a plain (unlocked) read of the target elsewhere doesn't block on it.
 	 */
-	class JsonAppendExecutor {
+	class JsonAppendExecutor implements WriteVerbExecutorInterface {
 
 		/**
 		 * Compile (in-memory) and execute an `append to <range> (...)`
 		 * statement targeting a JSON-source range.
-		 * @param AstAppend $statement
-		 * @param array<string, mixed> $parameters
+		 * @param AstStatement $statement
+		 * @param ExecutionContext $context
 		 * @return QuelResult
 		 * @throws QuelException On a missing/invalid target file or a failed write
 		 */
-		public function execute(AstAppend $statement, array $parameters): QuelResult {
+		public function execute(AstStatement $statement, ExecutionContext $context): QuelResult {
+			assert($statement instanceof AstAppend);
+			$parameters = $context->getParameters();
+
 			$range = $statement->getRange();
 			assert($range instanceof AstRangeJsonSource);
 

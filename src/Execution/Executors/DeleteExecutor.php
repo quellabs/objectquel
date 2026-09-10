@@ -7,7 +7,9 @@
 	use Quellabs\ObjectQuel\DatabaseAdapter\DatabaseAdapter;
 	use Quellabs\ObjectQuel\EntityStore;
 	use Quellabs\ObjectQuel\Exception\QuelException;
+	use Quellabs\ObjectQuel\Execution\ExecutionContext;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstDelete;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstStatement;
 	use Quellabs\ObjectQuel\ObjectQuel\QuelResult;
 	use Quellabs\ObjectQuel\ObjectQuel\QuelToSQLDelete;
 
@@ -20,7 +22,7 @@
 	 * map (see objectquel-write-verbs-design.md). No generated PK to report
 	 * (unlike `append`) — a DELETE never creates one.
 	 */
-	class DeleteExecutor {
+	class DeleteExecutor implements WriteVerbExecutorInterface {
 
 		private DatabaseAdapter $connection;
 		private QuelToSQLDelete $compiler;
@@ -38,12 +40,15 @@
 
 		/**
 		 * Compile and execute a `delete <range> where ...` statement.
-		 * @param AstDelete $statement
-		 * @param array<string, mixed> $parameters
+		 * @param AstStatement $statement
+		 * @param ExecutionContext $context
 		 * @return QuelResult
 		 * @throws QuelException On compile or execution failure
 		 */
-		public function execute(AstDelete $statement, array $parameters): QuelResult {
+		public function execute(AstStatement $statement, ExecutionContext $context): QuelResult {
+			assert($statement instanceof AstDelete);
+			$parameters = $context->getParameters();
+
 			// compileSql() takes $parameters by reference — see
 			// ReplaceExecutor::execute()'s equivalent comment. convertToSQL()
 			// doesn't currently mutate $parameters for `delete` (no

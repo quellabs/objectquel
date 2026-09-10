@@ -18,6 +18,7 @@
 		private ?string $constraintName;
 
 		/**
+		 * AlterTablePrimaryKeyState constructor
 		 * @param string[] $columns
 		 * @param string|null $constraintName
 		 */
@@ -27,12 +28,18 @@
 		}
 
 		/**
+		 * Returns the table's current primary-key columns.
 		 * @return string[]
 		 */
 		public function getColumns(): array {
 			return $this->columns;
 		}
 
+		/**
+		 * Returns the constraint name needed to drop the primary key on
+		 * pgsql/sqlsrv, or null where it isn't needed.
+		 * @return string|null
+		 */
 		public function getConstraintName(): ?string {
 			return $this->constraintName;
 		}

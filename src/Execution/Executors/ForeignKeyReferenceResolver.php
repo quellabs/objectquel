@@ -15,6 +15,15 @@
 	 */
 	class ForeignKeyReferenceResolver {
 
+		/**
+		 * Looks up $referencedTable's own primary key to default a column-less
+		 * `references Table` clause to.
+		 * @param DatabaseAdapter $connection
+		 * @param string $referencedTable
+		 * @return string
+		 * @throws QuelException If the table's schema can't be read, has no
+		 *         primary key, or has a composite primary key
+		 */
 		public static function resolveReferencedColumn(DatabaseAdapter $connection, string $referencedTable): string {
 			// getPrimaryKeyColumns() throws its own (non-QuelException) error
 			// when $referencedTable doesn't exist yet (e.g. a self-referencing

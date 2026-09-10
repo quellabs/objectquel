@@ -3,6 +3,7 @@
 	namespace Quellabs\ObjectQuel\Execution;
 	
 	use Quellabs\ObjectQuel\EntityStore;
+	use Quellabs\ObjectQuel\Execution\ExecutionContext;
 	use Quellabs\ObjectQuel\Planner\ExecutionStageInterface;
 	use Quellabs\ObjectQuel\Exception\EntityResolutionException;
 	use Quellabs\ObjectQuel\Execution\Executors\ConstantRetrieveExecutor;
@@ -118,10 +119,10 @@
 						// TempTableStages contribute no rows to intermediate results.
 						$this->tempTableExecutor->execute(
 							$stage,
-							fn(ExecutionPlan $innerPlan) => $this->execute($innerPlan)
+							new ExecutionContext($stage->getStaticParams(), fn(ExecutionPlan $innerPlan) => $this->execute($innerPlan))
 						);
 					} elseif ($stage instanceof ConstantStage) {
-						$intermediateResults[$stage->getName()] = $this->constantExecutor->execute($stage);
+						$intermediateResults[$stage->getName()] = $this->constantExecutor->execute($stage, new ExecutionContext($stage->getStaticParams()));
 					} else {
 						$intermediateResults[$stage->getName()] = $this->executeStage($stage);
 					}
@@ -149,10 +150,12 @@
 		 */
 		private function executeStage(ExecutionStageInterface $stage): array {
 			try {
+				$context = new ExecutionContext($stage->getStaticParams());
+
 				if ($stage->getRange() instanceof AstRangeJsonSource) {
-					return $this->jsonExecutor->execute($stage, $stage->getStaticParams());
+					return $this->jsonExecutor->execute($stage, $context);
 				} else {
-					return $this->databaseExecutor->execute($stage, $stage->getStaticParams());
+					return $this->databaseExecutor->execute($stage, $context);
 				}
 			} catch (QuelException $e) {
 				throw new QuelException("Stage '{$stage->getName()}' failed: {$e->getMessage()}", 'stage_error', 0, $e);

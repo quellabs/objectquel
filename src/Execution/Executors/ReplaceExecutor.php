@@ -7,7 +7,9 @@
 	use Quellabs\ObjectQuel\DatabaseAdapter\DatabaseAdapter;
 	use Quellabs\ObjectQuel\EntityManager;
 	use Quellabs\ObjectQuel\Exception\QuelException;
+	use Quellabs\ObjectQuel\Execution\ExecutionContext;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstReplace;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstStatement;
 	use Quellabs\ObjectQuel\ObjectQuel\QuelResult;
 	use Quellabs\ObjectQuel\ObjectQuel\QuelToSQLReplace;
 
@@ -20,7 +22,7 @@
 	 * map (see objectquel-write-verbs-design.md). No generated PK to report
 	 * (unlike `append`) — an UPDATE never creates one.
 	 */
-	class ReplaceExecutor {
+	class ReplaceExecutor implements WriteVerbExecutorInterface {
 
 		private DatabaseAdapter $connection;
 		private QuelToSQLReplace $compiler;
@@ -42,12 +44,15 @@
 
 		/**
 		 * Compile and execute a `replace <range> (...) where ...` statement.
-		 * @param AstReplace $statement
-		 * @param array<string, mixed> $parameters
+		 * @param AstStatement $statement
+		 * @param ExecutionContext $context
 		 * @return QuelResult
 		 * @throws QuelException|SemanticException On compile or execution failure
 		 */
-		public function execute(AstReplace $statement, array $parameters): QuelResult {
+		public function execute(AstStatement $statement, ExecutionContext $context): QuelResult {
+			assert($statement instanceof AstReplace);
+			$parameters = $context->getParameters();
+
 			// compileSql() takes $parameters by reference, so this local
 			// variable picks up every mutation convertToSQL() makes
 			// (WriteVerbParameterNormalizer's denormalized values, an added

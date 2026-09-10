@@ -21,6 +21,10 @@
 
 		private DatabaseAdapter $connection;
 
+		/**
+		 * DdlRunner constructor
+		 * @param DatabaseAdapter $connection
+		 */
 		public function __construct(DatabaseAdapter $connection) {
 			$this->connection = $connection;
 		}

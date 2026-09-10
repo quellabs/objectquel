@@ -4,6 +4,7 @@
 	
 	use Flow\JSONPath\JSONPath;
 	use Flow\JSONPath\JSONPathException;
+	use Quellabs\ObjectQuel\Execution\ExecutionContext;
 	use Quellabs\ObjectQuel\Execution\Helpers\ConditionEvaluator;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRangeJsonSource;
 	use Quellabs\ObjectQuel\Exception\QuelException;
@@ -12,16 +13,18 @@
 	/**
 	 * Handles JSON file query execution
 	 */
-	class JsonRetrieveExecutor {
+	class JsonRetrieveExecutor implements StageExecutorInterface {
 		
 		/**
 		 * Execute a JSON query and returns the result
 		 * @param ExecutionStageInterface $stage
-		 * @param array<string, mixed> $initialParams
+		 * @param ExecutionContext $context
 		 * @return list<array<string, mixed>>
 		 * @throws QuelException
 		 */
-		public function execute(ExecutionStageInterface $stage, array $initialParams = []): array {
+		public function execute(ExecutionStageInterface $stage, ExecutionContext $context): array {
+			$initialParams = $context->getParameters();
+
 			// Fetch the range
 			$jsonRange = $stage->getRange();
 			

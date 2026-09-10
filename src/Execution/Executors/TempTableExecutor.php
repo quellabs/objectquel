@@ -7,6 +7,8 @@
 	use Quellabs\ObjectQuel\DatabaseAdapter\DDLTypeMapper;
 	use Quellabs\ObjectQuel\DatabaseAdapter\SqlIdentifierQuoter;
 	use Quellabs\ObjectQuel\EntityStore;
+	use Quellabs\ObjectQuel\Execution\ExecutionContext;
+	use Quellabs\ObjectQuel\Planner\ExecutionStageInterface;
 	use Quellabs\ObjectQuel\Planner\TempTableStage;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstIdentifier;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRetrieve;
@@ -52,7 +54,7 @@
 	 *   per-statement/packet size limits (e.g. MySQL's max_allowed_packet) on
 	 *   very large result sets.
 	 */
-	class TempTableExecutor {
+	class TempTableExecutor implements StageExecutorInterface {
 		
 		/**
 		 * Number of rows to insert per batch
@@ -107,19 +109,20 @@
 		}
 		
 		/**
-		 * Execute a TempTableStage.
-		 *
-		 * Runs the inner query through the provided callable (which wraps the full
-		 * decomposition pipeline so JSON stages are handled), materialises the results
-		 * into a temp table, then mutates the stage's AstRangeDatabase so downstream
-		 * SQL generation treats it as an ordinary table reference.
-		 *
-		 * @param TempTableStage $stage The stage to materialise
-		 * @param callable $runner
-		 * @return void
+		 * Execute a TempTableStage: run the inner query through the context's
+		 * stage runner, materialise the results into a temp table, then mutate
+		 * the stage's AstRangeDatabase so downstream SQL generation treats it
+		 * as an ordinary table reference. $stage is narrowed to TempTableStage
+		 * via assert() — PlanExecutor only ever dispatches one here.
+		 * @param ExecutionStageInterface $stage The stage to materialise
+		 * @param ExecutionContext $context Bound query parameters and the stage runner
+		 * @return list<array<string, mixed>> Always empty — see class docblock
 		 * @throws QuelException On execution or DDL failure
 		 */
-		public function execute(TempTableStage $stage, callable $runner): void {
+		public function execute(ExecutionStageInterface $stage, ExecutionContext $context): array {
+			assert($stage instanceof TempTableStage);
+
+			$runner = $context->getStageRunnerOrFail();
 			$range = $stage->getRange();
 			$innerQuery = $stage->getQuery();
 
@@ -137,7 +140,7 @@
 			// INNER JOIN: an empty source means the outer query can produce no rows.
 			// Skip table creation entirely — PlanExecutor will produce an empty result set.
 			if (empty($rows) && $range->isRequired()) {
-				return;
+				return [];
 			}
 			
 			// Infer column schema from result rows when available, or fall back to the
@@ -162,6 +165,8 @@
 			
 			// Register the table name so cleanup() can DROP it later
 			$this->createdTables[] = $tableName;
+
+			return [];
 		}
 		
 		/**
@@ -302,7 +307,7 @@
 		 * max_allowed_packet) on large result sets.
 		 * @param string $tableName
 		 * @param string[] $columns
-		 * @param list<array<string, bool|float|int|string|null>> $rows
+		 * @param list<array<string, mixed>> $rows
 		 * @throws QuelException
 		 */
 		private function insertRows(string $tableName, array $columns, array $rows): void {

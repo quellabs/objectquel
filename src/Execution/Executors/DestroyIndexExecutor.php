@@ -5,7 +5,9 @@
 	use Quellabs\ObjectQuel\Capabilities\PlatformCapabilitiesInterface;
 	use Quellabs\ObjectQuel\DatabaseAdapter\DatabaseAdapter;
 	use Quellabs\ObjectQuel\Exception\QuelException;
+	use Quellabs\ObjectQuel\Execution\ExecutionContext;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstDestroyIndex;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstStatement;
 	use Quellabs\ObjectQuel\ObjectQuel\QuelToSQLCreateIndex;
 	use Quellabs\ObjectQuel\ObjectQuel\QuelToSQLDestroyIndex;
 
@@ -40,7 +42,7 @@
 	 * EXISTS` no-op) it always did: this introspection only ever adds a new
 	 * destroy target, it never intercepts the existing one.
 	 */
-	class DestroyIndexExecutor {
+	class DestroyIndexExecutor implements DdlStatementExecutorInterface {
 
 		/**
 		 * Database connection used to execute the generated DDL, and to
@@ -74,11 +76,14 @@
 
 		/**
 		 * Compile and execute a `destroy Name on Table [if exists]` statement.
-		 * @param AstDestroyIndex $statement
+		 * @param AstStatement $statement
+		 * @param ExecutionContext $context
 		 * @return void
 		 * @throws QuelException On DDL failure
 		 */
-		public function execute(AstDestroyIndex $statement): void {
+		public function execute(AstStatement $statement, ExecutionContext $context): void {
+			assert($statement instanceof AstDestroyIndex);
+
 			$this->ddlRunner->run(
 				$this->compileSql($statement),
 				"Failed to destroy index '{$statement->getIndexName()}' on '{$statement->getTableName()}'",

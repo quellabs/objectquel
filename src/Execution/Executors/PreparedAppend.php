@@ -17,20 +17,38 @@
 		private EntityMetadataRecord $metadata;
 		private mixed $generatedId;
 
+		/**
+		 * PreparedAppend constructor
+		 * @param AstAppend $statement
+		 * @param EntityMetadataRecord $metadata
+		 * @param mixed $generatedId
+		 */
 		public function __construct(AstAppend $statement, EntityMetadataRecord $metadata, mixed $generatedId) {
 			$this->statement = $statement;
 			$this->metadata = $metadata;
 			$this->generatedId = $generatedId;
 		}
 
+		/**
+		 * Returns the (possibly rewritten) append statement.
+		 * @return AstAppend
+		 */
 		public function getStatement(): AstAppend {
 			return $this->statement;
 		}
 
+		/**
+		 * Returns the target entity's metadata.
+		 * @return EntityMetadataRecord
+		 */
 		public function getMetadata(): EntityMetadataRecord {
 			return $this->metadata;
 		}
 
+		/**
+		 * Returns the generated primary key, or null when none was generated.
+		 * @return mixed
+		 */
 		public function getGeneratedId(): mixed {
 			return $this->generatedId;
 		}

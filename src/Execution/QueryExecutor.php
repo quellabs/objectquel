@@ -13,7 +13,7 @@
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstReplace;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstShowIndex;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstStatement;
-	use Quellabs\ObjectQuel\Capabilities\PlatformCapabilities;
+	use Quellabs\ObjectQuel\Capabilities\PlatformCapabilitiesInterface;
 	use Quellabs\ObjectQuel\EntityManager;
 	use Quellabs\ObjectQuel\DatabaseAdapter\DatabaseAdapter;
 	use Quellabs\ObjectQuel\Exception\EntityResolutionException;
@@ -35,7 +35,8 @@
 	use Quellabs\ObjectQuel\Execution\Executors\DeleteExecutor;
 	use Quellabs\ObjectQuel\Execution\Executors\DestroyExecutor;
 	use Quellabs\ObjectQuel\Execution\Executors\DestroyIndexExecutor;
-	use Quellabs\ObjectQuel\Execution\Executors\IndexVisibilityExecutor;
+	use Quellabs\ObjectQuel\Execution\Executors\HideIndexExecutor;
+	use Quellabs\ObjectQuel\Execution\Executors\ShowIndexExecutor;
 	use Quellabs\ObjectQuel\Execution\Executors\JsonRetrieveExecutor;
 	use Quellabs\ObjectQuel\Execution\Executors\ReplaceExecutor;
 	use Quellabs\ObjectQuel\ObjectQuel\DateTimeParameterCoercer;
@@ -58,7 +59,7 @@
 	class QueryExecutor {
 		
 		private EntityManager $entityManager;
-		private PlatformCapabilities $capabilities;
+		private PlatformCapabilitiesInterface $capabilities;
 		private DatabaseAdapter $connection;
 		private PlanExecutor $planExecutor;
 		private QueryOptimizer $optimizer;
@@ -73,7 +74,8 @@
 		private AlterTableExecutor $alterTableExecutor;
 		private DestroyExecutor $destroyExecutor;
 		private DestroyIndexExecutor $destroyIndexExecutor;
-		private IndexVisibilityExecutor $indexVisibilityExecutor;
+		private HideIndexExecutor $hideIndexExecutor;
+		private ShowIndexExecutor $showIndexExecutor;
 		private AppendExecutor $appendExecutor;
 		private ReplaceExecutor $replaceExecutor;
 		private DeleteExecutor $deleteExecutor;
@@ -107,7 +109,8 @@
 			$this->alterTableExecutor = new AlterTableExecutor($this->connection, $this->capabilities);
 			$this->destroyExecutor = new DestroyExecutor($this->connection, $this->capabilities);
 			$this->destroyIndexExecutor = new DestroyIndexExecutor($this->connection, $this->capabilities);
-			$this->indexVisibilityExecutor = new IndexVisibilityExecutor($this->connection, $this->capabilities);
+			$this->hideIndexExecutor = new HideIndexExecutor($this->connection, $this->capabilities);
+			$this->showIndexExecutor = new ShowIndexExecutor($this->connection, $this->capabilities);
 			$this->appendExecutor = new AppendExecutor($this->connection, $entityManager, $this->capabilities, $this->planExecutor);
 			$this->replaceExecutor = new ReplaceExecutor($this->connection, $entityManager, $this->capabilities);
 			$this->deleteExecutor = new DeleteExecutor($this->connection, $entityManager->getEntityStore(), $this->capabilities);
@@ -175,7 +178,9 @@
 				
 				// Parse the input query string into an Abstract Syntax Tree (AST)
 				$ast = $this->parse($query);
-				
+
+				$context = new ExecutionContext($normalizedParameters);
+
 				// DDL statements bypass the retrieve pipeline entirely — none
 				// of it applies to a statement with no rows to return.
 				if (
@@ -188,27 +193,27 @@
 					$ast instanceof AstShowIndex
 				) {
 					match (true) {
-						$ast instanceof AstCreateTable => $this->createTableExecutor->execute($ast),
-						$ast instanceof AstAlterTable => $this->alterTableExecutor->execute($ast),
-						$ast instanceof AstDestroy => $this->destroyExecutor->execute($ast),
-						$ast instanceof AstDestroyIndex => $this->destroyIndexExecutor->execute($ast),
-						$ast instanceof AstHideIndex => $this->indexVisibilityExecutor->executeHide($ast),
-						$ast instanceof AstShowIndex => $this->indexVisibilityExecutor->executeShow($ast),
-						default => $this->createIndexExecutor->execute($ast),
+						$ast instanceof AstCreateTable => $this->createTableExecutor->execute($ast, $context),
+						$ast instanceof AstAlterTable => $this->alterTableExecutor->execute($ast, $context),
+						$ast instanceof AstDestroy => $this->destroyExecutor->execute($ast, $context),
+						$ast instanceof AstDestroyIndex => $this->destroyIndexExecutor->execute($ast, $context),
+						$ast instanceof AstHideIndex => $this->hideIndexExecutor->execute($ast, $context),
+						$ast instanceof AstShowIndex => $this->showIndexExecutor->execute($ast, $context),
+						default => $this->createIndexExecutor->execute($ast, $context),
 					};
 
 					return null;
 				}
-				
+
 				// Write-verb statements bypass the retrieve pipeline entirely too
 				// (no semantic analysis, no identifier resolution — see each
 				// executor's own docblock) but, unlike DDL, do return a QuelResult
 				// (affected-row count and, for append, a generated primary key).
 				if ($ast instanceof AstAppend || $ast instanceof AstReplace || $ast instanceof AstDelete) {
 					return match (true) {
-						$ast instanceof AstAppend => $this->appendExecutor->execute($ast, $normalizedParameters),
-						$ast instanceof AstReplace => $this->replaceExecutor->execute($ast, $normalizedParameters),
-						default => $this->deleteExecutor->execute($ast, $normalizedParameters),
+						$ast instanceof AstAppend => $this->appendExecutor->execute($ast, $context),
+						$ast instanceof AstReplace => $this->replaceExecutor->execute($ast, $context),
+						default => $this->deleteExecutor->execute($ast, $context),
 					};
 				}
 				

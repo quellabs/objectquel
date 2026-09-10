@@ -5,7 +5,9 @@
 	use Quellabs\ObjectQuel\Capabilities\PlatformCapabilitiesInterface;
 	use Quellabs\ObjectQuel\DatabaseAdapter\DatabaseAdapter;
 	use Quellabs\ObjectQuel\Exception\QuelException;
+	use Quellabs\ObjectQuel\Execution\ExecutionContext;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstCreateIndex;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstStatement;
 	use Quellabs\ObjectQuel\ObjectQuel\QuelToSQLCreateIndex;
 
 	/**
@@ -23,7 +25,7 @@
 	 * the base table's primary key column for sqlite's FTS5
 	 * content_rowid) — resolved here, via the connection, before compiling.
 	 */
-	class CreateIndexExecutor {
+	class CreateIndexExecutor implements DdlStatementExecutorInterface {
 
 		/**
 		 * Database connection used to execute the generated DDL
@@ -56,13 +58,16 @@
 		/**
 		 * Compile and execute an `index [unique|fulltext] on Table is
 		 * index_name (...)` statement.
-		 * @param AstCreateIndex $statement
+		 * @param AstStatement $statement
+		 * @param ExecutionContext $context
 		 * @return void
 		 * @throws QuelException On DDL failure, or if a fulltext index's
 		 *         required schema prerequisite (sqlsrv: an existing
 		 *         unique/primary index; sqlite: a primary key) is missing
 		 */
-		public function execute(AstCreateIndex $statement): void {
+		public function execute(AstStatement $statement, ExecutionContext $context): void {
+			assert($statement instanceof AstCreateIndex);
+
 			$this->ddlRunner->run(
 				$this->compileSql($statement),
 				"Failed to create index '{$statement->getIndexName()}' on '{$statement->getTableName()}'",

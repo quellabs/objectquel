@@ -2,11 +2,12 @@
 	
 	namespace Quellabs\ObjectQuel\Execution\Executors;
 	
-	use Quellabs\ObjectQuel\Capabilities\PlatformCapabilities;
+	use Quellabs\ObjectQuel\Capabilities\PlatformCapabilitiesInterface;
 	use Quellabs\ObjectQuel\EntityManager;
 	use Quellabs\ObjectQuel\Exception\EntityResolutionException;
 	use Quellabs\ObjectQuel\Exception\QuelException;
 	use Quellabs\ObjectQuel\Exception\TransformationException;
+	use Quellabs\ObjectQuel\Execution\ExecutionContext;
 	use Quellabs\ObjectQuel\Planner\ExecutionStageInterface;
 	use Quellabs\ObjectQuel\Planner\QueryOptimizer;
 	
@@ -26,9 +27,9 @@
 		/**
 		 * DryRunRetrieveExecutor
 		 * @param EntityManager $entityManager
-		 * @param PlatformCapabilities $capabilities
+		 * @param PlatformCapabilitiesInterface $capabilities
 		 */
-		public function __construct(EntityManager $entityManager, PlatformCapabilities $capabilities) {
+		public function __construct(EntityManager $entityManager, PlatformCapabilitiesInterface $capabilities) {
 			parent::__construct($entityManager, $capabilities);
 			$this->queryOptimizer = new QueryOptimizer($this->entityManager, $this->capabilities);
 		}
@@ -37,13 +38,14 @@
 		 * Optimizes and transforms the query, captures the generated SQL,
 		 * and returns an empty result set without touching the database.
 		 * @param ExecutionStageInterface $stage
-		 * @param array<string, mixed> $initialParams
+		 * @param ExecutionContext $context
 		 * @return list<array<string, mixed>> Always returns an empty array
 		 * @throws EntityResolutionException
 		 * @throws QuelException
 		 * @throws TransformationException
 		 */
-		public function execute(ExecutionStageInterface $stage, array $initialParams = []): array {
+		public function execute(ExecutionStageInterface $stage, ExecutionContext $context): array {
+			$initialParams = $context->getParameters();
 			$this->queryOptimizer->transform($stage->getQuery(), $initialParams);
 			$this->queryTransformer->transform($stage->getQuery(), $initialParams);
 			$this->capturedSql[] = $this->convertToSQL($stage->getQuery(), $initialParams);

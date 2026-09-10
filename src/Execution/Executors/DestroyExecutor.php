@@ -5,7 +5,9 @@
 	use Quellabs\ObjectQuel\Capabilities\PlatformCapabilitiesInterface;
 	use Quellabs\ObjectQuel\DatabaseAdapter\DatabaseAdapter;
 	use Quellabs\ObjectQuel\Exception\QuelException;
+	use Quellabs\ObjectQuel\Execution\ExecutionContext;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstDestroy;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstStatement;
 	use Quellabs\ObjectQuel\ObjectQuel\QuelToSQLDestroy;
 
 	/**
@@ -20,7 +22,7 @@
 	 * Bypasses the retrieve pipeline entirely — none of it applies to a DDL
 	 * statement with no rows to return.
 	 */
-	class DestroyExecutor {
+	class DestroyExecutor implements DdlStatementExecutorInterface {
 
 		/**
 		 * Database connection used to execute the generated DDL
@@ -46,11 +48,14 @@
 
 		/**
 		 * Compile and execute a `destroy [temporary] Name [if exists]` statement.
-		 * @param AstDestroy $statement
+		 * @param AstStatement $statement
+		 * @param ExecutionContext $context
 		 * @return void
 		 * @throws QuelException On DDL failure
 		 */
-		public function execute(AstDestroy $statement): void {
+		public function execute(AstStatement $statement, ExecutionContext $context): void {
+			assert($statement instanceof AstDestroy);
+
 			foreach ($this->compileSql($statement) as $sql) {
 				// execute() swallows the exception and returns null on failure
 				// rather than throwing (same as CreateTableExecutor).

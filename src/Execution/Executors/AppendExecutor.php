@@ -11,12 +11,14 @@
 	use Quellabs\ObjectQuel\EntityManager;
 	use Quellabs\ObjectQuel\EntityStore;
 	use Quellabs\ObjectQuel\Exception\QuelException;
+	use Quellabs\ObjectQuel\Execution\ExecutionContext;
 	use Quellabs\ObjectQuel\Execution\PlanExecutor;
 	use Quellabs\ObjectQuel\Metadata\EntityMetadataRecord;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstAppend;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstAssignment;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstParameter;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRangeJsonSource;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstStatement;
 	use Quellabs\ObjectQuel\ObjectQuel\CompiledAppendSql;
 	use Quellabs\ObjectQuel\ObjectQuel\Helpers\WriteVerbParameterNormalizer;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRetrieve;
@@ -45,7 +47,7 @@
 	 * of the above — it never reaches QuelToSQLAppend/SQL at all (see
 	 * objectquel-json-append-plan.md).
 	 */
-	class AppendExecutor {
+	class AppendExecutor implements WriteVerbExecutorInterface {
 
 		/**
 		 * Rows per batch for planner-routed insert-from-select (see
@@ -98,15 +100,18 @@
 
 		/**
 		 * Compile and execute an `append to <range> (...)` statement.
-		 * @param AstAppend $statement
-		 * @param array<string, mixed> $parameters
+		 * @param AstStatement $statement
+		 * @param ExecutionContext $context
 		 * @return QuelResult
 		 * @throws QuelException On compile or execution failure
 		 * @throws \ReflectionException|SemanticException
 		 */
-		public function execute(AstAppend $statement, array $parameters): QuelResult {
+		public function execute(AstStatement $statement, ExecutionContext $context): QuelResult {
+			assert($statement instanceof AstAppend);
+			$parameters = $context->getParameters();
+
 			if ($statement->getRange() instanceof AstRangeJsonSource) {
-				return $this->jsonAppendExecutor->execute($statement, $parameters);
+				return $this->jsonAppendExecutor->execute($statement, $context);
 			}
 
 			if ($statement->isInsertFromSelect()) {

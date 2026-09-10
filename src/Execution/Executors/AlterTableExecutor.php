@@ -14,6 +14,8 @@
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstAlterTable;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstCreateIndex;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstDestroyIndex;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstStatement;
+	use Quellabs\ObjectQuel\Execution\ExecutionContext;
 	use Quellabs\ObjectQuel\ObjectQuel\QuelToSQLAlter;
 
 	/**
@@ -51,7 +53,7 @@
 	 * separate `$this->execute()` calls already would (see
 	 * objectquel-index-clause-design.md, decision 4).
 	 */
-	class AlterTableExecutor {
+	class AlterTableExecutor implements DdlStatementExecutorInterface {
 
 		private DatabaseAdapter $connection;
 
@@ -81,12 +83,15 @@
 
 		/**
 		 * Compile and execute an `alter Name (op {, op})` statement.
-		 * @param AstAlterTable $statement
+		 * @param AstStatement $statement
+		 * @param ExecutionContext $context
 		 * @return void
 		 * @throws QuelException On DDL failure, or if a sub-operation isn't
 		 *         representable on the connected engine
 		 */
-		public function execute(AstAlterTable $statement): void {
+		public function execute(AstStatement $statement, ExecutionContext $context): void {
+			assert($statement instanceof AstAlterTable);
+
 			$this->ddlRunner->runTransactionally(
 				$this->compileSql($statement),
 				$this->platform,
@@ -119,21 +124,29 @@
 				$primaryKeyState->getConstraintName()
 			);
 
+			return array_merge($statements, $this->compileIndexOperationsSql($statement));
+		}
+
+		/**
+		 * Compiles the SQL for this statement's add/drop index sub-operations,
+		 * delegating to CreateIndexExecutor/DestroyIndexExecutor's own compileSql().
+		 * @param AstAlterTable $statement
+		 * @return list<string>
+		 * @throws QuelException If a sub-operation isn't representable on
+		 *         the connected engine
+		 */
+		private function compileIndexOperationsSql(AstAlterTable $statement): array {
+			$statements = [];
+
 			foreach ($statement->getOperations() as $operation) {
 				if ($operation instanceof AstAlterAddIndex) {
-					$statements = [
-						...$statements,
-						...$this->createIndexExecutor->compileSql(AstCreateIndex::fromEntry($statement->getTableName(), $operation)),
-					];
+					$statements[] = $this->createIndexExecutor->compileSql(AstCreateIndex::fromEntry($statement->getTableName(), $operation));
 				} elseif ($operation instanceof AstAlterDropIndex) {
-					$statements = [
-						...$statements,
-						...$this->destroyIndexExecutor->compileSql(new AstDestroyIndex($operation->getIndexName(), $statement->getTableName())),
-					];
+					$statements[] = $this->destroyIndexExecutor->compileSql(new AstDestroyIndex($operation->getIndexName(), $statement->getTableName()));
 				}
 			}
 
-			return $statements;
+			return array_merge([], ...$statements);
 		}
 
 		/**
@@ -164,6 +177,12 @@
 			return $resolved;
 		}
 
+		/**
+		 * Whether $statement contains a `primary key (...)`/`drop primary key`
+		 * sub-operation, which needs resolvePrimaryKeyState()'s schema lookup.
+		 * @param AstAlterTable $statement
+		 * @return bool
+		 */
 		private function needsPrimaryKeyState(AstAlterTable $statement): bool {
 			foreach ($statement->getOperations() as $operation) {
 				if ($operation instanceof AstAlterSetPrimaryKey || $operation instanceof AstAlterDropPrimaryKey) {

@@ -6,8 +6,10 @@
 	use Quellabs\ObjectQuel\DatabaseAdapter\DatabaseAdapter;
 	use Quellabs\ObjectQuel\DatabaseAdapter\SqlIdentifierQuoter;
 	use Quellabs\ObjectQuel\Exception\QuelException;
+	use Quellabs\ObjectQuel\Execution\ExecutionContext;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstCreateIndex;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstCreateTable;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstStatement;
 	use Quellabs\ObjectQuel\ObjectQuel\QuelToSQLCreate;
 
 	/**
@@ -42,7 +44,7 @@
 	 * dropped on a later failure. Left out of scope: narrow, session-scoped,
 	 * lower blast radius than the permanent-table case this guards against.
 	 */
-	class CreateTableExecutor {
+	class CreateTableExecutor implements DdlStatementExecutorInterface {
 
 		private DatabaseAdapter $connection;
 
@@ -76,11 +78,14 @@
 
 		/**
 		 * Compile and execute a `create [temporary] Name (...)` statement.
-		 * @param AstCreateTable $statement
+		 * @param AstStatement $statement
+		 * @param ExecutionContext $context
 		 * @return void
 		 * @throws QuelException On DDL failure
 		 */
-		public function execute(AstCreateTable $statement): void {
+		public function execute(AstStatement $statement, ExecutionContext $context): void {
+			assert($statement instanceof AstCreateTable);
+
 			$statements = $this->compileSql($statement);
 			$failureMessage = "Failed to create table '{$statement->getTableName()}'";
 			$errorCode = 'table_creation_error';
