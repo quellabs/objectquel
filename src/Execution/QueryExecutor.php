@@ -9,7 +9,9 @@
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstDelete;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstDestroy;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstDestroyIndex;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstHideIndex;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstReplace;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstShowIndex;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstStatement;
 	use Quellabs\ObjectQuel\Capabilities\PlatformCapabilities;
 	use Quellabs\ObjectQuel\EntityManager;
@@ -33,6 +35,7 @@
 	use Quellabs\ObjectQuel\Execution\Executors\DeleteExecutor;
 	use Quellabs\ObjectQuel\Execution\Executors\DestroyExecutor;
 	use Quellabs\ObjectQuel\Execution\Executors\DestroyIndexExecutor;
+	use Quellabs\ObjectQuel\Execution\Executors\IndexVisibilityExecutor;
 	use Quellabs\ObjectQuel\Execution\Executors\JsonRetrieveExecutor;
 	use Quellabs\ObjectQuel\Execution\Executors\ReplaceExecutor;
 	use Quellabs\ObjectQuel\ObjectQuel\DateTimeParameterCoercer;
@@ -70,6 +73,7 @@
 		private AlterTableExecutor $alterTableExecutor;
 		private DestroyExecutor $destroyExecutor;
 		private DestroyIndexExecutor $destroyIndexExecutor;
+		private IndexVisibilityExecutor $indexVisibilityExecutor;
 		private AppendExecutor $appendExecutor;
 		private ReplaceExecutor $replaceExecutor;
 		private DeleteExecutor $deleteExecutor;
@@ -103,6 +107,7 @@
 			$this->alterTableExecutor = new AlterTableExecutor($this->connection, $this->capabilities);
 			$this->destroyExecutor = new DestroyExecutor($this->connection, $this->capabilities);
 			$this->destroyIndexExecutor = new DestroyIndexExecutor($this->connection, $this->capabilities);
+			$this->indexVisibilityExecutor = new IndexVisibilityExecutor($this->connection, $this->capabilities);
 			$this->appendExecutor = new AppendExecutor($this->connection, $entityManager, $this->capabilities, $this->planExecutor);
 			$this->replaceExecutor = new ReplaceExecutor($this->connection, $entityManager, $this->capabilities);
 			$this->deleteExecutor = new DeleteExecutor($this->connection, $entityManager->getEntityStore(), $this->capabilities);
@@ -178,13 +183,17 @@
 					$ast instanceof AstAlterTable ||
 					$ast instanceof AstDestroy ||
 					$ast instanceof AstDestroyIndex ||
-					$ast instanceof AstCreateIndex
+					$ast instanceof AstCreateIndex ||
+					$ast instanceof AstHideIndex ||
+					$ast instanceof AstShowIndex
 				) {
 					match (true) {
 						$ast instanceof AstCreateTable => $this->createTableExecutor->execute($ast),
 						$ast instanceof AstAlterTable => $this->alterTableExecutor->execute($ast),
 						$ast instanceof AstDestroy => $this->destroyExecutor->execute($ast),
 						$ast instanceof AstDestroyIndex => $this->destroyIndexExecutor->execute($ast),
+						$ast instanceof AstHideIndex => $this->indexVisibilityExecutor->executeHide($ast),
+						$ast instanceof AstShowIndex => $this->indexVisibilityExecutor->executeShow($ast),
 						default => $this->createIndexExecutor->execute($ast),
 					};
 
@@ -360,7 +369,7 @@
 			
 			// Ensure the parsed AST represents a statement type this executor knows how to run
 			if (!$ast instanceof AstStatement) {
-				throw new QuelException("Invalid query type: expected retrieve, create, alter, destroy, index, or write-verb (append/replace/delete) operation");
+				throw new QuelException("Invalid query type: expected retrieve, create, alter, destroy, index, hide, show, or write-verb (append/replace/delete) operation");
 			}
 			
 			// The AST is now fully validated

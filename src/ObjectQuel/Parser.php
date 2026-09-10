@@ -10,6 +10,7 @@
 	use Quellabs\ObjectQuel\ObjectQuel\Rules\CreateTable;
 	use Quellabs\ObjectQuel\ObjectQuel\Rules\Delete;
 	use Quellabs\ObjectQuel\ObjectQuel\Rules\Destroy;
+	use Quellabs\ObjectQuel\ObjectQuel\Rules\IndexVisibility;
 	use Quellabs\ObjectQuel\ObjectQuel\Rules\Range;
 	use Quellabs\ObjectQuel\ObjectQuel\Rules\Replace;
 	use Quellabs\ObjectQuel\ObjectQuel\Rules\Retrieve;
@@ -23,6 +24,7 @@
 		private CreateIndex $createIndexRule;
 		private AlterTable $alterTableRule;
 		private Destroy $destroyRule;
+		private IndexVisibility $indexVisibilityRule;
 		private Append $appendRule;
 		private Replace $replaceRule;
 		private Delete $deleteRule;
@@ -40,6 +42,7 @@
             $this->createIndexRule = new CreateIndex($lexer);
             $this->alterTableRule = new AlterTable($lexer);
             $this->destroyRule = new Destroy($lexer);
+            $this->indexVisibilityRule = new IndexVisibility($lexer);
             $this->appendRule = new Append($lexer);
             $this->replaceRule = new Replace($lexer);
             $this->deleteRule = new Delete($lexer);
@@ -64,9 +67,9 @@
 		    // Get the next token without changing the position in the lexer.
 			    $token = $this->lexer->peek();
 
-			    // create/destroy/index/replace/delete have no token type (see
-			    // Lexer::peekKeyword()) so — unlike Retrieve/Append — they're
-			    // recognized by text.
+			    // create/destroy/hide/show/index/replace/delete have no token
+			    // type (see Lexer::peekKeyword()) so — unlike Retrieve/Append —
+			    // they're recognized by text.
 			    if ($token->getType() === Token::Retrieve) {
 				    $queries[] = $this->retrieveRule->parse($directives, $ranges);
 			    } elseif ($token->getType() === Token::Append) {
@@ -81,6 +84,10 @@
 				    $queries[] = $this->alterTableRule->parse();
 			    } elseif ($this->lexer->peekKeyword('destroy')) {
 				    $queries[] = $this->destroyRule->parse();
+			    } elseif ($this->lexer->peekKeyword('hide')) {
+				    $queries[] = $this->indexVisibilityRule->parseHide();
+			    } elseif ($this->lexer->peekKeyword('show')) {
+				    $queries[] = $this->indexVisibilityRule->parseShow();
 			    } elseif ($this->lexer->peekKeyword('index')) {
 				    // Ranges ahead of `index` (if any) are simply unused,
 				    // same as `create` above.

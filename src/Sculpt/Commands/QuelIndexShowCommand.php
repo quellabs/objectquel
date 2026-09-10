@@ -2,13 +2,13 @@
 	
 	namespace Quellabs\ObjectQuel\Sculpt\Commands;
 	
-	use Quellabs\ObjectQuel\Capabilities\PlatformCapabilities;
 	use Quellabs\ObjectQuel\EntityStore;
 	use Quellabs\ObjectQuel\Sculpt\ServiceProvider;
 	use Quellabs\Sculpt\ConfigurationManager;
 	use Quellabs\Sculpt\Console\ConsoleInput;
 	use Quellabs\Sculpt\Console\ConsoleOutput;
 	use Quellabs\ObjectQuel\Exception\EntityResolutionException;
+	use Quellabs\ObjectQuel\Exception\QuelException;
 	
 	/**
 	 * QuelIndexShowCommand - Makes a database index visible to the query optimizer
@@ -83,9 +83,9 @@ HELP;
 		 * Workflow:
 		 *   1. Resolve entity name and index name (from args or interactive prompt).
 		 *   2. Verify the entity exists in the store and resolve it to a table name.
-		 *   3. Confirm the target database dialect supports invisible indexes.
-		 *   4. Confirm the named index exists on that table.
-		 *   5. Issue the dialect-appropriate ALTER TABLE DDL.
+		 *   3. Run the equivalent `show Name on Table` ObjectQuel statement — a
+		 *      nonexistent index or table surfaces as a QuelException from the
+		 *      DDL itself, no separate pre-check needed.
 		 *
 		 * @param ConfigurationManager $config Provides access to CLI arguments
 		 * @return int 0 on success, 1 on any error
@@ -124,41 +124,19 @@ HELP;
 			// Translate the entity class name to its underlying database table
 			/** @var ServiceProvider $provider */
 			$provider = $this->provider;
-			$databaseAdapter = $provider->getDatabaseAdapter();
-			$capabilities = new PlatformCapabilities($databaseAdapter);
-			
-			// Invisible indexes are a MySQL/MariaDB-only feature
-			if (!$capabilities->supportsIndexHiding()) {
-				$this->output->error("Invisible indexes are not supported.");
+			$metadata = $this->getEntityStore()->getMetadata($fullEntityName);
+
+			// Run the actual ObjectQuel statement — same executeQuery() entry
+			// point any other caller uses, not a hand-built ALTER TABLE string.
+			// A nonexistent index/table or an unsupported dialect surfaces here
+			// as a QuelException; no separate existence/support pre-check.
+			try {
+				$provider->getEntityManager()->executeQuery("show {$indexName} on {$metadata->tableName}");
+			} catch (QuelException $e) {
+				$this->output->error($e->getMessage());
 				return 1;
 			}
-			
-			// Guard against typos: confirm the index actually exists before issuing DDL
-			// Guard against typos: confirm the index actually exists before issuing DDL
-			$entityStore = $this->getEntityStore();
-			$metadata = $entityStore->getMetadata($fullEntityName);
-			$indexes = $databaseAdapter->getIndexes($metadata->tableName);
-			
-			if (!array_key_exists($indexName, $indexes)) {
-				$this->output->error("Index '{$indexName}' does not exist on table '{$metadata->tableName}'.");
-				return 1;
-			}
-			
-			// Each dialect uses different syntax to restore an index to optimizer visibility:
-			//   MySQL   → VISIBLE      (standard SQL extension)
-			//   MariaDB → NOT IGNORED  (MariaDB-specific terminology)
-			$keyword = $capabilities->getIndexVisibilityKeywords()['visible'];
-			$sql = "ALTER TABLE `{$metadata->tableName}` ALTER INDEX `{$indexName}` {$keyword}";
-			
-			// Execute the query
-			$result = $databaseAdapter->execute($sql);
-			
-			// If the call failed, output an error
-			if ($result === null) {
-				$this->output->error("Failed to make index visible: " . $databaseAdapter->getLastErrorMessage());
-				return 1;
-			}
-			
+
 			// Success
 			$this->output->success("Index '{$indexName}' on table '{$metadata->tableName}' is now visible to the optimizer.");
 			return 0;

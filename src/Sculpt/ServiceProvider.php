@@ -5,18 +5,31 @@
 	use Cake\Database\Connection;
 	use Quellabs\Support\ComposerUtils;
 	use Quellabs\ObjectQuel\DatabaseAdapter\DatabaseAdapter;
+	use Quellabs\ObjectQuel\EntityManager;
 	use Quellabs\Sculpt\Application;
 	use Quellabs\ObjectQuel\Configuration;
-	
+
 	/**
 	 * ObjectQuel service provider for the Sculpt framework
 	 */
 	class ServiceProvider extends \Quellabs\Sculpt\ServiceProvider {
-		
+
+		/**
+		 * @var Connection|null The underlying CakePHP connection, shared by
+		 *      getDatabaseAdapter() and getEntityManager() so a command
+		 *      requesting both doesn't open two live connections
+		 */
+		private ?Connection $connection = null;
+
 		/**
 		 * @var DatabaseAdapter|null Database adapter
 		 */
 		private ?DatabaseAdapter $adapter = null;
+
+		/**
+		 * @var EntityManager|null Entity manager
+		 */
+		private ?EntityManager $entityManager = null;
 		
 		/**
 		 * Register all ObjectQuel commands with the Sculpt application
@@ -105,22 +118,29 @@
 		 * @return DatabaseAdapter The database adapter instance
 		 */
 		public function getDatabaseAdapter(): DatabaseAdapter {
-			// Return existing instance if already created (singleton behavior)
-			if ($this->adapter !== null) {
-				return $this->adapter;
-			}
-			
-			// Build the connection configuration from config file and defaults
-			$config = $this->buildConnectionConfig();
-			
-			// Create and cache the connection instance
-			$connection = new Connection($config);
-			
-			// Create a new database adapter with connection
-			$this->adapter = new DatabaseAdapter($connection);
-			
-			// Return the singleton instance
-			return $this->adapter;
+			return $this->adapter ??= new DatabaseAdapter($this->getConnection());
+		}
+
+		/**
+		 * Returns an EntityManager wired to the same connection
+		 * getDatabaseAdapter() uses, using lazy initialization. Lets a
+		 * command run an ObjectQuel query string directly (via
+		 * executeQuery()) instead of driving the parser/compiler/executor
+		 * classes itself.
+		 * @return EntityManager
+		 * @throws \Quellabs\AnnotationReader\Exception\AnnotationReaderException
+		 */
+		public function getEntityManager(): EntityManager {
+			return $this->entityManager ??= new EntityManager($this->getConfiguration(), $this->getConnection());
+		}
+
+		/**
+		 * Returns the underlying CakePHP connection, built once from config
+		 * file and defaults and shared by getDatabaseAdapter()/getEntityManager().
+		 * @return Connection
+		 */
+		private function getConnection(): Connection {
+			return $this->connection ??= new Connection($this->buildConnectionConfig());
 		}
 		
 		/**
