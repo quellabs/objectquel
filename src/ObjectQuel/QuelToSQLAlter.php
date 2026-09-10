@@ -234,7 +234,7 @@
 
 			$statements = [
 				sprintf('ALTER TABLE %s ALTER COLUMN %s TYPE %s USING %s::%s', $table, $quotedColumn, $type, $quotedColumn, $type),
-				sprintf('ALTER TABLE %s ALTER COLUMN %s %s NOT NULL', $table, $quotedColumn, $column->isNotNull() ? 'SET' : 'DROP'),
+				sprintf('ALTER TABLE %s ALTER COLUMN %s %s NOT NULL', $table, $quotedColumn, !$column->isNullable() ? 'SET' : 'DROP'),
 			];
 
 			$statements[] = $column->isIdentity()
@@ -264,7 +264,7 @@
 			}
 
 			$type = $this->ddlTypeMapper->getTempTableColumnType($column->toColumnDefinitionArray());
-			$nullability = $column->isNotNull() ? 'NOT NULL' : 'NULL';
+			$nullability = !$column->isNullable() ? 'NOT NULL' : 'NULL';
 
 			return sprintf(
 				'ALTER TABLE %s ALTER COLUMN %s %s %s',
@@ -446,16 +446,16 @@
 		/**
 		 * Renders a full column definition (type + NOT NULL + identity) via
 		 * DDLTypeMapper, the same per-dialect renderer `create` uses. PK
-		 * membership never folds into $notNull here the way QuelToSQLCreate
-		 * does — `add`/`retype` never implicitly make a column part of the
-		 * primary key; that's always a separate, explicit
+		 * membership never folds into the NOT NULL-ness here the way
+		 * QuelToSQLCreate does — `add`/`retype` never implicitly make a
+		 * column part of the primary key; that's always a separate, explicit
 		 * `primary key (...)` sub-operation.
 		 */
 		private function renderColumnDefinition(AstColumnDefinition $column): string {
 			return $this->ddlTypeMapper->renderColumnDefinition(
 				$this->identifierQuoter->quoteIdentifier($column->getName()),
 				$column->toColumnDefinitionArray(),
-				$column->isNotNull(),
+				!$column->isNullable(),
 				$column->isIdentity()
 			);
 		}

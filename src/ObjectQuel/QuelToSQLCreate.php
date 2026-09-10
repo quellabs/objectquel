@@ -82,7 +82,7 @@
 				fn($column) => $this->ddlTypeMapper->renderColumnDefinition(
 					$this->identifierQuoter->quoteIdentifier($column->getName()),
 					$column->toColumnDefinitionArray(),
-					$column->isNotNull() || in_array($column->getName(), $primaryKeyColumns, true),
+					!$column->isNullable() || in_array($column->getName(), $primaryKeyColumns, true),
 					$column->isIdentity()
 				),
 				$statement->getColumns()

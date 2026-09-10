@@ -50,9 +50,9 @@
 			}
 
 			[$limit, $precision, $scale] = self::parseOptionalTypeArguments($lexer);
-			[$notNull, $identity] = self::parseColumnConstraints($lexer);
+			[$nullable, $identity] = self::parseColumnConstraints($lexer);
 
-			return new AstColumnDefinition($name, $type, $limit, $precision, $scale, $unsigned, $notNull, $identity);
+			return new AstColumnDefinition($name, $type, $limit, $precision, $scale, $unsigned, $nullable, $identity);
 		}
 
 		/**
@@ -106,27 +106,24 @@
 
 		/**
 		 * Parse the constraint keywords following a column's type: any combination
-		 * of `not null`, `null`, `identity`, in any order. `unsigned` is not parsed
-		 * here — it precedes the type name instead (see parseColumnType()).
+		 * of `nullable`, `identity`, in any order. Columns are NOT NULL by default —
+		 * `create`/`alter` deliberately don't read like raw SQL DDL (nullable unless
+		 * `not null` is written); `nullable` opts a column out of that default
+		 * instead, matching @Orm\Column's `nullable` parameter. `unsigned` is not
+		 * parsed here — it precedes the type name instead (see parseColumnType()).
 		 * `primary key` is not a column-level constraint either — see
 		 * PrimaryKeyClause.
 		 * @param Lexer $lexer
-		 * @return array{0: bool, 1: bool} [notNull, identity]
+		 * @return array{0: bool, 1: bool} [nullable, identity]
 		 * @throws LexerException
 		 */
 		private static function parseColumnConstraints(Lexer $lexer): array {
-			$notNull = false;
+			$nullable = false;
 			$identity = false;
 
 			while (true) {
-				if ($lexer->optionalMatch(Token::Not)) {
-					$lexer->match(Token::Null);
-					$notNull = true;
-					continue;
-				}
-
-				if ($lexer->optionalMatch(Token::Null)) {
-					// Explicit 'null' is a no-op (the default); consume and move on.
+				if ($lexer->optionalMatchKeyword('nullable')) {
+					$nullable = true;
 					continue;
 				}
 
@@ -138,6 +135,6 @@
 				break;
 			}
 
-			return [$notNull, $identity];
+			return [$nullable, $identity];
 		}
 	}

@@ -8,8 +8,11 @@
 	 * A single column definition inside `create [temporary] Name (...)`: a
 	 * name, an abstract type (the @Orm\Column vocabulary — see
 	 * DatabaseAdapter\TypeMapper), optional limit/precision/scale, and the
-	 * minimal constraint set supported (`not null`, `identity`). No nested
-	 * AstInterface children.
+	 * minimal constraint set supported (`nullable`, `identity`). Columns are
+	 * NOT NULL by default, matching @Orm\Column's `nullable` parameter — the
+	 * `nullable` keyword opts a column out of that default, rather than
+	 * `create`/`alter` reading like raw SQL DDL (nullable-by-default unless
+	 * `not null` is written). No nested AstInterface children.
 	 *
 	 * Primary key is not a per-column constraint here — it's declared via a
 	 * table-level `primary key (...)` clause instead (see
@@ -24,7 +27,7 @@
 		private ?int $precision;
 		private ?int $scale;
 		private bool $unsigned;
-		private bool $notNull;
+		private bool $nullable;
 		private bool $identity;
 
 		/**
@@ -35,7 +38,7 @@
 		 * @param int|null $precision Optional precision (decimal)
 		 * @param int|null $scale Optional scale (decimal)
 		 * @param bool $unsigned Whether the column is unsigned
-		 * @param bool $notNull Whether the column rejects NULL values
+		 * @param bool $nullable Whether the column accepts NULL values (default: false, i.e. NOT NULL)
 		 * @param bool $identity Whether the column auto-increments
 		 */
 		public function __construct(
@@ -45,7 +48,7 @@
 			?int $precision = null,
 			?int $scale = null,
 			bool $unsigned = false,
-			bool $notNull = false,
+			bool $nullable = false,
 			bool $identity = false
 		) {
 			$this->name = $name;
@@ -54,7 +57,7 @@
 			$this->precision = $precision;
 			$this->scale = $scale;
 			$this->unsigned = $unsigned;
-			$this->notNull = $notNull;
+			$this->nullable = $nullable;
 			$this->identity = $identity;
 		}
 
@@ -86,8 +89,8 @@
 			return $this->unsigned;
 		}
 
-		public function isNotNull(): bool {
-			return $this->notNull;
+		public function isNullable(): bool {
+			return $this->nullable;
 		}
 
 		public function isIdentity(): bool {
@@ -119,7 +122,7 @@
 				$this->precision,
 				$this->scale,
 				$this->unsigned,
-				$this->notNull,
+				$this->nullable,
 				$this->identity
 			);
 
