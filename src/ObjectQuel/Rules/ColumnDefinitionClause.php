@@ -49,10 +49,19 @@
 				throw new ParserException("Column '{$name}' declares 'unsigned' but type '{$type}' does not support it");
 			}
 
-			[$limit, $precision, $scale] = self::parseOptionalTypeArguments($lexer);
-			[$nullable, $identity] = self::parseColumnConstraints($lexer);
+			$typeArguments = self::parseOptionalTypeArguments($lexer);
+			$constraints = self::parseColumnConstraints($lexer);
 
-			return new AstColumnDefinition($name, $type, $limit, $precision, $scale, $unsigned, $nullable, $identity);
+			return new AstColumnDefinition(
+				$name,
+				$type,
+				$typeArguments->limit,
+				$typeArguments->precision,
+				$typeArguments->scale,
+				$unsigned,
+				$constraints->nullable,
+				$constraints->identity
+			);
 		}
 
 		/**
@@ -84,12 +93,12 @@
 		/**
 		 * Parse an optional `(limit)` or `(precision, scale)` suffix after a type name.
 		 * @param Lexer $lexer
-		 * @return array{0: int|null, 1: int|null, 2: int|null} [limit, precision, scale]
+		 * @return ColumnTypeArguments
 		 * @throws LexerException|ParserException
 		 */
-		private static function parseOptionalTypeArguments(Lexer $lexer): array {
+		private static function parseOptionalTypeArguments(Lexer $lexer): ColumnTypeArguments {
 			if (!$lexer->optionalMatch(Token::ParenthesesOpen)) {
-				return [null, null, null];
+				return new ColumnTypeArguments();
 			}
 
 			$first = (int)$lexer->match(Token::Number)->getNumericValue();
@@ -97,11 +106,11 @@
 			if ($lexer->optionalMatch(Token::Comma)) {
 				$scale = (int)$lexer->match(Token::Number)->getNumericValue();
 				$lexer->match(Token::ParenthesesClose);
-				return [null, $first, $scale];
+				return new ColumnTypeArguments(precision: $first, scale: $scale);
 			}
 
 			$lexer->match(Token::ParenthesesClose);
-			return [$first, null, null];
+			return new ColumnTypeArguments(limit: $first);
 		}
 
 		/**
@@ -114,10 +123,10 @@
 		 * `primary key` is not a column-level constraint either — see
 		 * PrimaryKeyClause.
 		 * @param Lexer $lexer
-		 * @return array{0: bool, 1: bool} [nullable, identity]
+		 * @return ColumnConstraints
 		 * @throws LexerException
 		 */
-		private static function parseColumnConstraints(Lexer $lexer): array {
+		private static function parseColumnConstraints(Lexer $lexer): ColumnConstraints {
 			$nullable = false;
 			$identity = false;
 
@@ -135,6 +144,6 @@
 				break;
 			}
 
-			return [$nullable, $identity];
+			return new ColumnConstraints($nullable, $identity);
 		}
 	}
