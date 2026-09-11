@@ -147,6 +147,11 @@
 		 * addressable afterward — keeping one code path across all four
 		 * dialects instead of a SQLite carve-out (see
 		 * objectquel-foreign-key-design.md, "Implementation surface").
+		 * @param string $tableName
+		 * @param AstCreateTableForeignKey $foreignKey
+		 * @return string
+		 * @throws \LogicException If the referenced column was never resolved
+		 * @throws QuelException If the derived constraint name exceeds the identifier length limit
 		 */
 		private function renderForeignKeyConstraint(string $tableName, AstCreateTableForeignKey $foreignKey): string {
 			$referencedColumn = $foreignKey->getReferencedColumn();

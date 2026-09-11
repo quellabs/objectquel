@@ -107,6 +107,8 @@
 
 		/**
 		 * The plain/unique case: `CREATE [UNIQUE] INDEX <name> ON <table> (<cols>)`.
+		 * @param AstCreateIndex $statement
+		 * @return string
 		 */
 		private function compilePlainOrUnique(AstCreateIndex $statement): string {
 			$keyword = $statement->isUnique() ? 'CREATE UNIQUE INDEX' : 'CREATE INDEX';
@@ -123,6 +125,8 @@
 		/**
 		 * mysql/mariadb: a real, named index — same shape as the plain case,
 		 * FULLTEXT instead of [UNIQUE].
+		 * @param AstCreateIndex $statement
+		 * @return string
 		 */
 		private function compileMysqlFulltext(AstCreateIndex $statement): string {
 			return sprintf(
@@ -138,6 +142,8 @@
 		 * Each column is coalesced to '' before concatenation — Postgres's
 		 * `||` yields NULL for the whole expression if any operand is NULL,
 		 * which would silently drop that row from the index entirely.
+		 * @param AstCreateIndex $statement
+		 * @return string
 		 */
 		private function compilePostgresFulltext(AstCreateIndex $statement): string {
 			$vectorExpression = implode(
@@ -160,8 +166,10 @@
 		 * sqlsrv: bootstrap the shared fulltext catalog if it doesn't exist
 		 * yet, then create the table's (unnamed, one-per-table) fulltext
 		 * index against it.
+		 * @param AstCreateIndex $statement
 		 * @param string|null $keyIndexName Resolved by CreateIndexExecutor via schema introspection
 		 * @return list<string>
+		 * @throws SemanticException If $keyIndexName was not resolved by the caller
 		 */
 		private function compileSqlServerFulltext(AstCreateIndex $statement, ?string $keyIndexName): array {
 			if ($keyIndexName === null) {
@@ -194,6 +202,8 @@
 		 * prior tag already exists (sp_addextendedproperty fails on a
 		 * duplicate), which matters if a fulltext index was previously
 		 * dropped and recreated with a different name.
+		 * @param AstCreateIndex $statement
+		 * @return string
 		 */
 		private function tagFulltextIndexName(AstCreateIndex $statement): string {
 			$tableName = $this->identifierQuoter->quoteStringLiteral($statement->getTableName());
@@ -216,8 +226,10 @@
 		 * documentation prescribes to keep it in sync with the base table —
 		 * an external-content FTS5 table is never updated automatically when
 		 * the base table changes.
+		 * @param AstCreateIndex $statement
 		 * @param string|null $primaryKeyColumn Resolved by CreateIndexExecutor via schema introspection
 		 * @return list<string>
+		 * @throws SemanticException If $primaryKeyColumn was not resolved by the caller
 		 */
 		private function compileSqliteFulltext(AstCreateIndex $statement, ?string $primaryKeyColumn): array {
 			if ($primaryKeyColumn === null) {

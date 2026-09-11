@@ -146,6 +146,8 @@
 		/**
 		 * Retrieves the field names from an AstRetrieve object and converts them to a SQL-compatible string.
 		 * @param AstRetrieve $retrieve The AstRetrieve object to process.
+		 * @param string|null $outerRangeName When emitting as a subquery, the
+		 *        outer range name entity column aliases are rewritten to use.
 		 * @return string The formatted field names as a single string.
 		 */
 		private function getFieldNames(AstRetrieve $retrieve, ?string $outerRangeName = null): string {

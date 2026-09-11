@@ -33,6 +33,10 @@
 
 		private PlatformCapabilitiesInterface $platform;
 
+		/**
+		 * QuelToSQLIndexVisibility constructor
+		 * @param PlatformCapabilitiesInterface $platform
+		 */
 		public function __construct(PlatformCapabilitiesInterface $platform) {
 			$this->identifierQuoter = new SqlIdentifierQuoter($platform);
 			$this->platform = $platform;
@@ -40,6 +44,8 @@
 
 		/**
 		 * Compiles a `hide Name on Table` statement to SQL.
+		 * @param AstHideIndex $statement
+		 * @return string
 		 * @throws QuelException If the connected engine doesn't support invisible indexes
 		 */
 		public function convertHideToSQL(AstHideIndex $statement): string {
@@ -48,6 +54,8 @@
 
 		/**
 		 * Compiles a `show Name on Table` statement to SQL.
+		 * @param AstShowIndex $statement
+		 * @return string
 		 * @throws QuelException If the connected engine doesn't support invisible indexes
 		 */
 		public function convertShowToSQL(AstShowIndex $statement): string {
@@ -55,8 +63,11 @@
 		}
 
 		/**
+		 * @param string $indexName
+		 * @param string $tableName
 		 * @param 'hidden'|'visible' $keywordKey Selects which of
 		 *        getIndexVisibilityKeywords()'s two entries to render
+		 * @return string
 		 * @throws QuelException If the connected engine doesn't support invisible indexes
 		 */
 		private function compile(string $indexName, string $tableName, string $keywordKey): string {
@@ -73,6 +84,7 @@
 		}
 
 		/**
+		 * @return void
 		 * @throws QuelException If the connected engine doesn't support invisible indexes
 		 */
 		private function assertIndexHidingSupported(): void {

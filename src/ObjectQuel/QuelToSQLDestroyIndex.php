@@ -141,6 +141,10 @@
 
 		/**
 		 * A single `DROP INDEX [IF EXISTS] <name> [ON <table>]` statement.
+		 * @param AstDestroyIndex $statement
+		 * @param bool $includeOn
+		 * @param bool $ifExists
+		 * @return string
 		 */
 		private function plainDrop(AstDestroyIndex $statement, bool $includeOn, bool $ifExists): string {
 			$sql = 'DROP INDEX ' .
@@ -160,6 +164,7 @@
 		 * `IF OBJECT_ID(...) ... ELSE ...` — see QuelToSQLDestroy) — a
 		 * conditional drop needs dynamic SQL via prepared statements
 		 * instead, checked against information_schema.statistics.
+		 * @param AstDestroyIndex $statement
 		 * @return list<string>
 		 */
 		private function emulateMysqlIfExists(AstDestroyIndex $statement): array {
