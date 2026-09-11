@@ -211,7 +211,7 @@
 			}
 
 			if ($discriminatorInfo !== null) {
-				$compiled[$discriminatorInfo['column']] = $this->quoteStringLiteral($discriminatorInfo['value']);
+				$compiled[$discriminatorInfo['column']] = $this->identifierQuoter->quoteStringLiteral($discriminatorInfo['value']);
 			}
 
 			return $compiled;
@@ -234,16 +234,6 @@
 			} catch (QuelException $e) {
 				throw new SemanticException($e->getMessage(), $e->getCode(), $e);
 			}
-		}
-
-		/**
-		 * Quotes a literal string for direct embedding in compiled SQL,
-		 * matching BuildSqlFragments::handleString()'s addslashes() convention.
-		 * @param string $value
-		 * @return string
-		 */
-		private function quoteStringLiteral(string $value): string {
-			return '"' . addslashes($value) . '"';
 		}
 
 		/**
@@ -336,7 +326,7 @@
 
 			if ($discriminatorInfo !== null && !in_array($discriminatorInfo['column'], $columnNames, true)) {
 				$columnNames[] = $discriminatorInfo['column'];
-				$selectColumns[] = $this->quoteStringLiteral($discriminatorInfo['value']);
+				$selectColumns[] = $this->identifierQuoter->quoteStringLiteral($discriminatorInfo['value']);
 			}
 
 			return sprintf(

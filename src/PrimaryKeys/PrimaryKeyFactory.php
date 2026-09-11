@@ -43,8 +43,18 @@
 			// Instantiate the generator class
 			$generator = new $className();
 
-			// Generate and return the primary key value
+			// Generate the primary key value
 			// Pass the entity manager and entity to the generator for context-aware key generation
-			return $generator->generate($em, $entity);
+			$value = $generator->generate($em, $entity);
+
+			// Only IdentityGenerator is allowed to return null (the database
+			// assigns identity columns itself) — a null from any other
+			// generator means it's misbehaving, so fail loudly here rather
+			// than let callers silently write a null primary key.
+			if ($value === null && $type !== 'identity') {
+				throw new OrmException("Primary key generator '{$className}' returned null for strategy '{$type}'");
+			}
+
+			return $value;
 		}
 	}

@@ -60,6 +60,7 @@
 		private DatabaseAdapter $connection;
 		private EntityStore $entityStore;
 		private EntityManager $entityManager;
+		private PlatformCapabilitiesInterface $platform;
 		private QuelToSQLAppend $compiler;
 		private JsonAppendExecutor $jsonAppendExecutor;
 		private PlanExecutor $planExecutor;
@@ -82,6 +83,7 @@
 			$this->connection = $connection;
 			$this->entityManager = $entityManager;
 			$this->entityStore = $entityManager->getEntityStore();
+			$this->platform = $platform;
 			$this->planExecutor = $planExecutor;
 
 			// QuelToSQLReplace is reused (not reconstructed) so upsert's
@@ -162,7 +164,7 @@
 			// either way, so readback is skipped entirely for those dialects.
 			if ($eligibleForReadback && $statement->getOnConflict() !== null) {
 				$eligibleForReadback =
-					in_array($this->connection->getDatabaseType(), ['mysql', 'mariadb'], true) &&
+					in_array($this->platform->getDatabaseType(), ['mysql', 'mariadb'], true) &&
 					$rs->rowCount() === 1;
 			}
 
@@ -476,6 +478,7 @@
 		 * @return PreparedAppend
 		 * @throws \ReflectionException
 		 * @throws \Quellabs\ObjectQuel\OrmException If the strategy has no matching generator (see PrimaryKeyFactory::generate())
+		 * @throws QuelException If a multi-row append needs the 'sequence' strategy, which can't safely generate more than one row's value up front
 		 */
 		private function fillGeneratedPrimaryKeys(AstAppend $statement, EntityMetadataRecord $metadata, array &$parameters): PreparedAppend {
 			// Insert-from-select has no literal rows to generate PKs into —
@@ -519,31 +522,30 @@
 			// 'sequence' MAX(col)+1 lookup) — they never touch instance state a
 			// real constructor would set up, and nothing here is persisted.
 			$blankEntity = (new \ReflectionClass($metadata->className))->newInstanceWithoutConstructor();
+			// A 'sequence' strategy reads MAX(col)+1 from the table — re-querying
+			// it per row would return the same "next" value for every row, since
+			// none of them are actually inserted yet. Inferring later rows'
+			// values by offsetting the first row's (as an earlier version of
+			// this method did) risks silently colliding with a concurrent
+			// insert into the same table between this read and this batch's
+			// INSERT. Rather than generate a value that isn't backed by an
+			// actual read, refuse outright — the caller can append one row at
+			// a time, or use a collision-safe strategy ('uuid'/'identity'),
+			// for multi-row inserts.
+			if ($strategy === 'sequence' && count($rows) > 1) {
+				throw new QuelException(
+					"Cannot append multiple rows to '{$metadata->tableName}' using the 'sequence' primary key strategy: only the first row's value can be read safely before any row is inserted. Append one row at a time, or use a collision-safe strategy ('uuid'/'identity'), for multi-row inserts.",
+					'append_sequence_multi_row_unsupported'
+				);
+			}
+
 			$factory = new PrimaryKeyFactory();
 
 			$newRows = [];
 			$firstGeneratedValue = null;
 
 			foreach ($rows as $index => $row) {
-				// Re-querying a 'sequence' strategy per row would return the same
-				// "next" value for every row, since none of them are actually
-				// inserted yet — bump the first row's generated value by row
-				// index instead so a multi-row append doesn't collide on the
-				// primary key. 'uuid' (and any other strategy) generates fresh
-				// per row instead, since there's no collision to guard against.
-				if ($strategy === 'sequence' && $index > 0) {
-					// SequenceGenerator always generates a numeric (MAX(col)+1)
-					// value — enforced here since PrimaryKeyFactory::generate()
-					// is typed mixed to cover every strategy (uuid returns a
-					// string, identity returns null).
-					if (!is_numeric($firstGeneratedValue)) {
-						throw new \LogicException("Sequence strategy produced a non-numeric primary key value for '{$primaryKey}'");
-					}
-
-					$value = $firstGeneratedValue + $index;
-				} else {
-					$value = $factory->generate($this->entityManager, $blankEntity, $strategy);
-				}
+				$value = $factory->generate($this->entityManager, $blankEntity, $strategy);
 
 				if ($index === 0) {
 					$firstGeneratedValue = $value;

@@ -169,6 +169,17 @@
 		/**
 		 * @inheritDoc
 		 *
+		 * Conservative default: false, so callers always qualify SET targets
+		 * with a bare column name rather than risk a qualified one on an
+		 * engine that would reject it.
+		 */
+		public function supportsQualifiedSetTarget(): bool {
+			return false;
+		}
+
+		/**
+		 * @inheritDoc
+		 *
 		 * Defaults to 'mysql', the most widely deployed engine in the
 		 * Canvas/ObjectQuel target stack. Callers that need the real engine must
 		 * inject a real PlatformCapabilities instance instead of relying on this

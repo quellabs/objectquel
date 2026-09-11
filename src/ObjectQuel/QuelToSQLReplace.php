@@ -204,7 +204,7 @@
 		 * @return string
 		 */
 		private function quoteSetTargetColumn(string $columnName, ?string $qualifyWithAlias): string {
-			if ($qualifyWithAlias === null || in_array($this->platform->getDatabaseType(), ['pgsql', 'sqlite'], true)) {
+			if ($qualifyWithAlias === null || !$this->platform->supportsQualifiedSetTarget()) {
 				return $this->identifierQuoter->quoteIdentifier($columnName);
 			}
 

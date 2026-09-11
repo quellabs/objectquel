@@ -2,6 +2,7 @@
 
 	namespace Quellabs\ObjectQuel\Execution\Executors;
 
+	use Quellabs\ObjectQuel\Capabilities\FulltextIndexStyle;
 	use Quellabs\ObjectQuel\Capabilities\PlatformCapabilitiesInterface;
 	use Quellabs\ObjectQuel\DatabaseAdapter\DatabaseAdapter;
 	use Quellabs\ObjectQuel\Exception\QuelException;
@@ -117,7 +118,7 @@
 			$dialect = $this->platform->getDatabaseType();
 			$tableName = $statement->getTableName();
 
-			if ($dialect === 'sqlite') {
+			if ($this->platform->getFulltextIndexStyle() === FulltextIndexStyle::Fts5) {
 				// FTS5 virtual tables need an explicit content_rowid pointing at
 				// the base table's primary key to avoid duplicating its content.
 				$primaryKeyColumn = $this->connection->getPrimaryKey($tableName);

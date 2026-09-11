@@ -332,6 +332,16 @@
 
 		/**
 		 * @inheritDoc
+		 *
+		 * PostgreSQL and SQLite reject a qualified column on the left side of
+		 * SET; MySQL/MariaDB and SQL Server accept it.
+		 */
+		public function supportsQualifiedSetTarget(): bool {
+			return !in_array($this->adapter->getDatabaseType(), ['pgsql', 'sqlite'], true);
+		}
+
+		/**
+		 * @inheritDoc
 		 */
 		public function getDatabaseType(): string {
 			return $this->adapter->getDatabaseType();

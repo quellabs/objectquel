@@ -208,9 +208,12 @@
 					$identifierKeys[] = $property;   // PHP property name of the PK
 					$identifierColumns[] = $columnName; // Database column name of the PK
 					
-					// Only record the first PK we find as the auto-increment column.
-					// A composite PK can't be auto-increment, so subsequent PKs are skipped.
-					if ($autoIncrementColumn === null) {
+					// Only the first PK encountered is ever considered for
+					// auto-increment — a composite PK (more than one identifier
+					// column) can't be auto-increment, so every PK after the
+					// first is skipped outright, not just ones that already
+					// set $autoIncrementColumn.
+					if (count($identifierKeys) === 1) {
 						// Auto-increment when: strategy is explicitly 'identity', OR
 						// no strategy annotation is present at all (implicit default)
 						$isIdentity = $strategy === null || $strategy->getValue() === 'identity';

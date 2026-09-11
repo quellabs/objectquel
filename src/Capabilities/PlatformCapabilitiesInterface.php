@@ -247,6 +247,22 @@
 		public function supportsTransactionalDDL(): bool;
 
 		/**
+		 * Returns true if the database engine allows a qualified column
+		 * (`alias.col`) on the LEFT side of an UPDATE's SET assignment.
+		 *
+		 * PostgreSQL and SQLite both reject `SET alias.col = ...` as a syntax
+		 * error — the SET target must always be a bare column name on those
+		 * engines. MySQL/MariaDB and SQL Server accept either form.
+		 *
+		 * Shared by QuelToSQLReplace and VersionValueHandler so `replace` SQL
+		 * and @Orm\Version bump SQL agree on when a SET target may be
+		 * qualified, rather than each hardcoding its own engine list.
+		 *
+		 * @return bool
+		 */
+		public function supportsQualifiedSetTarget(): bool;
+
+		/**
 		 * Returns the connected database engine's type identifier.
 		 *
 		 * This is the most basic fact PlatformCapabilities reports — every other

@@ -103,7 +103,7 @@
 			$setClauseParts = [];
 
 			$targetAllowsQualification = $qualifyWithAlias !== null
-				&& !in_array($this->platformCapabilities->getDatabaseType(), ['pgsql', 'sqlite'], true);
+				&& $this->platformCapabilities->supportsQualifiedSetTarget();
 
 			// Process each version column according to its type
 			foreach ($versionColumns as $property => $versionColumn) {
@@ -117,7 +117,7 @@
 
 				switch ($versionColumn['column']->getType()) {
 					case 'integer':
-					case 'bigint':
+					case 'biginteger':
 						// Integer/bigint versions increment by 1. The RHS
 						// self-reference is always safe to qualify (see this
 						// method's docblock), independent of whether the LHS
@@ -186,7 +186,7 @@
 		 */
 		public function getInitialVersionValue(string $columnType): int|string {
 			return match ($columnType) {
-				'int', 'integer', 'bigint' => 1,
+				'int', 'integer', 'biginteger' => 1,
 				'datetime', 'timestamp' => $this->platformCapabilities->getCurrentDatetimeFunction(),
 				'uuid', 'guid' => "'" . Tools::createUUIDv7() . "'",
 				default => throw new \RuntimeException("Invalid column type {$columnType} for Version annotation"),

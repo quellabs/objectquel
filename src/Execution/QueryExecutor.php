@@ -20,6 +20,7 @@
 	use Quellabs\ObjectQuel\Exception\HydrationException;
 	use Quellabs\ObjectQuel\Exception\SemanticException;
 	use Quellabs\ObjectQuel\Exception\TransformationException;
+	use Quellabs\ObjectQuel\OrmException;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRetrieve;
 	use Quellabs\ObjectQuel\ObjectQuel\Lexer;
 	use Quellabs\ObjectQuel\ObjectQuel\LexerException;
@@ -262,6 +263,8 @@
 				throw new QuelException($e->getMessage(), 'hydration_error', 0, $e);
 			} catch (EntityResolutionException|\ReflectionException $e) {
 				throw new QuelException($e->getMessage(), 'resolution_error', 0, $e);
+			} catch (OrmException $e) {
+				throw new QuelException($e->getMessage(), 'orm_error', 0, $e);
 			}
 		}
 		

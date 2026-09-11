@@ -120,7 +120,7 @@ HELP;
 			$indexName = $config->getPositional(1);
 			
 			if ($indexName === null) {
-				$indexName = $this->collectIdentifier("Entity name");
+				$indexName = $this->collectIdentifier("Index name");
 			} elseif (!$this->isValidPhpIdentifier($indexName)) {
 				$this->output->error("Invalid index name '{$indexName}'.");
 				return 1;
