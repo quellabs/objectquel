@@ -79,7 +79,7 @@
 			$originalData = $this->unitOfWork->getEntitySnapshot($entity)
 				?? throw new \LogicException("UpdatePersister::persist() called for entity of type '" . get_class($entity) . "' with no snapshot.");
 
-			$alias = 'e';
+			// Fetch version column names
 			$versionColumnNames = array_column($metadata->versionColumns, 'name');
 
 			// Diff live entity state against its snapshot to find what actually changed.
@@ -91,12 +91,15 @@
 			);
 
 			// SET clause: the changed columns. WHERE clause: primary key + optimistic-lock version check.
+			$alias = 'e';
 			$assignments = $this->buildAssignments($metadata, $entity, $changedColumns);
 			$conditions = $this->buildLockConditions($metadata, $entity, $originalData, $alias);
 			$parameters = $assignments->parameters + $conditions->parameters;
 
-			// Compile and run the `replace` statement.
+			// Compile the `replace` statement.
 			$quel = "range of {$alias} is {$metadata->className} replace {$alias} (" . implode(', ', $assignments->clauses) . ') where ' . implode(' and ', $conditions->clauses);
+			
+			// Run the `replace` statement.
 			$result = $this->executeReplace($quel, $parameters);
 
 			// Zero affected rows means the row vanished or the lock was lost — fail loudly instead of silently no-op-ing.

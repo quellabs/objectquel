@@ -475,6 +475,7 @@
 		 * @param array<string, mixed> $parameters
 		 * @return PreparedAppend
 		 * @throws \ReflectionException
+		 * @throws \Quellabs\ObjectQuel\OrmException If the strategy has no matching generator (see PrimaryKeyFactory::generate())
 		 */
 		private function fillGeneratedPrimaryKeys(AstAppend $statement, EntityMetadataRecord $metadata, array &$parameters): PreparedAppend {
 			// Insert-from-select has no literal rows to generate PKs into —

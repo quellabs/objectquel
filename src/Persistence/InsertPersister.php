@@ -83,6 +83,7 @@
 		 * @throws \Exception
 		 */
 		public function persist(object $entity): void {
+			// Fetch metadata for entity
 			$metadata = $this->entityStore->getMetadata($entity);
 
 			// Generate non-identity PK values up front (composite keys
@@ -112,26 +113,29 @@
 		 * @param object $entity
 		 * @param EntityMetadataRecord $metadata
 		 * @return void
-		 * @throws OrmException If a generator returns null
+		 * @throws OrmException If the strategy has no matching generator (see PrimaryKeyFactory::generate())
 		 * @throws EntityResolutionException
 		 */
 		private function generatePrimaryKeyValues(object $entity, EntityMetadataRecord $metadata): void {
 			foreach ($metadata->identifierKeys as $primaryKey) {
+				// Read current primary key value
 				$currentValue = $this->propertyHandler->get($entity, $primaryKey);
 
+				// Already set (e.g. a natural key the caller assigned) — leave it alone.
 				if ($currentValue === null || $currentValue === '') {
+					// Determine primary key strategy
 					$strategy = $this->getPrimaryKeyStrategy($entity, $primaryKey);
 
+					// Identity keys are assigned by the database (or read back
+					// afterward via applyGeneratedId) — nothing to generate here.
 					if ($strategy === 'identity') {
 						continue;
 					}
 
+					// Generate the identity value
 					$value = $this->primaryKeyFactory->generate($this->entityManager, $entity, $strategy);
 
-					if ($value === null) {
-						throw new OrmException("Primary key generator for strategy '{$strategy}' returned null for primary key '{$primaryKey}'");
-					}
-
+					// Set the value on the entity
 					$this->propertyHandler->set($entity, $primaryKey, $value);
 				}
 			}
@@ -157,6 +161,7 @@
 					continue;
 				}
 
+				// Fetch current value from entity
 				$value = $this->propertyHandler->get($entity, $property);
 
 				// Unset here only for an identity-strategy PK, left for the
@@ -165,6 +170,7 @@
 					continue;
 				}
 
+				// Store the property
 				$assignments[] = "{$property} = :{$property}";
 
 				// Raw, not serialized — the compiler denormalizes it once.
@@ -216,12 +222,16 @@
 		 * @return void
 		 */
 		private function applyGeneratedId(object $entity, EntityMetadataRecord $metadata, QuelResult $result): void {
+			// No auto-increment column on this entity — nothing to write back.
 			if ($metadata->autoIncrementColumn === null) {
 				return;
 			}
 
+			// Fetch the generated ID
 			$generatedId = $result->getGeneratedId();
 
+			// > 0 excludes null/0/non-numeric — none of those are a real
+			// generated id, so leave the entity's column untouched.
 			if (is_numeric($generatedId) && (int)$generatedId > 0) {
 				$this->propertyHandler->set($entity, $metadata->autoIncrementColumn, (int)$generatedId);
 			}
@@ -235,6 +245,7 @@
 		 * @throws EntityResolutionException
 		 */
 		protected function getPrimaryKeyStrategy(object $entity, string $primaryKey): string {
+			// Fetch metadata for the given entity
 			$metadata = $this->entityStore->getMetadata($entity);
 
 			// Fetch key from cache if present
@@ -252,9 +263,7 @@
 
 			// Iterate through all annotations for the primary key
 			foreach ($annotations[$primaryKey] as $annotation) {
-				// Check if the current annotation is a PrimaryKeyStrategy instance
 				if ($annotation instanceof PrimaryKeyStrategy) {
-					// Return the value of the PrimaryKeyStrategy annotation
 					return $this->strategyColumnCache[$metadata->tableName][$primaryKey] = $annotation->getValue();
 				}
 			}

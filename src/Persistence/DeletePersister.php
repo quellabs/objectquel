@@ -59,8 +59,10 @@
 			// WHERE clause: match the row by its primary key.
 			$conditions = $this->buildPrimaryKeyConditions($entity, $metadata, $alias);
 
-			// Compile and run the `delete` statement.
+			// Compile the `delete` statement.
 			$quel = "range of {$alias} is {$metadata->className} delete {$alias} where " . implode(' and ', $conditions->clauses);
+			
+			// Execute the `delete` statement
 			$this->executeDelete($quel, $conditions->parameters);
 		}
 
