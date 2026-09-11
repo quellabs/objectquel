@@ -12,20 +12,10 @@
 	 * statement. Sibling to QuelToSQLRetrieve/QuelToSQLCreate.
 	 *
 	 * `IF EXISTS` is included only when the statement's `if exists`
-	 * qualifier is present; by default a missing name must fail loudly, not
-	 * silently no-op — see DestroyExecutor.
-	 *
-	 * Dialect branching only matters for `temporary`/temp-table resolution:
-	 * on mysql/mariadb/pgsql/sqlite a session-temp table's physical name is
-	 * the same as its logical one (the engine resolves an unqualified name
-	 * to the session's temp table first if one exists — MySQL: temp tables
-	 * shadow same-named permanent ones; Postgres: the per-session temp
-	 * schema is first in `search_path`; SQLite: `TEMP` is searched before
-	 * `MAIN`), so plain `DROP TABLE <name>` already does the right thing
-	 * whether `temporary` was written. SQL Server has no such
-	 * shadowing: a local temp table's real name is `#name`, a different
-	 * physical object, so `destroy Name` on SQL Server needs special
-	 * handling — see convertToSQL().
+	 * qualifier is present. Dialect branching only matters for SQL Server:
+	 * unlike the other three engines, its local temp tables are a
+	 * different physical object (`#name`), so `destroy Name` needs special
+	 * handling there — see convertToSQL().
 	 */
 	class QuelToSQLDestroy {
 

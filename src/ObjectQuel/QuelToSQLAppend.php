@@ -28,32 +28,19 @@
 
 	/**
 	 * Compiles an AstAppend statement to dialect-correct INSERT SQL. Sibling
-	 * to QuelToSQLRetrieve/QuelToSQLCreate/QuelToSQLDestroy — each QUEL
-	 * statement kind gets its own compiler here.
+	 * to QuelToSQLRetrieve/QuelToSQLCreate/QuelToSQLDestroy.
 	 *
 	 * Unlike QuelToSQLCreate/QuelToSQLDestroy, this needs EntityStore: an
-	 * append's assignments are entity property names, not raw column names,
-	 * and the compiler is also where the plan's scope-cut checks live — an
-	 * unknown property, a missing non-nullable/non-defaulted/non-generated
-	 * column, or a statically-incompatible literal value all raise a
-	 * SemanticException here, at compile time, rather than letting the
-	 * database reject the statement at runtime. Value expressions (literals,
-	 * parameters, casts, arithmetic) are rendered via BuildSqlFromAst, the
-	 * same expression-to-SQL visitor the retrieve pipeline uses for
-	 * WHERE/VALUES.
+	 * append's assignments are entity property names, and this is where the
+	 * scope-cut checks live — an unknown property, a missing non-nullable/
+	 * non-defaulted/non-generated column, or a statically-incompatible
+	 * literal all raise a SemanticException here at compile time. Value
+	 * expressions are rendered via BuildSqlFromAst, same as `retrieve`.
 	 *
-	 * When the literal-values form carries an upsert's `or replace (...)
-	 * where ...` on-conflict clause, compiling it is delegated to
-	 * QuelToSQLUpsert once the base INSERT and per-row values are ready —
-	 * there's no separate `AstUpsert` node (an upsert *is* an AstAppend with
-	 * an optional AstReplace slot), so QuelToSQLUpsert isn't a sibling
-	 * compiler for its own node the way QuelToSQLReplace/QuelToSQLDelete
-	 * are; it exists purely to keep that dialect-branching logic out of this
-	 * file.
-	 *
-	 * The target is always an entity range — JSON-source targets are
-	 * diverted to JsonAppendExecutor before reaching this class (see
-	 * AppendExecutor::execute()).
+	 * An upsert's `or replace (...) where ...` on-conflict clause is
+	 * delegated to QuelToSQLUpsert once the base INSERT and row values are
+	 * ready — there's no separate `AstUpsert` node. JSON-source targets
+	 * never reach this class (diverted to JsonAppendExecutor first).
 	 */
 	class QuelToSQLAppend {
 

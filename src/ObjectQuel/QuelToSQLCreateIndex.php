@@ -9,54 +9,23 @@
 
 	/**
 	 * Compiles an AstCreateIndex statement to dialect-correct DDL. Sibling to
-	 * QuelToSQLCreate/QuelToSQLDestroy — each QUEL statement kind gets its
-	 * own compiler here.
+	 * QuelToSQLCreate/QuelToSQLDestroy.
 	 *
-	 * The plain/unique case is a single, near-uniform
-	 * `CREATE [UNIQUE] INDEX <name> ON <table> (<cols>)` statement across
-	 * every dialect (see objectquel-create-index-plan.md's "Compile"
-	 * section) — only identifier quoting differs, so no DDLTypeMapper is
-	 * needed there.
+	 * The plain/unique case is a single, near-uniform `CREATE [UNIQUE]
+	 * INDEX` statement across all dialects — only identifier quoting
+	 * differs. `index fulltext on ...` is a materially different case per
+	 * dialect: mysql/mariadb use a real `CREATE FULLTEXT INDEX`; pgsql has
+	 * no such statement, so a GIN expression index over `to_tsvector(...)`
+	 * is used instead; sqlsrv needs a full-text catalog bootstrapped first
+	 * plus a `KEY INDEX` resolved by the caller, and since T-SQL fulltext
+	 * indexes are unnamed, the index name is recorded as a table-level
+	 * extended property instead (see tagFulltextIndexName(), read back by
+	 * QuelToSQLDestroyIndex); sqlite has no fulltext index concept at all,
+	 * so an FTS5 virtual table plus three sync triggers is created instead.
 	 *
-	 * `index fulltext on ...` is a materially different case per dialect, not
-	 * "the same statement with one word changed" — each of the four target
-	 * engines models full-text search as a genuinely different kind of
-	 * object:
-	 * - mysql/mariadb: `CREATE FULLTEXT INDEX` — a real index, one statement.
-	 * - pgsql: no native "fulltext index" statement at all — a GIN
-	 *   expression index over `to_tsvector('english', ...)` is Postgres's
-	 *   own idiom for this. 'english' is a fixed default text-search
-	 *   configuration for v1 (not user-selectable — see the plan doc).
-	 *   Columns are coalesced to '' before concatenation so a single NULL
-	 *   column doesn't null out the whole indexed document.
-	 * - sqlsrv: needs a full-text catalog to exist first (bootstrapped here,
-	 *   idempotently, into a single shared catalog — see
-	 *   FULLTEXT_CATALOG_NAME) and a `KEY INDEX` naming an existing
-	 *   unique/primary index on the table, resolved by the caller (see
-	 *   CreateIndexExecutor) since it requires schema introspection this
-	 *   compiler has no connection to do itself. T-SQL fulltext indexes are
-	 *   also unnamed (one per table) — $statement->getIndexName() has no
-	 *   equivalent in the `CREATE FULLTEXT INDEX` syntax itself, so it's
-	 *   instead recorded as a table-level extended property (see
-	 *   tagFulltextIndexName()) — SQL Server's standard, inspectable
-	 *   object-annotation mechanism — so a later `destroy Name on Table`
-	 *   can verify $name actually refers to this table's fulltext index
-	 *   rather than accepting any name typed against a table that merely
-	 *   has one (see objectquel-destroy-index-plan.md's "Fulltext index
-	 *   destroy on sqlsrv/sqlite" section, and QuelToSQLDestroyIndex,
-	 *   which reads this tag back via
-	 *   DatabaseAdapter::getSqlServerExtendedProperty()).
-	 * - sqlite: has no fulltext index concept on an ordinary table at all —
-	 *   an FTS5 *virtual table* is created instead (using the index name as
-	 *   its physical name), kept in sync with the base table via three
-	 *   triggers (SQLite's own documented pattern for external-content FTS5
-	 *   tables — content is never auto-copied on writes without them).
-	 *   Needs the base table's primary key column (content_rowid), resolved
-	 *   by the caller for the same reason as sqlsrv's KEY INDEX.
-	 *
-	 * Every convertToSQL() call returns a list of one or more statements to
-	 * run in order (mirrors QuelToSQLDestroy) — sqlsrv/sqlite's fulltext
-	 * paths need more than one.
+	 * convertToSQL() returns a list of one or more statements to run in
+	 * order (mirrors QuelToSQLDestroy) — sqlsrv/sqlite's fulltext paths
+	 * need more than one.
 	 */
 	class QuelToSQLCreateIndex {
 

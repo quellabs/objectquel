@@ -11,41 +11,17 @@
 	 * exists]`) to dialect-correct DDL. Sibling to QuelToSQLDestroy/
 	 * QuelToSQLCreateIndex.
 	 *
-	 * Dialect branching is only about whether `ON <table>` is part of `DROP
-	 * INDEX`'s own syntax:
-	 * - mysql/mariadb/sqlsrv: `DROP INDEX <name> ON <table>` — `ON` is
-	 *   mandatory.
-	 * - pgsql/sqlite: `DROP INDEX <name>` — no `ON`; index names are unique
-	 *   per-schema on both, not per-table. `$tableName` is still parsed
-	 *   (and required in the AST) since mysql/sqlsrv need it and the
-	 *   grammar itself is dialect-independent.
+	 * Dialect branching is mainly whether `ON <table>` is part of `DROP
+	 * INDEX`'s syntax (mandatory on mysql/mariadb/sqlsrv, absent on
+	 * pgsql/sqlite). `IF EXISTS` is natively supported everywhere except
+	 * plain MySQL, where it's emulated via dynamic SQL (see
+	 * emulateMysqlIfExists()).
 	 *
-	 * This same compile path also covers mysql/pgsql fulltext index destroy
-	 * with no special-casing — both are real, named, ordinary-enough index
-	 * objects that plain `DROP INDEX` drops the same way as a plain index.
-	 *
-	 * `IF EXISTS`: pgsql, sqlite, sqlsrv (2016+), and MariaDB all support
-	 * `DROP INDEX IF EXISTS` natively. Plain MySQL never added it, so it's
-	 * emulated here via dynamic SQL (multi-statement compile) rather than
-	 * silently dropping the qualifier — see emulateMysqlIfExists().
-	 *
-	 * sqlsrv's and sqlite's own fulltext "indexes" don't fit convertToSQL()
-	 * at all — neither is visible via DatabaseAdapter::getIndexes(), so
-	 * DestroyIndexExecutor resolves and verifies them itself via schema
-	 * introspection first, then calls one of these two dedicated methods
-	 * directly instead of convertToSQL():
-	 * - convertToSqlServerFulltextDropSQL(): a T-SQL fulltext index is
-	 *   unnamed (one per table) — see QuelToSQLCreateIndex's
-	 *   tagFulltextIndexName(), the only place $indexName is durably
-	 *   recorded for it.
-	 * - convertToSqliteFts5DropSQL(): SQLite's fulltext "index" is an FTS5
-	 *   external-content virtual table plus three sync triggers (see
-	 *   QuelToSQLCreateIndex::compileSqliteFulltext()), not an index row
-	 *   at all.
-	 * Both were originally deferred — see objectquel-destroy-index-plan.md's
-	 * "Fulltext index destroy on sqlsrv/sqlite" section for why a name
-	 * can't just be trusted on these two dialects without that resolution
-	 * step.
+	 * sqlsrv's and sqlite's own fulltext "indexes" aren't visible via
+	 * DatabaseAdapter::getIndexes(), so DestroyIndexExecutor resolves and
+	 * verifies them itself via schema introspection, then calls
+	 * convertToSqlServerFulltextDropSQL()/convertToSqliteFts5DropSQL()
+	 * directly instead of convertToSQL().
 	 */
 	class QuelToSQLDestroyIndex {
 

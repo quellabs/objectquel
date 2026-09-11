@@ -9,23 +9,16 @@
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstShowIndex;
 
 	/**
-	 * Compiles an AstHideIndex/AstShowIndex statement (`hide Name on Table` /
-	 * `show Name on Table`) to dialect-correct DDL. Sibling to
-	 * QuelToSQLCreateIndex/QuelToSQLDestroyIndex.
+	 * Compiles an AstHideIndex/AstShowIndex statement (`hide`/`show Name on
+	 * Table`) to dialect-correct DDL. Sibling to QuelToSQLCreateIndex/
+	 * QuelToSQLDestroyIndex.
 	 *
-	 * Both statements compile to the exact same shape — a single `ALTER
-	 * TABLE ... ALTER INDEX ... <keyword>` statement — differing only in
-	 * which of PlatformCapabilities::getIndexVisibilityKeywords()' two
-	 * keywords is used, so one class handles both rather than duplicating
-	 * the identifier-quoting/platform-guard plumbing across two near-empty
-	 * files (same reasoning QuelToSQLAlter gives for handling several
-	 * sub-operation kinds in one class).
+	 * Both statements compile to the same shape — a single `ALTER TABLE ...
+	 * ALTER INDEX ... <keyword>` — differing only in which visibility
+	 * keyword is used, so one class handles both.
 	 *
-	 * Only MySQL 8.0+ and MariaDB 10.6+ support invisible indexes at all
-	 * (see PlatformCapabilities::supportsIndexHiding()) — every other
-	 * dialect is rejected loudly here rather than silently emitting nothing,
-	 * the same 'unsupported' treatment QuelToSQLAlter gives retype/PK/FK
-	 * changes SQLite can't represent.
+	 * Only MySQL 8.0+/MariaDB 10.6+ support invisible indexes; every other
+	 * dialect is rejected loudly here rather than silently emitting nothing.
 	 */
 	class QuelToSQLIndexVisibility {
 

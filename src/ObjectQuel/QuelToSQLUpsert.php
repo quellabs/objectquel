@@ -16,50 +16,29 @@
 	use Quellabs\ObjectQuel\Serialization\Serializers\SQLSerializer;
 
 	/**
-	 * Compiles upsert's on-conflict extension of `append` (see
-	 * objectquel-upsert-plan.md) to dialect-correct SQL. Not a sibling
-	 * compiler for its own AST node the way QuelToSQLReplace/QuelToSQLDelete
-	 * are — there is no `AstUpsert`. Upsert is `AstAppend` with an optional
-	 * `?AstReplace $onConflict` slot (the existing `replace` grammar, minus
-	 * its own target range), so this class exists purely to keep that
-	 * dialect-branching logic out of QuelToSQLAppend, which QuelToSQLAppend
-	 * calls into only when `$onConflict` is non-null, handing it the base
-	 * INSERT SQL and the already-compiled rows it needs to build on.
+	 * Compiles upsert's on-conflict extension of `append` to dialect-correct
+	 * SQL. Not a sibling compiler for its own AST node — there is no
+	 * `AstUpsert`; upsert is `AstAppend` with an optional `?AstReplace
+	 * $onConflict` slot, so this class exists purely to keep that
+	 * dialect-branching logic out of QuelToSQLAppend, which calls into it
+	 * only when `$onConflict` is non-null.
 	 *
-	 * `or replace`'s assignment list is itself optional
-	 * (`AstReplace::getAssignments() === []`): `append to u (...) or replace
-	 * where <cond>`, with no parenthesized list at all, means "on conflict,
-	 * overwrite every appended column with the row that would have been
-	 * inserted" — the common upsert case, and QUEL reusing its own
-	 * `append`/`replace`/`or` verbs rather than inventing `ON CONFLICT`-
-	 * shaped clause words for it. Only when the caller needs the
-	 * conflict-time update to differ from the insert (e.g. incrementing a
-	 * counter instead of overwriting it) do they write the list out
-	 * explicitly, same as a standalone `replace`.
+	 * An empty `or replace` assignment list means "overwrite every
+	 * appended column with the row that would have been inserted"; the
+	 * caller writes the list out explicitly only when the conflict-time
+	 * update needs to differ from the insert.
 	 *
-	 * Dialect branching is via PlatformCapabilitiesInterface::
-	 * getDatabaseType() — the same "build engine-specific SQL text from
-	 * scratch" approach QuelToSQLCreate/QuelToSQLDestroy already use, not a
-	 * bespoke capability method for a one-off shape:
-	 *   - Postgres/SQLite: `INSERT ... ON CONFLICT (cols) DO UPDATE SET ...`,
-	 *     the default SET referencing `EXCLUDED.col` (the row that would
-	 *     have been inserted).
-	 *   - MySQL/MariaDB:   `INSERT ... ON DUPLICATE KEY UPDATE ...` — fires
-	 *     on *any* unique-key collision on the table, not only the named
-	 *     conflict columns; a real MySQL syntax gap, not something this
-	 *     compiler can paper over. The default SET references `VALUES(col)`.
-	 *   - SQL Server:      `MERGE ... WHEN MATCHED THEN UPDATE ... WHEN NOT
-	 *     MATCHED THEN INSERT ...`, the default SET referencing the USING
-	 *     source's own `source.col` (already computed there for the INSERT
-	 *     branch).
+	 * Dialect branching (via PlatformCapabilitiesInterface::
+	 * getDatabaseType()): Postgres/SQLite use `INSERT ... ON CONFLICT ...
+	 * DO UPDATE`, MySQL/MariaDB use `INSERT ... ON DUPLICATE KEY UPDATE`
+	 * (which fires on any unique-key collision, not just the named
+	 * conflict columns), and SQL Server uses `MERGE ... WHEN MATCHED/NOT
+	 * MATCHED`.
 	 *
-	 * The on-conflict WHERE clause isn't restricted to a declared unique/
-	 * primary-key constraint — see ConflictTargetResolver's docblock. When
-	 * it doesn't match one, there's no dialect-native atomic form to
-	 * compile to, so convertToSQL() returns a two-statement fallback
-	 * instead (see compileNonAtomicFallback()): an ordinary `UPDATE ...
-	 * WHERE <cond>` runs first, and the plain INSERT runs only if that
-	 * affected 0 rows. CompiledAppendSql carries either shape uniformly.
+	 * When the on-conflict WHERE clause doesn't match a declared unique/
+	 * primary-key constraint (see ConflictTargetResolver), there's no
+	 * dialect-native atomic form, so convertToSQL() falls back to a
+	 * two-statement UPDATE-then-INSERT (see compileNonAtomicFallback()).
 	 */
 	class QuelToSQLUpsert {
 

@@ -20,42 +20,18 @@
 	/**
 	 * Compiles an AstAlterTable statement's column, primary-key, and
 	 * foreign-key sub-operations to dialect-correct DDL. Sibling to
-	 * QuelToSQLCreate/QuelToSQLCreateIndex/QuelToSQLDestroy — each QUEL
-	 * statement kind gets its own compiler here.
+	 * QuelToSQLCreate/QuelToSQLCreateIndex/QuelToSQLDestroy.
 	 *
-	 * Index sub-operations (`add index`/`drop index`) are NOT compiled by
-	 * this class — they're sugar assembled into real AstCreateIndex/
-	 * AstDestroyIndex instances and run through the existing
-	 * QuelToSQLCreateIndex/QuelToSQLDestroyIndex compilers instead (see
-	 * objectquel-index-clause-design.md, "Sugar, not reimplementation"), by
-	 * Execution\Executors\AlterTableExecutor, which also owns the
-	 * column/PK-before-index execution ordering (see
-	 * objectquel-index-clause-design.md, decision 3). Foreign-key
-	 * sub-operations (`add foreign key`/`drop foreign key`), by contrast,
-	 * ARE compiled directly here — unlike index, three of four dialects
-	 * support FK add/drop as one native `ALTER TABLE` statement, so there's
-	 * no multi-statement compiler to centralize (see
-	 * objectquel-foreign-key-design.md, decision 2).
+	 * Index sub-operations are sugar assembled into AstCreateIndex/
+	 * AstDestroyIndex and run through those compilers instead (see
+	 * Execution\Executors\AlterTableExecutor); foreign-key sub-operations
+	 * ARE compiled directly here since most dialects support them natively
+	 * in one ALTER TABLE statement.
 	 *
-	 * One ObjectQuel `alter` statement compiling to several SQL statements
-	 * is normal here, same as QuelToSQLCreateIndex/QuelToSQLDestroyIndex —
-	 * no attempt is made to fold every sub-operation into one native
-	 * multi-clause `ALTER TABLE`, even on engines (MySQL) that could
-	 * technically support it; one consistent code path across all four
-	 * dialects wins over that micro-optimization (see
-	 * objectquel-index-clause-design.md, decision 2).
-	 *
-	 * `retype`, primary-key changes, and foreign-key changes are all
-	 * unsupported on SQLite (no `ALTER COLUMN`/`ADD`/`DROP CONSTRAINT` —
-	 * all three require rebuilding the table, which this compiler does not
-	 * attempt — see objectquel-alter-table-design.md, "Multi-engine retype
-	 * safety", and objectquel-foreign-key-design.md, "Dialect reality").
-	 * Adding IDENTITY to an existing column via `retype` is unsupported on
-	 * SQL Server (`ALTER COLUMN` cannot add IDENTITY; the column would need
-	 * to be recreated). Both cases throw a QuelException loudly rather than
-	 * silently emitting wrong or partial SQL — see
-	 * objectquel-alter-table-design.md, decision 1's "errors loudly ...
-	 * never one that silently drops" precedent.
+	 * `retype`, primary-key changes, and foreign-key changes are
+	 * unsupported on SQLite (no ALTER COLUMN/ADD/DROP CONSTRAINT), and
+	 * adding IDENTITY via `retype` is unsupported on SQL Server. Both
+	 * throw QuelException rather than emit wrong or partial SQL.
 	 */
 	class QuelToSQLAlter {
 

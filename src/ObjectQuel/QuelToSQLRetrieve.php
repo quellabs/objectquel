@@ -20,21 +20,17 @@
 	use Quellabs\ObjectQuel\DatabaseAdapter\SqlIdentifierQuoter;
 
 	/**
-	 * Compiles an AstRetrieve statement to dialect-correct SELECT SQL. Sibling
-	 * to QuelToSQLAppend/QuelToSQLReplace/QuelToSQLDelete/QuelToSQLCreate —
-	 * each QUEL statement kind gets its own compiler here — but the oldest
-	 * and most involved of them: retrieve's JOIN/subquery/aggregate/sort
-	 * machinery is why QueryNormalizer/SemanticAnalyzer/QueryOptimizer exist
-	 * at all, machinery none of the single-range write verbs need (see e.g.
-	 * QuelToSQLDelete/QuelToSQLReplace's own docblocks for why they skip it).
+	 * Compiles an AstRetrieve statement to dialect-correct SELECT SQL.
+	 * Sibling to QuelToSQLAppend/QuelToSQLReplace/QuelToSQLDelete/
+	 * QuelToSQLCreate, but the oldest and most involved of them: retrieve's
+	 * JOIN/subquery/aggregate/sort machinery is why QueryNormalizer/
+	 * SemanticAnalyzer/QueryOptimizer exist at all.
 	 *
 	 * Recursive by design: subquery/materialized ranges are compiled by
 	 * calling convertToSQL() again on their nested AstRetrieve and inlining
-	 * the result as a derived table (see getFrom()/getJoins()), which is why
-	 * $parameters is bound once in the constructor and reused across the
-	 * whole recursive call tree, rather than threaded through each method
-	 * call the way the write-verb compilers pass `array &$parameters` per
-	 * convertToSQL() call.
+	 * the result as a derived table, which is why $parameters is bound once
+	 * in the constructor and reused across the recursive call tree, rather
+	 * than threaded per-call like the write-verb compilers do.
 	 */
 	class QuelToSQLRetrieve {
 

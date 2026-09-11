@@ -19,37 +19,21 @@
 
 	/**
 	 * Compiles an AstReplace statement to dialect-correct UPDATE SQL. Sibling
-	 * to QuelToSQLAppend/QuelToSQLCreate/QuelToSQLDestroy — each QUEL
-	 * statement kind gets its own compiler here.
+	 * to QuelToSQLAppend/QuelToSQLCreate/QuelToSQLDestroy.
 	 *
-	 * The target table is aliased in the generated `UPDATE <table> as
-	 * <alias> SET ... WHERE ...` for no reason beyond matching
-	 * QuelToSQLRetrieve's own `as`-alias convention, but SET's target column
-	 * can't always be qualified with it: PostgreSQL/SQLite reject a table-
-	 * or-alias-qualified column on the LEFT side of a SET assignment (`SET
-	 * alias.col = ...` is a syntax error there), while MySQL/MariaDB/SQL
-	 * Server accept it there same as anywhere else. So a standalone
-	 * `replace`'s own UPDATE — which really does have a real alias in
-	 * scope — qualifies the SET target with it everywhere except
-	 * pgsql/sqlite, where it stays bare; the column name always comes
-	 * directly from the assignment's property name via metadata, never
-	 * through an AstIdentifier/BuildSqlFromAst. Everything else (SET
-	 * values, WHERE) reuses BuildSqlFromAst exactly as the retrieve
-	 * pipeline does, alias-qualified, which is valid everywhere once the
-	 * range is aliased in the UPDATE clause.
+	 * The target table is aliased in the generated UPDATE, but the SET
+	 * target column can't always be qualified with it: PostgreSQL/SQLite
+	 * reject an alias-qualified column on SET's left side, so it stays bare
+	 * there while MySQL/MariaDB/SQL Server qualify it like anywhere else.
+	 * SET values and WHERE reuse BuildSqlFromAst, alias-qualified, same as
+	 * `retrieve`.
 	 *
-	 * buildSetClause() is also reused by QuelToSQLUpsert for an `append ...
-	 * or replace (...)` on-conflict UPDATE, which has no table alias in
-	 * scope at all (the INSERT it's attached to never aliases its target) —
-	 * that call site passes no alias and always gets the bare form,
-	 * regardless of dialect.
+	 * buildSetClause() is also reused by QuelToSQLUpsert for an on-conflict
+	 * UPDATE that has no table alias in scope, always getting the bare form.
 	 *
-	 * Unlike QuelToSQLAppend's insert-from-select, `replace`'s WHERE clause
-	 * only ever has one range to resolve against (see AstReplace's
-	 * "single target range only" scope cut), so identifier resolution here
-	 * is the small, direct set of visitors — no QueryNormalizer/
-	 * SemanticAnalyzer/QueryOptimizer, which exist for retrieve's JOIN/
-	 * subquery/aggregate machinery that a single-range `replace` never needs.
+	 * Like `delete`, `replace`'s WHERE only ever has one range to resolve
+	 * against, so it skips the QueryNormalizer/SemanticAnalyzer/
+	 * QueryOptimizer machinery `retrieve` needs.
 	 */
 	class QuelToSQLReplace {
 

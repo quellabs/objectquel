@@ -10,11 +10,8 @@
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstCreateTableForeignKey;
 
 	/**
-	 * Compiles an AstCreateTable statement to dialect-correct CREATE TABLE DDL.
-	 * Sibling to QuelToSQLRetrieve/QuelToSQLDestroy — each QUEL statement kind
-	 * gets its own compiler here, rather than folding DDL into
-	 * QuelToSQLRetrieve, which is retrieve-specific (EntityStore-driven joins,
-	 * expressions) and never emits DDL.
+	 * Compiles an AstCreateTable statement to dialect-correct CREATE TABLE
+	 * DDL. Sibling to QuelToSQLRetrieve/QuelToSQLDestroy.
 	 */
 	class QuelToSQLCreate {
 
