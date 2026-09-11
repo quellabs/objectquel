@@ -161,7 +161,7 @@
 		 * @param array<string, array{name: string, column: Column, version: Version}> $versionColumns
 		 * @return array<string, int|string> property => raw SQL value expression
 		 *         (literal, quoted literal, or SQL function; never a parameter)
-		 * @throws \RuntimeException
+		 * @throws \RuntimeException|\Exception
 		 */
 		public function buildVersionInsertValues(array $versionColumns): array {
 			$values = [];
@@ -181,8 +181,7 @@
 		 * values instead of each maintaining its own copy.
 		 * @param string $columnType
 		 * @return int|string
-		 * @throws \RuntimeException
-		 * @throws \Exception
+		 * @throws \RuntimeException|\Exception
 		 */
 		public function getInitialVersionValue(string $columnType): int|string {
 			return match ($columnType) {

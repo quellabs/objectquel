@@ -86,12 +86,11 @@
 			// Fetch metadata for entity
 			$metadata = $this->entityStore->getMetadata($entity);
 
-			// Generate non-identity PK values up front (composite keys
-			// included) — append's own auto-generation only handles a
-			// single-column key.
+			// Generate non-identity PK values up front (composite keys included) —
+			//`append`'s own auto-generation only handles a single-column key.
 			$this->generatePrimaryKeyValues($entity, $metadata);
 
-			// Column list for the append: every mapped column except the auto-initialized version column.
+			// Column list for the `append`: every mapped column except the auto-initialized version column.
 			$assignments = $this->buildAssignments($entity, $metadata);
 
 			// Compile and run the `append to` statement.
