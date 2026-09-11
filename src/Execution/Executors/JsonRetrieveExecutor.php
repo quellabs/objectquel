@@ -113,11 +113,13 @@
 			// to iterate — return empty rather than letting foreach blow up on a string
 			// or associative object.
 			if (!is_array($decoded) || !array_is_list($decoded)) {
-				throw new QuelException(
-					$source->getExpression() !== null
-						? "JSONPath expression '{$source->getExpression()}' did not resolve to an array of rows."
-						: "JSON source '{$source->getPath()}' did not resolve to an array of rows. Use a JSONPath expression (e.g. '$.rows') to select the correct array."
-				);
+				if ($source->getExpression() !== null) {
+					$message = "JSONPath expression '{$source->getExpression()}' did not resolve to an array of rows.";
+				} else {
+					$message = "JSON source '{$source->getPath()}' did not resolve to an array of rows. Use a JSONPath expression (e.g. '$.rows') to select the correct array.";
+				}
+
+				throw new QuelException($message);
 			}
 			
 			// Prefix all items with the range alias

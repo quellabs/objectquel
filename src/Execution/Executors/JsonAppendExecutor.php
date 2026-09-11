@@ -47,6 +47,9 @@
 			assert($range instanceof AstRangeJsonSource);
 
 			$path = $range->getPath();
+
+			// Lock a sibling `.lock` file rather than $path itself (see class
+			// docblock), so an unlocked read of $path elsewhere never blocks.
 			$lockFile = $path . '.lock';
 			$lockHandle = fopen($lockFile, 'c+');
 
@@ -55,10 +58,15 @@
 			}
 
 			try {
+				// Exclusive: no concurrent reader/writer of the lock file may
+				// hold it while this read-mutate-write cycle runs.
 				if (!flock($lockHandle, LOCK_EX)) {
 					throw new QuelException("append to '{$path}': could not acquire an exclusive lock", 'append_error');
 				}
 
+				// Read the current contents, then append each new row on top —
+				// evaluated against $parameters, since a JSON range has no
+				// other row/contents context to evaluate assignment values in.
 				$rows = $this->loadRows($path);
 				$appendedRows = $statement->getRowsOrFail();
 
@@ -66,10 +74,13 @@
 					$rows[] = $this->evaluateRow($row, $parameters);
 				}
 
+				// Write the whole row set back — still under the lock, so no
+				// other append/write can interleave with this one.
 				$this->writeRowsAtomically($path, $rows);
 
 				return QuelResult::fromWriteStatement(count($appendedRows), null);
 			} finally {
+				// Always release the lock and close the handle, success or not.
 				flock($lockHandle, LOCK_UN);
 				fclose($lockHandle);
 			}
@@ -104,7 +115,7 @@
 
 			return $decoded;
 		}
-
+		
 		/**
 		 * Evaluates one assignment row into a plain PHP assoc array, keyed by
 		 * property name. Assignment values (literals, parameters, casts,
@@ -115,6 +126,7 @@
 		 * @param AstAssignment[] $row
 		 * @param array<string, mixed> $parameters
 		 * @return array<string, mixed>
+		 * @throws QuelException
 		 */
 		private function evaluateRow(array $row, array $parameters): array {
 			$evaluated = [];

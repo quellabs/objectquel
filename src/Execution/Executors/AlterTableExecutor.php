@@ -87,7 +87,8 @@
 		 * @param ExecutionContext $context
 		 * @return void
 		 * @throws QuelException On DDL failure, or if a sub-operation isn't
-		 *         representable on the connected engine
+		 *                       representable on the connected engine
+		 * @throws \Throwable
 		 */
 		public function execute(AstStatement $statement, ExecutionContext $context): void {
 			assert($statement instanceof AstAlterTable);
@@ -107,19 +108,31 @@
 		 * determines the SQL itself, and delegates index sub-operations to
 		 * CreateIndexExecutor/DestroyIndexExecutor's own compileSql(),
 		 * which does the same for their own prerequisites (sqlsrv/sqlite
-		 * fulltext).
+		 * fulltext). Foreign-key reference resolution is skipped on engines
+		 * with no named-foreign-key support (SQLite): QuelToSQLAlter rejects
+		 * `add foreign key` there regardless of the referenced column, so
+		 * resolving it first would be a wasted round trip that can also mask
+		 * the real error.
 		 * @param AstAlterTable $statement
 		 * @return list<string>
 		 * @throws QuelException If a sub-operation isn't representable on
 		 *         the connected engine
 		 */
 		public function compileSql(AstAlterTable $statement): array {
-			$primaryKeyState = $this->needsPrimaryKeyState($statement)
-				? $this->resolvePrimaryKeyState($statement->getTableName())
-				: new AlterTablePrimaryKeyState([], null);
+			if ($this->needsPrimaryKeyState($statement)) {
+				$primaryKeyState = $this->resolvePrimaryKeyState($statement->getTableName());
+			} else {
+				$primaryKeyState = new AlterTablePrimaryKeyState([], null);
+			}
+			
+			if ($this->platform->supportsNamedForeignKeys()) {
+				$operations = $this->resolveForeignKeyOperations($statement->getOperations());
+			} else {
+				$operations = $statement->getOperations();
+			}
 
 			$statements = $this->compiler->convertToSQL(
-				new AstAlterTable($statement->getTableName(), $this->resolveForeignKeyOperations($statement->getOperations())),
+				new AstAlterTable($statement->getTableName(), $operations),
 				$primaryKeyState->getColumns(),
 				$primaryKeyState->getConstraintName()
 			);
@@ -148,21 +161,16 @@
 
 			return array_merge([], ...$statements);
 		}
-
+		
 		/**
 		 * Defaults a column-less `references Table` to the target's primary
-		 * key. Skipped on engines with no named-foreign-key support
-		 * (SQLite): QuelToSQLAlter rejects `add foreign key` there
-		 * regardless of the referenced column, so resolving it first would
-		 * be a wasted round trip that can also mask the real error.
+		 * key. Only called where the platform supports named foreign keys —
+		 * the caller checks.
 		 * @param AstAlterOperation[] $operations
 		 * @return AstAlterOperation[]
+		 * @throws QuelException
 		 */
 		private function resolveForeignKeyOperations(array $operations): array {
-			if (!$this->platform->supportsNamedForeignKeys()) {
-				return $operations;
-			}
-
 			$resolved = [];
 
 			foreach ($operations as $operation) {

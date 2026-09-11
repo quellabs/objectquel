@@ -129,9 +129,9 @@
 				$this->isSqlServerFulltextIndexName($tableName, $statement->getIndexName())
 			) {
 				return $this->compiler->convertToSqlServerFulltextDropSQL($statement);
+			} else {
+				return $this->compiler->convertToSQL($statement);
 			}
-
-			return $this->compiler->convertToSQL($statement);
 		}
 
 		/**
@@ -162,14 +162,23 @@
 			$tableName = $statement->getTableName();
 			$indexes = $this->connection->getIndexes($tableName);
 
+			// A real index by this name takes precedence — only chase the
+			// FTS5 possibility once $indexName doesn't resolve as one.
 			if (!isset($indexes[$statement->getIndexName()])) {
+				// Fetch table name
 				$baseTable = $this->connection->getSqliteFts5BaseTable($statement->getIndexName());
 
+				// Confirmed match: $indexName is the FTS5 virtual table for
+				// this exact table, so compile the FTS5-specific drop
+				// (table + sync triggers) instead of an ordinary DROP INDEX.
 				if ($baseTable === $tableName) {
 					return $this->compiler->convertToSqliteFts5DropSQL($statement);
 				}
 			}
 
+			// Neither a known index nor a confirmed FTS5 table — fall
+			// through to the ordinary path, which fails loudly on its own
+			// if $indexName doesn't exist at all.
 			return $this->compiler->convertToSQL($statement);
 		}
 	}

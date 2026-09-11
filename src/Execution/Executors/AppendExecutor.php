@@ -124,7 +124,7 @@
 
 			return $this->executeDirectInsert($statement, $parameters);
 		}
-
+		
 		/**
 		 * Prepares, compiles, and runs the literal-values (or planner-ineligible
 		 * insert-from-select) form of an append statement directly against the
@@ -134,7 +134,7 @@
 		 * @param array<string, mixed> $parameters
 		 * @return QuelResult
 		 * @throws QuelException On compile or execution failure
-		 * @throws \ReflectionException|SemanticException
+		 * @throws \ReflectionException|SemanticException|EntityResolutionException
 		 */
 		private function executeDirectInsert(AstAppend $statement, array $parameters): QuelResult {
 			$prepared = $this->prepare($statement, $parameters);
@@ -161,8 +161,9 @@
 			// 2/0 = updated); Postgres/SQLite/SQL Server report the same count
 			// either way, so readback is skipped entirely for those dialects.
 			if ($eligibleForReadback && $statement->getOnConflict() !== null) {
-				$eligibleForReadback = in_array($this->connection->getDatabaseType(), ['mysql', 'mariadb'], true)
-					&& $rs->rowCount() === 1;
+				$eligibleForReadback =
+					in_array($this->connection->getDatabaseType(), ['mysql', 'mariadb'], true) &&
+					$rs->rowCount() === 1;
 			}
 
 			$generatedId = $prepared->getGeneratedId();
@@ -198,24 +199,30 @@
 		 *        every call is filtered down first (see filterParametersForSql()).
 		 * @param EntityMetadataRecord $metadata
 		 * @return QuelResult
-		 * @throws QuelException
+		 * @throws QuelException|\Throwable
 		 */
 		private function executeUpsertFallback(CompiledAppendSql $compiled, array $parameters, EntityMetadataRecord $metadata): QuelResult {
 			$this->connection->beginTrans();
 
 			try {
+				// Try the UPDATE branch first: if a row already matches the
+				// conflict target's WHERE clause, updating it is all that's
+				// needed and the INSERT below never runs.
 				$updateSql = $compiled->getFallbackUpdateSqlOrFail();
 
 				$updateRs = $this->assertInsertSucceeded(
 					$this->connection->execute($updateSql, $this->filterParametersForSql($updateSql, $parameters)),
 					$metadata->tableName
 				);
-
+				
+				// A row matched and was updated — the upsert is done.
 				if ($updateRs->rowCount() > 0) {
 					$this->connection->commitTrans();
 					return QuelResult::fromWriteStatement($updateRs->rowCount(), null);
 				}
 
+				// No row matched the WHERE clause, so nothing was updated:
+				// fall through to the plain INSERT to create it.
 				$insertRs = $this->assertInsertSucceeded(
 					$this->connection->execute($compiled->primarySql, $this->filterParametersForSql($compiled->primarySql, $parameters)),
 					$metadata->tableName
@@ -234,21 +241,18 @@
 				$this->connection->commitTrans();
 				return QuelResult::fromWriteStatement($insertRs->rowCount(), $generatedId);
 			} catch (\Throwable $e) {
+				// Either statement failing rolls back the other, so the row
+				// is never left half-updated/half-inserted.
 				$this->connection->rollbackTrans();
 				throw $e;
 			}
 		}
-
+		
 		/**
-		 * Narrows $parameters down to only the names $sql actually
-		 * references — the underlying driver rejects extra, unreferenced
-		 * bound parameters (`SQLSTATE[HY093]`) once native prepares split a
-		 * single compiled parameter set across more than one statement, which
-		 * only happens here (see executeUpsertFallback()); every other
-		 * write-verb execution path compiles its whole $parameters set into
-		 * one statement, where this mismatch can't occur. Mirrors the
-		 * placeholder regex DatabaseAdapter::deduplicateParameters() already
-		 * uses to avoid matching inside string literals.
+		 * Keeps only parameters referenced by $sql. Required for
+		 * executeUpsertFallback(), where native prepares split one parameter
+		 * set across multiple statements and reject unreferenced parameters.
+		 * Mirrors DatabaseAdapter::deduplicateParameters()'s placeholder regex.
 		 * @param string $sql
 		 * @param array<string, mixed> $parameters
 		 * @return array<string, mixed>
@@ -328,15 +332,15 @@
 			if (empty($rows)) {
 				return QuelResult::fromWriteStatement(0, null);
 			}
-
+			
+			// Re-insert the fetched rows as chunked literal-values appends
+			// (INSERT_BATCH_SIZE per statement) inside one transaction, so a
+			// failure partway through rolls back everything instead of
+			// leaving a partially-inserted result set.
 			$totalAffected = 0;
 			$this->connection->beginTrans();
 
 			try {
-				// Re-insert the fetched rows as chunked literal-values appends
-				// (INSERT_BATCH_SIZE per statement) inside one transaction, so a
-				// failure partway through rolls back everything instead of
-				// leaving a partially-inserted result set.
 				foreach (array_chunk($rows, self::INSERT_BATCH_SIZE) as $batchIndex => $batch) {
 					$chunkParams = [];
 					$assignmentRows = [];
@@ -398,22 +402,26 @@
 
 			return $rs;
 		}
-
+		
 		/**
 		 * Resolves entity metadata, normalizes bound-parameter values, and
 		 * fills in any generated primary keys. Called by executeDirectInsert()
 		 * before compiling the statement.
 		 * @param AstAppend $statement
 		 * @param array<string, mixed> $parameters
-		 * @throws \ReflectionException|EntityResolutionException
+		 * @return PreparedAppend
+		 * @throws EntityResolutionException
+		 * @throws \ReflectionException
 		 */
 		private function prepare(AstAppend $statement, array &$parameters): PreparedAppend {
+			// Validate existence of entity name
 			$entityName = $statement->getEntityName();
 
 			if ($entityName === null) {
 				throw new \LogicException('AppendExecutor::prepare() called on a statement whose target range is not an entity range');
 			}
 
+			// Fetch metadata for entity
 			$metadata = $this->entityStore->getMetadata($entityName);
 
 			// Insert-from-select has no literal rows to normalize — see this
@@ -444,7 +452,6 @@
 		 * @param AstAppend $statement Literal-values form (not insert-from-select)
 		 * @param EntityMetadataRecord $metadata
 		 * @param array<string, mixed> $parameters
-		 * @throws EntityResolutionException
 		 */
 		private function normalizeParameterValues(AstAppend $statement, EntityMetadataRecord $metadata, array &$parameters): void {
 			$serializer = $this->entityManager->getUnitOfWork()->getSerializer();
@@ -454,7 +461,7 @@
 				$normalizer->normalizeAssignments($row);
 			}
 		}
-
+		
 		/**
 		 * For the literal-values form, generates a value for the target
 		 * entity's primary key on every row that doesn't already supply one —
@@ -466,6 +473,7 @@
 		 * @param AstAppend $statement
 		 * @param EntityMetadataRecord $metadata
 		 * @param array<string, mixed> $parameters
+		 * @return PreparedAppend
 		 * @throws \ReflectionException
 		 */
 		private function fillGeneratedPrimaryKeys(AstAppend $statement, EntityMetadataRecord $metadata, array &$parameters): PreparedAppend {

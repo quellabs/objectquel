@@ -81,7 +81,7 @@
 		 * @param AstStatement $statement
 		 * @param ExecutionContext $context
 		 * @return void
-		 * @throws QuelException On DDL failure
+		 * @throws QuelException|\Throwable On DDL failure
 		 */
 		public function execute(AstStatement $statement, ExecutionContext $context): void {
 			assert($statement instanceof AstCreateTable);
@@ -92,21 +92,30 @@
 
 			if ($this->platform->supportsTransactionalDDL()) {
 				$this->ddlRunner->runTransactionally($statements, $this->platform, $failureMessage, $errorCode);
-				return;
+			} else {
+				$this->ddlRunner->runWithCompensation($statements, $failureMessage, $errorCode, $this->buildDropCompensation($statement));
 			}
+		}
 
+		/**
+		 * Builds the compensating action passed to
+		 * DdlRunner::runWithCompensation() for the non-transactional
+		 * (MySQL/MariaDB) path: drop the table execute() just created if
+		 * any statement fails, unless `if not exists` matched a table that
+		 * already existed. See the class docblock for the `if not exists`
+		 * carve-out's reasoning.
+		 * @param AstCreateTable $statement
+		 * @return callable(): void
+		 */
+		private function buildDropCompensation(AstCreateTable $statement): callable {
 			$physicalTableName = $this->compiler->getPhysicalTableName($statement);
 			$tableExistedBefore = in_array($physicalTableName, $this->connection->getTables(), true);
 
-			try {
-				$this->ddlRunner->run($statements, $failureMessage, $errorCode);
-			} catch (\Throwable $e) {
+			return function () use ($tableExistedBefore, $physicalTableName) {
 				if (!$tableExistedBefore) {
 					$this->compensateByDroppingTable($physicalTableName);
 				}
-
-				throw $e;
-			}
+			};
 		}
 
 		/**

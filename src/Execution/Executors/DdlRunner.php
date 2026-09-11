@@ -9,7 +9,9 @@
 	/**
 	 * Runs an ordered list of DDL statements against a connection, stopping
 	 * at (and reporting) the first failure — optionally wrapped in a
-	 * transaction when the platform supports transactional DDL. Shared by
+	 * transaction when the platform supports transactional DDL, or paired
+	 * with a caller-supplied compensating action for a non-transactional
+	 * failure response instead. Shared by
 	 * CreateTableExecutor/AlterTableExecutor (transactional) and
 	 * CreateIndexExecutor/DestroyIndexExecutor (non-transactional; see
 	 * objectquel-index-clause-design.md, decision 4 — transaction wrapping
@@ -73,5 +75,27 @@
 			}
 
 			$this->connection->commitTrans();
+		}
+
+		/**
+		 * Runs $statements as run() does, invoking $compensate() before
+		 * rethrowing on failure. Mirrors runTransactionally()'s try/catch/
+		 * rethrow skeleton for a caller that reacts to a failed sequence
+		 * with its own compensating action instead of a database
+		 * transaction — see CreateTableExecutor::buildDropCompensation().
+		 * @param list<string> $statements
+		 * @param string $failureMessage
+		 * @param string $errorCode
+		 * @param callable(): void $compensate Invoked once, before rethrowing, if any statement fails
+		 * @throws QuelException On the first failing statement
+		 * @throws \Throwable Any other exception raised while running $statements — $compensate() runs before rethrowing
+		 */
+		public function runWithCompensation(array $statements, string $failureMessage, string $errorCode, callable $compensate): void {
+			try {
+				$this->run($statements, $failureMessage, $errorCode);
+			} catch (\Throwable $e) {
+				$compensate();
+				throw $e;
+			}
 		}
 	}

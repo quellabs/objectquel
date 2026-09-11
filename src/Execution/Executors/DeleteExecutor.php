@@ -43,7 +43,7 @@
 		 * @param AstStatement $statement
 		 * @param ExecutionContext $context
 		 * @return QuelResult
-		 * @throws QuelException On compile or execution failure
+		 * @throws QuelException|SemanticException On compile or execution failure
 		 */
 		public function execute(AstStatement $statement, ExecutionContext $context): QuelResult {
 			assert($statement instanceof AstDelete);

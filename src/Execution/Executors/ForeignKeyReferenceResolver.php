@@ -31,8 +31,6 @@
 			// so every failure on this path is a QuelException.
 			try {
 				$columns = $connection->getPrimaryKeyColumns($referencedTable);
-			} catch (QuelException $e) {
-				throw $e;
 			} catch (\Throwable $e) {
 				throw new QuelException(
 					"Cannot default the referenced column for a foreign key to '{$referencedTable}': " .
@@ -43,9 +41,14 @@
 			}
 
 			if (count($columns) !== 1) {
+				if ($columns === []) {
+					$reason = "the table has no primary key";
+				} else {
+					$reason = "the table has a composite primary key";
+				}
+
 				throw new QuelException(
-					"Cannot default the referenced column for a foreign key to '{$referencedTable}': " .
-					($columns === [] ? "the table has no primary key" : "the table has a composite primary key") .
+					"Cannot default the referenced column for a foreign key to '{$referencedTable}': {$reason}" .
 					" — specify the referenced column explicitly, e.g. \"references {$referencedTable} (column)\"",
 					'foreign_key_reference_unresolved'
 				);
