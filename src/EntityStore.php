@@ -23,8 +23,6 @@
 	use Quellabs\AnnotationReader\AnnotationReaderLocator;
 	use Quellabs\AnnotationReader\AnnotationReader;
 	use Quellabs\AnnotationReader\Exception\AnnotationReaderException;
-	use Quellabs\ObjectQuel\Annotations\Orm\ManyToOne;
-	use Quellabs\ObjectQuel\Annotations\Orm\OneToOne;
 	use Quellabs\ObjectQuel\Annotations\Orm\Table;
 	use Quellabs\ObjectQuel\Exception\EntityResolutionException;
 	use Quellabs\ObjectQuel\Metadata\EntityMetadataRecord;

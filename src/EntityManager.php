@@ -143,12 +143,8 @@
 		
 		/**
 		 * Persists (inserts) an entity into the database
-		 *
-		 * For entities with composite primary keys where multiple keys use the identity strategy,
-		 * only the first identity key will receive the database-generated value. Other identity
-		 * keys must be set manually before calling flush().
-		 *
 		 * @param object $entity The entity to be inserted into the database
+		 * @throws EntityResolutionException
 		 */
 		public function persist(object $entity): bool {
 			return $this->unitOfWork->persistNew($entity);
@@ -169,6 +165,7 @@
 		 * Detach an entity from the EntityManager.
 		 * This will remove the entity from the identity map and stop tracking its changes.
 		 * @param object $entity The entity to detach.
+		 * @throws EntityResolutionException
 		 */
 		public function detach(object $entity): void {
 			$this->unitOfWork->detach($entity);
@@ -213,21 +210,21 @@
 				$memoryPeakUsage = memory_get_peak_usage(true) / 1024;
 				
 				// Explain the query. QueryExecutor::explainQuery() only supports
-				// a retrieve statement — a DDL/write-verb statement already ran
-				// for real above, so there's nothing safe to show for it without
-				// either misrepresenting a generated value or running the write
-				// again; fall back to an empty plan for those instead of letting
-				// the rejection bubble up and fail an otherwise-successful call.
+				// retrieve statements. DDL/write-verb statements have already been
+				// executed above, so explaining them would either require rerunning
+				// the write or fabricating a plan. For those statements, fall back
+				// to an empty plan rather than letting the unsupported-operation
+				// error fail an otherwise successful call.
 				try {
 					$plan = $this->queryExecutor->explainQuery($query, $parameters);
 				} catch (QuelException $e) {
 					if ($e->type !== 'not_plannable') {
 						throw $e;
 					}
-
+					
 					$plan = new QueryPlan([], []);
 				}
-
+				
 				// Emit the query plan + additional query info
 				$this->debugQuerySignal?->emit([
 					'driver'            => 'objectquel',
@@ -243,7 +240,7 @@
 			
 			return $result;
 		}
-
+		
 		/**
 		 * Returns planner decisions and generated SQL for a query without executing it.
 		 * Combines explain() with a SQL dry-run into one coherent result.
@@ -403,7 +400,7 @@
 		public function findBy(string $entityType, array $searchData, ?array $sortBy = null): array {
 			// Prepare a query in case the entity is not found
 			$query = $this->queryBuilder->prepareQuery($entityType, $searchData, $sortBy);
-
+			
 			// Null-valued keys become "is_null(main.{key})" in $query, with
 			// no ":{key}" placeholder, so they must be excluded from binding.
 			$boundParameters = array_filter($searchData, static fn(mixed $value): bool => $value !== null);

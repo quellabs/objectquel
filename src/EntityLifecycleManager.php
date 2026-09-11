@@ -21,7 +21,6 @@
 	namespace Quellabs\ObjectQuel;
 	
 	use Quellabs\AnnotationReader\AnnotationInterface;
-	use Quellabs\AnnotationReader\Exception\ParserException;
 	use Quellabs\ObjectQuel\Annotations\Orm\LifecycleAware;
 	use Quellabs\ObjectQuel\Annotations\Orm\PrePersist;
 	use Quellabs\ObjectQuel\Annotations\Orm\PostPersist;
@@ -72,10 +71,11 @@
 			$this->unitOfWork->signalPreDelete->connect(new Slot([$this, 'handlePreDelete']));
 			$this->unitOfWork->signalPostDelete->connect(new Slot([$this, 'handlePostDelete']));
 		}
-
+		
 		/**
 		 * Handle prePersist event
 		 * @param object $entity The entity being persisted
+		 * @throws \ReflectionException
 		 */
 		public function handlePrePersist(object $entity): void {
 			$this->executeLifecycleMethods($entity, PrePersist::class);
@@ -84,6 +84,7 @@
 		/**
 		 * Handle postPersist event
 		 * @param object $entity The entity that was persisted
+		 * @throws \ReflectionException
 		 */
 		public function handlePostPersist(object $entity): void {
 			$this->executeLifecycleMethods($entity, PostPersist::class);
@@ -92,6 +93,7 @@
 		/**
 		 * Handle preUpdate event
 		 * @param object $entity The entity being updated
+		 * @throws \ReflectionException
 		 */
 		public function handlePreUpdate(object $entity): void {
 			$this->executeLifecycleMethods($entity, PreUpdate::class);
@@ -100,6 +102,7 @@
 		/**
 		 * Handle postUpdate event
 		 * @param object $entity The entity that was updated
+		 * @throws \ReflectionException
 		 */
 		public function handlePostUpdate(object $entity): void {
 			$this->executeLifecycleMethods($entity, PostUpdate::class);
@@ -108,6 +111,7 @@
 		/**
 		 * Handle preDelete event
 		 * @param object $entity The entity being deleted
+		 * @throws \ReflectionException
 		 */
 		public function handlePreDelete(object $entity): void {
 			$this->executeLifecycleMethods($entity, PreDelete::class);
@@ -116,6 +120,7 @@
 		/**
 		 * Handle postDelete event
 		 * @param object $entity The entity that was deleted
+		 * @throws \ReflectionException
 		 */
 		public function handlePostDelete(object $entity): void {
 			$this->executeLifecycleMethods($entity, PostDelete::class);
@@ -125,6 +130,7 @@
 		 * Execute all lifecycle methods of a specific annotation type on an entity
 		 * @param object $entity The entity to execute methods on
 		 * @param class-string<AnnotationInterface> $annotationClass The annotation class to look for
+		 * @throws \ReflectionException
 		 */
 		private function executeLifecycleMethods(object $entity, string $annotationClass): void {
 			// Skip if entity class doesn't have lifecycle callbacks
@@ -148,20 +154,17 @@
 		 * @return bool  True if the entity has the @Orm\LifecycleAware annotation
 		 */
 		private function isLifecycleAware(object $entity): bool {
-			try {
-				$className = get_class($entity);
-				
-				// Check cache first
-				if (isset($this->lifecycleAwareCache[$className])) {
-					return $this->lifecycleAwareCache[$className];
-				}
-				
-				// Check if the class is lifecycle aware
-				$isLifeCycleAware = $this->entityStore->getAnnotationReader()->classHasAnnotation($entity, LifecycleAware::class);
-				return $this->lifecycleAwareCache[$className] = $isLifeCycleAware;
-			} catch (ParserException $e) {
-				return false;
+			$className = get_class($entity);
+			
+			// Check cache first
+			if (isset($this->lifecycleAwareCache[$className])) {
+				return $this->lifecycleAwareCache[$className];
 			}
+			
+			// Check if the class is lifecycle aware
+			$annotationReader = $this->entityStore->getAnnotationReader();
+			$isLifeCycleAware = $annotationReader->classHasAnnotation($entity, LifecycleAware::class);
+			return $this->lifecycleAwareCache[$className] = $isLifeCycleAware;
 		}
 		
 		/**
@@ -169,6 +172,7 @@
 		 * @param class-string $entityClass The entity class name
 		 * @param class-string<AnnotationInterface> $annotationClass The annotation class to look for
 		 * @return string[] List of method names
+		 * @throws \ReflectionException
 		 */
 		private function getLifecycleMethods(string $entityClass, string $annotationClass): array {
 			// Create a cache key
