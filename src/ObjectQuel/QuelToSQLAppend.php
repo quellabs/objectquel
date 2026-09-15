@@ -2,6 +2,7 @@
 
 	namespace Quellabs\ObjectQuel\ObjectQuel;
 
+	use Quellabs\ObjectQuel\OrmException;
 	use Quellabs\ObjectQuel\Exception\EntityResolutionException;
 	use Quellabs\AnnotationReader\Exception\AnnotationReaderException;
 	use Quellabs\ObjectQuel\Capabilities\PlatformCapabilitiesInterface;
@@ -127,7 +128,6 @@
 			// DEFAULT (which may not exist or may have drifted from the annotation).
 			$defaultColumnsToInit = $this->collectDefaultColumnsToInit($properties, $metadata);
 			$properties = array_merge($properties, array_keys($defaultColumnsToInit));
-
 			$columnNames = array_map(fn(string $property) => $metadata->getColumnNameOrFail($property), $properties);
 
 			// STI subclass: inject the discriminator column value so `append`
@@ -152,6 +152,7 @@
 				$rows
 			);
 
+			// Compile append query
 			$insertSql = $this->compileInsertGeneric($tableName, $columnNames, $properties, $compiledRows);
 			$onConflict = $statement->getOnConflict();
 
@@ -159,9 +160,10 @@
 				return CompiledAppendSql::single($insertSql);
 			}
 
+			// Convert query to SQL
 			return $this->upsertCompiler->convertToSQL($insertSql, $tableName, $metadata, $properties, $columnNames, $compiledRows, $onConflict, $parameters);
 		}
-
+		
 		/**
 		 * Compiles a single row's assignments to SQL, keyed by property, after
 		 * checking each value against its target column's declared type. Also
@@ -173,11 +175,12 @@
 		 * @param array{column: non-empty-string, value: non-empty-string}|null $discriminatorInfo STI discriminator column/value to add
 		 * @param array<string, mixed> $defaultColumnsToInit property => declared @Orm\Column default value to add
 		 * @return array<string, string> property (or discriminator column name) => compiled SQL value
-		 * @throws SemanticException
+		 * @throws SemanticException|OrmException
 		 */
 		private function compileRow(array $row, EntityMetadataRecord $metadata, array &$parameters, array $versionColumnsToInit = [], ?array $discriminatorInfo = null, array $defaultColumnsToInit = []): array {
 			$compiled = [];
 
+			// Caller-supplied assignments: type-check then render each value to SQL.
 			foreach ($row as $assignment) {
 				$this->assertAssignmentValueTypeCompatible($assignment, $metadata);
 
@@ -185,14 +188,17 @@
 				$compiled[$assignment->getProperty()] = $builder->visitNodeAndReturnSQL($assignment->getValue());
 			}
 
+			// @Orm\Version columns the caller didn't assign: initial value for this row.
 			foreach ($this->versionValueHandler->buildVersionInsertValues($versionColumnsToInit) as $property => $value) {
 				$compiled[$property] = (string)$value;
 			}
 
+			// @Orm\Column(default=...) columns the caller didn't assign: declared default, as a literal.
 			foreach ($defaultColumnsToInit as $property => $defaultValue) {
 				$compiled[$property] = $this->formatDefaultLiteral($defaultValue);
 			}
 
+			// STI subclass and not already supplied: the type-discriminator literal.
 			if ($discriminatorInfo !== null) {
 				$compiled[$discriminatorInfo['column']] = $this->identifierQuoter->quoteStringLiteral($discriminatorInfo['value']);
 			}
@@ -312,7 +318,7 @@
 				implode(', ', $valueTuples)
 			);
 		}
-
+		
 		/**
 		 * Compiles the insert-from-select form to
 		 * `INSERT INTO table (cols) SELECT ...`.
@@ -330,6 +336,7 @@
 		 * @param array<string, mixed> $parameters
 		 * @return string
 		 * @throws SemanticException
+		 * @throws AnnotationReaderException
 		 */
 		private function compileFromSelect(AstAppend $statement, EntityMetadataRecord $metadata, string $tableName, string $targetLabel, array &$parameters): string {
 			$properties = $statement->getColumnsOrFail();

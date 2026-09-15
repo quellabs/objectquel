@@ -161,7 +161,7 @@
 		 * @param array<string, array{name: string, column: Column, version: Version}> $versionColumns
 		 * @return array<string, int|string> property => raw SQL value expression
 		 *         (literal, quoted literal, or SQL function; never a parameter)
-		 * @throws \RuntimeException|\Exception
+		 * @throws OrmException|\Exception
 		 */
 		public function buildVersionInsertValues(array $versionColumns): array {
 			$values = [];
@@ -181,14 +181,14 @@
 		 * values instead of each maintaining its own copy.
 		 * @param string $columnType
 		 * @return int|string
-		 * @throws \RuntimeException|\Exception
+		 * @throws OrmException|\Exception
 		 */
 		public function getInitialVersionValue(string $columnType): int|string {
 			return match ($columnType) {
 				'int', 'integer', 'biginteger' => 1,
 				'datetime', 'timestamp' => $this->platformCapabilities->getCurrentDatetimeFunction(),
 				'uuid', 'guid' => "'" . Tools::createUUIDv7() . "'",
-				default => throw new \RuntimeException("Invalid column type {$columnType} for Version annotation"),
+				default => throw new OrmException("Invalid column type {$columnType} for Version annotation"),
 			};
 		}
 
