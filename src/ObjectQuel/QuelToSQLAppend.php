@@ -135,6 +135,20 @@
 				$properties = array_merge($properties, array_keys($versionColumnsToInit));
 			}
 
+			// Any @Orm\Column(default=...) column the caller didn't supply gets
+			// its declared default value added as if the caller had written it
+			// themselves — mirrors the version-column initialization above, and
+			// is what makes assertRequiredColumnsSupplied()'s "it has a default,
+			// so it's optional" exemption actually true: the value comes from
+			// the annotation, not from an omitted column falling through to
+			// whatever DEFAULT the table's own DDL happens to declare (which
+			// may not even exist, or may have drifted from the annotation).
+			$defaultColumnsToInit = $this->collectDefaultColumnsToInit($properties, $metadata);
+
+			if (!empty($defaultColumnsToInit)) {
+				$properties = array_merge($properties, array_keys($defaultColumnsToInit));
+			}
+
 			$columnNames = array_map(fn(string $property) => $metadata->getColumnNameOrFail($property), $properties);
 
 			// STI subclass: inject the discriminator column value so `append`
@@ -155,7 +169,7 @@
 			// source can both be built from the same compiled expressions
 			// without recompiling them.
 			$compiledRows = array_map(
-				fn(array $row) => $this->compileRow($row, $metadata, $parameters, $versionColumnsToInit, $discriminatorInfo),
+				fn(array $row) => $this->compileRow($row, $metadata, $parameters, $versionColumnsToInit, $discriminatorInfo, $defaultColumnsToInit),
 				$rows
 			);
 
@@ -180,10 +194,12 @@
 		 * @param array<string, array{name: string, column: \Quellabs\ObjectQuel\Annotations\Orm\Column, version: \Quellabs\ObjectQuel\Annotations\Orm\Version}> $versionColumnsToInit
 		 * @param array{column: non-empty-string, value: non-empty-string}|null $discriminatorInfo
 		 *        STI discriminator column/value to add — see compileValues()
+		 * @param array<string, mixed> $defaultColumnsToInit property => declared
+		 *        @Orm\Column default value to add — see compileValues()
 		 * @return array<string, string> property (or discriminator column name) => compiled SQL value
 		 * @throws SemanticException
 		 */
-		private function compileRow(array $row, EntityMetadataRecord $metadata, array &$parameters, array $versionColumnsToInit = [], ?array $discriminatorInfo = null): array {
+		private function compileRow(array $row, EntityMetadataRecord $metadata, array &$parameters, array $versionColumnsToInit = [], ?array $discriminatorInfo = null, array $defaultColumnsToInit = []): array {
 			$compiled = [];
 
 			foreach ($row as $assignment) {
@@ -197,11 +213,72 @@
 				$compiled[$property] = (string)$value;
 			}
 
+			foreach ($defaultColumnsToInit as $property => $defaultValue) {
+				$compiled[$property] = $this->formatDefaultLiteral($defaultValue);
+			}
+
 			if ($discriminatorInfo !== null) {
 				$compiled[$discriminatorInfo['column']] = $this->identifierQuoter->quoteStringLiteral($discriminatorInfo['value']);
 			}
 
 			return $compiled;
+		}
+
+		/**
+		 * Finds every mapped column with a declared @Orm\Column default that
+		 * isn't already in $properties (explicitly supplied, or already queued
+		 * for auto-initialization as a version column) — see compileValues().
+		 * @param string[] $properties Already-resolved property names for this
+		 *        statement (supplied + version columns to init)
+		 * @param EntityMetadataRecord $metadata
+		 * @return array<string, mixed> property => declared default value
+		 */
+		private function collectDefaultColumnsToInit(array $properties, EntityMetadataRecord $metadata): array {
+			$supplied = array_flip($properties);
+			$defaults = [];
+
+			foreach ($metadata->columnDefinitions as $columnName => $columnDef) {
+				if ($columnDef['primary_key'] || $columnDef['default'] === null) {
+					continue;
+				}
+
+				$property = $metadata->getPropertyName($columnName);
+
+				if ($property === null || isset($supplied[$property])) {
+					continue;
+				}
+
+				$defaults[$property] = $columnDef['default'];
+			}
+
+			return $defaults;
+		}
+
+		/**
+		 * Renders a declared @Orm\Column default value (a plain PHP scalar,
+		 * never an expression) as a SQL literal, for the same INSERT-values
+		 * position a caller-supplied literal would occupy.
+		 * @param mixed $value
+		 * @return string
+		 * @throws \LogicException If the declared default isn't a plain scalar
+		 */
+		private function formatDefaultLiteral(mixed $value): string {
+			if (is_bool($value)) {
+				return $value ? '1' : '0';
+			}
+
+			if (is_int($value) || is_float($value)) {
+				return (string)$value;
+			}
+
+			if (is_string($value)) {
+				return $this->identifierQuoter->quoteStringLiteral($value);
+			}
+
+			throw new \LogicException(sprintf(
+				'@Orm\Column default value must be a string, int, float, or bool, got %s',
+				get_debug_type($value)
+			));
 		}
 
 		/**

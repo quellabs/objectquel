@@ -135,10 +135,13 @@
 		
 		/**
 		 * Checks if this column has a default value
+		 * A declared default of 0, '0', '', or false is still a default;
+		 * only the absence of a "default" parameter (or an explicit null)
+		 * means there is none — see getDefault().
 		 * @return bool True if a default value is specified, false otherwise
 		 */
 		public function hasDefault(): bool {
-			return !empty($this->parameters["default"]);
+			return ($this->parameters["default"] ?? null) !== null;
 		}
 		
 		/**
