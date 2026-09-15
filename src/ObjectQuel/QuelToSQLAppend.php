@@ -120,19 +120,13 @@
 			// Un-assigned @Orm\Version columns get their INSERT initial value
 			// (mirrors InsertPersister — see VersionValueHandler::buildVersionInsertValues()).
 			$versionColumnsToInit = array_diff_key($metadata->versionColumns, array_flip($properties));
-
-			if (!empty($versionColumnsToInit)) {
-				$properties = array_merge($properties, array_keys($versionColumnsToInit));
-			}
+			$properties = array_merge($properties, array_keys($versionColumnsToInit));
 
 			// Un-assigned @Orm\Column(default=...) columns get their declared
 			// default value added, rather than relying on the table's own DDL
 			// DEFAULT (which may not exist or may have drifted from the annotation).
 			$defaultColumnsToInit = $this->collectDefaultColumnsToInit($properties, $metadata);
-
-			if (!empty($defaultColumnsToInit)) {
-				$properties = array_merge($properties, array_keys($defaultColumnsToInit));
-			}
+			$properties = array_merge($properties, array_keys($defaultColumnsToInit));
 
 			$columnNames = array_map(fn(string $property) => $metadata->getColumnNameOrFail($property), $properties);
 
