@@ -96,20 +96,17 @@
 		public function __construct(Configuration $configuration) {
 			$this->configuration = $configuration;
 			
-			// Use the application-wide shared reader if one has been registered (e.g. by Canvas).
-			// Sharing one instance means all packages contribute to and benefit from the same
-			// in-memory cache, so each class is deserialized from disk at most once per request.
-			// Fall back to constructing a local reader when running ObjectQuel standalone.
-			$sharedReader = AnnotationReaderLocator::getInstance();
-			
-			if ($sharedReader !== null) {
-				$this->annotationReader = $sharedReader;
+			// ObjectQuel's own reader, keyed separately so its cache path stays independent of Canvas's
+			$reader = AnnotationReaderLocator::getInstance('objectquel');
+
+			if ($reader !== null) {
+				$this->annotationReader = $reader;
 			} else {
 				$annotationReaderConfiguration = new \Quellabs\AnnotationReader\Configuration();
 				$annotationReaderConfiguration->setUseAnnotationCache($configuration->useMetadataCache());
 				$annotationReaderConfiguration->setAnnotationCachePath($configuration->getMetadataCachePath());
 				$this->annotationReader = new AnnotationReader($annotationReaderConfiguration);
-				AnnotationReaderLocator::setInstance($this->annotationReader);
+				AnnotationReaderLocator::setInstance($this->annotationReader, 'objectquel');
 			}
 			
 			$this->reflectionHandler = new ReflectionHandler();
