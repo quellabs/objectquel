@@ -207,13 +207,17 @@
 				case self::STRATEGY_WINDOW:
 					// Non-aggregate SELECT items become the window's PARTITION BY — the
 					// same "other columns imply grouping" rule ObjectQuel already uses to
-					// infer GROUP BY for the DIRECT strategies above — except the range's
-					// own primary key, which is excluded: unlike GROUP BY, PARTITION BY
-					// doesn't require every displayed column to be part of the key, and a
-					// primary key column is virtually always displayed for row identity
-					// alongside a sequence function (rank, lag, ...), where including it
-					// would put every row in its own single-row partition.
-					AggregateRewriter::rewriteAggregateAsWindowFunction($agg, $this->excludePrimaryKeyItems($nonAggItems));
+					// infer GROUP BY for the DIRECT strategies above — except:
+					//  - the range's own primary key, which is virtually always displayed
+					//    for row identity alongside a sequence function (rank, lag, ...),
+					//    where including it would put every row in its own partition;
+					//  - any column the aggregate itself orders by, which is virtually
+					//    always displayed too (e.g. `rank(sort by o.published)` while also
+					//    selecting o.published) — including it would fold every distinct
+					//    value of that column into its own partition, making the rank
+					//    trivially 1 for every row.
+					$partitionColumns = AstUtilities::excludeAggregateOrderColumns($agg, $this->excludePrimaryKeyItems($nonAggItems));
+					AggregateRewriter::rewriteAggregateAsWindowFunction($agg, $partitionColumns);
 					break;
 				
 				case self::STRATEGY_MEMORY:

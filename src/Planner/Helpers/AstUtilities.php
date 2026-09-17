@@ -267,4 +267,41 @@
 
 			return $primaryKey !== null && $leaf->getName() === $primaryKey;
 		}
+
+		/**
+		 * Filters out non-aggregate SELECT items that reference the same column as
+		 * one of the aggregate's own inline `sort by` expressions — applied alongside
+		 * excludePrimaryKeyItems() when inferring PARTITION BY. Without this, ranking
+		 * by a column that's also displayed (e.g. `rank(sort by o.published)` while
+		 * also selecting o.published) would put every distinct value of that column
+		 * in its own partition, making the rank trivially 1 for every row.
+		 * Matching is by getCompleteName() and only applies when the sort expression
+		 * is a bare identifier; a computed sort expression (e.g. `sort by o.a + o.b`)
+		 * has no safe general way to detect it re-appears in a SELECT item, so it is
+		 * left in the partition list unchanged.
+		 * @param AstAggregate $aggregate
+		 * @param AstAlias[] $nonAggItems
+		 * @return AstAlias[]
+		 */
+		public static function excludeAggregateOrderColumns(AstAggregate $aggregate, array $nonAggItems): array {
+			$orderColumnNames = [];
+
+			foreach ($aggregate->getOrder() ?? [] as $sortItem) {
+				if ($sortItem['ast'] instanceof AstIdentifier) {
+					$orderColumnNames[$sortItem['ast']->getCompleteName()] = true;
+				}
+			}
+
+			if ($orderColumnNames === []) {
+				return $nonAggItems;
+			}
+
+			return array_values(array_filter(
+				$nonAggItems,
+				function (AstAlias $item) use ($orderColumnNames): bool {
+					$expression = $item->getExpression();
+					return !($expression instanceof AstIdentifier && isset($orderColumnNames[$expression->getCompleteName()]));
+				}
+			));
+		}
 	}

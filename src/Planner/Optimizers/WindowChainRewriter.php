@@ -197,7 +197,14 @@
 				$clonedInner = $innerNode->deepClone();
 				$this->relinkIdentifiers($clonedInner, $originalRange, $clonedRange);
 				$innerRetrieve->addValue(new AstAlias($seqAlias, $clonedInner));
-				AggregateRewriter::rewriteAggregateAsWindowFunction($clonedInner, $innerPartitionItems);
+
+				// Also exclude any column this specific inner node orders by (e.g.
+				// `lag(o.published sort by o.published)`) — same reasoning as
+				// AggregateOptimizer's STRATEGY_WINDOW case, applied per node since
+				// different inner nodes in the same outer aggregate can sort by
+				// different columns.
+				$nodePartitionItems = AstUtilities::excludeAggregateOrderColumns($innerNode, $innerPartitionItems);
+				AggregateRewriter::rewriteAggregateAsWindowFunction($clonedInner, $nodePartitionItems);
 
 				$replacement = $this->buildPropertyIdentifier(null, $seqAlias, $helperRangeName);
 				$pendingHelperIdentifiers[] = $replacement;
