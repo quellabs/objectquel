@@ -25,6 +25,9 @@
 		/** @var AstRange[] */
 		private array $correlatedRanges;
 		
+		/** @var AstInterface[] PARTITION BY expressions for TYPE_WINDOW subqueries */
+		private array $partitionBy;
+		
 		/**
 		 * AstSubquery constructor
 		 * @param AstInterface|null $aggregation
@@ -32,26 +35,45 @@
 		 * @param AstRange[] $correlatedRanges
 		 * @param AstInterface|null $conditions
 		 * @param string|null $origin
+		 * @param AstInterface[] $partitionBy PARTITION BY expressions (TYPE_WINDOW only)
 		 */
 		public function __construct(
 			string        $type = self::TYPE_SCALAR,
 			?AstInterface $aggregation = null,
 			array         $correlatedRanges = [],
 			?AstInterface $conditions = null,
-			?string       $origin = null
+			?string       $origin = null,
+			array         $partitionBy = []
 		) {
 			$this->type = $type;
 			$this->aggregation = $aggregation;
 			$this->conditions = $conditions;
 			$this->correlatedRanges = $correlatedRanges;
 			$this->origin = $origin;
+			$this->partitionBy = $partitionBy;
 			
 			$this->aggregation?->setParent($this);
+			
+			foreach ($this->partitionBy as $expression) {
+				$expression->setParent($this);
+			}
 		}
 		
 		public function accept(AstVisitorInterface $visitor): void {
 			parent::accept($visitor);
 			$this->aggregation?->accept($visitor);
+			
+			foreach ($this->partitionBy as $expression) {
+				$expression->accept($visitor);
+			}
+		}
+		
+		/**
+		 * Returns the PARTITION BY expressions for a TYPE_WINDOW subquery.
+		 * @return AstInterface[]
+		 */
+		public function getPartitionBy(): array {
+			return $this->partitionBy;
 		}
 		
 		/**
@@ -138,9 +160,15 @@
 				$clonedCorrelatedRanges[] = $range->deepClone();
 			}
 			
+			// Clone the partition columns
+			$clonedPartitionBy = [];
+			foreach ($this->partitionBy as $expression) {
+				$clonedPartitionBy[] = $expression->deepClone();
+			}
+			
 			// Create new instance with cloned identifier
 			// Return cloned node
 			// @phpstan-ignore-next-line new.static
-			return new static($this->type, $clonedAggregation, $clonedCorrelatedRanges, $clonedConditions);
+			return new static($this->type, $clonedAggregation, $clonedCorrelatedRanges, $clonedConditions, $this->origin, $clonedPartitionBy);
 		}
 	}

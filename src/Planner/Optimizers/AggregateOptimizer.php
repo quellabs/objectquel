@@ -4,12 +4,15 @@
 	
 	use Quellabs\ObjectQuel\Capabilities\PlatformCapabilitiesInterface;
 	use Quellabs\ObjectQuel\Capabilities\NullPlatformCapabilities;
+	use Quellabs\ObjectQuel\EntityStore;
+	use Quellabs\ObjectQuel\Exception\QuelException;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstAggregate;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstAlias;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstIdentifier;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstNumber;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRangeJsonSource;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRetrieve;
+	use Quellabs\ObjectQuel\ObjectQuel\AstInterface;
 	use Quellabs\ObjectQuel\Planner\Helpers\AggregateConstants;
 	use Quellabs\ObjectQuel\Planner\Helpers\AggregateRewriter;
 	use Quellabs\ObjectQuel\Planner\Helpers\AstUtilities;
@@ -40,14 +43,19 @@
 		private const string STRATEGY_DIRECT_OVERLAP = 'DIRECT:ranges overlap, kept inline with GROUP BY';
 		private const string STRATEGY_SUBQUERY_DISJOINT = 'SUBQUERY:disjoint ranges, isolated in correlated subquery';
 		
+		/** @var EntityStore Provides entity metadata, used to exclude primary key columns from partition inference */
+		private EntityStore $entityStore;
+
 		/** @var PlatformCapabilitiesInterface Database engine capability descriptor */
 		private PlatformCapabilitiesInterface $platform;
-		
+
 		/**
 		 * AggregateOptimizer constructor
+		 * @param EntityStore $entityStore Provides entity metadata for primary key lookups
 		 * @param PlatformCapabilitiesInterface $platform Database engine capability descriptor
 		 */
-		public function __construct(PlatformCapabilitiesInterface $platform = new NullPlatformCapabilities()) {
+		public function __construct(EntityStore $entityStore, PlatformCapabilitiesInterface $platform = new NullPlatformCapabilities()) {
+			$this->entityStore = $entityStore;
 			$this->platform = $platform;
 		}
 		
@@ -113,11 +121,59 @@
 		private function applyAggregateStrategies(AstRetrieve $root, array $aggregates, bool $isAggregateOnly, PlanLogInterface $log): void {
 			// Non-aggregate items are invariant per query — compute once outside the loop.
 			$nonAggItems = AstUtilities::collectNonAggregateSelectItems($root);
-			
+
+			// An aggregate-only query normally collapses every aggregate into one summary
+			// row (STRATEGY_DIRECT_AGG_ONLY). A sequence function or running aggregate
+			// can't collapse — it emits one row per input row — so once any aggregate in
+			// the query requires the window strategy, every other true aggregate must use
+			// it too, or the result set's row count would be ambiguous. Treating the query
+			// as "not aggregate-only" for strategy selection routes every aggregate through
+			// the window-eligibility check instead of the collapsing shortcut.
+			$forceWindow = $isAggregateOnly && $this->anyAggregateRequiresWindow($aggregates);
+
 			foreach ($aggregates as $agg) {
-				$strategy = $this->chooseStrategy($root, $agg, $isAggregateOnly, $nonAggItems);
+				$strategy = $this->chooseStrategy($root, $agg, $isAggregateOnly && !$forceWindow, $nonAggItems);
+
+				if ($forceWindow && $strategy !== self::STRATEGY_WINDOW) {
+					throw new QuelException(
+						'Cannot mix ' . $agg->getType() . '() with a sequence function or running aggregate ' .
+						'in the same aggregate-only query — every aggregate must independently qualify for ' .
+						'the window-function strategy (single range, no WHERE, no DISTINCT).'
+					);
+				}
+
 				$this->applyStrategy($root, $agg, $strategy, $isAggregateOnly, $nonAggItems, $log);
 			}
+		}
+
+		/**
+		 * Returns true if any aggregate in the list has no non-windowed SQL form —
+		 * a sequence function (rank, lag, ...) or any aggregate using an inline `sort by`.
+		 * @param AstAggregate[] $aggregates
+		 * @return bool
+		 */
+		private function anyAggregateRequiresWindow(array $aggregates): bool {
+			foreach ($aggregates as $aggregate) {
+				if ($this->requiresWindowFunction($aggregate)) {
+					return true;
+				}
+			}
+
+			return false;
+		}
+
+		/**
+		 * Returns true if the aggregate has no non-windowed SQL form: either it's one
+		 * of the sequence function types (rank, dense_rank, row_number, ntile, lag, lead),
+		 * or it's a plain aggregate (sum, count, avg, min, max) using an inline `sort by`
+		 * to compute a running value.
+		 * @param AstAggregate $aggregate
+		 * @return bool
+		 */
+		private function requiresWindowFunction(AstAggregate $aggregate): bool {
+			return
+				$aggregate->getOrder() !== null ||
+				in_array(get_class($aggregate), AggregateConstants::SEQUENCE_AGGREGATE_TYPES, true);
 		}
 		
 		/**
@@ -148,7 +204,15 @@
 					break;
 				
 				case self::STRATEGY_WINDOW:
-					AggregateRewriter::rewriteAggregateAsWindowFunction($agg);
+					// Non-aggregate SELECT items become the window's PARTITION BY — the
+					// same "other columns imply grouping" rule ObjectQuel already uses to
+					// infer GROUP BY for the DIRECT strategies above — except the range's
+					// own primary key, which is excluded: unlike GROUP BY, PARTITION BY
+					// doesn't require every displayed column to be part of the key, and a
+					// primary key column is virtually always displayed for row identity
+					// alongside a sequence function (rank, lag, ...), where including it
+					// would put every row in its own single-row partition.
+					AggregateRewriter::rewriteAggregateAsWindowFunction($agg, $this->excludePrimaryKeyItems($nonAggItems));
 					break;
 				
 				case self::STRATEGY_MEMORY:
@@ -208,31 +272,55 @@
 		 */
 		private function chooseStrategy(AstRetrieve $root, AstAggregate $aggregate, bool $isAggregateOnly, array $nonAggItems): string {
 			$aggRanges = RangeUtilities::collectRangesFromNode($aggregate);
-			
+			$needsWindow = $this->requiresWindowFunction($aggregate);
+
 			// 1. All ranges are non-database (e.g. JSON) — evaluate in memory.
+			//    Sequence functions / running aggregates have no in-memory equivalent —
+			//    they require a real SQL window function.
 			if ($this->isNonDatabaseAggregate($aggRanges)) {
+				if ($needsWindow) {
+					throw new QuelException(
+						$aggregate->getType() . '() requires SQL window function support; it cannot run against a non-database range.'
+					);
+				}
+
 				return self::STRATEGY_MEMORY;
 			}
-			
-			// 2. Filtered aggregate — subquery applies WHERE before aggregation.
+
+			// 2. Sequence functions / running aggregates have no non-windowed SQL form at
+			//    all — this must be decided before every other strategy, including the
+			//    aggregate-only shortcut below, or the node would be left unrewritten.
+			if ($needsWindow) {
+				if (!$this->canUseWindowFunction($root, $aggregate)) {
+					throw new QuelException(
+						$aggregate->getType() . '() could not be planned as a window function — this requires ' .
+						'a single-range query where every SELECT item references that range, and a database ' .
+						'engine with window function support.'
+					);
+				}
+
+				return self::STRATEGY_WINDOW;
+			}
+
+			// 3. Filtered aggregate — subquery applies WHERE before aggregation.
 			if ($aggregate->getConditions() !== null) {
 				return self::STRATEGY_SUBQUERY_FILTERED;
 			}
-			
-			// 3. Aggregate-only query — execute directly, no GROUP BY required.
+
+			// 4. Aggregate-only query — execute directly, no GROUP BY required.
 			if ($isAggregateOnly) {
 				return self::STRATEGY_DIRECT_AGG_ONLY;
 			}
-			
-			// 4. Window function — avoids GROUP BY for single-table mixed queries.
+
+			// 5. Window function — avoids GROUP BY for single-table mixed queries.
 			if ($this->canUseWindowFunction($root, $aggregate)) {
 				return self::STRATEGY_WINDOW;
 			}
-			
-			// 5. Mixed query — use GROUP BY if ranges overlap, otherwise isolate
+
+			// 6. Mixed query — use GROUP BY if ranges overlap, otherwise isolate
 			//    the aggregate in a subquery to avoid a cross-product.
 			$nonAggRanges = RangeUtilities::collectRangesFromNodes($nonAggItems);
-			
+
 			return RangeUtilities::rangesOverlapOrAreRelated($aggRanges, $nonAggRanges)
 				? self::STRATEGY_DIRECT_OVERLAP
 				: self::STRATEGY_SUBQUERY_DISJOINT;
@@ -252,14 +340,58 @@
 			if (empty($aggRanges)) {
 				return false;
 			}
-			
+
 			foreach ($aggRanges as $range) {
 				if (!$range instanceof AstRangeJsonSource) {
 					return false;
 				}
 			}
-			
+
 			return true;
+		}
+
+		/**
+		 * Filters out non-aggregate SELECT items that are bare references to their
+		 * range's declared primary key, before they're used as a window's PARTITION BY.
+		 * @param AstAlias[] $nonAggItems
+		 * @return AstAlias[]
+		 */
+		private function excludePrimaryKeyItems(array $nonAggItems): array {
+			return array_values(array_filter(
+				$nonAggItems,
+				fn(AstAlias $item): bool => !$this->isPrimaryKeyIdentifier($item->getExpression())
+			));
+		}
+
+		/**
+		 * Returns true if the expression is a bare identifier referencing its
+		 * range's declared primary key column (e.g. `o.id`, not `o.id.something`).
+		 * @param AstInterface $expression
+		 * @return bool
+		 */
+		private function isPrimaryKeyIdentifier(AstInterface $expression): bool {
+			if (!$expression instanceof AstIdentifier) {
+				return false;
+			}
+
+			// A property reference like `o.id` is a chain: the node itself is the
+			// range root (name "o"), and the actual property lives at the end of
+			// the `getNext()` chain — walk to it before comparing names.
+			$leaf = $expression;
+
+			while ($leaf->getNext() !== null) {
+				$leaf = $leaf->getNext();
+			}
+
+			$entityName = $leaf->getEntityName();
+
+			if ($entityName === null) {
+				return false;
+			}
+
+			$primaryKey = $this->entityStore->getMetadata($entityName)->getPrimaryKey();
+
+			return $primaryKey !== null && $leaf->getName() === $primaryKey;
 		}
 		
 		// ---------------------------------------------------------------------
@@ -370,16 +502,22 @@
 			if ($aggregate->getConditions() !== null) {
 				return false;
 			}
-			
+
 			// DISTINCT variants are commonly unsupported in window context.
 			if (in_array(get_class($aggregate), AggregateConstants::DISTINCT_AGGREGATE_TYPES, true)) {
 				return false;
 			}
-			
+
 			if (!$this->platform->supportsWindowFunctions()) {
 				return false;
 			}
-			
+
+			// Sequence functions (rank, lag, ...) and any aggregate using an inline
+			// `sort by` (a running total) have no non-windowed SQL form at all.
+			if ($this->requiresWindowFunction($aggregate)) {
+				return true;
+			}
+
 			return in_array(get_class($aggregate), AggregateConstants::NOT_DISTINCT_AGGREGATE_TYPES, true);
 		}
 	}

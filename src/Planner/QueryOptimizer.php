@@ -51,7 +51,7 @@
 			$this->anyOptimizer = new Optimizers\AnyOptimizer($entityManager);
 			$this->rangeOptimizer = new Optimizers\RangeOptimizer($entityManager);
 			$this->joinOptimizer = new Optimizers\JoinOptimizer($entityManager);
-			$this->aggregateOptimizer = new Optimizers\AggregateOptimizer($platform);
+			$this->aggregateOptimizer = new Optimizers\AggregateOptimizer($this->entityStore, $platform);
 			
 			// Initialize stateless optimizers that work on AST structure alone
 			$this->existsOptimizer = new Optimizers\ExistsOptimizer();

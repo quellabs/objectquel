@@ -20,10 +20,7 @@
 		
 		/** @var int Default number of records per page when window size is not specified */
 		private const int DEFAULT_WINDOW_SIZE = 1;
-		
-		/** @var string Default sort order when ASC/DESC is not explicitly specified */
-		private const string DEFAULT_SORT_ORDER = '';
-		
+
 		/** @var bool Whether this retrieve is for a temporary table (affects column aliasing) */
 		private bool $isTemporaryTable;
 		
@@ -213,48 +210,10 @@
 			if (!$this->lexer->optionalMatch(Token::Sort)) {
 				return;
 			}
-			
+
 			$this->lexer->match(Token::By);
-			$sortArray = $this->parseSortExpressions();
+			$sortArray = (new SortExpressionParser($this->lexer, $this->expressionRule))->parse();
 			$retrieve->setSort($sortArray);
-		}
-		
-		/**
-		 * Parse individual sort expressions and their order specifications.
-		 * @return array<int, array{ast: AstInterface, order: string}> Array of sort specifications with 'ast' and 'order' keys
-		 * @throws LexerException|ParserException on expression parsing errors
-		 */
-		private function parseSortExpressions(): array {
-			$sortArray = [];
-			
-			do {
-				$expression = $this->expressionRule->parse();
-				$order = $this->parseSortOrder();
-				
-				$sortArray[] = [
-					'ast'   => $expression,
-					'order' => $order
-				];
-			} while ($this->lexer->optionalMatch(Token::Comma));
-			
-			return $sortArray;
-		}
-		
-		/**
-		 * Parse the sort order specification (ASC/DESC) for a sort expression.
-		 * @return string Sort order: 'asc', 'desc', or default empty string
-		 * @throws LexerException
-		 */
-		private function parseSortOrder(): string {
-			if ($this->lexer->optionalMatch(Token::Asc)) {
-				return 'asc';
-			}
-			
-			if ($this->lexer->optionalMatch(Token::Desc)) {
-				return 'desc';
-			}
-			
-			return self::DEFAULT_SORT_ORDER;
 		}
 		
 		/**

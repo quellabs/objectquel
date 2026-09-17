@@ -688,58 +688,44 @@
 
 		/**
 		 * Sequence functions (rank, dense_rank, row_number, ntile, lag, lead) have no
-		 * SQL representation outside a window function. AggregateOptimizer must always
-		 * rewrite them into an AstSubquery(TYPE_WINDOW) before this visitor sees them —
-		 * reaching one of these handlers directly means that rewrite was skipped.
+		 * SQL representation outside a window function — AggregateOptimizer must always
+		 * rewrite them into an AstSubquery(TYPE_WINDOW) before they're ever emitted.
+		 *
+		 * These handlers only exist so visitNode()'s naming-convention dispatch has
+		 * somewhere to go. In practice they only run as a side effect of
+		 * ProcessAggregate::markExpressionAsHandled(), which deliberately dispatches to
+		 * the class handler purely to mark the node visited (bookkeeping to prevent
+		 * AstSubquery's own accept() from processing it a second time) — the actual
+		 * window SQL is already built separately by ProcessAggregate::buildWindowAggregate().
+		 * So there's genuinely nothing to append here; this must be a true no-op, not an
+		 * error — throwing would misfire on that legitimate bookkeeping call.
 		 * @param AstAggregate $ast
 		 */
-		private function rejectUnplannedSequenceFunction(AstAggregate $ast): never {
-			throw new \LogicException(
-				$ast->getType() . '() has no SQL representation outside a window function; '
-				. 'AggregateOptimizer failed to plan it as one'
-			);
+		private function noOpSequenceFunctionHandler(AstAggregate $ast): void {
 		}
 
-		/**
-		 * @param AstRank $ast
-		 */
 		protected function handleRank(AstRank $ast): void {
-			$this->rejectUnplannedSequenceFunction($ast);
+			$this->noOpSequenceFunctionHandler($ast);
 		}
 
-		/**
-		 * @param AstDenseRank $ast
-		 */
 		protected function handleDenseRank(AstDenseRank $ast): void {
-			$this->rejectUnplannedSequenceFunction($ast);
+			$this->noOpSequenceFunctionHandler($ast);
 		}
 
-		/**
-		 * @param AstRowNumber $ast
-		 */
 		protected function handleRowNumber(AstRowNumber $ast): void {
-			$this->rejectUnplannedSequenceFunction($ast);
+			$this->noOpSequenceFunctionHandler($ast);
 		}
 
-		/**
-		 * @param AstNtile $ast
-		 */
 		protected function handleNtile(AstNtile $ast): void {
-			$this->rejectUnplannedSequenceFunction($ast);
+			$this->noOpSequenceFunctionHandler($ast);
 		}
 
-		/**
-		 * @param AstLag $ast
-		 */
 		protected function handleLag(AstLag $ast): void {
-			$this->rejectUnplannedSequenceFunction($ast);
+			$this->noOpSequenceFunctionHandler($ast);
 		}
 
-		/**
-		 * @param AstLead $ast
-		 */
 		protected function handleLead(AstLead $ast): void {
-			$this->rejectUnplannedSequenceFunction($ast);
+			$this->noOpSequenceFunctionHandler($ast);
 		}
 		
 		/**

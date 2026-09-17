@@ -19,7 +19,13 @@
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstIsFloat;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstIsInteger;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstIsNumeric;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstDenseRank;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstLag;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstLead;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstNtile;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstParameter;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRank;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRowNumber;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstSearchScore;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstString;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstCountU;
@@ -82,6 +88,12 @@
 				'sum' => $this->parseSum(),
 				'sumu' => $this->parseSumU(),
 				'any' => $this->parseAny(),
+				'rank' => $this->parseRank(),
+				'dense_rank' => $this->parseDenseRank(),
+				'row_number' => $this->parseRowNumber(),
+				'ntile' => $this->parseNtile(),
+				'lag' => $this->parseLag(),
+				'lead' => $this->parseLead(),
 				'concat' => $this->parseConcat(),
 				'search_score' => $this->parseSearchScore(),
 				'is_empty' => $this->parseIsEmpty(),
@@ -121,28 +133,104 @@
 		 * Generic parser for aggregates
 		 * @template T of AstInterface
 		 * @param class-string<T> $astClass The fully qualified AST class name to instantiate
+		 * @param bool $allowSortBy Whether an inline `sort by` may follow the optional WHERE,
+		 *        flipping this call into a windowed running aggregate (e.g. a running SUM).
+		 *        Left false for ANY() and the DISTINCT variants (COUNTU/AVGU/SUMU), which
+		 *        can never be computed as a window function.
 		 * @return T The instantiated AST node
 		 * @throws LexerException|ParserException|\ReflectionException
 		 */
-		private function parseAggregateFunction(string $astClass): AstInterface {
+		private function parseAggregateFunction(string $astClass, bool $allowSortBy = false): AstInterface {
 			// Match opening parenthesis
 			$this->lexer->match(Token::ParenthesesOpen);
-			
+
 			// Parse the parameter - either as property chain (entity.field) or general expression
 			$parameter = $this->expressionRule->parse();
-			
+
 			// Optional WHERE statement
-			$expression = null;
+			$conditions = null;
 			if ($this->lexer->optionalMatch(TOKEN::Where)) {
 				$logicalExpression = new LogicalExpression($this->lexer);
-				$expression = $logicalExpression->parse();
+				$conditions = $logicalExpression->parse();
 			}
-			
+
+			// Optional inline `sort by`, flipping SQL generation to a window function
+			$order = $allowSortBy ? $this->optionalSortBy() : null;
+
 			// Match closing parenthesis
 			$this->lexer->match(Token::ParenthesesClose);
-			
+
 			// Create and return the appropriate AST node
-			return new $astClass($parameter, $expression);
+			return new $astClass($parameter, $conditions, $order);
+		}
+
+		/**
+		 * Parses `(expr sort by ...)` for a value-bearing sequence function (ntile, lag,
+		 * lead) that has no WHERE clause and requires the sort-by list — these functions
+		 * have no meaning without an explicit row order.
+		 * @template T of AstInterface
+		 * @param class-string<T> $astClass The fully qualified AST class name to instantiate
+		 * @param string $functionName Lowercase function name, used in the error message
+		 * @return T The instantiated AST node
+		 * @throws LexerException|ParserException|\ReflectionException
+		 */
+		private function parseValueSequenceFunction(string $astClass, string $functionName): AstInterface {
+			$this->lexer->match(Token::ParenthesesOpen);
+			$parameter = $this->expressionRule->parse();
+			$order = $this->requiredSortBy($functionName);
+			$this->lexer->match(Token::ParenthesesClose);
+
+			return new $astClass($parameter, $order);
+		}
+
+		/**
+		 * Parses `(sort by ...)` for a no-argument sequence function (rank, dense_rank,
+		 * row_number) — these have no value argument and no meaning without an explicit
+		 * row order.
+		 * @template T of AstInterface
+		 * @param class-string<T> $astClass The fully qualified AST class name to instantiate
+		 * @param string $functionName Lowercase function name, used in the error message
+		 * @return T The instantiated AST node
+		 * @throws LexerException|ParserException|\ReflectionException
+		 */
+		private function parseNoArgumentSequenceFunction(string $astClass, string $functionName): AstInterface {
+			$this->lexer->match(Token::ParenthesesOpen);
+			$order = $this->requiredSortBy($functionName);
+			$this->lexer->match(Token::ParenthesesClose);
+
+			return new $astClass($order);
+		}
+
+		/**
+		 * Parses the optional inline `sort by expr [asc|desc], ...` list found inside
+		 * aggregate and sequence function calls. Returns null when no `sort by` is present.
+		 * @return array<int, array{ast: AstInterface, order: string}>|null
+		 * @throws LexerException|ParserException
+		 */
+		private function optionalSortBy(): ?array {
+			if (!$this->lexer->optionalMatch(Token::Sort)) {
+				return null;
+			}
+
+			$this->lexer->match(Token::By);
+			return (new SortExpressionParser($this->lexer, $this->expressionRule))->parse();
+		}
+
+		/**
+		 * Same as optionalSortBy(), but throws when no `sort by` is present — for
+		 * sequence functions that are meaningless without an explicit row order.
+		 * @param string $functionName Lowercase function name, used in the error message
+		 * @return array<int, array{ast: AstInterface, order: string}>
+		 * @throws LexerException|ParserException
+		 */
+		private function requiredSortBy(string $functionName): array {
+			$order = $this->optionalSortBy();
+
+			if ($order === null) {
+				throw new ParserException("{$functionName}() requires an inline 'sort by' clause; it has no meaning without an explicit row order.");
+			}
+
+			return $order;
 		}
 		
 		/**
@@ -152,7 +240,7 @@
 		 * @throws LexerException|ParserException|\ReflectionException
 		 */
 		protected function parseCount(): AstCount {
-			return $this->parseAggregateFunction(AstCount::class);
+			return $this->parseAggregateFunction(AstCount::class, allowSortBy: true);
 		}
 		
 		/**
@@ -172,7 +260,7 @@
 		 * @throws LexerException|ParserException|\ReflectionException
 		 */
 		protected function parseAvg(): AstAvg {
-			return $this->parseAggregateFunction(AstAvg::class);
+			return $this->parseAggregateFunction(AstAvg::class, allowSortBy: true);
 		}
 		
 		/**
@@ -192,7 +280,7 @@
 		 * @throws LexerException|ParserException|\ReflectionException
 		 */
 		protected function parseMax(): AstMax {
-			return $this->parseAggregateFunction(AstMax::class);
+			return $this->parseAggregateFunction(AstMax::class, allowSortBy: true);
 		}
 		
 		/**
@@ -202,7 +290,7 @@
 		 * @throws LexerException|ParserException|\ReflectionException
 		 */
 		protected function parseMin(): AstMin {
-			return $this->parseAggregateFunction(AstMin::class);
+			return $this->parseAggregateFunction(AstMin::class, allowSortBy: true);
 		}
 		
 		/**
@@ -212,7 +300,7 @@
 		 * @throws LexerException|ParserException|\ReflectionException
 		 */
 		protected function parseSum(): AstSum {
-			return $this->parseAggregateFunction(AstSum::class);
+			return $this->parseAggregateFunction(AstSum::class, allowSortBy: true);
 		}
 		
 		/**
@@ -235,6 +323,66 @@
 		 */
 		protected function parseAny(): AstAny {
 			return $this->parseAggregateFunction(AstAny::class);
+		}
+
+		/**
+		 * Parse RANK() — sequential rank within the partition, with gaps after ties.
+		 * No value argument; requires an inline `sort by`.
+		 * @return AstRank
+		 * @throws LexerException|ParserException|\ReflectionException
+		 */
+		protected function parseRank(): AstRank {
+			return $this->parseNoArgumentSequenceFunction(AstRank::class, 'rank');
+		}
+
+		/**
+		 * Parse DENSE_RANK() — sequential rank within the partition, no gaps after ties.
+		 * No value argument; requires an inline `sort by`.
+		 * @return AstDenseRank
+		 * @throws LexerException|ParserException|\ReflectionException
+		 */
+		protected function parseDenseRank(): AstDenseRank {
+			return $this->parseNoArgumentSequenceFunction(AstDenseRank::class, 'dense_rank');
+		}
+
+		/**
+		 * Parse ROW_NUMBER() — unique sequential position within the partition; no ties.
+		 * No value argument; requires an inline `sort by`.
+		 * @return AstRowNumber
+		 * @throws LexerException|ParserException|\ReflectionException
+		 */
+		protected function parseRowNumber(): AstRowNumber {
+			return $this->parseNoArgumentSequenceFunction(AstRowNumber::class, 'row_number');
+		}
+
+		/**
+		 * Parse NTILE(n) — distributes partition rows into n roughly-equal buckets.
+		 * Requires an inline `sort by`.
+		 * @return AstNtile
+		 * @throws LexerException|ParserException|\ReflectionException
+		 */
+		protected function parseNtile(): AstNtile {
+			return $this->parseValueSequenceFunction(AstNtile::class, 'ntile');
+		}
+
+		/**
+		 * Parse LAG(expr) — value of expr from the previous row in the partition.
+		 * Requires an inline `sort by`.
+		 * @return AstLag
+		 * @throws LexerException|ParserException|\ReflectionException
+		 */
+		protected function parseLag(): AstLag {
+			return $this->parseValueSequenceFunction(AstLag::class, 'lag');
+		}
+
+		/**
+		 * Parse LEAD(expr) — value of expr from the next row in the partition.
+		 * Requires an inline `sort by`.
+		 * @return AstLead
+		 * @throws LexerException|ParserException|\ReflectionException
+		 */
+		protected function parseLead(): AstLead {
+			return $this->parseValueSequenceFunction(AstLead::class, 'lead');
 		}
 		
 		/**

@@ -190,6 +190,12 @@
 				throw new \LogicException(get_class($aggNode) . ' requires a value argument; it cannot use the scalar subquery strategy');
 			}
 
+			// Mark the identifier as processed too — AstAggregate::accept() unconditionally
+			// cascades into it regardless of $aggNode's own visited state, which would
+			// otherwise make this visitor append its raw SQL a second time outside the
+			// aggregate function text built below.
+			$this->markExpressionAsHandled($identifier);
+
 			// Convert the aggregate target expression to SQL
 			// Uses deepClone() to avoid modifying the original AST node during conversion
 			$targetExpression = $this->convertExpressionToSql($identifier->deepClone());
@@ -407,10 +413,8 @@
 		}
 		
 		/**
-		 * Builds a window aggregate: AGG([DISTINCT] expr) OVER ([ORDER BY ...])
+		 * Builds a window aggregate: AGG([DISTINCT] expr) OVER ([PARTITION BY ...] [ORDER BY ...])
 		 * SUM is wrapped in COALESCE(..., 0) to keep your current NULL behavior.
-		 * PARTITION BY is added once AstSubquery threads partition columns through
-		 * from the optimizer (single-stage window planning); not wired yet.
 		 */
 		private function buildWindowAggregate(AstSubquery $subquery): string {
 			// Fetch aggregation from the subquery
@@ -421,9 +425,32 @@
 				$this->markExpressionAsHandled($aggNode);
 			}
 
+			// Mark the partition columns as processed too — AstSubquery::accept()
+			// visits them independently (for visitors that need to, e.g. range
+			// discovery), which would otherwise make this visitor append their raw
+			// SQL a second time outside the OVER (...) clause built below.
+			foreach ($subquery->getPartitionBy() as $partitionExpression) {
+				$this->markExpressionAsHandled($partitionExpression);
+			}
+
 			// Validate that we have a proper aggregate node before proceeding
 			if (!$aggNode instanceof AstAggregate) {
 				return "";
+			}
+
+			// Mark the identifier and inline `sort by` expressions as processed too —
+			// AstAggregate::accept() unconditionally cascades into them regardless of
+			// whether $aggNode itself was already marked visited above, which would
+			// otherwise make this visitor append their raw SQL a second time outside
+			// the function-call / OVER (...) text built below.
+			$identifier = $aggNode->getIdentifier();
+
+			if ($identifier !== null) {
+				$this->markExpressionAsHandled($identifier);
+			}
+
+			foreach ($aggNode->getOrder() ?? [] as $sortItem) {
+				$this->markExpressionAsHandled($sortItem['ast']);
 			}
 
 			// Extract the aggregate function name (SUM, COUNT, AVG, RANK, LAG, etc.)
@@ -434,11 +461,11 @@
 
 			// Convert the aggregate's target expression to SQL, cloning to avoid side effects.
 			// No-argument sequence functions (rank, dense_rank, row_number) have no identifier.
-			$identifier = $aggNode->getIdentifier();
 			$argSql = $identifier !== null ? $this->convertExpressionToSql($identifier->deepClone()) : '';
 
-			// Build the OVER clause from the aggregate's inline `sort by`, if any
-			$overClause = $this->buildOverClause($aggNode);
+			// Build the OVER clause from the query's partition columns and the
+			// aggregate's inline `sort by`, if any
+			$overClause = $this->buildOverClause($aggNode, $subquery->getPartitionBy());
 
 			// Special handling for SUM: wrap entire window function in COALESCE for NULL safety
 			// OVER() creates window function, COALESCE ensures 0 instead of NULL result
@@ -451,26 +478,40 @@
 		}
 
 		/**
-		 * Builds the `OVER (...)` clause from an aggregate's inline `sort by` list.
+		 * Builds the `OVER (...)` clause from the query's partition columns (the
+		 * non-aggregate SELECT items, mirroring GROUP BY inference) and the
+		 * aggregate's inline `sort by` list.
 		 * @param AstAggregate $aggNode
-		 * @return string e.g. "OVER ()" or "OVER (ORDER BY o.eventTime ASC)"
+		 * @param AstInterface[] $partitionBy
+		 * @return string e.g. "OVER ()" or "OVER (PARTITION BY o.accountId ORDER BY o.eventTime ASC)"
 		 */
-		private function buildOverClause(AstAggregate $aggNode): string {
+		private function buildOverClause(AstAggregate $aggNode, array $partitionBy): string {
+			$clauseParts = [];
+
+			if ($partitionBy !== []) {
+				$partitionSql = array_map(
+					fn(AstInterface $expression): string => $this->convertExpressionToSql($expression->deepClone()),
+					$partitionBy
+				);
+
+				$clauseParts[] = 'PARTITION BY ' . implode(', ', $partitionSql);
+			}
+
 			$order = $aggNode->getOrder();
 
-			if ($order === null || $order === []) {
-				return 'OVER ()';
+			if ($order !== null && $order !== []) {
+				$orderTerms = [];
+
+				foreach ($order as $sortItem) {
+					$sql = $this->convertExpressionToSql($sortItem['ast']->deepClone());
+					$direction = strtolower($sortItem['order']) === 'desc' ? 'DESC' : 'ASC';
+					$orderTerms[] = "{$sql} {$direction}";
+				}
+
+				$clauseParts[] = 'ORDER BY ' . implode(', ', $orderTerms);
 			}
 
-			$orderTerms = [];
-
-			foreach ($order as $sortItem) {
-				$sql = $this->convertExpressionToSql($sortItem['ast']->deepClone());
-				$direction = strtolower($sortItem['order']) === 'desc' ? 'DESC' : 'ASC';
-				$orderTerms[] = "{$sql} {$direction}";
-			}
-
-			return 'OVER (ORDER BY ' . implode(', ', $orderTerms) . ')';
+			return 'OVER (' . implode(' ', $clauseParts) . ')';
 		}
 		
 		/**
