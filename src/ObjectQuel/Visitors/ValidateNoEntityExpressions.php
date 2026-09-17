@@ -58,11 +58,12 @@
 		}
 		
 		/**
-		 * Returns true if the identifier is a bare range reference (entity or json source), false if not
-		 * @param AstInterface $ast
+		 * Returns true if the identifier is a bare range reference (entity or json source), false if not.
+		 * Null (a no-argument sequence function like rank()) is never a bare range.
+		 * @param AstInterface|null $ast
 		 * @return bool
 		 */
-		protected function identifierIsBareRange(AstInterface $ast): bool {
+		protected function identifierIsBareRange(?AstInterface $ast): bool {
 			if (!$ast instanceof AstIdentifier) {
 				return false;
 			}

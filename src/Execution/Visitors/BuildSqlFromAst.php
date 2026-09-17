@@ -10,6 +10,7 @@
 	use Quellabs\ObjectQuel\Execution\Helpers\ProcessExpression;
 	use Quellabs\ObjectQuel\Execution\Helpers\ResolveType;
 	use Quellabs\ObjectQuel\Execution\SqlGeneratorInterface;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstAggregate;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstAlias;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstAny;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstAvg;
@@ -23,6 +24,7 @@
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstCount;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstCountU;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstDate;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstDenseRank;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstExpression;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstFactor;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstIdentifier;
@@ -32,14 +34,19 @@
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstIsFloat;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstIsInteger;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstIsNumeric;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstLag;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstLead;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstMax;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstMin;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstNtile;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstNot;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstNull;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstNumber;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstParameter;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRangeDatabase;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRangeJsonSource;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRank;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRowNumber;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstSearch;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstSearchFullText;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstSearchLike;
@@ -677,6 +684,62 @@
 		 */
 		protected function handleAny(AstAny $ast): void {
 			$this->result[] = $this->aggregateHandler->handleAny($ast);
+		}
+
+		/**
+		 * Sequence functions (rank, dense_rank, row_number, ntile, lag, lead) have no
+		 * SQL representation outside a window function. AggregateOptimizer must always
+		 * rewrite them into an AstSubquery(TYPE_WINDOW) before this visitor sees them —
+		 * reaching one of these handlers directly means that rewrite was skipped.
+		 * @param AstAggregate $ast
+		 */
+		private function rejectUnplannedSequenceFunction(AstAggregate $ast): never {
+			throw new \LogicException(
+				$ast->getType() . '() has no SQL representation outside a window function; '
+				. 'AggregateOptimizer failed to plan it as one'
+			);
+		}
+
+		/**
+		 * @param AstRank $ast
+		 */
+		protected function handleRank(AstRank $ast): void {
+			$this->rejectUnplannedSequenceFunction($ast);
+		}
+
+		/**
+		 * @param AstDenseRank $ast
+		 */
+		protected function handleDenseRank(AstDenseRank $ast): void {
+			$this->rejectUnplannedSequenceFunction($ast);
+		}
+
+		/**
+		 * @param AstRowNumber $ast
+		 */
+		protected function handleRowNumber(AstRowNumber $ast): void {
+			$this->rejectUnplannedSequenceFunction($ast);
+		}
+
+		/**
+		 * @param AstNtile $ast
+		 */
+		protected function handleNtile(AstNtile $ast): void {
+			$this->rejectUnplannedSequenceFunction($ast);
+		}
+
+		/**
+		 * @param AstLag $ast
+		 */
+		protected function handleLag(AstLag $ast): void {
+			$this->rejectUnplannedSequenceFunction($ast);
+		}
+
+		/**
+		 * @param AstLead $ast
+		 */
+		protected function handleLead(AstLead $ast): void {
+			$this->rejectUnplannedSequenceFunction($ast);
 		}
 		
 		/**

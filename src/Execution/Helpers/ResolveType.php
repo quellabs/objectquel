@@ -89,8 +89,11 @@
 			// same type as their argument. SUM(floatCol) is float, MIN(intCol) is integer.
 			// AstCount/AstCountU are intentionally excluded — they always return integer
 			// regardless of the argument type, and they declare that via getReturnType().
+			// No-argument sequence functions (rank, dense_rank, row_number) have no
+			// identifier to recurse into; they fall through to their own getReturnType().
 			if ($ast instanceof AstAggregate) {
-				return $this->inferReturnType($ast->getIdentifier());
+				$identifier = $ast->getIdentifier();
+				return $identifier !== null ? $this->inferReturnType($identifier) : $ast->getReturnType();
 			}
 			
 			// Unary sign operators (+x, -x) do not change the numeric type of the operand.

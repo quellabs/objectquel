@@ -13,12 +13,13 @@
 	 * concrete aggregate type.
 	 */
 	interface NodeAggregate extends AstInterface {
-		
+
 		/**
 		 * Returns the identifier (column reference) this aggregate operates over.
-		 * @return AstInterface
+		 * Null for sequence functions with no value argument (rank, dense_rank, row_number).
+		 * @return AstInterface|null
 		 */
-		public function getIdentifier(): AstInterface;
+		public function getIdentifier(): ?AstInterface;
 		
 		/**
 		 * Replaces the identifier.

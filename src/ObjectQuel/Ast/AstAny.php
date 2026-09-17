@@ -41,8 +41,24 @@
 			if ($parent === null) {
 				throw new \LogicException('AstAny cannot be made a root node.');
 			}
-			
+
 			parent::setParent($parent);
+		}
+
+		/**
+		 * Narrows the return type from ?AstInterface to AstInterface.
+		 * ANY(...) always has a value argument — only the no-argument sequence
+		 * functions (rank, dense_rank, row_number) ever have a null identifier.
+		 * @return AstInterface
+		 */
+		public function getIdentifier(): AstInterface {
+			$identifier = parent::getIdentifier();
+
+			if ($identifier === null) {
+				throw new \LogicException('AstAny has no identifier — the AST is in an invalid state.');
+			}
+
+			return $identifier;
 		}
 
 		/**

@@ -177,13 +177,22 @@
 			
 			// Extract aggregate function details (COUNT, SUM, AVG, etc.)
 			$functionName = $this->aggregateToString($aggNode);
-			
+
 			// Handle DISTINCT modifier for aggregate functions (e.g., COUNT(DISTINCT column))
 			$distinctClause = $this->isDistinct($aggNode) ? 'DISTINCT ' : '';
-			
+
+			// Only MIN/MAX/AVG/SUM/COUNT reach a scalar subquery; the no-argument
+			// sequence functions (rank, dense_rank, row_number) always require the
+			// window-function strategy instead, so a null identifier here is a bug.
+			$identifier = $aggNode->getIdentifier();
+
+			if ($identifier === null) {
+				throw new \LogicException(get_class($aggNode) . ' requires a value argument; it cannot use the scalar subquery strategy');
+			}
+
 			// Convert the aggregate target expression to SQL
 			// Uses deepClone() to avoid modifying the original AST node during conversion
-			$targetExpression = $this->convertExpressionToSql($aggNode->getIdentifier()->deepClone());
+			$targetExpression = $this->convertExpressionToSql($identifier->deepClone());
 			
 			// Build FROM clause including all necessary table joins from correlated ranges.
 			// Correlated ranges define which tables this subquery needs to access
@@ -398,40 +407,70 @@
 		}
 		
 		/**
-		 * Builds a window aggregate: AGG([DISTINCT] expr) OVER ()
+		 * Builds a window aggregate: AGG([DISTINCT] expr) OVER ([ORDER BY ...])
 		 * SUM is wrapped in COALESCE(..., 0) to keep your current NULL behavior.
+		 * PARTITION BY is added once AstSubquery threads partition columns through
+		 * from the optimizer (single-stage window planning); not wired yet.
 		 */
 		private function buildWindowAggregate(AstSubquery $subquery): string {
 			// Fetch aggregation from the subquery
 			$aggNode = $subquery->getAggregation();
-			
+
 			// Mark the aggregation expression as processed to avoid duplicate handling
 			if ($aggNode !== null) {
 				$this->markExpressionAsHandled($aggNode);
 			}
-			
+
 			// Validate that we have a proper aggregate node before proceeding
 			if (!$aggNode instanceof AstAggregate) {
 				return "";
 			}
-			
-			// Extract the aggregate function name (SUM, COUNT, AVG, etc.)
+
+			// Extract the aggregate function name (SUM, COUNT, AVG, RANK, LAG, etc.)
 			$fn = $aggNode->getType();
-			
+
 			// Add DISTINCT keyword if the aggregate uses DISTINCT semantics
 			$distinct = $this->isDistinct($aggNode) ? 'DISTINCT ' : '';
-			
-			// Convert the aggregate's target expression to SQL, cloning to avoid side effects
-			$argSql = $this->convertExpressionToSql($aggNode->getIdentifier()->deepClone());
-			
+
+			// Convert the aggregate's target expression to SQL, cloning to avoid side effects.
+			// No-argument sequence functions (rank, dense_rank, row_number) have no identifier.
+			$identifier = $aggNode->getIdentifier();
+			$argSql = $identifier !== null ? $this->convertExpressionToSql($identifier->deepClone()) : '';
+
+			// Build the OVER clause from the aggregate's inline `sort by`, if any
+			$overClause = $this->buildOverClause($aggNode);
+
 			// Special handling for SUM: wrap entire window function in COALESCE for NULL safety
 			// OVER() creates window function, COALESCE ensures 0 instead of NULL result
 			if ($fn === 'SUM') {
-				return "COALESCE({$fn}({$distinct}{$argSql}) OVER (), 0)";
+				return "COALESCE({$fn}({$distinct}{$argSql}) {$overClause}, 0)";
 			}
-			
+
 			// Standard window function format for non-SUM aggregates
-			return "{$fn}({$distinct}{$argSql}) OVER ()";
+			return "{$fn}({$distinct}{$argSql}) {$overClause}";
+		}
+
+		/**
+		 * Builds the `OVER (...)` clause from an aggregate's inline `sort by` list.
+		 * @param AstAggregate $aggNode
+		 * @return string e.g. "OVER ()" or "OVER (ORDER BY o.eventTime ASC)"
+		 */
+		private function buildOverClause(AstAggregate $aggNode): string {
+			$order = $aggNode->getOrder();
+
+			if ($order === null || $order === []) {
+				return 'OVER ()';
+			}
+
+			$orderTerms = [];
+
+			foreach ($order as $sortItem) {
+				$sql = $this->convertExpressionToSql($sortItem['ast']->deepClone());
+				$direction = strtolower($sortItem['order']) === 'desc' ? 'DESC' : 'ASC';
+				$orderTerms[] = "{$sql} {$direction}";
+			}
+
+			return 'OVER (ORDER BY ' . implode(', ', $orderTerms) . ')';
 		}
 		
 		/**
@@ -546,24 +585,33 @@
 			string $aggregateFunction,
 			bool $distinct = false
 		): string {
+			// This path only ever handles MIN/MAX/AVG/SUM/COUNT — the no-argument
+			// sequence functions (rank, dense_rank, row_number) always require the
+			// window-function strategy instead, so a null identifier here is a bug.
+			$identifier = $ast->getIdentifier();
+
+			if ($identifier === null) {
+				throw new \LogicException(get_class($ast) . ' requires a value argument outside the window-function strategy');
+			}
+
 			// Handle conditional aggregation: aggregate WHERE condition → CASE WHEN condition
 			if ($ast->getConditions() !== null) {
 				$condition = $this->convertExpressionToSql($ast->getConditions());
-				$expression = $this->convertExpressionToSql($ast->getIdentifier());
+				$expression = $this->convertExpressionToSql($identifier);
 				$caseExpression = "CASE WHEN {$condition} THEN {$expression} END";
-				
+
 				// Build aggregate function with CASE WHEN expression
 				$distinctClause = $distinct ? 'DISTINCT ' : '';
-				
+
 				if ($aggregateFunction === 'SUM') {
 					return "COALESCE({$aggregateFunction}({$distinctClause}{$caseExpression}), 0)";
 				} else {
 					return "{$aggregateFunction}({$distinctClause}{$caseExpression})";
 				}
 			}
-			
+
 			// Handle standard aggregation
-			$sqlExpression = $this->convertExpressionToSql($ast->getIdentifier());
+			$sqlExpression = $this->convertExpressionToSql($identifier);
 			$distinctClause = $distinct ? 'DISTINCT ' : '';
 			
 			// Apply function-specific NULL handling

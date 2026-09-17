@@ -506,6 +506,14 @@
 		 */
 		private static function collectAggregateValues(AstAggregate $ast, array $contents, array $initialParams): array {
 			$identifier = $ast->getIdentifier();
+
+			// MIN/MAX/AVG/SUM/COUNT always have a value argument; only the no-argument
+			// sequence functions (rank, dense_rank, row_number) can be null, and those
+			// require SQL window functions — they can't run against in-memory sources.
+			if ($identifier === null) {
+				throw new QuelException(get_class($ast) . ' cannot be evaluated in memory; it requires SQL window function support');
+			}
+
 			$aggConditions = $ast->getConditions();
 			$values = [];
 			
