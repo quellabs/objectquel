@@ -186,7 +186,7 @@
 			
 			return $result;
 		}
-		
+
 		/**
 		 * Checks if a condition expression references only the specified range.
 		 * @param AstExpression $condition The condition to check (e.g., "temp.id = 5")

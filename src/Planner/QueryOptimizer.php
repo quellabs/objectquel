@@ -54,7 +54,7 @@
 			$this->joinOptimizer = new Optimizers\JoinOptimizer($entityManager);
 			$this->aggregateOptimizer = new Optimizers\AggregateOptimizer($this->entityStore, $platform);
 			$this->windowChainRewriter = new Optimizers\WindowChainRewriter($this->entityStore, $platform);
-			
+
 			// Initialize stateless optimizers that work on AST structure alone
 			$this->existsOptimizer = new Optimizers\ExistsOptimizer();
 			$this->JoinConditionFieldInjector = new Optimizers\JoinConditionFieldInjector();

@@ -24,10 +24,10 @@
 		
 		/** @var AstRange[] */
 		private array $correlatedRanges;
-		
+
 		/** @var AstInterface[] PARTITION BY expressions for TYPE_WINDOW subqueries */
 		private array $partitionBy;
-		
+
 		/**
 		 * AstSubquery constructor
 		 * @param AstInterface|null $aggregation
@@ -51,7 +51,7 @@
 			$this->correlatedRanges = $correlatedRanges;
 			$this->origin = $origin;
 			$this->partitionBy = $partitionBy;
-			
+
 			$this->aggregation?->setParent($this);
 			
 			foreach ($this->partitionBy as $expression) {
@@ -131,7 +131,7 @@
 		public function getCorrelatedRanges(): array {
 			return $this->correlatedRanges;
 		}
-		
+
 		/**
 		 * Returns contents of WHERE
 		 * @return AstInterface|null
@@ -165,13 +165,13 @@
 			foreach ($this->correlatedRanges as $range) {
 				$clonedCorrelatedRanges[] = $range->deepClone();
 			}
-			
+
 			// Clone the partition columns
 			$clonedPartitionBy = [];
 			foreach ($this->partitionBy as $expression) {
 				$clonedPartitionBy[] = $expression->deepClone();
 			}
-			
+
 			// Create new instance with cloned identifier
 			// Return cloned node
 			// @phpstan-ignore-next-line new.static

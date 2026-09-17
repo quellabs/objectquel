@@ -465,7 +465,7 @@
 		private function excludePrimaryKeyItems(array $nonAggItems): array {
 			return AstUtilities::excludePrimaryKeyItems($this->entityStore, $nonAggItems);
 		}
-		
+
 		// ---------------------------------------------------------------------
 		// QUERY STRUCTURE ANALYSIS
 		// ---------------------------------------------------------------------

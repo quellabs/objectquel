@@ -33,7 +33,7 @@
 			$parent = $aggregate->getParent() ?? throw new \LogicException('Cannot rewrite aggregate: node has no parent');
 			AstNodeReplacer::replaceChild($parent, $aggregate, $windowFn);
 		}
-		
+
 		/**
 		 * Rewrites an aggregate expression as a correlated subquery.
 		 * This is typically done to handle aggregates that can't be processed in the main query,
