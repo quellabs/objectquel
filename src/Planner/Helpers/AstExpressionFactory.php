@@ -25,15 +25,17 @@
 		 *
 		 * @param AstAggregate $expression The window function expression (e.g., ROW_NUMBER(), SUM() OVER())
 		 * @param string|null $origin Optional origin identifier for debugging/tracing
+		 * @param AstInterface[] $partitionBy PARTITION BY columns for the OVER (...) clause
 		 * @return AstSubquery             Window function subquery with empty ranges and no WHERE conditions
 		 */
-		public static function createWindowFunction(AstAggregate $expression, ?string $origin = null): AstSubquery {
+		public static function createWindowFunction(AstAggregate $expression, ?string $origin = null, array $partitionBy = []): AstSubquery {
 			return new AstSubquery(
 				AstSubquery::TYPE_WINDOW,
 				$expression,
 				[],             // Window functions don't use ranges in the same way as correlated subqueries
 				null,  // Window functions don't have WHERE conditions at the subquery level
-				$origin
+				$origin,
+				$partitionBy
 			);
 		}
 		

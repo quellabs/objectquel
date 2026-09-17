@@ -4,6 +4,7 @@
 	
 	use Quellabs\ObjectQuel\Capabilities\PlatformCapabilitiesInterface;
 	use Quellabs\ObjectQuel\Capabilities\NullPlatformCapabilities;
+	use Quellabs\ObjectQuel\EntityStore;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstAggregate;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstAlias;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstIdentifier;
@@ -40,14 +41,19 @@
 		private const string STRATEGY_DIRECT_OVERLAP = 'DIRECT:ranges overlap, kept inline with GROUP BY';
 		private const string STRATEGY_SUBQUERY_DISJOINT = 'SUBQUERY:disjoint ranges, isolated in correlated subquery';
 		
+		/** @var EntityStore Provides entity metadata, used to exclude primary key columns from partition inference */
+		private EntityStore $entityStore;
+
 		/** @var PlatformCapabilitiesInterface Database engine capability descriptor */
 		private PlatformCapabilitiesInterface $platform;
-		
+
 		/**
 		 * AggregateOptimizer constructor
+		 * @param EntityStore $entityStore Provides entity metadata for primary key lookups
 		 * @param PlatformCapabilitiesInterface $platform Database engine capability descriptor
 		 */
-		public function __construct(PlatformCapabilitiesInterface $platform = new NullPlatformCapabilities()) {
+		public function __construct(EntityStore $entityStore, PlatformCapabilitiesInterface $platform = new NullPlatformCapabilities()) {
+			$this->entityStore = $entityStore;
 			$this->platform = $platform;
 		}
 		
@@ -148,7 +154,13 @@
 					break;
 				
 				case self::STRATEGY_WINDOW:
-					AggregateRewriter::rewriteAggregateAsWindowFunction($agg);
+					// Non-aggregate SELECT items become the window's PARTITION BY — the
+					// same "other columns imply grouping" rule ObjectQuel already uses to
+					// infer GROUP BY for the DIRECT strategies above — except the range's
+					// own primary key, which is virtually always displayed for row
+					// identity, where including it would put every row in its own partition.
+					$partitionColumns = $this->excludePrimaryKeyItems($nonAggItems);
+					AggregateRewriter::rewriteAggregateAsWindowFunction($agg, $partitionColumns);
 					break;
 				
 				case self::STRATEGY_MEMORY:
@@ -261,7 +273,17 @@
 			
 			return true;
 		}
-		
+
+		/**
+		 * Filters out non-aggregate SELECT items that are bare references to their
+		 * range's declared primary key, before they're used as a window's PARTITION BY.
+		 * @param AstAlias[] $nonAggItems
+		 * @return AstAlias[]
+		 */
+		private function excludePrimaryKeyItems(array $nonAggItems): array {
+			return AstUtilities::excludePrimaryKeyItems($this->entityStore, $nonAggItems);
+		}
+
 		// ---------------------------------------------------------------------
 		// QUERY STRUCTURE ANALYSIS
 		// ---------------------------------------------------------------------
