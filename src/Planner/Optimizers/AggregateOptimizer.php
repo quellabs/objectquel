@@ -10,6 +10,7 @@
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstAlias;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstIdentifier;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstNumber;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRange;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRangeJsonSource;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRetrieve;
 	use Quellabs\ObjectQuel\ObjectQuel\AstInterface;
@@ -353,45 +354,13 @@
 		/**
 		 * Filters out non-aggregate SELECT items that are bare references to their
 		 * range's declared primary key, before they're used as a window's PARTITION BY.
+		 * Shared with WindowChainRewriter, which propagates the same exclusion into
+		 * a helper query's own partition columns.
 		 * @param AstAlias[] $nonAggItems
 		 * @return AstAlias[]
 		 */
 		private function excludePrimaryKeyItems(array $nonAggItems): array {
-			return array_values(array_filter(
-				$nonAggItems,
-				fn(AstAlias $item): bool => !$this->isPrimaryKeyIdentifier($item->getExpression())
-			));
-		}
-
-		/**
-		 * Returns true if the expression is a bare identifier referencing its
-		 * range's declared primary key column (e.g. `o.id`, not `o.id.something`).
-		 * @param AstInterface $expression
-		 * @return bool
-		 */
-		private function isPrimaryKeyIdentifier(AstInterface $expression): bool {
-			if (!$expression instanceof AstIdentifier) {
-				return false;
-			}
-
-			// A property reference like `o.id` is a chain: the node itself is the
-			// range root (name "o"), and the actual property lives at the end of
-			// the `getNext()` chain — walk to it before comparing names.
-			$leaf = $expression;
-
-			while ($leaf->getNext() !== null) {
-				$leaf = $leaf->getNext();
-			}
-
-			$entityName = $leaf->getEntityName();
-
-			if ($entityName === null) {
-				return false;
-			}
-
-			$primaryKey = $this->entityStore->getMetadata($entityName)->getPrimaryKey();
-
-			return $primaryKey !== null && $leaf->getName() === $primaryKey;
+			return AstUtilities::excludePrimaryKeyItems($this->entityStore, $nonAggItems);
 		}
 		
 		// ---------------------------------------------------------------------
@@ -439,33 +408,54 @@
 			if (!$this->isWindowFunctionEligible($aggregate)) {
 				return false;
 			}
-			
-			$queryRanges = $root->getRanges();
-			
+
+			// WindowChainRewriter-added helper ranges are derived tables joined 1:1
+			// on primary key back to the query's real range — they never change row
+			// cardinality, so they're excluded from the "single range" count that
+			// guards against genuine multi-table partitioning.
+			$queryRanges = $this->excludeHelperRanges($root, $root->getRanges());
+
 			if (count($queryRanges) !== 1) {
 				return false;
 			}
-			
+
 			$singleRange = $queryRanges[0];
-			
+
 			return
-				$this->aggregateUsesRange($aggregate, $singleRange) &&
+				$this->aggregateUsesRange($root, $aggregate, $singleRange) &&
 				$this->allSelectItemsUseRange($root, $aggregate, $singleRange);
 		}
-		
+
 		/**
-		 * Returns true if the aggregate references exactly the given range and no other.
+		 * Filters out ranges that WindowChainRewriter added as sequence-function
+		 * helper ranges (see AstRetrieve::$window_chain_helper_ranges).
+		 * @param AstRetrieve $root
+		 * @param AstRange[] $ranges
+		 * @return AstRange[]
+		 */
+		private function excludeHelperRanges(AstRetrieve $root, array $ranges): array {
+			return array_values(array_filter(
+				$ranges,
+				fn($range) => !$root->isWindowChainHelperRange($range->getName())
+			));
+		}
+
+		/**
+		 * Returns true if the aggregate references exactly the given range and no
+		 * other, ignoring any WindowChainRewriter helper ranges it may also reference.
+		 * @param AstRetrieve $root
 		 * @param AstAggregate $aggregate
 		 * @param object $singleRange The single range the query is expected to use
 		 * @return bool
 		 */
-		private function aggregateUsesRange(AstAggregate $aggregate, object $singleRange): bool {
-			$ranges = RangeUtilities::collectRangesFromNode($aggregate);
+		private function aggregateUsesRange(AstRetrieve $root, AstAggregate $aggregate, object $singleRange): bool {
+			$ranges = $this->excludeHelperRanges($root, RangeUtilities::collectRangesFromNode($aggregate));
 			return count($ranges) === 1 && $ranges[0] === $singleRange;
 		}
-		
+
 		/**
-		 * Returns true if every SELECT item other than $aggregate references exactly $singleRange.
+		 * Returns true if every SELECT item other than $aggregate references exactly
+		 * $singleRange, ignoring any WindowChainRewriter helper ranges also referenced.
 		 * @param AstRetrieve $root
 		 * @param AstAggregate $aggregate The aggregate being evaluated (excluded from the check)
 		 * @param object $singleRange Expected range for all other select items
@@ -476,14 +466,14 @@
 				if ($selectItem->getExpression() === $aggregate) {
 					continue;
 				}
-				
-				$itemRanges = RangeUtilities::collectRangesFromNode($selectItem->getExpression());
-				
+
+				$itemRanges = $this->excludeHelperRanges($root, RangeUtilities::collectRangesFromNode($selectItem->getExpression()));
+
 				if (count($itemRanges) !== 1 || $itemRanges[0] !== $singleRange) {
 					return false;
 				}
 			}
-			
+
 			return true;
 		}
 		

@@ -13,6 +13,7 @@
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRetrieve;
 	use Quellabs\ObjectQuel\ObjectQuel\AstInterface;
 	use Quellabs\ObjectQuel\ObjectQuel\Visitors\CollectNodes;
+	use Quellabs\ObjectQuel\EntityStore;
 	use Quellabs\ObjectQuel\Planner\Visitors\CollectAggregates;
 	use Quellabs\ObjectQuel\Planner\Visitors\CollectIdentifiers;
 	
@@ -215,5 +216,55 @@
 			
 			// Return true if either operand references the given range
 			return $leftMatches || $rightMatches;
+		}
+
+		/**
+		 * Filters out non-aggregate SELECT items that are bare references to their
+		 * range's declared primary key — used both for a window's PARTITION BY
+		 * (AggregateOptimizer) and for propagating the same partition columns into
+		 * a WindowChainRewriter helper query. Without this exclusion, a query that
+		 * also displays a row's own id (the common case) would put every row in
+		 * its own single-row partition.
+		 * @param EntityStore $entityStore
+		 * @param AstAlias[] $nonAggItems
+		 * @return AstAlias[]
+		 */
+		public static function excludePrimaryKeyItems(EntityStore $entityStore, array $nonAggItems): array {
+			return array_values(array_filter(
+				$nonAggItems,
+				fn(AstAlias $item): bool => !self::isPrimaryKeyIdentifier($entityStore, $item->getExpression())
+			));
+		}
+
+		/**
+		 * Returns true if the expression is a bare identifier referencing its
+		 * range's declared primary key column (e.g. `o.id`, not `o.id.something`).
+		 * @param EntityStore $entityStore
+		 * @param AstInterface $expression
+		 * @return bool
+		 */
+		public static function isPrimaryKeyIdentifier(EntityStore $entityStore, AstInterface $expression): bool {
+			if (!$expression instanceof AstIdentifier) {
+				return false;
+			}
+
+			// A property reference like `o.id` is a chain: the node itself is the
+			// range root (name "o"), and the actual property lives at the end of
+			// the `getNext()` chain — walk to it before comparing names.
+			$leaf = $expression;
+
+			while ($leaf->getNext() !== null) {
+				$leaf = $leaf->getNext();
+			}
+
+			$entityName = $leaf->getEntityName();
+
+			if ($entityName === null) {
+				return false;
+			}
+
+			$primaryKey = $entityStore->getMetadata($entityName)->getPrimaryKey();
+
+			return $primaryKey !== null && $leaf->getName() === $primaryKey;
 		}
 	}

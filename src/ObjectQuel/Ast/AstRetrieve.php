@@ -56,7 +56,16 @@
 		
 		/** @var AstInterface[] Grouping specifications (GROUP BY clause) */
 		protected array $group_by;
-		
+
+		/**
+		 * @var array<string, true> Names of ranges added by WindowChainRewriter to
+		 * host an extracted nested sequence-function computation. Each is a
+		 * derived table joined 1:1 on primary key back to the query's real range,
+		 * so it never changes row cardinality — AggregateOptimizer's single-range
+		 * window eligibility check excludes these when counting "real" ranges.
+		 */
+		protected array $window_chain_helper_ranges = [];
+
 		/**
 		 * AstRetrieve constructor.
 		 * @param array<string, mixed> $directives Compiler directives for query optimization
@@ -223,11 +232,30 @@
 		public function setRanges(array $ranges): void {
 			// Set new ranges array
 			$this->ranges = $ranges;
-			
+
 			// Establish parent relationships for all new ranges
 			foreach ($this->ranges as $range) {
 				$range->setParent($this);
 			}
+		}
+
+		/**
+		 * Marks a range as a WindowChainRewriter-added helper (see the property
+		 * docblock above).
+		 * @param string $rangeName
+		 * @return void
+		 */
+		public function addWindowChainHelperRange(string $rangeName): void {
+			$this->window_chain_helper_ranges[$rangeName] = true;
+		}
+
+		/**
+		 * Returns true if $rangeName was added by WindowChainRewriter.
+		 * @param string $rangeName
+		 * @return bool
+		 */
+		public function isWindowChainHelperRange(string $rangeName): bool {
+			return isset($this->window_chain_helper_ranges[$rangeName]);
 		}
 		
 		/**
@@ -522,6 +550,7 @@
 			$clone->sort_in_application_logic = $this->sort_in_application_logic;
 			$clone->window = $this->window;
 			$clone->window_size = $this->window_size;
+			$clone->window_chain_helper_ranges = $this->window_chain_helper_ranges;
 			
 			// Establish parent relationships for all cloned children
 			foreach ($clonedRanges as $range) {
