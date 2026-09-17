@@ -687,43 +687,59 @@
 		}
 
 		/**
-		 * Sequence functions (rank, dense_rank, row_number, ntile, lag, lead) have no
-		 * SQL representation outside a window function — AggregateOptimizer must always
-		 * rewrite them into an AstSubquery(TYPE_WINDOW) before they're ever emitted.
-		 *
-		 * These handlers only exist so visitNode()'s naming-convention dispatch has
-		 * somewhere to go. In practice they only run as a side effect of
-		 * ProcessAggregate::markExpressionAsHandled(), which deliberately dispatches to
-		 * the class handler purely to mark the node visited (bookkeeping to prevent
-		 * AstSubquery's own accept() from processing it a second time) — the actual
-		 * window SQL is already built separately by ProcessAggregate::buildWindowAggregate().
-		 * So there's genuinely nothing to append here; this must be a true no-op, not an
-		 * error — throwing would misfire on that legitimate bookkeeping call.
+		 * No-op target for the six sequence-function handlers below. They only run as
+		 * a side effect of ProcessAggregate::markExpressionAsHandled() (bookkeeping to
+		 * mark the node visited) — the real window SQL is built separately by
+		 * ProcessAggregate::buildWindowAggregate(), so there's nothing to append here.
 		 * @param AstAggregate $ast
 		 */
 		private function noOpSequenceFunctionHandler(AstAggregate $ast): void {
 		}
 
+		/**
+		 * Process a RANK() sequence function — see noOpSequenceFunctionHandler().
+		 * @param AstRank $ast The RANK function node to process
+		 */
 		protected function handleRank(AstRank $ast): void {
 			$this->noOpSequenceFunctionHandler($ast);
 		}
 
+		/**
+		 * Process a DENSE_RANK() sequence function — see noOpSequenceFunctionHandler().
+		 * @param AstDenseRank $ast The DENSE_RANK function node to process
+		 */
 		protected function handleDenseRank(AstDenseRank $ast): void {
 			$this->noOpSequenceFunctionHandler($ast);
 		}
 
+		/**
+		 * Process a ROW_NUMBER() sequence function — see noOpSequenceFunctionHandler().
+		 * @param AstRowNumber $ast The ROW_NUMBER function node to process
+		 */
 		protected function handleRowNumber(AstRowNumber $ast): void {
 			$this->noOpSequenceFunctionHandler($ast);
 		}
 
+		/**
+		 * Process an NTILE(n) sequence function — see noOpSequenceFunctionHandler().
+		 * @param AstNtile $ast The NTILE function node to process
+		 */
 		protected function handleNtile(AstNtile $ast): void {
 			$this->noOpSequenceFunctionHandler($ast);
 		}
 
+		/**
+		 * Process a LAG(expr) sequence function — see noOpSequenceFunctionHandler().
+		 * @param AstLag $ast The LAG function node to process
+		 */
 		protected function handleLag(AstLag $ast): void {
 			$this->noOpSequenceFunctionHandler($ast);
 		}
 
+		/**
+		 * Process a LEAD(expr) sequence function — see noOpSequenceFunctionHandler().
+		 * @param AstLead $ast The LEAD function node to process
+		 */
 		protected function handleLead(AstLead $ast): void {
 			$this->noOpSequenceFunctionHandler($ast);
 		}

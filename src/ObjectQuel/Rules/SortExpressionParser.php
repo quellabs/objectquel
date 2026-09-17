@@ -20,6 +20,10 @@
 		private Lexer $lexer;
 		private ArithmeticExpression $expressionRule;
 
+		/**
+		 * @param Lexer $lexer
+		 * @param ArithmeticExpression $expressionRule Rule used to parse each sort expression
+		 */
 		public function __construct(Lexer $lexer, ArithmeticExpression $expressionRule) {
 			$this->lexer = $lexer;
 			$this->expressionRule = $expressionRule;

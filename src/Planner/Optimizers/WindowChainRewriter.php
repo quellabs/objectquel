@@ -103,7 +103,11 @@
 		/**
 		 * Extracts each inner window aggregate into its own helper range and
 		 * rewrites $outerAggregate's argument to reference it.
+		 * @param AstRetrieve $root
+		 * @param AstAggregate $outerAggregate
 		 * @param AstAggregate[] $innerNodes
+		 * @param PlanLogInterface $log
+		 * @return void
 		 * @throws QuelException
 		 */
 		private function rewriteChain(AstRetrieve $root, AstAggregate $outerAggregate, array $innerNodes, PlanLogInterface $log): void {

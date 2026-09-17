@@ -14,12 +14,17 @@
 	class AstLag extends AstAggregate {
 
 		/**
+		 * @param AstInterface $expression The value expression to read from the previous row
 		 * @param array<int, array{ast: AstInterface, order: string}>|null $order
 		 */
 		public function __construct(AstInterface $expression, ?array $order = null) {
 			parent::__construct($expression, null, $order);
 		}
 
+		/**
+		 * Returns string representation of aggregate
+		 * @return string
+		 */
 		public function getType(): string {
 			return "LAG";
 		}
@@ -39,6 +44,10 @@
 			return $identifier;
 		}
 
+		/**
+		 * Clone this node
+		 * @return static
+		 */
 		public function deepClone(): static {
 			// @phpstan-ignore-next-line new.static
 			return new static($this->getIdentifier()->deepClone(), $this->cloneOrder());

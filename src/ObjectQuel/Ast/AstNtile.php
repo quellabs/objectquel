@@ -19,10 +19,18 @@
 			parent::__construct($bucketCount, null, $order);
 		}
 
+		/**
+		 * Returns string representation of aggregate
+		 * @return string
+		 */
 		public function getType(): string {
 			return "NTILE";
 		}
 
+		/**
+		 * Returns the return type of this node
+		 * @return string|null
+		 */
 		public function getReturnType(): ?string {
 			return "integer";
 		}
@@ -42,6 +50,10 @@
 			return $identifier;
 		}
 
+		/**
+		 * Clone this node
+		 * @return static
+		 */
 		public function deepClone(): static {
 			// @phpstan-ignore-next-line new.static
 			return new static($this->getIdentifier()->deepClone(), $this->cloneOrder());

@@ -15,14 +15,26 @@
 			parent::__construct(null, null, $order);
 		}
 
+		/**
+		 * Returns string representation of aggregate
+		 * @return string
+		 */
 		public function getType(): string {
 			return "RANK";
 		}
 
+		/**
+		 * Returns the return type of this node
+		 * @return string|null
+		 */
 		public function getReturnType(): ?string {
 			return "integer";
 		}
 
+		/**
+		 * Clone this node
+		 * @return static
+		 */
 		public function deepClone(): static {
 			// @phpstan-ignore-next-line new.static
 			return new static($this->cloneOrder());

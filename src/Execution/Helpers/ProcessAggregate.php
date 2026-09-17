@@ -111,7 +111,7 @@
 				case AstSubquery::TYPE_CASE_WHEN:
 					return $this->buildCaseWhenExistsSubquery($subquery);
 				
-				case AstSubquery::TYPE_WINDOW: // ← add
+				case AstSubquery::TYPE_WINDOW:
 					return $this->buildWindowAggregate($subquery);
 				
 				default:
@@ -413,8 +413,10 @@
 		}
 		
 		/**
-		 * Builds a window aggregate: AGG([DISTINCT] expr) OVER ([PARTITION BY ...] [ORDER BY ...])
-		 * SUM is wrapped in COALESCE(..., 0) to keep your current NULL behavior.
+		 * Builds a window aggregate: AGG([DISTINCT] expr) OVER ([PARTITION BY ...] [ORDER BY ...]).
+		 * SUM is wrapped in COALESCE(..., 0), matching the scalar-subquery and plain strategies.
+		 * @param AstSubquery $subquery Contains the windowed aggregate and its partition columns
+		 * @return string Complete SQL window function expression
 		 */
 		private function buildWindowAggregate(AstSubquery $subquery): string {
 			// Fetch aggregation from the subquery

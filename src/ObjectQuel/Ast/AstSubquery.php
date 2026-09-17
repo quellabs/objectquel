@@ -59,10 +59,16 @@
 			}
 		}
 		
+		/**
+		 * Accept a visitor to perform operations on this node.
+		 * Cascades into partitionBy independently of the aggregation so visitors
+		 * that need to see it (e.g. range discovery) still can.
+		 * @param AstVisitorInterface $visitor The visitor to accept.
+		 */
 		public function accept(AstVisitorInterface $visitor): void {
 			parent::accept($visitor);
 			$this->aggregation?->accept($visitor);
-			
+
 			foreach ($this->partitionBy as $expression) {
 				$expression->accept($visitor);
 			}
