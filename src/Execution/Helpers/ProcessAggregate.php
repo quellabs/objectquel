@@ -184,17 +184,15 @@
 			// Only MIN/MAX/AVG/SUM/COUNT reach a scalar subquery; the no-argument
 			// sequence functions (rank, dense_rank, row_number) always require the
 			// window-function strategy instead, so a null identifier here is a bug.
+			// These aggregates all have real per-type handlers (handleSum, etc.),
+			// which — unlike the sequence functions' no-op handlers — already visit
+			// and mark the identifier as a side effect of markExpressionAsHandled($aggNode)
+			// above, so no separate mark is needed here.
 			$identifier = $aggNode->getIdentifier();
 
 			if ($identifier === null) {
 				throw new \LogicException(get_class($aggNode) . ' requires a value argument; it cannot use the scalar subquery strategy');
 			}
-
-			// Mark the identifier as processed too — AstAggregate::accept() unconditionally
-			// cascades into it regardless of $aggNode's own visited state, which would
-			// otherwise make this visitor append its raw SQL a second time outside the
-			// aggregate function text built below.
-			$this->markExpressionAsHandled($identifier);
 
 			// Convert the aggregate target expression to SQL
 			// Uses deepClone() to avoid modifying the original AST node during conversion
