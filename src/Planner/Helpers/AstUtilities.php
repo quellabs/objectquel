@@ -269,6 +269,26 @@
 		}
 
 		/**
+		 * Wraps an aggregate's explicit inline `by` list into the AstAlias[] shape
+		 * AggregateRewriter::rewriteAggregateAsWindowFunction() expects, or null when
+		 * no explicit `by` was written (caller falls back to inference).
+		 * @param AstAggregate $aggregate
+		 * @return AstAlias[]|null
+		 */
+		public static function buildPartitionItemsFromExplicitBy(AstAggregate $aggregate): ?array {
+			$partitionBy = $aggregate->getPartitionBy();
+
+			if ($partitionBy === null) {
+				return null;
+			}
+
+			return array_map(
+				static fn(AstInterface $expression): AstAlias => new AstAlias('_partition', $expression->deepClone()),
+				$partitionBy
+			);
+		}
+
+		/**
 		 * Filters out non-aggregate SELECT items that reference the same column as
 		 * one of the aggregate's own inline `sort by` expressions — applied alongside
 		 * excludePrimaryKeyItems() when inferring PARTITION BY. Without this, ranking

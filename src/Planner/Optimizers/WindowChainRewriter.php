@@ -85,7 +85,8 @@
 
 		/**
 		 * Finds every AstAggregate within $expression that requires a window
-		 * function (a sequence function, or any aggregate using an inline `sort by`).
+		 * function (a sequence function, or any aggregate using an inline `sort by`
+		 * and/or `by`).
 		 * @param AstInterface $expression
 		 * @return AstAggregate[]
 		 */
@@ -96,7 +97,7 @@
 
 			return array_values(array_filter(
 				$visitor->getCollectedNodes(),
-				fn(AstAggregate $node): bool => $node->getOrder() !== null
+				fn(AstAggregate $node): bool => $node->getOrder() !== null || $node->getPartitionBy() !== null
 			));
 		}
 
@@ -198,12 +199,16 @@
 				$this->relinkIdentifiers($clonedInner, $originalRange, $clonedRange);
 				$innerRetrieve->addValue(new AstAlias($seqAlias, $clonedInner));
 
-				// Also exclude any column this specific inner node orders by (e.g.
+				// An explicit inline `by` on this node wins — $clonedInner already carries
+				// it relinked to $clonedRange via the relinkIdentifiers() call above, since
+				// AstAggregate::accept() cascades into partitionBy like it does order.
+				// Otherwise, exclude any column this specific inner node orders by (e.g.
 				// `lag(o.published sort by o.published)`) — same reasoning as
 				// AggregateOptimizer's STRATEGY_WINDOW case, applied per node since
 				// different inner nodes in the same outer aggregate can sort by
 				// different columns.
-				$nodePartitionItems = AstUtilities::excludeAggregateOrderColumns($innerNode, $innerPartitionItems);
+				$nodePartitionItems = AstUtilities::buildPartitionItemsFromExplicitBy($clonedInner)
+					?? AstUtilities::excludeAggregateOrderColumns($innerNode, $innerPartitionItems);
 				AggregateRewriter::rewriteAggregateAsWindowFunction($clonedInner, $nodePartitionItems);
 
 				$replacement = $this->buildPropertyIdentifier(null, $seqAlias, $helperRangeName);

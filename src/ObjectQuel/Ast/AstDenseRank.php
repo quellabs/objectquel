@@ -10,9 +10,10 @@
 
 		/**
 		 * @param array<int, array{ast: \Quellabs\ObjectQuel\ObjectQuel\AstInterface, order: string}>|null $order
+		 * @param array<int, \Quellabs\ObjectQuel\ObjectQuel\AstInterface>|null $partitionBy
 		 */
-		public function __construct(?array $order = null) {
-			parent::__construct(null, null, $order);
+		public function __construct(?array $order = null, ?array $partitionBy = null) {
+			parent::__construct(null, null, $order, $partitionBy);
 		}
 
 		/**
@@ -37,6 +38,6 @@
 		 */
 		public function deepClone(): static {
 			// @phpstan-ignore-next-line new.static
-			return new static($this->cloneOrder());
+			return new static($this->cloneOrder(), $this->clonePartitionBy());
 		}
 	}

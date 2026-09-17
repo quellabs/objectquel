@@ -438,11 +438,15 @@
 				return "";
 			}
 
-			// Mark the identifier and inline `sort by` expressions as processed too —
-			// AstAggregate::accept() unconditionally cascades into them regardless of
-			// whether $aggNode itself was already marked visited above, which would
-			// otherwise make this visitor append their raw SQL a second time outside
-			// the function-call / OVER (...) text built below.
+			// Mark the identifier, inline `sort by`, and inline `by` expressions as
+			// processed too — AstAggregate::accept() unconditionally cascades into them
+			// regardless of whether $aggNode itself was already marked visited above,
+			// which would otherwise make this visitor append their raw SQL a second time
+			// outside the function-call / OVER (...) text built below. This applies even
+			// though the aggregate's own `by` list isn't what's used to build the
+			// PARTITION BY clause here (that comes from $subquery->getPartitionBy(),
+			// already resolved by the optimizer) — $aggNode still carries its original
+			// `by` list via deepClone(), and it must be marked handled regardless.
 			$identifier = $aggNode->getIdentifier();
 
 			if ($identifier !== null) {
@@ -451,6 +455,10 @@
 
 			foreach ($aggNode->getOrder() ?? [] as $sortItem) {
 				$this->markExpressionAsHandled($sortItem['ast']);
+			}
+
+			foreach ($aggNode->getPartitionBy() ?? [] as $expression) {
+				$this->markExpressionAsHandled($expression);
 			}
 
 			// Extract the aggregate function name (SUM, COUNT, AVG, RANK, LAG, etc.)

@@ -30,19 +30,29 @@
 		private ?array $order;
 
 		/**
+		 * @var array<int, AstInterface>|null Inline `by` list — explicit PARTITION BY
+		 * columns. Null means no explicit list was written; the optimizer then falls
+		 * back to inferring partition columns from the other SELECT items.
+		 */
+		private ?array $partitionBy;
+
+		/**
 		 * AstAggregate constructor.
 		 * @param AstInterface|null $entityOrIdentifier Null for no-argument sequence functions
 		 * @param AstInterface|null $conditions
 		 * @param array<int, array{ast: AstInterface, order: string}>|null $order
+		 * @param array<int, AstInterface>|null $partitionBy
 		 */
-		public function __construct(?AstInterface $entityOrIdentifier, ?AstInterface $conditions = null, ?array $order = null) {
+		public function __construct(?AstInterface $entityOrIdentifier, ?AstInterface $conditions = null, ?array $order = null, ?array $partitionBy = null) {
 			$this->identifier = $entityOrIdentifier;
 			$this->conditions = $conditions;
 			$this->order = null;
+			$this->partitionBy = null;
 
 			$this->identifier?->setParent($this);
 			$conditions?->setParent($this);
 			$this->setOrder($order);
+			$this->setPartitionBy($partitionBy);
 		}
 
 		/**
@@ -56,6 +66,10 @@
 
 			foreach ($this->order ?? [] as $sortItem) {
 				$sortItem['ast']->accept($visitor);
+			}
+
+			foreach ($this->partitionBy ?? [] as $expression) {
+				$expression->accept($visitor);
 			}
 		}
 
@@ -140,6 +154,40 @@
 		}
 
 		/**
+		 * Returns the explicit inline `by` list, or null when partitioning should be
+		 * inferred from the other SELECT items instead.
+		 * @return array<int, AstInterface>|null
+		 */
+		public function getPartitionBy(): ?array {
+			return $this->partitionBy;
+		}
+
+		/**
+		 * Replaces the inline `by` list. Adopts each expression as a child.
+		 * @param array<int, AstInterface>|null $partitionBy
+		 * @return void
+		 */
+		public function setPartitionBy(?array $partitionBy): void {
+			$this->partitionBy = $partitionBy;
+
+			foreach ($this->partitionBy ?? [] as $expression) {
+				$expression->setParent($this);
+			}
+		}
+
+		/**
+		 * Clones the inline `by` list. Shared by deepClone() implementations across
+		 * this class hierarchy, same as cloneOrder().
+		 * @return array<int, AstInterface>|null
+		 */
+		protected function clonePartitionBy(): ?array {
+			return $this->partitionBy === null ? null : array_map(
+				static fn(AstInterface $expression): AstInterface => $expression->deepClone(),
+				$this->partitionBy
+			);
+		}
+
+		/**
 		 * Clone this node
 		 * @return static
 		 */
@@ -151,6 +199,6 @@
 			// Create new instance with cloned identifier
 			// Return cloned node
 			// @phpstan-ignore-next-line new.static
-			return new static($clonedIdentifier, $clonedConditions, $this->cloneOrder());
+			return new static($clonedIdentifier, $clonedConditions, $this->cloneOrder(), $this->clonePartitionBy());
 		}
 	}

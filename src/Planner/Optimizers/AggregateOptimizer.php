@@ -167,13 +167,14 @@
 		 * Returns true if the aggregate has no non-windowed SQL form: either it's one
 		 * of the sequence function types (rank, dense_rank, row_number, ntile, lag, lead),
 		 * or it's a plain aggregate (sum, count, avg, min, max) using an inline `sort by`
-		 * to compute a running value.
+		 * (a running value) and/or an inline `by` (a per-row group total).
 		 * @param AstAggregate $aggregate
 		 * @return bool
 		 */
 		private function requiresWindowFunction(AstAggregate $aggregate): bool {
 			return
 				$aggregate->getOrder() !== null ||
+				$aggregate->getPartitionBy() !== null ||
 				in_array(get_class($aggregate), AggregateConstants::SEQUENCE_AGGREGATE_TYPES, true);
 		}
 		
@@ -205,9 +206,10 @@
 					break;
 				
 				case self::STRATEGY_WINDOW:
-					// Non-aggregate SELECT items become the window's PARTITION BY — the
-					// same "other columns imply grouping" rule ObjectQuel already uses to
-					// infer GROUP BY for the DIRECT strategies above — except:
+					// An explicit inline `by` list always wins. Otherwise, non-aggregate
+					// SELECT items become the window's PARTITION BY — the same "other
+					// columns imply grouping" rule ObjectQuel already uses to infer GROUP
+					// BY for the DIRECT strategies above — except:
 					//  - the range's own primary key, which is virtually always displayed
 					//    for row identity alongside a sequence function (rank, lag, ...),
 					//    where including it would put every row in its own partition;
@@ -216,7 +218,8 @@
 					//    selecting o.published) — including it would fold every distinct
 					//    value of that column into its own partition, making the rank
 					//    trivially 1 for every row.
-					$partitionColumns = AstUtilities::excludeAggregateOrderColumns($agg, $this->excludePrimaryKeyItems($nonAggItems));
+					$partitionColumns = AstUtilities::buildPartitionItemsFromExplicitBy($agg)
+						?? AstUtilities::excludeAggregateOrderColumns($agg, $this->excludePrimaryKeyItems($nonAggItems));
 					AggregateRewriter::rewriteAggregateAsWindowFunction($agg, $partitionColumns);
 					break;
 				

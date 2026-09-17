@@ -133,19 +133,23 @@
 		 * Generic parser for aggregates
 		 * @template T of AstInterface
 		 * @param class-string<T> $astClass The fully qualified AST class name to instantiate
-		 * @param bool $allowSortBy Whether an inline `sort by` may follow the optional WHERE,
-		 *        flipping this call into a windowed running aggregate (e.g. a running SUM).
-		 *        Left false for ANY() and the DISTINCT variants (COUNTU/AVGU/SUMU), which
-		 *        can never be computed as a window function.
+		 * @param bool $allowWindowClauses Whether an inline `by` and/or `sort by` may follow
+		 *        the optional WHERE, flipping this call into a windowed aggregate (e.g. a
+		 *        running SUM, or a per-row group total). Left false for ANY() and the
+		 *        DISTINCT variants (COUNTU/AVGU/SUMU), which can never be computed as a
+		 *        window function.
 		 * @return T The instantiated AST node
 		 * @throws LexerException|ParserException|\ReflectionException
 		 */
-		private function parseAggregateFunction(string $astClass, bool $allowSortBy = false): AstInterface {
+		private function parseAggregateFunction(string $astClass, bool $allowWindowClauses = false): AstInterface {
 			// Match opening parenthesis
 			$this->lexer->match(Token::ParenthesesOpen);
 
 			// Parse the parameter - either as property chain (entity.field) or general expression
 			$parameter = $this->expressionRule->parse();
+
+			// Optional inline `by`, explicit PARTITION BY columns
+			$partitionBy = $allowWindowClauses ? $this->optionalBy() : null;
 
 			// Optional WHERE statement
 			$conditions = null;
@@ -155,13 +159,13 @@
 			}
 
 			// Optional inline `sort by`, flipping SQL generation to a window function
-			$order = $allowSortBy ? $this->optionalSortBy() : null;
+			$order = $allowWindowClauses ? $this->optionalSortBy() : null;
 
 			// Match closing parenthesis
 			$this->lexer->match(Token::ParenthesesClose);
 
 			// Create and return the appropriate AST node
-			return new $astClass($parameter, $conditions, $order);
+			return new $astClass($parameter, $conditions, $order, $partitionBy);
 		}
 
 		/**
@@ -177,10 +181,11 @@
 		private function parseValueSequenceFunction(string $astClass, string $functionName): AstInterface {
 			$this->lexer->match(Token::ParenthesesOpen);
 			$parameter = $this->expressionRule->parse();
+			$partitionBy = $this->optionalBy();
 			$order = $this->requiredSortBy($functionName);
 			$this->lexer->match(Token::ParenthesesClose);
 
-			return new $astClass($parameter, $order);
+			return new $astClass($parameter, $order, $partitionBy);
 		}
 
 		/**
@@ -195,10 +200,33 @@
 		 */
 		private function parseNoArgumentSequenceFunction(string $astClass, string $functionName): AstInterface {
 			$this->lexer->match(Token::ParenthesesOpen);
+			$partitionBy = $this->optionalBy();
 			$order = $this->requiredSortBy($functionName);
 			$this->lexer->match(Token::ParenthesesClose);
 
-			return new $astClass($order);
+			return new $astClass($order, $partitionBy);
+		}
+
+		/**
+		 * Parses the optional inline `by expr, ...` list found inside aggregate and
+		 * sequence function calls — explicit PARTITION BY columns, overriding the
+		 * optimizer's default inference from the other SELECT items. No `asc`/`desc`,
+		 * unlike `sort by` — partitioning has no order. Returns null when no `by` is present.
+		 * @return array<int, AstInterface>|null
+		 * @throws LexerException|ParserException
+		 */
+		private function optionalBy(): ?array {
+			if (!$this->lexer->optionalMatch(Token::By)) {
+				return null;
+			}
+
+			$expressions = [];
+
+			do {
+				$expressions[] = $this->expressionRule->parse();
+			} while ($this->lexer->optionalMatch(Token::Comma));
+
+			return $expressions;
 		}
 
 		/**
@@ -240,7 +268,7 @@
 		 * @throws LexerException|ParserException|\ReflectionException
 		 */
 		protected function parseCount(): AstCount {
-			return $this->parseAggregateFunction(AstCount::class, allowSortBy: true);
+			return $this->parseAggregateFunction(AstCount::class, allowWindowClauses: true);
 		}
 		
 		/**
@@ -260,7 +288,7 @@
 		 * @throws LexerException|ParserException|\ReflectionException
 		 */
 		protected function parseAvg(): AstAvg {
-			return $this->parseAggregateFunction(AstAvg::class, allowSortBy: true);
+			return $this->parseAggregateFunction(AstAvg::class, allowWindowClauses: true);
 		}
 		
 		/**
@@ -280,7 +308,7 @@
 		 * @throws LexerException|ParserException|\ReflectionException
 		 */
 		protected function parseMax(): AstMax {
-			return $this->parseAggregateFunction(AstMax::class, allowSortBy: true);
+			return $this->parseAggregateFunction(AstMax::class, allowWindowClauses: true);
 		}
 		
 		/**
@@ -290,7 +318,7 @@
 		 * @throws LexerException|ParserException|\ReflectionException
 		 */
 		protected function parseMin(): AstMin {
-			return $this->parseAggregateFunction(AstMin::class, allowSortBy: true);
+			return $this->parseAggregateFunction(AstMin::class, allowWindowClauses: true);
 		}
 		
 		/**
@@ -300,7 +328,7 @@
 		 * @throws LexerException|ParserException|\ReflectionException
 		 */
 		protected function parseSum(): AstSum {
-			return $this->parseAggregateFunction(AstSum::class, allowSortBy: true);
+			return $this->parseAggregateFunction(AstSum::class, allowWindowClauses: true);
 		}
 		
 		/**

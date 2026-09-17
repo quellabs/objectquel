@@ -14,9 +14,10 @@
 		/**
 		 * @param AstInterface $bucketCount The number of buckets (e.g. AstNumber(4))
 		 * @param array<int, array{ast: AstInterface, order: string}>|null $order
+		 * @param array<int, AstInterface>|null $partitionBy
 		 */
-		public function __construct(AstInterface $bucketCount, ?array $order = null) {
-			parent::__construct($bucketCount, null, $order);
+		public function __construct(AstInterface $bucketCount, ?array $order = null, ?array $partitionBy = null) {
+			parent::__construct($bucketCount, null, $order, $partitionBy);
 		}
 
 		/**
@@ -56,6 +57,6 @@
 		 */
 		public function deepClone(): static {
 			// @phpstan-ignore-next-line new.static
-			return new static($this->getIdentifier()->deepClone(), $this->cloneOrder());
+			return new static($this->getIdentifier()->deepClone(), $this->cloneOrder(), $this->clonePartitionBy());
 		}
 	}

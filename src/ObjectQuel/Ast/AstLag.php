@@ -16,9 +16,10 @@
 		/**
 		 * @param AstInterface $expression The value expression to read from the previous row
 		 * @param array<int, array{ast: AstInterface, order: string}>|null $order
+		 * @param array<int, AstInterface>|null $partitionBy
 		 */
-		public function __construct(AstInterface $expression, ?array $order = null) {
-			parent::__construct($expression, null, $order);
+		public function __construct(AstInterface $expression, ?array $order = null, ?array $partitionBy = null) {
+			parent::__construct($expression, null, $order, $partitionBy);
 		}
 
 		/**
@@ -50,6 +51,6 @@
 		 */
 		public function deepClone(): static {
 			// @phpstan-ignore-next-line new.static
-			return new static($this->getIdentifier()->deepClone(), $this->cloneOrder());
+			return new static($this->getIdentifier()->deepClone(), $this->cloneOrder(), $this->clonePartitionBy());
 		}
 	}
