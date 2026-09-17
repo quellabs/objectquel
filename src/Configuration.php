@@ -72,7 +72,14 @@
 		 * and ensure consistent database structure across environments.
 		 */
 		private string $migrationsPath = '';
-		
+
+		/**
+		 * @var string Name of the table quel:migrate tracks applied migrations in
+		 * Defaults to 'quel_migrations' — the ObjectQuel-native tracking table,
+		 * unrelated to Phinx's 'phinxlog'.
+		 */
+		private string $migrationTable = 'quel_migrations';
+
 		/**
 		 * @var int|null Window size to use for pagination, or null if none
 		 * Default number of records to return per page in paginated queries.
@@ -237,7 +244,24 @@
 		public function setMigrationsPath(string $migrationsPath): void {
 			$this->migrationsPath = $migrationsPath;
 		}
-		
+
+		/**
+		 * Returns the name of the table quel:migrate tracks applied migrations in
+		 * @return string
+		 */
+		public function getMigrationTable(): string {
+			return $this->migrationTable;
+		}
+
+		/**
+		 * Sets the name of the table quel:migrate tracks applied migrations in
+		 * @param string $migrationTable
+		 * @return void
+		 */
+		public function setMigrationTable(string $migrationTable): void {
+			$this->migrationTable = $migrationTable;
+		}
+
 		/**
 		 * Returns the standard window size for pagination
 		 * @return int|null Default page size or null if not configured

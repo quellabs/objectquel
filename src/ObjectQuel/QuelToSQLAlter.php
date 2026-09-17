@@ -3,7 +3,7 @@
 	namespace Quellabs\ObjectQuel\ObjectQuel;
 
 	use Quellabs\ObjectQuel\Capabilities\PlatformCapabilitiesInterface;
-	use Quellabs\ObjectQuel\DatabaseAdapter\DDLTypeMapper;
+	use Quellabs\ObjectQuel\DatabaseAdapter\Mapper\DDLTypeMapper;
 	use Quellabs\ObjectQuel\DatabaseAdapter\SqlIdentifierQuoter;
 	use Quellabs\ObjectQuel\Exception\QuelException;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstAlterAddColumn;
@@ -84,7 +84,7 @@
 				$statements = [
 					...$statements,
 					...match (true) {
-						$operation instanceof AstAlterAddColumn => [$this->compileAddColumn($tableName, $operation)],
+						$operation instanceof AstAlterAddColumn => $this->compileAddColumn($tableName, $operation),
 						$operation instanceof AstAlterDropColumn => [$this->compileDropColumn($tableName, $operation)],
 						$operation instanceof AstAlterRenameColumn => [$this->compileRenameColumn($tableName, $operation)],
 						$operation instanceof AstAlterRetypeColumn => $this->compileRetypeColumn($tableName, $operation),
@@ -109,14 +109,17 @@
 		}
 		
 		/**
-		 * `add attr = type constraints` — a plain new column, rendered with
-		 * the same per-dialect column renderer `create` uses.
+		 * `add attr = type constraints [backfill 'literal']` — a plain new
+		 * column, rendered with the same per-dialect column renderer
+		 * `create` uses. With no `backfill` clause, this is one statement;
+		 * with one, compileAddColumnWithBackfill() takes over (see its
+		 * docblock for the per-dialect statement sequence).
 		 * @param string $tableName
 		 * @param AstAlterAddColumn $operation
-		 * @return string
+		 * @return list<string>
 		 * @throws QuelException
 		 */
-		private function compileAddColumn(string $tableName, AstAlterAddColumn $operation): string {
+		private function compileAddColumn(string $tableName, AstAlterAddColumn $operation): array {
 			$column = $operation->getColumn();
 			$dialect = $this->platform->getDatabaseType();
 
@@ -128,10 +131,63 @@
 				);
 			}
 
+			$backfillValue = $operation->getBackfillValue();
+
+			if ($backfillValue !== null) {
+				return $this->compileAddColumnWithBackfill($tableName, $column, $backfillValue, $dialect);
+			}
+
 			$columnDef = $this->renderColumnDefinition($column);
 			$keyword = $dialect === 'sqlsrv' ? 'ADD' : 'ADD COLUMN';
 
-			return sprintf('ALTER TABLE %s %s %s', $this->quotedTable($tableName), $keyword, $columnDef);
+			return [sprintf('ALTER TABLE %s %s %s', $this->quotedTable($tableName), $keyword, $columnDef)];
+		}
+
+		/**
+		 * `add attr = type constraints backfill 'literal'` — adds the column
+		 * with a transient DEFAULT so existing rows get backfilled, then
+		 * drops the default again so it isn't a second, persisted source of
+		 * truth alongside @Orm\Column(default=...).
+		 *
+		 * MySQL/MariaDB and PostgreSQL share identical add/cleanup syntax.
+		 * SQL Server's `ADD ... DEFAULT` creates a named default-constraint
+		 * object that must be dropped by name (DefaultConstraintNamer).
+		 * SQLite is a deliberate one-statement carve-out: no ALTER COLUMN at
+		 * all, so the default is left in place after backfill — harmless,
+		 * since append() never reads a column's DB-level default.
+		 * @param string $tableName
+		 * @param AstColumnDefinition $column
+		 * @param string $backfillValue
+		 * @param string $dialect
+		 * @return list<string>
+		 * @throws QuelException
+		 */
+		private function compileAddColumnWithBackfill(string $tableName, AstColumnDefinition $column, string $backfillValue, string $dialect): array {
+			$table = $this->quotedTable($tableName);
+			$columnDef = $this->renderColumnDefinition($column);
+			$quotedDefault = $this->identifierQuoter->quoteStringLiteral($backfillValue);
+
+			if ($this->usesNamedDefaultConstraint()) {
+				$constraintName = $this->identifierQuoter->quoteIdentifier(
+					DefaultConstraintNamer::nameOrThrow($tableName, $column->getName())
+				);
+
+				return [
+					sprintf('ALTER TABLE %s ADD %s CONSTRAINT %s DEFAULT %s', $table, $columnDef, $constraintName, $quotedDefault),
+					sprintf('ALTER TABLE %s DROP CONSTRAINT %s', $table, $constraintName),
+				];
+			}
+
+			if ($dialect === 'sqlite') {
+				return [sprintf('ALTER TABLE %s ADD COLUMN %s DEFAULT %s', $table, $columnDef, $quotedDefault)];
+			}
+
+			$quotedColumn = $this->identifierQuoter->quoteIdentifier($column->getName());
+
+			return [
+				sprintf('ALTER TABLE %s ADD COLUMN %s DEFAULT %s', $table, $columnDef, $quotedDefault),
+				sprintf('ALTER TABLE %s ALTER COLUMN %s DROP DEFAULT', $table, $quotedColumn),
+			];
 		}
 
 		/**
@@ -454,6 +510,19 @@
 		 */
 		private function usesNativeDropClause(): bool {
 			return in_array($this->platform->getDatabaseType(), ['mysql', 'mariadb'], true);
+		}
+
+		/**
+		 * Whether adding a column with a DEFAULT creates a separate named
+		 * constraint object that must be dropped by name (SQL Server only —
+		 * MySQL/PostgreSQL drop it by targeting the column directly). A
+		 * dialect syntax-form choice, not a capability gate — nothing is
+		 * infeasible either way — so it stays a private helper rather than
+		 * a PlatformCapabilitiesInterface method.
+		 * @return bool
+		 */
+		private function usesNamedDefaultConstraint(): bool {
+			return $this->platform->getDatabaseType() === 'sqlsrv';
 		}
 
 		/**

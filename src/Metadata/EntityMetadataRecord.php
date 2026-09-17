@@ -33,7 +33,7 @@
 	use Quellabs\ObjectQuel\Annotations\Orm\ManyToOne;
 	use Quellabs\ObjectQuel\Annotations\Orm\UniqueIndex;
 	use Quellabs\ObjectQuel\Annotations\Orm\Version;
-	use Quellabs\ObjectQuel\DatabaseAdapter\DatabaseAdapter;
+	use Quellabs\ObjectQuel\DatabaseAdapter\ColumnDefinition;
 	use Quellabs\ObjectQuel\Exception\EntityResolutionException;
 	
 	/**
@@ -47,7 +47,6 @@
 	 * All properties are readonly to ensure immutability and prevent accidental
 	 * modification of cached metadata.
 	 *
-	 * @phpstan-import-type ColumnDefinition from DatabaseAdapter
 	 * @phpstan-import-type ColumnDefinitionRecord from EntityMetadataBuilder
 	 */
 	readonly class EntityMetadataRecord {
@@ -237,25 +236,25 @@
 		 */
 		public function getColumnDefinitionsForSchema(): array {
 			$result = [];
-			
+
 			/** @noinspection PhpLoopCanBeConvertedToArrayMapInspection */
 			foreach ($this->columnDefinitions as $columnName => $def) {
-				$result[$columnName] = [
-					'type'        => $def['type'],
-					'php_type'    => $def['php_type'] instanceof \ReflectionNamedType ? $def['php_type']->getName() : 'mixed',
-					'limit'       => is_int($def['limit']) ? $def['limit'] : null,
-					'default'     => $def['default'],
-					'nullable'    => $def['nullable'],
-					'precision'   => is_int($def['precision']) ? $def['precision'] : null,
-					'scale'       => is_int($def['scale']) ? $def['scale'] : null,
-					'unsigned'    => $def['unsigned'],
-					'generated'   => null,
-					'identity'    => $def['identity'],
-					'primary_key' => $def['primary_key'],
-					'values'      => is_array($def['values']) ? $def['values'] : null,
-				];
+				$result[$columnName] = new ColumnDefinition(
+					type: $def['type'],
+					php_type: $def['php_type'] instanceof \ReflectionNamedType ? $def['php_type']->getName() : 'mixed',
+					limit: is_int($def['limit']) ? $def['limit'] : null,
+					default: $def['default'],
+					nullable: $def['nullable'],
+					precision: is_int($def['precision']) ? $def['precision'] : null,
+					scale: is_int($def['scale']) ? $def['scale'] : null,
+					unsigned: $def['unsigned'],
+					generated: null,
+					identity: $def['identity'],
+					primary_key: $def['primary_key'],
+					values: is_array($def['values']) ? $def['values'] : null,
+				);
 			}
-			
+
 			return $result;
 		}
 		

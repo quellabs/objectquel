@@ -59,14 +59,14 @@
 		 * @param string $indexName
 		 * @param string $tableName
 		 * @param 'hidden'|'visible' $keywordKey Selects which of
-		 *        getIndexVisibilityKeywords()'s two entries to render
+		 *        visibilityKeywords()'s two entries to render
 		 * @return string
 		 * @throws QuelException If the connected engine doesn't support invisible indexes
 		 */
 		private function compile(string $indexName, string $tableName, string $keywordKey): string {
 			$this->assertIndexHidingSupported();
 
-			$keyword = $this->platform->getIndexVisibilityKeywords()[$keywordKey];
+			$keyword = $this->visibilityKeywords()[$keywordKey];
 
 			return sprintf(
 				'ALTER TABLE %s ALTER INDEX %s %s',
@@ -74,6 +74,21 @@
 				$this->identifierQuoter->quoteIdentifier($indexName),
 				$keyword
 			);
+		}
+
+		/**
+		 * The ALTER INDEX keyword pair for hiding/restoring an index's
+		 * visibility to the query optimizer. Only ever reached once
+		 * assertIndexHidingSupported() has confirmed the connected engine is
+		 * MySQL 8.0+ or MariaDB 10.6+ (see PlatformCapabilitiesInterface::
+		 * supportsIndexHiding()), so this only needs to distinguish those two.
+		 * @return array{hidden: string, visible: string}
+		 */
+		private function visibilityKeywords(): array {
+			return match ($this->platform->getDatabaseType()) {
+				'mysql' => ['hidden' => 'INVISIBLE', 'visible' => 'VISIBLE'],
+				default => ['hidden' => 'IGNORED', 'visible' => 'NOT IGNORED'],
+			};
 		}
 
 		/**

@@ -4,6 +4,7 @@
 	
 	use Quellabs\Contracts\Discovery\ProviderInterface;
 	use Quellabs\ObjectQuel\Configuration;
+	use Quellabs\ObjectQuel\DatabaseAdapter\ColumnDefinition;
 	use Quellabs\ObjectQuel\DatabaseAdapter\DatabaseAdapter;
 	use Quellabs\ObjectQuel\Sculpt\ServiceProvider;
 	use Quellabs\Sculpt\Contracts\CommandBase;
@@ -18,9 +19,7 @@
 	 * fully annotated entity class with typed properties, ORM annotations, index
 	 * mappings, and getter/setter methods.
 	 *
-	 * @phpstan-import-type ColumnDefinition from DatabaseAdapter
 	 * @phpstan-import-type IndexDefinition from DatabaseAdapter
-	 * @phpstan-import-type ForeignKeyDefinition from DatabaseAdapter
 	 */
 	class MakeEntityFromTableCommand extends CommandBase {
 		
@@ -319,7 +318,7 @@ HELP;
 				// Normalize the database-native type to the ORM canonical type before
 				// writing the annotation. PostgreSQL returns 'jsonb' from its schema
 				// catalog but the ORM only knows 'json'.
-				$ormType = $column["type"] === 'jsonb' ? 'json' : $column["type"];
+				$ormType = $column->type === 'jsonb' ? 'json' : $column->type;
 
 				// Add the Column annotation with name and type
 				$output .= "         * @Orm\Column(name=\"{$columnName}\", type=\"{$ormType}\"";
@@ -348,7 +347,7 @@ HELP;
 				}
 
 				// If this is an auto-incrementing primary key, add the PrimaryKeyStrategy annotation
-				if ($column["primary_key"] && $column["identity"]) {
+				if ($column->primary_key && $column->identity) {
 					$output .= "         * @Orm\PrimaryKeyStrategy(strategy=\"identity\")\n";
 				}
 				
@@ -380,9 +379,8 @@ HELP;
 		 * even if they can't be NULL in the database. This reflects that new entities will have
 		 * null IDs until they're persisted to the database and receive their auto-generated value.
 		 *
-		 * @param array $column
-		 * @phpstan-param ColumnDefinition $column
-		 *     The column description array containing metadata such as:
+		 * @param ColumnDefinition $column
+		 *     The column description, notably:
 		 *     - php_type: The base PHP type (string, int, float, etc.)
 		 *     - nullable: Whether the column allows NULL values in the database
 		 *     - identity: Whether the column is an auto-increment/identity column
@@ -391,13 +389,13 @@ HELP;
 		 *                - For nullable or identity columns: "?type" (e.g., "?int", "?string")
 		 *                - For non-nullable regular columns: just the type (e.g., "int", "string")
 		 */
-		private function getColumnType(array $column): string {
+		private function getColumnType(ColumnDefinition $column): string {
 			// A column should be nullable in PHP if either:
 			// 1. It allows NULL values in the database, OR
 			// 2. It's an auto-increment identity column (which will be NULL for new entities), OR
 			// 3. It's a complex type without a default value (determined by isNullableInPhpOnly)
-			$phpType = $column["php_type"];
-			$nullable = $column["nullable"] || $column["identity"] || $this->isNullableInPhpOnly($column);
+			$phpType = $column->php_type;
+			$nullable = $column->nullable || $column->identity || $this->isNullableInPhpOnly($column);
 			
 			// For nullable types, prepend a "?" to create a union type with null (PHP 7.4+)
 			// Example: "?int" means "int|null" (can be either an integer or null)
@@ -412,67 +410,65 @@ HELP;
 		/**
 		 * Determines if a column should be made nullable in PHP despite being NOT NULL in the database
 		 * This occurs when complex types have no default value but are marked as NOT NULL
-		 * @param array $column Column metadata from database schema
-		 * @phpstan-param ColumnDefinition $column Column metadata from database schema
+		 * @param ColumnDefinition $column Column metadata from database schema
 		 * @return bool True if the column should be made nullable in PHP despite database constraints
 		 */
-		private function isNullableInPhpOnly(array $column): bool {
+		private function isNullableInPhpOnly(ColumnDefinition $column): bool {
 			// List of complex types that should be nullable when they lack defaults
 			$complexTypes = ['date', 'datetime', 'json', 'blob', 'text'];
-			
+
 			// Check if this is a complex type without default value that's marked as NOT NULL
 			return (
-				in_array($column['type'], $complexTypes) &&
-				!$column['nullable'] &&
-				$column['default'] === null &&
-				!$column['identity'] // Exclude identity columns which are handled separately
+				in_array($column->type, $complexTypes) &&
+				!$column->nullable &&
+				$column->default === null &&
+				!$column->identity // Exclude identity columns which are handled separately
 			);
 		}
 		
 		/**
 		 * Get the column annotation details
-		 * @param array $column The column description
-		 * @phpstan-param ColumnDefinition $column
+		 * @param ColumnDefinition $column The column description
 		 * @return string The column annotation details
 		 */
-		private function getColumnAnnotationDetails(array $column): string {
+		private function getColumnAnnotationDetails(ColumnDefinition $column): string {
 			// Initialize an empty array to collect annotation details
 			$details = [];
-			
+
 			// Add limit annotation if specified
-			if ($column["limit"] !== null) {
-				if (is_int($column["limit"])) {
-					$details[] = "limit={$column["limit"]}";
+			if ($column->limit !== null) {
+				if (is_int($column->limit)) {
+					$details[] = "limit={$column->limit}";
 				} else {
 					// must be array<int,int>
-					$values = implode(', ', $column["limit"]);
+					$values = implode(', ', $column->limit);
 					$details[] = "limit={{$values}}";
 				}
 			}
-			
+
 			// Add nullable annotation if the column is nullable
-			if ($column["nullable"]) {
+			if ($column->nullable) {
 				$details[] = "nullable=true";
 			}
-			
+
 			// Add primary key annotation if the column is a primary key
-			if ($column["primary_key"]) {
+			if ($column->primary_key) {
 				$details[] = "primary_key=true";
 			}
-			
+
 			// Add default value annotation if specified
-			if (is_scalar($column["default"]) && $column["default"] !== '') {
-				$details[] = "default=\"" . $column["default"] . "\"";
+			if (is_scalar($column->default) && $column->default !== '') {
+				$details[] = "default=\"" . $column->default . "\"";
 			}
-			
+
 			// Add precision annotation for decimal/numeric columns if specified
-			if (!empty($column["precision"])) {
-				$details[] = "precision={$column["precision"]}";
+			if (!empty($column->precision)) {
+				$details[] = "precision={$column->precision}";
 			}
-			
+
 			// Add scale annotation for decimal/numeric columns if specified
-			if (!empty($column["scale"])) {
-				$details[] = "scale={$column["scale"]}";
+			if (!empty($column->scale)) {
+				$details[] = "scale={$column->scale}";
 			}
 			
 			// Implode the array with comma separator and prepend a comma if details exist
@@ -482,24 +478,22 @@ HELP;
 		
 		/**
 		 * Returns true if the column has a default value
-		 * @param array $column The column description
-		 * @phpstan-param ColumnDefinition $column The column description
+		 * @param ColumnDefinition $column The column description
 		 * @return bool
 		 */
-		private function hasColumnDefaultValue(array $column): bool {
-			return $column["default"] !== null && $column["default"] !== '';
+		private function hasColumnDefaultValue(ColumnDefinition $column): bool {
+			return $column->default !== null && $column->default !== '';
 		}
-		
+
 		/**
 		 * Get the default value for a column
-		 * @param array $column The column description
-		 * @phpstan-param ColumnDefinition $column The column description
+		 * @param ColumnDefinition $column The column description
 		 * @return string The default value expression
 		 */
-		private function getColumnDefaultValue(array $column): string {
+		private function getColumnDefaultValue(ColumnDefinition $column): string {
 			// Store the default value and type for easier reference
-			$defaultValue = $column["default"];
-			$columnType = $column['type'];
+			$defaultValue = $column->default;
+			$columnType = $column->type;
 			
 			// For datetime properties with a default string value
 			// Convert the string to a DateTime object initialization
@@ -565,18 +559,17 @@ HELP;
 		
 		/**
 		 * Generate a setter method for a column
-		 * @param array $column The column description
-		 * @phpstan-param ColumnDefinition $column The column description
+		 * @param ColumnDefinition $column The column description
 		 * @param string $fieldCamelCase The camelCase field name
 		 * @param string $variableCamelCase The camelCase variable name
 		 * @param string $acceptType The PHP type for the column
 		 * @return string The generated setter method
 		 */
-		private function generateSetter(array $column, string $fieldCamelCase, string $variableCamelCase, string $acceptType): string {
+		private function generateSetter(ColumnDefinition $column, string $fieldCamelCase, string $variableCamelCase, string $acceptType): string {
 			$output = "\n";
-			
+
 			// Only suppress setters for auto-increment primary keys (primary_key=true AND identity=true)
-			if (!$column["primary_key"] || !$column["identity"]) {
+			if (!$column->primary_key || !$column->identity) {
 				$output .= "        public function set{$fieldCamelCase}({$acceptType} \$value): self {\n";
 				$output .= "            \$this->{$variableCamelCase} = \$value;\n";
 				$output .= "            return \$this;\n";
@@ -640,21 +633,21 @@ HELP;
 			$result = [];
 
 			foreach ($this->provider->getDatabaseAdapter()->getForeignKeys($tableName) as $foreignKey) {
-				if (count($foreignKey['columns']) !== 1 || count($foreignKey['referencedColumns']) !== 1) {
+				if (count($foreignKey->columns) !== 1 || count($foreignKey->referencedColumns) !== 1) {
 					continue;
 				}
 
-				$localColumn = $foreignKey['columns'][0];
-				$targetEntityName = $this->camelCase($foreignKey['referencedTable']);
+				$localColumn = $foreignKey->columns[0];
+				$targetEntityName = $this->camelCase($foreignKey->referencedTable);
 
 				$result[$localColumn] = [
 					'target'           => "{$this->configuration->getEntityNameSpace()}\\{$targetEntityName}Entity",
 					// Round-trip the source constraint's actual rule — defaulting to
 					// RESTRICT here would silently misrepresent what the database
 					// actually enforces.
-					'referencedColumn' => $foreignKey['referencedColumns'][0],
-					'onDelete'         => $foreignKey['onDelete'],
-					'onUpdate'         => $foreignKey['onUpdate'],
+					'referencedColumn' => $foreignKey->referencedColumns[0],
+					'onDelete'         => $foreignKey->onDelete,
+					'onUpdate'         => $foreignKey->onUpdate,
 				];
 			}
 

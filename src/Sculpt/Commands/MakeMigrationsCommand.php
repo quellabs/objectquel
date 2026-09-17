@@ -8,7 +8,7 @@
 	use Quellabs\ObjectQuel\Capabilities\PlatformCapabilities;
 	use Quellabs\ObjectQuel\Sculpt\Helpers\EntitySchemaAnalyzer;
 	use Quellabs\ObjectQuel\Sculpt\SculptTypes;
-	use Quellabs\ObjectQuel\Sculpt\Helpers\PhinxMigrationBuilder;
+	use Quellabs\ObjectQuel\Sculpt\Helpers\QuelMigrationBuilder;
 	use Quellabs\ObjectQuel\Sculpt\ServiceProvider;
 	use Quellabs\Sculpt\Contracts\CommandBase;
 	use Quellabs\Sculpt\ConfigurationManager;
@@ -20,9 +20,8 @@
 	 * MakeMigrationsCommand - CLI command for generating database migrations
 	 *
 	 * Detects differences between entity definitions and the current database schema,
-	 * then produces a Phinx migration file to synchronize the two.
+	 * then produces an ObjectQuel migration file to synchronize the two.
 	 *
-	 * @phpstan-import-type ColumnDefinition from DatabaseAdapter
 	 * @phpstan-import-type ColumnModification from SculptTypes
 	 * @phpstan-import-type EntityChangeSet from SculptTypes
 	 */
@@ -85,7 +84,7 @@
 			$this->printChangeSummary($allChanges);
 			
 			// Generate the migration file and report the result
-			$migrationBuilder = new PhinxMigrationBuilder($databaseAdapter, $this->migrationsPath, $platform);
+			$migrationBuilder = new QuelMigrationBuilder($databaseAdapter, $this->migrationsPath, $platform);
 			$result = $migrationBuilder->generateMigrationFile($allChanges);
 			
 			if (!$result['success']) {
@@ -121,7 +120,7 @@
 			return <<<HELP
 DESCRIPTION:
     Generate a database migration file by comparing entity definitions with the
-    current database schema and producing a Phinx migration to synchronize them.
+    current database schema and producing an ObjectQuel migration to synchronize them.
 
 USAGE:
     php sculpt make:migrations
@@ -192,6 +191,20 @@ HELP;
 				foreach ($changes['foreignKeys']['deleted'] as $fk => $cfg) {
 					$this->output->writeLn(" ✓ Dropped foreign key: {$tableName}.{$fk}");
 				}
+
+				// Primary-key change — at most one per table, unlike every
+				// other facet above. Narrowed via a single local variable
+				// (rather than re-reading $changes['primaryKey'] after
+				// extracting just its 'action') so checking 'action' here
+				// also narrows which of 'columns'/'from' are available.
+				$primaryKeyChange = $changes['primaryKey'] ?? ['action' => null];
+
+				if ($primaryKeyChange['action'] === 'set') {
+					$columns = implode(', ', $primaryKeyChange['columns']);
+					$this->output->writeLn(" ✓ Primary key changed: {$tableName} ({$columns})");
+				} elseif ($primaryKeyChange['action'] === 'drop') {
+					$this->output->writeLn(" ✓ Primary key dropped: {$tableName}");
+				}
 			}
 			
 			$this->output->writeLn("");
@@ -209,18 +222,18 @@ HELP;
 			$from = $diff['from'];
 			$to = $diff['to'];
 			$parts = [];
-			
-			if ($from['type'] !== $to['type']) {
-				$parts[] = "type changed to " . $to['type'];
+
+			if ($from->type !== $to->type) {
+				$parts[] = "type changed to " . $to->type;
 			}
-			
-			if (($from['limit'] ?? null) !== ($to['limit'] ?? null)) {
-				$toLimit = $to['limit'] ?? null;
+
+			if ($from->limit !== $to->limit) {
+				$toLimit = $to->limit;
 				$parts[] = "length changed to " . (is_array($toLimit) ? json_encode($toLimit) : (string)($toLimit ?? 'default'));
 			}
-			
-			if (($from['nullable'] ?? null) !== ($to['nullable'] ?? null)) {
-				$parts[] = ($to['nullable'] ?? false) ? "now nullable" : "now not nullable";
+
+			if ($from->nullable !== $to->nullable) {
+				$parts[] = $to->nullable ? "now nullable" : "now not nullable";
 			}
 			
 			return empty($parts) ? "" : " (" . implode(", ", $parts) . ")";

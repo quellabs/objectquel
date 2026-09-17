@@ -8,6 +8,7 @@
 	use Quellabs\ObjectQuel\Capabilities\NullPlatformCapabilities;
 	use Quellabs\ObjectQuel\Capabilities\PlatformCapabilitiesInterface;
 	use Quellabs\ObjectQuel\DatabaseAdapter\DatabaseAdapter;
+	use Quellabs\ObjectQuel\DatabaseAdapter\ForeignKeyDefinition;
 	use Quellabs\ObjectQuel\EntityStore;
 	use Quellabs\ObjectQuel\Exception\EntityResolutionException;
 	use Quellabs\ObjectQuel\Sculpt\SculptTypes;
@@ -19,7 +20,7 @@
 	class IndexComparator {
 
 		/**
-		 * Database connection / interface with cakephp/database and Phinx
+		 * Database connection / interface with cakephp/database
 		 * @var DatabaseAdapter
 		 */
 		private DatabaseAdapter $connection;
@@ -126,25 +127,40 @@
 			}
 
 			return array_map(
-				static fn(array $foreignKey): array => $foreignKey['columns'],
+				static fn(ForeignKeyDefinition $foreignKey): array => $foreignKey->columns,
 				$this->connection->getForeignKeys($tableName)
 			);
 		}
 		
 		
 		/**
-		 * Retrieves all database indexes defined for a specific table
+		 * Retrieves all database indexes defined for a specific table. On
+		 * SQLite, a fulltext index is a separate FTS5 virtual table that
+		 * getIndexes() can never see, so it's merged in from a dedicated
+		 * lookup instead — otherwise it would report as missing forever.
 		 * @param string $tableName The name of the database table to get indexes for
 		 * @return array<string, IndexDefinition> Formatted array of database indexes with their configurations
 		 */
 		public function getTableIndexes(string $tableName): array {
-			return array_map(function ($index) {
+			$result = array_map(function ($index) {
 				return [
 					'columns' => $index['columns'],   // Array of column names included in this index
 					'type'    => $index['type'],      // Original index type from database
 					'unique'  => strtoupper($index['type']) === 'UNIQUE'  // Convert type to boolean flag for uniqueness
 				];
 			}, $this->connection->getIndexes($tableName));
+
+			if ($this->platform->getDatabaseType() === 'sqlite') {
+				foreach ($this->connection->getSqliteFts5IndexesForTable($tableName) as $indexName => $fts5Index) {
+					$result[$indexName] = [
+						'columns' => $fts5Index['columns'],
+						'type'    => 'FULLTEXT',
+						'unique'  => false,
+					];
+				}
+			}
+
+			return $result;
 		}
 		
 		/**

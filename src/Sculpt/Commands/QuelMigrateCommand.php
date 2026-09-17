@@ -1,39 +1,38 @@
 <?php
-	
+
 	namespace Quellabs\ObjectQuel\Sculpt\Commands;
-	
-	use Phinx\Config\Config;
-	use Phinx\Migration\Manager;
-	use Phinx\Migration\MigrationInterface;
+
+	use Quellabs\ObjectQuel\Capabilities\PlatformCapabilities;
+	use Quellabs\ObjectQuel\Migration\LocatedMigration;
+	use Quellabs\ObjectQuel\Migration\MigrationLocator;
+	use Quellabs\ObjectQuel\Migration\MigrationRepository;
+	use Quellabs\ObjectQuel\Migration\MigrationRunner;
 	use Quellabs\ObjectQuel\Sculpt\ServiceProvider;
 	use Quellabs\Sculpt\Contracts\CommandBase;
 	use Quellabs\Sculpt\ConfigurationManager;
 	use Quellabs\Sculpt\Console\ConsoleInput;
 	use Quellabs\Sculpt\Console\ConsoleOutput;
-	use Symfony\Component\Console\Input\ArrayInput;
-	use Symfony\Component\Console\Output\BufferedOutput;
-	
+
 	/**
 	 * QuelMigrateCommand - Run, roll back, or check the status of database migrations
 	 *
-	 * Wraps Phinx's migration manager to provide a unified migrate command with
-	 * interactive confirmation, dry-run support, and rollback control.
+	 * Drives MigrationRunner: real ObjectQuel DDL/DML through
+	 * AbstractMigration::query(), tracked in the quel_migrations table —
+	 * no Phinx involved (see objectquel-migrations-implementation-plan.md,
+	 * Phase 4). Same flags/UX as before; this is a backend swap.
+	 *
+	 * Dry-run has no engine-level equivalent to Phinx's own --dry-run
+	 * anymore (a migration is just a sequence of query() calls run
+	 * directly through EntityManager::executeQuery()), so here it means
+	 * "list what would run/be rolled back, without invoking any
+	 * migration's up()/down() at all" (see Phase 3's dry-run note).
 	 */
 	class QuelMigrateCommand extends CommandBase {
-		
-		private string $environment;
-		
-		/**
-		 * QuelMigrateCommand constructor
-		 * @param ConsoleInput $input
-		 * @param ConsoleOutput $output
-		 * @param ServiceProvider $provider
-		 */
+
 		public function __construct(ConsoleInput $input, ConsoleOutput $output, ServiceProvider $provider) {
 			parent::__construct($input, $output, $provider);
-			$this->environment = 'development';
 		}
-		
+
 		/**
 		 * Get the command signature/name for registration in the CLI
 		 * @return string Command signature
@@ -41,7 +40,7 @@
 		public function getSignature(): string {
 			return "quel:migrate";
 		}
-		
+
 		/**
 		 * Get a short description of what the command does
 		 * @return string Command description
@@ -49,7 +48,7 @@
 		public function getDescription(): string {
 			return "Manage database migrations: run, rollback, or check status.";
 		}
-		
+
 		/**
 		 * Get detailed help information for the command
 		 * @return string Command help text
@@ -57,9 +56,10 @@
 		public function getHelp(): string {
 			return <<<HELP
 DESCRIPTION:
-    Manages database migrations using Phinx under the hood. Supports running
-    pending migrations, rolling back applied ones, and inspecting current status.
-    Prompts for confirmation before making any changes unless --force is passed.
+    Manages database migrations, tracked in the quel_migrations table. Supports
+    running pending migrations, rolling back applied ones, and inspecting
+    current status. Prompts for confirmation before making any changes unless
+    --force is passed.
 
 USAGE:
     php sculpt quel:migrate [options]
@@ -95,262 +95,224 @@ EXAMPLES:
         Preview pending migrations without applying them
 HELP;
 		}
-		
+
 		/**
 		 * Execute the command
 		 * @param ConfigurationManager $config Optional parameters passed to the command
 		 * @return int Exit code (0 for success)
 		 */
 		public function execute(ConfigurationManager $config): int {
-			// Fetch service provider
 			$serviceProvider = $this->getProvider();
 
-			// Check if we can generate the phinx config
-			// This line exists to make PhpStan happy
-			if (!$serviceProvider instanceof \Quellabs\ObjectQuel\Sculpt\ServiceProvider) {
-				$this->output->error("Unable to fetch phinx configuration");
+			if (!$serviceProvider instanceof ServiceProvider) {
+				$this->output->error("Unable to fetch ObjectQuel configuration");
 				return 1;
 			}
-			
-			// Create a Phinx configuration
-			$phinxConfig = new Config($serviceProvider->createPhinxConfig());
 
-			// Create the manager with buffered output to capture all output
-			// Always use the 'development' environment since that's all our config supports
-			$inputArgs = $this->prepareInputArgs($config);
-			$input = new ArrayInput($inputArgs);
-			$bufferedOutput = new BufferedOutput();
-			$manager = new Manager($phinxConfig, $input, $bufferedOutput);
-			
+			$runner = $this->makeRunner($serviceProvider);
+
 			try {
-				// Determine which operation to perform based on flags
+				if ($config->hasFlag('status')) {
+					return $this->showStatus($runner);
+				}
+
 				if ($config->hasFlag('rollback')) {
-					$result = $this->performRollback($manager, $config);
-				} elseif ($config->hasFlag('status')) {
-					$result = $this->showStatus($manager);
-				} else {
-					$result = $this->runMigrations($manager, $config);
+					return $this->performRollback($runner, $config);
 				}
-				
-				// Get any output from the buffered output and display it
-				$outputContent = $bufferedOutput->fetch();
-				
-				if (!empty($outputContent)) {
-					$this->output->write($outputContent);
-				}
-				
-				return $result;
-			} catch (\Exception $e) {
+
+				return $this->runMigrations($runner, $config);
+			} catch (\Throwable $e) {
 				$this->output->error("Migration error: " . $e->getMessage());
 				return 1;
 			}
 		}
-		
+
 		/**
-		 * Prepare input arguments for Phinx commands
-		 * @param ConfigurationManager $config
-		 * @return array<string, bool>
+		 * Builds a MigrationRunner wired to the application's configured
+		 * connection, migrations path, and tracking table.
+		 * @param ServiceProvider $serviceProvider
+		 * @return MigrationRunner
 		 */
-		private function prepareInputArgs(ConfigurationManager $config): array {
-			$args = [];
-			
-			// Add dry-run flag if specified
-			if ($this->isDryRun($config)) {
-				$args['--dry-run'] = true;
+		private function makeRunner(ServiceProvider $serviceProvider): MigrationRunner {
+			$configuration = $serviceProvider->getConfiguration();
+			$entityManager = $serviceProvider->getEntityManager();
+			$platform = new PlatformCapabilities($serviceProvider->getDatabaseAdapter());
+			$repository = new MigrationRepository($entityManager, $configuration->getMigrationTable());
+			$locator = new MigrationLocator($entityManager, $configuration->getMigrationsPath());
+
+			return new MigrationRunner($entityManager, $platform, $repository, $locator);
+		}
+
+		/**
+		 * Run migrations to update database schema
+		 * @param MigrationRunner $runner
+		 * @param ConfigurationManager $config Configuration with runtime options and flags
+		 * @return int Exit code (0 for success)
+		 */
+		private function runMigrations(MigrationRunner $runner, ConfigurationManager $config): int {
+			$target = $config->getAsIntOrNull('target');
+			$pending = $this->pendingUpToTarget($runner, $target);
+
+			if (!$this->confirmMigrations($pending, $config)) {
+				$this->output->writeLn("Migration operation canceled.");
+				return 0;
 			}
-			
-			return $args;
+
+			$this->output->writeLn("Running migrations...");
+
+			if ($this->isDryRun($config)) {
+				$this->output->writeLn("Dry run mode - no database changes will be made.");
+				$this->output->success("Migration completed successfully.");
+				return 0;
+			}
+
+			if ($target !== null) {
+				$this->output->writeLn("Migrating to version: {$target}");
+			}
+
+			$runner->migrate($target);
+
+			$this->output->success("Migration completed successfully.");
+			return 0;
 		}
-		
+
 		/**
-		 * Get pending migrations to display to the user
-		 * @param Manager $manager
-		 * @return array<int, MigrationInterface>
+		 * The pending migrations migrate($target) would actually apply,
+		 * without invoking any up() — mirrors its target-inclusive condition.
+		 * @param MigrationRunner $runner
+		 * @param int|null $target
+		 * @return list<LocatedMigration>
 		 */
-		private function getPendingMigrations(Manager $manager): array {
-			// Get all migrations
-			$migrations = $manager->getMigrations($this->environment);
-			
-			// Get all migrated versions
-			$adapter = $manager->getEnvironment($this->environment)->getAdapter();
-			$versions = $adapter->getVersions();
-			
-			// Filter to get only pending migrations.
-			// ARRAY_FILTER_USE_KEY means $version is the array key (the version timestamp integer),
-			// not the MigrationInterface value.
-			return array_filter($migrations, function ($version) use ($versions) {
-				return !in_array($version, $versions);
-			}, ARRAY_FILTER_USE_KEY);
+		private function pendingUpToTarget(MigrationRunner $runner, ?int $target): array {
+			$pending = $runner->getPending();
+
+			if ($target === null) {
+				return $pending;
+			}
+
+			return array_values(array_filter(
+				$pending,
+				static fn(LocatedMigration $migration) => $migration->version <= $target
+			));
 		}
-		
+
 		/**
 		 * Display pending migrations and ask for confirmation
-		 * @param Manager $manager Migration Manager instance
+		 * @param LocatedMigration[] $pending
 		 * @param ConfigurationManager $config Configuration Manager containing runtime flags
 		 * @return bool True if user confirms or force/dry-run flags are set, false otherwise
 		 */
-		private function confirmMigrations(Manager $manager, ConfigurationManager $config): bool {
-			// Get all migrations that haven't been applied yet
-			$pending = $this->getPendingMigrations($manager);
+		private function confirmMigrations(array $pending, ConfigurationManager $config): bool {
 			$count = count($pending);
-			
-			// If no pending migrations, nothing to do
+
 			if ($count === 0) {
 				$this->output->writeLn("No pending migrations found.");
 				return false;
 			}
-			
-			// Check for force flag to skip confirmation
-			// This allows automated scripts to run migrations without user interaction
+
 			if ($config->hasFlag('force') || $config->hasFlag('f')) {
 				return true;
 			}
-			
-			// If in dry-run mode, we can proceed without confirmation
-			// Dry-run will only display what would happen without making actual changes
+
 			if ($this->isDryRun($config)) {
+				$this->output->writeLn("{$count} pending " . ($count === 1 ? "migration" : "migrations") . " would run:");
+				$this->output->writeLn("");
+				$this->printMigrationTable($pending);
 				return true;
 			}
-			
-			// Display pending migrations with proper singular/plural form
+
 			$this->output->writeLn("{$count} pending " . ($count === 1 ? "migration" : "migrations") . " found:");
-			$this->output->writeLn(""); // Empty line for better readability
-			
-			// Build table rows with migration information
-			$rows = [];
-			foreach ($pending as $version => $migration) {
-				// Each row contains the version number and fully qualified class name
-				$rows[] = [$version, get_class($migration)];
-			}
-			
-			// Display migrations in a formatted table for better readability
-			$this->output->table(['Version', 'Migration Name'], $rows);
-			
-			// Ask for confirmation and return user's choice
-			// The migration will only proceed if the user confirms with 'yes'
 			$this->output->writeLn("");
+			$this->printMigrationTable($pending);
+			$this->output->writeLn("");
+
 			return $this->input->confirm("Do you want to run these migrations?", false);
 		}
-		
+
 		/**
-		 * Run migrations to update database schema
-		 * @param Manager $manager Migration Manager responsible for executing migrations
-		 * @param ConfigurationManager $config Configuration with runtime options and flags
-		 * @return int Exit code (0 for success)
+		 * @param LocatedMigration[] $migrations
+		 * @return void
 		 */
-		private function runMigrations(Manager $manager, ConfigurationManager $config): int {
-			// First check if there are pending migrations and get user confirmation
-			// This will return false if no migrations exist or user cancels the operation
-			if (!$this->confirmMigrations($manager, $config)) {
-				$this->output->writeLn("Migration operation canceled.");
-				return 0; // Return success code since this is not an error
+		private function printMigrationTable(array $migrations): void {
+			$rows = [];
+
+			foreach ($migrations as $migration) {
+				$rows[] = [$migration->version, $migration->name];
 			}
-			
-			// Output message
-			$this->output->writeLn("Running migrations...");
-			
-			// Check if this is a dry run (simulation only)
-			// This is useful for previewing what changes will be made without actually applying them
-			if ($this->isDryRun($config)) {
-				$this->output->writeLn("Dry run mode - no database changes will be made.");
-			}
-			
-			// Check if a specific target version was requested
-			// This allows migrating to a specific version instead of the latest one
-			$target = $config->getAsIntOrNull('target');
-			
-			if ($target) {
-				// Migrate to the specific target version
-				$this->output->writeLn("Migrating to version: {$target}");
-				$manager->migrate($this->environment, $target);
-			} else {
-				// No target specified, migrate to the latest version
-				$manager->migrate($this->environment);
-			}
-			
-			// All migrations completed without errors
-			$this->output->success("Migration completed successfully.");
-			return 0; // Return success exit code
+
+			$this->output->table(['Version', 'Migration Name'], $rows);
 		}
-		
+
 		/**
 		 * Roll back migrations
-		 * @param Manager $manager Migration Manager responsible for executing rollbacks
+		 * @param MigrationRunner $runner
 		 * @param ConfigurationManager $config Configuration with runtime options and flags
 		 * @return int Exit code (0 for success)
 		 */
-		private function performRollback(Manager $manager, ConfigurationManager $config): int {
+		private function performRollback(MigrationRunner $runner, ConfigurationManager $config): int {
 			$steps = $config->getAsInt('steps', 1);
-			$target = $config->getAsString('target');
+			$target = $config->getAsIntOrNull('target');
 			$force = $config->hasFlag('force') || $config->hasFlag('f');
 			$isDryRun = $this->isDryRun($config);
-			
-			// If steps > 1 and no explicit target, resolve the target version ourselves.
-			// Phinx's Manager::rollback() has no steps parameter — it only accepts a target version.
-			if (!$target && $steps > 1) {
-				$adapter = $manager->getEnvironment($this->environment)->getAdapter();
-				$versions = $adapter->getVersions(); // oldest-to-newest order
-				
-				if (count($versions) < $steps) {
-					$this->output->error("Cannot roll back {$steps} migrations: only " . count($versions) . " have been applied.");
-					return 1;
-				}
-				
-				// Roll back N steps means go back to the version just before the last N applied ones.
-				// Target is the version that should remain applied (the one before our window).
-				$target = (string)$versions[count($versions) - $steps - 1];
-			}
-			
-			// Prompt for confirmation if not in force or dry-run mode
+
 			if (!$force && !$isDryRun) {
-				if ($target) {
-					$message = "Are you sure you want to roll back to version {$target}?";
-				} else {
-					$message = "Are you sure you want to roll back {$steps} " . ($steps === 1 ? "migration" : "migrations") . "?";
-				}
-				
+				$message = $target !== null
+					? "Are you sure you want to roll back to version {$target}?"
+					: "Are you sure you want to roll back {$steps} " . ($steps === 1 ? "migration" : "migrations") . "?";
+
 				if (!$this->input->confirm($message, false)) {
 					$this->output->writeLn("Rollback operation canceled.");
 					return 0;
 				}
 			}
-			
-			// Output line
+
 			$this->output->writeLn("Rolling back migrations...");
-			
-			// Warning if user uses dry-run
+
 			if ($isDryRun) {
 				$this->output->writeLn("Dry run mode - no database changes will be made.");
+				$this->printMigrationTable($runner->getRollbackCandidates($target, $steps));
+				$this->output->success("Rollback completed successfully.");
+				return 0;
 			}
-			
-			// Rollback
-			if ($target) {
+
+			if ($target !== null) {
 				$this->output->writeLn("Rolling back to version: {$target}");
-				$manager->rollback($this->environment, $target, $force);
 			} else {
-				// No target, no steps > 1: roll back the single most recent migration
-				$this->output->writeLn("Rolling back 1 migration");
-				$manager->rollback($this->environment, null, $force);
+				$this->output->writeLn("Rolling back {$steps} " . ($steps === 1 ? "migration" : "migrations"));
 			}
-			
+
+			$runner->rollback($target, $steps);
+
 			$this->output->success("Rollback completed successfully.");
 			return 0;
 		}
-		
+
 		/**
 		 * Show migration status
-		 * @param Manager $manager Migration Manager used to retrieve and print status
+		 * @param MigrationRunner $runner
 		 * @return int Exit code (0 for success)
 		 */
-		private function showStatus(Manager $manager): int {
-			// Show status
+		private function showStatus(MigrationRunner $runner): int {
 			$this->output->writeLn("Migration Status:");
-			
-			// Instead of printing directly, capture the output from Phinx
-			$manager->printStatus($this->environment);
+			$this->output->writeLn("");
+
+			$status = $runner->status();
+
+			if ($status === []) {
+				$this->output->writeLn("No migrations found.");
+				return 0;
+			}
+
+			$rows = [];
+
+			foreach ($status as $entry) {
+				$rows[] = [$entry['version'], $entry['name'], $entry['applied_at'] ?? 'pending'];
+			}
+
+			$this->output->table(['Version', 'Migration Name', 'Applied At'], $rows);
 			return 0;
 		}
-		
+
 		/**
 		 * Determine whether the command is running in dry-run mode
 		 * @param ConfigurationManager $config Configuration with runtime options and flags

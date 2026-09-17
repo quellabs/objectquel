@@ -166,26 +166,6 @@
 		/**
 		 * @inheritDoc
 		 *
-		 * Only reached when supportsIndexHiding() is true, so this only needs to
-		 * distinguish MySQL from MariaDB.
-		 */
-		public function getIndexVisibilityKeywords(): array {
-			return match ($this->adapter->getDatabaseType()) {
-				'mysql' => ['hidden' => 'INVISIBLE', 'visible' => 'VISIBLE'],
-				default => ['hidden' => 'IGNORED', 'visible' => 'NOT IGNORED'],
-			};
-		}
-
-		/**
-		 * @inheritDoc
-		 */
-		public function supportsFieldFunction(): bool {
-			return in_array($this->adapter->getDatabaseType(), ['mysql', 'mariadb']);
-		}
-		
-		/**
-		 * @inheritDoc
-		 *
 		 * Maps each supported database engine to its fulltext search style:
 		 * - MySQL / MariaDB: FULLTEXT index with MATCH ... AGAINST
 		 * - SQL Server:      FULLTEXT index with MATCH ... AGAINST

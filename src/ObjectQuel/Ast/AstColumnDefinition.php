@@ -7,7 +7,7 @@
 	/**
 	 * A single column definition inside `create [temporary] Name (...)`: a
 	 * name, an abstract type (the @Orm\Column vocabulary — see
-	 * DatabaseAdapter\TypeMapper), optional limit/precision/scale, and the
+	 * DatabaseAdapter\Mapper\TypeMapper), optional limit/precision/scale, and the
 	 * minimal constraint set supported (`nullable`, `identity`). Columns are
 	 * NOT NULL by default, matching @Orm\Column's `nullable` parameter — the
 	 * `nullable` keyword opts a column out of that default, rather than
@@ -30,6 +30,9 @@
 		private bool $nullable;
 		private bool $identity;
 
+		/** @var string[]|null */
+		private ?array $enumValues;
+
 		/**
 		 * AstColumnDefinition constructor.
 		 * @param string $name Column name
@@ -40,6 +43,7 @@
 		 * @param bool $unsigned Whether the column is unsigned
 		 * @param bool $nullable Whether the column accepts NULL values (default: false, i.e. NOT NULL)
 		 * @param bool $identity Whether the column auto-increments
+		 * @param string[]|null $enumValues Declared values, only non-null when $type === 'enum'
 		 */
 		public function __construct(
 			string $name,
@@ -49,7 +53,8 @@
 			?int $scale = null,
 			bool $unsigned = false,
 			bool $nullable = false,
-			bool $identity = false
+			bool $identity = false,
+			?array $enumValues = null
 		) {
 			$this->name = $name;
 			$this->type = $type;
@@ -59,6 +64,7 @@
 			$this->unsigned = $unsigned;
 			$this->nullable = $nullable;
 			$this->identity = $identity;
+			$this->enumValues = $enumValues;
 		}
 
 		public function accept(AstVisitorInterface $visitor): void {
@@ -98,10 +104,20 @@
 		}
 
 		/**
+		 * @return string[]|null Declared enum values, only non-null when getType() === 'enum'
+		 */
+		public function getEnumValues(): ?array {
+			return $this->enumValues;
+		}
+
+		/**
 		 * Returns this column's type metadata shaped the way
 		 * DDLTypeMapper::getTempTableColumnType() (and the new constraint
-		 * renderer) expect it.
-		 * @return array{type: string, limit: int|null, unsigned: bool, precision: int|null, scale: int|null}
+		 * renderer) expect it. 'values' is always a list (never null) here,
+		 * even for non-enum columns — DDLTypeMapper only ever reads it when
+		 * 'type' === 'enum', where the parser (ColumnDefinitionClause::
+		 * parseEnumValues()) guarantees at least one declared value.
+		 * @return array{type: string, limit: int|null, unsigned: bool, precision: int|null, scale: int|null, values: string[]}
 		 */
 		public function toColumnDefinitionArray(): array {
 			return [
@@ -110,6 +126,7 @@
 				'unsigned'  => $this->unsigned,
 				'precision' => $this->precision,
 				'scale'     => $this->scale,
+				'values'    => $this->enumValues ?? [],
 			];
 		}
 
@@ -123,7 +140,8 @@
 				$this->scale,
 				$this->unsigned,
 				$this->nullable,
-				$this->identity
+				$this->identity,
+				$this->enumValues
 			);
 
 			$clone->setParent($this->getParent());

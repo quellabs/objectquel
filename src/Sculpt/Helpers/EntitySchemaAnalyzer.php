@@ -4,6 +4,7 @@
 	
 	use Quellabs\ObjectQuel\Capabilities\NullPlatformCapabilities;
 	use Quellabs\ObjectQuel\Capabilities\PlatformCapabilitiesInterface;
+	use Quellabs\ObjectQuel\DatabaseAdapter\ColumnDefinition;
 	use Quellabs\ObjectQuel\DatabaseAdapter\DatabaseAdapter;
 	use Quellabs\ObjectQuel\EntityStore;
 	use Quellabs\ObjectQuel\Sculpt\SculptTypes;
@@ -15,7 +16,6 @@
 	 * This class compares entity class definitions (properties, indexes) against the actual
 	 * database schema to detect structural differences that need migration.
 	 *
-	 * @phpstan-import-type ColumnDefinition from DatabaseAdapter
 	 * @phpstan-import-type IndexDefinition from SculptTypes
 	 * @phpstan-import-type IndexChangeSet from SculptTypes
 	 * @phpstan-import-type EntityChangeSet from SculptTypes
@@ -44,6 +44,9 @@
 		/** @var ForeignKeyComparator Handles comparison of database foreign keys between entity and schema */
 		private ForeignKeyComparator $foreignKeyComparator;
 
+		/** @var PrimaryKeyComparator Handles comparison of the primary key between entity and schema */
+		private PrimaryKeyComparator $primaryKeyComparator;
+
 		/** @var SchemaComparator Handles comparison of column definitions and structures */
 		private SchemaComparator $schemaComparator;
 		
@@ -64,6 +67,7 @@
 			$this->entityStore = $entityStore;
 			$this->indexComparator = new IndexComparator($connection, $entityStore, $platform);
 			$this->foreignKeyComparator = new ForeignKeyComparator($connection, $entityStore, $platform);
+			$this->primaryKeyComparator = new PrimaryKeyComparator($connection, $entityStore);
 			$this->schemaComparator = new SchemaComparator($platform);
 		}
 		
@@ -160,9 +164,13 @@
 			// Analyze what changed
 			$changes = $this->schemaComparator->analyzeSchemaChanges($entityColumns, $tableColumns);
 
-			// Add index and foreign key comparisons to the change set
+			// Add index, foreign key, and primary key comparisons to the change set.
+			// Primary key only — a brand-new table's key is embedded directly in
+			// its `create` statement (see the table_not_exists branch above),
+			// never through this diff.
 			$changes['indexes'] = $this->indexComparator->compareIndexes($className);
 			$changes['foreignKeys'] = $this->foreignKeyComparator->compareForeignKeys($className);
+			$changes['primaryKey'] = $this->primaryKeyComparator->comparePrimaryKey($className);
 
 			// Return results
 			return $changes;
@@ -203,6 +211,11 @@
 				!empty($changes['foreignKeys']['modified']) ||
 				!empty($changes['foreignKeys']['deleted'])
 			) {
+				return true;
+			}
+
+			// Check for a primary-key change
+			if (($changes['primaryKey']['action'] ?? null) !== null) {
 				return true;
 			}
 

@@ -23,7 +23,7 @@
 	use Quellabs\ObjectQuel\Annotations\Orm\SoftDelete;
 	use Quellabs\ObjectQuel\Annotations\Orm\UniqueIndex;
 	use Quellabs\ObjectQuel\Annotations\Orm\Version;
-	use Quellabs\ObjectQuel\DatabaseAdapter\TypeMapper;
+	use Quellabs\ObjectQuel\DatabaseAdapter\Mapper\TypeMapper;
 	use Quellabs\ObjectQuel\ReflectionManagement\ReflectionHandler;
 	
 	/**

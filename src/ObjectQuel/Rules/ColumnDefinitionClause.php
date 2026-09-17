@@ -2,7 +2,7 @@
 
 	namespace Quellabs\ObjectQuel\ObjectQuel\Rules;
 
-	use Quellabs\ObjectQuel\DatabaseAdapter\TypeMapper;
+	use Quellabs\ObjectQuel\DatabaseAdapter\Mapper\TypeMapper;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstColumnDefinition;
 	use Quellabs\ObjectQuel\ObjectQuel\Lexer;
 	use Quellabs\ObjectQuel\ObjectQuel\LexerException;
@@ -49,7 +49,9 @@
 				throw new ParserException("Column '{$name}' declares 'unsigned' but type '{$type}' does not support it");
 			}
 
-			$typeArguments = self::parseOptionalTypeArguments($lexer);
+			$typeArguments = $type === 'enum'
+				? self::parseEnumValues($lexer, $name)
+				: self::parseOptionalTypeArguments($lexer);
 			$constraints = self::parseColumnConstraints($lexer);
 
 			return new AstColumnDefinition(
@@ -60,7 +62,8 @@
 				$typeArguments->scale,
 				$unsigned,
 				$constraints->nullable,
-				$constraints->identity
+				$constraints->identity,
+				$typeArguments->enumValues
 			);
 		}
 
@@ -111,6 +114,32 @@
 
 			$lexer->match(Token::ParenthesesClose);
 			return new ColumnTypeArguments(limit: $first);
+		}
+
+		/**
+		 * Parse the `('value', 'value', ...)` type-arguments form for an `enum`
+		 * column. Required (not optional, unlike the numeric forms) — an enum
+		 * with no declared values has no valid content, so a bare `enum` with
+		 * no parenthesized values is a parse error rather than a silently
+		 * empty list.
+		 * @param Lexer $lexer
+		 * @param string $columnName Used only to produce readable error messages
+		 * @return ColumnTypeArguments
+		 * @throws LexerException|ParserException
+		 */
+		private static function parseEnumValues(Lexer $lexer, string $columnName): ColumnTypeArguments {
+			if (!$lexer->optionalMatch(Token::ParenthesesOpen)) {
+				throw new ParserException("Column '{$columnName}' declares type 'enum' without any values — expected 'enum('value', ...)'");
+			}
+
+			$values = [$lexer->match(Token::String)->getStringValue()];
+
+			while ($lexer->optionalMatch(Token::Comma)) {
+				$values[] = $lexer->match(Token::String)->getStringValue();
+			}
+
+			$lexer->match(Token::ParenthesesClose);
+			return new ColumnTypeArguments(enumValues: $values);
 		}
 
 		/**

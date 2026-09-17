@@ -5,18 +5,18 @@
 	use Quellabs\ObjectQuel\Capabilities\NullPlatformCapabilities;
 	use Quellabs\ObjectQuel\Capabilities\PlatformCapabilitiesInterface;
 	use Quellabs\ObjectQuel\DatabaseAdapter\DatabaseAdapter;
+	use Quellabs\ObjectQuel\DatabaseAdapter\ForeignKeyDefinition;
 	use Quellabs\ObjectQuel\EntityStore;
 	use Quellabs\ObjectQuel\Exception\EntityResolutionException;
 	use Quellabs\ObjectQuel\ObjectQuel\ForeignKeyConstraintNamer;
 	use Quellabs\ObjectQuel\Sculpt\SculptTypes;
 
 	/**
-	 * @phpstan-import-type ForeignKeyDefinition from DatabaseAdapter
 	 * @phpstan-import-type ForeignKeyChangeSet from SculptTypes
 	 */
 	class ForeignKeyComparator {
 
-		/** @var DatabaseAdapter Database connection / interface with cakephp/database and Phinx */
+		/** @var DatabaseAdapter Database connection / interface with cakephp/database */
 		private DatabaseAdapter $connection;
 
 		/** @var EntityStore EntityStore manages entity metadata and relations */
@@ -113,13 +113,13 @@
 				$action = $metadata->getForeignKeyActionForColumn($columnName);
 				$name = ForeignKeyConstraintNamer::name($metadata->tableName, $columnName);
 
-				$result[$name] = [
-					'columns'           => [$columnName],
-					'referencedTable'   => $targetMetadata->tableName,
-					'referencedColumns' => [$referencedColumn],
-					'onDelete'          => $action?->getOnDelete() ?? 'RESTRICT',
-					'onUpdate'          => $action?->getOnUpdate() ?? 'NO ACTION',
-				];
+				$result[$name] = new ForeignKeyDefinition(
+					columns: [$columnName],
+					referencedTable: $targetMetadata->tableName,
+					referencedColumns: [$referencedColumn],
+					onDelete: $action?->getOnDelete() ?? 'RESTRICT',
+					onUpdate: $action?->getOnUpdate() ?? 'NO ACTION',
+				);
 			}
 
 			return $result;
@@ -131,21 +131,21 @@
 		 * @param ForeignKeyDefinition $entityConfig Entity foreign key configuration
 		 * @return bool True if configurations differ, false otherwise
 		 */
-		private function foreignKeyConfigDiffers(array $dbConfig, array $entityConfig): bool {
-			if ($dbConfig['referencedTable'] !== $entityConfig['referencedTable']) {
+		private function foreignKeyConfigDiffers(ForeignKeyDefinition $dbConfig, ForeignKeyDefinition $entityConfig): bool {
+			if ($dbConfig->referencedTable !== $entityConfig->referencedTable) {
 				return true;
 			}
 
-			if ($dbConfig['onDelete'] !== $entityConfig['onDelete']) {
+			if ($dbConfig->onDelete !== $entityConfig->onDelete) {
 				return true;
 			}
 
-			if ($dbConfig['onUpdate'] !== $entityConfig['onUpdate']) {
+			if ($dbConfig->onUpdate !== $entityConfig->onUpdate) {
 				return true;
 			}
 
-			$dbColumns = $dbConfig['columns'];
-			$entityColumns = $entityConfig['columns'];
+			$dbColumns = $dbConfig->columns;
+			$entityColumns = $entityConfig->columns;
 			sort($dbColumns);
 			sort($entityColumns);
 
@@ -153,8 +153,8 @@
 				return true;
 			}
 
-			$dbReferencedColumns = $dbConfig['referencedColumns'];
-			$entityReferencedColumns = $entityConfig['referencedColumns'];
+			$dbReferencedColumns = $dbConfig->referencedColumns;
+			$entityReferencedColumns = $entityConfig->referencedColumns;
 			sort($dbReferencedColumns);
 			sort($entityReferencedColumns);
 

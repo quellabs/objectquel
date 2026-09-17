@@ -330,7 +330,7 @@
 				
 				// MySQL/MariaDB support FIELD() natively, so use it directly rather
 				// than the portable CASE fallback below.
-				if ($this->platform->supportsFieldFunction()) {
+				if ($this->supportsFieldFunction()) {
 					return "ORDER BY FIELD({$column}, " . implode(", ", $uniqueValues) . ")";
 				}
 				
@@ -356,7 +356,18 @@
 				return "ORDER BY CASE {$column} " . implode(" ", $whenClauses) . " ELSE 0 END";
 			}
 		}
-		
+
+		/**
+		 * Whether the connected engine supports ORDER BY FIELD(col, v1, v2,
+		 * ...) — only MySQL and MariaDB implement FIELD(); every other
+		 * engine has no equivalent function and needs the portable CASE
+		 * fallback in getSortUsingIn() above instead.
+		 * @return bool
+		 */
+		private function supportsFieldFunction(): bool {
+			return in_array($this->platform->getDatabaseType(), ['mysql', 'mariadb'], true);
+		}
+
 		/**
 		 * Regular sort handler
 		 * @param AstRetrieve $retrieve

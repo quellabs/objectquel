@@ -44,8 +44,8 @@
 					\Quellabs\ObjectQuel\Sculpt\Commands\MakeEntityFromTableCommand::class,
 					\Quellabs\ObjectQuel\Sculpt\Commands\MakeRepositoryCommand::class,
 					\Quellabs\ObjectQuel\Sculpt\Commands\MakeMigrationsCommand::class,
+					\Quellabs\ObjectQuel\Sculpt\Commands\MakeBlankMigrationCommand::class,
 					\Quellabs\ObjectQuel\Sculpt\Commands\QuelMigrateCommand::class,
-					\Quellabs\ObjectQuel\Sculpt\Commands\QuelCreatePhinxConfigCommand::class,
 					\Quellabs\ObjectQuel\Sculpt\Commands\PacGenerateEntityCommand::class,
 					\Quellabs\ObjectQuel\Sculpt\Commands\QuelIndexHideCommand::class,
 					\Quellabs\ObjectQuel\Sculpt\Commands\QuelIndexShowCommand::class,
@@ -68,6 +68,7 @@
 		 *      encoding: string,
 		 *      collation: string,
 		 *      migrations_path: string,
+		 *      migration_table: string,
 		 *      entity_namespace: string,
 		 *      entity_path: string,
 		 *      proxy_namespace: string,
@@ -87,6 +88,7 @@
 				'encoding'              => 'utf8mb4',
 				'collation'             => 'utf8mb4_unicode_ci',
 				'migrations_path'       => '',
+				'migration_table'       => 'quel_migrations',
 				'entity_namespace'      => '',
 				'entity_path'           => '',
 				'proxy_namespace'       => 'Quellabs\\ObjectQuel\\Proxy\\Runtime',
@@ -107,6 +109,7 @@
 			$configuration->setEntityPath($this->getConfigValueAsString('entity_path', $defaults['entity_path']));
 			$configuration->setEntityNameSpace($this->getConfigValueAsString('entity_namespace', $defaults['entity_namespace']));
 			$configuration->setMigrationsPath($this->getConfigValueAsString('migrations_path', $defaults['migrations_path']));
+			$configuration->setMigrationTable($this->getConfigValueAsString('migration_table', $defaults['migration_table']));
 			$configuration->setMetadataCachePath($this->getConfigValueAsString('metadata_cache_path', $defaults['metadata_cache_path']));
 			$configuration->setUseMetadataCache(!empty($this->getConfigValueAsString('metadata_cache_path', $defaults['metadata_cache_path'])));
 			$configuration->setGenerateForeignKeys($this->getConfigValueAsBool('generate_foreign_keys', $defaults['generate_foreign_keys']));
@@ -141,56 +144,6 @@
 		 */
 		private function getConnection(): Connection {
 			return $this->connection ??= new Connection($this->buildConnectionConfig());
-		}
-		
-		/**
-		 * Returns a Phinx configuration array
-		 * @return array{
-		 *     paths: array{
-		 *         migrations: string
-		 *     },
-		 *     environments: array{
-		 *         default_migration_table: string,
-		 *         default_environment: string,
-		 *         development: array{
-		 *             adapter: string,
-		 *             host: string,
-		 *             name: string,
-		 *             user: string,
-		 *             pass: string,
-		 *             port: int,
-		 *             charset: string,
-		 *             collation: string,
-		 *             suffix: string
-		 *         }
-		 *     }
-		 * }
-		 */
-		public function createPhinxConfig(): array {
-			// Fetch default values
-			$defaults = $this->getDefaults();
-			
-			// Make a phinx config configuration array
-			return [
-				'paths'        => [
-					'migrations' => $this->getConfigValueAsString('migrations_path', $defaults['migrations_path']),
-				],
-				'environments' => [
-					'default_migration_table' => $this->getConfigValueAsString('migration_table', 'phinxlog'),
-					'default_environment'     => 'development',
-					'development'             => [
-						'adapter'   => $this->getConfigValueAsString('driver', $defaults['driver']),
-						'host'      => $this->getConfigValueAsString('host', $defaults['host']),
-						'name'      => $this->getConfigValueAsString('database', $defaults['database']),
-						'user'      => $this->getConfigValueAsString('username', $defaults['username']),
-						'pass'      => $this->getConfigValueAsString('password', $defaults['password']),
-						'port'      => $this->getConfigValueAsInt('port', $defaults['port']),
-						'charset'   => $this->getConfigValueAsString('encoding', $defaults['encoding']),
-						'collation' => $this->getConfigValueAsString('collation', $defaults['collation']),
-						'suffix'    => '',
-					],
-				],
-			];
 		}
 		
 		/**

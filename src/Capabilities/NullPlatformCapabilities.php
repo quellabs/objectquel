@@ -50,26 +50,6 @@
 		/**
 		 * @inheritDoc
 		 *
-		 * Defaults to MySQL/MariaDB syntax; unreachable in practice since
-		 * supportsIndexHiding() is false here, so callers should never get this far.
-		 */
-		public function getIndexVisibilityKeywords(): array {
-			return ['hidden' => 'INVISIBLE', 'visible' => 'VISIBLE'];
-		}
-		
-		/**
-		 * @inheritDoc
-		 *
-		 * Conservative default: false, so callers emit the portable CASE
-		 * expression rather than assuming MySQL/MariaDB's FIELD() is available.
-		 */
-		public function supportsFieldFunction(): bool {
-			return false;
-		}
-		
-		/**
-		 * @inheritDoc
-		 *
 		 * Falls back to the most broadly-compatible fulltext style.
 		 * MySQL/MariaDB/SQL Server syntax is the most widely recognised default
 		 * when no database connection is available to detect the actual engine.

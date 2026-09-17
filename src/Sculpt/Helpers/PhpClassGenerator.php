@@ -4,7 +4,7 @@
 	
 	use Quellabs\Support\StringInflector;
 	use Quellabs\ObjectQuel\Sculpt\SculptTypes;
-	use Quellabs\ObjectQuel\DatabaseAdapter\TypeMapper;
+	use Quellabs\ObjectQuel\DatabaseAdapter\Mapper\TypeMapper;
 	
 	/**
 	 * Generic PHP class source editor.

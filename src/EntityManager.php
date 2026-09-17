@@ -101,10 +101,15 @@
 		}
 		
 		/**
-		 * Remove signal from hub
+		 * Remove signal from hub. Uses isset() rather than !== null so a
+		 * constructor-bypassed instance (e.g. a PHPUnit mock with the
+		 * constructor disabled) destructs safely instead of fataling on
+		 * the uninitialized typed property — isset() returns false for an
+		 * uninitialized typed property instead of throwing, unlike a direct
+		 * read.
 		 */
 		public function __destruct() {
-			if ($this->debugQuerySignal !== null) {
+			if (isset($this->debugQuerySignal)) {
 				$this->signalHub->unregisterSignal($this->debugQuerySignal);
 			}
 		}

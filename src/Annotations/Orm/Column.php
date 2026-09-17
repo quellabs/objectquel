@@ -3,8 +3,7 @@
 	namespace Quellabs\ObjectQuel\Annotations\Orm;
 	
 	use Quellabs\AnnotationReader\AnnotationInterface;
-	use Quellabs\ObjectQuel\DatabaseAdapter\TypeMapper;
-	use Quellabs\Support\Tools;
+	use Quellabs\ObjectQuel\DatabaseAdapter\Mapper\TypeMapper;
 	
 	/**
 	 * @Annotation
@@ -110,10 +109,12 @@
 		 * @return int|null The length/size of the column or null if not specified or invalid
 		 */
 		public function getLimit(): ?int {
-			// Calculate the length if the type is 'enum'
+			// Must match TypeMapper::enumFallbackLimit() exactly, or this
+			// declared limit could never match what introspection reads
+			// back on a non-native-enum engine — see that method's docblock.
 			if ($this->getType() === 'enum') {
 				$enumType = $this->getEnumType() ?? throw new \LogicException('Enum column must specify enumType');
-				return max(Tools::getMaxEnumValueLength($enumType), 32);
+				return TypeMapper::enumFallbackLimit(TypeMapper::getEnumCases($enumType));
 			}
 			
 			// Check if the limit parameter exists or is empty

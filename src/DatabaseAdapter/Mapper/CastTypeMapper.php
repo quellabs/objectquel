@@ -1,6 +1,6 @@
 <?php
 
-	namespace Quellabs\ObjectQuel\DatabaseAdapter;
+	namespace Quellabs\ObjectQuel\DatabaseAdapter\Mapper;
 
 	use Quellabs\ObjectQuel\Capabilities\PlatformCapabilitiesInterface;
 

@@ -29,7 +29,7 @@
 	 * one-object invariant. Each parenthesized, comma-separated entry is a
 	 * single-purpose sub-operation:
 	 *
-	 *   add attr = type constraints          -> AstAlterAddColumn
+	 *   add attr = type constraints [backfill 'v'] -> AstAlterAddColumn
 	 *   drop attr                            -> AstAlterDropColumn
 	 *   rename oldAttr to newAttr            -> AstAlterRenameColumn
 	 *   retype attr = type constraints       -> AstAlterRetypeColumn
@@ -125,7 +125,8 @@
 		}
 
 		/**
-		 * `add` is followed by a plain column definition, an index clause
+		 * `add` is followed by a plain column definition (optionally with a
+		 * trailing `backfill 'literal'` clause), an index clause
 		 * (`[unique|fulltext] index name (...)`), or a foreign key clause
 		 * (`foreign key (...) references ...`).
 		 * @throws LexerException|ParserException
@@ -139,7 +140,12 @@
 				return $this->parseAddForeignKey();
 			}
 
-			return new AstAlterAddColumn(ColumnDefinitionClause::parse($this->lexer));
+			$column = ColumnDefinitionClause::parse($this->lexer);
+			$backfillValue = $this->lexer->optionalMatchKeyword('backfill') !== null
+				? $this->lexer->match(Token::String)->getStringValue()
+				: null;
+
+			return new AstAlterAddColumn($column, $backfillValue);
 		}
 
 		/**

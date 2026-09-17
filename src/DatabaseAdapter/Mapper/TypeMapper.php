@@ -1,6 +1,6 @@
 <?php
 	
-	namespace Quellabs\ObjectQuel\DatabaseAdapter;
+	namespace Quellabs\ObjectQuel\DatabaseAdapter\Mapper;
 	
 	/**
 	 * TypeMapper static utility class
@@ -25,7 +25,7 @@
 		];
 		
 		/**
-		 * Phinx column type to corresponding PHP type
+		 * Abstract column type to corresponding PHP type
 		 * @var array<string, string>
 		 */
 		private const array TYPE_MAP = [
@@ -116,6 +116,41 @@
 		}
 
 		/**
+		 * The VARCHAR length an `enum(...)` column falls back to on engines
+		 * without a native ENUM type. A 255-character floor, not an exact
+		 * fit — sizing exactly would need widening later, a dead end on
+		 * SQLite (no ALTER COLUMN at all). Shared by DDLTypeMapper and
+		 * SchemaComparator so the two can't drift apart.
+		 * @param string[] $values Declared enum values
+		 * @return int
+		 */
+		public static function enumFallbackLimit(array $values): int {
+			return max(255, ...array_map('strlen', $values));
+		}
+
+		/**
+		 * Per-engine map of a declared type to the type its DDL layer
+		 * renders identically to (e.g. SQLite's 'json'/'uuid' as bare
+		 * TEXT — see DDLTypeMapper), so introspection can't tell them
+		 * apart. SQL Server has the same 'text'/'json' gap but isn't
+		 * listed: no live instance to verify a fix against.
+		 */
+		private const array INTROSPECTION_COLLAPSE = [
+			'sqlite' => ['json' => 'text', 'uuid' => 'text'],
+		];
+
+		/**
+		 * Collapses $type per INTROSPECTION_COLLAPSE, or returns it
+		 * unchanged if $databaseType has no such ambiguity.
+		 * @param string $type Declared column type
+		 * @param string $databaseType getDatabaseType()'s return value
+		 * @return string
+		 */
+		public static function collapseForIntrospection(string $type, string $databaseType): string {
+			return self::INTROSPECTION_COLLAPSE[$databaseType][$type] ?? $type;
+		}
+
+		/**
 		 * Whether $type is a recognised abstract column type (the vocabulary
 		 * @Orm\Column uses). Used by `create` to reject unknown types at parse
 		 * time instead of silently falling through to VARCHAR.
@@ -142,8 +177,12 @@
 		}
 		
 		/**
-		 * Convert a Phinx column type to a corresponding PHP type
-		 * @param string $phinxType The Phinx column type
+		 * Convert an abstract ORM column type to a corresponding PHP type.
+		 * Named after this vocabulary's origin (it's literally Phinx's own
+		 * AdapterInterface::PHINX_TYPE_* constant values, passed through
+		 * unchanged — see objectquel-phinx-removal-plan.md), not because this
+		 * method itself depends on Phinx.
+		 * @param string $phinxType The abstract column type
 		 * @return string The corresponding PHP type
 		 */
 		public static function phinxTypeToPhpType(string $phinxType): string {
@@ -156,9 +195,15 @@
 		 * @return string[]
 		 */
 		public static function getRelevantProperties(string $type): array {
-			// Base properties all columns have
-			$baseProperties = ['type', 'nullable', 'default'];
-			
+			// Base properties all columns have. 'default' is deliberately excluded:
+			// no DDL path (QuelToSQLCreate, QuelToSQLAlter's retype) ever writes a
+			// column-level DEFAULT to the database — @Orm\Column(default=...) is
+			// applied purely at the ORM layer (QuelToSQLAppend), so a live table's
+			// introspected default can never be made to match it. Comparing it here
+			// would flag every declared default as a permanent, unfixable
+			// "modified column" on every make:migrations run.
+			$baseProperties = ['type', 'nullable'];
+
 			// Unknown types get no extra properties beyond the base set
 			return array_merge($baseProperties, self::RELEVANT_PROPERTIES[$type] ?? []);
 		}

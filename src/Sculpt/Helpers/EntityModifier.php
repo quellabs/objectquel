@@ -4,7 +4,7 @@
 	
 	use Quellabs\ObjectQuel\Configuration;
 	use Quellabs\ObjectQuel\Sculpt\SculptTypes;
-	use Quellabs\ObjectQuel\DatabaseAdapter\TypeMapper;
+	use Quellabs\ObjectQuel\DatabaseAdapter\Mapper\TypeMapper;
 	use Quellabs\ObjectQuel\Sculpt\Commands\MakeEntityCommand;
 	use Quellabs\Support\StringInflector;
 	

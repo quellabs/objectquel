@@ -2,7 +2,8 @@
 	
 	namespace Quellabs\ObjectQuel\Sculpt;
 	
-	use Quellabs\ObjectQuel\DatabaseAdapter\DatabaseAdapter;
+	use Quellabs\ObjectQuel\DatabaseAdapter\ColumnDefinition;
+	use Quellabs\ObjectQuel\DatabaseAdapter\ForeignKeyDefinition;
 	
 	/**
 	 * Shared PHPStan type aliases for the Sculpt subsystem.
@@ -109,8 +110,6 @@
 	 * Foreign key types
 	 * -------------------------------------------------------------------------
 	 *
-	 * @phpstan-import-type ForeignKeyDefinition from DatabaseAdapter
-	 *
 	 * @phpstan-type ForeignKeyChangeSet array{
 	 *     added: array<string, ForeignKeyDefinition>,
 	 *     modified: array<string, array{
@@ -121,13 +120,27 @@
 	 * }
 	 *
 	 * -------------------------------------------------------------------------
+	 * Primary key types
+	 * -------------------------------------------------------------------------
+	 *
+	 * A table has at most one primary key, so — unlike IndexChangeSet/
+	 * ForeignKeyChangeSet — this is a single optional change, not a keyed
+	 * map of many. Modeled as a discriminated union on 'action' rather than
+	 * one shape with optional keys, so a 'set' entry is guaranteed to carry
+	 * 'columns' (the desired key, in entity-declared order) and both 'set'
+	 * and 'drop' are guaranteed to carry 'from' (the table's current key,
+	 * so down() can restore it).
+	 *
+	 * @phpstan-type PrimaryKeyChangeSet array{action: null}
+	 *                                  |array{action: 'set', columns: array<int, string>, from: array<int, string>}
+	 *                                  |array{action: 'drop', from: array<int, string>}
+	 *
+	 * -------------------------------------------------------------------------
 	 * Composite types (depend on ColumnDefinition, IndexChangeSet and ForeignKeyChangeSet)
 	 * -------------------------------------------------------------------------
 	 *
 	 * A single entry from the 'modified' map: the before/after column definitions
 	 * and a per-field breakdown of what changed.
-	 *
-	 * @phpstan-import-type ColumnDefinition from DatabaseAdapter
 	 *
 	 * @phpstan-type ColumnModification array{
 	 *     from: ColumnDefinition,
@@ -141,7 +154,8 @@
 	 *     modified: array<string, ColumnModification>,
 	 *     deleted: array<string, ColumnDefinition>,
 	 *     indexes: IndexChangeSet,
-	 *     foreignKeys: ForeignKeyChangeSet
+	 *     foreignKeys: ForeignKeyChangeSet,
+	 *     primaryKey?: PrimaryKeyChangeSet
 	 * }
 	 */
 	final class SculptTypes {}

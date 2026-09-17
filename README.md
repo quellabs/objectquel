@@ -201,7 +201,7 @@ ObjectQuel is a full Data Mapper ORM, not just a query language:
 - **Lifecycle events** — pre/post persist, update, and delete via SignalHub
 - **Custom repositories** — optional repository pattern with type-safe access
 - **Indexing** — annotation-driven index management
-- **Migrations** — database schema migrations powered by Phinx
+- **Migrations** — database schema migrations, generated from entity changes or hand-written, run as plain ObjectQuel DDL/DML
 
 ## CLI tooling
 
@@ -216,6 +216,9 @@ php bin/sculpt make:entity-from-table
 
 # Generate migrations from entity changes
 php bin/sculpt make:migrations
+
+# Create a blank migration for hand-written schema/data changes
+php bin/sculpt make:blank-migration <Name>
 
 # Run pending migrations
 php bin/sculpt quel:migrate
