@@ -15,11 +15,11 @@
 		/**
 		 * Sorts the results array based on provided sort criteria.
 		 * Sort items are taken directly from AstRetrieve::getSort(), so the
-		 * key is 'direction' (optional) rather than 'order'.
+		 * key is 'order' (optional), matching Retrieve::parseSortExpressions().
 		 * AST traversal is precomputed once before the comparator runs to
 		 * avoid O(n log n) repeated traversal.
 		 * @param array<int, array<string, mixed>> $results Reference to the array of results to be sorted
-		 * @param array<int, array{ast: AstInterface, direction?: string}> $sortItems Array of sort specifications from AstRetrieve::getSort()
+		 * @param array<int, array{ast: AstInterface, order?: string}> $sortItems Array of sort specifications from AstRetrieve::getSort()
 		 * @return void This method modifies the input array directly and doesn't return a value
 		 * @throws \UnexpectedValueException If a sort key resolves to a non-scalar value
 		 */
@@ -39,7 +39,7 @@
 					
 					return [
 						'range'     => $ast->getSourceRange()?->getName(),
-						'direction' => strtolower($item['direction'] ?? 'asc'),
+						'direction' => strtolower($item['order'] ?? 'asc'),
 					];
 				},
 				$sortItems

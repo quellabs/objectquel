@@ -298,16 +298,16 @@
 		/**
 		 * /**
 		 * Sets the sorting specifications for the ORDER BY clause.
-		 * @param array<int, array{ast: AstInterface, direction?: string}> $sortArray
+		 * @param array<int, array{ast: AstInterface, order?: string}> $sortArray
 		 * @return void
 		 */
 		public function setSort(array $sortArray): void {
 			$this->sort = $sortArray;
 		}
-		
+
 		/**
 		 * Returns the current sorting specifications.
-		 * @return array<int, array{ast: AstInterface, direction?: string}>
+		 * @return array<int, array{ast: AstInterface, order?: string}>
 		 */
 		public function getSort(): array {
 			return $this->sort;
