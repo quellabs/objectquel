@@ -71,7 +71,12 @@
 		/** @var array<int, string> SQL fragments that will be concatenated to form the final query */
 		private array $result;
 		
-		/** @var array<string, bool> Track visited nodes to prevent infinite recursion and duplicate processing */
+		/**
+		 * @var array<string, AstInterface> Track visited nodes to prevent infinite
+		 * recursion and duplicate processing. Values are the nodes themselves (not
+		 * just a boolean) so they stay alive for this visitor's lifetime — see
+		 * addToVisitedNodes().
+		 */
 		private array $visitedNodes;
 		
 		/** @var array<string, mixed> Reference to query parameters for parameterized queries */
@@ -750,8 +755,13 @@
 				return;
 			}
 			
-			// Mark this node as visited using its unique object ID
-			$this->visitedNodes[spl_object_hash($ast)] = true;
+			// Mark this node as visited using its unique object ID. Storing the node
+			// itself (not just `true`) keeps a live reference for the rest of this
+			// visitor's lifetime — without it, a locally-scoped node (e.g. a deep
+			// clone used once and discarded) can be garbage-collected and have its
+			// object handle reused by a later, unrelated node, causing a false
+			// "already visited" hit via a spl_object_hash() collision.
+			$this->visitedNodes[spl_object_hash($ast)] = $ast;
 			
 			// Recursively mark all children
 			foreach ($this->getAstChildren($ast) as $child) {
