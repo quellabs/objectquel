@@ -530,8 +530,8 @@
 			// Clone all child arrays with their AST nodes
 			$clonedRanges = $this->cloneArray($this->ranges);
 			$clonedValues = $this->cloneArray($this->values);
-			
-			
+			$clonedGroupBy = $this->cloneArray($this->group_by);
+
 			$clonedSort = $this->cloneSortArray($this->sort);
 			
 			// Clone the conditions node if it exists
@@ -545,6 +545,7 @@
 			$clone->values = $clonedValues;
 			$clone->conditions = $clonedConditions;
 			$clone->sort = $clonedSort;
+			$clone->group_by = $clonedGroupBy;
 			
 			// Copy primitive properties
 			$clone->sort_in_application_logic = $this->sort_in_application_logic;
@@ -569,7 +570,11 @@
 			foreach ($clonedSort as $sortItem) {
 				$sortItem['ast']->setParent($clone);
 			}
-			
+
+			foreach ($clonedGroupBy as $groupByItem) {
+				$groupByItem->setParent($clone);
+			}
+
 			return $clone;
 		}
 		

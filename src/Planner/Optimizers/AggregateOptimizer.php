@@ -43,6 +43,7 @@
 		private const string STRATEGY_WINDOW = 'WINDOW:single-table mixed query, rewritten as window function';
 		private const string STRATEGY_DIRECT_OVERLAP = 'DIRECT:ranges overlap, kept inline with GROUP BY';
 		private const string STRATEGY_SUBQUERY_DISJOINT = 'SUBQUERY:disjoint ranges, isolated in correlated subquery';
+		private const string STRATEGY_DIRECT_EXPLICIT_GROUP = 'DIRECT:explicit `by` list used as GROUP BY';
 		
 		/** @var EntityStore Provides entity metadata, used to exclude primary key columns from partition inference */
 		private EntityStore $entityStore;
@@ -132,8 +133,26 @@
 			// the window-eligibility check instead of the collapsing shortcut.
 			$forceWindow = $isAggregateOnly && $this->anyAggregateRequiresWindow($aggregates);
 
+			// An explicit inline `by` on a plain aggregate is a query-wide GROUP BY
+			// override — collected once and validated for consistency across every
+			// aggregate that specifies one (see collectExplicitGroupByOverride()).
+			$explicitGroupBy = $this->collectExplicitGroupByOverride($aggregates);
+
+			if ($forceWindow && $explicitGroupBy !== null) {
+				throw new QuelException(
+					'Cannot mix a windowed sequence function or running aggregate with a plain aggregate ' .
+					'using an explicit `by` group in the same aggregate-only query — their row cardinalities ' .
+					'are incompatible.'
+				);
+			}
+
+			// An explicit `by` group forces real GROUP BY behavior even in an otherwise
+			// aggregate-only query shape, since it can group by a column not otherwise
+			// selected at all — the collapsing "no GROUP BY needed" shortcut no longer applies.
+			$effectiveAggregateOnly = $isAggregateOnly && !$forceWindow && $explicitGroupBy === null;
+
 			foreach ($aggregates as $agg) {
-				$strategy = $this->chooseStrategy($root, $agg, $isAggregateOnly && !$forceWindow, $nonAggItems);
+				$strategy = $this->chooseStrategy($root, $agg, $effectiveAggregateOnly, $nonAggItems, $explicitGroupBy !== null);
 
 				if ($forceWindow && $strategy !== self::STRATEGY_WINDOW) {
 					throw new QuelException(
@@ -143,8 +162,57 @@
 					);
 				}
 
-				$this->applyStrategy($root, $agg, $strategy, $isAggregateOnly, $nonAggItems, $log);
+				$this->applyStrategy($root, $agg, $strategy, $effectiveAggregateOnly, $nonAggItems, $explicitGroupBy, $log);
 			}
+		}
+
+		/**
+		 * Collects a query-wide GROUP BY override from every non-window aggregate's
+		 * explicit inline `by` list, validating that every aggregate which specifies
+		 * one specifies the *same* columns — GROUP BY is a single query-wide clause,
+		 * so conflicting lists across aggregates in the same query are ambiguous.
+		 * @param AstAggregate[] $aggregates
+		 * @return AstInterface[]|null Shared `by` list, or null if none was specified
+		 * @throws QuelException on conflicting `by` lists
+		 */
+		private function collectExplicitGroupByOverride(array $aggregates): ?array {
+			$selected = null;
+			$selectedNames = null;
+
+			foreach ($aggregates as $aggregate) {
+				// Sequence functions / running aggregates use `by` for PARTITION BY instead.
+				if ($this->requiresWindowFunction($aggregate)) {
+					continue;
+				}
+
+				$partitionBy = $aggregate->getPartitionBy();
+
+				if ($partitionBy === null) {
+					continue;
+				}
+
+				// Compare by column name where possible; a computed expression falls back
+				// to object identity, so mixing one across multiple aggregates always
+				// reports a conflict rather than risking a false match.
+				$names = array_map(
+					static fn(AstInterface $expression): string => $expression instanceof AstIdentifier
+						? $expression->getCompleteName()
+						: spl_object_hash($expression),
+					$partitionBy
+				);
+
+				if ($selectedNames === null) {
+					$selected = $partitionBy;
+					$selectedNames = $names;
+				} elseif ($names !== $selectedNames) {
+					throw new QuelException(
+						'Conflicting explicit `by` lists across aggregates in the same query — ' .
+						'every aggregate\'s `by` list must specify the same columns.'
+					);
+				}
+			}
+
+			return $selected;
 		}
 
 		/**
@@ -167,14 +235,15 @@
 		 * Returns true if the aggregate has no non-windowed SQL form: either it's one
 		 * of the sequence function types (rank, dense_rank, row_number, ntile, lag, lead),
 		 * or it's a plain aggregate (sum, count, avg, min, max) using an inline `sort by`
-		 * (a running value) and/or an inline `by` (a per-row group total).
+		 * to compute a running value. A bare inline `by` with no `sort by` does NOT
+		 * require a window — it's an explicit GROUP BY override instead (see
+		 * collectExplicitGroupByOverride()).
 		 * @param AstAggregate $aggregate
 		 * @return bool
 		 */
 		private function requiresWindowFunction(AstAggregate $aggregate): bool {
 			return
 				$aggregate->getOrder() !== null ||
-				$aggregate->getPartitionBy() !== null ||
 				in_array(get_class($aggregate), AggregateConstants::SEQUENCE_AGGREGATE_TYPES, true);
 		}
 		
@@ -183,20 +252,23 @@
 		 * @param AstRetrieve $root
 		 * @param AstAggregate $agg The aggregate node to rewrite
 		 * @param string $strategy One of self::STRATEGY_*
-		 * @param bool $isAggregateOnly Pre-computed query shape flag
-		 * @param AstAlias[] $nonAggItems Non-aggregate SELECT items (used for GROUP BY)
+		 * @param bool $isAggregateOnly Pre-computed query shape flag (already accounts for an explicit `by` group)
+		 * @param AstAlias[] $nonAggItems Non-aggregate SELECT items (used for GROUP BY inference)
+		 * @param AstInterface[]|null $explicitGroupBy Query-wide `by` override, if any
 		 * @param PlanLogInterface $log
 		 */
-		private function applyStrategy(AstRetrieve $root, AstAggregate $agg, string $strategy, bool $isAggregateOnly, array $nonAggItems, PlanLogInterface $log): void {
+		private function applyStrategy(AstRetrieve $root, AstAggregate $agg, string $strategy, bool $isAggregateOnly, array $nonAggItems, ?array $explicitGroupBy, PlanLogInterface $log): void {
 			$label = $agg->getType();
-			
+
 			switch ($strategy) {
 				case self::STRATEGY_DIRECT_AGG_ONLY:
 				case self::STRATEGY_DIRECT_OVERLAP:
-					// GROUP BY is only needed when mixing aggregates with non-aggregates.
-					// Aggregate-only queries collapse to one row without it.
+				case self::STRATEGY_DIRECT_EXPLICIT_GROUP:
+					// GROUP BY is only needed when mixing aggregates with non-aggregates,
+					// or when an explicit `by` group forces it even in an aggregate-only shape.
+					// An explicit group always wins over inference from the SELECT list.
 					if (!$isAggregateOnly) {
-						$root->setGroupBy($nonAggItems);
+						$root->setGroupBy($explicitGroupBy ?? $nonAggItems);
 					}
 					break;
 				
@@ -262,13 +334,21 @@
 		 *
 		 * Priority order:
 		 *  1. Non-database source     → MEMORY   (JSON ranges, evaluated in PHP)
-		 *  2. Filtered aggregate      → SUBQUERY (WHERE must run inside the aggregate)
-		 *  3. Aggregate-only query    → DIRECT   (no GROUP BY needed)
-		 *  4. Window-eligible         → WINDOW   (single-table mixed query, avoids GROUP BY)
-		 *  5. Ranges overlap          → DIRECT + GROUP BY
-		 *  6. Fallback                → SUBQUERY
+		 *  2. Window-required         → WINDOW   (sequence function or running aggregate)
+		 *  3. Explicit `by` group     → DIRECT + explicit GROUP BY (wins over everything below)
+		 *  4. Filtered aggregate      → SUBQUERY (WHERE must run inside the aggregate)
+		 *  5. Aggregate-only query    → DIRECT   (no GROUP BY needed)
+		 *  6. Window-eligible         → WINDOW   (single-table mixed query, avoids GROUP BY)
+		 *  7. Ranges overlap          → DIRECT + GROUP BY
+		 *  8. Fallback                → SUBQUERY
 		 *
-		 * WINDOW is checked before the range-overlap test (step 5) because a
+		 * Step 3 comes before step 4 so that an aggregate with both an explicit `by`
+		 * and its own `where` (e.g. `avg(e.age by e.dept where e.job=1023)`) is routed
+		 * to the plain DIRECT strategy, whose SQL generation already renders the
+		 * aggregate's own conditions as a CASE WHEN — not to the correlated-subquery
+		 * strategy, which assumes a per-row correlation this shape doesn't have.
+		 *
+		 * Step 6 is checked before the range-overlap test (step 7) because a
 		 * single-table mixed query is a valid window candidate and avoids the
 		 * GROUP BY entirely — more efficient than DIRECT for that shape.
 		 *
@@ -276,9 +356,10 @@
 		 * @param AstAggregate $aggregate Aggregate node to analyze
 		 * @param bool $isAggregateOnly Pre-computed query shape flag
 		 * @param AstAlias[] $nonAggItems Pre-computed non-aggregate SELECT items
+		 * @param bool $hasExplicitGroupBy True when some aggregate in the query specified an inline `by`
 		 * @return string One of self::STRATEGY_*
 		 */
-		private function chooseStrategy(AstRetrieve $root, AstAggregate $aggregate, bool $isAggregateOnly, array $nonAggItems): string {
+		private function chooseStrategy(AstRetrieve $root, AstAggregate $aggregate, bool $isAggregateOnly, array $nonAggItems, bool $hasExplicitGroupBy): string {
 			$aggRanges = RangeUtilities::collectRangesFromNode($aggregate);
 			$needsWindow = $this->requiresWindowFunction($aggregate);
 
@@ -310,22 +391,37 @@
 				return self::STRATEGY_WINDOW;
 			}
 
-			// 3. Filtered aggregate — subquery applies WHERE before aggregation.
+			// 3. An explicit `by` group (on this or a sibling aggregate) always wins —
+			//    guard against grouping across genuinely unrelated ranges, which would
+			//    otherwise risk a silent cross-product once forced inline.
+			if ($hasExplicitGroupBy) {
+				$nonAggRanges = RangeUtilities::collectRangesFromNodes($nonAggItems);
+
+				if ($nonAggRanges !== [] && !RangeUtilities::rangesOverlapOrAreRelated($aggRanges, $nonAggRanges)) {
+					throw new QuelException(
+						$aggregate->getType() . '() with an explicit `by` group over unrelated ranges is not yet supported.'
+					);
+				}
+
+				return self::STRATEGY_DIRECT_EXPLICIT_GROUP;
+			}
+
+			// 4. Filtered aggregate — subquery applies WHERE before aggregation.
 			if ($aggregate->getConditions() !== null) {
 				return self::STRATEGY_SUBQUERY_FILTERED;
 			}
 
-			// 4. Aggregate-only query — execute directly, no GROUP BY required.
+			// 5. Aggregate-only query — execute directly, no GROUP BY required.
 			if ($isAggregateOnly) {
 				return self::STRATEGY_DIRECT_AGG_ONLY;
 			}
 
-			// 5. Window function — avoids GROUP BY for single-table mixed queries.
+			// 6. Window function — avoids GROUP BY for single-table mixed queries.
 			if ($this->canUseWindowFunction($root, $aggregate)) {
 				return self::STRATEGY_WINDOW;
 			}
 
-			// 6. Mixed query — use GROUP BY if ranges overlap, otherwise isolate
+			// 7. Mixed query — use GROUP BY if ranges overlap, otherwise isolate
 			//    the aggregate in a subquery to avoid a cross-product.
 			$nonAggRanges = RangeUtilities::collectRangesFromNodes($nonAggItems);
 

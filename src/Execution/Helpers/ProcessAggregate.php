@@ -643,6 +643,15 @@
 				throw new \LogicException(get_class($ast) . ' requires a value argument outside the window-function strategy');
 			}
 
+			// Mark the inline `by` list as processed — AggregateOptimizer already
+			// consumed it into the query's GROUP BY clause (STRATEGY_DIRECT_EXPLICIT_GROUP),
+			// but $ast itself still carries it, and AstAggregate::accept() unconditionally
+			// cascades into it regardless, which would otherwise append its raw SQL a
+			// second time right after this method's own return value.
+			foreach ($ast->getPartitionBy() ?? [] as $expression) {
+				$this->markExpressionAsHandled($expression);
+			}
+
 			// Handle conditional aggregation: aggregate WHERE condition → CASE WHEN condition
 			if ($ast->getConditions() !== null) {
 				$condition = $this->convertExpressionToSql($ast->getConditions());

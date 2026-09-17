@@ -133,11 +133,11 @@
 		 * Generic parser for aggregates
 		 * @template T of AstInterface
 		 * @param class-string<T> $astClass The fully qualified AST class name to instantiate
-		 * @param bool $allowWindowClauses Whether an inline `by` and/or `sort by` may follow
-		 *        the optional WHERE, flipping this call into a windowed aggregate (e.g. a
-		 *        running SUM, or a per-row group total). Left false for ANY() and the
-		 *        DISTINCT variants (COUNTU/AVGU/SUMU), which can never be computed as a
-		 *        window function.
+		 * @param bool $allowWindowClauses Whether an inline `by` and/or `sort by` may be used.
+		 *        `sort by` (with or without `by` alongside it) flips this call into a windowed
+		 *        running aggregate. A bare `by` alone does NOT window it — it's an explicit
+		 *        GROUP BY override instead, resolved later by AggregateOptimizer. Left false
+		 *        for ANY() and the DISTINCT variants (COUNTU/AVGU/SUMU), which can use neither.
 		 * @return T The instantiated AST node
 		 * @throws LexerException|ParserException|\ReflectionException
 		 */
