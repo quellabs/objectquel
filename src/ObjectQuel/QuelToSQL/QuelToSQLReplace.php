@@ -192,7 +192,7 @@
 				return $this->identifierQuoter->quoteIdentifier($columnName);
 			}
 
-			return $this->identifierQuoter->quoteIdentifier($qualifyWithAlias) . 'ObjectQuel' . $this->identifierQuoter->quoteIdentifier($columnName);
+			return $this->identifierQuoter->quoteIdentifier($qualifyWithAlias) . '.' . $this->identifierQuoter->quoteIdentifier($columnName);
 		}
 
 		/**

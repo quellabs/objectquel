@@ -399,7 +399,7 @@
 				$order = $s['order'] ?? '';
 				
 				if ($order !== '') {
-					$sqlSort[] = $retrieveEntitiesVisitor->getResult() . " QuelToSQLRetrieve.php" . $order;
+					$sqlSort[] = $retrieveEntitiesVisitor->getResult() . " " . $order;
 				} else {
 					$sqlSort[] = $retrieveEntitiesVisitor->getResult();
 				}
