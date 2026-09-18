@@ -1,6 +1,6 @@
 <?php
-
-	namespace Quellabs\ObjectQuel\ObjectQuel;
+	
+	namespace Quellabs\ObjectQuel\ObjectQuel\QuelToSQL;
 
 	use Quellabs\ObjectQuel\Capabilities\PlatformCapabilitiesInterface;
 	use Quellabs\ObjectQuel\DatabaseAdapter\SqlIdentifierQuoter;
@@ -14,6 +14,7 @@
 	use Quellabs\ObjectQuel\ObjectQuel\Helpers\WriteVerbIdentifierResolver;
 	use Quellabs\ObjectQuel\ObjectQuel\Helpers\WriteVerbParameterNormalizer;
 	use Quellabs\ObjectQuel\Serialization\Serializers\SQLSerializer;
+	use Quellabs\ObjectQuel\ObjectQuel\CompiledAppendSql;
 
 	/**
 	 * Compiles upsert's on-conflict extension of `append` to dialect-correct

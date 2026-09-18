@@ -1,6 +1,6 @@
 <?php
-
-	namespace Quellabs\ObjectQuel\ObjectQuel;
+	
+	namespace Quellabs\ObjectQuel\ObjectQuel\QuelToSQL;
 
 	use Quellabs\ObjectQuel\Capabilities\PlatformCapabilitiesInterface;
 	use Quellabs\ObjectQuel\DatabaseAdapter\SqlIdentifierQuoter;
@@ -192,7 +192,7 @@
 				return $this->identifierQuoter->quoteIdentifier($columnName);
 			}
 
-			return $this->identifierQuoter->quoteIdentifier($qualifyWithAlias) . '.' . $this->identifierQuoter->quoteIdentifier($columnName);
+			return $this->identifierQuoter->quoteIdentifier($qualifyWithAlias) . 'ObjectQuel' . $this->identifierQuoter->quoteIdentifier($columnName);
 		}
 
 		/**

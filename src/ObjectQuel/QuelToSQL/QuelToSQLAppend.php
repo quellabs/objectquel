@@ -1,8 +1,10 @@
 <?php
-
-	namespace Quellabs\ObjectQuel\ObjectQuel;
+	
+	namespace Quellabs\ObjectQuel\ObjectQuel\QuelToSQL;
 
 	use Quellabs\ObjectQuel\OrmException;
+	use Quellabs\ObjectQuel\ObjectQuel\QueryNormalizer;
+	use Quellabs\ObjectQuel\ObjectQuel\SemanticAnalyzer;
 	use Quellabs\ObjectQuel\Exception\EntityResolutionException;
 	use Quellabs\AnnotationReader\Exception\AnnotationReaderException;
 	use Quellabs\ObjectQuel\Capabilities\PlatformCapabilitiesInterface;
@@ -27,6 +29,7 @@
 	use Quellabs\ObjectQuel\ObjectQuel\Visitors\ResolveRootIdentifierType;
 	use Quellabs\ObjectQuel\Persistence\VersionValueHandler;
 	use Quellabs\ObjectQuel\Planner\QueryOptimizer;
+	use Quellabs\ObjectQuel\ObjectQuel\CompiledAppendSql;
 
 	/**
 	 * Compiles an AstAppend statement to dialect-correct INSERT SQL. Sibling
@@ -77,7 +80,7 @@
 		 * @param array<string, mixed> $parameters Bound parameters, by reference
 		 *        (mutated only for insert-from-select's nested retrieve)
 		 * @return CompiledAppendSql
-		 * @throws SemanticException|EntityResolutionException
+		 * @throws SemanticException|EntityResolutionException|AnnotationReaderException|OrmException
 		 */
 		public function convertToSQL(AstAppend $statement, array &$parameters): CompiledAppendSql {
 			$entityName = $statement->getEntityName();
@@ -106,7 +109,7 @@
 		 * @param string $tableName
 		 * @param array<string, mixed> $parameters
 		 * @return CompiledAppendSql
-		 * @throws SemanticException|AnnotationReaderException
+		 * @throws SemanticException|AnnotationReaderException|OrmException
 		 */
 		private function compileValues(AstAppend $statement, EntityMetadataRecord $metadata, string $tableName, array &$parameters): CompiledAppendSql {
 			$rows = $statement->getRowsOrFail();

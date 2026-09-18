@@ -10,7 +10,7 @@
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstCreateIndex;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstCreateTable;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstStatement;
-	use Quellabs\ObjectQuel\ObjectQuel\QuelToSQLCreate;
+	use Quellabs\ObjectQuel\ObjectQuel\QuelToSQL\QuelToSQLCreate;
 
 	/**
 	 * Executes an AstCreateTable statement: compiles it via QuelToSQLCreate

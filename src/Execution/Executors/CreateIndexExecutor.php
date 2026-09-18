@@ -9,7 +9,7 @@
 	use Quellabs\ObjectQuel\Execution\ExecutionContext;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstCreateIndex;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstStatement;
-	use Quellabs\ObjectQuel\ObjectQuel\QuelToSQLCreateIndex;
+	use Quellabs\ObjectQuel\ObjectQuel\QuelToSQL\QuelToSQLCreateIndex;
 
 	/**
 	 * Executes an AstCreateIndex statement: compiles it via

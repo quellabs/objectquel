@@ -8,8 +8,8 @@
 	use Quellabs\ObjectQuel\Execution\ExecutionContext;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstDestroyIndex;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstStatement;
-	use Quellabs\ObjectQuel\ObjectQuel\QuelToSQLCreateIndex;
-	use Quellabs\ObjectQuel\ObjectQuel\QuelToSQLDestroyIndex;
+	use Quellabs\ObjectQuel\ObjectQuel\QuelToSQL\QuelToSQLCreateIndex;
+	use Quellabs\ObjectQuel\ObjectQuel\QuelToSQL\QuelToSQLDestroyIndex;
 
 	/**
 	 * Executes an AstDestroyIndex statement: compiles it via

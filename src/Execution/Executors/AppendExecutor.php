@@ -4,6 +4,7 @@
 
 	use Cake\Database\StatementInterface;
 	use Quellabs\ObjectQuel\Exception\SemanticException;
+	use Quellabs\ObjectQuel\ObjectQuel\CompiledAppendSql;
 	use Quellabs\ObjectQuel\Annotations\Orm\PrimaryKeyStrategy;
 	use Quellabs\ObjectQuel\Exception\EntityResolutionException;
 	use Quellabs\ObjectQuel\Capabilities\PlatformCapabilitiesInterface;
@@ -19,13 +20,12 @@
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstParameter;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRangeJsonSource;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstStatement;
-	use Quellabs\ObjectQuel\ObjectQuel\CompiledAppendSql;
 	use Quellabs\ObjectQuel\ObjectQuel\Helpers\WriteVerbParameterNormalizer;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRetrieve;
 	use Quellabs\ObjectQuel\ObjectQuel\QuelResult;
-	use Quellabs\ObjectQuel\ObjectQuel\QuelToSQLAppend;
-	use Quellabs\ObjectQuel\ObjectQuel\QuelToSQLReplace;
-	use Quellabs\ObjectQuel\ObjectQuel\QuelToSQLUpsert;
+	use Quellabs\ObjectQuel\ObjectQuel\QuelToSQL\QuelToSQLAppend;
+	use Quellabs\ObjectQuel\ObjectQuel\QuelToSQL\QuelToSQLReplace;
+	use Quellabs\ObjectQuel\ObjectQuel\QuelToSQL\QuelToSQLUpsert;
 	use Quellabs\ObjectQuel\Planner\ExecutionPlanBuilder;
 	use Quellabs\ObjectQuel\PrimaryKeys\PrimaryKeyFactory;
 
@@ -136,7 +136,7 @@
 		 * @param array<string, mixed> $parameters
 		 * @return QuelResult
 		 * @throws QuelException On compile or execution failure
-		 * @throws \ReflectionException|SemanticException|EntityResolutionException
+		 * @throws \ReflectionException|SemanticException|EntityResolutionException|\Throwable
 		 */
 		private function executeDirectInsert(AstAppend $statement, array $parameters): QuelResult {
 			$prepared = $this->prepare($statement, $parameters);

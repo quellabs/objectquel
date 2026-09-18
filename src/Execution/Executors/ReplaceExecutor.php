@@ -11,7 +11,7 @@
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstReplace;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstStatement;
 	use Quellabs\ObjectQuel\ObjectQuel\QuelResult;
-	use Quellabs\ObjectQuel\ObjectQuel\QuelToSQLReplace;
+	use Quellabs\ObjectQuel\ObjectQuel\QuelToSQL\QuelToSQLReplace;
 
 	/**
 	 * Executes an AstReplace statement: compiles it via QuelToSQLReplace and

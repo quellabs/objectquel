@@ -15,11 +15,11 @@
 	 * <cond>` to run first; only if it affects 0 rows does $primarySql (a
 	 * plain INSERT) run. AppendExecutor runs both inside one transaction.
 	 */
-	final class CompiledAppendSql {
+	final readonly class CompiledAppendSql {
 
 		private function __construct(
-			public readonly string $primarySql,
-			public readonly ?string $fallbackUpdateSql,
+			public string $primarySql,
+			public ?string $fallbackUpdateSql,
 		) {
 		}
 
