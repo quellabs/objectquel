@@ -3,7 +3,6 @@
 	namespace Quellabs\ObjectQuel\ObjectQuel\QuelToSQL;
 
 	use Quellabs\ObjectQuel\ObjectQuel\ForeignKeyConstraintNamer;
-	use Quellabs\ObjectQuel\ObjectQuel\ForeignKeyActionNormalizer;
 	use Quellabs\ObjectQuel\Capabilities\PlatformCapabilitiesInterface;
 	use Quellabs\ObjectQuel\DatabaseAdapter\Mapper\DDLTypeMapper;
 	use Quellabs\ObjectQuel\DatabaseAdapter\SqlIdentifierQuoter;

@@ -12,7 +12,7 @@
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\NodeFunction;
 	use Quellabs\ObjectQuel\ObjectQuel\AstInterface;
 	use Quellabs\ObjectQuel\ObjectQuel\AstVisitorInterface;
-	use Quellabs\ObjectQuel\ObjectQuel\IdentifierType;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\IdentifierType;
 	
 	/**
 	 * Class NoExpressionsAllowedOnEntitiesValidator

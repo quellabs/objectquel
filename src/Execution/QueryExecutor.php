@@ -40,9 +40,9 @@
 	use Quellabs\ObjectQuel\Execution\Executors\ShowIndexExecutor;
 	use Quellabs\ObjectQuel\Execution\Executors\JsonRetrieveExecutor;
 	use Quellabs\ObjectQuel\Execution\Executors\ReplaceExecutor;
-	use Quellabs\ObjectQuel\ObjectQuel\DateTimeParameterCoercer;
-	use Quellabs\ObjectQuel\ObjectQuel\IdentifierTypeResolver;
-	use Quellabs\ObjectQuel\ObjectQuel\QueryNormalizer;
+	use Quellabs\ObjectQuel\ObjectQuel\Passes\DateTimeParameterCoercer;
+	use Quellabs\ObjectQuel\ObjectQuel\Passes\IdentifierTypeResolver;
+	use Quellabs\ObjectQuel\ObjectQuel\Passes\QueryNormalizer;
 	use Quellabs\ObjectQuel\ObjectQuel\SemanticAnalyzer;
 	use Quellabs\ObjectQuel\Planner\ExecutionPlanBuilder;
 	use Quellabs\ObjectQuel\Planner\QueryOptimizer;

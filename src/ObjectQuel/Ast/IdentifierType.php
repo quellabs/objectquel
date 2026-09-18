@@ -1,6 +1,6 @@
 <?php
 	
-	namespace Quellabs\ObjectQuel\ObjectQuel;
+	namespace Quellabs\ObjectQuel\ObjectQuel\Ast;
 	
 	/**
 	 * Classifies the role of an identifier encountered during query parsing or resolution.

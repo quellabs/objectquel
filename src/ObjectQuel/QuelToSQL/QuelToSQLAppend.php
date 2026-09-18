@@ -3,7 +3,7 @@
 	namespace Quellabs\ObjectQuel\ObjectQuel\QuelToSQL;
 
 	use Quellabs\ObjectQuel\OrmException;
-	use Quellabs\ObjectQuel\ObjectQuel\QueryNormalizer;
+	use Quellabs\ObjectQuel\ObjectQuel\Passes\QueryNormalizer;
 	use Quellabs\ObjectQuel\ObjectQuel\SemanticAnalyzer;
 	use Quellabs\ObjectQuel\Exception\EntityResolutionException;
 	use Quellabs\AnnotationReader\Exception\AnnotationReaderException;
@@ -29,7 +29,6 @@
 	use Quellabs\ObjectQuel\ObjectQuel\Visitors\ResolveRootIdentifierType;
 	use Quellabs\ObjectQuel\Persistence\VersionValueHandler;
 	use Quellabs\ObjectQuel\Planner\QueryOptimizer;
-	use Quellabs\ObjectQuel\ObjectQuel\CompiledAppendSql;
 
 	/**
 	 * Compiles an AstAppend statement to dialect-correct INSERT SQL. Sibling

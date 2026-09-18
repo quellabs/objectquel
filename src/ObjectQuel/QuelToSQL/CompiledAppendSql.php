@@ -1,6 +1,6 @@
 <?php
 	
-	namespace Quellabs\ObjectQuel\ObjectQuel;
+	namespace Quellabs\ObjectQuel\ObjectQuel\QuelToSQL;
 	
 	/**
 	 * Represents the compiled SQL for an AST append operation.

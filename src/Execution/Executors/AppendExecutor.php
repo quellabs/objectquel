@@ -4,7 +4,7 @@
 
 	use Cake\Database\StatementInterface;
 	use Quellabs\ObjectQuel\Exception\SemanticException;
-	use Quellabs\ObjectQuel\ObjectQuel\CompiledAppendSql;
+	use Quellabs\ObjectQuel\ObjectQuel\QuelToSQL\CompiledAppendSql;
 	use Quellabs\ObjectQuel\Annotations\Orm\PrimaryKeyStrategy;
 	use Quellabs\ObjectQuel\Exception\EntityResolutionException;
 	use Quellabs\ObjectQuel\Capabilities\PlatformCapabilitiesInterface;

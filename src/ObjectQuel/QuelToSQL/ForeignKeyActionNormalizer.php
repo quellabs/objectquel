@@ -1,6 +1,6 @@
 <?php
 
-	namespace Quellabs\ObjectQuel\ObjectQuel;
+	namespace Quellabs\ObjectQuel\ObjectQuel\QuelToSQL;
 
 	/**
 	 * Normalizes a foreign key's ON DELETE/ON UPDATE action for the target
