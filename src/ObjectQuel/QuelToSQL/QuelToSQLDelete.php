@@ -2,6 +2,7 @@
 	
 	namespace Quellabs\ObjectQuel\ObjectQuel\QuelToSQL;
 
+	use Quellabs\ObjectQuel\Exception\EntityResolutionException;
 	use Quellabs\ObjectQuel\Capabilities\PlatformCapabilitiesInterface;
 	use Quellabs\ObjectQuel\DatabaseAdapter\SqlIdentifierQuoter;
 	use Quellabs\ObjectQuel\EntityStore;
@@ -51,7 +52,7 @@
 		 * @param AstDelete $statement
 		 * @param array<string, mixed> $parameters Bound parameters, by reference
 		 * @return string
-		 * @throws SemanticException
+		 * @throws SemanticException|EntityResolutionException
 		 */
 		public function convertToSQL(AstDelete $statement, array &$parameters): string {
 			// The WHERE clause's identifiers need a resolved type/range

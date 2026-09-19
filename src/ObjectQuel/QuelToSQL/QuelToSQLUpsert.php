@@ -129,9 +129,11 @@
 			}
 
 			if (in_array($dialect, ['mysql', 'mariadb'], true)) {
-				$setClauseParts = $explicitAssignments !== []
-					? $this->buildSetClauseParts($explicitAssignments, $metadata, $parameters)
-					: $this->buildReferencedSetClause($columnNames, 'VALUES', asFunction: true, metadata: $metadata, targetLabel: $targetName);
+				if ($explicitAssignments !== []) {
+					$setClauseParts = $this->buildSetClauseParts($explicitAssignments, $metadata, $parameters);
+				} else {
+					$setClauseParts = $this->buildReferencedSetClause($columnNames, 'VALUES', asFunction: true, metadata: $metadata, targetLabel: $targetName);
+				}
 
 				return CompiledAppendSql::single(sprintf('%s ON DUPLICATE KEY UPDATE %s', $insertSql, implode(', ', $setClauseParts)));
 			}
@@ -202,10 +204,12 @@
 			$onConflict->getConditionsOrFail()->accept($normalizer);
 
 			$assignments = $onConflict->getAssignments();
-
-			$setClauseParts = $assignments !== []
-				? $this->replaceCompiler->buildSetClause($assignments, $metadata, $parameters, $onConflict->getRange()->getName())
-				: $this->buildDefaultFallbackSetClause($metadata, $properties, $columnNames, $compiledRows[0]);
+			
+			if ($assignments !== []) {
+				$setClauseParts = $this->replaceCompiler->buildSetClause($assignments, $metadata, $parameters, $onConflict->getRange()->getName());
+			} else {
+				$setClauseParts = $this->buildDefaultFallbackSetClause($metadata, $properties, $columnNames, $compiledRows[0]);
+			}
 
 			$whereSql = (new BuildSqlFromAst($this->entityStore, $parameters, 'WHERE', $this->platform))
 				->visitNodeAndReturnSQL($onConflict->getConditionsOrFail());
@@ -302,7 +306,7 @@
 		 * @param string[] $columnNames
 		 * @param array<int, array<string, string>> $compiledRows
 		 * @param string[] $conflictColumns
-		 * @param \Quellabs\ObjectQuel\ObjectQuel\Ast\AstAssignment[] $explicitAssignments Empty means "default to the inserted row"
+		 * @param AstAssignment[] $explicitAssignments Empty means "default to the inserted row"
 		 * @param EntityMetadataRecord $metadata
 		 * @param array<string, mixed> $parameters
 		 * @return string
@@ -342,10 +346,12 @@
 				fn(string $column) => $sourceAlias . '.' . $this->identifierQuoter->quoteIdentifier($column),
 				$columnNames
 			);
-
-			$setClauseParts = $explicitAssignments !== []
-				? $this->buildSetClauseParts($explicitAssignments, $metadata, $parameters)
-				: $this->buildReferencedSetClause($columnNames, $sourceAlias, asFunction: false, metadata: $metadata, targetLabel: $metadata->className);
+			
+			if ($explicitAssignments !== []) {
+				$setClauseParts = $this->buildSetClauseParts($explicitAssignments, $metadata, $parameters);
+			} else {
+				$setClauseParts = $this->buildReferencedSetClause($columnNames, $sourceAlias, asFunction: false, metadata: $metadata, targetLabel: $metadata->className);
+			}
 
 			return sprintf(
 				'MERGE INTO %s AS %s USING (VALUES %s) AS %s (%s) ON %s WHEN MATCHED THEN UPDATE SET %s WHEN NOT MATCHED THEN INSERT (%s) VALUES (%s);',
@@ -398,10 +404,12 @@
 			return array_map(
 				function (string $column) use ($reference, $asFunction) {
 					$quotedColumn = $this->identifierQuoter->quoteIdentifier($column);
-
-					return $asFunction
-						? "{$quotedColumn} = {$reference}({$quotedColumn})"
-						: "{$quotedColumn} = {$reference}.{$quotedColumn}";
+					
+					if ($asFunction) {
+						return "{$quotedColumn} = {$reference}({$quotedColumn})";
+					} else {
+						return "{$quotedColumn} = {$reference}.{$quotedColumn}";
+					}
 				},
 				$updatableColumns
 			);

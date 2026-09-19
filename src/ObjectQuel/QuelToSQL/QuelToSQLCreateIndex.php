@@ -52,7 +52,7 @@
 			$this->identifierQuoter = new SqlIdentifierQuoter($platform);
 			$this->platform = $platform;
 		}
-
+		
 		/**
 		 * Compiles an `index [unique|fulltext] on Table is index_name (...)`
 		 * statement to SQL.
@@ -60,6 +60,7 @@
 		 * @param string|null $primaryKeyColumn Base table's primary key column — required only for sqlite fulltext
 		 * @param string|null $sqlServerKeyIndexName An existing unique/primary index on the table — required only for sqlsrv fulltext
 		 * @return list<string>
+		 * @throws SemanticException
 		 */
 		public function convertToSQL(AstCreateIndex $statement, ?string $primaryKeyColumn = null, ?string $sqlServerKeyIndexName = null): array {
 			if ($statement->getType() !== 'fulltext') {
