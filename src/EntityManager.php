@@ -438,11 +438,14 @@
 		/**
 		 * Schedules an entity for removal
 		 * @param object $entity
+		 * @param bool $hardDelete When true, forces a real DELETE at flush time even if
+		 *        the entity carries @SoftDelete — the entity-level equivalent of a raw
+		 *        `delete ... where ... @ignoreSoftDelete true` statement.
 		 * @return void
 		 * @throws EntityResolutionException
 		 */
-		public function remove(object $entity): void {
-			$this->unitOfWork->scheduleForDelete($entity);
+		public function remove(object $entity, bool $hardDelete = false): void {
+			$this->unitOfWork->scheduleForDelete($entity, $hardDelete);
 		}
 		
 		/**

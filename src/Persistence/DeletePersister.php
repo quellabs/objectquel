@@ -49,19 +49,26 @@
 		 * Deletes an entity by generating and executing a `delete <alias>
 		 * where <alias>.<pk> = :pk [and ...]` statement for its primary key.
 		 * @param object $entity The entity to be removed from the database
+		 * @param bool $hardDelete When true, prefixes the statement with
+		 *        `@ignoreSoftDelete true` so an entity with @SoftDelete still
+		 *        gets a real DELETE instead of the default soft-delete UPDATE
+		 *        (see QuelToSQLDelete) — set by UnitOfWork when the caller
+		 *        passed EntityManager::remove()'s $hardDelete argument.
 		 * @throws OrmException If the DELETE operation fails
 		 * @throws EntityResolutionException
 		 */
-		public function persist(object $entity): void {
+		public function persist(object $entity, bool $hardDelete = false): void {
 			$alias = 'e';
 			$metadata = $this->entityStore->getMetadata($entity);
 
 			// WHERE clause: match the row by its primary key.
 			$conditions = $this->buildPrimaryKeyConditions($entity, $metadata, $alias);
 
-			// Compile the `delete` statement.
-			$quel = "range of {$alias} is {$metadata->className} delete {$alias} where " . implode(' and ', $conditions->clauses);
-			
+			// Compile the `delete` statement. Same directive-prefix shape as
+			// QueryBuilder::prepareQuery()'s 'ignoreSoftDelete' flag.
+			$directivePrefix = $hardDelete ? "@ignoreSoftDelete true\n" : '';
+			$quel = "{$directivePrefix}range of {$alias} is {$metadata->className} delete {$alias} where " . implode(' and ', $conditions->clauses);
+
 			// Execute the `delete` statement
 			$this->executeDelete($quel, $conditions->parameters);
 		}

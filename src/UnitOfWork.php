@@ -29,6 +29,7 @@
 	use Quellabs\ObjectQuel\DatabaseAdapter\DatabaseAdapter;
 	use Quellabs\ObjectQuel\Exception\EntityResolutionException;
 	use Quellabs\ObjectQuel\Persistence\DeletePersister;
+	use Quellabs\ObjectQuel\Persistence\DeleteType;
 	use Quellabs\ObjectQuel\Persistence\InsertPersister;
 	use Quellabs\ObjectQuel\Persistence\UpdatePersister;
 	use Quellabs\ObjectQuel\Persistence\VersionValueHandler;
@@ -64,14 +65,16 @@
 		/** @var \WeakMap<object, array<string, mixed>> */
 		protected \WeakMap $entitySnapshots;
 		
-		/** @var \WeakMap<object, bool> */
+		/** @var \WeakMap<object, bool> Value is the $hardDelete flag passed to scheduleForDelete(). */
 		protected \WeakMap $entityRemovalList;
 		
 		public Signal $signalPrePersist;
 		public Signal $signalPostPersist;
 		public Signal $signalPreUpdate;
 		public Signal $signalPostUpdate;
+		/** Emitted as (object $entity, DeleteType $deleteType) — see the Deleted case in flush(). */
 		public Signal $signalPreDelete;
+		/** Emitted as (object $entity, DeleteType $deleteType) — see the Deleted case in flush(). */
 		public Signal $signalPostDelete;
 		
 		/**
@@ -413,9 +416,16 @@
 
 								$deleted[] = $entity; // Add entity to the deleted list
 								
-								$this->signalPreDelete->emit($entity);
-								$this->deletePersister->persist($entity); // Delete if the entity is marked for deletion.
-								$this->signalPostDelete->emit($entity);
+								// hasSoftDelete() alone decides what DeletePersister will actually
+								// do — it never sets the directive itself, so this mirrors
+								// QuelToSQLDelete's own decision exactly, unless the caller forced
+								// a hard delete via EntityManager::remove()'s $hardDelete argument.
+								$hardDelete = $this->isEntityScheduledForHardDelete($entity);
+								$deleteType = (!$hardDelete && $metadata->hasSoftDelete()) ? DeleteType::Soft : DeleteType::Hard;
+
+								$this->signalPreDelete->emit($entity, $deleteType);
+								$this->deletePersister->persist($entity, $hardDelete); // Delete if the entity is marked for deletion.
+								$this->signalPostDelete->emit($entity, $deleteType);
 								break;
 						}
 					}
@@ -496,20 +506,33 @@
 		/**
 		 * Adds an entity to the removal list and handles cascading delete operations
 		 * @param object $entity The entity to schedule for deletion
+		 * @param bool $hardDelete When true, forces a real DELETE at flush time even if
+		 *        the entity carries @SoftDelete — see DeletePersister::persist(). Cascaded
+		 *        dependents (executeCascadingDeletions()) are not forced; each is scheduled
+		 *        with its own default of false.
 		 * @return void
 		 * @throws EntityResolutionException
 		 */
-		public function scheduleForDelete(object $entity): void {
+		public function scheduleForDelete(object $entity, bool $hardDelete = false): void {
 			// Skip if already scheduled for deletion to prevent duplicate processing
 			if ($this->isEntityScheduledForDeletion($entity)) {
 				return;
 			}
-			
+
 			// Mark entity for deletion first (prevents infinite recursion with circular references)
-			$this->entityRemovalList[$entity] = true;
-			
+			$this->entityRemovalList[$entity] = $hardDelete;
+
 			// Process dependent entities that should be cascade deleted
 			$this->executeCascadingDeletions($entity);
+		}
+
+		/**
+		 * Whether $entity was scheduled for deletion with $hardDelete = true.
+		 * @param object $entity
+		 * @return bool
+		 */
+		private function isEntityScheduledForHardDelete(object $entity): bool {
+			return $this->entityRemovalList[$entity] ?? false;
 		}
 		
 		/**

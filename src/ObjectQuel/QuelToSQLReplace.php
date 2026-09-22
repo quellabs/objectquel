@@ -12,6 +12,7 @@
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstReplace;
 	use Quellabs\ObjectQuel\ObjectQuel\AstInterface;
 	use Quellabs\ObjectQuel\ObjectQuel\Helpers\AssignmentValidator;
+	use Quellabs\ObjectQuel\ObjectQuel\Helpers\SetTargetColumnQuoter;
 	use Quellabs\ObjectQuel\ObjectQuel\Helpers\WriteVerbIdentifierResolver;
 	use Quellabs\ObjectQuel\ObjectQuel\Helpers\WriteVerbParameterNormalizer;
 	use Quellabs\ObjectQuel\Persistence\VersionValueHandler;
@@ -188,11 +189,7 @@
 		 * @return string
 		 */
 		private function quoteSetTargetColumn(string $columnName, ?string $qualifyWithAlias): string {
-			if ($qualifyWithAlias === null || !$this->platform->supportsQualifiedSetTarget()) {
-				return $this->identifierQuoter->quoteIdentifier($columnName);
-			}
-
-			return $this->identifierQuoter->quoteIdentifier($qualifyWithAlias) . '.' . $this->identifierQuoter->quoteIdentifier($columnName);
+			return SetTargetColumnQuoter::quote($columnName, $qualifyWithAlias, $this->identifierQuoter, $this->platform);
 		}
 
 		/**

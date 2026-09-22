@@ -98,7 +98,7 @@
 				    // No lookahead needed — QUEL's drop verb is `destroy`, a
 				    // separate keyword; the literal word `delete` always
 				    // means this DML verb.
-				    $queries[] = $this->deleteRule->parse($ranges);
+				    $queries[] = $this->deleteRule->parse($directives, $ranges);
 			    } else {
 				    $tokenName = Token::toString($token->getType()) ?: 'unknown';
 				    throw new ParserException("Unexpected token '{$tokenName}' on line {$this->lexer->getLineNumber()}");
