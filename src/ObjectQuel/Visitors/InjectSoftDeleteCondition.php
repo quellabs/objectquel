@@ -10,6 +10,7 @@
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstCheckNull;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstExpression;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstIdentifier;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstIfNull;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRangeDatabase;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRetrieve;
 	use Quellabs\ObjectQuel\ObjectQuel\AstInterface;
@@ -20,8 +21,12 @@
 	 * database range whose entity carries an @SoftDelete annotation.
 	 *
 	 * The injected condition depends on the annotated column's type:
-	 *   - 'datetime'  →  range.property IS NULL  (null means the record is active)
-	 *   - 'boolean'   →  range.property = false   (false means the record is active)
+	 *   - 'datetime'  →  range.property IS NULL              (null means the record is active)
+	 *   - 'boolean'   →  COALESCE(range.property, false) = false  (false or absent means active)
+	 *
+	 * Both forms evaluate to true when the range comes from a LEFT JOIN with no
+	 * matching row, so an optional relation never excludes the parent row just
+	 * because it has nothing to soft-delete-check.
 	 *
 	 * Injection is skipped entirely when the query carries the
 	 * @ignoreSoftDelete true compiler directive, which is set automatically by
@@ -125,8 +130,11 @@
 				// NULL means active (not yet soft-deleted); any timestamp means deleted
 				'datetime' => new AstCheckNull($root),
 
-				// false means active; true means deleted
-				'boolean'  => new AstExpression($root, new AstBool(false), '='),
+				// false means active; true means deleted. Wrapped in COALESCE so that
+				// a LEFT JOIN range with no matching row (property reads NULL) is also
+				// treated as active, instead of failing the bare `= false` comparison
+				// under SQL's three-valued NULL logic.
+				'boolean'  => new AstExpression(new AstIfNull($root, new AstBool(false)), new AstBool(false), '='),
 
 				// Unknown column type — skip rather than silently emitting a broken query
 				default    => null,

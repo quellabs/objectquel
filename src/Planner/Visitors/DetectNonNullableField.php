@@ -7,6 +7,7 @@
 	use Quellabs\ObjectQuel\Exception\EntityResolutionException;
 	use Quellabs\ObjectQuel\Metadata\EntityMetadataRecord;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstIdentifier;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstIfNull;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRangeDatabaseSubquery;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRetrieve;
 	use Quellabs\ObjectQuel\ObjectQuel\AstInterface;
@@ -72,6 +73,18 @@
 			
 			// Must have a range and a field component, and must match our target range
 			if ($range === null || $next === null || $range->getName() !== $this->rangeName) {
+				return;
+			}
+
+			// A reference used as ifnull()/COALESCE()'s primary (possibly-null)
+			// argument is not evidence the row must exist — that's precisely the
+			// case the function exists to handle, substituting the alt value
+			// instead of failing the comparison. Only the checked expression side
+			// is exempt; a reference used as the alt value is an ordinary
+			// reference and still counts.
+			$parent = $node->getParent();
+
+			if ($parent instanceof AstIfNull && $parent->getExpression() === $node) {
 				return;
 			}
 
