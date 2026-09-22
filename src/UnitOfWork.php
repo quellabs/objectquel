@@ -723,7 +723,7 @@
 			// rows being looked for here — the ones currently marked deleted.
 			$dependentObjects = $this->entityManager->findBy($dependentEntityClass, [
 				$relationColumn => $parentId
-			], null, ['ignoreSoftDelete']);
+			], null, ignoreSoftDelete: true);
 
 			$softDeleteProperty = $dependentMetadata->softDeleteProperty ?? throw new \LogicException('cascadeRestoreDependentObjects called on entity without @SoftDelete');
 			$activeValue = $this->softDeleteActiveValue($dependentMetadata);

@@ -398,14 +398,15 @@
 		 * @param class-string<T> $entityType The fully qualified class name of the container
 		 * @param array<string, mixed> $searchData Associative array of field names and values to filter by
 		 * @param array<string, string>|null $sortBy Associative array of field names and sort directions
-		 * @param array<int, string> $flags Optional query flags — see QueryBuilder::prepareQuery(),
-		 *        e.g. ['ignoreSoftDelete'] to also match soft-deleted rows
+		 * @param bool $ignoreSoftDelete When true, also matches soft-deleted rows —
+		 *        see QueryBuilder::prepareQuery()'s 'ignoreSoftDelete' flag.
 		 * @return T[] The found entities
 		 * @throws QuelException
 		 * @throws EntityResolutionException
 		 */
-		public function findBy(string $entityType, array $searchData, ?array $sortBy = null, array $flags = []): array {
+		public function findBy(string $entityType, array $searchData, ?array $sortBy = null, bool $ignoreSoftDelete = false): array {
 			// Prepare a query in case the entity is not found
+			$flags = $ignoreSoftDelete ? ['ignoreSoftDelete'] : [];
 			$query = $this->queryBuilder->prepareQuery($entityType, $searchData, $sortBy, $flags);
 			
 			// Null-valued keys become "is_null(main.{key})" in $query, with
@@ -428,12 +429,14 @@
 		 * @param class-string<T> $entityType The fully qualified class name of the container
 		 * @param array<string, mixed> $searchData Associative array of field names and values to filter by
 		 * @param array<string, string>|null $sortBy Associative array of field names and sort directions
+		 * @param bool $ignoreSoftDelete When true, also matches soft-deleted rows —
+		 *        see QueryBuilder::prepareQuery()'s 'ignoreSoftDelete' flag.
 		 * @return T|null The found entity or null if not found
 		 * @throws QuelException
 		 * @throws EntityResolutionException
 		 */
-		public function findOneBy(string $entityType, array $searchData, ?array $sortBy = null): ?object {
-			$results = $this->findBy($entityType, $searchData, $sortBy);
+		public function findOneBy(string $entityType, array $searchData, ?array $sortBy = null, bool $ignoreSoftDelete = false): ?object {
+			$results = $this->findBy($entityType, $searchData, $sortBy, $ignoreSoftDelete);
 			return $results[0] ?? null;
 		}
 		
