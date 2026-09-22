@@ -21,6 +21,11 @@
 	 * Like `replace`, the target must already be a declared range (no bare
 	 * entity name form) — the mandatory `where` clause needs a concrete
 	 * range to resolve `range.property` identifiers against.
+	 *
+	 * $directives is threaded through unmodified so a `delete` statement can
+	 * carry the same `@ignoreSoftDelete true` directive `retrieve` uses —
+	 * see QuelToSQLDelete, which turns `delete` into a soft-delete UPDATE
+	 * when the target entity has @SoftDelete, unless that directive is set.
 	 */
 	class Delete {
 
@@ -39,11 +44,13 @@
 
 		/**
 		 * Parse a complete `delete` statement.
+		 * @param array<string, mixed> $directives Compiler directives parsed ahead of this
+		 *        statement, e.g. @ignoreSoftDelete
 		 * @param AstRange[] $ranges Ranges already parsed ahead of this statement
 		 * @return AstDelete
 		 * @throws LexerException|ParserException
 		 */
-		public function parse(array $ranges): AstDelete {
+		public function parse(array $directives, array $ranges): AstDelete {
 			$this->lexer->matchKeyword('delete');
 
 			$targetName = $this->lexer->match(Token::Identifier)->getStringValue();
@@ -54,7 +61,7 @@
 
 			$this->consumeOptionalSemicolon();
 
-			return new AstDelete($range, $conditions);
+			return new AstDelete($directives, $range, $conditions);
 		}
 
 		/**

@@ -398,13 +398,16 @@
 		 * @param class-string<T> $entityType The fully qualified class name of the container
 		 * @param array<string, mixed> $searchData Associative array of field names and values to filter by
 		 * @param array<string, string>|null $sortBy Associative array of field names and sort directions
+		 * @param bool $ignoreSoftDelete When true, also matches soft-deleted rows —
+		 *        see QueryBuilder::prepareQuery()'s 'ignoreSoftDelete' flag.
 		 * @return T[] The found entities
 		 * @throws QuelException
 		 * @throws EntityResolutionException
 		 */
-		public function findBy(string $entityType, array $searchData, ?array $sortBy = null): array {
+		public function findBy(string $entityType, array $searchData, ?array $sortBy = null, bool $ignoreSoftDelete = false): array {
 			// Prepare a query in case the entity is not found
-			$query = $this->queryBuilder->prepareQuery($entityType, $searchData, $sortBy);
+			$flags = $ignoreSoftDelete ? ['ignoreSoftDelete'] : [];
+			$query = $this->queryBuilder->prepareQuery($entityType, $searchData, $sortBy, $flags);
 			
 			// Null-valued keys become "is_null(main.{key})" in $query, with
 			// no ":{key}" placeholder, so they must be excluded from binding.
@@ -426,25 +429,45 @@
 		 * @param class-string<T> $entityType The fully qualified class name of the container
 		 * @param array<string, mixed> $searchData Associative array of field names and values to filter by
 		 * @param array<string, string>|null $sortBy Associative array of field names and sort directions
+		 * @param bool $ignoreSoftDelete When true, also matches soft-deleted rows —
+		 *        see QueryBuilder::prepareQuery()'s 'ignoreSoftDelete' flag.
 		 * @return T|null The found entity or null if not found
 		 * @throws QuelException
 		 * @throws EntityResolutionException
 		 */
-		public function findOneBy(string $entityType, array $searchData, ?array $sortBy = null): ?object {
-			$results = $this->findBy($entityType, $searchData, $sortBy);
+		public function findOneBy(string $entityType, array $searchData, ?array $sortBy = null, bool $ignoreSoftDelete = false): ?object {
+			$results = $this->findBy($entityType, $searchData, $sortBy, $ignoreSoftDelete);
 			return $results[0] ?? null;
 		}
 		
 		/**
 		 * Schedules an entity for removal
 		 * @param object $entity
+		 * @param bool $hardDelete When true, forces a real DELETE at flush time even if
+		 *        the entity carries @SoftDelete — the entity-level equivalent of a raw
+		 *        `delete ... where ... @ignoreSoftDelete true` statement.
 		 * @return void
 		 * @throws EntityResolutionException
 		 */
-		public function remove(object $entity): void {
-			$this->unitOfWork->scheduleForDelete($entity);
+		public function remove(object $entity, bool $hardDelete = false): void {
+			$this->unitOfWork->scheduleForDelete($entity, $hardDelete);
 		}
-		
+
+		/**
+		 * Reverts a soft delete on $entity — the inverse of remove() on a
+		 * @SoftDelete entity. $entity must already be managed (e.g. returned
+		 * by find()/retrieve()); the change is written on the next flush(),
+		 * same as any other property change.
+		 * @param object $entity
+		 * @return void
+		 * @throws EntityResolutionException
+		 * @throws OrmException If $entity has no @SoftDelete column, or its
+		 *         column type isn't 'datetime' or 'boolean'
+		 */
+		public function restore(object $entity): void {
+			$this->unitOfWork->restore($entity);
+		}
+
 		/**
 		 * Returns the validation rules of a given entity
 		 * @param object $entity

@@ -28,17 +28,22 @@
 	 */
 	class AstDelete extends Ast implements AstStatement, NodeWithConditions, NodeWithRanges {
 
+		/** @var array<string, mixed> Compiler directives that control query compilation behavior */
+		private array $directives;
+
 		private AstRangeDatabase $range;
 
 		private ?AstInterface $conditions;
 
 		/**
 		 * AstDelete constructor.
+		 * @param array<string, mixed> $directives Compiler directives, e.g. @ignoreSoftDelete
 		 * @param AstRangeDatabase $range Target range — a declared, real
 		 *        persisted entity range
 		 * @param AstInterface $conditions Mandatory WHERE condition
 		 */
-		public function __construct(AstRangeDatabase $range, AstInterface $conditions) {
+		public function __construct(array $directives, AstRangeDatabase $range, AstInterface $conditions) {
+			$this->directives = $directives;
 			$this->range = $range;
 			$this->conditions = $conditions;
 			$this->conditions->setParent($this);
@@ -55,6 +60,24 @@
 
 		public function getRange(): AstRangeDatabase {
 			return $this->range;
+		}
+
+		/**
+		 * Returns all compiler directives for this statement.
+		 * @return array<string, mixed>
+		 */
+		public function getDirectives(): array {
+			return $this->directives;
+		}
+
+		/**
+		 * Returns a specific compiler directive value. Directive names are
+		 * case-insensitive — see Parser::parseCompilerDirectives().
+		 * @param string $name The directive name
+		 * @return mixed The directive value or null if not found
+		 */
+		public function getDirective(string $name): mixed {
+			return $this->directives[strtolower($name)] ?? null;
 		}
 
 		/**
@@ -93,7 +116,7 @@
 			$clonedRange = $this->range->deepClone();
 
 			// @phpstan-ignore-next-line new.static
-			$clone = new static($clonedRange, $this->conditions->deepClone());
+			$clone = new static($this->directives, $clonedRange, $this->conditions->deepClone());
 			$clone->setParent($this->getParent());
 			return $clone;
 		}

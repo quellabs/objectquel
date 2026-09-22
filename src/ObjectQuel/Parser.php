@@ -98,7 +98,7 @@
 				    // No lookahead needed — QUEL's drop verb is `destroy`, a
 				    // separate keyword; the literal word `delete` always
 				    // means this DML verb.
-				    $queries[] = $this->deleteRule->parse($ranges);
+				    $queries[] = $this->deleteRule->parse($directives, $ranges);
 			    } else {
 				    $tokenName = Token::toString($token->getType()) ?: 'unknown';
 				    throw new ParserException("Unexpected token '{$tokenName}' on line {$this->lexer->getLineNumber()}");
@@ -142,9 +142,11 @@
 		    while ($this->lexer->peek()->getType() == Token::CompilerDirective) {
 			    $directive = $this->lexer->match(Token::CompilerDirective);
 			    $directiveName = $directive->getStringValue();
-			    
-			    // Gebruik van een helper functie om de toewijzing te vereenvoudigen
-			    $directives[$directiveName] = $this->matchDirectiveValue($directiveName);
+
+			    // Stored lowercase so directive names are case-insensitive —
+			    // see AstRetrieve/AstDelete::getDirective(), which lowercases
+			    // the lookup key the same way.
+			    $directives[strtolower($directiveName)] = $this->matchDirectiveValue($directiveName);
 		    }
 		    
 		    return $directives;

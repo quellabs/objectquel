@@ -28,7 +28,9 @@
 	use Quellabs\ObjectQuel\Collections\EntityCollection;
 	use Quellabs\ObjectQuel\DatabaseAdapter\DatabaseAdapter;
 	use Quellabs\ObjectQuel\Exception\EntityResolutionException;
+	use Quellabs\ObjectQuel\Metadata\EntityMetadataRecord;
 	use Quellabs\ObjectQuel\Persistence\DeletePersister;
+	use Quellabs\ObjectQuel\Persistence\DeleteType;
 	use Quellabs\ObjectQuel\Persistence\InsertPersister;
 	use Quellabs\ObjectQuel\Persistence\UpdatePersister;
 	use Quellabs\ObjectQuel\Persistence\VersionValueHandler;
@@ -64,14 +66,16 @@
 		/** @var \WeakMap<object, array<string, mixed>> */
 		protected \WeakMap $entitySnapshots;
 		
-		/** @var \WeakMap<object, bool> */
+		/** @var \WeakMap<object, bool> Value is the $hardDelete flag passed to scheduleForDelete(). */
 		protected \WeakMap $entityRemovalList;
 		
 		public Signal $signalPrePersist;
 		public Signal $signalPostPersist;
 		public Signal $signalPreUpdate;
 		public Signal $signalPostUpdate;
+		/** Emitted as (object $entity, DeleteType $deleteType) — see the Deleted case in flush(). */
 		public Signal $signalPreDelete;
+		/** Emitted as (object $entity, DeleteType $deleteType) — see the Deleted case in flush(). */
 		public Signal $signalPostDelete;
 		
 		/**
@@ -413,9 +417,16 @@
 
 								$deleted[] = $entity; // Add entity to the deleted list
 								
-								$this->signalPreDelete->emit($entity);
-								$this->deletePersister->persist($entity); // Delete if the entity is marked for deletion.
-								$this->signalPostDelete->emit($entity);
+								// hasSoftDelete() alone decides what DeletePersister will actually
+								// do — it never sets the directive itself, so this mirrors
+								// QuelToSQLDelete's own decision exactly, unless the caller forced
+								// a hard delete via EntityManager::remove()'s $hardDelete argument.
+								$hardDelete = $this->isEntityScheduledForHardDelete($entity);
+								$deleteType = (!$hardDelete && $metadata->hasSoftDelete()) ? DeleteType::Soft : DeleteType::Hard;
+
+								$this->signalPreDelete->emit($entity, $deleteType);
+								$this->deletePersister->persist($entity, $hardDelete); // Delete if the entity is marked for deletion.
+								$this->signalPostDelete->emit($entity, $deleteType);
 								break;
 						}
 					}
@@ -496,22 +507,234 @@
 		/**
 		 * Adds an entity to the removal list and handles cascading delete operations
 		 * @param object $entity The entity to schedule for deletion
+		 * @param bool $hardDelete When true, forces a real DELETE at flush time even if
+		 *        the entity carries @SoftDelete — see DeletePersister::persist(). Cascaded
+		 *        dependents inherit this entity's *effective* outcome (hard if $hardDelete
+		 *        is true, or the entity has no @SoftDelete at all) — see executeCascadingDeletions().
 		 * @return void
 		 * @throws EntityResolutionException
 		 */
-		public function scheduleForDelete(object $entity): void {
+		public function scheduleForDelete(object $entity, bool $hardDelete = false): void {
 			// Skip if already scheduled for deletion to prevent duplicate processing
 			if ($this->isEntityScheduledForDeletion($entity)) {
 				return;
 			}
-			
+
 			// Mark entity for deletion first (prevents infinite recursion with circular references)
-			$this->entityRemovalList[$entity] = true;
-			
+			$this->entityRemovalList[$entity] = $hardDelete;
+
+			// An entity with no @SoftDelete always ends up really deleted,
+			// regardless of $hardDelete — cascade needs to know that actual
+			// outcome, not just the flag it was called with.
+			$metadata = $this->entityStore->getMetadata($entity);
+			$effectiveHardDelete = $hardDelete || !$metadata->hasSoftDelete();
+
 			// Process dependent entities that should be cascade deleted
-			$this->executeCascadingDeletions($entity);
+			$this->executeCascadingDeletions($entity, $effectiveHardDelete);
 		}
-		
+
+		/**
+		 * Whether $entity was scheduled for deletion with $hardDelete = true.
+		 * @param object $entity
+		 * @return bool
+		 */
+		private function isEntityScheduledForHardDelete(object $entity): bool {
+			return $this->entityRemovalList[$entity] ?? false;
+		}
+
+		/**
+		 * Reverts a soft delete: sets $entity's @SoftDelete column back to
+		 * its "active" value, and cascade-restores any Cascade(remove)
+		 * dependent that is currently soft-deleted — the same relation
+		 * graph executeCascadingDeletions() walks, in reverse.
+		 *
+		 * Unlike cascade-delete, cascade-restore has no record of *why* a
+		 * dependent is soft-deleted — it restores every currently
+		 * soft-deleted dependent it finds through a Cascade(remove)
+		 * relation, even one that was soft-deleted independently of this
+		 * parent. Same tradeoff as cascade-delete already resurrects for
+		 * the opposite operation (soft-deleting a parent leaves an
+		 * independently-active dependent alone; there's no signal here
+		 * either way to distinguish "belongs to this parent's lifecycle"
+		 * from "coincidentally soft-deleted too").
+		 *
+		 * $entity must already be managed (e.g. returned by find()/retrieve())
+		 * — this is a plain property mutation, picked up as a normal update
+		 * on the next commit() the same as any other change, not an
+		 * immediate write.
+		 * @param object $entity
+		 * @return void
+		 * @throws EntityResolutionException
+		 * @throws OrmException If $entity has no @SoftDelete column, or its
+		 *         column type isn't 'datetime' or 'boolean'
+		 */
+		public function restore(object $entity): void {
+			$this->restoreEntityAndCascade($entity, []);
+		}
+
+		/**
+		 * @param object $entity
+		 * @param array<string, true> $visited Guards against infinite
+		 *        recursion through a circular Cascade(remove) reference —
+		 *        keyed by spl_object_hash, accumulated down the current
+		 *        restore() call's cascade path.
+		 * @return void
+		 * @throws EntityResolutionException
+		 * @throws OrmException
+		 */
+		private function restoreEntityAndCascade(object $entity, array $visited): void {
+			$hash = spl_object_hash($entity);
+
+			if (isset($visited[$hash])) {
+				return;
+			}
+
+			$visited[$hash] = true;
+
+			$metadata = $this->entityStore->getMetadata($entity);
+
+			if (!$metadata->hasSoftDelete()) {
+				throw new OrmException(sprintf('%s has no @SoftDelete column to restore', $metadata->className));
+			}
+
+			$activeValue = $this->softDeleteActiveValue($metadata);
+
+			// softDeleteProperty is non-null here: hasSoftDelete() just confirmed
+			// it. The assertion satisfies PHPStan without a runtime cost — same
+			// pattern QuelToSQLDelete/InjectSoftDeleteCondition use.
+			$softDeleteProperty = $metadata->softDeleteProperty ?? throw new \LogicException('restore() called on entity without @SoftDelete');
+
+			$this->propertyHandler->set($entity, $softDeleteProperty, $activeValue);
+
+			$this->executeCascadingRestores($entity, $visited);
+		}
+
+		/**
+		 * The "active" value for a recognised @SoftDelete column type — null
+		 * for a datetime column, false for a boolean one, the values
+		 * QuelToSQLDelete/InjectSoftDeleteCondition treat as "not deleted".
+		 * @param EntityMetadataRecord $metadata
+		 * @return mixed
+		 * @throws OrmException If the column type isn't 'datetime' or 'boolean'
+		 */
+		private function softDeleteActiveValue(EntityMetadataRecord $metadata): mixed {
+			return match ($metadata->softDeleteColumnType) {
+				'datetime' => null,
+				'boolean'  => false,
+				default    => throw new OrmException(sprintf(
+					"%s's @SoftDelete column type '%s' is not supported",
+					$metadata->className,
+					$metadata->softDeleteColumnType
+				)),
+			};
+		}
+
+		/**
+		 * Walks the same Cascade(remove) relation graph as
+		 * executeCascadingDeletions(), restoring any dependent that is
+		 * currently soft-deleted.
+		 * @param object $entity The entity just restored
+		 * @param array<string, true> $visited
+		 * @return void
+		 * @throws EntityResolutionException|QuelException
+		 */
+		private function executeCascadingRestores(object $entity, array $visited): void {
+			$normalizedClass = $this->entityStore->normalizeEntityClass($entity);
+			$dependentEntityClasses = $this->entityStore->getDependentEntities($entity);
+
+			foreach ($dependentEntityClasses as $dependentEntityClass) {
+				$this->handleDependentEntityClassForRestore($dependentEntityClass, $normalizedClass, $entity, $visited);
+			}
+		}
+
+		/**
+		 * @param class-string $dependentEntityClass
+		 * @param string $normalizedClass
+		 * @param object $entity
+		 * @param array<string, true> $visited
+		 * @return void
+		 * @throws EntityResolutionException
+		 * @throws QuelException
+		 */
+		private function handleDependentEntityClassForRestore(string $dependentEntityClass, string $normalizedClass, object $entity, array $visited): void {
+			$metadata = $this->getEntityStore()->getMetadata($dependentEntityClass);
+
+			// Only a @SoftDelete dependent can have anything to restore — a
+			// plain one was either left untouched or really deleted when this
+			// parent was soft/hard-deleted (see cascadeDeleteDependentObjects()),
+			// and there's nothing to undo either way.
+			if (!$metadata->hasSoftDelete()) {
+				return;
+			}
+
+			$manyToOneDependencies = $metadata->getManyToOneDependencies();
+			$oneToOneDependencies = $metadata->getOneToOneDependencies();
+
+			foreach (array_merge($manyToOneDependencies, $oneToOneDependencies) as $property => $annotation) {
+				if ($this->entityStore->normalizeEntityClass($annotation->getTargetEntity()) !== $normalizedClass) {
+					continue;
+				}
+
+				$relationColumn = $annotation->getLocalColumn() ?? "{$property}Id";
+				$cascadeInfo = $this->getCascadeInfo($dependentEntityClass, $property);
+
+				if (!$cascadeInfo || !$this->shouldCascadeRemove($cascadeInfo)) {
+					continue;
+				}
+
+				$this->cascadeRestoreDependentObjects($dependentEntityClass, $relationColumn, $entity, $metadata, $visited);
+			}
+		}
+
+		/**
+		 * Finds every dependent row referencing $parentEntity (bypassing the
+		 * soft-delete filter, since the rows of interest are exactly the ones
+		 * it would otherwise hide) and restores the ones currently
+		 * soft-deleted.
+		 * @param class-string $dependentEntityClass
+		 * @param string $relationColumn
+		 * @param object $parentEntity
+		 * @param EntityMetadataRecord $dependentMetadata
+		 * @param array<string, true> $visited
+		 * @return void
+		 * @throws EntityResolutionException|QuelException
+		 */
+		private function cascadeRestoreDependentObjects(string $dependentEntityClass, string $relationColumn, object $parentEntity, EntityMetadataRecord $dependentMetadata, array $visited): void {
+			// Unrecognised column type — same fail-open behavior as
+			// QuelToSQLDelete/InjectSoftDeleteCondition: skip rather than let
+			// one badly-annotated dependent break an unrelated restore().
+			if (!in_array($dependentMetadata->softDeleteColumnType, ['datetime', 'boolean'], true)) {
+				return;
+			}
+
+			$parentPrimaryKeys = $this->getIdentifiers($parentEntity);
+
+			if (count($parentPrimaryKeys) !== 1) {
+				return;
+			}
+
+			$parentId = $parentPrimaryKeys[array_key_first($parentPrimaryKeys)];
+
+			if ($parentId === null) {
+				return;
+			}
+
+			// ignoreSoftDelete: the default filter would hide exactly the
+			// rows being looked for here — the ones currently marked deleted.
+			$dependentObjects = $this->entityManager->findBy($dependentEntityClass, [
+				$relationColumn => $parentId
+			], null, ignoreSoftDelete: true);
+
+			$softDeleteProperty = $dependentMetadata->softDeleteProperty ?? throw new \LogicException('cascadeRestoreDependentObjects called on entity without @SoftDelete');
+			$activeValue = $this->softDeleteActiveValue($dependentMetadata);
+
+			foreach ($dependentObjects as $dependentObject) {
+				if ($this->propertyHandler->get($dependentObject, $softDeleteProperty) !== $activeValue) {
+					$this->restoreEntityAndCascade($dependentObject, $visited);
+				}
+			}
+		}
+
 		/**
 		 * Determines the state of an entity (e.g., new, modified, not managed, etc.).
 		 * @param object $entity The entity whose state needs to be determined.
@@ -919,25 +1142,27 @@
 		 * This maintains referential integrity in the database by removing child records
 		 * that would otherwise become orphaned.
 		 * @param object $entity The parent entity being deleted
+		 * @param bool $parentEffectiveHardDelete Whether $entity is actually being removed
+		 *        from the database (true), or merely soft-deleted (false) — see scheduleForDelete().
 		 * @return void
 		 * @throws EntityResolutionException|QuelException
 		 */
-		private function executeCascadingDeletions(object $entity): void {
+		private function executeCascadingDeletions(object $entity, bool $parentEffectiveHardDelete): void {
 			// Normalize the entity class name to ensure consistent format
 			// Normalization handles variations in namespace notation
 			$normalizedClass = $this->entityStore->normalizeEntityClass($entity);
-			
+
 			// Retrieve all entity classes that depend on this entity
 			// These are entities that have relationships annotated with cascade="remove"
 			// or similar configurations that indicate cascading deletes
 			$dependentEntityClasses = $this->entityStore->getDependentEntities($entity);
-			
+
 			// Process each dependent entity class to find and mark instances for deletion
 			foreach ($dependentEntityClasses as $dependentEntityClass) {
-				$this->handleDependentEntityClass($dependentEntityClass, $normalizedClass, $entity);
+				$this->handleDependentEntityClass($dependentEntityClass, $normalizedClass, $entity, $parentEffectiveHardDelete);
 			}
 		}
-		
+
 		/**
 		 * Process a specific dependent entity class for cascading deletion.
 		 * This method examines relationships from the dependent entity to the parent,
@@ -945,11 +1170,13 @@
 		 * @param class-string $dependentEntityClass The fully qualified class name of the dependent entity type
 		 * @param string $normalizedClass The normalized class name of the parent entity being deleted
 		 * @param object $entity The parent entity object instance being deleted
+		 * @param bool $parentEffectiveHardDelete Whether the parent is actually being removed
+		 *        from the database, or merely soft-deleted — see scheduleForDelete().
 		 * @return void
 		 * @throws EntityResolutionException
 		 * @throws QuelException
 		 */
-		private function handleDependentEntityClass(string $dependentEntityClass, string $normalizedClass, object $entity): void {
+		private function handleDependentEntityClass(string $dependentEntityClass, string $normalizedClass, object $entity, bool $parentEffectiveHardDelete): void {
 			// Fetch metadata for this entity
 			$metadata = $this->getEntityStore()->getMetadata($dependentEntityClass);
 			
@@ -993,7 +1220,8 @@
 					$dependentEntityClass,             // The class of dependent objects to search for
 					$property,                         // The object-reference property, e.g. "customer"
 					$relationColumn,                   // The scalar FK column that references the parent
-					$entity                            // The parent entity being deleted
+					$entity,                            // The parent entity being deleted
+					$parentEffectiveHardDelete
 				);
 			}
 		}
@@ -1056,16 +1284,31 @@
 		 * @param string $relationProperty Object-reference property holding the parent, e.g. "customer"
 		 * @param string $relationColumn Scalar FK column property, e.g. "customerId"
 		 * @param object $parentEntity The parent entity object
+		 * @param bool $parentEffectiveHardDelete Whether the parent is actually being removed
+		 *        from the database, or merely soft-deleted — see scheduleForDelete().
 		 * @return void
 		 * @throws EntityResolutionException|Exception\QuelException
 		 */
-		private function cascadeDeleteDependentObjects(string $dependentEntityClass, string $relationProperty, string $relationColumn, object $parentEntity): void {
+		private function cascadeDeleteDependentObjects(string $dependentEntityClass, string $relationProperty, string $relationColumn, object $parentEntity, bool $parentEffectiveHardDelete): void {
 			// Schedule any managed, not-yet-persisted dependents first. These
 			// can never be found by the DB-driven lookup below — they don't
 			// exist in the database yet — but without this they'd still get
 			// inserted afterward, pointing at a parent row that's about to
 			// be removed.
-			$this->cascadeDeleteUnpersistedDependents($dependentEntityClass, $relationProperty, $parentEntity);
+			$this->cascadeDeleteUnpersistedDependents($dependentEntityClass, $relationProperty, $parentEntity, $parentEffectiveHardDelete);
+
+			// The parent is staying in the database (soft-deleted). A dependent
+			// that has no @SoftDelete of its own can't be soft-deleted, so it's
+			// left untouched rather than really removed — otherwise restoring
+			// the parent later can't bring it back. When the parent is actually
+			// gone, the dependent must follow for real regardless of its own
+			// @SoftDelete, or it's left pointing at a parent row that no longer
+			// exists (see scheduleForDelete()).
+			$dependentMetadata = $this->entityStore->getMetadata($dependentEntityClass);
+
+			if (!$parentEffectiveHardDelete && !$dependentMetadata->hasSoftDelete()) {
+				return;
+			}
 
 			// Extract the primary key identifiers from the parent entity
 			// This returns an array of primary key field names and their values
@@ -1099,7 +1342,7 @@
 			// This doesn't immediately delete the objects, but schedules them for deletion
 			// when the entity manager flushes changes to the database
 			foreach ($dependentObjects as $dependentObject) {
-				$this->scheduleForDelete($dependentObject);
+				$this->scheduleForDelete($dependentObject, $parentEffectiveHardDelete);
 			}
 		}
 
@@ -1114,11 +1357,21 @@
 		 * @param class-string $dependentEntityClass Class name of dependent entity
 		 * @param string $relationProperty Object-reference property holding the parent, e.g. "customer"
 		 * @param object $parentEntity The parent entity object
+		 * @param bool $parentEffectiveHardDelete Whether the parent is actually being removed
+		 *        from the database, or merely soft-deleted — see scheduleForDelete().
 		 * @return void
 		 * @throws EntityResolutionException
 		 */
-		private function cascadeDeleteUnpersistedDependents(string $dependentEntityClass, string $relationProperty, object $parentEntity): void {
+		private function cascadeDeleteUnpersistedDependents(string $dependentEntityClass, string $relationProperty, object $parentEntity, bool $parentEffectiveHardDelete): void {
 			$normalizedClass = $this->entityStore->normalizeEntityClass($dependentEntityClass);
+
+			// See cascadeDeleteDependentObjects(): a dependent that can't be
+			// soft-deleted is left alone while the parent is only soft-deleted.
+			$dependentMetadata = $this->entityStore->getMetadata($dependentEntityClass);
+
+			if (!$parentEffectiveHardDelete && !$dependentMetadata->hasSoftDelete()) {
+				return;
+			}
 
 			foreach ($this->entitiesByClass[$normalizedClass] ?? [] as $candidate) {
 				if ($this->getEntityState($candidate) !== DirtyState::New) {
@@ -1126,7 +1379,7 @@
 				}
 
 				if ($this->propertyHandler->get($candidate, $relationProperty) === $parentEntity) {
-					$this->scheduleForDelete($candidate);
+					$this->scheduleForDelete($candidate, $parentEffectiveHardDelete);
 				}
 			}
 		}
