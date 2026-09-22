@@ -447,7 +447,22 @@
 		public function remove(object $entity, bool $hardDelete = false): void {
 			$this->unitOfWork->scheduleForDelete($entity, $hardDelete);
 		}
-		
+
+		/**
+		 * Reverts a soft delete on $entity — the inverse of remove() on a
+		 * @SoftDelete entity. $entity must already be managed (e.g. returned
+		 * by find()/retrieve()); the change is written on the next flush(),
+		 * same as any other property change.
+		 * @param object $entity
+		 * @return void
+		 * @throws EntityResolutionException
+		 * @throws OrmException If $entity has no @SoftDelete column, or its
+		 *         column type isn't 'datetime' or 'boolean'
+		 */
+		public function restore(object $entity): void {
+			$this->unitOfWork->restore($entity);
+		}
+
 		/**
 		 * Returns the validation rules of a given entity
 		 * @param object $entity

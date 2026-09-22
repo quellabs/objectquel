@@ -540,7 +540,46 @@
 		private function isEntityScheduledForHardDelete(object $entity): bool {
 			return $this->entityRemovalList[$entity] ?? false;
 		}
-		
+
+		/**
+		 * Reverts a soft delete: sets $entity's @SoftDelete column back to
+		 * its "active" value (null for a datetime column, false for a
+		 * boolean one — the values QuelToSQLDelete/InjectSoftDeleteCondition
+		 * treat as "not deleted"). $entity must already be managed (e.g.
+		 * returned by find()/retrieve()) — this is a plain property
+		 * mutation, picked up as a normal update on the next commit() the
+		 * same as any other change, not an immediate write.
+		 * @param object $entity
+		 * @return void
+		 * @throws EntityResolutionException
+		 * @throws OrmException If $entity has no @SoftDelete column, or its
+		 *         column type isn't 'datetime' or 'boolean'
+		 */
+		public function restore(object $entity): void {
+			$metadata = $this->entityStore->getMetadata($entity);
+
+			if (!$metadata->hasSoftDelete()) {
+				throw new OrmException(sprintf('%s has no @SoftDelete column to restore', $metadata->className));
+			}
+
+			$activeValue = match ($metadata->softDeleteColumnType) {
+				'datetime' => null,
+				'boolean'  => false,
+				default    => throw new OrmException(sprintf(
+					"%s's @SoftDelete column type '%s' is not supported",
+					$metadata->className,
+					$metadata->softDeleteColumnType
+				)),
+			};
+
+			// softDeleteProperty is non-null here: hasSoftDelete() just confirmed
+			// it. The assertion satisfies PHPStan without a runtime cost — same
+			// pattern QuelToSQLDelete/InjectSoftDeleteCondition use.
+			$softDeleteProperty = $metadata->softDeleteProperty ?? throw new \LogicException('restore() called on entity without @SoftDelete');
+
+			$this->propertyHandler->set($entity, $softDeleteProperty, $activeValue);
+		}
+
 		/**
 		 * Determines the state of an entity (e.g., new, modified, not managed, etc.).
 		 * @param object $entity The entity whose state needs to be determined.
