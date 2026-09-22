@@ -418,9 +418,7 @@
 		private function getSort(AstRetrieve $retrieve): string {
 			// If the compiler directive @InValuesAreFinal is provided, then we need to sort based on
 			// the order within the IN() list
-			$compilerDirectives = $retrieve->getDirectives();
-			
-			if (isset($compilerDirectives['InValuesAreFinal']) && ($compilerDirectives['InValuesAreFinal'] === true)) {
+			if ($retrieve->getDirective('InValuesAreFinal') === true) {
 				return $this->getSortUsingIn($retrieve);
 			} elseif (!$retrieve->getSortInApplicationLogic()) {
 				return $this->getSortDefault($retrieve);

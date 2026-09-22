@@ -77,13 +77,10 @@
 		 * @throws EntityResolutionException
 		 */
 		private function processPagination(AstRetrieve $ast, array $parameters, int $window, int $windowSize): void {
-			// Check for query directives that might affect pagination behavior
-			$directives = $ast->getDirectives();
-			
 			// Look for the 'InValuesAreFinal' directive which indicates that any IN conditions
 			// in the query are already finalized and don't need additional validation/processing
 			// This is an optimization flag that can skip the validation phase of pagination
-			$skipValidation = isset($directives['InValuesAreFinal']) && $directives['InValuesAreFinal'] === true;
+			$skipValidation = $ast->getDirective('InValuesAreFinal') === true;
 			
 			// Choose the appropriate pagination strategy based on the directive
 			if ($skipValidation) {

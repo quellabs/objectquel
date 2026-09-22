@@ -142,9 +142,11 @@
 		    while ($this->lexer->peek()->getType() == Token::CompilerDirective) {
 			    $directive = $this->lexer->match(Token::CompilerDirective);
 			    $directiveName = $directive->getStringValue();
-			    
-			    // Gebruik van een helper functie om de toewijzing te vereenvoudigen
-			    $directives[$directiveName] = $this->matchDirectiveValue($directiveName);
+
+			    // Stored lowercase so directive names are case-insensitive —
+			    // see AstRetrieve/AstDelete::getDirective(), which lowercases
+			    // the lookup key the same way.
+			    $directives[strtolower($directiveName)] = $this->matchDirectiveValue($directiveName);
 		    }
 		    
 		    return $directives;

@@ -374,12 +374,13 @@
 		}
 		
 		/**
-		 * Returns a specific compiler directive value.
+		 * Returns a specific compiler directive value. Directive names are
+		 * case-insensitive — see Parser::parseCompilerDirectives().
 		 * @param string $name The directive name
 		 * @return mixed The directive value or null if not found
 		 */
 		public function getDirective(string $name): mixed {
-			return $this->directives[$name] ?? null;
+			return $this->directives[strtolower($name)] ?? null;
 		}
 		
 		/**
