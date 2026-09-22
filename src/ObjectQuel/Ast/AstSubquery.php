@@ -24,7 +24,10 @@
 		
 		/** @var AstRange[] */
 		private array $correlatedRanges;
-		
+
+		/** @var AstInterface[] PARTITION BY columns for a TYPE_WINDOW subquery; empty for other types */
+		private array $partitionBy;
+
 		/**
 		 * AstSubquery constructor
 		 * @param AstInterface|null $aggregation
@@ -32,20 +35,23 @@
 		 * @param AstRange[] $correlatedRanges
 		 * @param AstInterface|null $conditions
 		 * @param string|null $origin
+		 * @param AstInterface[] $partitionBy
 		 */
 		public function __construct(
 			string        $type = self::TYPE_SCALAR,
 			?AstInterface $aggregation = null,
 			array         $correlatedRanges = [],
 			?AstInterface $conditions = null,
-			?string       $origin = null
+			?string       $origin = null,
+			array         $partitionBy = []
 		) {
 			$this->type = $type;
 			$this->aggregation = $aggregation;
 			$this->conditions = $conditions;
 			$this->correlatedRanges = $correlatedRanges;
 			$this->origin = $origin;
-			
+			$this->partitionBy = $partitionBy;
+
 			$this->aggregation?->setParent($this);
 		}
 		
@@ -103,6 +109,14 @@
 		public function getCorrelatedRanges(): array {
 			return $this->correlatedRanges;
 		}
+
+		/**
+		 * Get the PARTITION BY columns for a TYPE_WINDOW subquery.
+		 * @return AstInterface[]
+		 */
+		public function getPartitionBy(): array {
+			return $this->partitionBy;
+		}
 		
 		/**
 		 * Returns contents of WHERE
@@ -137,10 +151,16 @@
 			foreach ($this->correlatedRanges as $range) {
 				$clonedCorrelatedRanges[] = $range->deepClone();
 			}
-			
+
+			// Clone the partition columns
+			$clonedPartitionBy = [];
+			foreach ($this->partitionBy as $expression) {
+				$clonedPartitionBy[] = $expression->deepClone();
+			}
+
 			// Create new instance with cloned identifier
 			// Return cloned node
 			// @phpstan-ignore-next-line new.static
-			return new static($this->type, $clonedAggregation, $clonedCorrelatedRanges, $clonedConditions);
+			return new static($this->type, $clonedAggregation, $clonedCorrelatedRanges, $clonedConditions, $this->origin, $clonedPartitionBy);
 		}
 	}

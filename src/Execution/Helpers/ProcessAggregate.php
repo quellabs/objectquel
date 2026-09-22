@@ -398,40 +398,62 @@
 		}
 		
 		/**
-		 * Builds a window aggregate: AGG([DISTINCT] expr) OVER ()
+		 * Builds a window aggregate: AGG([DISTINCT] expr) OVER ([PARTITION BY ...]).
 		 * SUM is wrapped in COALESCE(..., 0) to keep your current NULL behavior.
 		 */
 		private function buildWindowAggregate(AstSubquery $subquery): string {
 			// Fetch aggregation from the subquery
 			$aggNode = $subquery->getAggregation();
-			
+
 			// Mark the aggregation expression as processed to avoid duplicate handling
 			if ($aggNode !== null) {
 				$this->markExpressionAsHandled($aggNode);
 			}
-			
+
 			// Validate that we have a proper aggregate node before proceeding
 			if (!$aggNode instanceof AstAggregate) {
 				return "";
 			}
-			
+
 			// Extract the aggregate function name (SUM, COUNT, AVG, etc.)
 			$fn = $aggNode->getType();
-			
+
 			// Add DISTINCT keyword if the aggregate uses DISTINCT semantics
 			$distinct = $this->isDistinct($aggNode) ? 'DISTINCT ' : '';
-			
+
 			// Convert the aggregate's target expression to SQL, cloning to avoid side effects
 			$argSql = $this->convertExpressionToSql($aggNode->getIdentifier()->deepClone());
-			
+
+			// Build the OVER clause from the query's partition columns (the
+			// non-aggregate SELECT items, mirroring GROUP BY inference)
+			$overClause = $this->buildOverClause($subquery->getPartitionBy());
+
 			// Special handling for SUM: wrap entire window function in COALESCE for NULL safety
 			// OVER() creates window function, COALESCE ensures 0 instead of NULL result
 			if ($fn === 'SUM') {
-				return "COALESCE({$fn}({$distinct}{$argSql}) OVER (), 0)";
+				return "COALESCE({$fn}({$distinct}{$argSql}) {$overClause}, 0)";
 			}
-			
+
 			// Standard window function format for non-SUM aggregates
-			return "{$fn}({$distinct}{$argSql}) OVER ()";
+			return "{$fn}({$distinct}{$argSql}) {$overClause}";
+		}
+
+		/**
+		 * Builds the `OVER (...)` clause from the query's partition columns.
+		 * @param AstInterface[] $partitionBy
+		 * @return string e.g. "OVER ()" or "OVER (PARTITION BY o.accountId)"
+		 */
+		private function buildOverClause(array $partitionBy): string {
+			if ($partitionBy === []) {
+				return "OVER ()";
+			}
+
+			$partitionSql = array_map(
+				fn(AstInterface $expression): string => $this->convertExpressionToSql($expression->deepClone()),
+				$partitionBy
+			);
+
+			return "OVER (PARTITION BY " . implode(", ", $partitionSql) . ")";
 		}
 		
 		/**

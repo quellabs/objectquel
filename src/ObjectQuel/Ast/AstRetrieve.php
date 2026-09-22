@@ -503,45 +503,50 @@
 			// Clone all child arrays with their AST nodes
 			$clonedRanges = $this->cloneArray($this->ranges);
 			$clonedValues = $this->cloneArray($this->values);
-			
-			
+			$clonedGroupBy = $this->cloneArray($this->group_by);
+
 			$clonedSort = $this->cloneSortArray($this->sort);
-			
+
 			// Clone the conditions node if it exists
 			$clonedConditions = $this->conditions?->deepClone();
-			
+
 			// Create new instance with cloned ranges
 			// @phpstan-ignore-next-line new.static
 			$clone = new static($this->directives, $clonedRanges, $this->unique);
-			
+
 			// Set all the cloned properties
 			$clone->values = $clonedValues;
 			$clone->conditions = $clonedConditions;
 			$clone->sort = $clonedSort;
-			
+			$clone->group_by = $clonedGroupBy;
+
 			// Copy primitive properties
 			$clone->sort_in_application_logic = $this->sort_in_application_logic;
 			$clone->window = $this->window;
 			$clone->window_size = $this->window_size;
-			
+
 			// Establish parent relationships for all cloned children
 			foreach ($clonedRanges as $range) {
 				$range->setParent($clone);
 			}
-			
+
 			foreach ($clonedValues as $value) {
 				$value->setParent($clone);
 			}
-			
+
 			// Macro expressions are already owned by their cloned AstAlias nodes in
 			// $clonedValues — no separate setParent call needed here.
-			
+
 			$clonedConditions?->setParent($clone);
-			
+
 			foreach ($clonedSort as $sortItem) {
 				$sortItem['ast']->setParent($clone);
 			}
-			
+
+			foreach ($clonedGroupBy as $groupByItem) {
+				$groupByItem->setParent($clone);
+			}
+
 			return $clone;
 		}
 		
