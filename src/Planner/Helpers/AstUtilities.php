@@ -269,6 +269,21 @@
 		}
 
 		/**
+		 * Returns true if an aggregate node requires a window function - either a
+		 * sequence function (rank, dense_rank, row_number, ntile, lag, lead - which
+		 * only exist in window-shaped form) or a running aggregate using an inline
+		 * `sort by` and/or `by`. Shared definition used by WindowChainRewriter (to
+		 * find nested window aggregates), WhereWindowFilterRewriter (to find one
+		 * referenced in a WHERE condition), and SemanticAnalyzer (to let those same
+		 * nodes through the WHERE-clause aggregate restriction).
+		 * @param AstAggregate $node
+		 * @return bool
+		 */
+		public static function isWindowShaped(AstAggregate $node): bool {
+			return $node->getOrder() !== null || $node->getPartitionBy() !== null;
+		}
+
+		/**
 		 * Wraps an aggregate's explicit inline `by` list into the AstAlias[] shape
 		 * AggregateRewriter::rewriteAggregateAsWindowFunction() expects, or null when
 		 * no explicit `by` was written (caller falls back to inference).

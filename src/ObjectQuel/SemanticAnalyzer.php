@@ -19,7 +19,6 @@
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRetrieve;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstSearch;
 	use Quellabs\ObjectQuel\ObjectQuel\Visitors\CollectNodes;
-	use Quellabs\ObjectQuel\ObjectQuel\Visitors\DetectRestrictedNodeType;
 	use Quellabs\ObjectQuel\ObjectQuel\Visitors\ValidateNoTemporalScalarMix;
 	use Quellabs\ObjectQuel\ObjectQuel\Visitors\ValidateEntityPropertyExists;
 	use Quellabs\ObjectQuel\ObjectQuel\Visitors\ValidateJsonPropertyChain;
@@ -607,36 +606,35 @@
 		}
 		
 		/**
-		 * Validates that no aggregate functions are present in WHERE clause conditions.
-		 * SQL standard prohibits aggregate functions (COUNT, SUM, AVG, MIN, MAX) in WHERE clauses.
-		 * They should only appear in SELECT, HAVING, or ORDER BY clauses.
+		 * Validates that no plain aggregate functions are present in WHERE clause
+		 * conditions. SQL standard prohibits aggregate functions (COUNT, SUM, AVG,
+		 * MIN, MAX) in WHERE clauses - they should only appear in SELECT, HAVING, or
+		 * ORDER BY clauses.
+		 *
+		 * Window-shaped aggregates (a sequence function, or a running aggregate using
+		 * an inline `sort by`/`by` - see AstUtilities::isWindowShaped()) are exempt:
+		 * Planner\Optimizers\WhereWindowFilterRewriter stages those into a helper
+		 * range before AggregateOptimizer runs, so referencing e.g. `rn <= 3` where
+		 * `rn = row_number(...)` is valid, unlike a plain `sum(...) <= 3`.
 		 * @param AstRetrieve $ast The AST to validate
-		 * @throws SemanticException If aggregate functions are found in WHERE conditions
+		 * @throws SemanticException If a non-window aggregate function is found in WHERE conditions
 		 */
 		private function validateNoAggregatesInWhereClause(AstRetrieve $ast): void {
 			// Early exit if there are no WHERE conditions to validate
 			if ($ast->getConditions() === null) {
 				return;
 			}
-			
-			try {
-				// Create a visitor that searches for any of the prohibited aggregate
-				// function types in the condition tree
-				$visitor = new DetectRestrictedNodeType([AstAggregate::class]);
-				
-				// Traverse the WHERE clause conditions looking for aggregate functions
-				// If any are found, the visitor will throw an exception
-				$ast->getConditions()->accept($visitor);
-				
-				// If we reach this point, no aggregate functions were found (validation passed)
-				
-			} catch (\Exception $e) {
-				// Extract the aggregate function name from the exception message.
-				// Exception message contains the class name like "AstCount", so we extract "COUNT"
-				$nodeType = strtoupper(substr($e->getMessage(), 3));
-				
-				// Throw a user-friendly error explaining the SQL rule violation
-				throw new SemanticException("Aggregate function {$nodeType} is not allowed in WHERE clause");
+
+			// Collect every aggregate node in the WHERE tree and reject the first
+			// one that isn't window-shaped - a plain sum()/count()/avg()/min()/max()
+			// has no HAVING equivalent in Quel today.
+			$visitor = new CollectNodes([AstAggregate::class]);
+			$ast->getConditions()->accept($visitor);
+
+			foreach ($visitor->getCollectedNodes() as $node) {
+				if (!AstUtilities::isWindowShaped($node)) {
+					throw new SemanticException("Aggregate function {$node->getType()} is not allowed in WHERE clause");
+				}
 			}
 		}
 		

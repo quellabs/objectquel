@@ -69,38 +69,50 @@
 				}
 				
 				$node->setExpression($inner);
+				$inner->setParent($node);
 				return $node;
 			}
-			
+
 			if ($node instanceof AstBinaryOperator) {
 				// Recurse first so constants from deeper nodes are visible here
 				$left = $this->propagate($node->getLeft());
 				$right = $this->propagate($node->getRight());
-				
+
 				$result = $this->foldBinaryOperator($node->getOperator(), $left, $right);
-				
+
 				if ($result !== null) {
 					return $result;
 				}
-				
-				// No rule fired — reattach the (possibly rewritten) children and continue
+
+				// No rule fired — reattach the (possibly rewritten) children and continue.
+				// setLeft()/setRight() don't update the child's own parent pointer (by
+				// this codebase's convention, only constructors do that), so it's done
+				// explicitly here — otherwise a node that foldComparison() unwrapped and
+				// handed back unchanged (e.g. `expr = 1` → `expr`) keeps pointing at the
+				// AstExpression it used to live in instead of this node, and a later
+				// getParent() call on it (e.g. AstNodeReplacer) finds a stale parent
+				// whose left/right no longer holds it.
 				$node->setLeft($left);
 				$node->setRight($right);
+				$left->setParent($node);
+				$right->setParent($node);
 				return $node;
 			}
-			
+
 			if ($node instanceof AstExpression) {
 				$left = $this->propagate($node->getLeft());
 				$right = $this->propagate($node->getRight());
-				
+
 				$result = $this->foldComparison($node->getOperator(), $left, $right);
-				
+
 				if ($result !== null) {
 					return $result;
 				}
-				
+
 				$node->setLeft($left);
 				$node->setRight($right);
+				$left->setParent($node);
+				$right->setParent($node);
 				return $node;
 			}
 			

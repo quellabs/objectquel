@@ -2,20 +2,11 @@
 
 	namespace Quellabs\ObjectQuel\Planner\Optimizers;
 
-	use Quellabs\ObjectQuel\Capabilities\NullPlatformCapabilities;
-	use Quellabs\ObjectQuel\Capabilities\PlatformCapabilitiesInterface;
-	use Quellabs\ObjectQuel\EntityStore;
 	use Quellabs\ObjectQuel\Exception\QuelException;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstAggregate;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstAlias;
-	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstExpression;
-	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstIdentifier;
-	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRange;
-	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRangeDatabase;
-	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRangeDatabaseSubquery;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRetrieve;
 	use Quellabs\ObjectQuel\ObjectQuel\AstInterface;
-	use Quellabs\ObjectQuel\ObjectQuel\Ast\IdentifierType;
 	use Quellabs\ObjectQuel\ObjectQuel\Visitors\CollectNodes;
 	use Quellabs\ObjectQuel\Planner\Helpers\AggregateRewriter;
 	use Quellabs\ObjectQuel\Planner\Helpers\AstNodeReplacer;
@@ -40,20 +31,7 @@
 	 * Scope: single-range queries only (matching the single-stage window strategy's
 	 * own restriction) and one level of nesting per outer aggregate.
 	 */
-	class WindowChainRewriter {
-
-		private EntityStore $entityStore;
-		private PlatformCapabilitiesInterface $platform;
-		private int $helperCounter = 0;
-
-		/**
-		 * @param EntityStore $entityStore Provides entity metadata for primary key lookups
-		 * @param PlatformCapabilitiesInterface $platform Database engine capability descriptor
-		 */
-		public function __construct(EntityStore $entityStore, PlatformCapabilitiesInterface $platform = new NullPlatformCapabilities()) {
-			$this->entityStore = $entityStore;
-			$this->platform = $platform;
-		}
+	class WindowChainRewriter extends AbstractSequenceFunctionHoister {
 
 		/**
 		 * Rewrite every aggregate in $root whose argument contains a nested
@@ -97,7 +75,7 @@
 
 			return array_values(array_filter(
 				$visitor->getCollectedNodes(),
-				fn(AstAggregate $node): bool => $node->getOrder() !== null || $node->getPartitionBy() !== null
+				fn(AstAggregate $node): bool => AstUtilities::isWindowShaped($node)
 			));
 		}
 
@@ -118,68 +96,27 @@
 				);
 			}
 
-			$queryRanges = $root->getRanges();
-
-			if (count($queryRanges) !== 1 || !$queryRanges[0] instanceof AstRangeDatabase) {
-				throw new QuelException(
-					'A nested sequence function inside ' . $outerAggregate->getType() . '(...) is only supported for single-range queries.'
-				);
-			}
-
-			/** @var AstRangeDatabase $originalRange */
-			$originalRange = $queryRanges[0];
-			$entityName = $originalRange->getEntityName();
-			$primaryKey = $entityName !== null ? $this->entityStore->getMetadata($entityName)->getPrimaryKey() : null;
-
-			if ($primaryKey === null) {
-				throw new QuelException(
-					"Cannot extract a nested sequence function inside {$outerAggregate->getType()}(...): range '{$originalRange->getName()}' has no declared primary key."
-				);
-			}
+			[$innerRetrieve, $clonedRange, $originalRange, $primaryKey] = $this->beginHelperRange(
+				$root,
+				'a nested sequence function inside ' . $outerAggregate->getType() . '(...)'
+			);
 
 			$this->helperCounter++;
 			$helperRangeName = '_chain_' . $this->helperCounter;
-
-			// Clone the range the inner query runs over - it must be independent
-			// of the outer query's copy.
-			$clonedRange = $originalRange->deepClone();
-			$innerRetrieve = new AstRetrieve([], [$clonedRange], false);
 
 			// Carry the outer query's own WHERE conditions (already fully resolved,
 			// including any injected soft-delete/discriminator condition) into the
 			// inner query too, so the window computation runs over the same row set
 			// the outer query itself considers - otherwise rows excluded by the
 			// outer WHERE could still influence the inner ordering/partitioning.
-			$outerConditions = $root->getConditions();
-
-			if ($outerConditions !== null) {
-				$clonedConditions = $outerConditions->deepClone();
-				$this->relinkIdentifiers($clonedConditions, $originalRange, $clonedRange);
-				$innerRetrieve->setConditions($clonedConditions);
-			}
-
-			// Row-identity column, selected so the outer query can join back to it.
-			$innerRetrieve->addValue(new AstAlias(
-				'_pk',
-				$this->buildPropertyIdentifier($clonedRange, $primaryKey)
-			));
+			$this->carryConditions($innerRetrieve, $root->getConditions(), $originalRange, $clonedRange);
 
 			// The outer query's own non-aggregate SELECT items (minus its primary
 			// key) become the outer aggregate's PARTITION BY (see AggregateOptimizer).
 			// The inner lag()/rank()/etc. must partition the same way, or it would
 			// compute across the whole table instead of within each of the outer
-			// query's groups — cloned and relinked to run against $clonedRange.
-			$outerPartitionItems = AstUtilities::excludePrimaryKeyItems(
-				$this->entityStore,
-				AstUtilities::collectNonAggregateSelectItems($root)
-			);
-			$innerPartitionItems = [];
-
-			foreach ($outerPartitionItems as $partitionItem) {
-				$clonedExpression = $partitionItem->getExpression()->deepClone();
-				$this->relinkIdentifiers($clonedExpression, $originalRange, $clonedRange);
-				$innerPartitionItems[] = new AstAlias($partitionItem->getName(), $clonedExpression);
-			}
+			// query's groups.
+			$innerPartitionItems = $this->inferOuterPartitionItems($root, $originalRange, $clonedRange);
 
 			// Extract each nested window aggregate into its own aliased column,
 			// immediately rewriting it into a window-function subquery itself —
@@ -222,73 +159,12 @@
 				}
 			}
 
-			// Join the helper range back to the original range on primary key.
-			$helperPkReference = $this->buildPropertyIdentifier(null, '_pk', $helperRangeName);
-			$pendingHelperIdentifiers[] = $helperPkReference;
-
-			$joinCondition = new AstExpression(
-				$helperPkReference,
-				$this->buildPropertyIdentifier($originalRange, $primaryKey),
-				'='
-			);
-
-			$helperRange = new AstRangeDatabaseSubquery($helperRangeName, $innerRetrieve, $joinCondition, required: true);
-
-			foreach ($pendingHelperIdentifiers as $pendingIdentifier) {
-				$pendingIdentifier->setRange($helperRange);
-			}
-
-			$root->setRanges([...$root->getRanges(), $helperRange]);
-			$root->addWindowChainHelperRange($helperRangeName);
+			$this->finishHelperRange($root, $innerRetrieve, $originalRange, $clonedRange, $primaryKey, $helperRangeName, $pendingHelperIdentifiers);
 
 			$log->note(
 				'optimizer', 'aggregate', 'WINDOW_CHAIN',
 				"Extracted nested sequence function inside {$outerAggregate->getType()}(...) into range '{$helperRangeName}'",
 				$outerAggregate->getType()
 			);
-		}
-
-		/**
-		 * Re-points every identifier in $expression that references $oldRange (by
-		 * stored object identity) to $newRange instead - needed after deep-cloning
-		 * an expression whose identifiers still point at the pre-clone range.
-		 */
-		private function relinkIdentifiers(AstInterface $expression, AstRange $oldRange, AstRange $newRange): void {
-			foreach (AstUtilities::collectIdentifiersFromAst($expression) as $identifier) {
-				if ($identifier->getRange() === $oldRange) {
-					$identifier->setRange($newRange);
-				}
-			}
-		}
-
-		/**
-		 * Builds a `range.property` identifier chain. Pass $range for an
-		 * entity-backed reference (range resolved directly); pass $range as null
-		 * with $rangeName set for a reference into a helper range that may not exist
-		 * yet at construction time - the caller is responsible for calling
-		 * setRange() on the returned identifier once the range object exists.
-		 * @param AstRange|null $range
-		 * @param string $propertyName
-		 * @param string|null $rangeName Required when $range is null
-		 */
-		private function buildPropertyIdentifier(?AstRange $range, string $propertyName, ?string $rangeName = null): AstIdentifier {
-			$baseName = $range?->getName() ?? $rangeName;
-
-			if ($baseName === null) {
-				throw new \LogicException('buildPropertyIdentifier() requires either $range or $rangeName.');
-			}
-
-			$baseType = $range instanceof AstRangeDatabase ? IdentifierType::EntityRoot : IdentifierType::SubqueryRoot;
-			$leafType = $range instanceof AstRangeDatabase ? IdentifierType::EntityProperty : IdentifierType::SubqueryProperty;
-
-			$base = new AstIdentifier($baseName, $baseType);
-			$leaf = new AstIdentifier($propertyName, $leafType);
-			$base->setNext($leaf);
-
-			if ($range !== null) {
-				$base->setRange($range);
-			}
-
-			return $base;
 		}
 	}

@@ -89,7 +89,7 @@
 			// loop is unsafe because rewriteAggregateAsCorrelatedSubquery can
 			// restructure the tree and invalidate a live traversal.
 			$aggregates = AstUtilities::collectAggregateNodes($root);
-			
+
 			// Apply the strategies
 			$this->applyAggregateStrategies($root, $aggregates, $isAggregateOnly, $log);
 		}
