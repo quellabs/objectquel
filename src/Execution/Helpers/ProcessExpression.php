@@ -52,17 +52,7 @@
 	 */
 	class ProcessExpression {
 
-		/**
-		 * Binding strength of each binary operator, low to high. AstBinaryOperator
-		 * (AND/OR), AstExpression (comparisons), AstTerm (+/-), and AstFactor (multiply/divide)
-		 * all render through handleGenericExpression() as flat "{left} {op}
-		 * {right}" text with no grouping of their own — the query's tree shape is
-		 * the only record of which operand belongs to which operator (parentheses
-		 * in the source are consumed by the parser to shape the tree, then
-		 * discarded; see ArithmeticExpression::parsePrimaryExpression()). This
-		 * table drives operandSql() so a nested operator that binds more loosely
-		 * than its parent gets parentheses back before emission.
-		 */
+		/** Binding strength of each binary operator, low to high; drives operandSql()'s re-parenthesization. */
 		private const array OPERATOR_PRECEDENCE = [
 			'OR'  => 1,
 			'AND' => 2,
@@ -174,9 +164,7 @@
 				}
 			}
 			
-			// Standard binary operation: visit both sides and combine with operator.
-			// Operands are wrapped in parentheses when needed to preserve precedence
-			// (see operandSql()).
+			// Parenthesize operands as needed to preserve precedence (see operandSql()).
 			$parentPrecedence = self::OPERATOR_PRECEDENCE[$operator] ?? null;
 			$leftResult = $this->operandSql($ast->getLeft(), $parentPrecedence, false);
 			$rightResult = $this->operandSql($ast->getRight(), $parentPrecedence, true);
@@ -185,21 +173,10 @@
 		}
 
 		/**
-		 * Renders one operand of a binary operator, parenthesizing it when omitting
-		 * parentheses would change its meaning under SQL's operator precedence and
-		 * left-to-right associativity.
-		 *
-		 * A nested operator that binds more loosely than its parent (e.g. OR
-		 * nested under AND) always needs parentheses, on either side, or it gets
-		 * regrouped with the parent's other operand. A nested operator at the
-		 * *same* precedence needs parentheses only on the right (e.g. "a - (b -
-		 * c)" or "a / (b * c)"): the parser already left-folds a same-precedence
-		 * chain, so the left operand's own text reproduces that grouping without
-		 * help, but a same-precedence right operand exists only because the
-		 * source had explicit parentheses overriding that left-fold — dropping
-		 * them would silently reassociate a non-associative operator (-, /) and
-		 * change the result.
-		 *
+		 * Renders one operand, parenthesizing it when needed to preserve SQL operator
+		 * precedence/associativity — a same-precedence right operand always needs
+		 * parentheses (e.g. "a - (b - c)"), since the parser already left-folds same-
+		 * precedence chains on the left.
 		 * @param AstInterface $operand The operand to render
 		 * @param int|null $parentPrecedence Precedence of the enclosing operator, or null if unranked
 		 * @param bool $isRightOperand Whether this is the right-hand operand

@@ -219,11 +219,8 @@
 		}
 
 		/**
-		 * Filters out non-aggregate SELECT items that are bare references to their
-		 * range's declared primary key — used both for a window's PARTITION BY
-		 * (AggregateOptimizer) and for propagating the same partition columns into
-		 * a WindowChainRewriter helper query. Without this exclusion, a query that
-		 * also displays a row's own id (the common case) would put every row in
+		 * Filters out non-aggregate SELECT items that are bare references to their range's
+		 * primary key, since displaying the row's own id would otherwise put every row in
 		 * its own single-row partition.
 		 * @param EntityStore $entityStore
 		 * @param AstAlias[] $nonAggItems
@@ -248,9 +245,7 @@
 				return false;
 			}
 
-			// A property reference like `o.id` is a chain: the node itself is the
-			// range root (name "o"), and the actual property lives at the end of
-			// the `getNext()` chain — walk to it before comparing names.
+			// Walk to the chain's leaf (e.g. `o.id`'s "id" part) before comparing names.
 			$leaf = $expression;
 
 			while ($leaf->getNext() !== null) {

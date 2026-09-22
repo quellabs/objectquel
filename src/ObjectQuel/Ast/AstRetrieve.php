@@ -402,8 +402,7 @@
 		}
 		
 		/**
-		 * Returns a specific compiler directive value. Directive names are
-		 * case-insensitive — see Parser::parseCompilerDirectives().
+		 * Returns a specific compiler directive value (name is case-insensitive).
 		 * @param string $name The directive name
 		 * @return mixed The directive value or null if not found
 		 */

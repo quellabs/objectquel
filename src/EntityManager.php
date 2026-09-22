@@ -398,8 +398,7 @@
 		 * @param class-string<T> $entityType The fully qualified class name of the container
 		 * @param array<string, mixed> $searchData Associative array of field names and values to filter by
 		 * @param array<string, string>|null $sortBy Associative array of field names and sort directions
-		 * @param bool $ignoreSoftDelete When true, also matches soft-deleted rows —
-		 *        see QueryBuilder::prepareQuery()'s 'ignoreSoftDelete' flag.
+		 * @param bool $ignoreSoftDelete When true, also matches soft-deleted rows
 		 * @return T[] The found entities
 		 * @throws QuelException
 		 * @throws EntityResolutionException
@@ -429,8 +428,7 @@
 		 * @param class-string<T> $entityType The fully qualified class name of the container
 		 * @param array<string, mixed> $searchData Associative array of field names and values to filter by
 		 * @param array<string, string>|null $sortBy Associative array of field names and sort directions
-		 * @param bool $ignoreSoftDelete When true, also matches soft-deleted rows —
-		 *        see QueryBuilder::prepareQuery()'s 'ignoreSoftDelete' flag.
+		 * @param bool $ignoreSoftDelete When true, also matches soft-deleted rows
 		 * @return T|null The found entity or null if not found
 		 * @throws QuelException
 		 * @throws EntityResolutionException
@@ -443,9 +441,7 @@
 		/**
 		 * Schedules an entity for removal
 		 * @param object $entity
-		 * @param bool $hardDelete When true, forces a real DELETE at flush time even if
-		 *        the entity carries @SoftDelete — the entity-level equivalent of a raw
-		 *        `delete ... where ... @ignoreSoftDelete true` statement.
+		 * @param bool $hardDelete When true, forces a real DELETE even if the entity is soft-deletable
 		 * @return void
 		 * @throws EntityResolutionException
 		 */
@@ -454,15 +450,11 @@
 		}
 
 		/**
-		 * Reverts a soft delete on $entity — the inverse of remove() on a
-		 * @SoftDelete entity. $entity must already be managed (e.g. returned
-		 * by find()/retrieve()); the change is written on the next flush(),
-		 * same as any other property change.
+		 * Reverts a soft delete on an already-managed $entity, written on the next flush().
 		 * @param object $entity
 		 * @return void
 		 * @throws EntityResolutionException
-		 * @throws OrmException If $entity has no @SoftDelete column, or its
-		 *         column type isn't 'datetime' or 'boolean'
+		 * @throws OrmException If $entity has no soft-delete column
 		 */
 		public function restore(object $entity): void {
 			$this->unitOfWork->restore($entity);

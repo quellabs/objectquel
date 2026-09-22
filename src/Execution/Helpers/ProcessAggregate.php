@@ -471,8 +471,7 @@
 			// No-argument sequence functions (rank, dense_rank, row_number) have no identifier.
 			$argSql = $identifier !== null ? $this->convertExpressionToSql($identifier->deepClone()) : '';
 
-			// Build the OVER clause from the query's partition columns and the
-			// aggregate's inline `sort by`, if any
+			// Build the OVER clause from the partition columns and any inline `sort by`.
 			$overClause = $this->buildOverClause($aggNode, $subquery->getPartitionBy());
 
 			// Special handling for SUM: wrap entire window function in COALESCE for NULL safety

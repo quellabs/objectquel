@@ -20,13 +20,8 @@
 	 * Compiles an AstDelete statement to dialect-correct SQL. Sibling to
 	 * QuelToSQLReplace/QuelToSQLAppend.
 	 *
-	 * When the target entity carries @SoftDelete, `delete` compiles to an
-	 * UPDATE that sets the soft-delete column instead of a real DELETE —
-	 * mirroring InjectSoftDeleteCondition's read-side filtering with the
-	 * same opt-out: the `@ignoreSoftDelete true` directive forces a real
-	 * DELETE regardless of @SoftDelete, same directive name and meaning
-	 * `retrieve` uses. An entity with no recognised soft-delete column type
-	 * (see buildSoftDeleteSetClause()) falls back to a real DELETE too.
+	 * A soft-deletable entity compiles `delete` to an UPDATE of its soft-delete
+	 * column instead of a real DELETE, unless `@ignoreSoftDelete true` is set.
 	 *
 	 * The target table is aliased with the QUEL range name so WHERE-clause
 	 * identifiers resolve via BuildSqlFromAst same as `retrieve`. Like
@@ -58,9 +53,7 @@
 		}
 
 		/**
-		 * Compiles a `delete <range> where ...` statement to SQL — a real
-		 * DELETE, or a soft-delete UPDATE when applicable (see this class's
-		 * docblock).
+		 * Compiles a `delete <range> where ...` statement to SQL (see class docblock).
 		 * @param AstDelete $statement
 		 * @param array<string, mixed> $parameters Bound parameters, by reference
 		 * @return string
@@ -110,18 +103,8 @@
 		}
 
 		/**
-		 * Builds the `` `col` = <sql> `` SET-clause fragment that marks a row
-		 * soft-deleted, or null when the entity has no soft-delete column or
-		 * its column type isn't one of the two InjectSoftDeleteCondition
-		 * (the read-side filter) recognises — falling back to a real DELETE
-		 * in that case rather than emitting a broken UPDATE, same fail-open
-		 * behavior InjectSoftDeleteCondition::buildCondition() uses.
-		 *
-		 * A raw SQL fragment, not a bound parameter — mirrors
-		 * VersionValueHandler::buildVersionSetClause()'s 'datetime' case,
-		 * which uses the same engine-appropriate "current datetime"
-		 * expression for the same reason (this is a system-generated value,
-		 * not user-supplied data going through AssignmentValidator).
+		 * Builds the `col = <sql>` SET-clause fragment marking a row soft-deleted,
+		 * or null when the entity has no recognised soft-delete column type.
 		 * @param EntityMetadataRecord $metadata
 		 * @param string $alias The DELETE/UPDATE statement's own range alias
 		 * @return string|null
@@ -131,10 +114,7 @@
 				return null;
 			}
 
-			// softDeleteColumn is non-null here: EntityMetadataBuilder always
-			// sets it together with softDeleteProperty, which hasSoftDelete()
-			// just confirmed is set. The assertion satisfies PHPStan without
-			// a runtime cost — same pattern InjectSoftDeleteCondition uses.
+			// Non-null here: hasSoftDelete() confirmed softDeleteProperty is set.
 			$softDeleteColumn = $metadata->softDeleteColumn ?? throw new \LogicException('buildSoftDeleteSetClause called on entity without @SoftDelete');
 			$targetColumn = SetTargetColumnQuoter::quote($softDeleteColumn, $alias, $this->identifierQuoter, $this->platform);
 

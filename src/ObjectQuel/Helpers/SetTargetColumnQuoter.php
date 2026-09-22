@@ -5,20 +5,12 @@
 	use Quellabs\ObjectQuel\Capabilities\PlatformCapabilitiesInterface;
 	use Quellabs\ObjectQuel\DatabaseAdapter\SqlIdentifierQuoter;
 
-	/**
-	 * Quotes a SET-clause target column for `replace`/`delete`-as-update SQL,
-	 * qualifying it with the statement's own range alias only where the
-	 * connected engine allows a qualified column on the left side of a SET
-	 * assignment — PostgreSQL and SQLite reject `SET alias.col = ...` there,
-	 * so those always get the bare column regardless of $qualifyWithAlias.
-	 */
+	/** Quotes a SET-clause target column, qualifying it with the range alias only when the platform allows it. */
 	class SetTargetColumnQuoter {
 
 		/**
 		 * @param string $columnName
-		 * @param string|null $qualifyWithAlias The statement's own range alias, or
-		 *        null to always render bare (e.g. an on-conflict UPDATE with no
-		 *        alias in scope).
+		 * @param string|null $qualifyWithAlias The statement's own range alias, or null to always render bare
 		 * @param SqlIdentifierQuoter $identifierQuoter
 		 * @param PlatformCapabilitiesInterface $platform
 		 * @return string
