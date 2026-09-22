@@ -7,6 +7,7 @@
 	use Quellabs\ObjectQuel\Exception\EntityResolutionException;
 	use Quellabs\ObjectQuel\Metadata\EntityMetadataRecord;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstIdentifier;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstIfNull;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRangeDatabaseSubquery;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRetrieve;
 	use Quellabs\ObjectQuel\ObjectQuel\AstInterface;
@@ -75,6 +76,24 @@
 				return;
 			}
 
+			// A reference nested anywhere inside ifnull()/COALESCE() — either
+			// argument — is not evidence the row must exist. It's tempting to
+			// exempt only the checked (possibly-null) argument and treat the alt
+			// value as an ordinary reference, but that's unsound: ifnull() only
+			// evaluates its alt value when the checked argument is NULL, so
+			// whenever the checked argument is non-null on a given row (e.g. a
+			// literal, a parameter, or another column that happens to be set),
+			// the alt value's presence or absence never affects the result at
+			// all — a reference there proves nothing about whether its range
+			// must exist. Symmetrically, if the alt value is a non-null literal,
+			// the checked argument's own nullability stops mattering for the
+			// final result. Since either argument can end up irrelevant
+			// depending on the other, neither can be trusted as a NULL-proof
+			// reference; only a bare reference outside any ifnull() is.
+			if ($this->isNestedInsideIfNull($node)) {
+				return;
+			}
+
 			// Check the correct part of the query
 			if ($this->subquery !== null) {
 				$this->checkSubqueryField($next->getName());
@@ -88,6 +107,24 @@
 		 */
 		public function isNonNullable(): bool {
 			return $this->nonNullableFound;
+		}
+
+		/**
+		 * Walks up from an identifier to check whether any ancestor is an
+		 * AstIfNull node — covers a reference nested arbitrarily deep inside
+		 * either argument (e.g. `ifnull(a.x + 1, b.y)`), not just a bare
+		 * identifier used directly as one.
+		 * @param AstInterface $node
+		 * @return bool
+		 */
+		private function isNestedInsideIfNull(AstInterface $node): bool {
+			for ($current = $node->getParent(); $current !== null; $current = $current->getParent()) {
+				if ($current instanceof AstIfNull) {
+					return true;
+				}
+			}
+
+			return false;
 		}
 		
 		/**

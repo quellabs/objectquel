@@ -51,7 +51,26 @@
 	 * - Support regular expression matching in SQL
 	 */
 	class ProcessExpression {
-		
+
+		/**
+		 * Binding strength of each binary operator, low to high. AstBinaryOperator
+		 * (AND/OR), AstExpression (comparisons), AstTerm (+/-), and AstFactor (multiply/divide)
+		 * all render through handleGenericExpression() as flat "{left} {op}
+		 * {right}" text with no grouping of their own — the query's tree shape is
+		 * the only record of which operand belongs to which operator (parentheses
+		 * in the source are consumed by the parser to shape the tree, then
+		 * discarded; see ArithmeticExpression::parsePrimaryExpression()). This
+		 * table drives operandSql() so a nested operator that binds more loosely
+		 * than its parent gets parentheses back before emission.
+		 */
+		private const array OPERATOR_PRECEDENCE = [
+			'OR'  => 1,
+			'AND' => 2,
+			'='   => 3, '<>' => 3, '<' => 3, '>' => 3, '<=' => 3, '>=' => 3,
+			'+'   => 4, '-'  => 4,
+			'*'   => 5, '/'  => 5,
+		];
+
 		/**
 		 * Wildcard character mappings for converting user-friendly patterns to SQL LIKE syntax
 		 *
@@ -155,11 +174,55 @@
 				}
 			}
 			
-			// Standard binary operation: visit both sides and combine with operator
-			$leftResult = $this->visitNodeAndReturnSQL($ast->getLeft());
-			$rightResult = $this->visitNodeAndReturnSQL($ast->getRight());
-			
+			// Standard binary operation: visit both sides and combine with operator.
+			// Operands are wrapped in parentheses when needed to preserve precedence
+			// (see operandSql()).
+			$parentPrecedence = self::OPERATOR_PRECEDENCE[$operator] ?? null;
+			$leftResult = $this->operandSql($ast->getLeft(), $parentPrecedence, false);
+			$rightResult = $this->operandSql($ast->getRight(), $parentPrecedence, true);
+
 			return "{$leftResult} {$operator} {$rightResult}";
+		}
+
+		/**
+		 * Renders one operand of a binary operator, parenthesizing it when omitting
+		 * parentheses would change its meaning under SQL's operator precedence and
+		 * left-to-right associativity.
+		 *
+		 * A nested operator that binds more loosely than its parent (e.g. OR
+		 * nested under AND) always needs parentheses, on either side, or it gets
+		 * regrouped with the parent's other operand. A nested operator at the
+		 * *same* precedence needs parentheses only on the right (e.g. "a - (b -
+		 * c)" or "a / (b * c)"): the parser already left-folds a same-precedence
+		 * chain, so the left operand's own text reproduces that grouping without
+		 * help, but a same-precedence right operand exists only because the
+		 * source had explicit parentheses overriding that left-fold — dropping
+		 * them would silently reassociate a non-associative operator (-, /) and
+		 * change the result.
+		 *
+		 * @param AstInterface $operand The operand to render
+		 * @param int|null $parentPrecedence Precedence of the enclosing operator, or null if unranked
+		 * @param bool $isRightOperand Whether this is the right-hand operand
+		 * @return string The operand's SQL, parenthesized if required
+		 */
+		private function operandSql(AstInterface $operand, ?int $parentPrecedence, bool $isRightOperand): string {
+			$sql = $this->visitNodeAndReturnSQL($operand);
+
+			if ($parentPrecedence === null || !$operand instanceof NodeBinary) {
+				return $sql;
+			}
+
+			$childPrecedence = self::OPERATOR_PRECEDENCE[$operand->getOperator()] ?? null;
+
+			if ($childPrecedence === null) {
+				return $sql;
+			}
+
+			$needsParens = $isRightOperand
+				? $childPrecedence <= $parentPrecedence
+				: $childPrecedence < $parentPrecedence;
+
+			return $needsParens ? "({$sql})" : $sql;
 		}
 		
 		/**
@@ -916,8 +979,8 @@
 				return null;
 			}
 			
-			$leftResult = $this->visitNodeAndReturnSQL($ast->getLeft());
-			
+			$leftResult = $this->operandSql($ast->getLeft(), self::OPERATOR_PRECEDENCE[$operator] ?? null, false);
+
 			$stringValue = str_replace(
 				array_keys(self::WILDCARD_MAPPINGS),
 				array_values(self::WILDCARD_MAPPINGS),
@@ -948,7 +1011,7 @@
 		 * @return string The REGEXP or REGEXP_LIKE expression
 		 */
 		private function handleRegularExpression(AstRegExp $rightAst, NodeBinary $ast, string $operator): string {
-			$leftResult = $this->visitNodeAndReturnSQL($ast->getLeft());
+			$leftResult = $this->operandSql($ast->getLeft(), self::OPERATOR_PRECEDENCE[$operator] ?? null, false);
 			$flags = $rightAst->getFlags();
 			
 			// REGEXP_LIKE(col, pattern[, flags]) when the platform supports it.

@@ -10,6 +10,7 @@
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstCheckNull;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstExpression;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstIdentifier;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstIfNull;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRangeDatabase;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRetrieve;
 	use Quellabs\ObjectQuel\ObjectQuel\AstInterface;
@@ -20,8 +21,24 @@
 	 * database range whose entity carries an @SoftDelete annotation.
 	 *
 	 * The injected condition depends on the annotated column's type:
-	 *   - 'datetime'  →  range.property IS NULL  (null means the record is active)
-	 *   - 'boolean'   →  range.property = false   (false means the record is active)
+	 *   - 'datetime'  →  range.property IS NULL              (null means the record is active)
+	 *   - 'boolean'   →  COALESCE(range.property, false) = false  (false or absent means active)
+	 *
+	 * Both forms evaluate to true when the range comes from a LEFT JOIN with no
+	 * matching row, so an optional relation never excludes the parent row just
+	 * because it has nothing to soft-delete-check.
+	 *
+	 * For a joined range the condition is ANDed onto that range's own JOIN
+	 * condition (its ON clause) rather than the query's WHERE clause, so a
+	 * soft-deleted related row behaves the same as an absent one: the parent
+	 * row survives with this range's columns coming back NULL, instead of
+	 * vanishing entirely the way a WHERE-clause filter forces regardless of
+	 * join type. This is equivalent to WHERE-clause filtering for a required
+	 * (INNER JOIN) range — a per-table predicate produces the same result set
+	 * whether it lives in that table's ON clause or the top-level WHERE — so
+	 * it's applied unconditionally, not just for ranges already known to be
+	 * optional. Only the primary (FROM) range has no ON clause to attach to,
+	 * so its condition still goes into WHERE.
 	 *
 	 * Injection is skipped entirely when the query carries the
 	 * @ignoreSoftDelete true compiler directive, which is set automatically by
@@ -48,7 +65,9 @@
 		/**
 		 * Walks every database range in the query. For each range whose entity
 		 * has a soft-delete column, builds the appropriate filter expression and
-		 * ANDs it onto the existing WHERE conditions.
+		 * ANDs it onto that range's own JOIN condition (or the query's WHERE
+		 * conditions for the primary range, which has no JOIN condition) — see
+		 * this class's docblock for why the JOIN condition is preferred.
 		 * @param AstRetrieve $ast
 		 * @return void
 		 * @throws EntityResolutionException
@@ -60,31 +79,43 @@
 			if ($ast->getDirective('ignoreSoftDelete')) {
 				return;
 			}
-			
+
 			foreach ($ast->getRanges() as $range) {
 				// Only concrete entity ranges have EntityStore metadata to inspect
 				if (!$range instanceof AstRangeDatabase) {
 					continue;
 				}
-				
+
 				$metadata = $this->entityStore->getMetadata($range->getEntityName());
-				
+
 				if (!$metadata->hasSoftDelete()) {
 					continue;
 				}
-				
+
 				$condition = $this->buildCondition($range, $metadata);
-				
+
 				if ($condition === null) {
 					continue;
 				}
-				
-				// AND the new condition onto whatever WHERE clause already exists.
-				// The existing conditions become the left operand so that the
-				// soft-delete filter always appears at the outermost level and
-				// cannot be short-circuited by an OR inside the original conditions.
+
+				// A joined range has its own ON-clause condition to AND onto,
+				// keeping the filter local to this range's join instead of the
+				// query's WHERE clause — see this class's docblock.
+				$joinProperty = $range->getJoinProperty();
+
+				if ($joinProperty !== null) {
+					$range->setJoinProperty(new AstBinaryOperator($joinProperty, $condition, 'AND'));
+					continue;
+				}
+
+				// No JOIN condition means this is the primary (FROM) range —
+				// AND the new condition onto whatever WHERE clause already
+				// exists. The existing conditions become the left operand so
+				// that the soft-delete filter always appears at the outermost
+				// level and cannot be short-circuited by an OR inside the
+				// original conditions.
 				$existing = $ast->getConditions();
-				
+
 				if ($existing !== null) {
 					$combined = new AstBinaryOperator($existing, $condition, 'AND');
 					$ast->setConditions($combined);
@@ -125,8 +156,11 @@
 				// NULL means active (not yet soft-deleted); any timestamp means deleted
 				'datetime' => new AstCheckNull($root),
 
-				// false means active; true means deleted
-				'boolean'  => new AstExpression($root, new AstBool(false), '='),
+				// false means active; true means deleted. Wrapped in COALESCE so that
+				// a LEFT JOIN range with no matching row (property reads NULL) is also
+				// treated as active, instead of failing the bare `= false` comparison
+				// under SQL's three-valued NULL logic.
+				'boolean'  => new AstExpression(new AstIfNull($root, new AstBool(false)), new AstBool(false), '='),
 
 				// Unknown column type — skip rather than silently emitting a broken query
 				default    => null,
