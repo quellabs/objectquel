@@ -9,6 +9,7 @@
 	use Quellabs\ObjectQuel\DatabaseAdapter\Inspector\MysqlSchemaIntrospector;
 	use Quellabs\ObjectQuel\DatabaseAdapter\Inspector\NullSchemaIntrospector;
 	use Quellabs\ObjectQuel\DatabaseAdapter\Inspector\PostgresSchemaIntrospector;
+	use Quellabs\ObjectQuel\DatabaseAdapter\Inspector\RoutineSchemaInspector;
 	use Quellabs\ObjectQuel\DatabaseAdapter\Inspector\SchemaIntrospectorInterface;
 	use Quellabs\ObjectQuel\DatabaseAdapter\Inspector\SqlServerFulltextIndexInspector;
 	use Quellabs\ObjectQuel\DatabaseAdapter\Inspector\SqlServerSchemaIntrospector;
@@ -100,8 +101,11 @@
 		 */
 		private ?int $sqlServerCompatibilityLevelCache;
 
-		/** @var string|null SQL Server default schema; null means not yet read */
-		private ?string $routineSchemaCache = null;
+		/**
+		 * Cached RoutineSchemaInspector instance, lazily created by getRoutineSchema().
+		 * @var RoutineSchemaInspector|null
+		 */
+		private ?RoutineSchemaInspector $routineSchemaInspectorCache = null;
 		
 		/**
 		 * Constructs a new database adapter instance
@@ -310,29 +314,14 @@
 		}
 
 		/**
-		 * Returns the schema that qualifies routine names, or null when unqualified
-		 * names are used. SQL Server only calls a scalar function by a schema-qualified name,
-		 * so there it returns the connection's default schema, read once.
+		 * Returns the schema that qualifies routine names, or null when unqualified names are used.
 		 * @return string|null
 		 * @throws \RuntimeException When the default schema can't be read
+		 * @see RoutineSchemaInspector::getRoutineSchema()
 		 */
 		public function getRoutineSchema(): ?string {
-			if ($this->getDatabaseType() !== 'sqlsrv') {
-				return null;
-			}
-
-			if ($this->routineSchemaCache !== null) {
-				return $this->routineSchemaCache;
-			}
-
-			$statement = $this->execute('SELECT SCHEMA_NAME() AS routine_schema');
-			$row = $statement?->fetch('assoc');
-
-			if (!is_array($row) || !is_string($row['routine_schema']) || $row['routine_schema'] === '') {
-				throw new \RuntimeException("Can't read the connection's default schema, which qualifies routine names on SQL Server.");
-			}
-
-			return $this->routineSchemaCache = $row['routine_schema'];
+			$this->routineSchemaInspectorCache ??= new RoutineSchemaInspector($this);
+			return $this->routineSchemaInspectorCache->getRoutineSchema();
 		}
 		
 		/**
