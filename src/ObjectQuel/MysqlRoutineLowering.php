@@ -2,6 +2,8 @@
 
 	namespace Quellabs\ObjectQuel\ObjectQuel;
 
+	use Quellabs\ObjectQuel\EntityStore;
+	use Quellabs\ObjectQuel\Exception\QuelException;
 	use Quellabs\ObjectQuel\Exception\SemanticException;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstAlias;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstBeginTransaction;
@@ -17,6 +19,7 @@
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRoutineDefinition;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstWhile;
 	use Quellabs\ObjectQuel\ObjectQuel\Routines\RoutineReferenceSql;
+	use Quellabs\ObjectQuel\ObjectQuel\Routines\RoutineStatementCompiler;
 	use Quellabs\ObjectQuel\ObjectQuel\Visitors\CollectNodes;
 
 	/**
@@ -42,6 +45,25 @@
 		private array $keyFields;
 
 		private int $loopCount;
+
+		/** Collation of string variables and return values, or null for the database default */
+		private ?string $collation;
+
+		/**
+		 * @param EntityStore $entityStore Entity metadata
+		 * @param RoutineStatementCompiler $statements Compiles embedded statements for the target engine
+		 * @param string|null $collation Collation of string variables and return values, or null for the database default
+		 * @throws QuelException When the collation isn't a plain collation name
+		 */
+		public function __construct(EntityStore $entityStore, RoutineStatementCompiler $statements, ?string $collation = null) {
+			parent::__construct($entityStore, $statements);
+
+			if ($collation !== null && !preg_match('/^[A-Za-z0-9_]+$/', $collation)) {
+				throw new QuelException("'{$collation}' isn't a valid collation name.");
+			}
+
+			$this->collation = $collation;
+		}
 
 		/**
 		 * @return string Engine name for error messages
@@ -180,6 +202,36 @@
 			}
 
 			return "CREATE {$orReplace}FUNCTION {$signature}\nRETURNS " . $this->sqlType($routine->getDeclaredReturnType()) . "\n{$dataAccess}";
+		}
+
+		/**
+		 * @param string $type Routine type name
+		 * @return string SQL type, with the configured collation when it's a character type
+		 */
+		protected function sqlType(string $type): string {
+			return $this->withCollation(parent::sqlType($type));
+		}
+
+		/**
+		 * @return array<string, string> SQL type of every field variable, by variable name, with the configured collation
+		 * @throws QuelException
+		 */
+		protected function fieldVariableTypes(): array {
+			return array_map($this->withCollation(...), parent::fieldVariableTypes());
+		}
+
+		/**
+		 * Adds the configured collation to a character type. MySQL requires CHARACTER SET alongside it; a collation name starts with its character set's.
+		 * @param string $sqlType SQL type
+		 * @return string
+		 */
+		private function withCollation(string $sqlType): string {
+			if ($this->collation === null || !preg_match('/^(VARCHAR|CHAR|TEXT|ENUM)\b/', $sqlType)) {
+				return $sqlType;
+			}
+
+			$characterSet = explode('_', $this->collation, 2)[0];
+			return "{$sqlType} CHARACTER SET {$characterSet} COLLATE {$this->collation}";
 		}
 
 		/**

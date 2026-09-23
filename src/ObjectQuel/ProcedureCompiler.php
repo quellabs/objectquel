@@ -69,7 +69,7 @@
 			$lowering = match ($this->platform->getDatabaseType()) {
 				'pgsql' => new PostgresRoutineLowering($entityStore, $statements),
 				'sqlsrv' => new SqlServerRoutineLowering($entityStore, $statements),
-				'mysql', 'mariadb' => new MysqlRoutineLowering($entityStore, $statements),
+				'mysql', 'mariadb' => new MysqlRoutineLowering($entityStore, $statements, $this->entityManager->getConfiguration()->getCollation()),
 				default => throw new QuelException("Routines can't be compiled for '{$this->platform->getDatabaseType()}'."),
 			};
 

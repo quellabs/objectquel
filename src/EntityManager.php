@@ -123,6 +123,14 @@
 		}
 		
 		/**
+		 * Returns the configuration
+		 * @return Configuration
+		 */
+		public function getConfiguration(): Configuration {
+			return $this->configuration;
+		}
+
+		/**
 		 * Returns the unit of work
 		 * @return UnitOfWork
 		 */

@@ -119,7 +119,13 @@
 		 * regenerates one, unless it deliberately opts in.
 		 */
 		private bool $generateForeignKeys = false;
-		
+
+		/**
+		 * @var string|null Collation of string variables and return values in MySQL/MariaDB routines.
+		 * Null leaves them on the database default collation in effect when the routine is created.
+		 */
+		private ?string $collation = null;
+
 		/**
 		 * Retrieves entity path
 		 * @return string Primary entity path
@@ -351,6 +357,24 @@
 		 */
 		public function setGenerateForeignKeys(bool $generateForeignKeys): self {
 			$this->generateForeignKeys = $generateForeignKeys;
+			return $this;
+		}
+
+		/**
+		 * Returns the collation for string variables in MySQL/MariaDB routines.
+		 * @return string|null Collation name, or null for the database default
+		 */
+		public function getCollation(): ?string {
+			return $this->collation;
+		}
+
+		/**
+		 * Sets the collation for string variables in MySQL/MariaDB routines.
+		 * @param string|null $collation Collation name, or null for the database default
+		 * @return self
+		 */
+		public function setCollation(?string $collation): self {
+			$this->collation = $collation;
 			return $this;
 		}
 	}
