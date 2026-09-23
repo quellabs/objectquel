@@ -106,6 +106,7 @@
 		 *   MySQL/MariaDB  → 'UNIX_TIMESTAMP(%s)'
 		 *   PostgreSQL     → 'EXTRACT(EPOCH FROM %s)::BIGINT'
 		 *   SQLite         → "strftime('%%s', %s)"
+		 *   SQL Server     → "DATEDIFF_BIG(SECOND, '1970-01-01', %s)"
 		 *
 		 * @return string  A sprintf-compatible template with one %s placeholder.
 		 */
@@ -119,10 +120,18 @@
 		 *   MySQL/MariaDB  → 'UNIX_TIMESTAMP()'
 		 *   PostgreSQL     → 'EXTRACT(EPOCH FROM NOW())::BIGINT'
 		 *   SQLite         → "strftime('%s','now')"
+		 *   SQL Server     → "DATEDIFF_BIG(SECOND, '1970-01-01', SYSUTCDATETIME())"
 		 *
 		 * @return string  A complete SQL expression, no placeholders.
 		 */
 		public function getCurrentUnixTimestamp(): string;
+
+		/**
+		 * Converts a Unix timestamp back to a native datetime, the inverse of getUnixTimestampFunction().
+		 * @param string $timestampSql SQL of the Unix timestamp
+		 * @return string SQL of the datetime
+		 */
+		public function getDatetimeFromUnixTimestamp(string $timestampSql): string;
 		
 		/**
 		 * Returns the SQL expression that yields the current date and time as a

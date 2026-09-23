@@ -73,10 +73,10 @@
 			// via-relation expansion) so that range attachments are final.
 			$this->resolveIdentifierTypes($ast);
 
-			// Step 6: Wrap bare datetime column references with AstDate so that all
-			// temporal values are expressed uniformly before semantic validation and
-			// SQL generation. Must run after Step 6 so that entity names and column
-			// types are fully resolved on every identifier.
+			// Step 6: Express datetime operands as Unix timestamps (columns wrapped in
+			// AstDate, date strings compared with them as integers) before semantic
+			// validation and SQL generation. Must run after Step 5 so that entity names
+			// and column types are fully resolved on every identifier.
 			$this->processWithVisitor($ast, NormalizeDateTime::class, $this->entityStore);
 
 			// Step 7: Inject soft-delete filter conditions for every database range
