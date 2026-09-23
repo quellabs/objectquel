@@ -30,7 +30,8 @@
 		 * @return void
 		 */
 		public function optimize(AstRetrieve $ast): void {
-			$allProjectionsAggregates = AstUtilities::areAllSelectFieldsAggregates($ast);
+			// A grouped query can only select a hidden field through an aggregate (ONLY_FULL_GROUP_BY)
+			$wrapInMin = AstUtilities::areAllSelectFieldsAggregates($ast) || !empty($ast->getGroupBy());
 			
 			// No conditions means no WHERE clause, so no implicit fields needed
 			if ($ast->getConditions() === null) {
@@ -48,9 +49,7 @@
 			foreach ($visitor->getIdentifiers() as $identifier) {
 				$clonedIdentifier = $identifier->deepClone();
 				
-				// When all user projections are aggregates (COUNT, SUM, etc.),
-				// wrap implicit fields in MIN() to satisfy SQL GROUP BY requirements
-				if ($allProjectionsAggregates) {
+				if ($wrapInMin) {
 					$alias = new AstAlias($identifier->getCompleteName(), new AstMin($clonedIdentifier));
 				} else {
 					$alias = new AstAlias($identifier->getCompleteName(), $clonedIdentifier);
