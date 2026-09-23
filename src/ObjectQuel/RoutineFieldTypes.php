@@ -11,6 +11,8 @@
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstBinaryOperator;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstExpression;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstIdentifier;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRange;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRangeDatabase;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRetrieve;
 
 	/**
@@ -36,6 +38,9 @@
 
 		/** @var array<string, TypeDefinition> Declared type of each local and parameter */
 		private array $variables = [];
+
+		/** @var array<string, string> Entity of each declared range, by range name */
+		private array $declaredRanges = [];
 
 		/** @var array<string, array<string, TypeDefinition|null>> Type of each field, by cursor; null when unknown */
 		private array $cursorFields = [];
@@ -154,20 +159,29 @@
 		}
 
 		/**
-		 * @param AstIdentifier $identifier `range.property`, a direct column read
-		 * @return TypeDefinition|null The column's declared type, or null when it isn't a direct column read
+		 * Types column reads in embedded statements, whose identifiers aren't bound to ranges yet.
+		 * @param AstRange[] $ranges Ranges the routine declares
+		 * @return void
+		 */
+		public function setDeclaredRanges(array $ranges): void {
+			$this->declaredRanges = [];
+
+			foreach ($ranges as $range) {
+				if ($range instanceof AstRangeDatabase) {
+					$this->declaredRanges[$range->getName()] = $range->getEntityName();
+				}
+			}
+		}
+
+		/**
+		 * @param string $entityName Entity name
+		 * @param string $property Property name
+		 * @return TypeDefinition|null The property's column type, or null when it isn't a column
 		 * @throws EntityResolutionException
 		 */
-		private function columnDefinition(AstIdentifier $identifier): ?array {
-			$entityName = $identifier->getEntityName();
-			$property = $identifier->getNext();
-
-			if ($entityName === null || $property === null || $property->hasNext()) {
-				return null;
-			}
-
+		public function columnType(string $entityName, string $property): ?array {
 			$metadata = $this->store->getMetadata($entityName);
-			$columnName = $metadata->getColumnName($property->getName());
+			$columnName = $metadata->getColumnName($property);
 			$column = $columnName === null ? null : ($metadata->columnDefinitions[$columnName] ?? null);
 
 			if ($column === null) {
@@ -182,6 +196,56 @@
 				'scale'     => $column['scale'],
 				'values'    => $column['values'],
 			];
+		}
+
+		/**
+		 * @param AstIdentifier $identifier `range.property`, or a bare property of one declared range
+		 * @return TypeDefinition|null The column's declared type, or null when it isn't a direct column read
+		 * @throws EntityResolutionException
+		 */
+		private function columnDefinition(AstIdentifier $identifier): ?array {
+			$property = $identifier->getNext();
+
+			if ($property === null) {
+				$entityName = $this->bareColumnEntity($identifier);
+				return $entityName === null ? null : $this->columnType($entityName, $identifier->getName());
+			}
+
+			$entityName = $identifier->getEntityName() ?? $this->declaredRanges[$identifier->getName()] ?? null;
+
+			if ($entityName === null || $property->hasNext()) {
+				return null;
+			}
+
+			return $this->columnType($entityName, $property->getName());
+		}
+
+		/**
+		 * @param AstIdentifier $identifier Bare identifier
+		 * @return string|null The one declared entity with this property, or null when none, several, or it names a target-list entry
+		 * @throws EntityResolutionException
+		 */
+		private function bareColumnEntity(AstIdentifier $identifier): ?string {
+			if ($identifier->getType()->isRoutineReference() || $identifier->getParent() instanceof AstIdentifier) {
+				return null;
+			}
+
+			$ancestor = $identifier->getParent();
+
+			while ($ancestor !== null && !$ancestor instanceof AstRetrieve) {
+				$ancestor = $ancestor->getParent();
+			}
+
+			if ($ancestor?->hasValueAlias($identifier->getName())) {
+				return null;
+			}
+
+			$matches = array_filter(
+				array_unique($this->declaredRanges),
+				fn(string $entityName) => $this->store->getMetadata($entityName)->getColumnName($identifier->getName()) !== null
+			);
+
+			return count($matches) === 1 ? reset($matches) : null;
 		}
 
 		/**
