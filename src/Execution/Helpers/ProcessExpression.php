@@ -918,8 +918,8 @@
 			
 			// String literal: use a platform-appropriate regex match with the pattern
 			if ($valueNode instanceof AstString) {
-				$escaped = "'" . $this->escapeSqlString($valueNode->getValue()) . "'";
-				return $this->buildRegexMatch($escaped, self::REGEX_PATTERNS[$patternKey]);
+				$literal = $this->identifierQuoter->quoteStringLiteral($valueNode->getValue());
+				return $this->buildRegexMatch($literal, self::REGEX_PATTERNS[$patternKey]);
 			}
 			
 			// Numeric literal: evaluate at compile time
@@ -961,12 +961,14 @@
 		 * @return string SQL boolean expression
 		 */
 		private function buildRegexMatch(string $sqlExpression, string $pattern): string {
+			$quotedPattern = $this->identifierQuoter->quoteStringLiteral($pattern);
+
 			if ($this->platform->supportsRegexpLike()) {
-				return "REGEXP_LIKE({$sqlExpression}, \"{$pattern}\")";
+				return "REGEXP_LIKE({$sqlExpression}, {$quotedPattern})";
 			}
-			
+
 			$operator = $this->platform->getRegexpFallbackOperators()['match'];
-			return "{$sqlExpression} {$operator} '{$pattern}'";
+			return "{$sqlExpression} {$operator} {$quotedPattern}";
 		}
 		
 		/**
@@ -1004,7 +1006,7 @@
 		 * Handle regular expression patterns for SQL REGEXP / REGEXP_LIKE conversion.
 		 *
 		 * When the platform supports REGEXP_LIKE() (MySQL 8.0+, SQL Server 2025+),
-		 * emits REGEXP_LIKE(col, "pattern"[, "flags"]) — with the flags argument
+		 * emits REGEXP_LIKE(col, 'pattern'[, 'flags']) — with the flags argument
 		 * included only when flags are present, since REGEXP_LIKE accepts the
 		 * 2-argument form on both supporting engines.
 		 *
@@ -1021,7 +1023,8 @@
 		private function handleRegularExpression(AstRegExp $rightAst, NodeBinary $ast, string $operator): string {
 			$leftResult = $this->operandSql($ast->getLeft(), self::OPERATOR_PRECEDENCE[$operator] ?? null, false, false);
 			$flags = $rightAst->getFlags();
-			
+			$pattern = $this->identifierQuoter->quoteStringLiteral($rightAst->getValue());
+
 			// REGEXP_LIKE(col, pattern[, flags]) when the platform supports it.
 			// Used regardless of whether flags are present — REGEXP_LIKE with no
 			// third argument is valid on every engine that supports the function,
@@ -1029,15 +1032,15 @@
 			// because this particular pattern has no flags.
 			if ($this->platform->supportsRegexpLike()) {
 				$not = $operator === '<>' ? 'NOT ' : '';
-				$flagsArg = $flags !== '' ? ", \"{$flags}\"" : '';
-				return "{$not}REGEXP_LIKE({$leftResult}, \"{$rightAst->getValue()}\"{$flagsArg})";
+				$flagsArg = $flags !== '' ? ', ' . $this->identifierQuoter->quoteStringLiteral($flags) : '';
+				return "{$not}REGEXP_LIKE({$leftResult}, {$pattern}{$flagsArg})";
 			}
 			
 			// Fallback: platform-specific plain match operator. Flags are dropped
 			// — behavior depends on collation.
 			$operators = $this->platform->getRegexpFallbackOperators();
 			$regexpOperator = $operator === '=' ? $operators['match'] : $operators['notMatch'];
-			return "{$leftResult}{$regexpOperator}\"{$rightAst->getValue()}\"";
+			return "{$leftResult} {$regexpOperator} {$pattern}";
 		}
 		
 		/**
@@ -1095,23 +1098,6 @@
 					return $identifier->getName();
 				}
 			}, $identifiers);
-		}
-		
-		/**
-		 * Escape a string value for safe inclusion in a SQL literal.
-		 *
-		 * NOTE: This centralizes escaping so it can be swapped for a PDO/mysqli
-		 * real_escape_string call once a connection reference is available here.
-		 * Do not inline addslashes() calls elsewhere in this class.
-		 *
-		 * @param string $value Raw string value
-		 * @return string Escaped string safe for embedding between SQL quotes
-		 */
-		private function escapeSqlString(string $value): string {
-			// addslashes() is a stopgap. Replace this body with:
-			//   return $this->connection->real_escape_string($value);
-			// or route through the parameter binding system when that becomes feasible.
-			return addslashes($value);
 		}
 		
 		/**

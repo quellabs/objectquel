@@ -116,14 +116,17 @@
 		}
 
 		/**
-		 * Escapes a value for inclusion in a single-quoted SQL string literal,
-		 * by doubling embedded quotes — the ANSI SQL escaping rule, identical
-		 * across every dialect this class supports. Does not add the
-		 * surrounding quotes itself; see quoteStringLiteral() for that.
+		 * Escapes a value for inclusion in a single-quoted SQL string literal by doubling embedded quotes.
+		 * MySQL/MariaDB also read backslash escapes (unless NO_BACKSLASH_ESCAPES is set), so backslashes are doubled there.
+		 * Does not add the surrounding quotes; see quoteStringLiteral().
 		 * @param string $value
 		 * @return string
 		 */
 		public function escapeStringLiteral(string $value): string {
+			if (in_array($this->platform->getDatabaseType(), ['mysql', 'mariadb'], true)) {
+				$value = str_replace('\\', '\\\\', $value);
+			}
+
 			return str_replace("'", "''", $value);
 		}
 

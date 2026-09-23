@@ -186,11 +186,6 @@
 		 * @return string SQL string literal with proper escaping
 		 */
 		public function handleString(AstString $ast): string {
-			// Only MySQL/MariaDB read a double-quoted token as a string; the other engines read it as an identifier
-			if (in_array($this->platform->getDatabaseType(), ['mysql', 'mariadb'], true)) {
-				return '"' . $this->escapeSqlString($ast->getValue()) . '"';
-			}
-
 			return $this->identifierQuoter->quoteStringLiteral($ast->getValue());
 		}
 		
@@ -288,19 +283,5 @@
 		 */
 		private function visitNodeAndReturnSQL(AstInterface $node): string {
 			return $this->mainVisitor->visitNodeAndReturnSQL($node);
-		}
-		
-		/**
-		 * Escape a string value for safe inclusion in a SQL literal.
-		 *
-		 * NOTE: This centralizes escaping so it can be swapped for a PDO/mysqli
-		 * real_escape_string call once a connection reference is available here.
-		 * Do not inline addslashes() calls elsewhere in this class.
-		 *
-		 * @param string $value Raw string value
-		 * @return string Escaped string safe for embedding between SQL quotes
-		 */
-		private function escapeSqlString(string $value): string {
-			return addslashes($value);
 		}
 	}

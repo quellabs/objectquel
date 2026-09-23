@@ -238,11 +238,13 @@
 		 * - MySQL / MariaDB: UNIX_TIMESTAMP(col)
 		 * - PostgreSQL:      EXTRACT(EPOCH FROM col)::BIGINT
 		 * - SQLite:          strftime('%s', col)
+		 * - SQL Server:      DATEDIFF_BIG(SECOND, '1970-01-01', col); like PostgreSQL, a column without offset counts as UTC
 		 */
 		public function getUnixTimestampFunction(): string {
 			return match ($this->adapter->getDatabaseType()) {
 				'pgsql' => 'EXTRACT(EPOCH FROM %s)::BIGINT',
 				'sqlite' => "strftime('%%s', %s)",
+				'sqlsrv' => "DATEDIFF_BIG(SECOND, '1970-01-01', %s)",
 				default => 'UNIX_TIMESTAMP(%s)',
 			};
 		}
@@ -254,11 +256,13 @@
 		 * - MySQL / MariaDB: UNIX_TIMESTAMP()
 		 * - PostgreSQL:      EXTRACT(EPOCH FROM NOW())::BIGINT
 		 * - SQLite:          strftime('%s','now')
+		 * - SQL Server:      DATEDIFF_BIG(SECOND, '1970-01-01', SYSUTCDATETIME())
 		 */
 		public function getCurrentUnixTimestamp(): string {
 			return match ($this->adapter->getDatabaseType()) {
 				'pgsql' => 'EXTRACT(EPOCH FROM NOW())::BIGINT',
 				'sqlite' => "strftime('%s','now')",
+				'sqlsrv' => "DATEDIFF_BIG(SECOND, '1970-01-01', SYSUTCDATETIME())",
 				default => 'UNIX_TIMESTAMP()',
 			};
 		}
