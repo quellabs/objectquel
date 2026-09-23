@@ -65,7 +65,7 @@
 
 		/**
 		 * Runs a copy of an embedded retrieve through the ad hoc query pipeline, narrowed to the ranges it reads.
-		 * The copy selects exactly its target list: hidden projections the optimizer adds only serve PHP-side processing.
+		 * The copy selects only its target list, without the optimizer's PHP-side projections.
 		 * @param AstRetrieve $retrieve Analyzed standalone or cursor retrieve
 		 * @param AstAlias[] $extraValues Values appended to the copy's target list before the pipeline runs
 		 * @return AstRetrieve The optimized copy, ready for retrieveSql()

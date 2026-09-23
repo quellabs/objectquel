@@ -69,9 +69,7 @@
 		}
 
 		/**
-		 * Consumes `function` when it starts the routine form. A table or index named
-		 * `function` (`destroy function`, `destroy function if exists`, `destroy function on T`)
-		 * keeps its old meaning.
+		 * Consumes `function` when it starts the routine form; a table or index named `function` keeps its meaning.
 		 * @return bool True when `function` was consumed
 		 * @throws LexerException
 		 */

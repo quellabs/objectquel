@@ -92,7 +92,7 @@
 
 		/**
 		 * Compiles a routine's current-row `delete x` against the cursor's source range, soft-deleting like `delete`.
-		 * Where the alias would need a FROM clause (SQL Server), the table is left unaliased, the documented `WHERE CURRENT OF` form.
+		 * On SQL Server the table is left unaliased, the documented `WHERE CURRENT OF` form.
 		 * @param AstRangeDatabase $range The cursor's source range
 		 * @param string $rowCondition SQL condition selecting the current row, e.g. `CURRENT OF cursor`
 		 * @return string
@@ -132,18 +132,8 @@
 		}
 
 		/**
-		 * Builds the `` `col` = <sql> `` SET-clause fragment that marks a row
-		 * soft-deleted, or null when the entity has no soft-delete column or
-		 * its column type isn't one of the two InjectSoftDeleteCondition
-		 * (the read-side filter) recognises — falling back to a real DELETE
-		 * in that case rather than emitting a broken UPDATE, same fail-open
-		 * behavior InjectSoftDeleteCondition::buildCondition() uses.
-		 *
-		 * A raw SQL fragment, not a bound parameter — mirrors
-		 * VersionValueHandler::buildVersionSetClause()'s 'datetime' case,
-		 * which uses the same engine-appropriate "current datetime"
-		 * expression for the same reason (this is a system-generated value,
-		 * not user-supplied data going through AssignmentValidator).
+		 * Builds the SET fragment that marks a row soft-deleted, or null (a real DELETE) when the entity
+		 * has no soft-delete column of a type InjectSoftDeleteCondition recognises.
 		 * @param EntityMetadataRecord $metadata
 		 * @param string|null $alias The DELETE/UPDATE statement's own range alias, or null when the table is unaliased
 		 * @return string|null

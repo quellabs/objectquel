@@ -171,9 +171,7 @@
 		}
 
 		/**
-		 * `type name [= initializer]` — a `retrieve` initializer is parsed as a
-		 * statement, anything else as an expression. Whether the type allows
-		 * that initializer is checked later, not here.
+		 * Parses `type name [= initializer]`; a `retrieve` initializer is a statement, anything else an expression.
 		 * @return AstDeclare
 		 * @throws LexerException|ParserException|\ReflectionException
 		 */

@@ -110,7 +110,7 @@
 
 		/**
 		 * Compiles a routine's current-row `replace x (...)` against the cursor's source range, bumping version columns like `replace`.
-		 * Where the alias would need a FROM clause (SQL Server), the table is left unaliased, the documented `WHERE CURRENT OF` form.
+		 * On SQL Server the table is left unaliased, the documented `WHERE CURRENT OF` form.
 		 * @param AstRangeDatabase $range The cursor's source range
 		 * @param AstAssignment[] $assignments Column assignments
 		 * @param string $rowCondition SQL condition selecting the current row, e.g. `CURRENT OF cursor`
