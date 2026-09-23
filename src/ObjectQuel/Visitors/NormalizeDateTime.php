@@ -1,103 +1,122 @@
 <?php
-	
+
 	namespace Quellabs\ObjectQuel\ObjectQuel\Visitors;
-	
+
 	use Quellabs\ObjectQuel\EntityStore;
 	use Quellabs\ObjectQuel\Exception\EntityResolutionException;
+	use Quellabs\ObjectQuel\Exception\QuelException;
 	use Quellabs\ObjectQuel\Execution\Helpers\ResolveType;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstDate;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstIdentifier;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstNumber;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstString;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\NodeBinary;
 	use Quellabs\ObjectQuel\ObjectQuel\AstInterface;
 	use Quellabs\ObjectQuel\ObjectQuel\AstVisitorInterface;
-	
+
 	/**
-	 * Normalizes bare datetime column references into AstDate nodes.
-	 *
-	 * Visits terminal AstIdentifier nodes (those with no next in the chain —
-	 * i.e. the actual column node, e.g. "createdAt" in "p.createdAt"). When
-	 * the column resolves to \DateTime and appears inside a binary expression,
-	 * the root of the chain is wrapped with AstDate so that handleDate emits
-	 * the correct UNIX_TIMESTAMP() SQL.
-	 *
-	 * Double-wrapping is prevented by checking whether the chain root's parent
-	 * is already an AstDate.
+	 * Expresses the datetime operands of binary expressions as Unix timestamps, which date arithmetic works in.
+	 * A datetime identifier operand (a column, or a routine variable or cursor field when the type
+	 * resolver knows them) is wrapped in AstDate; a date string compared with one becomes an integer.
+	 * Bound parameters are converted at execution by CoerceDateTimeParameters.
 	 */
 	class NormalizeDateTime implements AstVisitorInterface {
-		
+
+		/** Comparison operators whose string operand is read as a date */
+		private const array COMPARISON_OPERATORS = ['=', '<>', '>', '>=', '<', '<='];
+
 		private ResolveType $resolveType;
-		
+
 		/**
-		 * @param EntityStore $entityStore Used by ResolveType to look up column annotations
+		 * @param EntityStore $entityStore Used to look up column types
+		 * @param ResolveType|null $resolveType Type resolver; defaults to one that knows entity columns only
 		 */
-		public function __construct(EntityStore $entityStore) {
-			$this->resolveType = new ResolveType($entityStore);
+		public function __construct(EntityStore $entityStore, ?ResolveType $resolveType = null) {
+			$this->resolveType = $resolveType ?? new ResolveType($entityStore);
 		}
-		
+
 		/**
-		 * Visits an AST node. When the node is a bare datetime identifier whose
-		 * parent is not already an AstDate, wraps it with AstDate via the parent's
-		 * setter.
+		 * Wraps the datetime identifier operands of a binary expression, then converts a date string compared with a timestamp.
 		 * @param AstInterface $node
 		 * @return void
-		 * @throws EntityResolutionException
+		 * @throws EntityResolutionException|QuelException
 		 */
 		public function visitNode(AstInterface $node): void {
-			// Only interested in identifiers.
-			if (!$node instanceof AstIdentifier) {
+			if (!$node instanceof NodeBinary) {
 				return;
 			}
-			
-			// Only act on terminal nodes — the actual column at the end of the chain.
-			// "createdAt" in "p.createdAt" has no next; "p" does. Skip non-terminals.
-			if ($node->hasNext()) {
-				return;
-			}
-			
-			// Only act on datetime columns.
-			if ($this->resolveType->inferReturnTypeOfIdentifier($node) !== '\DateTime') {
-				return;
-			}
-			
-			// Walk up to the root of the chain — that's the node to wrap.
-			// For "p.createdAt": terminal is "createdAt", root is "p".
-			$root = $node;
 
-			while ($root->hasParentIdentifier()) {
-				$parent = $root->getParent();
-
-				if (!$parent instanceof AstIdentifier) {
-					break;
-				}
-
-				$root = $parent;
+			if ($this->isDateTimeIdentifier($node->getLeft())) {
+				$node->setLeft($this->attach(new AstDate($node->getLeft(), null), $node));
 			}
-			
-			// Only wrap when the root appears directly inside a binary expression.
-			// Projections and aliases are left untouched — the hydrator handles
-			// those correctly via @Column annotations.
-			$binaryParent = $root->getParent();
-			
-			// Already wrapped — skip to prevent double-wrapping.
-			if ($binaryParent instanceof AstDate) {
+
+			if ($this->isDateTimeIdentifier($node->getRight())) {
+				$node->setRight($this->attach(new AstDate($node->getRight(), null), $node));
+			}
+
+			if (!in_array($node->getOperator(), self::COMPARISON_OPERATORS, true)) {
 				return;
 			}
-			
-			// Do nothing if identifier is not part of expression
-			if (!$binaryParent instanceof NodeBinary) {
-				return;
-			}
-			
-			// Wrap the root with AstDate. handleDate will emit UNIX_TIMESTAMP(col).
-			// Capture the parent before constructing AstDate — the constructor calls
-			// $root->setParent($this) which would overwrite the original parent reference.
-			$wrapped = new AstDate($root, null);
 
-			// Wire the wrapped node into the binary expression.
-			if ($binaryParent->getLeft() === $root) {
-				$binaryParent->setLeft($wrapped);
-			} else {
-				$binaryParent->setRight($wrapped);
+			if ($this->isTimestamp($node->getLeft()) && $node->getRight() instanceof AstString) {
+				$node->setRight($this->attach($this->timestampLiteral($node->getRight()), $node));
 			}
+
+			if ($this->isTimestamp($node->getRight()) && $node->getLeft() instanceof AstString) {
+				$node->setLeft($this->attach($this->timestampLiteral($node->getLeft()), $node));
+			}
+		}
+
+		/**
+		 * @param AstInterface $operand Operand of a binary expression
+		 * @return bool True when it's an identifier chain ending in a datetime value
+		 * @throws EntityResolutionException
+		 */
+		private function isDateTimeIdentifier(AstInterface $operand): bool {
+			if (!$operand instanceof AstIdentifier) {
+				return false;
+			}
+
+			// The chain's last node carries the value's type: "createdAt" in "p.createdAt"
+			$terminal = $operand;
+
+			while ($terminal->getNext() !== null) {
+				$terminal = $terminal->getNext();
+			}
+
+			return $this->resolveType->inferReturnTypeOfIdentifier($terminal) === '\DateTime';
+		}
+
+		/**
+		 * @param AstInterface $operand Operand of a comparison
+		 * @return bool True when it's a point in time as a Unix timestamp, not an interval
+		 */
+		private function isTimestamp(AstInterface $operand): bool {
+			return $operand instanceof AstDate && !$operand->isInterval();
+		}
+
+		/**
+		 * @param AstString $literal Date string, e.g. "2024-01-01" or "2024-01-01 12:00:00"
+		 * @return AstNumber The same point in time as a Unix timestamp
+		 * @throws QuelException When the string isn't a date
+		 */
+		private function timestampLiteral(AstString $literal): AstNumber {
+			$timestamp = CoerceDateTimeParameters::toTimestamp($literal->getValue());
+
+			if ($timestamp === null) {
+				throw new QuelException("'{$literal->getValue()}' is compared with a datetime and must be a 'Y-m-d H:i:s' or 'Y-m-d' string, or a Unix timestamp.", 'type_error');
+			}
+
+			return new AstNumber((string)$timestamp);
+		}
+
+		/**
+		 * @param AstInterface $replacement Node taking an operand's place
+		 * @param NodeBinary $parent The binary expression it goes into
+		 * @return AstInterface The replacement, with its parent set
+		 */
+		private function attach(AstInterface $replacement, NodeBinary $parent): AstInterface {
+			$replacement->setParent($parent);
+			return $replacement;
 		}
 	}

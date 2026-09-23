@@ -93,6 +93,7 @@
 			}
 
 			$this->validate($routine);
+			$this->declareVariableTypes($routine);
 			$this->prepareCursors($routine);
 			(new RoutineTypeChecker($this->entityStore, $this->typeMapper))->check($routine, $this->cursorQueries);
 
@@ -379,6 +380,26 @@
 				$this->cursorDeclarations[$name] = $initializer;
 				$this->cursorRanges[$name] = $ranges;
 				$this->cursorQueries[$name] = $this->prepareCursorQuery($name, $initializer);
+				$this->statements->getFieldTypes()->recordCursor($name, $this->cursorQueries[$name]);
+			}
+		}
+
+		/**
+		 * Records the declared type of every parameter and scalar local, for statements that read them.
+		 * @param AstRoutineDefinition $routine The routine; declarations are top-level only
+		 * @return void
+		 */
+		private function declareVariableTypes(AstRoutineDefinition $routine): void {
+			$fieldTypes = $this->statements->getFieldTypes();
+
+			foreach ($routine->getParameters() as $parameter) {
+				$fieldTypes->declareVariable($parameter->getName(), $parameter->getType());
+			}
+
+			foreach ($routine->getBody() as $statement) {
+				if ($statement instanceof AstDeclare && !$statement->isCursor()) {
+					$fieldTypes->declareVariable($statement->getName(), $statement->getType());
+				}
 			}
 		}
 

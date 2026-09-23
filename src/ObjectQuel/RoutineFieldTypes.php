@@ -134,6 +134,23 @@
 		}
 
 		/**
+		 * Types routine variables and cursor fields as well as entity columns.
+		 * @param AstIdentifier $identifier Identifier node; for `cursor.field`, the field node
+		 * @return string|null PHP-level type, or null when unknown
+		 * @throws EntityResolutionException
+		 */
+		public function inferReturnTypeOfIdentifier(AstIdentifier $identifier): ?string {
+			$root = $identifier->getType() === IdentifierType::CursorField ? $identifier->getParent() : $identifier;
+
+			if (!$root instanceof AstIdentifier || !$root->getType()->isRoutineReference()) {
+				return parent::inferReturnTypeOfIdentifier($identifier);
+			}
+
+			$definition = $this->routineReferenceDefinition($root);
+			return $definition === null ? null : TypeMapper::phinxTypeToPhpType($definition['type']);
+		}
+
+		/**
 		 * @param AstInterface $expression A target-list expression after the query pipeline
 		 * @return TypeDefinition|null The value's type, or null when it can't be determined
 		 * @throws EntityResolutionException

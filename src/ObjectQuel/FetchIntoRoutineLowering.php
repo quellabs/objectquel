@@ -2,7 +2,6 @@
 
 	namespace Quellabs\ObjectQuel\ObjectQuel;
 
-	use Quellabs\ObjectQuel\EntityStore;
 	use Quellabs\ObjectQuel\Exception\EntityResolutionException;
 	use Quellabs\ObjectQuel\Exception\QuelException;
 	use Quellabs\ObjectQuel\Exception\SemanticException;
@@ -19,22 +18,11 @@
 	 */
 	abstract class FetchIntoRoutineLowering extends RoutineLowering {
 
-		private RoutineFieldTypes $fieldTypes;
-
 		/** @var array<string, array<string, string>> SQL type of each fetched field, by cursor and field, in select-list order */
 		protected array $cursorFields;
 
 		/** True once a discarded retrieve needs the scratch variable */
 		protected bool $usesDiscardVariable;
-
-		/**
-		 * @param EntityStore $entityStore Entity metadata
-		 * @param RoutineStatementCompiler $statements Compiles embedded statements for the target engine
-		 */
-		public function __construct(EntityStore $entityStore, RoutineStatementCompiler $statements) {
-			parent::__construct($entityStore, $statements);
-			$this->fieldTypes = new RoutineFieldTypes($entityStore, $this->typeMapper);
-		}
 
 		/**
 		 * @param string $name Local or parameter name
@@ -132,7 +120,7 @@
 		}
 
 		/**
-		 * Records variable types for typing cursor fields that read them.
+		 * Resets the per-routine lowering state.
 		 * @param AstRoutineDefinition $routine The routine
 		 * @return void
 		 * @throws SemanticException
@@ -140,16 +128,6 @@
 		protected function validate(AstRoutineDefinition $routine): void {
 			$this->cursorFields = [];
 			$this->usesDiscardVariable = false;
-
-			foreach ($routine->getParameters() as $parameter) {
-				$this->fieldTypes->declareVariable($parameter->getName(), $parameter->getType());
-			}
-
-			foreach ($routine->getBody() as $statement) {
-				if ($statement instanceof AstDeclare && !$statement->isCursor()) {
-					$this->fieldTypes->declareVariable($statement->getName(), $statement->getType());
-				}
-			}
 		}
 
 		/**
@@ -161,7 +139,7 @@
 		 */
 		protected function prepareCursorQuery(string $cursorName, AstRetrieve $initializer): AstRetrieve {
 			$query = $this->prepareFetchedQuery($cursorName, $initializer);
-			$this->cursorFields[$cursorName] = $this->fieldTypes->declareCursor($cursorName, $query);
+			$this->cursorFields[$cursorName] = $this->statements->getFieldTypes()->declareCursor($cursorName, $query);
 			return $query;
 		}
 

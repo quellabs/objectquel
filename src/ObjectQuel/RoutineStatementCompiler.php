@@ -3,6 +3,7 @@
 	namespace Quellabs\ObjectQuel\ObjectQuel;
 
 	use Quellabs\ObjectQuel\Capabilities\PlatformCapabilitiesInterface;
+	use Quellabs\ObjectQuel\DatabaseAdapter\Mapper\DDLTypeMapper;
 	use Quellabs\ObjectQuel\EntityManager;
 	use Quellabs\ObjectQuel\EntityStore;
 	use Quellabs\ObjectQuel\Exception\EntityResolutionException;
@@ -23,6 +24,7 @@
 	use Quellabs\ObjectQuel\Planner\ExecutionPlanBuilder;
 	use Quellabs\ObjectQuel\Planner\ExecutionStage;
 	use Quellabs\ObjectQuel\Planner\QueryOptimizer;
+	use Quellabs\ObjectQuel\ObjectQuel\Visitors\NormalizeDateTime;
 
 	/**
 	 * Compiles the statements and expressions embedded in a routine body to SQL
@@ -42,6 +44,7 @@
 		private QuelToSQLReplace $replaceCompiler;
 		private QuelToSQLAppend $appendCompiler;
 		private QuelToSQLCall $callCompiler;
+		private RoutineFieldTypes $fieldTypes;
 
 		/**
 		 * @param EntityManager $entityManager Entity metadata and the optimizer's dependencies
@@ -61,6 +64,14 @@
 			$this->replaceCompiler = new QuelToSQLReplace($this->entityStore, $platform, $versionValueHandler);
 			$this->callCompiler = new QuelToSQLCall($this->entityStore, $platform);
 			$this->appendCompiler = new QuelToSQLAppend($entityManager, $platform, new QuelToSQLUpsert($this->entityStore, $platform, $this->replaceCompiler), $versionValueHandler);
+			$this->fieldTypes = new RoutineFieldTypes($this->entityStore, new DDLTypeMapper($platform));
+		}
+
+		/**
+		 * @return RoutineFieldTypes Types of the routine's variables and cursor fields, filled in by the lowering
+		 */
+		public function getFieldTypes(): RoutineFieldTypes {
+			return $this->fieldTypes;
 		}
 
 		/**
@@ -85,6 +96,7 @@
 			$parameters = [];
 			(new IdentifierTypeResolver($this->entityStore))->resolve($query);
 			(new QueryNormalizer($this->entityStore))->transform($query);
+			$this->normalizeDateTimes($query);
 			(new SemanticAnalyzer($this->entityStore, $this->platform))->validate($query);
 			(new QueryOptimizer($this->entityManager, $this->platform))->transform($query, $parameters);
 
@@ -118,6 +130,7 @@
 		 */
 		public function compileDelete(AstDelete $delete): string {
 			$statement = $delete->deepClone();
+			$this->normalizeDateTimes($statement->getConditionsOrFail());
 
 			return $this->withoutBoundParameters('delete', function (array &$parameters) use ($statement): string {
 				return $this->deleteCompiler->convertToSQL($statement, $parameters);
@@ -131,6 +144,7 @@
 		 */
 		public function compileReplace(AstReplace $replace): string {
 			$statement = $replace->deepClone();
+			$this->normalizeDateTimes($statement->getConditionsOrFail());
 
 			return $this->withoutBoundParameters('replace', function (array &$parameters) use ($statement): string {
 				return $this->replaceCompiler->convertToSQL($statement, $parameters);
@@ -147,6 +161,10 @@
 			$statement = $append->deepClone();
 			$entityName = $statement->getEntityName();
 
+			if ($statement->getOnConflict() !== null) {
+				$this->normalizeDateTimes($statement->getOnConflict()->getConditionsOrFail());
+			}
+
 			if ($entityName === null) {
 				throw new SemanticException("'append to {$statement->getRange()->getName()}' targets a JSON source, which a routine can't write.");
 			}
@@ -156,6 +174,7 @@
 					$source = $statement->getSourceOrFail();
 					$this->narrowRanges($source);
 					$this->appendCompiler->prepareSource($source, $parameters);
+					$this->normalizeDateTimes($source);
 
 					if ($this->appendCompiler->needsPlanner($source)) {
 						throw new SemanticException("The retrieve feeding 'append to {$statement->getRange()->getName()}' needs PHP-side processing (a JSON source or a temp table), which a routine can't run.");
@@ -206,6 +225,9 @@
 		 * @throws SemanticException
 		 */
 		public function compileCondition(AstInterface $condition): string {
+			$condition = $condition->deepClone();
+			$this->normalizeDateTimes($condition);
+
 			return $this->withoutBoundParameters('expression', function (array &$parameters) use ($condition): string {
 				return (new BuildSqlFromAst($this->entityStore, $parameters, 'WHERE', $this->platform))->visitConditionAndReturnSQL($condition);
 			});
@@ -223,6 +245,9 @@
 				$predicate = $this->compileCondition($value);
 				return "CASE WHEN {$predicate} THEN 1 WHEN NOT ({$predicate}) THEN 0 END";
 			}
+
+			$value = $value->deepClone();
+			$this->normalizeDateTimes($value);
 
 			return $this->withoutBoundParameters('expression', function (array &$parameters) use ($value): string {
 				return (new BuildSqlFromAst($this->entityStore, $parameters, 'VALUES', $this->platform))->visitNodeAndReturnSQL($value);
@@ -257,6 +282,17 @@
 		 */
 		private function narrowRanges(AstRetrieve $query): void {
 			$query->setRanges(array_values($this->rangeReferences->withJoinDependencies($query, $query->getRanges())));
+		}
+
+		/**
+		 * Expresses datetime routine variables and cursor fields in comparisons and arithmetic as Unix timestamps,
+		 * like datetime columns, so both sides of a comparison agree.
+		 * @param AstInterface $node Cloned statement part, modified in place
+		 * @return void
+		 * @throws EntityResolutionException|QuelException
+		 */
+		private function normalizeDateTimes(AstInterface $node): void {
+			$node->accept(new NormalizeDateTime($this->entityStore, $this->fieldTypes));
 		}
 
 		/**

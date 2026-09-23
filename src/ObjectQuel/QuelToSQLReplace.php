@@ -5,10 +5,13 @@
 	use Quellabs\ObjectQuel\Capabilities\PlatformCapabilitiesInterface;
 	use Quellabs\ObjectQuel\DatabaseAdapter\SqlIdentifierQuoter;
 	use Quellabs\ObjectQuel\EntityStore;
+	use Quellabs\ObjectQuel\Exception\EntityResolutionException;
+	use Quellabs\ObjectQuel\Exception\QuelException;
 	use Quellabs\ObjectQuel\Exception\SemanticException;
 	use Quellabs\ObjectQuel\Execution\Visitors\BuildSqlFromAst;
 	use Quellabs\ObjectQuel\Metadata\EntityMetadataRecord;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstAssignment;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstParameter;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRangeDatabase;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstReplace;
 	use Quellabs\ObjectQuel\ObjectQuel\AstInterface;
@@ -17,6 +20,8 @@
 	use Quellabs\ObjectQuel\ObjectQuel\Helpers\SetTargetColumnQuoter;
 	use Quellabs\ObjectQuel\ObjectQuel\Helpers\WriteVerbIdentifierResolver;
 	use Quellabs\ObjectQuel\ObjectQuel\Helpers\WriteVerbParameterNormalizer;
+	use Quellabs\ObjectQuel\ObjectQuel\Visitors\CoerceDateTimeParameters;
+	use Quellabs\ObjectQuel\ObjectQuel\Visitors\NormalizeDateTime;
 	use Quellabs\ObjectQuel\Persistence\VersionValueHandler;
 	use Quellabs\ObjectQuel\Serialization\Serializers\SQLSerializer;
 
@@ -71,7 +76,7 @@
 		 * @param AstReplace $statement
 		 * @param array<string, mixed> $parameters Bound parameters, by reference
 		 * @return string
-		 * @throws SemanticException
+		 * @throws SemanticException|QuelException|EntityResolutionException
 		 */
 		public function convertToSQL(AstReplace $statement, array &$parameters): string {
 			// Identifiers in the WHERE clause and assignment values (e.g.
@@ -92,9 +97,15 @@
 			// (e.g. `where u.deletedAt > :since`). One shared instance
 			// normalizes both halves so a parameter reused between them
 			// isn't denormalized twice.
+			$conditions = $statement->getConditionsOrFail();
+
+			// Datetime comparisons work in Unix timestamps, as in retrieve
+			$conditions->accept(new NormalizeDateTime($this->entityStore));
+
 			$normalizer = new WriteVerbParameterNormalizer($metadata, $this->serializer, $parameters);
 			$normalizer->normalizeAssignments($statement->getAssignments());
-			$statement->getConditionsOrFail()->accept($normalizer);
+			$conditions->accept($normalizer);
+			$this->coerceConditionParameters($conditions, $statement->getAssignments(), $parameters);
 
 			$setClauseParts = $this->buildSetClause($statement->getAssignments(), $metadata, $parameters, $range->getName());
 
@@ -102,7 +113,7 @@
 				$metadata->tableName,
 				$range->getName(),
 				implode(', ', $setClauseParts),
-				$this->compileCondition($statement->getConditionsOrFail(), $parameters),
+				$this->compileCondition($conditions, $parameters),
 				$this->identifierQuoter,
 				$this->platform
 			);
@@ -246,5 +257,34 @@
 		private function compileCondition(AstInterface $condition, array &$parameters): string {
 			$builder = new BuildSqlFromAst($this->entityStore, $parameters, 'WHERE', $this->platform);
 			return $builder->visitConditionAndReturnSQL($condition);
+		}
+
+		/**
+		 * Converts parameters compared with a datetime in the WHERE clause to Unix timestamps.
+		 * A parameter also used as a SET value can't hold both forms, so that combination is rejected.
+		 * @param AstInterface $conditions WHERE clause, after NormalizeDateTime
+		 * @param AstAssignment[] $assignments SET clause
+		 * @param array<string, mixed> $parameters Bound parameters, by reference
+		 * @return void
+		 * @throws QuelException
+		 */
+		public function coerceConditionParameters(AstInterface $conditions, array $assignments, array &$parameters): void {
+			$setValues = [];
+
+			foreach ($assignments as $assignment) {
+				$value = $assignment->getValue();
+
+				if ($value instanceof AstParameter && array_key_exists($value->getName(), $parameters)) {
+					$setValues[$value->getName()] = $parameters[$value->getName()];
+				}
+			}
+
+			$conditions->accept(new CoerceDateTimeParameters($parameters));
+
+			foreach ($setValues as $name => $value) {
+				if ($parameters[$name] !== $value) {
+					throw new QuelException("Parameter ':{$name}' is both assigned and compared with a datetime, which need different forms. Bind the comparison value under a second name.", 'type_error');
+				}
+			}
 		}
 	}

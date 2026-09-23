@@ -5,6 +5,8 @@
 	use Quellabs\ObjectQuel\Capabilities\PlatformCapabilitiesInterface;
 	use Quellabs\ObjectQuel\DatabaseAdapter\SqlIdentifierQuoter;
 	use Quellabs\ObjectQuel\EntityStore;
+	use Quellabs\ObjectQuel\Exception\EntityResolutionException;
+	use Quellabs\ObjectQuel\Exception\QuelException;
 	use Quellabs\ObjectQuel\Exception\SemanticException;
 	use Quellabs\ObjectQuel\Execution\Visitors\BuildSqlFromAst;
 	use Quellabs\ObjectQuel\Metadata\EntityMetadataRecord;
@@ -14,6 +16,7 @@
 	use Quellabs\ObjectQuel\ObjectQuel\Helpers\ConflictTargetResolver;
 	use Quellabs\ObjectQuel\ObjectQuel\Helpers\WriteVerbIdentifierResolver;
 	use Quellabs\ObjectQuel\ObjectQuel\Helpers\WriteVerbParameterNormalizer;
+	use Quellabs\ObjectQuel\ObjectQuel\Visitors\NormalizeDateTime;
 	use Quellabs\ObjectQuel\Serialization\Serializers\SQLSerializer;
 
 	/**
@@ -85,7 +88,7 @@
 		 * @param AstReplace $onConflict
 		 * @param array<string, mixed> $parameters Bound parameters, by reference
 		 * @return CompiledAppendSql
-		 * @throws SemanticException
+		 * @throws SemanticException|QuelException|EntityResolutionException
 		 */
 		public function convertToSQL(
 			string $insertSql,
@@ -174,7 +177,7 @@
 		 * @param AstReplace $onConflict Already identifier-resolved by the caller
 		 * @param array<string, mixed> $parameters Bound parameters, by reference
 		 * @return CompiledAppendSql
-		 * @throws SemanticException
+		 * @throws SemanticException|QuelException|EntityResolutionException
 		 */
 		private function compileNonAtomicFallback(
 			string $insertSql,
@@ -198,9 +201,15 @@
 			// docblock) — not done by calling QuelToSQLReplace::convertToSQL()
 			// directly, since that would re-run WriteVerbIdentifierResolver a
 			// second time on $onConflict (already resolved above).
+			$conditions = $onConflict->getConditionsOrFail();
+
+			// Datetime comparisons work in Unix timestamps, as in retrieve and replace
+			$conditions->accept(new NormalizeDateTime($this->entityStore));
+
 			$normalizer = new WriteVerbParameterNormalizer($metadata, $this->serializer, $parameters);
 			$normalizer->normalizeAssignments($onConflict->getAssignments());
-			$onConflict->getConditionsOrFail()->accept($normalizer);
+			$conditions->accept($normalizer);
+			$this->replaceCompiler->coerceConditionParameters($conditions, $onConflict->getAssignments(), $parameters);
 
 			$assignments = $onConflict->getAssignments();
 
@@ -209,7 +218,7 @@
 				: $this->buildDefaultFallbackSetClause($metadata, $properties, $columnNames, $compiledRows[0]);
 
 			$whereSql = (new BuildSqlFromAst($this->entityStore, $parameters, 'WHERE', $this->platform))
-				->visitConditionAndReturnSQL($onConflict->getConditionsOrFail());
+				->visitConditionAndReturnSQL($conditions);
 
 			$updateSql = AliasedDmlSql::update(
 				$tableName,
