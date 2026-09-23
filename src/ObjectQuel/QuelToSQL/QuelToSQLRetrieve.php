@@ -39,6 +39,9 @@
 		private EntityStore $entityStore;
 		private PlatformCapabilitiesInterface $platform;
 
+		/** @var string|null Schema that qualifies routine names, or null for none */
+		private ?string $routineSchema;
+
 		/**
 		 * Quotes identifiers/aliases for whichever engine $platform describes.
 		 * @var SqlIdentifierQuoter
@@ -53,15 +56,18 @@
 		 * @param EntityStore $entityStore
 		 * @param array<string, mixed> $parameters
 		 * @param PlatformCapabilitiesInterface $platform Database engine capability descriptor
+		 * @param string|null $routineSchema Schema that qualifies routine names, or null for none
 		 */
 		public function __construct(
 			EntityStore $entityStore,
 			array &$parameters,
-			PlatformCapabilitiesInterface $platform = new NullPlatformCapabilities()
+			PlatformCapabilitiesInterface $platform = new NullPlatformCapabilities(),
+			?string $routineSchema = null
 		) {
 			$this->entityStore = $entityStore;
 			$this->parameters = &$parameters;
 			$this->platform = $platform;
+			$this->routineSchema = $routineSchema;
 			$this->identifierQuoter = new SqlIdentifierQuoter($platform);
 		}
 		
@@ -156,7 +162,7 @@
 			foreach ($retrieve->getValues() as $value) {
 				// Create a new QuelToSQLConvertToString converter, passing the outer range name
 				// so entity column aliases use the derived table's name (e.g. "x.id" not "y.id")
-				$quelToSQLConvertToString = new BuildSqlFromAst($this->entityStore, $this->parameters, "VALUES", $this->platform, $outerRangeName);
+				$quelToSQLConvertToString = new BuildSqlFromAst($this->entityStore, $this->parameters, "VALUES", $this->platform, $this->routineSchema, $outerRangeName);
 				$value->accept($quelToSQLConvertToString);
 				$sqlResult = $quelToSQLConvertToString->getResult();
 				
@@ -271,7 +277,7 @@
 				return "";
 			}
 			
-			$retrieveEntitiesVisitor = new BuildSqlFromAst($this->entityStore, $this->parameters, "WHERE", $this->platform);
+			$retrieveEntitiesVisitor = new BuildSqlFromAst($this->entityStore, $this->parameters, "WHERE", $this->platform, $this->routineSchema);
 			return "WHERE " . $retrieveEntitiesVisitor->visitConditionAndReturnSQL($conditions);
 		}
 		
@@ -304,7 +310,7 @@
 				$astObject = $exception->getAstObject();
 				
 				// Convert Quel conditions to a SQL string
-				$retrieveEntitiesVisitor = new BuildSqlFromAst($this->entityStore, $this->parameters, "SORT", $this->platform);
+				$retrieveEntitiesVisitor = new BuildSqlFromAst($this->entityStore, $this->parameters, "SORT", $this->platform, $this->routineSchema);
 				$astObject->getIdentifier()->accept($retrieveEntitiesVisitor);
 				$column = $retrieveEntitiesVisitor->getResult();
 				
@@ -381,7 +387,7 @@
 			foreach ($sort as $s) {
 				// Create a new instance of QuelToSQLConvertToString to convert the conditions to a SQL string.
 				// This object will process the Quel conditions and convert them into a format that SQL understands.
-				$retrieveEntitiesVisitor = new BuildSqlFromAst($this->entityStore, $this->parameters, "SORT", $this->platform);
+				$retrieveEntitiesVisitor = new BuildSqlFromAst($this->entityStore, $this->parameters, "SORT", $this->platform, $this->routineSchema);
 				
 				// Guide the QUEL through to get a SQL query back
 				$s['ast']->accept($retrieveEntitiesVisitor);
@@ -434,7 +440,7 @@
 			$groupSQL = [];
 			
 			foreach ($groupBy as $group) {
-				$visitor = new BuildSqlFromAst($this->entityStore, $this->parameters, "CONDITION", $this->platform);
+				$visitor = new BuildSqlFromAst($this->entityStore, $this->parameters, "CONDITION", $this->platform, $this->routineSchema);
 				$group->accept($visitor);
 				$groupSQL[] = $visitor->getResult();
 			}
@@ -487,7 +493,7 @@
 				$joinProperty = $range->getJoinProperty();
 				
 				// Convert the join condition to a SQL string.
-				$visitor = new BuildSqlFromAst($this->entityStore, $this->parameters, "CONDITION", $this->platform);
+				$visitor = new BuildSqlFromAst($this->entityStore, $this->parameters, "CONDITION", $this->platform, $this->routineSchema);
 				$joinColumn = $visitor->visitConditionAndReturnSQL($joinProperty);
 				
 				// Determine join type

@@ -17,7 +17,7 @@
 
 		private DatabaseAdapter $connection;
 		private PlatformCapabilitiesInterface $platform;
-		private QuelToSQLDestroyRoutine $compiler;
+		private ?QuelToSQLDestroyRoutine $compiler = null;
 		private DdlRunner $ddlRunner;
 
 		/**
@@ -27,8 +27,15 @@
 		public function __construct(DatabaseAdapter $connection, PlatformCapabilitiesInterface $platform) {
 			$this->connection = $connection;
 			$this->platform = $platform;
-			$this->compiler = new QuelToSQLDestroyRoutine($platform);
 			$this->ddlRunner = new DdlRunner($connection);
+		}
+
+		/**
+		 * Returns the DROP compiler. Built on first use, so SQL Server reads the routine schema only when a statement needs compiling.
+		 * @return QuelToSQLDestroyRoutine
+		 */
+		private function compiler(): QuelToSQLDestroyRoutine {
+			return $this->compiler ??= new QuelToSQLDestroyRoutine($this->platform, $this->connection->getRoutineSchema());
 		}
 
 		/**
@@ -41,7 +48,7 @@
 		public function execute(AstStatement $statement, ExecutionContext $context): void {
 			assert($statement instanceof AstDestroyRoutine);
 
-			$statements = $this->compiler->convertToSQL($statement);
+			$statements = $this->compiler()->convertToSQL($statement);
 
 			// MySQL's DROP runs with IF EXISTS on both kinds, so a missing routine is caught here.
 			if (

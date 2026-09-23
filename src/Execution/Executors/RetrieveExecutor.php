@@ -108,7 +108,7 @@
 		 * @throws QuelException
 		 */
 		protected function convertToSQL(AstRetrieve $retrieve, array &$parameters): string {
-			$quelToSQL = new QuelToSQLRetrieve($this->entityManager->getEntityStore(), $parameters, $this->capabilities);
+			$quelToSQL = new QuelToSQLRetrieve($this->entityManager->getEntityStore(), $parameters, $this->capabilities, $this->connection->getRoutineSchema());
 			return $quelToSQL->convertToSQL($retrieve);
 		}
 	}

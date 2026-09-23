@@ -37,8 +37,6 @@
 		 */
 		private ?bool $windowFunctionsCache = null;
 
-		/** @var string|null SQL Server default schema; null means not yet read */
-		private ?string $routineSchemaCache = null;
 		
 		/**
 		 * Constructor
@@ -354,31 +352,6 @@
 		 */
 		public function supportsBooleanLiterals(): bool {
 			return $this->adapter->getDatabaseType() !== 'sqlsrv';
-		}
-
-		/**
-		 * @inheritDoc
-		 *
-		 * On SQL Server, the connection's default schema, read once.
-		 * @throws \RuntimeException When the default schema can't be read
-		 */
-		public function getRoutineSchema(): ?string {
-			if ($this->adapter->getDatabaseType() !== 'sqlsrv') {
-				return null;
-			}
-
-			if ($this->routineSchemaCache !== null) {
-				return $this->routineSchemaCache;
-			}
-
-			$statement = $this->adapter->execute('SELECT SCHEMA_NAME() AS routine_schema');
-			$row = $statement?->fetch('assoc');
-
-			if (!is_array($row) || !is_string($row['routine_schema']) || $row['routine_schema'] === '') {
-				throw new \RuntimeException("Can't read the connection's default schema, which qualifies routine names on SQL Server.");
-			}
-
-			return $this->routineSchemaCache = $row['routine_schema'];
 		}
 
 		/**

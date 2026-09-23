@@ -62,7 +62,7 @@
 		private EntityStore $entityStore;
 		private EntityManager $entityManager;
 		private PlatformCapabilitiesInterface $platform;
-		private QuelToSQLAppend $compiler;
+		private ?QuelToSQLAppend $compiler = null;
 		private JsonAppendExecutor $jsonAppendExecutor;
 		private PlanExecutor $planExecutor;
 
@@ -86,6 +86,17 @@
 			$this->entityStore = $entityManager->getEntityStore();
 			$this->platform = $platform;
 			$this->planExecutor = $planExecutor;
+			$this->jsonAppendExecutor = new JsonAppendExecutor();
+		}
+
+		/**
+		 * Returns the append compiler. Built on first use, so SQL Server reads the routine schema only when a statement needs compiling.
+		 * @return QuelToSQLAppend
+		 */
+		private function compiler(): QuelToSQLAppend {
+			if ($this->compiler !== null) {
+				return $this->compiler;
+			}
 
 			// QuelToSQLReplace is reused (not reconstructed) so upsert's
 			// on-conflict UPDATE SET clause is built by the exact same
@@ -94,11 +105,11 @@
 			// itself isn't a compiler for its own AST node (there's no
 			// AstUpsert — see QuelToSQLAppend's docblock); it just keeps the
 			// on-conflict dialect-branching logic out of QuelToSQLAppend.
-			$versionValueHandler = $entityManager->getUnitOfWork()->getVersionValueHandler();
-			$replaceCompiler = new QuelToSQLReplace($this->entityStore, $platform, $versionValueHandler);
-			$upsertCompiler = new QuelToSQLUpsert($this->entityStore, $platform, $replaceCompiler);
-			$this->compiler = new QuelToSQLAppend($entityManager, $platform, $upsertCompiler, $versionValueHandler);
-			$this->jsonAppendExecutor = new JsonAppendExecutor();
+			$routineSchema = $this->connection->getRoutineSchema();
+			$versionValueHandler = $this->entityManager->getUnitOfWork()->getVersionValueHandler();
+			$replaceCompiler = new QuelToSQLReplace($this->entityStore, $this->platform, $routineSchema, $versionValueHandler);
+			$upsertCompiler = new QuelToSQLUpsert($this->entityStore, $this->platform, $routineSchema, $replaceCompiler);
+			return $this->compiler = new QuelToSQLAppend($this->entityManager, $this->platform, $routineSchema, $upsertCompiler, $versionValueHandler);
 		}
 
 		/**
@@ -121,7 +132,7 @@
 			if ($statement->isInsertFromSelect()) {
 				$source = $this->prepareInsertFromSelectSource($statement, $parameters);
 
-				if ($this->compiler->needsPlanner($source)) {
+				if ($this->compiler()->needsPlanner($source)) {
 					return $this->executeInsertFromSelectViaPlanner($statement, $source, $parameters);
 				}
 			}
@@ -159,7 +170,7 @@
 			$prepared = $this->prepare($statement, $parameters);
 			$statement = $prepared->getStatement();
 			$metadata = $prepared->getMetadata();
-			$compiled = $this->compiler->convertToSQL($statement, $parameters);
+			$compiled = $this->compiler()->convertToSQL($statement, $parameters);
 			$target = $metadata->tableName;
 
 			if ($compiled->hasFallbackUpdate()) {
@@ -292,7 +303,7 @@
 		 */
 		private function prepareInsertFromSelectSource(AstAppend $statement, array &$parameters): AstRetrieve {
 			$source = $statement->getSourceOrFail();
-			$this->compiler->prepareSource($source, $parameters);
+			$this->compiler()->prepareSource($source, $parameters);
 			return $source;
 		}
 		
@@ -340,10 +351,10 @@
 			// Maps $properties[$i] to the source retrieve's $i-th visible
 			// projection alias, so a fetched row's column ($row[$alias]) can be
 			// read back out under the target property name below.
-			$visibleAliases = $this->compiler->resolveVisibleAliases($properties, $source, $targetLabel);
+			$visibleAliases = $this->compiler()->resolveVisibleAliases($properties, $source, $targetLabel);
 
 			// Typed placeholders let the compiler convert a Unix timestamp bound into a datetime column
-			$valueTypes = array_map(fn(string $alias) => $this->compiler->sourceValueType($source, $alias), $visibleAliases);
+			$valueTypes = array_map(fn(string $alias) => $this->compiler()->sourceValueType($source, $alias), $visibleAliases);
 
 			// Runs the source retrieve exactly like a top-level `retrieve`
 			// query (JSON joins, temp-table promotion and all) and materializes
@@ -388,7 +399,7 @@
 					// prepare()/fillGeneratedPrimaryKeys() are deliberately
 					// skipped here.
 					$chunkStatement = AstAppend::forValues($statement->getRange(), $assignmentRows);
-					$sql = $this->compiler->convertToSQL($chunkStatement, $chunkParams)->primarySql;
+					$sql = $this->compiler()->convertToSQL($chunkStatement, $chunkParams)->primarySql;
 					$rs = $this->assertInsertSucceeded($this->connection->execute($sql, $chunkParams), $tableName);
 					$totalAffected += $rs->rowCount();
 				}

@@ -181,7 +181,7 @@
 			}
 
 			$kind = $routine->isVoid() ? 'PROCEDURE' : 'FUNCTION';
-			return ["DROP {$kind} IF EXISTS " . $this->quoter->quoteRoutineName($routine->getName()), $create];
+			return ["DROP {$kind} IF EXISTS " . $this->quoter->quoteRoutineName($routine->getName(), $this->routineSchema), $create];
 		}
 
 		/**
@@ -192,7 +192,7 @@
 		private function header(AstRoutineDefinition $routine, array $parameters): string {
 			$list = implode(', ', array_map(fn(string $name, string $type) => "{$name} {$type}", array_keys($parameters), $parameters));
 			$orReplace = $this->platform->getDatabaseType() === 'mariadb' ? 'OR REPLACE ' : '';
-			$signature = $this->quoter->quoteRoutineName($routine->getName()) . "({$list})";
+			$signature = $this->quoter->quoteRoutineName($routine->getName(), $this->routineSchema) . "({$list})";
 
 			// Advisory on MySQL, but binary logging rejects a function without READS SQL DATA (or NO SQL/DETERMINISTIC)
 			$dataAccess = $this->writesTables($routine) ? 'MODIFIES SQL DATA' : 'READS SQL DATA';

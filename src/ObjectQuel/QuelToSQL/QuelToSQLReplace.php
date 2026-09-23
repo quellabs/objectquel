@@ -51,6 +51,9 @@
 		private EntityStore $entityStore;
 		private SqlIdentifierQuoter $identifierQuoter;
 		private PlatformCapabilitiesInterface $platform;
+
+		/** @var string|null Schema that qualifies routine names, or null for none */
+		private ?string $routineSchema;
 		private VersionValueHandler $versionValueHandler;
 		private SQLSerializer $serializer;
 		private ResolveType $valueTypes;
@@ -59,16 +62,18 @@
 		 * QuelToSQLReplace constructor
 		 * @param EntityStore $entityStore
 		 * @param PlatformCapabilitiesInterface $platform
+		 * @param string|null $routineSchema Schema that qualifies routine names, or null for none
 		 * @param VersionValueHandler $versionValueHandler Reused as-is (not
 		 *        reconstructed) so `replace` bumps @Orm\Version columns using
 		 *        the exact same logic persist()'s UPDATE path does.
 		 * @param ResolveType|null $valueTypes Types assigned values; defaults to one that knows entity columns only
 		 */
-		public function __construct(EntityStore $entityStore, PlatformCapabilitiesInterface $platform, VersionValueHandler $versionValueHandler, ?ResolveType $valueTypes = null) {
+		public function __construct(EntityStore $entityStore, PlatformCapabilitiesInterface $platform, ?string $routineSchema, VersionValueHandler $versionValueHandler, ?ResolveType $valueTypes = null) {
 			$this->entityStore = $entityStore;
 			$this->valueTypes = $valueTypes ?? new ResolveType($entityStore);
 			$this->identifierQuoter = new SqlIdentifierQuoter($platform);
 			$this->platform = $platform;
+			$this->routineSchema = $routineSchema;
 			$this->versionValueHandler = $versionValueHandler;
 			// Only needs EntityStore (see Serializer's constructor) — built
 			// here rather than threaded in from EntityManager, so
@@ -257,7 +262,7 @@
 		 * @return string
 		 */
 		private function compileExpression(AstInterface $expression, array &$parameters): string {
-			$builder = new BuildSqlFromAst($this->entityStore, $parameters, 'VALUES', $this->platform);
+			$builder = new BuildSqlFromAst($this->entityStore, $parameters, 'VALUES', $this->platform, $this->routineSchema);
 			return $builder->visitNodeAndReturnSQL($expression);
 		}
 
@@ -273,7 +278,7 @@
 		 * @return string
 		 */
 		private function compileCondition(AstInterface $condition, array &$parameters): string {
-			$builder = new BuildSqlFromAst($this->entityStore, $parameters, 'WHERE', $this->platform);
+			$builder = new BuildSqlFromAst($this->entityStore, $parameters, 'WHERE', $this->platform, $this->routineSchema);
 			return $builder->visitConditionAndReturnSQL($condition);
 		}
 

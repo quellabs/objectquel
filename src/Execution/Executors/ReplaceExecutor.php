@@ -25,7 +25,9 @@
 	class ReplaceExecutor implements WriteVerbExecutorInterface {
 
 		private DatabaseAdapter $connection;
-		private QuelToSQLReplace $compiler;
+		private EntityManager $entityManager;
+		private PlatformCapabilitiesInterface $platform;
+		private ?QuelToSQLReplace $compiler = null;
 
 		/**
 		 * ReplaceExecutor constructor
@@ -35,10 +37,20 @@
 		 */
 		public function __construct(DatabaseAdapter $connection, EntityManager $entityManager, PlatformCapabilitiesInterface $platform) {
 			$this->connection = $connection;
-			$this->compiler = new QuelToSQLReplace(
-				$entityManager->getEntityStore(),
-				$platform,
-				$entityManager->getUnitOfWork()->getVersionValueHandler()
+			$this->entityManager = $entityManager;
+			$this->platform = $platform;
+		}
+
+		/**
+		 * Returns the replace compiler. Built on first use, so SQL Server reads the routine schema only when a statement needs compiling.
+		 * @return QuelToSQLReplace
+		 */
+		private function compiler(): QuelToSQLReplace {
+			return $this->compiler ??= new QuelToSQLReplace(
+				$this->entityManager->getEntityStore(),
+				$this->platform,
+				$this->connection->getRoutineSchema(),
+				$this->entityManager->getUnitOfWork()->getVersionValueHandler()
 			);
 		}
 
@@ -84,6 +96,6 @@
 		 * @throws QuelException|SemanticException On compile failure
 		 */
 		public function compileSql(AstReplace $statement, array &$parameters): string {
-			return $this->compiler->convertToSQL($statement, $parameters);
+			return $this->compiler()->convertToSQL($statement, $parameters);
 		}
 	}

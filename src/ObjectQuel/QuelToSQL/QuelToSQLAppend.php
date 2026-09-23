@@ -54,6 +54,9 @@
 		private EntityManager $entityManager;
 		private SqlIdentifierQuoter $identifierQuoter;
 		private PlatformCapabilitiesInterface $platform;
+
+		/** @var string|null Schema that qualifies routine names, or null for none */
+		private ?string $routineSchema;
 		private QuelToSQLUpsert $upsertCompiler;
 		private VersionValueHandler $versionValueHandler;
 		private ResolveType $valueTypes;
@@ -64,17 +67,19 @@
 		 *        nested retrieve, prepared through the same pipeline a top-level
 		 *        retrieve uses — QueryOptimizer requires an EntityManager.
 		 * @param PlatformCapabilitiesInterface $platform
+		 * @param string|null $routineSchema Schema that qualifies routine names, or null for none
 		 * @param QuelToSQLUpsert $upsertCompiler Handles an AstAppend's on-conflict extension
 		 * @param VersionValueHandler $versionValueHandler Reused as-is so the
 		 *        literal-values form initializes @Orm\Version columns using the
 		 *        same logic InsertPersister's INSERT path does — see compileValues().
 		 * @param ResolveType|null $valueTypes Types inserted values; defaults to one that knows entity columns only
 		 */
-		public function __construct(EntityManager $entityManager, PlatformCapabilitiesInterface $platform, QuelToSQLUpsert $upsertCompiler, VersionValueHandler $versionValueHandler, ?ResolveType $valueTypes = null) {
+		public function __construct(EntityManager $entityManager, PlatformCapabilitiesInterface $platform, ?string $routineSchema, QuelToSQLUpsert $upsertCompiler, VersionValueHandler $versionValueHandler, ?ResolveType $valueTypes = null) {
 			$this->entityManager = $entityManager;
 			$this->entityStore = $entityManager->getEntityStore();
 			$this->identifierQuoter = new SqlIdentifierQuoter($platform);
 			$this->platform = $platform;
+			$this->routineSchema = $routineSchema;
 			$this->upsertCompiler = $upsertCompiler;
 			$this->versionValueHandler = $versionValueHandler;
 			$this->valueTypes = $valueTypes ?? new ResolveType($this->entityStore);
@@ -196,7 +201,7 @@
 				$value = $assignment->getValue();
 				$value->accept(new NormalizeDateTime($this->entityStore, $this->valueTypes));
 
-				$builder = new BuildSqlFromAst($this->entityStore, $parameters, 'VALUES', $this->platform);
+				$builder = new BuildSqlFromAst($this->entityStore, $parameters, 'VALUES', $this->platform, $this->routineSchema);
 				$compiled[$assignment->getProperty()] = $this->convertTimestamp($builder->visitNodeAndReturnSQL($value), $this->valueTypes->inferReturnType($value), $assignment->getProperty(), $metadata);
 			}
 
@@ -469,7 +474,7 @@
 		 * @return string
 		 */
 		private function finalizeSourceRetrieveSql(AstRetrieve $source, array &$parameters): string {
-			return (new QuelToSQLRetrieve($this->entityStore, $parameters, $this->platform))->convertToSQL($source);
+			return (new QuelToSQLRetrieve($this->entityStore, $parameters, $this->platform, $this->routineSchema))->convertToSQL($source);
 		}
 
 		/**

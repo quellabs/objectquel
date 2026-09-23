@@ -22,13 +22,18 @@
 		private EntityManager $entityManager;
 		private PlatformCapabilitiesInterface $platform;
 
+		/** @var string|null Schema that qualifies routine names, or null for none */
+		private ?string $routineSchema;
+
 		/**
 		 * @param EntityManager $entityManager Entity metadata and query pipeline dependencies
 		 * @param PlatformCapabilitiesInterface $platform Target engine
+		 * @param string|null $routineSchema Schema that qualifies routine names, or null for none
 		 */
-		public function __construct(EntityManager $entityManager, PlatformCapabilitiesInterface $platform) {
+		public function __construct(EntityManager $entityManager, PlatformCapabilitiesInterface $platform, ?string $routineSchema) {
 			$this->entityManager = $entityManager;
 			$this->platform = $platform;
+			$this->routineSchema = $routineSchema;
 		}
 
 		/**
@@ -64,7 +69,7 @@
 		 */
 		public function lower(AstRoutineDefinition $routine): array {
 			$entityStore = $this->entityManager->getEntityStore();
-			$statements = new RoutineStatementCompiler($this->entityManager, $this->platform);
+			$statements = new RoutineStatementCompiler($this->entityManager, $this->platform, $this->routineSchema);
 
 			$lowering = match ($this->platform->getDatabaseType()) {
 				'pgsql' => new PostgresRoutineLowering($entityStore, $statements),

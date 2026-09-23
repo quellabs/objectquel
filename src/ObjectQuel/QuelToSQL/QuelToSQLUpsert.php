@@ -49,6 +49,9 @@
 		private EntityStore $entityStore;
 		private SqlIdentifierQuoter $identifierQuoter;
 		private PlatformCapabilitiesInterface $platform;
+
+		/** @var string|null Schema that qualifies routine names, or null for none */
+		private ?string $routineSchema;
 		private QuelToSQLReplace $replaceCompiler;
 		private SQLSerializer $serializer;
 
@@ -56,15 +59,17 @@
 		 * QuelToSQLUpsert constructor
 		 * @param EntityStore $entityStore
 		 * @param PlatformCapabilitiesInterface $platform
+		 * @param string|null $routineSchema Schema that qualifies routine names, or null for none
 		 * @param QuelToSQLReplace $replaceCompiler Reused (not reconstructed) for
 		 *        an explicit on-conflict UPDATE SET clause, so it's built with the
 		 *        exact same property-exists/type/@Orm\Version-bump rules a
 		 *        standalone `replace` uses — see QuelToSQLReplace::buildSetClause().
 		 */
-		public function __construct(EntityStore $entityStore, PlatformCapabilitiesInterface $platform, QuelToSQLReplace $replaceCompiler) {
+		public function __construct(EntityStore $entityStore, PlatformCapabilitiesInterface $platform, ?string $routineSchema, QuelToSQLReplace $replaceCompiler) {
 			$this->entityStore = $entityStore;
 			$this->identifierQuoter = new SqlIdentifierQuoter($platform);
 			$this->platform = $platform;
+			$this->routineSchema = $routineSchema;
 			$this->replaceCompiler = $replaceCompiler;
 			// Same reasoning as QuelToSQLReplace's own — an explicit `or
 			// replace (...)` list is assignments too, and must denormalize
@@ -217,7 +222,7 @@
 				? $this->replaceCompiler->buildSetClause($assignments, $metadata, $parameters, $onConflict->getRange()->getName())
 				: $this->buildDefaultFallbackSetClause($metadata, $properties, $columnNames, $compiledRows[0]);
 
-			$whereSql = (new BuildSqlFromAst($this->entityStore, $parameters, 'WHERE', $this->platform))
+			$whereSql = (new BuildSqlFromAst($this->entityStore, $parameters, 'WHERE', $this->platform, $this->routineSchema))
 				->visitConditionAndReturnSQL($conditions);
 
 			$updateSql = AliasedDmlSql::update(

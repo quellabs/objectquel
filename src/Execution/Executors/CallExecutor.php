@@ -19,7 +19,9 @@
 	class CallExecutor {
 
 		private DatabaseAdapter $connection;
-		private QuelToSQLCall $compiler;
+		private EntityStore $entityStore;
+		private PlatformCapabilitiesInterface $platform;
+		private ?QuelToSQLCall $compiler = null;
 
 		/**
 		 * @param DatabaseAdapter $connection Connection the call runs on
@@ -28,7 +30,16 @@
 		 */
 		public function __construct(DatabaseAdapter $connection, EntityStore $entityStore, PlatformCapabilitiesInterface $platform) {
 			$this->connection = $connection;
-			$this->compiler = new QuelToSQLCall($entityStore, $platform);
+			$this->entityStore = $entityStore;
+			$this->platform = $platform;
+		}
+
+		/**
+		 * Returns the call compiler. Built on first use, so SQL Server reads the routine schema only when a statement needs compiling.
+		 * @return QuelToSQLCall
+		 */
+		private function compiler(): QuelToSQLCall {
+			return $this->compiler ??= new QuelToSQLCall($this->entityStore, $this->platform, $this->connection->getRoutineSchema());
 		}
 
 		/**
@@ -42,7 +53,7 @@
 			$name = $statement->getCall()->getName();
 			$parameters = $context->getParameters();
 			$isProcedure = $this->isProcedure($statement);
-			$sql = $this->compiler->convertToSQL($statement, $isProcedure, $parameters);
+			$sql = $this->compiler()->convertToSQL($statement, $isProcedure, $parameters);
 			$result = $this->connection->execute($sql, $parameters);
 
 			if ($result === null) {
@@ -72,7 +83,7 @@
 		 */
 		private function isProcedure(AstCall $statement): bool {
 			$name = $statement->getCall()->getName();
-			[$sql, $parameters] = $this->compiler->kindQuery($statement);
+			[$sql, $parameters] = $this->compiler()->kindQuery($statement);
 			$result = $this->connection->execute($sql, $parameters);
 
 			if ($result === null) {

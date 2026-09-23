@@ -102,6 +102,9 @@
 		/** @var PlatformCapabilitiesInterface Database engine capability descriptor */
 		private PlatformCapabilitiesInterface $platform;
 
+		/** @var string|null Schema that qualifies routine names, or null for none */
+		private ?string $routineSchema;
+
 		/** @var CastTypeMapper Resolves QUEL cast types to SQL type tokens for the connected engine */
 		private CastTypeMapper $castTypeMapper;
 
@@ -111,6 +114,7 @@
 		 * @param array<string, mixed> $parameters Reference to parameters array for parameterized queries
 		 * @param string $partOfQuery Current query part being processed (default: "VALUES")
 		 * @param PlatformCapabilitiesInterface $platform Database engine capability descriptor
+		 * @param string|null $routineSchema Schema that qualifies routine names, or null for none
 		 * @param string|null $subqueryAliasRangeName When non-null, column aliases in entity
 		 *        expansion use this name instead of the inner range name, so derived table
 		 *        columns match what the outer query expects (e.g. "x.id" instead of "y.id")
@@ -120,6 +124,7 @@
 			array &$parameters,
 			string $partOfQuery = "VALUES",
 			PlatformCapabilitiesInterface $platform = new NullPlatformCapabilities(),
+			?string $routineSchema = null,
 			?string $subqueryAliasRangeName = null
 		) {
 			// Initialize core properties
@@ -129,10 +134,11 @@
 			$this->parameters = &$parameters; // Use reference to allow parameter modification
 			$this->partOfQuery = $partOfQuery;
 			$this->platform = $platform;
+			$this->routineSchema = $routineSchema;
 			$this->castTypeMapper = new CastTypeMapper($platform);
 
 			// Initialize helper classes with proper dependencies and references
-			$this->sqlFragmentBuilder = new BuildSqlFragments($this->entityStore, $this, $subqueryAliasRangeName, $this->platform);
+			$this->sqlFragmentBuilder = new BuildSqlFragments($this->entityStore, $this, $subqueryAliasRangeName, $this->platform, $this->routineSchema);
 			$this->typeInference = new ResolveType($this->entityStore);
 			$this->aggregateHandler = new ProcessAggregate($this->entityStore, $this->partOfQuery, $this->sqlFragmentBuilder, $this, $this->platform);
 			$this->expressionHandler = new ProcessExpression($this->entityStore, $this->typeInference, $this->parameters, $this, $this->platform);

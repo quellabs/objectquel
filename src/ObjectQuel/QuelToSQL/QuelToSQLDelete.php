@@ -45,17 +45,22 @@
 		private EntityStore $entityStore;
 		private SqlIdentifierQuoter $identifierQuoter;
 		private PlatformCapabilitiesInterface $platform;
+
+		/** @var string|null Schema that qualifies routine names, or null for none */
+		private ?string $routineSchema;
 		private SQLSerializer $serializer;
 
 		/**
 		 * QuelToSQLDelete constructor
 		 * @param EntityStore $entityStore
 		 * @param PlatformCapabilitiesInterface $platform
+		 * @param string|null $routineSchema Schema that qualifies routine names, or null for none
 		 */
-		public function __construct(EntityStore $entityStore, PlatformCapabilitiesInterface $platform) {
+		public function __construct(EntityStore $entityStore, PlatformCapabilitiesInterface $platform, ?string $routineSchema) {
 			$this->entityStore = $entityStore;
 			$this->identifierQuoter = new SqlIdentifierQuoter($platform);
 			$this->platform = $platform;
+			$this->routineSchema = $routineSchema;
 			// Only needs EntityStore (see Serializer's constructor) — built
 			// here so WriteVerbParameterNormalizer denormalizes a WHERE
 			// clause's bound-parameter values exactly like append/replace do.
@@ -92,7 +97,7 @@
 			$conditions->accept(new WriteVerbParameterNormalizer($metadata, $this->serializer, $parameters));
 			$conditions->accept(new CoerceDateTimeParameters($parameters));
 
-			$builder = new BuildSqlFromAst($this->entityStore, $parameters, 'WHERE', $this->platform);
+			$builder = new BuildSqlFromAst($this->entityStore, $parameters, 'WHERE', $this->platform, $this->routineSchema);
 			$whereSql = $builder->visitConditionAndReturnSQL($conditions);
 
 			return $this->buildStatement($range, $metadata, $whereSql, (bool)$statement->getDirective('ignoreSoftDelete'), $range->getName());

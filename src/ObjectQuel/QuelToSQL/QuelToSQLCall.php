@@ -26,15 +26,20 @@
 
 		private EntityStore $entityStore;
 		private PlatformCapabilitiesInterface $platform;
+
+		/** @var string|null Schema that qualifies routine names, or null for none */
+		private ?string $routineSchema;
 		private SqlIdentifierQuoter $identifierQuoter;
 
 		/**
 		 * @param EntityStore $entityStore Needed by the SQL builder for literals
 		 * @param PlatformCapabilitiesInterface $platform Target engine
+		 * @param string|null $routineSchema Schema that qualifies routine names, or null for none
 		 */
-		public function __construct(EntityStore $entityStore, PlatformCapabilitiesInterface $platform) {
+		public function __construct(EntityStore $entityStore, PlatformCapabilitiesInterface $platform, ?string $routineSchema) {
 			$this->entityStore = $entityStore;
 			$this->platform = $platform;
+			$this->routineSchema = $routineSchema;
 			$this->identifierQuoter = new SqlIdentifierQuoter($platform);
 		}
 
@@ -57,7 +62,7 @@
 				// Procedures and scalar functions, native or CLR
 				'sqlsrv' => [
 					"SELECT CASE WHEN type IN ('P', 'PC') THEN 1 ELSE 0 END AS is_procedure FROM sys.objects WHERE object_id = OBJECT_ID(:name) AND type IN ('P', 'PC', 'FN', 'FS')",
-					['name' => $this->identifierQuoter->quoteRoutineName($name)],
+					['name' => $this->identifierQuoter->quoteRoutineName($name, $this->routineSchema)],
 				],
 
 				// Functions and procedures have separate namespaces, so both can match
@@ -80,7 +85,7 @@
 		 */
 		public function convertToSQL(AstCall $statement, bool $isProcedure, array &$parameters): string {
 			$call = $statement->getCall();
-			$name = $this->identifierQuoter->quoteRoutineName($call->getName());
+			$name = $this->identifierQuoter->quoteRoutineName($call->getName(), $this->routineSchema);
 			$arguments = implode(', ', $this->compileArguments($statement, $parameters));
 
 			if (!$isProcedure) {
@@ -96,7 +101,7 @@
 		 * @return string `CALL name(args)`, or `EXEC name args` on SQL Server
 		 */
 		public function procedureCall(string $name, string $arguments): string {
-			$name = $this->identifierQuoter->quoteRoutineName($name);
+			$name = $this->identifierQuoter->quoteRoutineName($name, $this->routineSchema);
 
 			if ($this->platform->getDatabaseType() === 'sqlsrv') {
 				return "EXEC {$name}" . ($arguments === '' ? '' : " {$arguments}");
@@ -113,7 +118,7 @@
 		 */
 		private function compileArguments(AstCall $statement, array &$parameters): array {
 			$call = $statement->getCall();
-			$builder = new BuildSqlFromAst($this->entityStore, $parameters, 'VALUES', $this->platform);
+			$builder = new BuildSqlFromAst($this->entityStore, $parameters, 'VALUES', $this->platform, $this->routineSchema);
 			$result = [];
 
 			foreach ($call->getArguments() as $argument) {

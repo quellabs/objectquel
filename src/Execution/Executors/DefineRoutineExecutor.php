@@ -19,7 +19,9 @@
 	 */
 	class DefineRoutineExecutor implements DdlStatementExecutorInterface {
 
-		private ProcedureCompiler $compiler;
+		private EntityManager $entityManager;
+		private PlatformCapabilitiesInterface $platform;
+		private ?ProcedureCompiler $compiler = null;
 		private DdlRunner $ddlRunner;
 
 		/**
@@ -27,8 +29,17 @@
 		 * @param PlatformCapabilitiesInterface $platform Connected engine
 		 */
 		public function __construct(EntityManager $entityManager, PlatformCapabilitiesInterface $platform) {
-			$this->compiler = new ProcedureCompiler($entityManager, $platform);
+			$this->entityManager = $entityManager;
+			$this->platform = $platform;
 			$this->ddlRunner = new DdlRunner($entityManager->getConnection());
+		}
+
+		/**
+		 * Returns the routine compiler. Built on first use, so SQL Server reads the routine schema only when a statement needs compiling.
+		 * @return ProcedureCompiler
+		 */
+		private function compiler(): ProcedureCompiler {
+			return $this->compiler ??= new ProcedureCompiler($this->entityManager, $this->platform, $this->entityManager->getConnection()->getRoutineSchema());
 		}
 
 		/**
@@ -44,7 +55,7 @@
 			assert($statement instanceof AstRoutineDefinition);
 
 			$this->ddlRunner->run(
-				$this->compiler->compileRoutine($statement),
+				$this->compiler()->compileRoutine($statement),
 				"Failed to define routine '{$statement->getName()}'",
 				'routine_definition_error'
 			);

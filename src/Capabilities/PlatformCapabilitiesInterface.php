@@ -262,13 +262,6 @@
 		public function supportsBooleanLiterals(): bool;
 
 		/**
-		 * Returns the schema that qualifies routine names, or null when unqualified
-		 * names are used. SQL Server only calls a scalar function by a schema-qualified name.
-		 * @return string|null
-		 */
-		public function getRoutineSchema(): ?string;
-
-		/**
 		 * Returns the connected database engine's type identifier.
 		 *
 		 * This is the most basic fact PlatformCapabilities reports — every other

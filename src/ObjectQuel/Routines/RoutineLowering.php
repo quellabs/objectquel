@@ -45,6 +45,9 @@
 		protected RoutineStatementCompiler $statements;
 		protected PlatformCapabilitiesInterface $platform;
 		protected SqlIdentifierQuoter $quoter;
+
+		/** Schema that qualifies routine names, or null for none */
+		protected ?string $routineSchema;
 		protected DDLTypeMapper $typeMapper;
 		private RoutineCursorSource $cursorSource;
 
@@ -75,6 +78,7 @@
 			$this->statements = $statements;
 			$this->platform = $statements->getPlatform();
 			$this->quoter = new SqlIdentifierQuoter($this->platform);
+			$this->routineSchema = $statements->getRoutineSchema();
 			$this->typeMapper = new DDLTypeMapper($this->platform);
 			$this->cursorSource = new RoutineCursorSource($entityStore);
 		}

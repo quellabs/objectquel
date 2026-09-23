@@ -94,12 +94,12 @@
 		}
 
 		/**
-		 * Quotes a routine name, qualified by the platform's routine schema when it has one.
+		 * Quotes a routine name, qualified by the schema when one is given.
 		 * @param string $name Unquoted routine name
+		 * @param string|null $schema Schema that qualifies the name (see DatabaseAdapter::getRoutineSchema()), or null for none
 		 * @return string E.g. `"f"`, `` `f` `` or `[dbo].[f]`
 		 */
-		public function quoteRoutineName(string $name): string {
-			$schema = $this->platform->getRoutineSchema();
+		public function quoteRoutineName(string $name, ?string $schema): string {
 			$quotedName = $this->quoteIdentifier($name);
 			return $schema === null ? $quotedName : $this->quoteIdentifier($schema) . '.' . $quotedName;
 		}

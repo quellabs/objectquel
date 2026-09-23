@@ -51,6 +51,9 @@
 		private EntityManager $entityManager;
 		private EntityStore $entityStore;
 		private PlatformCapabilitiesInterface $platform;
+
+		/** @var string|null Schema that qualifies routine names, or null for none */
+		private ?string $routineSchema;
 		private RoutineRangeReferences $rangeReferences;
 		private QuelToSQLDelete $deleteCompiler;
 		private QuelToSQLReplace $replaceCompiler;
@@ -61,11 +64,13 @@
 		/**
 		 * @param EntityManager $entityManager Entity metadata and the optimizer's dependencies
 		 * @param PlatformCapabilitiesInterface $platform Target engine, which need not be the connected one
+		 * @param string|null $routineSchema Schema that qualifies routine names, or null for none
 		 */
-		public function __construct(EntityManager $entityManager, PlatformCapabilitiesInterface $platform) {
+		public function __construct(EntityManager $entityManager, PlatformCapabilitiesInterface $platform, ?string $routineSchema) {
 			$this->entityManager = $entityManager;
 			$this->entityStore = $entityManager->getEntityStore();
 			$this->platform = $platform;
+			$this->routineSchema = $routineSchema;
 			$this->rangeReferences = new RoutineRangeReferences($this->entityStore);
 
 			// Built for the target platform; the unit of work's own handler renders for the connected engine
@@ -75,10 +80,10 @@
 			// Written values may read routine variables and cursor fields, so the write compilers type them with these
 			$this->fieldTypes = new RoutineFieldTypes($this->entityStore, new DDLTypeMapper($platform));
 
-			$this->deleteCompiler = new QuelToSQLDelete($this->entityStore, $platform);
-			$this->replaceCompiler = new QuelToSQLReplace($this->entityStore, $platform, $versionValueHandler, $this->fieldTypes);
-			$this->callCompiler = new QuelToSQLCall($this->entityStore, $platform);
-			$this->appendCompiler = new QuelToSQLAppend($entityManager, $platform, new QuelToSQLUpsert($this->entityStore, $platform, $this->replaceCompiler), $versionValueHandler, $this->fieldTypes);
+			$this->deleteCompiler = new QuelToSQLDelete($this->entityStore, $platform, $routineSchema);
+			$this->replaceCompiler = new QuelToSQLReplace($this->entityStore, $platform, $routineSchema, $versionValueHandler, $this->fieldTypes);
+			$this->callCompiler = new QuelToSQLCall($this->entityStore, $platform, $routineSchema);
+			$this->appendCompiler = new QuelToSQLAppend($entityManager, $platform, $routineSchema, new QuelToSQLUpsert($this->entityStore, $platform, $routineSchema, $this->replaceCompiler), $versionValueHandler, $this->fieldTypes);
 		}
 
 		/**
@@ -133,7 +138,7 @@
 		 */
 		public function retrieveSql(AstRetrieve $prepared): string {
 			return $this->withoutBoundParameters('retrieve', function (array &$parameters) use ($prepared): string {
-				return (new QuelToSQLRetrieve($this->entityStore, $parameters, $this->platform))->convertToSQL($prepared);
+				return (new QuelToSQLRetrieve($this->entityStore, $parameters, $this->platform, $this->routineSchema))->convertToSQL($prepared);
 			});
 		}
 
@@ -243,7 +248,7 @@
 			$this->normalizeDateTimes($condition);
 
 			return $this->withoutBoundParameters('expression', function (array &$parameters) use ($condition): string {
-				return (new BuildSqlFromAst($this->entityStore, $parameters, 'WHERE', $this->platform))->visitConditionAndReturnSQL($condition);
+				return (new BuildSqlFromAst($this->entityStore, $parameters, 'WHERE', $this->platform, $this->routineSchema))->visitConditionAndReturnSQL($condition);
 			});
 		}
 
@@ -264,7 +269,7 @@
 			$this->normalizeDateTimes($value);
 
 			return $this->withoutBoundParameters('expression', function (array &$parameters) use ($value): string {
-				return (new BuildSqlFromAst($this->entityStore, $parameters, 'VALUES', $this->platform))->visitNodeAndReturnSQL($value);
+				return (new BuildSqlFromAst($this->entityStore, $parameters, 'VALUES', $this->platform, $this->routineSchema))->visitNodeAndReturnSQL($value);
 			});
 		}
 
@@ -302,6 +307,13 @@
 		 */
 		public function getPlatform(): PlatformCapabilitiesInterface {
 			return $this->platform;
+		}
+
+		/**
+		 * @return string|null Schema that qualifies routine names, or null for none
+		 */
+		public function getRoutineSchema(): ?string {
+			return $this->routineSchema;
 		}
 
 		/**

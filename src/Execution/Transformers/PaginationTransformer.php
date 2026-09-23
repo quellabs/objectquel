@@ -232,7 +232,7 @@
 			}
 			
 			// Transform the Quel query to SQL
-			$quelToSQL = new QuelToSQLRetrieve($this->entityStore, $stringKeyedParameters, $this->platform);
+			$quelToSQL = new QuelToSQLRetrieve($this->entityStore, $stringKeyedParameters, $this->platform, $this->connection->getRoutineSchema());
 			return $quelToSQL->convertToSQL($retrieve);
 		}
 		

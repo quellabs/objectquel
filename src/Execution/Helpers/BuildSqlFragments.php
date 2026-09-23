@@ -45,6 +45,9 @@
 		/** @var PlatformCapabilitiesInterface Engine whose string literal syntax is rendered */
 		private PlatformCapabilitiesInterface $platform;
 
+		/** @var string|null Schema that qualifies routine names, or null for none */
+		private ?string $routineSchema;
+
 		/**
 		 * Constructor - initializes the SQL builder helper with required dependencies
 		 * @param EntityStore $entityStore Entity metadata store
@@ -53,18 +56,21 @@
 		 *        using this name instead of the inner range name, so derived table columns match
 		 *        what the outer query expects (e.g. "x.id" instead of "y.id")
 		 * @param PlatformCapabilitiesInterface $platform Database engine capability descriptor
+		 * @param string|null $routineSchema Schema that qualifies routine names, or null for none
 		 */
 		public function __construct(
 			EntityStore           $entityStore,
 			SqlGeneratorInterface $mainVisitor,
 			?string               $subqueryAliasRangeName = null,
-			PlatformCapabilitiesInterface $platform = new NullPlatformCapabilities()
+			PlatformCapabilitiesInterface $platform = new NullPlatformCapabilities(),
+			?string               $routineSchema = null
 		) {
 			$this->entityStore = $entityStore;
 			$this->mainVisitor = $mainVisitor;
 			$this->subqueryAliasRangeName = $subqueryAliasRangeName;
 			$this->identifierQuoter = new SqlIdentifierQuoter($platform);
 			$this->platform = $platform;
+			$this->routineSchema = $routineSchema;
 		}
 		
 		/**
@@ -212,7 +218,7 @@
 		 */
 		public function handleRoutineCall(AstRoutineCall $call): string {
 			$arguments = array_map(fn(AstInterface $argument) => $this->visitNodeAndReturnSQL($argument), $call->getArguments());
-			return $this->identifierQuoter->quoteRoutineName($call->getName()) . '(' . implode(', ', $arguments) . ')';
+			return $this->identifierQuoter->quoteRoutineName($call->getName(), $this->routineSchema) . '(' . implode(', ', $arguments) . ')';
 		}
 		
 		/**

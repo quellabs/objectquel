@@ -16,12 +16,17 @@
 		private SqlIdentifierQuoter $identifierQuoter;
 		private PlatformCapabilitiesInterface $platform;
 
+		/** @var string|null Schema that qualifies routine names, or null for none */
+		private ?string $routineSchema;
+
 		/**
 		 * @param PlatformCapabilitiesInterface $platform Target engine
+		 * @param string|null $routineSchema Schema that qualifies routine names, or null for none
 		 */
-		public function __construct(PlatformCapabilitiesInterface $platform) {
+		public function __construct(PlatformCapabilitiesInterface $platform, ?string $routineSchema) {
 			$this->identifierQuoter = new SqlIdentifierQuoter($platform);
 			$this->platform = $platform;
+			$this->routineSchema = $routineSchema;
 		}
 
 		/**
@@ -32,7 +37,7 @@
 		public function convertToSQL(AstDestroyRoutine $statement): array {
 			$name = $statement->getName();
 			$ifExists = $statement->isIfExists() ? 'IF EXISTS ' : '';
-			$quotedName = $this->identifierQuoter->quoteRoutineName($name);
+			$quotedName = $this->identifierQuoter->quoteRoutineName($name, $this->routineSchema);
 
 			return match ($this->platform->getDatabaseType()) {
 				'pgsql' => ["DROP ROUTINE {$ifExists}{$quotedName}"],
