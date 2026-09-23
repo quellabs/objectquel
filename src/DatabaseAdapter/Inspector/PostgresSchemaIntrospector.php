@@ -2,9 +2,11 @@
 
 	namespace Quellabs\ObjectQuel\DatabaseAdapter\Inspector;
 
+	use Quellabs\ObjectQuel\Capabilities\PlatformCapabilities;
 	use Quellabs\ObjectQuel\DatabaseAdapter\ColumnDefinition;
 	use Quellabs\ObjectQuel\DatabaseAdapter\DatabaseAdapter;
 	use Quellabs\ObjectQuel\DatabaseAdapter\ForeignKeyDefinition;
+	use Quellabs\ObjectQuel\DatabaseAdapter\SqlIdentifierQuoter;
 	use Quellabs\ObjectQuel\DatabaseAdapter\Mapper\NativeColumnTypeMapper;
 	use Quellabs\ObjectQuel\DatabaseAdapter\Mapper\TypeMapper;
 
@@ -172,10 +174,8 @@
 		 * @return array<string, array<string, IndexUsageStats>>|null
 		 */
 		public function getIndexUsageStatistics(array $tables): ?array {
-			$inList = implode(', ', array_map(
-				fn(string $t) => "'" . addslashes($t) . "'",
-				$tables
-			));
+			$quoter = new SqlIdentifierQuoter(new PlatformCapabilities($this->adapter));
+			$inList = implode(', ', array_map(fn(string $t) => $quoter->quoteStringLiteral($t), $tables));
 
 			$statement = $this->adapter->execute("
 				SELECT

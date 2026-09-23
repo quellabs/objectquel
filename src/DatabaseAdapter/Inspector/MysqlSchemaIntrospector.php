@@ -2,9 +2,11 @@
 
 	namespace Quellabs\ObjectQuel\DatabaseAdapter\Inspector;
 
+	use Quellabs\ObjectQuel\Capabilities\PlatformCapabilities;
 	use Quellabs\ObjectQuel\DatabaseAdapter\ColumnDefinition;
 	use Quellabs\ObjectQuel\DatabaseAdapter\DatabaseAdapter;
 	use Quellabs\ObjectQuel\DatabaseAdapter\ForeignKeyDefinition;
+	use Quellabs\ObjectQuel\DatabaseAdapter\SqlIdentifierQuoter;
 	use Quellabs\ObjectQuel\DatabaseAdapter\Mapper\NativeColumnTypeMapper;
 	use Quellabs\ObjectQuel\DatabaseAdapter\Mapper\NumericPrecisionScale;
 	use Quellabs\ObjectQuel\DatabaseAdapter\Mapper\TypeMapper;
@@ -171,12 +173,9 @@
 		 */
 		public function getIndexUsageStatistics(array $tables): ?array {
 			// Interpolated, not bound: performance_schema rejects prepared-statement
-			// binding on some MySQL/MariaDB versions. Safe here — names come from
-			// DatabaseAdapter::getTables(), not user input, and are addslashes()-escaped.
-			$inList = implode(', ', array_map(
-				fn(string $t) => "'" . addslashes($t) . "'",
-				$tables
-			));
+			// binding on some MySQL/MariaDB versions. Names come from DatabaseAdapter::getTables().
+			$quoter = new SqlIdentifierQuoter(new PlatformCapabilities($this->adapter));
+			$inList = implode(', ', array_map(fn(string $t) => $quoter->quoteStringLiteral($t), $tables));
 
 			$statement = $this->adapter->execute("
 				SELECT
