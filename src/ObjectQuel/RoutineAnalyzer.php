@@ -15,6 +15,7 @@
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstForeach;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstIdentifier;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstIf;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstParameter;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRangeDatabase;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRangeDeclaration;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstReplace;
@@ -62,14 +63,21 @@
 			$this->scope = new RoutineScope($this->collectDeclaredNames($routine));
 			$this->isVoid = $routine->isVoid();
 
-			$returnType = $this->normalizeType($routine->getDeclaredReturnType());
+			$placeholders = new CollectNodes(AstParameter::class);
+			$routine->accept($placeholders);
+
+			if (!empty($placeholders->getCollectedNodes())) {
+				throw new SemanticException("Routines take values through their parameters; ':{$placeholders->getCollectedNodes()[0]->getName()}' placeholders aren't allowed.");
+			}
+
+			$returnType = self::normalizeType($routine->getDeclaredReturnType());
 
 			if ($returnType !== 'void' && !TypeMapper::isValidColumnType($returnType)) {
 				throw new SemanticException("Unknown return type '{$routine->getDeclaredReturnType()}' for routine '{$routine->getName()}'.");
 			}
 
 			foreach ($routine->getParameters() as $parameter) {
-				if (!TypeMapper::isValidColumnType($this->normalizeType($parameter->getType()))) {
+				if (!TypeMapper::isValidColumnType(self::normalizeType($parameter->getType()))) {
 					throw new SemanticException("Unknown type '{$parameter->getType()}' for parameter '{$parameter->getName()}'. Parameters take column types; 'void' and 'cursor' aren't allowed.");
 				}
 
@@ -182,7 +190,7 @@
 		 */
 		private function analyzeDeclaration(AstDeclare $declaration): void {
 			$name = $declaration->getName();
-			$type = $this->normalizeType($declaration->getType());
+			$type = self::normalizeType($declaration->getType());
 			$initializer = $declaration->getInitializer();
 
 			if ($type === 'cursor') {
@@ -354,7 +362,7 @@
 		 * @param string $type Type name as written
 		 * @return string Normalized type name
 		 */
-		private function normalizeType(string $type): string {
+		public static function normalizeType(string $type): string {
 			$type = strtolower($type);
 			return self::TYPE_ALIASES[$type] ?? $type;
 		}

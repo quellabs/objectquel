@@ -62,6 +62,11 @@
 			if ($node->getParent() instanceof AstIdentifier) {
 				return;
 			}
+
+			// Routine variables and cursor fields are not properties
+			if ($node->getType()->isRoutineReference()) {
+				return;
+			}
 			
 			// Already has a child → it's at least a two-segment chain like "a.b".
 			// EntityProcessRange will have attached a range to the base if "a" is a

@@ -47,4 +47,15 @@
 		/** Field segment of a `cursorName.field` read. */
 		case CursorField;
 
+		/**
+		 * True for identifiers naming routine state rather than a range; the query pipeline leaves these alone.
+		 * @return bool
+		 */
+		public function isRoutineReference(): bool {
+			return match ($this) {
+				self::RoutineVariable, self::CursorRoot, self::CursorField => true,
+				default => false,
+			};
+		}
+
 	}

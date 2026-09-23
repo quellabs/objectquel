@@ -9,6 +9,7 @@
 	use Quellabs\ObjectQuel\Execution\Visitors\BuildSqlFromAst;
 	use Quellabs\ObjectQuel\Metadata\EntityMetadataRecord;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstAssignment;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRangeDatabase;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstReplace;
 	use Quellabs\ObjectQuel\ObjectQuel\AstInterface;
 	use Quellabs\ObjectQuel\ObjectQuel\Helpers\AssignmentValidator;
@@ -102,6 +103,27 @@
 				$this->identifierQuoter->quoteIdentifier($range->getName()),
 				implode(', ', $setClauseParts),
 				$this->compileCondition($statement->getConditionsOrFail(), $parameters)
+			);
+		}
+
+		/**
+		 * Compiles a routine's current-row `replace x (...)` against the cursor's source range, bumping version columns like `replace`.
+		 * @param AstRangeDatabase $range The cursor's source range
+		 * @param AstAssignment[] $assignments Column assignments
+		 * @param string $rowCondition SQL condition selecting the current row, e.g. `CURRENT OF cursor`
+		 * @param array<string, mixed> $parameters Bound parameters, by reference
+		 * @return string
+		 * @throws SemanticException
+		 */
+		public function convertCurrentRowToSQL(AstRangeDatabase $range, array $assignments, string $rowCondition, array &$parameters): string {
+			$metadata = $this->entityStore->getMetadata($range->getEntityName());
+
+			return sprintf(
+				'UPDATE %s as %s SET %s WHERE %s',
+				$this->identifierQuoter->quoteIdentifier($metadata->tableName),
+				$this->identifierQuoter->quoteIdentifier($range->getName()),
+				implode(', ', $this->buildSetClause($assignments, $metadata, $parameters, $range->getName())),
+				$rowCondition
 			);
 		}
 

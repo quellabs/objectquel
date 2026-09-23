@@ -34,6 +34,7 @@
 	use Quellabs\ObjectQuel\ObjectQuel\AstInterface;
 	use Quellabs\ObjectQuel\ObjectQuel\AstVisitorInterface;
 	use Quellabs\ObjectQuel\ObjectQuel\IdentifierType;
+	use Quellabs\ObjectQuel\ObjectQuel\RoutineReferenceSql;
 	
 	/**
 	 * ExpressionHandler - Converts AST expression nodes to SQL equivalents
@@ -656,6 +657,11 @@
 		 * @throws QuelException
 		 */
 		public function buildColumnName(AstIdentifier $identifier): string {
+			// Routine variables and cursor fields have no range; they render as routine-local names
+			if ($identifier->getType()->isRoutineReference()) {
+				return RoutineReferenceSql::render($identifier, $this->identifierQuoter, $this->platform->getDatabaseType());
+			}
+
 			// Get the range (table alias) from the identifier
 			$range = $identifier->getRange();
 			
@@ -989,7 +995,7 @@
 			
 			$likeOperator = $operator === '=' ? ' LIKE ' : ' NOT LIKE ';
 			
-			return "{$leftResult}{$likeOperator}\"" . $this->escapeSqlString($stringValue) . '"';
+			return $leftResult . $likeOperator . $this->visitNodeAndReturnSQL(new AstString($stringValue, '"'));
 		}
 		
 		/**

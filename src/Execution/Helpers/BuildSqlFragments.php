@@ -41,6 +41,9 @@
 		/** @var SqlIdentifierQuoter Quotes table/column identifiers correctly for the connected engine */
 		private SqlIdentifierQuoter $identifierQuoter;
 
+		/** @var PlatformCapabilitiesInterface Engine whose string literal syntax is rendered */
+		private PlatformCapabilitiesInterface $platform;
+
 		/**
 		 * Constructor - initializes the SQL builder helper with required dependencies
 		 * @param EntityStore $entityStore Entity metadata store
@@ -60,6 +63,7 @@
 			$this->mainVisitor = $mainVisitor;
 			$this->subqueryAliasRangeName = $subqueryAliasRangeName;
 			$this->identifierQuoter = new SqlIdentifierQuoter($platform);
+			$this->platform = $platform;
 		}
 		
 		/**
@@ -177,7 +181,12 @@
 		 * @return string SQL string literal with proper escaping
 		 */
 		public function handleString(AstString $ast): string {
-			return '"' . $this->escapeSqlString($ast->getValue()) . '"';
+			// Only MySQL/MariaDB read a double-quoted token as a string; the other engines read it as an identifier
+			if (in_array($this->platform->getDatabaseType(), ['mysql', 'mariadb'], true)) {
+				return '"' . $this->escapeSqlString($ast->getValue()) . '"';
+			}
+
+			return $this->identifierQuoter->quoteStringLiteral($ast->getValue());
 		}
 		
 		/**

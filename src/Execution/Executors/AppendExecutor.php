@@ -4,7 +4,6 @@
 
 	use Cake\Database\StatementInterface;
 	use Quellabs\ObjectQuel\Exception\SemanticException;
-	use Quellabs\ObjectQuel\Annotations\Orm\PrimaryKeyStrategy;
 	use Quellabs\ObjectQuel\Exception\EntityResolutionException;
 	use Quellabs\ObjectQuel\Capabilities\PlatformCapabilitiesInterface;
 	use Quellabs\ObjectQuel\DatabaseAdapter\DatabaseAdapter;
@@ -511,7 +510,7 @@
 			// 'identity' means an auto-increment/serial column — the database
 			// assigns it on insert, so there's nothing to generate here (and
 			// nothing to add to the SQL or $parameters).
-			$strategy = $this->resolvePrimaryKeyStrategy($metadata, $primaryKey);
+			$strategy = $metadata->getPrimaryKeyStrategy($primaryKey);
 
 			if ($strategy === 'identity') {
 				return new PreparedAppend($statement, $metadata, null);
@@ -562,24 +561,5 @@
 			$generatedId = count($rows) === 1 ? $firstGeneratedValue : null;
 
 			return new PreparedAppend(AstAppend::forValues($statement->getRange(), $newRows), $metadata, $generatedId);
-		}
-
-		/**
-		 * Mirrors InsertPersister::getPrimaryKeyStrategy(), adapted to read
-		 * straight from metadata instead of requiring an entity instance.
-		 * @param EntityMetadataRecord $metadata
-		 * @param string $primaryKey
-		 * @return string
-		 */
-		private function resolvePrimaryKeyStrategy(EntityMetadataRecord $metadata, string $primaryKey): string {
-			$annotations = $metadata->getAnnotations()[$primaryKey] ?? [];
-
-			foreach ($annotations as $annotation) {
-				if ($annotation instanceof PrimaryKeyStrategy) {
-					return $annotation->getValue();
-				}
-			}
-
-			return 'identity';
 		}
 	}

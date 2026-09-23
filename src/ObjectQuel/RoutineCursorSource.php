@@ -21,6 +21,7 @@
 	class RoutineCursorSource extends FindPropertyRange {
 
 		private EntityStore $entityStore;
+		private RoutineRangeReferences $rangeReferences;
 
 		/**
 		 * @param EntityStore $entityStore Entity metadata for property lookups
@@ -28,6 +29,7 @@
 		public function __construct(EntityStore $entityStore) {
 			parent::__construct($entityStore);
 			$this->entityStore = $entityStore;
+			$this->rangeReferences = new RoutineRangeReferences($entityStore);
 		}
 
 		/**
@@ -66,8 +68,7 @@
 		}
 
 		/**
-		 * Collects the ranges the query's target list and `where` read, including
-		 * ranges reached through unqualified properties.
+		 * Collects the ranges the query's target list and `where` read, rejecting related-entity reads.
 		 * @param string $cursorName Cursor name, for error messages
 		 * @param AstRetrieve $query The cursor's query
 		 * @param AstRange[] $ranges Ranges declared before the cursor
@@ -76,37 +77,16 @@
 		 * @throws EntityResolutionException
 		 */
 		private function collectReferencedRanges(string $cursorName, AstRetrieve $query, array $ranges): array {
-			$rangesByName = [];
-
-			foreach ($ranges as $range) {
-				$rangesByName[$range->getName()] = $range;
-			}
+			$referenced = $this->rangeReferences->direct($query, $ranges);
 
 			$identifiers = new CollectNodes(AstIdentifier::class);
 			$query->acceptWithoutRanges($identifiers);
 
-			$referenced = [];
-
 			foreach ($identifiers->getCollectedNodes() as $identifier) {
-				if ($identifier->getParent() instanceof AstIdentifier) {
-					continue;
-				}
+				$range = $referenced[$identifier->getName()] ?? null;
 
-				$range = $rangesByName[$identifier->getName()] ?? null;
-
-				if ($range !== null) {
+				if ($range !== null && !$identifier->getParent() instanceof AstIdentifier) {
 					$this->assertNotRelationRead($cursorName, $identifier, $range);
-					$referenced[$range->getName()] = $range;
-					continue;
-				}
-
-				// Bare unqualified property (routine variables are typed already)
-				if ($identifier->getNext() === null && $identifier->getType() === IdentifierType::Unresolved) {
-					$matches = $this->findRanges($identifier->getName(), $ranges);
-
-					if (count($matches) === 1) {
-						$referenced[$matches[0]->getName()] = $matches[0];
-					}
 				}
 			}
 

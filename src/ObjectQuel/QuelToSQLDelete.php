@@ -9,6 +9,7 @@
 	use Quellabs\ObjectQuel\Execution\Visitors\BuildSqlFromAst;
 	use Quellabs\ObjectQuel\Metadata\EntityMetadataRecord;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstDelete;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRangeDatabase;
 	use Quellabs\ObjectQuel\ObjectQuel\Helpers\RangeTableName;
 	use Quellabs\ObjectQuel\ObjectQuel\Helpers\SetTargetColumnQuoter;
 	use Quellabs\ObjectQuel\ObjectQuel\Helpers\WriteVerbIdentifierResolver;
@@ -82,11 +83,35 @@
 			$normalizer = new WriteVerbParameterNormalizer($metadata, $this->serializer, $parameters);
 			$statement->getConditionsOrFail()->accept($normalizer);
 
-			$tableName = RangeTableName::resolve($range, $this->entityStore);
 			$builder = new BuildSqlFromAst($this->entityStore, $parameters, 'WHERE', $this->platform);
 			$whereSql = $builder->visitNodeAndReturnSQL($statement->getConditionsOrFail());
 
-			if (!$statement->getDirective('ignoreSoftDelete')) {
+			return $this->buildStatement($range, $metadata, $whereSql, (bool)$statement->getDirective('ignoreSoftDelete'));
+		}
+
+		/**
+		 * Compiles a routine's current-row `delete x` against the cursor's source range, soft-deleting like `delete`.
+		 * @param AstRangeDatabase $range The cursor's source range
+		 * @param string $rowCondition SQL condition selecting the current row, e.g. `CURRENT OF cursor`
+		 * @return string
+		 */
+		public function convertCurrentRowToSQL(AstRangeDatabase $range, string $rowCondition): string {
+			$metadata = $this->entityStore->getMetadata($range->getEntityName());
+			return $this->buildStatement($range, $metadata, $rowCondition, false);
+		}
+
+		/**
+		 * Builds the DELETE, or the soft-delete UPDATE when the entity has one and it isn't ignored.
+		 * @param AstRangeDatabase $range Target range
+		 * @param EntityMetadataRecord $metadata Target entity metadata
+		 * @param string $whereSql Compiled WHERE condition
+		 * @param bool $ignoreSoftDelete True to always emit a real DELETE
+		 * @return string
+		 */
+		private function buildStatement(AstRangeDatabase $range, EntityMetadataRecord $metadata, string $whereSql, bool $ignoreSoftDelete): string {
+			$tableName = RangeTableName::resolve($range, $this->entityStore);
+
+			if (!$ignoreSoftDelete) {
 				$softDeleteSetClause = $this->buildSoftDeleteSetClause($metadata, $range->getName());
 
 				if ($softDeleteSetClause !== null) {
