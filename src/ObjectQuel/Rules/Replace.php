@@ -89,11 +89,12 @@
 		}
 
 		/**
-		 * Parses the parenthesized, comma-separated assignment list.
+		 * Parses the parenthesized, comma-separated assignment list. Also used
+		 * by Rules\RoutineBlock for a current-tuple `replace cursorName (...)`.
 		 * @return AstAssignment[]
 		 * @throws LexerException|ParserException
 		 */
-		private function parseAssignments(): array {
+		public function parseAssignments(): array {
 			$this->lexer->match(Token::ParenthesesOpen);
 
 			$expressionRule = new ArithmeticExpression($this->lexer);

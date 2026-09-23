@@ -95,6 +95,8 @@
 				'<'  => Token::SmallerThan,
 				'('  => Token::ParenthesesOpen,
 				')'  => Token::ParenthesesClose,
+				'{'  => Token::CurlyBraceOpen,
+				'}'  => Token::CurlyBraceClose,
 				'+'  => Token::Plus,
 				'-'  => Token::Minus,
 				'*'  => Token::Star,
