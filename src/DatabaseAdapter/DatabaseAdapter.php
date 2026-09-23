@@ -505,7 +505,7 @@
 		public function execute(string $query, array $parameters = []): ?StatementInterface {
 			try {
 				$this->deduplicateParameters($query, $parameters);
-				return $this->connection->execute($query, $parameters);
+				return $this->connection->execute($query, $parameters, $this->booleanParameterTypes($parameters));
 			} catch (\Exception $exception) {
 				$this->last_error = $exception->getCode();
 				$this->last_error_message = $exception->getMessage();
@@ -615,6 +615,15 @@
 		}
 		
 		// ==================== Helpers ====================
+		
+		/**
+		 * Cake binds untyped values as strings, turning false into '', which strict-mode MySQL rejects for a boolean column.
+		 * @param array<int|string, mixed> $parameters
+		 * @return array<int|string, string> Cake type 'boolean' for each bool parameter
+		 */
+		private function booleanParameterTypes(array $parameters): array {
+			return array_map(fn() => 'boolean', array_filter($parameters, 'is_bool'));
+		}
 		
 		/**
 		 * Rewrites duplicate named parameters so PDO can bind them.
