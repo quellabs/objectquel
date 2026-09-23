@@ -342,6 +342,9 @@
 			// read back out under the target property name below.
 			$visibleAliases = $this->compiler->resolveVisibleAliases($properties, $source, $targetLabel);
 
+			// Typed placeholders let the compiler convert a Unix timestamp bound into a datetime column
+			$valueTypes = array_map(fn(string $alias) => $this->compiler->sourceValueType($source, $alias), $visibleAliases);
+
 			// Runs the source retrieve exactly like a top-level `retrieve`
 			// query (JSON joins, temp-table promotion and all) and materializes
 			// every row in memory — see the "known limitation" note above.
@@ -373,7 +376,7 @@
 							// chunk) never collide on the same bound parameter.
 							$paramName = "__append_source_{$batchIndex}_{$rowIndex}_{$property}";
 							$chunkParams[$paramName] = $row[$visibleAliases[$i]];
-							$assignmentRow[] = new AstAssignment($property, new AstParameter($paramName));
+							$assignmentRow[] = new AstAssignment($property, new AstParameter($paramName, $valueTypes[$i]));
 						}
 
 						$assignmentRows[] = $assignmentRow;
