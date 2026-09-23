@@ -94,6 +94,17 @@
 		}
 
 		/**
+		 * Quotes a routine name, qualified by the platform's routine schema when it has one.
+		 * @param string $name Unquoted routine name
+		 * @return string E.g. `"f"`, `` `f` `` or `[dbo].[f]`
+		 */
+		public function quoteRoutineName(string $name): string {
+			$schema = $this->platform->getRoutineSchema();
+			$quotedName = $this->quoteIdentifier($name);
+			return $schema === null ? $quotedName : $this->quoteIdentifier($schema) . '.' . $quotedName;
+		}
+
+		/**
 		 * Quotes a comma-separated list of identifiers — the "N columns, each
 		 * individually quoted" shape used throughout column-list/conflict-target
 		 * rendering (INSERT's column list, CREATE INDEX's column list, etc).

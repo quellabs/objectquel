@@ -19,6 +19,7 @@
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstNull;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstNumber;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstParameter;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRoutineCall;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstString;
 	use Quellabs\ObjectQuel\ObjectQuel\AstInterface;
 	
@@ -207,6 +208,16 @@
 			);
 			
 			return 'CONCAT(' . implode(', ', $parts) . ')';
+		}
+
+		/**
+		 * Renders a stored routine call with its arguments.
+		 * @param AstRoutineCall $call The call node
+		 * @return string E.g. `"f"(1)` or `[dbo].[f](1)`
+		 */
+		public function handleRoutineCall(AstRoutineCall $call): string {
+			$arguments = array_map(fn(AstInterface $argument) => $this->visitNodeAndReturnSQL($argument), $call->getArguments());
+			return $this->identifierQuoter->quoteRoutineName($call->getName()) . '(' . implode(', ', $arguments) . ')';
 		}
 		
 		/**

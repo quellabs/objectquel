@@ -178,6 +178,15 @@
 		/**
 		 * @inheritDoc
 		 *
+		 * Defaults to MySQL/MariaDB behavior.
+		 */
+		public function getRoutineSchema(): ?string {
+			return null;
+		}
+
+		/**
+		 * @inheritDoc
+		 *
 		 * Defaults to 'mysql', the most widely deployed engine in the
 		 * Canvas/ObjectQuel target stack. Callers that need the real engine must
 		 * inject a real PlatformCapabilities instance instead of relying on this

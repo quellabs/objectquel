@@ -93,7 +93,7 @@
 		 */
 		private function header(AstRoutineDefinition $routine, array $parameters): string {
 			$list = implode(', ', array_map(fn(string $name, string $type) => "{$name} {$type}", array_keys($parameters), $parameters));
-			$name = $this->quoter->quoteIdentifier($routine->getName());
+			$name = $this->quoter->quoteRoutineName($routine->getName());
 
 			if ($routine->isVoid()) {
 				return "CREATE OR ALTER PROCEDURE {$name}" . ($list === '' ? '' : " {$list}");

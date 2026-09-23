@@ -40,6 +40,7 @@
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstParameter;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRangeDatabase;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRangeJsonSource;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRoutineCall;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstSearch;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstSearchFullText;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstSearchLike;
@@ -454,6 +455,15 @@
 		 */
 		protected function handleConcat(AstConcat $concat): void {
 			$this->result[] = $this->sqlFragmentBuilder->handleConcat($concat);
+		}
+
+		/**
+		 * Process a stored routine call
+		 * @param AstRoutineCall $call The call node
+		 * @return void
+		 */
+		protected function handleRoutineCall(AstRoutineCall $call): void {
+			$this->result[] = $this->sqlFragmentBuilder->handleRoutineCall($call);
 		}
 		
 		/**

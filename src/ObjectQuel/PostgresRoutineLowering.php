@@ -57,7 +57,7 @@
 				$parameters[] = $this->quoter->quoteIdentifier($parameter->getName()) . ' ' . $this->sqlType($parameter->getType());
 			}
 
-			$signature = $this->quoter->quoteIdentifier($routine->getName()) . '(' . implode(', ', $parameters) . ')';
+			$signature = $this->quoter->quoteRoutineName($routine->getName()) . '(' . implode(', ', $parameters) . ')';
 
 			if ($routine->isVoid()) {
 				return "CREATE OR REPLACE PROCEDURE {$signature}";

@@ -17,7 +17,9 @@
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstAssignment;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstParameter;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRangeJsonSource;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRoutineCall;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstStatement;
+	use Quellabs\ObjectQuel\ObjectQuel\Visitors\CollectNodes;
 	use Quellabs\ObjectQuel\ObjectQuel\CompiledAppendSql;
 	use Quellabs\ObjectQuel\ObjectQuel\Helpers\WriteVerbParameterNormalizer;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRetrieve;
@@ -112,6 +114,7 @@
 			$parameters = $context->getParameters();
 
 			if ($statement->getRange() instanceof AstRangeJsonSource) {
+				$this->assertNoRoutineCall($statement);
 				return $this->jsonAppendExecutor->execute($statement, $context);
 			}
 
@@ -126,6 +129,21 @@
 			return $this->executeDirectInsert($statement, $parameters);
 		}
 		
+		/**
+		 * PHP writes a JSON source, so its values can't call a routine, which the database runs.
+		 * @param AstAppend $statement Append to a JSON source
+		 * @return void
+		 * @throws SemanticException When a value calls a routine
+		 */
+		private function assertNoRoutineCall(AstAppend $statement): void {
+			$calls = new CollectNodes(AstRoutineCall::class);
+			$statement->accept($calls);
+
+			if (!empty($calls->getCollectedNodes())) {
+				throw new SemanticException("'{$calls->getCollectedNodes()[0]->getName()}' is a routine call, which the database runs, but PHP writes a JSON source.");
+			}
+		}
+
 		/**
 		 * Prepares, compiles, and runs the literal-values (or planner-ineligible
 		 * insert-from-select) form of an append statement directly against the

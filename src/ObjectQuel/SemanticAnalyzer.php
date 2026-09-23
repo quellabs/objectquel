@@ -17,6 +17,7 @@
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRangeJsonSource;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRegExp;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRetrieve;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRoutineCall;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstSearch;
 	use Quellabs\ObjectQuel\ObjectQuel\Visitors\CollectNodes;
 	use Quellabs\ObjectQuel\ObjectQuel\Visitors\DetectRestrictedNodeType;
@@ -81,6 +82,9 @@
 			
 			// Step 1: Validate that the projection list is not empty
 			$this->validatePopulatedProjections($ast);
+
+			// Step 2: Validate that routine calls sit in a query the database runs
+			$this->validateRoutineCallsRunOnServer($ast);
 			
 			// ==============================================================================
 			// Range validation
@@ -516,6 +520,32 @@
 			}
 		}
 		
+		/**
+		 * Routines run on the database server, so a query that PHP evaluates (a JSON
+		 * source, or no range at all) can't call one.
+		 * @param AstRetrieve $ast The AST to validate
+		 * @return void
+		 * @throws SemanticException When such a query calls a routine
+		 */
+		private function validateRoutineCallsRunOnServer(AstRetrieve $ast): void {
+			$calls = new CollectNodes(AstRoutineCall::class);
+			$ast->accept($calls);
+
+			if (empty($calls->getCollectedNodes())) {
+				return;
+			}
+
+			$runsInPhp = empty($ast->getRanges());
+
+			foreach ($ast->getRanges() as $range) {
+				$runsInPhp = $runsInPhp || $range instanceof AstRangeJsonSource;
+			}
+
+			if ($runsInPhp) {
+				throw new SemanticException("'{$calls->getCollectedNodes()[0]->getName()}' is a routine call, which the database runs, but this query runs in PHP (a JSON source, or no range).");
+			}
+		}
+
 		/**
 		 * Validates that at least one range exists without a 'via' clause to serve as the FROM clause.
 		 * In SQL, every query must have a primary FROM table. Other tables are joined to this base.

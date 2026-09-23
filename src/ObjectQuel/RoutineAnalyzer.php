@@ -22,9 +22,11 @@
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstReplaceCurrent;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRetrieve;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstReturn;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRoutineCall;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRoutineDefinition;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstVariableAssignment;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstWhile;
+	use Quellabs\ObjectQuel\ObjectQuel\Rules\QueryFunction;
 	use Quellabs\ObjectQuel\ObjectQuel\Visitors\CollectNodes;
 	use Quellabs\ObjectQuel\ObjectQuel\Visitors\ResolveRoutineReferences;
 
@@ -62,6 +64,17 @@
 		public function analyze(AstRoutineDefinition $routine): void {
 			$this->scope = new RoutineScope($this->collectDeclaredNames($routine));
 			$this->isVoid = $routine->isVoid();
+
+			if (QueryFunction::isBuiltin($routine->getName())) {
+				throw new SemanticException("'{$routine->getName()}' is a built-in function, so a routine by that name could never be called.");
+			}
+
+			$calls = new CollectNodes(AstRoutineCall::class);
+			$routine->accept($calls);
+
+			if (!empty($calls->getCollectedNodes())) {
+				throw new SemanticException("Routines can't call routines yet; '{$calls->getCollectedNodes()[0]->getName()}' is called here.");
+			}
 
 			$placeholders = new CollectNodes(AstParameter::class);
 			$routine->accept($placeholders);

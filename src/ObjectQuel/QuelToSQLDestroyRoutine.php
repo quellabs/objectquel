@@ -32,14 +32,14 @@
 		public function convertToSQL(AstDestroyRoutine $statement): array {
 			$name = $statement->getName();
 			$ifExists = $statement->isIfExists() ? 'IF EXISTS ' : '';
-			$quotedName = $this->identifierQuoter->quoteIdentifier($name);
+			$quotedName = $this->identifierQuoter->quoteRoutineName($name);
 
 			return match ($this->platform->getDatabaseType()) {
 				'pgsql' => ["DROP ROUTINE {$ifExists}{$quotedName}"],
 
 				// Functions and procedures share one namespace, so at most one of them exists.
 				'sqlsrv' => [
-					"IF OBJECT_ID(N'{$this->identifierQuoter->escapeStringLiteral($name)}', N'P') IS NOT NULL "
+					"IF OBJECT_ID(N'{$this->identifierQuoter->escapeStringLiteral($quotedName)}', N'P') IS NOT NULL "
 					. "DROP PROCEDURE {$quotedName} ELSE DROP FUNCTION {$ifExists}{$quotedName}"
 				],
 
