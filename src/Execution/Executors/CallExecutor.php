@@ -10,7 +10,7 @@
 	use Quellabs\ObjectQuel\Execution\ExecutionContext;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstCall;
 	use Quellabs\ObjectQuel\ObjectQuel\QuelResult;
-	use Quellabs\ObjectQuel\ObjectQuel\QuelToSQLCall;
+	use Quellabs\ObjectQuel\ObjectQuel\QuelToSQL\QuelToSQLCall;
 
 	/**
 	 * Executes `call name(args)`. Calls are untyped, so the catalog says whether the routine

@@ -1,0 +1,197 @@
+<?php
+	
+	namespace Quellabs\ObjectQuel\ObjectQuel\Passes;
+	
+	use Quellabs\ObjectQuel\EntityStore;
+	use Quellabs\ObjectQuel\Exception\EntityResolutionException;
+	use Quellabs\ObjectQuel\Exception\TransformationException;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRangeDatabase;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRangeDatabaseSubquery;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRetrieve;
+	use Quellabs\ObjectQuel\ObjectQuel\AstVisitorInterface;
+	use Quellabs\ObjectQuel\ObjectQuel\Visitors\ResolveRangeDatabaseProxy;
+	use Quellabs\ObjectQuel\ObjectQuel\Visitors\ExpandMacros;
+	use Quellabs\ObjectQuel\ObjectQuel\Visitors\ResolvePropertyType;
+	use Quellabs\ObjectQuel\ObjectQuel\Visitors\ResolveRootIdentifierType;
+	use Quellabs\ObjectQuel\ObjectQuel\Visitors\RewriteViaRelationToJoinCondition;
+	use Quellabs\ObjectQuel\ObjectQuel\Visitors\NormalizeDateTime;
+	use Quellabs\ObjectQuel\ObjectQuel\Helpers\ResolveUnqualifiedProperty;
+	use Quellabs\ObjectQuel\ObjectQuel\Visitors\InjectSoftDeleteCondition;
+	
+	/**
+	 * This class orchestrates a multistep transformation process that converts high-level
+	 * ObjectQuel queries into a format suitable for SQL generation. The transformation
+	 * handles macro expansion, range processing, namespace resolution, and relationship
+	 * mapping through a series of visitor pattern implementations.
+	 */
+	class QueryNormalizer {
+		
+		/**
+		 * Entity store containing metadata about all available entities and their relationships.
+		 * Used for namespace resolution, relationship mapping, and schema validation.
+		 * @var EntityStore
+		 */
+		private EntityStore $entityStore;
+
+		/**
+		 * Initialize the query transformer with an entity store.
+		 * @param EntityStore $entityStore Store containing entity definitions and metadata
+		 */
+		public function __construct(EntityStore $entityStore) {
+			$this->entityStore = $entityStore;
+		}
+		
+		/**
+		 * Transform an ObjectQuel AST into SQL-ready format through multi-stage processing.
+		 * @param AstRetrieve $ast The parsed ObjectQuel query AST to transform
+		 * @return void Modifies the AST in-place
+		 * @throws TransformationException
+		 * @throws EntityResolutionException
+		 */
+		public function transform(AstRetrieve $ast): void {
+			// First, recursively transform all nested queries in temporary ranges
+			// This ensures inner queries are fully resolved before outer query processing
+			$this->transformNestedQueries($ast);
+			
+			// Step 1: Add proper namespaces to all ranges
+			// Resolves entity names to their fully qualified forms using the entity store
+			$this->processWithVisitor($ast, ResolveRangeDatabaseProxy::class, $this->entityStore);
+			
+			// Step 2: Resolve unqualified property names to range-prefixed identifiers
+			// Allows bare names like 'name' to be written instead of 'p.name' when unambiguous
+			$this->processWithVisitor($ast, ResolveUnqualifiedProperty::class, $this->entityStore, $ast->getRanges());
+			
+			// Step 3: Expand alias references from the SELECT list into WHERE / ORDER BY.
+			// Runs after namespace resolution and unqualified-property expansion so that
+			// the cloned expressions land in a fully-resolved context.
+			$this->processWithVisitor($ast, ExpandMacros::class, $ast);
+			
+			// Step 4: Converts indirect relationships through intermediate entities into direct joins
+			$this->transformViaRelations($ast);
+			
+			// Step 5: Assign IdentifierType to every root identifier node in the chain.
+			// This must run after all structural rewrites (alias expansion, namespace resolution,
+			// via-relation expansion) so that range attachments are final.
+			$this->resolveIdentifierTypes($ast);
+
+			// Step 6: Express datetime operands as Unix timestamps (columns wrapped in
+			// AstDate, date strings compared with them as integers) before semantic
+			// validation and SQL generation. Must run after Step 5 so that entity names
+			// and column types are fully resolved on every identifier.
+			$this->processWithVisitor($ast, NormalizeDateTime::class, $this->entityStore);
+
+			// Step 7: Inject soft-delete filter conditions for every database range
+			// whose entity carries an @SoftDelete annotation. Runs last so that all
+			// identifier types are fully resolved before the injected nodes are added.
+			// Skipped when the query carries the @ignoreSoftDelete true directive.
+			(new InjectSoftDeleteCondition($this->entityStore))->inject($ast);
+		}
+		
+		/**
+		 * Recursively transform all nested queries in temporary range definitions.
+		 * Ensures that inner queries are fully resolved before the outer query is processed.
+		 * @param AstRetrieve $ast The query AST containing potential nested queries
+		 * @return void Modifies nested queries in-place
+		 * @throws TransformationException
+		 * @throws EntityResolutionException
+		 */
+		private function transformNestedQueries(AstRetrieve $ast): void {
+			foreach ($ast->getRanges() as $range) {
+				// Only process temporary ranges that contain nested queries
+				if (!$range instanceof AstRangeDatabaseSubquery) {
+					continue;
+				}
+				
+				// Recursively transform the inner query with full transformation pipeline
+				$this->transform($range->getQuery());
+			}
+		}
+		
+		/**
+		 * Assigns IdentifierType values to all identifier nodes in the AST.
+		 *
+		 * Runs ResolveRootIdentifierType first (sets types on chain-root nodes based
+		 * on which kind of range they reference), then ResolvePropertyType (propagates
+		 * types downward through the chain, detecting JSON column boundaries so that
+		 * child nodes become JsonProperty rather than EntityProperty).
+		 *
+		 * Nested subquery ranges are processed recursively so that inner chains are
+		 * typed before the outer query's chains are resolved.
+		 * @param AstRetrieve $ast The AST to process
+		 * @return void Modifies identifier type fields in-place
+		 * @throws EntityResolutionException
+		 */
+		private function resolveIdentifierTypes(AstRetrieve $ast): void {
+			// Recursively type the inner query of every subquery range first, so that
+			// inner chains are settled before outer references to them are resolved.
+			foreach ($ast->getRanges() as $range) {
+				if ($range instanceof AstRangeDatabaseSubquery) {
+					$this->resolveIdentifierTypes($range->getQuery());
+				}
+			}
+			
+			// Phase 1: type root nodes (EntityRoot, SubqueryRoot, JsonRoot, EntityReference).
+			$ast->accept(new ResolveRootIdentifierType($ast));
+			
+			// Phase 2: type non-root nodes, respecting JSON column boundaries.
+			$ast->accept(new ResolvePropertyType($this->entityStore));
+		}
+		
+		/**
+		 * Generic method to process AST with a visitor pattern.
+		 * @param AstRetrieve $ast The AST to process
+		 * @param class-string<AstVisitorInterface> $visitorClass The fully qualified visitor class name
+		 * @param mixed ...$args Variable arguments to pass to the visitor constructor
+		 * @return void
+		 */
+		private function processWithVisitor(AstRetrieve $ast, string $visitorClass, ...$args): void {
+			// Create a new instance of the specified visitor class with provided arguments
+			$visitor = new $visitorClass(...$args);
+			
+			// Apply the visitor to the AST using the visitor pattern
+			// The AST will traverse itself and call appropriate visitor methods
+			$ast->accept($visitor);
+		}
+		
+		/**
+		 * Transforms complex 'via' relations into simple property lookups for SQL generation.
+		 * @param AstRetrieve $ast The query AST containing ranges with potential 'via' relations
+		 * @return void Modifies ranges in-place to replace 'via' relations with direct lookups
+		 * @throws TransformationException|EntityResolutionException
+		 */
+		private function transformViaRelations(AstRetrieve $ast): void {
+			// Process each table/range in the query to handle 'via' relationship definitions
+			foreach ($ast->getRanges() as $range) {
+				// Only handle database ranges
+				if (!$range instanceof AstRangeDatabase) {
+					continue;
+				}
+				
+				// Get the join property that defines how this range connects to other tables
+				// Join properties specify the relationship/connection logic between entities
+				$joinProperty = $range->getJoinProperty();
+				
+				// Skip ranges that don't have join properties
+				// The main/root table typically doesn't need join properties
+				// as it's the starting point for the query (appears in FROM clause)
+				if ($joinProperty === null) {
+					continue;
+				}
+				
+				// Create a specialized converter to transform 'via' relations into direct property references
+				// This converter understands the entity relationships stored in the EntityStore
+				// and can resolve indirect relationship chains into direct field mappings
+				$converter = new RewriteViaRelationToJoinCondition($this->entityStore, $range);
+				
+				// Transform the join property itself to resolve any 'via' relationships
+				// This converts complex relationship definitions into simple field-to-field mappings
+				// The result is a join condition that SQL can understand and execute efficiently
+				$range->setJoinProperty($converter->processNodeSide($joinProperty));
+				
+				// Explicitly traverse the new join property rather than using range->accept(),
+				// which would cause infinite recursion since identifiers hold back-references
+				// to their range and AstRangeDatabase::accept() previously traversed joinProperty.
+				$range->getJoinProperty()?->accept($converter);
+			}
+		}
+	}

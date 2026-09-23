@@ -9,7 +9,7 @@
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstIdentifier;
 	use Quellabs\ObjectQuel\ObjectQuel\AstInterface;
 	use Quellabs\ObjectQuel\ObjectQuel\AstVisitorInterface;
-	use Quellabs\ObjectQuel\ObjectQuel\IdentifierType;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\IdentifierType;
 	
 	/**
 	 * Validates that JsonProperty nodes only appear after a JSON-typed EntityProperty.

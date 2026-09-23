@@ -8,7 +8,7 @@
 	use Quellabs\ObjectQuel\Execution\ExecutionContext;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstDestroy;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstStatement;
-	use Quellabs\ObjectQuel\ObjectQuel\QuelToSQLDestroy;
+	use Quellabs\ObjectQuel\ObjectQuel\QuelToSQL\QuelToSQLDestroy;
 
 	/**
 	 * Executes an AstDestroy statement: compiles it via QuelToSQLDestroy (a

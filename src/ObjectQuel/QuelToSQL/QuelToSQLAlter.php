@@ -1,0 +1,567 @@
+<?php
+
+	namespace Quellabs\ObjectQuel\ObjectQuel\QuelToSQL;
+
+	use Quellabs\ObjectQuel\Capabilities\PlatformCapabilitiesInterface;
+	use Quellabs\ObjectQuel\DatabaseAdapter\Mapper\DDLTypeMapper;
+	use Quellabs\ObjectQuel\DatabaseAdapter\SqlIdentifierQuoter;
+	use Quellabs\ObjectQuel\Exception\QuelException;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstAlterAddColumn;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstAlterAddForeignKey;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstAlterDropColumn;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstAlterDropForeignKey;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstAlterDropPrimaryKey;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstAlterRenameColumn;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstAlterRetypeColumn;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstAlterSetPrimaryKey;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstAlterTable;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstColumnDefinition;
+	use Quellabs\ObjectQuel\ObjectQuel\ForeignKeyConstraintNamer;
+
+	/**
+	 * Compiles an AstAlterTable statement's column, primary-key, and
+	 * foreign-key sub-operations to dialect-correct DDL. Sibling to
+	 * QuelToSQLCreate/QuelToSQLCreateIndex/QuelToSQLDestroy.
+	 *
+	 * Index sub-operations are sugar assembled into AstCreateIndex/
+	 * AstDestroyIndex and run through those compilers instead (see
+	 * Execution\Executors\AlterTableExecutor); foreign-key sub-operations
+	 * ARE compiled directly here since most dialects support them natively
+	 * in one ALTER TABLE statement.
+	 *
+	 * `retype`, primary-key changes, and foreign-key changes are
+	 * unsupported on SQLite (no ALTER COLUMN/ADD/DROP CONSTRAINT), and
+	 * adding IDENTITY via `retype` is unsupported on SQL Server. Both
+	 * throw QuelException rather than emit wrong or partial SQL.
+	 */
+	class QuelToSQLAlter {
+
+		private DDLTypeMapper $ddlTypeMapper;
+		private SqlIdentifierQuoter $identifierQuoter;
+		private PlatformCapabilitiesInterface $platform;
+
+		/**
+		 * QuelToSQLAlter constructor
+		 * @param PlatformCapabilitiesInterface $platform
+		 */
+		public function __construct(PlatformCapabilitiesInterface $platform) {
+			$this->ddlTypeMapper = new DDLTypeMapper($platform);
+			$this->identifierQuoter = new SqlIdentifierQuoter($platform);
+			$this->platform = $platform;
+		}
+
+		/**
+		 * Compiles every column, primary-key, and foreign-key sub-operation
+		 * of an `alter` statement to SQL, in three fixed phases rather than
+		 * declaration order: `drop foreign key` first (so a column it
+		 * constrains can be dropped afterward in the same statement),
+		 * column/primary-key ops next in declaration order, `add foreign
+		 * key` last (so it can reference a column added earlier in the
+		 * same statement). Index sub-operations are silently skipped here
+		 * (see class docblock) — the caller compiles those separately.
+		 * @param AstAlterTable $statement
+		 * @param string[] $existingPrimaryKeyColumns Resolved by the caller via schema introspection; only consulted when the statement contains a primary-key sub-operation
+		 * @param string|null $existingPrimaryKeyConstraintName Resolved by the caller; required only on pgsql/sqlsrv when a primary-key sub-operation must first drop an existing key
+		 * @return list<string>
+		 * @throws QuelException If a sub-operation isn't representable on the connected engine (see class docblock)
+		 */
+		public function convertToSQL(AstAlterTable $statement, array $existingPrimaryKeyColumns = [], ?string $existingPrimaryKeyConstraintName = null): array {
+			$tableName = $statement->getTableName();
+			$statements = [];
+			$dropForeignKeyStatements = [];
+			$addForeignKeyStatements = [];
+
+			foreach ($statement->getOperations() as $operation) {
+				if ($operation instanceof AstAlterDropForeignKey) {
+					$dropForeignKeyStatements[] = $this->compileDropForeignKey($tableName, $operation);
+					continue;
+				}
+
+				if ($operation instanceof AstAlterAddForeignKey) {
+					$addForeignKeyStatements[] = $this->compileAddForeignKey($tableName, $operation);
+					continue;
+				}
+
+				$statements = [
+					...$statements,
+					...match (true) {
+						$operation instanceof AstAlterAddColumn => $this->compileAddColumn($tableName, $operation),
+						$operation instanceof AstAlterDropColumn => [$this->compileDropColumn($tableName, $operation)],
+						$operation instanceof AstAlterRenameColumn => [$this->compileRenameColumn($tableName, $operation)],
+						$operation instanceof AstAlterRetypeColumn => $this->compileRetypeColumn($tableName, $operation),
+						$operation instanceof AstAlterSetPrimaryKey => $this->compileSetPrimaryKey($tableName, $operation, $existingPrimaryKeyColumns, $existingPrimaryKeyConstraintName),
+						$operation instanceof AstAlterDropPrimaryKey => $this->compileDropPrimaryKey($tableName, $existingPrimaryKeyColumns, $existingPrimaryKeyConstraintName),
+						// Index sub-operations: compiled by the caller instead.
+						default => [],
+					},
+				];
+			}
+
+			return [...$dropForeignKeyStatements, ...$statements, ...$addForeignKeyStatements];
+		}
+		
+		/**
+		 * Quote a table name
+		 * @param string $tableName
+		 * @return string
+		 */
+		private function quotedTable(string $tableName): string {
+			return $this->identifierQuoter->quoteIdentifier($tableName);
+		}
+		
+		/**
+		 * `add attr = type constraints [backfill 'literal']` — a plain new
+		 * column, rendered with the same per-dialect column renderer
+		 * `create` uses. With no `backfill` clause, this is one statement;
+		 * with one, compileAddColumnWithBackfill() takes over (see its
+		 * docblock for the per-dialect statement sequence).
+		 * @param string $tableName
+		 * @param AstAlterAddColumn $operation
+		 * @return list<string>
+		 * @throws QuelException
+		 */
+		private function compileAddColumn(string $tableName, AstAlterAddColumn $operation): array {
+			$column = $operation->getColumn();
+			$dialect = $this->platform->getDatabaseType();
+
+			if ($dialect === 'sqlite' && $column->isIdentity()) {
+				throw new QuelException(
+					"Cannot add identity column '{$column->getName()}' to '{$tableName}': SQLite's autoincrement idiom " .
+					"(INTEGER PRIMARY KEY AUTOINCREMENT) can only be declared when a table is created, not added afterwards",
+					'alter_unsupported'
+				);
+			}
+
+			$backfillValue = $operation->getBackfillValue();
+
+			if ($backfillValue !== null) {
+				return $this->compileAddColumnWithBackfill($tableName, $column, $backfillValue, $dialect);
+			}
+
+			$columnDef = $this->renderColumnDefinition($column);
+			$keyword = $dialect === 'sqlsrv' ? 'ADD' : 'ADD COLUMN';
+
+			return [sprintf('ALTER TABLE %s %s %s', $this->quotedTable($tableName), $keyword, $columnDef)];
+		}
+
+		/**
+		 * `add attr = type constraints backfill 'literal'` — adds the column
+		 * with a transient DEFAULT so existing rows get backfilled, then
+		 * drops the default again so it isn't a second, persisted source of
+		 * truth alongside @Orm\Column(default=...).
+		 *
+		 * MySQL/MariaDB and PostgreSQL share identical add/cleanup syntax.
+		 * SQL Server's `ADD ... DEFAULT` creates a named default-constraint
+		 * object that must be dropped by name (DefaultConstraintNamer).
+		 * SQLite is a deliberate one-statement carve-out: no ALTER COLUMN at
+		 * all, so the default is left in place after backfill — harmless,
+		 * since append() never reads a column's DB-level default.
+		 * @param string $tableName
+		 * @param AstColumnDefinition $column
+		 * @param string $backfillValue
+		 * @param string $dialect
+		 * @return list<string>
+		 * @throws QuelException
+		 */
+		private function compileAddColumnWithBackfill(string $tableName, AstColumnDefinition $column, string $backfillValue, string $dialect): array {
+			$table = $this->quotedTable($tableName);
+			$columnDef = $this->renderColumnDefinition($column);
+			$quotedDefault = $this->identifierQuoter->quoteStringLiteral($backfillValue);
+
+			if ($this->usesNamedDefaultConstraint()) {
+				$constraintName = $this->identifierQuoter->quoteIdentifier(
+					DefaultConstraintNamer::nameOrThrow($tableName, $column->getName())
+				);
+
+				return [
+					sprintf('ALTER TABLE %s ADD %s CONSTRAINT %s DEFAULT %s', $table, $columnDef, $constraintName, $quotedDefault),
+					sprintf('ALTER TABLE %s DROP CONSTRAINT %s', $table, $constraintName),
+				];
+			}
+
+			if ($dialect === 'sqlite') {
+				return [sprintf('ALTER TABLE %s ADD COLUMN %s DEFAULT %s', $table, $columnDef, $quotedDefault)];
+			}
+
+			$quotedColumn = $this->identifierQuoter->quoteIdentifier($column->getName());
+
+			return [
+				sprintf('ALTER TABLE %s ADD COLUMN %s DEFAULT %s', $table, $columnDef, $quotedDefault),
+				sprintf('ALTER TABLE %s ALTER COLUMN %s DROP DEFAULT', $table, $quotedColumn),
+			];
+		}
+
+		/**
+		 * `drop attr` — uniform across every dialect.
+		 * @param string $tableName
+		 * @param AstAlterDropColumn $operation
+		 * @return string
+		 */
+		private function compileDropColumn(string $tableName, AstAlterDropColumn $operation): string {
+			return sprintf(
+				'ALTER TABLE %s DROP COLUMN %s',
+				$this->quotedTable($tableName),
+				$this->identifierQuoter->quoteIdentifier($operation->getColumnName())
+			);
+		}
+
+		/**
+		 * `rename oldAttr to newAttr` — every dialect except SQL Server
+		 * supports `RENAME COLUMN ... TO ...` directly; SQL Server has no
+		 * such ALTER TABLE clause at all and uses `sp_rename` instead.
+		 * @param string $tableName
+		 * @param AstAlterRenameColumn $operation
+		 * @return string
+		 */
+		private function compileRenameColumn(string $tableName, AstAlterRenameColumn $operation): string {
+			if ($this->platform->getDatabaseType() === 'sqlsrv') {
+				$target = $this->identifierQuoter->escapeStringLiteral("{$tableName}.{$operation->getOldName()}");
+				$newName = $this->identifierQuoter->escapeStringLiteral($operation->getNewName());
+
+				return "EXEC sp_rename N'{$target}', N'{$newName}', N'COLUMN'";
+			}
+
+			return sprintf(
+				'ALTER TABLE %s RENAME COLUMN %s TO %s',
+				$this->quotedTable($tableName),
+				$this->identifierQuoter->quoteIdentifier($operation->getOldName()),
+				$this->identifierQuoter->quoteIdentifier($operation->getNewName())
+			);
+		}
+		
+		/**
+		 * `retype attr = type constraints` — replaces the column's type and
+		 * constraints outright. See class docblock for the SQLite/SQL
+		 * Server carve-outs.
+		 * @param string $tableName
+		 * @param AstAlterRetypeColumn $operation
+		 * @return list<string>
+		 * @throws QuelException
+		 */
+		private function compileRetypeColumn(string $tableName, AstAlterRetypeColumn $operation): array {
+			$column = $operation->getColumn();
+			$dialect = $this->platform->getDatabaseType();
+
+			if ($dialect === 'sqlite') {
+				throw new QuelException(
+					"Cannot retype column '{$column->getName()}' on '{$tableName}': SQLite has no ALTER COLUMN — " .
+					"changing a column's type or constraints requires rebuilding the table, which 'alter' does not attempt.",
+					'alter_unsupported'
+				);
+			}
+
+			return match ($dialect) {
+				'pgsql' => $this->compilePostgresRetype($tableName, $column),
+				'sqlsrv' => [$this->compileSqlServerRetype($tableName, $column)],
+				default => [$this->compileMysqlRetype($tableName, $column)],
+			};
+		}
+
+		/**
+		 * MySQL/MariaDB: a single `MODIFY COLUMN` clause covers type, NOT
+		 * NULL, and AUTO_INCREMENT all at once.
+		 * @param string $tableName
+		 * @param AstColumnDefinition $column
+		 * @return string
+		 */
+		private function compileMysqlRetype(string $tableName, AstColumnDefinition $column): string {
+			return sprintf('ALTER TABLE %s MODIFY COLUMN %s', $this->quotedTable($tableName), $this->renderColumnDefinition($column));
+		}
+
+		/**
+		 * PostgreSQL: type, nullability, and identity are three
+		 * independent `ALTER COLUMN` clauses, unlike MySQL's single
+		 * `MODIFY COLUMN`. The type change always carries an explicit
+		 * `USING` cast — safe even when the cast is a no-op — since a bare
+		 * `TYPE` clause fails whenever Postgres can't derive an implicit
+		 * cast on its own. Nullability and identity are always emitted
+		 * (never conditionally), matching this op's "replaces outright"
+		 * semantics: `DROP IDENTITY IF EXISTS` is a safe no-op when the
+		 * column was never an identity column.
+		 * @param string $tableName
+		 * @param AstColumnDefinition $column
+		 * @return list<string>
+		 */
+		private function compilePostgresRetype(string $tableName, AstColumnDefinition $column): array {
+			$table = $this->quotedTable($tableName);
+			$quotedColumn = $this->identifierQuoter->quoteIdentifier($column->getName());
+			$type = $this->ddlTypeMapper->getTempTableColumnType($column->toColumnDefinitionArray());
+
+			$statements = [
+				sprintf('ALTER TABLE %s ALTER COLUMN %s TYPE %s USING %s::%s', $table, $quotedColumn, $type, $quotedColumn, $type),
+				sprintf('ALTER TABLE %s ALTER COLUMN %s %s NOT NULL', $table, $quotedColumn, !$column->isNullable() ? 'SET' : 'DROP'),
+			];
+			
+			if ($column->isIdentity()) {
+				$statements[] = sprintf('ALTER TABLE %s ALTER COLUMN %s ADD GENERATED BY DEFAULT AS IDENTITY', $table, $quotedColumn);
+			} else {
+				$statements[] = sprintf('ALTER TABLE %s ALTER COLUMN %s DROP IDENTITY IF EXISTS', $table, $quotedColumn);
+			}
+
+			return $statements;
+		}
+
+		/**
+		 * SQL Server: type and nullability are one `ALTER COLUMN` clause,
+		 * always with an explicit trailing NULL/NOT NULL (T-SQL otherwise
+		 * silently keeps the existing column's nullability instead of
+		 * applying this op's "replaces outright" semantics). Adding
+		 * IDENTITY isn't representable via `ALTER COLUMN` at all — the
+		 * column would need to be recreated — so that combination is
+		 * rejected loudly rather than silently ignored.
+		 * @param string $tableName
+		 * @param AstColumnDefinition $column
+		 * @return string
+		 * @throws QuelException
+		 */
+		private function compileSqlServerRetype(string $tableName, AstColumnDefinition $column): string {
+			if ($column->isIdentity()) {
+				throw new QuelException(
+					"Cannot retype column '{$column->getName()}' on '{$tableName}' to add 'identity': SQL Server's " .
+					"ALTER COLUMN cannot add IDENTITY to an existing column — the column would need to be recreated, " .
+					"which 'alter' does not attempt",
+					'alter_unsupported'
+				);
+			}
+
+			$type = $this->ddlTypeMapper->getTempTableColumnType($column->toColumnDefinitionArray());
+			$nullability = !$column->isNullable() ? 'NOT NULL' : 'NULL';
+
+			return sprintf(
+				'ALTER TABLE %s ALTER COLUMN %s %s %s',
+				$this->quotedTable($tableName),
+				$this->identifierQuoter->quoteIdentifier($column->getName()),
+				$type,
+				$nullability
+			);
+		}
+
+		/**
+		 * `primary key (col {, col})` — replaces the full primary key
+		 * outright (see objectquel-primary-key-design.md, decision 1): an
+		 * existing key is dropped first (dialect-specific form), then the
+		 * new one is added. No drop is emitted when the table currently has
+		 * no primary key.
+		 * @param string $tableName
+		 * @param AstAlterSetPrimaryKey $operation
+		 * @param string[] $existingPrimaryKeyColumns
+		 * @param string|null $existingPrimaryKeyConstraintName
+		 * @return list<string>
+		 * @throws QuelException
+		 */
+		private function compileSetPrimaryKey(string $tableName, AstAlterSetPrimaryKey $operation, array $existingPrimaryKeyColumns, ?string $existingPrimaryKeyConstraintName): array {
+			$this->assertPrimaryKeyChangesSupported($tableName);
+
+			$statements = $existingPrimaryKeyColumns === []
+				? []
+				: [$this->compileDropExistingPrimaryKey($tableName, $existingPrimaryKeyConstraintName)];
+
+			$statements[] = sprintf(
+				'ALTER TABLE %s ADD PRIMARY KEY (%s)',
+				$this->quotedTable($tableName),
+				$this->identifierQuoter->quoteIdentifierList($operation->getColumns())
+			);
+
+			return $statements;
+		}
+
+		/**
+		 * `drop primary key` — removes the table's primary key entirely.
+		 * Pre-checked against $existingPrimaryKeyColumns (rather than left
+		 * to the database, unlike most other DDL failures in this codebase)
+		 * because pgsql/sqlsrv need a resolved constraint name to build
+		 * valid SQL in the first place — there's no statement to emit at
+		 * all when none exists, so the check is made uniform across every
+		 * dialect rather than only where it's structurally required.
+		 * @param string $tableName
+		 * @param string[] $existingPrimaryKeyColumns
+		 * @param string|null $existingPrimaryKeyConstraintName
+		 * @return list<string>
+		 * @throws QuelException
+		 */
+		private function compileDropPrimaryKey(string $tableName, array $existingPrimaryKeyColumns, ?string $existingPrimaryKeyConstraintName): array {
+			$this->assertPrimaryKeyChangesSupported($tableName);
+
+			if ($existingPrimaryKeyColumns === []) {
+				throw new QuelException("Cannot drop primary key on '{$tableName}': table has no primary key", 'alter_error');
+			}
+
+			return [$this->compileDropExistingPrimaryKey($tableName, $existingPrimaryKeyConstraintName)];
+		}
+
+		/**
+		 * @param string $tableName
+		 * @return void
+		 * @throws QuelException
+		 */
+		private function assertPrimaryKeyChangesSupported(string $tableName): void {
+			if ($this->platform->getDatabaseType() === 'sqlite') {
+				throw new QuelException(
+					"Cannot change the primary key on '{$tableName}': SQLite has no ALTER TABLE support for " .
+					"primary-key changes — this requires rebuilding the table, which 'alter' does not attempt " .
+					"(see objectquel-alter-table-design.md, 'Multi-engine retype safety')",
+					'alter_unsupported'
+				);
+			}
+		}
+
+		/**
+		 * MySQL/MariaDB need no constraint name (`DROP PRIMARY KEY` is a
+		 * fixed clause); pgsql/sqlsrv name their primary key as an
+		 * ordinary named constraint and must `DROP CONSTRAINT` it, using
+		 * the name the caller resolved via schema introspection.
+		 * @param string $tableName
+		 * @param string|null $existingPrimaryKeyConstraintName
+		 * @return string
+		 * @throws QuelException
+		 */
+		private function compileDropExistingPrimaryKey(string $tableName, ?string $existingPrimaryKeyConstraintName): string {
+			if ($this->usesNativeDropClause()) {
+				return sprintf('ALTER TABLE %s DROP PRIMARY KEY', $this->quotedTable($tableName));
+			}
+
+			if ($existingPrimaryKeyConstraintName === null) {
+				throw new QuelException(
+					"Cannot change the primary key on '{$tableName}': the table has a primary key but its constraint name could not be resolved",
+					'alter_error'
+				);
+			}
+
+			return sprintf(
+				'ALTER TABLE %s DROP CONSTRAINT %s',
+				$this->quotedTable($tableName),
+				$this->identifierQuoter->quoteIdentifier($existingPrimaryKeyConstraintName)
+			);
+		}
+
+		/**
+		 * `add foreign key (col) references Table (col) [on delete action]
+		 * [on update action]` — one native `ALTER TABLE ... ADD CONSTRAINT
+		 * ... FOREIGN KEY ...` statement, same as three of the four
+		 * supported dialects natively support (see
+		 * objectquel-foreign-key-design.md, "Dialect reality"). The
+		 * constraint name is always the derived one — never
+		 * author-supplied (see objectquel-foreign-key-design.md, decision 1).
+		 * @param string $tableName
+		 * @param AstAlterAddForeignKey $operation
+		 * @return string
+		 * @throws \LogicException If the referenced column was never resolved
+		 * @throws QuelException If foreign-key changes aren't supported on the connected engine
+		 */
+		private function compileAddForeignKey(string $tableName, AstAlterAddForeignKey $operation): string {
+			$this->assertForeignKeyChangesSupported($tableName);
+
+			$referencedColumn = $operation->getReferencedColumn();
+
+			if ($referencedColumn === null) {
+				throw new \LogicException(
+					"Cannot compile foreign key on '{$tableName}.{$operation->getColumn()}': the referenced column " .
+					"was never resolved — callers must resolve a column-less 'references Table' via " .
+					"ForeignKeyReferenceResolver before compiling"
+				);
+			}
+
+			$name = ForeignKeyConstraintNamer::nameOrThrow($tableName, $operation->getColumn());
+			$dialect = $this->platform->getDatabaseType();
+
+			return sprintf(
+				'ALTER TABLE %s ADD CONSTRAINT %s FOREIGN KEY (%s) REFERENCES %s (%s) ON DELETE %s ON UPDATE %s',
+				$this->quotedTable($tableName),
+				$this->identifierQuoter->quoteIdentifier($name),
+				$this->identifierQuoter->quoteIdentifier($operation->getColumn()),
+				$this->identifierQuoter->quoteIdentifier($operation->getReferencedTable()),
+				$this->identifierQuoter->quoteIdentifier($referencedColumn),
+				ForeignKeyActionNormalizer::forDialect($operation->getOnDelete(), $dialect),
+				ForeignKeyActionNormalizer::forDialect($operation->getOnUpdate(), $dialect)
+			);
+		}
+
+		/**
+		 * `drop foreign key (col)` — targets by column, per
+		 * objectquel-foreign-key-design.md, decision 1, resolving to the
+		 * same derived name `add foreign key` would have used for that
+		 * column. MySQL/MariaDB use the dedicated `DROP FOREIGN KEY`
+		 * clause; pgsql/sqlsrv use the general-purpose `DROP CONSTRAINT`
+		 * (both name their FK as an ordinary named constraint).
+		 * @param string $tableName
+		 * @param AstAlterDropForeignKey $operation
+		 * @return string
+		 * @throws QuelException If foreign-key changes aren't supported on the connected engine
+		 */
+		private function compileDropForeignKey(string $tableName, AstAlterDropForeignKey $operation): string {
+			$this->assertForeignKeyChangesSupported($tableName);
+
+			$quotedName = $this->identifierQuoter->quoteIdentifier(
+				ForeignKeyConstraintNamer::nameOrThrow($tableName, $operation->getColumn())
+			);
+
+			if ($this->usesNativeDropClause()) {
+				return sprintf('ALTER TABLE %s DROP FOREIGN KEY %s', $this->quotedTable($tableName), $quotedName);
+			}
+
+			return sprintf('ALTER TABLE %s DROP CONSTRAINT %s', $this->quotedTable($tableName), $quotedName);
+		}
+
+		/**
+		 * Whether the connected engine drops a named constraint via its own
+		 * dedicated clause (`DROP PRIMARY KEY`/`DROP FOREIGN KEY`) rather
+		 * than the general-purpose `DROP CONSTRAINT` every other dialect
+		 * uses. True only for MySQL/MariaDB.
+		 * @return bool
+		 */
+		private function usesNativeDropClause(): bool {
+			return in_array($this->platform->getDatabaseType(), ['mysql', 'mariadb'], true);
+		}
+
+		/**
+		 * Whether adding a column with a DEFAULT creates a separate named
+		 * constraint object that must be dropped by name (SQL Server only —
+		 * MySQL/PostgreSQL drop it by targeting the column directly). A
+		 * dialect syntax-form choice, not a capability gate — nothing is
+		 * infeasible either way — so it stays a private helper rather than
+		 * a PlatformCapabilitiesInterface method.
+		 * @return bool
+		 */
+		private function usesNamedDefaultConstraint(): bool {
+			return $this->platform->getDatabaseType() === 'sqlsrv';
+		}
+
+		/**
+		 * SQLite's ALTER TABLE cannot add or drop a foreign key at all —
+		 * FK constraints there can only be declared inline in CREATE TABLE
+		 * (see objectquel-foreign-key-design.md, "Dialect reality"). Same
+		 * 'alter_unsupported' treatment retype/primary-key changes get.
+		 * @param string $tableName
+		 * @return void
+		 * @throws QuelException
+		 */
+		private function assertForeignKeyChangesSupported(string $tableName): void {
+			if (!$this->platform->supportsNamedForeignKeys()) {
+				throw new QuelException(
+					"Cannot change foreign keys on '{$tableName}': SQLite has no ALTER TABLE support for " .
+					"adding or dropping foreign keys — they can only be declared inline in CREATE TABLE, " .
+					"which 'alter' does not attempt (see objectquel-foreign-key-design.md, 'Dialect reality')",
+					'alter_unsupported'
+				);
+			}
+		}
+
+		/**
+		 * Renders a full column definition (type + NOT NULL + identity) via
+		 * DDLTypeMapper, the same per-dialect renderer `create` uses. PK
+		 * membership never folds into the NOT NULL-ness here the way
+		 * QuelToSQLCreate does — `add`/`retype` never implicitly make a
+		 * column part of the primary key; that's always a separate, explicit
+		 * `primary key (...)` sub-operation.
+		 * @param AstColumnDefinition $column
+		 * @return string
+		 */
+		private function renderColumnDefinition(AstColumnDefinition $column): string {
+			return $this->ddlTypeMapper->renderColumnDefinition(
+				$this->identifierQuoter->quoteIdentifier($column->getName()),
+				$column->toColumnDefinitionArray(),
+				!$column->isNullable(),
+				$column->isIdentity()
+			);
+		}
+	}

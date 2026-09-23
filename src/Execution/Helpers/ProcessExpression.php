@@ -33,8 +33,8 @@
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\NodeBinary;
 	use Quellabs\ObjectQuel\ObjectQuel\AstInterface;
 	use Quellabs\ObjectQuel\ObjectQuel\AstVisitorInterface;
-	use Quellabs\ObjectQuel\ObjectQuel\IdentifierType;
-	use Quellabs\ObjectQuel\ObjectQuel\RoutineReferenceSql;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\IdentifierType;
+	use Quellabs\ObjectQuel\ObjectQuel\Routines\RoutineReferenceSql;
 	
 	/**
 	 * ExpressionHandler - Converts AST expression nodes to SQL equivalents

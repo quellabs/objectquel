@@ -1,0 +1,189 @@
+<?php
+
+	namespace Quellabs\ObjectQuel\ObjectQuel\QuelToSQL;
+
+	use Quellabs\ObjectQuel\Capabilities\PlatformCapabilitiesInterface;
+	use Quellabs\ObjectQuel\DatabaseAdapter\Mapper\DDLTypeMapper;
+	use Quellabs\ObjectQuel\DatabaseAdapter\SqlIdentifierQuoter;
+	use Quellabs\ObjectQuel\Exception\QuelException;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstCreateTable;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstCreateTableForeignKey;
+	use Quellabs\ObjectQuel\ObjectQuel\ForeignKeyConstraintNamer;
+
+	/**
+	 * Compiles an AstCreateTable statement to dialect-correct CREATE TABLE
+	 * DDL. Sibling to QuelToSQLRetrieve/QuelToSQLDestroy.
+	 */
+	class QuelToSQLCreate {
+
+		private DDLTypeMapper $ddlTypeMapper;
+		private SqlIdentifierQuoter $identifierQuoter;
+		private PlatformCapabilitiesInterface $platform;
+
+		/**
+		 * QuelToSQLCreate constructor
+		 * @param PlatformCapabilitiesInterface $platform
+		 */
+		public function __construct(PlatformCapabilitiesInterface $platform) {
+			$this->ddlTypeMapper = new DDLTypeMapper($platform);
+			$this->identifierQuoter = new SqlIdentifierQuoter($platform);
+			$this->platform = $platform;
+		}
+
+		/**
+		 * Resolves the physical table name a `create [temporary] Name (...)`
+		 * statement targets — the '#'-prefixed sqlsrv temp-table name when
+		 * temporary, the logical name unchanged otherwise. Exposed
+		 * separately from convertToSQL() so callers assembling further DDL
+		 * against the same table (e.g. CreateTableExecutor's embedded
+		 * indexes) target the same physical name, not the logical one.
+		 * @param AstCreateTable $statement
+		 * @return string
+		 */
+		public function getPhysicalTableName(AstCreateTable $statement): string {
+			return $statement->isTemporary()
+				? $this->ddlTypeMapper->getTempTableName($statement->getTableName())
+				: $this->ddlTypeMapper->getTableName($statement->getTableName());
+		}
+
+		/**
+		 * Compiles a `create [temporary] Name (...) [if not exists]`
+		 * statement to SQL.
+		 * @param AstCreateTable $statement
+		 * @return string
+		 * @throws QuelException If an embedded foreign key's derived constraint name exceeds the identifier length limit
+		 */
+		public function convertToSQL(AstCreateTable $statement): string {
+			// SQL Server needs special syntax
+			$isSqlServer = $this->platform->getDatabaseType() === 'sqlsrv';
+
+			// SQL Server has no CREATE TEMPORARY TABLE keyword — temp-ness comes
+			// from a '#' prefix in the physical name instead (see DDLTypeMapper).
+			$keyword = $statement->isTemporary()
+				? $this->ddlTypeMapper->getTemporaryCreateTableKeyword()
+				: $this->ddlTypeMapper->getCreateTableKeyword();
+			$tableName = $this->getPhysicalTableName($statement);
+
+			// mysql/mariadb/pgsql/sqlite all accept IF NOT EXISTS inline, right
+			// after the CREATE [TEMPORARY] TABLE keyword.
+			if ($statement->isIfNotExists() && !$isSqlServer) {
+				$keyword .= ' IF NOT EXISTS';
+			}
+
+			// Build the SQL query. A column's effective NOT NULL-ness folds
+			// in PK membership here rather than being stored back onto the
+			// column — PK is a separate, possibly-out-of-order clause, not a
+			// per-column flag (see objectquel-primary-key-design.md).
+			$primaryKeyColumns = $statement->getPrimaryKeyColumns();
+
+			$columnDefs = array_map(
+				fn($column) => $this->ddlTypeMapper->renderColumnDefinition(
+					$this->identifierQuoter->quoteIdentifier($column->getName()),
+					$column->toColumnDefinitionArray(),
+					!$column->isNullable() || in_array($column->getName(), $primaryKeyColumns, true),
+					$column->isIdentity()
+				),
+				$statement->getColumns()
+			);
+
+			// SQLite's single-column identity PK is rendered inline by
+			// DDLTypeMapper (INTEGER PRIMARY KEY AUTOINCREMENT) — adding a
+			// trailing PRIMARY KEY constraint on top of that is invalid
+			// SQLite syntax. Every other PK shape, on every dialect
+			// including SQLite, gets a trailing table constraint.
+			$isSqlite = $this->platform->getDatabaseType() === 'sqlite';
+			$hasIdentityColumn = array_filter($statement->getColumns(), fn($column) => $column->isIdentity()) !== [];
+
+			if ($primaryKeyColumns !== [] && !($isSqlite && $hasIdentityColumn)) {
+				$quotedPkColumns = array_map(
+					fn($name) => $this->identifierQuoter->quoteIdentifier($name),
+					$primaryKeyColumns
+				);
+
+				$columnDefs[] = sprintf('PRIMARY KEY (%s)', implode(', ', $quotedPkColumns));
+			}
+
+			// Embedded `foreign key (...) references ...` entries append as
+			// trailing table constraints too — SQLite's only way to declare
+			// one at all (see objectquel-foreign-key-design.md, "Dialect
+			// reality"), and uniform across every other dialect as well.
+			foreach ($statement->getForeignKeys() as $foreignKey) {
+				$columnDefs[] = $this->renderForeignKeyConstraint($tableName, $foreignKey);
+			}
+
+			$createStatement = sprintf(
+				'%s %s (%s)',
+				$keyword,
+				$this->identifierQuoter->quoteIdentifier($tableName),
+				implode(', ', $columnDefs)
+			);
+
+			// MySQL/MariaDB default to whatever the connected server's own
+			// default_storage_engine is — never assume that's InnoDB. Foreign
+			// keys (see renderForeignKeyConstraint() above, and QuelToSQLAlter's
+			// `add foreign key`) are silently unenforced on any other engine
+			// (MyISAM accepts the CONSTRAINT syntax but only creates a plain
+			// index, no error), so InnoDB must be forced explicitly rather than
+			// left to the server's default.
+			if (in_array($this->platform->getDatabaseType(), ['mysql', 'mariadb'], true)) {
+				$createStatement .= ' ENGINE=InnoDB';
+			}
+
+			// T-SQL has no inline IF NOT EXISTS on CREATE TABLE at all (unlike
+			// DROP TABLE IF EXISTS, which SQL Server does support) — the whole
+			// statement is wrapped in an existence check instead, the standard
+			// T-SQL workaround for this gap.
+			if ($statement->isIfNotExists() && $isSqlServer) {
+				$tableNameRes = $this->identifierQuoter->escapeStringLiteral($tableName);
+
+				return sprintf(
+					"IF %s IS NULL %s",
+					$statement->isTemporary()
+						? "OBJECT_ID('tempdb..{$tableNameRes}')"
+						: "OBJECT_ID(N'{$tableNameRes}', N'U')",
+					$createStatement
+				);
+			}
+
+			return $createStatement;
+		}
+
+		/**
+		 * Renders one embedded `foreign key (...) references ...` entry as
+		 * a trailing `CONSTRAINT name FOREIGN KEY (...) REFERENCES
+		 * other(...)` table constraint. The derived name is always emitted
+		 * explicitly — even on SQLite, where it's parsed but never
+		 * addressable afterward — keeping one code path across all four
+		 * dialects instead of a SQLite carve-out (see
+		 * objectquel-foreign-key-design.md, "Implementation surface").
+		 * @param string $tableName
+		 * @param AstCreateTableForeignKey $foreignKey
+		 * @return string
+		 * @throws \LogicException If the referenced column was never resolved
+		 * @throws QuelException If the derived constraint name exceeds the identifier length limit
+		 */
+		private function renderForeignKeyConstraint(string $tableName, AstCreateTableForeignKey $foreignKey): string {
+			$referencedColumn = $foreignKey->getReferencedColumn();
+
+			if ($referencedColumn === null) {
+				throw new \LogicException(
+					"Cannot compile foreign key on '{$tableName}.{$foreignKey->getColumn()}': the referenced column " .
+					"was never resolved — callers must resolve a column-less 'references Table' via " .
+					"ForeignKeyReferenceResolver before compiling"
+				);
+			}
+
+			$name = ForeignKeyConstraintNamer::nameOrThrow($tableName, $foreignKey->getColumn());
+			$dialect = $this->platform->getDatabaseType();
+
+			return sprintf(
+				'CONSTRAINT %s FOREIGN KEY (%s) REFERENCES %s (%s) ON DELETE %s ON UPDATE %s',
+				$this->identifierQuoter->quoteIdentifier($name),
+				$this->identifierQuoter->quoteIdentifier($foreignKey->getColumn()),
+				$this->identifierQuoter->quoteIdentifier($foreignKey->getReferencedTable()),
+				$this->identifierQuoter->quoteIdentifier($referencedColumn),
+				ForeignKeyActionNormalizer::forDialect($foreignKey->getOnDelete(), $dialect),
+				ForeignKeyActionNormalizer::forDialect($foreignKey->getOnUpdate(), $dialect)
+			);
+		}
+	}

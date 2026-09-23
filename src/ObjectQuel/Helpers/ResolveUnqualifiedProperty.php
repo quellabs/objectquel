@@ -8,7 +8,7 @@
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRange;
 	use Quellabs\ObjectQuel\ObjectQuel\AstInterface;
 	use Quellabs\ObjectQuel\ObjectQuel\AstVisitorInterface;
-	use Quellabs\ObjectQuel\ObjectQuel\IdentifierType;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\IdentifierType;
 	
 	/**
 	 * Resolves unqualified property names to their fully-qualified range-prefixed form.

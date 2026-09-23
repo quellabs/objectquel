@@ -9,6 +9,8 @@
 	use Quellabs\ObjectQuel\Exception\SemanticException;
 	use Quellabs\ObjectQuel\Exception\TransformationException;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRoutineDefinition;
+	use Quellabs\ObjectQuel\ObjectQuel\Routines\RoutineAnalyzer;
+	use Quellabs\ObjectQuel\ObjectQuel\Routines\RoutineStatementCompiler;
 
 	/**
 	 * Compiles EQUEL routine source (`define function ...`) to the target

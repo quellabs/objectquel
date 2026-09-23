@@ -20,13 +20,13 @@
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRoutineCall;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstStatement;
 	use Quellabs\ObjectQuel\ObjectQuel\Visitors\CollectNodes;
-	use Quellabs\ObjectQuel\ObjectQuel\CompiledAppendSql;
+	use Quellabs\ObjectQuel\ObjectQuel\QuelToSQL\CompiledAppendSql;
 	use Quellabs\ObjectQuel\ObjectQuel\Helpers\WriteVerbParameterNormalizer;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRetrieve;
 	use Quellabs\ObjectQuel\ObjectQuel\QuelResult;
-	use Quellabs\ObjectQuel\ObjectQuel\QuelToSQLAppend;
-	use Quellabs\ObjectQuel\ObjectQuel\QuelToSQLReplace;
-	use Quellabs\ObjectQuel\ObjectQuel\QuelToSQLUpsert;
+	use Quellabs\ObjectQuel\ObjectQuel\QuelToSQL\QuelToSQLAppend;
+	use Quellabs\ObjectQuel\ObjectQuel\QuelToSQL\QuelToSQLReplace;
+	use Quellabs\ObjectQuel\ObjectQuel\QuelToSQL\QuelToSQLUpsert;
 	use Quellabs\ObjectQuel\Planner\ExecutionPlanBuilder;
 	use Quellabs\ObjectQuel\PrimaryKeys\PrimaryKeyFactory;
 

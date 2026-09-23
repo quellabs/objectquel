@@ -11,7 +11,7 @@
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstDelete;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstStatement;
 	use Quellabs\ObjectQuel\ObjectQuel\QuelResult;
-	use Quellabs\ObjectQuel\ObjectQuel\QuelToSQLDelete;
+	use Quellabs\ObjectQuel\ObjectQuel\QuelToSQL\QuelToSQLDelete;
 
 	/**
 	 * Executes an AstDelete statement: compiles it via QuelToSQLDelete and

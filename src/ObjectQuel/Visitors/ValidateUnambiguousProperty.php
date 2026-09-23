@@ -10,7 +10,7 @@
 	use Quellabs\ObjectQuel\ObjectQuel\AstInterface;
 	use Quellabs\ObjectQuel\ObjectQuel\AstVisitorInterface;
 	use Quellabs\ObjectQuel\ObjectQuel\Helpers\FindPropertyRange;
-	use Quellabs\ObjectQuel\ObjectQuel\IdentifierType;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\IdentifierType;
 	
 	/**
 	 * Validates that all unresolved bare identifiers can be unambiguously mapped

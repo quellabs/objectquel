@@ -16,7 +16,7 @@
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstDestroyIndex;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstStatement;
 	use Quellabs\ObjectQuel\Execution\ExecutionContext;
-	use Quellabs\ObjectQuel\ObjectQuel\QuelToSQLAlter;
+	use Quellabs\ObjectQuel\ObjectQuel\QuelToSQL\QuelToSQLAlter;
 
 	/**
 	 * Executes an AstAlterTable statement: compiles it via QuelToSQLAlter

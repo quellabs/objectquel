@@ -12,7 +12,7 @@
 	use Quellabs\ObjectQuel\Execution\Transformers\PaginationTransformer;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRetrieve;
 	use Quellabs\ObjectQuel\Exception\QuelException;
-	use Quellabs\ObjectQuel\ObjectQuel\QuelToSQLRetrieve;
+	use Quellabs\ObjectQuel\ObjectQuel\QuelToSQL\QuelToSQLRetrieve;
 
 	/**
 	 * Handles database-specific query execution including SQL conversion and temp tables

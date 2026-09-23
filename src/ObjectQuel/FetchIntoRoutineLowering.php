@@ -10,6 +10,8 @@
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstDeclare;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRetrieve;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRoutineDefinition;
+	use Quellabs\ObjectQuel\ObjectQuel\Routines\RoutineLowering;
+	use Quellabs\ObjectQuel\ObjectQuel\Routines\RoutineReferenceSql;
 
 	/**
 	 * Shared lowering for engines without row variables (SQL Server, MySQL/MariaDB):

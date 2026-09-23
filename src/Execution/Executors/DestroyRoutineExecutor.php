@@ -8,7 +8,7 @@
 	use Quellabs\ObjectQuel\Execution\ExecutionContext;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstDestroyRoutine;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstStatement;
-	use Quellabs\ObjectQuel\ObjectQuel\QuelToSQLDestroyRoutine;
+	use Quellabs\ObjectQuel\ObjectQuel\QuelToSQL\QuelToSQLDestroyRoutine;
 
 	/**
 	 * Executes `destroy function name [if exists]` through QuelToSQLDestroyRoutine.

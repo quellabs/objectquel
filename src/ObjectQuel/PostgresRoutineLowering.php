@@ -11,6 +11,8 @@
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstReturn;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRoutineDefinition;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstWhile;
+	use Quellabs\ObjectQuel\ObjectQuel\Routines\RoutineLowering;
+	use Quellabs\ObjectQuel\ObjectQuel\Routines\RoutineReferenceSql;
 
 	/**
 	 * Lowers an analyzed routine to a PL/pgSQL CREATE FUNCTION (non-void) or

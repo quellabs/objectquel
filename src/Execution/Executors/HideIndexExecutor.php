@@ -8,7 +8,7 @@
 	use Quellabs\ObjectQuel\Execution\ExecutionContext;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstHideIndex;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstStatement;
-	use Quellabs\ObjectQuel\ObjectQuel\QuelToSQLIndexVisibility;
+	use Quellabs\ObjectQuel\ObjectQuel\QuelToSQL\QuelToSQLIndexVisibility;
 
 	/**
 	 * Executes an AstHideIndex statement: compiles it via

@@ -11,8 +11,8 @@
 	use Quellabs\ObjectQuel\ObjectQuel\AstInterface;
 	use Quellabs\ObjectQuel\ObjectQuel\AstVisitorInterface;
 	use Quellabs\ObjectQuel\ObjectQuel\Helpers\FindPropertyRange;
-	use Quellabs\ObjectQuel\ObjectQuel\IdentifierType;
-	use Quellabs\ObjectQuel\ObjectQuel\RoutineScope;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\IdentifierType;
+	use Quellabs\ObjectQuel\ObjectQuel\Routines\RoutineScope;
 
 	/**
 	 * Types identifiers that name routine variables (RoutineVariable) or read a
