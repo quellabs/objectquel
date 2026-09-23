@@ -195,7 +195,7 @@
 				$value->accept(new NormalizeDateTime($this->entityStore, $this->valueTypes));
 
 				$builder = new BuildSqlFromAst($this->entityStore, $parameters, 'VALUES', $this->platform);
-				$compiled[$assignment->getProperty()] = $this->convertTimestamp($builder->visitNodeAndReturnSQL($value), $value, $assignment->getProperty(), $metadata);
+				$compiled[$assignment->getProperty()] = $this->convertTimestamp($builder->visitNodeAndReturnSQL($value), $this->valueTypes->inferReturnType($value), $assignment->getProperty(), $metadata);
 			}
 
 			// @Orm\Version columns the caller didn't assign: initial value for this row.
@@ -368,7 +368,7 @@
 
 			foreach ($visibleAliases as $i => $alias) {
 				$columnSql = $derivedTableAlias . '.' . $this->identifierQuoter->quoteIdentifier($alias);
-				$selectColumns[] = $this->convertTimestamp($columnSql, $this->sourceValue($source, $alias), $properties[$i], $metadata);
+				$selectColumns[] = $this->convertTimestamp($columnSql, $this->sourceValueType($source, $alias), $properties[$i], $metadata);
 			}
 
 			// STI subclass: inject the discriminator column as a literal
@@ -394,19 +394,19 @@
 		/**
 		 * Converts a Unix timestamp written to a datetime column to a datetime.
 		 * @param string $valueSql Compiled value
-		 * @param AstInterface|null $value The value's expression, or null when unknown
+		 * @param string|null $valueType Inferred PHP-level type of the value, or null when unknown
 		 * @param string $property Target property
 		 * @param EntityMetadataRecord $metadata Target entity
 		 * @return string
-		 * @throws SemanticException|EntityResolutionException
+		 * @throws SemanticException
 		 */
-		private function convertTimestamp(string $valueSql, ?AstInterface $value, string $property, EntityMetadataRecord $metadata): string {
+		private function convertTimestamp(string $valueSql, ?string $valueType, string $property, EntityMetadataRecord $metadata): string {
 			$columnName = $metadata->getColumnName($property);
 			$columnDef = $columnName === null ? null : ($metadata->columnDefinitions[$columnName] ?? null);
 
 			return DateTimeWriteSql::convert(
 				$valueSql,
-				$value === null ? null : $this->valueTypes->inferReturnType($value),
+				$valueType,
 				$columnDef === null ? null : TypeMapper::phinxTypeToPhpType($columnDef['type']),
 				$property,
 				$this->platform
@@ -416,12 +416,13 @@
 		/**
 		 * @param AstRetrieve $source Prepared source retrieve
 		 * @param string $alias Name of one of its values
-		 * @return AstInterface|null That value's expression, or null when there's none
+		 * @return string|null Inferred PHP-level type of that value, or null when unknown
+		 * @throws EntityResolutionException
 		 */
-		private function sourceValue(AstRetrieve $source, string $alias): ?AstInterface {
+		public function sourceValueType(AstRetrieve $source, string $alias): ?string {
 			foreach ($source->getValues() as $value) {
 				if ($value->getName() === $alias) {
-					return $value->getExpression();
+					return $this->valueTypes->inferReturnType($value->getExpression());
 				}
 			}
 
