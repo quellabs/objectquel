@@ -9,7 +9,7 @@
 	 * `define function name (params) returnType { ... }` — one node for both
 	 * value-returning and `void` routines; the distinction is semantic, not structural.
 	 */
-	class AstRoutineDefinition extends Ast {
+	class AstRoutineDefinition extends Ast implements AstStatement {
 
 		private string $name;
 		private string $returnType;

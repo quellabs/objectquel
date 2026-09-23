@@ -32,21 +32,32 @@
 		/**
 		 * Parses, analyzes and lowers one routine.
 		 * @param string $source Routine source containing one `define function`
-		 * @return string[] Statements to run in order, the last one creating the routine
+		 * @return list<string> Statements to run in order, the last one creating the routine
 		 * @throws LexerException|ParserException|\ReflectionException
 		 * @throws SemanticException|EntityResolutionException|TransformationException|QuelException
 		 */
 		public function compile(string $source): array {
 			$entityStore = $this->entityManager->getEntityStore();
 			$routine = (new ProcedureParser(new Lexer($source), $entityStore))->parse();
-			(new RoutineAnalyzer($entityStore))->analyze($routine);
+
+			return $this->compileRoutine($routine);
+		}
+
+		/**
+		 * Analyzes and lowers an already parsed routine.
+		 * @param AstRoutineDefinition $routine Routine from ProcedureParser
+		 * @return list<string> Statements to run in order, the last one creating the routine
+		 * @throws SemanticException|EntityResolutionException|TransformationException|QuelException
+		 */
+		public function compileRoutine(AstRoutineDefinition $routine): array {
+			(new RoutineAnalyzer($this->entityManager->getEntityStore()))->analyze($routine);
 
 			return $this->lower($routine);
 		}
 
 		/**
 		 * @param AstRoutineDefinition $routine Routine that passed RoutineAnalyzer
-		 * @return string[] Statements to run in order, the last one creating the routine
+		 * @return list<string> Statements to run in order, the last one creating the routine
 		 * @throws SemanticException|EntityResolutionException|TransformationException|QuelException
 		 */
 		public function lower(AstRoutineDefinition $routine): array {

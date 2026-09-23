@@ -4,6 +4,7 @@
 
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstDestroy;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstDestroyIndex;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstDestroyRoutine;
 	use Quellabs\ObjectQuel\ObjectQuel\Lexer;
 	use Quellabs\ObjectQuel\ObjectQuel\LexerException;
 	use Quellabs\ObjectQuel\ObjectQuel\Token;
@@ -15,6 +16,7 @@
 	 *
 	 *   destroy [temporary] Name [if exists]        -> AstDestroy (table)
 	 *   destroy Name on Table [if exists]            -> AstDestroyIndex
+	 *   destroy function Name [if exists]            -> AstDestroyRoutine
 	 *
 	 * `temporary` only makes sense for the table form, so seeing it commits
 	 * to that form immediately; otherwise the token right after the name
@@ -38,11 +40,18 @@
 
 		/**
 		 * Parse a complete `destroy` statement.
-		 * @return AstDestroy|AstDestroyIndex
+		 * @return AstDestroy|AstDestroyIndex|AstDestroyRoutine
 		 * @throws LexerException
 		 */
-		public function parse(): AstDestroy|AstDestroyIndex {
+		public function parse(): AstDestroy|AstDestroyIndex|AstDestroyRoutine {
 			$this->lexer->matchKeyword('destroy');
+
+			if ($this->matchRoutineKeyword()) {
+				$routineName = $this->lexer->match(Token::Identifier)->getStringValue();
+				$ifExists = $this->parseOptionalIfExists();
+				$this->consumeOptionalSemicolon();
+				return new AstDestroyRoutine($routineName, $ifExists);
+			}
 
 			$temporary = $this->lexer->optionalMatchKeyword('temporary') !== null;
 			$name = $this->lexer->match(Token::Identifier)->getStringValue();
@@ -57,6 +66,29 @@
 			$this->consumeOptionalSemicolon();
 
 			return new AstDestroy($name, $temporary, $ifExists);
+		}
+
+		/**
+		 * Consumes `function` when it starts the routine form. A table or index named
+		 * `function` (`destroy function`, `destroy function if exists`, `destroy function on T`)
+		 * keeps its old meaning.
+		 * @return bool True when `function` was consumed
+		 * @throws LexerException
+		 */
+		private function matchRoutineKeyword(): bool {
+			if (!$this->lexer->peekKeyword('function') || $this->lexer->peekNext() !== Token::Identifier) {
+				return false;
+			}
+
+			$state = $this->lexer->saveState();
+			$this->lexer->matchKeyword('function');
+
+			if ($this->lexer->peekKeyword('if') || $this->lexer->peekKeyword('on')) {
+				$this->lexer->restoreState($state);
+				return false;
+			}
+
+			return true;
 		}
 
 		/**

@@ -76,7 +76,7 @@
 
 		/**
 		 * @param AstRoutineDefinition $routine Routine that passed RoutineAnalyzer
-		 * @return string[] Statements to run in order, the last one creating the routine
+		 * @return list<string> Statements to run in order, the last one creating the routine
 		 * @throws SemanticException When the routine uses something the engine can't express
 		 * @throws EntityResolutionException|TransformationException|QuelException
 		 */
@@ -104,7 +104,7 @@
 
 		/**
 		 * @param AstRoutineDefinition $routine The routine, with cursors prepared
-		 * @return string[] Statements to run in order
+		 * @return list<string> Statements to run in order
 		 * @throws SemanticException|EntityResolutionException|TransformationException|QuelException
 		 */
 		abstract protected function render(AstRoutineDefinition $routine): array;

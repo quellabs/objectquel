@@ -9,8 +9,10 @@
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstDelete;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstDestroy;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstDestroyIndex;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstDestroyRoutine;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstHideIndex;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstReplace;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRoutineDefinition;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstShowIndex;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstStatement;
 	use Quellabs\ObjectQuel\Capabilities\PlatformCapabilitiesInterface;
@@ -26,6 +28,7 @@
 	use Quellabs\ObjectQuel\ObjectQuel\LexerException;
 	use Quellabs\ObjectQuel\Exception\QuelException;
 	use Quellabs\ObjectQuel\ObjectQuel\Parser;
+	use Quellabs\ObjectQuel\ObjectQuel\ProcedureParser;
 	use Quellabs\ObjectQuel\ObjectQuel\ParserException;
 	use Quellabs\ObjectQuel\ObjectQuel\QuelResult;
 	use Quellabs\ObjectQuel\Execution\Executors\AlterTableExecutor;
@@ -36,6 +39,8 @@
 	use Quellabs\ObjectQuel\Execution\Executors\DeleteExecutor;
 	use Quellabs\ObjectQuel\Execution\Executors\DestroyExecutor;
 	use Quellabs\ObjectQuel\Execution\Executors\DestroyIndexExecutor;
+	use Quellabs\ObjectQuel\Execution\Executors\DestroyRoutineExecutor;
+	use Quellabs\ObjectQuel\Execution\Executors\DefineRoutineExecutor;
 	use Quellabs\ObjectQuel\Execution\Executors\HideIndexExecutor;
 	use Quellabs\ObjectQuel\Execution\Executors\ShowIndexExecutor;
 	use Quellabs\ObjectQuel\Execution\Executors\JsonRetrieveExecutor;
@@ -75,6 +80,8 @@
 		private AlterTableExecutor $alterTableExecutor;
 		private DestroyExecutor $destroyExecutor;
 		private DestroyIndexExecutor $destroyIndexExecutor;
+		private DefineRoutineExecutor $defineRoutineExecutor;
+		private DestroyRoutineExecutor $destroyRoutineExecutor;
 		private HideIndexExecutor $hideIndexExecutor;
 		private ShowIndexExecutor $showIndexExecutor;
 		private AppendExecutor $appendExecutor;
@@ -110,6 +117,8 @@
 			$this->alterTableExecutor = new AlterTableExecutor($this->connection, $this->capabilities);
 			$this->destroyExecutor = new DestroyExecutor($this->connection, $this->capabilities);
 			$this->destroyIndexExecutor = new DestroyIndexExecutor($this->connection, $this->capabilities);
+			$this->defineRoutineExecutor = new DefineRoutineExecutor($entityManager, $this->capabilities);
+			$this->destroyRoutineExecutor = new DestroyRoutineExecutor($this->connection, $this->capabilities);
 			$this->hideIndexExecutor = new HideIndexExecutor($this->connection, $this->capabilities);
 			$this->showIndexExecutor = new ShowIndexExecutor($this->connection, $this->capabilities);
 			$this->appendExecutor = new AppendExecutor($this->connection, $entityManager, $this->capabilities, $this->planExecutor);
@@ -191,7 +200,9 @@
 					$ast instanceof AstDestroyIndex ||
 					$ast instanceof AstCreateIndex ||
 					$ast instanceof AstHideIndex ||
-					$ast instanceof AstShowIndex
+					$ast instanceof AstShowIndex ||
+					$ast instanceof AstRoutineDefinition ||
+					$ast instanceof AstDestroyRoutine
 				) {
 					match (true) {
 						$ast instanceof AstCreateTable => $this->createTableExecutor->execute($ast, $context),
@@ -200,6 +211,8 @@
 						$ast instanceof AstDestroyIndex => $this->destroyIndexExecutor->execute($ast, $context),
 						$ast instanceof AstHideIndex => $this->hideIndexExecutor->execute($ast, $context),
 						$ast instanceof AstShowIndex => $this->showIndexExecutor->execute($ast, $context),
+						$ast instanceof AstRoutineDefinition => $this->defineRoutineExecutor->execute($ast, $context),
+						$ast instanceof AstDestroyRoutine => $this->destroyRoutineExecutor->execute($ast, $context),
 						default => $this->createIndexExecutor->execute($ast, $context),
 					};
 
@@ -367,6 +380,11 @@
 			// Convert the raw query string into an Abstract Syntax Tree
 			// Create a lexer to break the query string into tokens (keywords, identifiers, operators, etc.)
 			$lexer = new Lexer($query);
+
+			// A routine definition has its own grammar and parser
+			if ($lexer->peekKeyword('define')) {
+				return (new ProcedureParser($lexer, $this->entityManager->getEntityStore()))->parse();
+			}
 			
 			// Create a parser that takes the tokenized input and builds an Abstract Syntax Tree
 			$parser = new Parser($lexer, $this->entityManager->getEntityStore());

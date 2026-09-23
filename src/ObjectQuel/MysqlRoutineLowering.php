@@ -94,7 +94,7 @@
 
 		/**
 		 * @param AstRoutineDefinition $routine The routine, with cursors prepared
-		 * @return string[] DROP ... IF EXISTS (MySQL only) and the CREATE statement
+		 * @return list<string> DROP ... IF EXISTS (MySQL only) and the CREATE statement
 		 */
 		protected function render(AstRoutineDefinition $routine): array {
 			$body = $this->lowerBlock($routine->getBody(), 1);
