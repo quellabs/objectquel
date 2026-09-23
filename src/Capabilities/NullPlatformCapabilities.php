@@ -98,6 +98,15 @@
 		/**
 		 * @inheritDoc
 		 *
+		 * Defaults to MySQL/MariaDB syntax.
+		 */
+		public function getDatetimeFromUnixTimestamp(string $timestampSql): string {
+			return "FROM_UNIXTIME({$timestampSql})";
+		}
+
+		/**
+		 * @inheritDoc
+		 *
 		 * Defaults to MySQL/MariaDB syntax, which PostgreSQL also accepts as-is.
 		 */
 		public function getCurrentDatetimeFunction(): string {

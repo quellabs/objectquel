@@ -107,7 +107,7 @@
 		 * @throws SemanticException
 		 */
 		protected function assignment(string $name, AstInterface $value): string {
-			return $this->quoter->quoteIdentifier($name) . ' := ' . $this->statements->compileValue($value) . ';';
+			return $this->quoter->quoteIdentifier($name) . ' := ' . $this->assignedValue($name, $value) . ';';
 		}
 
 		/**
@@ -124,7 +124,7 @@
 				$result .= $this->line('CLOSE ' . $this->quoter->quoteIdentifier($cursorName) . ';', $depth);
 			}
 
-			return $result . $this->line('RETURN ' . $this->statements->compileValue($return->getValue()) . ';', $depth);
+			return $result . $this->line('RETURN ' . $this->returnedValue($return) . ';', $depth);
 		}
 
 		/**

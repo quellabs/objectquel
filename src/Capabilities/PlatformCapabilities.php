@@ -266,6 +266,21 @@
 				default => 'UNIX_TIMESTAMP()',
 			};
 		}
+
+		/**
+		 * @inheritDoc
+		 *
+		 * Reads the timestamp in the same time zone getUnixTimestampFunction() writes it in.
+		 * SQL Server adds days and seconds separately: DATEADD takes an int before SQL Server 2025.
+		 */
+		public function getDatetimeFromUnixTimestamp(string $timestampSql): string {
+			return match ($this->adapter->getDatabaseType()) {
+				'pgsql' => "(TO_TIMESTAMP({$timestampSql}) AT TIME ZONE 'UTC')",
+				'sqlite' => "datetime({$timestampSql}, 'unixepoch')",
+				'sqlsrv' => "DATEADD(SECOND, CAST({$timestampSql} AS BIGINT) % 86400, DATEADD(DAY, CAST({$timestampSql} AS BIGINT) / 86400, CAST('1970-01-01' AS DATETIME2)))",
+				default => "FROM_UNIXTIME({$timestampSql})",
+			};
+		}
 		
 		/**
 		 * @inheritDoc

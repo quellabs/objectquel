@@ -62,6 +62,9 @@
 		/** @var string[] Cursors of the loops enclosing the statement being lowered, outermost first */
 		protected array $openLoops;
 
+		/** Routine being lowered */
+		private AstRoutineDefinition $routine;
+
 		/**
 		 * @param EntityStore $entityStore Entity metadata
 		 * @param RoutineStatementCompiler $statements Compiles embedded statements for the target engine
@@ -82,6 +85,7 @@
 		 * @throws EntityResolutionException|TransformationException|QuelException
 		 */
 		public function lower(AstRoutineDefinition $routine): array {
+			$this->routine = $routine;
 			$this->cursorQueries = [];
 			$this->cursorRanges = [];
 			$this->cursorDeclarations = [];
@@ -382,6 +386,26 @@
 				$this->cursorQueries[$name] = $this->prepareCursorQuery($name, $initializer);
 				$this->statements->getFieldTypes()->recordCursor($name, $this->cursorQueries[$name]);
 			}
+		}
+
+		/**
+		 * @param string $name Variable name
+		 * @param AstInterface $value Value assigned to it
+		 * @return string The value's SQL, as a datetime when a Unix timestamp goes into a datetime variable
+		 * @throws SemanticException|EntityResolutionException|QuelException
+		 */
+		protected function assignedValue(string $name, AstInterface $value): string {
+			$type = $this->statements->getFieldTypes()->variableType($name);
+			return $type === null ? $this->statements->compileValue($value) : $this->statements->compileStoredValue($value, $name, $type);
+		}
+
+		/**
+		 * @param AstReturn $return The return
+		 * @return string The returned value's SQL, as a datetime when a Unix timestamp is returned as one
+		 * @throws SemanticException|EntityResolutionException|QuelException
+		 */
+		protected function returnedValue(AstReturn $return): string {
+			return $this->statements->compileStoredValue($return->getValue(), $this->routine->getName(), $this->routine->getDeclaredReturnType());
 		}
 
 		/**

@@ -65,6 +65,14 @@
 		}
 
 		/**
+		 * @param string $name Local or parameter name
+		 * @return string|null Its normalized routine type, or null when it isn't declared
+		 */
+		public function variableType(string $name): ?string {
+			return $this->variables[$name]['type'] ?? null;
+		}
+
+		/**
 		 * Types every value of a prepared cursor query; later cursors can read these fields.
 		 * @param string $cursorName Cursor name
 		 * @param AstRetrieve $prepared Prepared cursor query

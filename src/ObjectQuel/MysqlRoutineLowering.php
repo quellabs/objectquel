@@ -188,7 +188,7 @@
 		 * @throws SemanticException
 		 */
 		protected function assignment(string $name, AstInterface $value): string {
-			return 'SET ' . $this->variableName($name) . ' = ' . $this->statements->compileValue($value) . ';';
+			return 'SET ' . $this->variableName($name) . ' = ' . $this->assignedValue($name, $value) . ';';
 		}
 
 		/**
@@ -199,7 +199,7 @@
 		 * @throws SemanticException
 		 */
 		protected function lowerReturn(AstReturn $return, int $depth): string {
-			return $this->line('RETURN ' . $this->statements->compileValue($return->getValue()) . ';', $depth);
+			return $this->line('RETURN ' . $this->returnedValue($return) . ';', $depth);
 		}
 
 		/**

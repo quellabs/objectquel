@@ -114,7 +114,7 @@
 		 * @throws SemanticException
 		 */
 		protected function assignment(string $name, AstInterface $value): string {
-			return 'SET ' . $this->variableName($name) . ' = ' . $this->statements->compileValue($value) . ';';
+			return 'SET ' . $this->variableName($name) . ' = ' . $this->assignedValue($name, $value) . ';';
 		}
 
 		/**
@@ -131,7 +131,7 @@
 				$result .= $this->lines(['CLOSE ' . $this->cursorName($cursorName) . ';', 'DEALLOCATE ' . $this->cursorName($cursorName) . ';'], $depth);
 			}
 
-			return $result . $this->line('RETURN ' . $this->statements->compileValue($return->getValue()) . ';', $depth);
+			return $result . $this->line('RETURN ' . $this->returnedValue($return) . ';', $depth);
 		}
 
 		/**

@@ -125,6 +125,13 @@
 		 * @return string  A complete SQL expression, no placeholders.
 		 */
 		public function getCurrentUnixTimestamp(): string;
+
+		/**
+		 * Converts a Unix timestamp back to a native datetime, the inverse of getUnixTimestampFunction().
+		 * @param string $timestampSql SQL of the Unix timestamp
+		 * @return string SQL of the datetime
+		 */
+		public function getDatetimeFromUnixTimestamp(string $timestampSql): string;
 		
 		/**
 		 * Returns the SQL expression that yields the current date and time as a

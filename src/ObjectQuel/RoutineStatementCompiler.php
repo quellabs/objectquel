@@ -4,6 +4,7 @@
 
 	use Quellabs\ObjectQuel\Capabilities\PlatformCapabilitiesInterface;
 	use Quellabs\ObjectQuel\DatabaseAdapter\Mapper\DDLTypeMapper;
+	use Quellabs\ObjectQuel\DatabaseAdapter\Mapper\TypeMapper;
 	use Quellabs\ObjectQuel\EntityManager;
 	use Quellabs\ObjectQuel\EntityStore;
 	use Quellabs\ObjectQuel\Exception\EntityResolutionException;
@@ -20,6 +21,7 @@
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRangeDatabase;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstReplace;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRetrieve;
+	use Quellabs\ObjectQuel\ObjectQuel\Helpers\DateTimeWriteSql;
 	use Quellabs\ObjectQuel\Persistence\VersionValueHandler;
 	use Quellabs\ObjectQuel\Planner\ExecutionPlanBuilder;
 	use Quellabs\ObjectQuel\Planner\ExecutionStage;
@@ -60,11 +62,13 @@
 			$unitOfWork = $entityManager->getUnitOfWork();
 			$versionValueHandler = new VersionValueHandler($entityManager->getConnection(), $this->entityStore, $unitOfWork, $unitOfWork->getPropertyHandler(), $platform);
 
-			$this->deleteCompiler = new QuelToSQLDelete($this->entityStore, $platform);
-			$this->replaceCompiler = new QuelToSQLReplace($this->entityStore, $platform, $versionValueHandler);
-			$this->callCompiler = new QuelToSQLCall($this->entityStore, $platform);
-			$this->appendCompiler = new QuelToSQLAppend($entityManager, $platform, new QuelToSQLUpsert($this->entityStore, $platform, $this->replaceCompiler), $versionValueHandler);
+			// Written values may read routine variables and cursor fields, so the write compilers type them with these
 			$this->fieldTypes = new RoutineFieldTypes($this->entityStore, new DDLTypeMapper($platform));
+
+			$this->deleteCompiler = new QuelToSQLDelete($this->entityStore, $platform);
+			$this->replaceCompiler = new QuelToSQLReplace($this->entityStore, $platform, $versionValueHandler, $this->fieldTypes);
+			$this->callCompiler = new QuelToSQLCall($this->entityStore, $platform);
+			$this->appendCompiler = new QuelToSQLAppend($entityManager, $platform, new QuelToSQLUpsert($this->entityStore, $platform, $this->replaceCompiler), $versionValueHandler, $this->fieldTypes);
 		}
 
 		/**
@@ -252,6 +256,22 @@
 			return $this->withoutBoundParameters('expression', function (array &$parameters) use ($value): string {
 				return (new BuildSqlFromAst($this->entityStore, $parameters, 'VALUES', $this->platform))->visitNodeAndReturnSQL($value);
 			});
+		}
+
+		/**
+		 * Compiles a value stored in a variable or returned; a Unix timestamp stored as a datetime is converted to one.
+		 * @param AstInterface $value Analyzed expression
+		 * @param string $receiver Variable name, or the routine name for a return value, for error messages
+		 * @param string $routineType Declared type of the variable or return value
+		 * @return string
+		 * @throws SemanticException|EntityResolutionException|QuelException
+		 */
+		public function compileStoredValue(AstInterface $value, string $receiver, string $routineType): string {
+			$normalized = $value->deepClone();
+			$this->normalizeDateTimes($normalized);
+
+			$targetType = TypeMapper::phinxTypeToPhpType(RoutineAnalyzer::normalizeType($routineType));
+			return DateTimeWriteSql::convert($this->compileValue($value), $this->fieldTypes->inferReturnType($normalized), $targetType, $receiver, $this->platform);
 		}
 
 		/**

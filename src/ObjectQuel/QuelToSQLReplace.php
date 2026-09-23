@@ -3,11 +3,13 @@
 	namespace Quellabs\ObjectQuel\ObjectQuel;
 
 	use Quellabs\ObjectQuel\Capabilities\PlatformCapabilitiesInterface;
+	use Quellabs\ObjectQuel\DatabaseAdapter\Mapper\TypeMapper;
 	use Quellabs\ObjectQuel\DatabaseAdapter\SqlIdentifierQuoter;
 	use Quellabs\ObjectQuel\EntityStore;
 	use Quellabs\ObjectQuel\Exception\EntityResolutionException;
 	use Quellabs\ObjectQuel\Exception\QuelException;
 	use Quellabs\ObjectQuel\Exception\SemanticException;
+	use Quellabs\ObjectQuel\Execution\Helpers\ResolveType;
 	use Quellabs\ObjectQuel\Execution\Visitors\BuildSqlFromAst;
 	use Quellabs\ObjectQuel\Metadata\EntityMetadataRecord;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstAssignment;
@@ -17,6 +19,7 @@
 	use Quellabs\ObjectQuel\ObjectQuel\AstInterface;
 	use Quellabs\ObjectQuel\ObjectQuel\Helpers\AliasedDmlSql;
 	use Quellabs\ObjectQuel\ObjectQuel\Helpers\AssignmentValidator;
+	use Quellabs\ObjectQuel\ObjectQuel\Helpers\DateTimeWriteSql;
 	use Quellabs\ObjectQuel\ObjectQuel\Helpers\SetTargetColumnQuoter;
 	use Quellabs\ObjectQuel\ObjectQuel\Helpers\WriteVerbIdentifierResolver;
 	use Quellabs\ObjectQuel\ObjectQuel\Helpers\WriteVerbParameterNormalizer;
@@ -50,6 +53,7 @@
 		private PlatformCapabilitiesInterface $platform;
 		private VersionValueHandler $versionValueHandler;
 		private SQLSerializer $serializer;
+		private ResolveType $valueTypes;
 
 		/**
 		 * QuelToSQLReplace constructor
@@ -58,9 +62,11 @@
 		 * @param VersionValueHandler $versionValueHandler Reused as-is (not
 		 *        reconstructed) so `replace` bumps @Orm\Version columns using
 		 *        the exact same logic persist()'s UPDATE path does.
+		 * @param ResolveType|null $valueTypes Types assigned values; defaults to one that knows entity columns only
 		 */
-		public function __construct(EntityStore $entityStore, PlatformCapabilitiesInterface $platform, VersionValueHandler $versionValueHandler) {
+		public function __construct(EntityStore $entityStore, PlatformCapabilitiesInterface $platform, VersionValueHandler $versionValueHandler, ?ResolveType $valueTypes = null) {
 			$this->entityStore = $entityStore;
+			$this->valueTypes = $valueTypes ?? new ResolveType($entityStore);
 			$this->identifierQuoter = new SqlIdentifierQuoter($platform);
 			$this->platform = $platform;
 			$this->versionValueHandler = $versionValueHandler;
@@ -191,13 +197,14 @@
 		 * Compiles a single `property = value` assignment to a `` `col` = <sql> ``
 		 * SET fragment, after checking the value against the column's declared
 		 * type. The target column goes through quoteSetTargetColumn() (see this
-		 * class's docblock) rather than BuildSqlFromAst/AstIdentifier.
+		 * class's docblock) rather than BuildSqlFromAst/AstIdentifier. A Unix
+		 * timestamp written to a datetime column is converted to a datetime.
 		 * @param AstAssignment $assignment
 		 * @param EntityMetadataRecord $metadata
 		 * @param array<string, mixed> $parameters
 		 * @param string|null $qualifyWithAlias See buildSetClause()'s docblock.
 		 * @return string
-		 * @throws SemanticException
+		 * @throws SemanticException|EntityResolutionException|QuelException
 		 */
 		private function compileAssignment(AstAssignment $assignment, EntityMetadataRecord $metadata, array &$parameters, ?string $qualifyWithAlias): string {
 			// getColumnNameOrFail() is safe here — buildSetClause() already ran
@@ -210,7 +217,18 @@
 				AssignmentValidator::assertValueTypeCompatible($assignment->getProperty(), $assignment->getValue(), $columnDef);
 			}
 
-			return $this->quoteSetTargetColumn($columnName, $qualifyWithAlias) . ' = ' . $this->compileExpression($assignment->getValue(), $parameters);
+			$value = $assignment->getValue();
+			$value->accept(new NormalizeDateTime($this->entityStore, $this->valueTypes));
+
+			$valueSql = DateTimeWriteSql::convert(
+				$this->compileExpression($value, $parameters),
+				$this->valueTypes->inferReturnType($value),
+				$columnDef === null ? null : TypeMapper::phinxTypeToPhpType($columnDef['type']),
+				$assignment->getProperty(),
+				$this->platform
+			);
+
+			return $this->quoteSetTargetColumn($columnName, $qualifyWithAlias) . ' = ' . $valueSql;
 		}
 
 		/**
