@@ -93,6 +93,7 @@
 
 			$this->validate($routine);
 			$this->prepareCursors($routine);
+			(new RoutineTypeChecker($this->entityStore, $this->typeMapper))->check($routine, $this->cursorQueries);
 
 			return $this->render($routine);
 		}

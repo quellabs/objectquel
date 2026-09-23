@@ -8,6 +8,8 @@
 	use Quellabs\ObjectQuel\Exception\EntityResolutionException;
 	use Quellabs\ObjectQuel\Exception\SemanticException;
 	use Quellabs\ObjectQuel\Execution\Helpers\ResolveType;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstBinaryOperator;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstExpression;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstIdentifier;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRetrieve;
 
@@ -35,7 +37,7 @@
 		/** @var array<string, TypeDefinition> Declared type of each local and parameter */
 		private array $variables = [];
 
-		/** @var array<string, array<string, TypeDefinition>> Type of each field, by cursor */
+		/** @var array<string, array<string, TypeDefinition|null>> Type of each field, by cursor; null when unknown */
 		private array $cursorFields = [];
 
 		/**
@@ -66,13 +68,33 @@
 		 * @throws EntityResolutionException
 		 */
 		public function declareCursor(string $cursorName, AstRetrieve $prepared): array {
+			$this->recordCursor($cursorName, $prepared);
+			$types = [];
+
+			foreach ($this->cursorFields[$cursorName] as $field => $definition) {
+				if ($definition === null) {
+					throw new SemanticException("The type of '{$cursorName}.{$field}' can't be determined, so it can't be fetched into a variable. Select a column, or cast the value, e.g. (int)x.");
+				}
+
+				$types[$field] = $this->typeMapper->getTempTableColumnType($definition);
+			}
+
+			return $types;
+		}
+
+		/**
+		 * Records the type of every value of a prepared cursor query, or null where it can't be determined.
+		 * @param string $cursorName Cursor name
+		 * @param AstRetrieve $prepared Prepared cursor query
+		 * @return void
+		 * @throws EntityResolutionException
+		 */
+		public function recordCursor(string $cursorName, AstRetrieve $prepared): void {
 			$this->cursorFields[$cursorName] = [];
 
 			foreach ($prepared->getValues() as $value) {
-				$this->cursorFields[$cursorName][$value->getName()] = $this->definitionOf($value->getExpression(), $cursorName, $value->getName());
+				$this->cursorFields[$cursorName][$value->getName()] = $this->definitionOf($value->getExpression());
 			}
-
-			return array_map(fn(array $definition) => $this->typeMapper->getTempTableColumnType($definition), $this->cursorFields[$cursorName]);
 		}
 
 		/**
@@ -84,12 +106,17 @@
 		}
 
 		/**
-		 * Adds routine variables, cursor fields and `range.column` reads to the parent's inference.
+		 * Adds routine variables, cursor fields, `range.column` reads and boolean predicates to the parent's inference.
 		 * @param AstInterface $ast Expression node
 		 * @return string|null PHP-level type, or null when unknown
 		 * @throws EntityResolutionException
 		 */
 		public function inferReturnType(AstInterface $ast): ?string {
+			// Comparisons and AND/OR are NodeBinary, which the parent types like arithmetic
+			if ($ast instanceof AstExpression || $ast instanceof AstBinaryOperator) {
+				return 'boolean';
+			}
+
 			if ($ast instanceof AstIdentifier) {
 				$definition = $ast->getType()->isRoutineReference() ? $this->routineReferenceDefinition($ast) : $this->columnDefinition($ast);
 
@@ -103,12 +130,10 @@
 
 		/**
 		 * @param AstInterface $expression A target-list expression after the query pipeline
-		 * @param string $cursorName Cursor name, for the error message
-		 * @param string $field Field name, for the error message
-		 * @return TypeDefinition
-		 * @throws SemanticException|EntityResolutionException
+		 * @return TypeDefinition|null The value's type, or null when it can't be determined
+		 * @throws EntityResolutionException
 		 */
-		private function definitionOf(AstInterface $expression, string $cursorName, string $field): array {
+		private function definitionOf(AstInterface $expression): ?array {
 			if ($expression instanceof AstIdentifier) {
 				$definition = $expression->getType()->isRoutineReference()
 					? $this->routineReferenceDefinition($expression)
@@ -122,7 +147,7 @@
 			$inferred = $this->inferReturnType($expression);
 
 			if ($inferred === null || !isset(self::INFERRED_TYPES[$inferred])) {
-				throw new SemanticException("The type of '{$cursorName}.{$field}' can't be determined, so it can't be fetched into a variable. Select a column, or cast the value, e.g. (int)x.");
+				return null;
 			}
 
 			return self::definition(self::INFERRED_TYPES[$inferred]);
