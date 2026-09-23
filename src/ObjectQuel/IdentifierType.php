@@ -38,4 +38,13 @@
 		/** Path expression into a JSON root. */
 		case JsonProperty;
 
+		/** Bare reference to a routine parameter or scalar local. */
+		case RoutineVariable;
+
+		/** Cursor name in a `cursorName.field` read inside that cursor's `foreach`. */
+		case CursorRoot;
+
+		/** Field segment of a `cursorName.field` read. */
+		case CursorField;
+
 	}
