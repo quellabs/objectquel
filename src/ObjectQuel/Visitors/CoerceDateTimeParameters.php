@@ -94,32 +94,10 @@
 		 * @throws QuelException
 		 */
 		private function coerceValue(mixed $value, string $paramName): int {
-			if ($value instanceof \DateTimeInterface) {
-				return $value->getTimestamp();
-			}
+			$timestamp = self::toTimestamp($value);
 
-			if (is_int($value)) {
-				return $value;
-			}
-
-			if (is_string($value)) {
-				$trimmed = trim($value);
-
-				// A bare integer string ("1754...") is already a Unix timestamp.
-				if ($trimmed !== '' && preg_match('/^-?\d+$/', $trimmed)) {
-					return (int) $trimmed;
-				}
-
-				// Pad a bare date string to midnight, same convention as ConditionEvaluator.
-				if (preg_match('/^\d{4}-\d{2}-\d{2}$/', $trimmed)) {
-					$trimmed .= ' 00:00:00';
-				}
-
-				$dt = \DateTime::createFromFormat('Y-m-d H:i:s', $trimmed);
-
-				if ($dt !== false) {
-					return $dt->getTimestamp();
-				}
+			if ($timestamp !== null) {
+				return $timestamp;
 			}
 
 			throw new QuelException(sprintf(
@@ -128,5 +106,39 @@
 				$paramName,
 				is_object($value) ? get_class($value) : var_export($value, true)
 			), 'type_error');
+		}
+
+		/**
+		 * Converts a DateTimeInterface, a Unix timestamp integer, or a 'Y-m-d H:i:s' / 'Y-m-d' / integer string.
+		 * @param mixed $value
+		 * @return int|null The Unix timestamp, or null when $value isn't one of those
+		 */
+		public static function toTimestamp(mixed $value): ?int {
+			if ($value instanceof \DateTimeInterface) {
+				return $value->getTimestamp();
+			}
+
+			if (is_int($value)) {
+				return $value;
+			}
+
+			if (!is_string($value)) {
+				return null;
+			}
+
+			$trimmed = trim($value);
+
+			// A bare integer string ("1754...") is already a Unix timestamp.
+			if ($trimmed !== '' && preg_match('/^-?\d+$/', $trimmed)) {
+				return (int) $trimmed;
+			}
+
+			// Pad a bare date string to midnight, same convention as ConditionEvaluator.
+			if (preg_match('/^\d{4}-\d{2}-\d{2}$/', $trimmed)) {
+				$trimmed .= ' 00:00:00';
+			}
+
+			$dt = \DateTime::createFromFormat('Y-m-d H:i:s', $trimmed);
+			return $dt === false ? null : $dt->getTimestamp();
 		}
 	}

@@ -235,11 +235,13 @@
 		 * - MySQL / MariaDB: UNIX_TIMESTAMP(col)
 		 * - PostgreSQL:      EXTRACT(EPOCH FROM col)::BIGINT
 		 * - SQLite:          strftime('%s', col)
+		 * - SQL Server:      DATEDIFF_BIG(SECOND, '1970-01-01', col); like PostgreSQL, a column without offset counts as UTC
 		 */
 		public function getUnixTimestampFunction(): string {
 			return match ($this->adapter->getDatabaseType()) {
 				'pgsql' => 'EXTRACT(EPOCH FROM %s)::BIGINT',
 				'sqlite' => "strftime('%%s', %s)",
+				'sqlsrv' => "DATEDIFF_BIG(SECOND, '1970-01-01', %s)",
 				default => 'UNIX_TIMESTAMP(%s)',
 			};
 		}
@@ -251,12 +253,29 @@
 		 * - MySQL / MariaDB: UNIX_TIMESTAMP()
 		 * - PostgreSQL:      EXTRACT(EPOCH FROM NOW())::BIGINT
 		 * - SQLite:          strftime('%s','now')
+		 * - SQL Server:      DATEDIFF_BIG(SECOND, '1970-01-01', SYSUTCDATETIME())
 		 */
 		public function getCurrentUnixTimestamp(): string {
 			return match ($this->adapter->getDatabaseType()) {
 				'pgsql' => 'EXTRACT(EPOCH FROM NOW())::BIGINT',
 				'sqlite' => "strftime('%s','now')",
+				'sqlsrv' => "DATEDIFF_BIG(SECOND, '1970-01-01', SYSUTCDATETIME())",
 				default => 'UNIX_TIMESTAMP()',
+			};
+		}
+
+		/**
+		 * @inheritDoc
+		 *
+		 * Reads the timestamp in the same time zone getUnixTimestampFunction() writes it in.
+		 * SQL Server adds days and seconds separately: DATEADD takes an int before SQL Server 2025.
+		 */
+		public function getDatetimeFromUnixTimestamp(string $timestampSql): string {
+			return match ($this->adapter->getDatabaseType()) {
+				'pgsql' => "(TO_TIMESTAMP({$timestampSql}) AT TIME ZONE 'UTC')",
+				'sqlite' => "datetime({$timestampSql}, 'unixepoch')",
+				'sqlsrv' => "DATEADD(SECOND, CAST({$timestampSql} AS BIGINT) % 86400, DATEADD(DAY, CAST({$timestampSql} AS BIGINT) / 86400, CAST('1970-01-01' AS DATETIME2)))",
+				default => "FROM_UNIXTIME({$timestampSql})",
 			};
 		}
 		

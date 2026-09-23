@@ -2,10 +2,11 @@
 	
 	namespace Quellabs\ObjectQuel\ObjectQuel\QuelToSQL;
 
-	use Quellabs\ObjectQuel\Exception\EntityResolutionException;
 	use Quellabs\ObjectQuel\Capabilities\PlatformCapabilitiesInterface;
 	use Quellabs\ObjectQuel\DatabaseAdapter\SqlIdentifierQuoter;
 	use Quellabs\ObjectQuel\EntityStore;
+	use Quellabs\ObjectQuel\Exception\EntityResolutionException;
+	use Quellabs\ObjectQuel\Exception\QuelException;
 	use Quellabs\ObjectQuel\Exception\SemanticException;
 	use Quellabs\ObjectQuel\Execution\Visitors\BuildSqlFromAst;
 	use Quellabs\ObjectQuel\Metadata\EntityMetadataRecord;
@@ -14,6 +15,8 @@
 	use Quellabs\ObjectQuel\ObjectQuel\Helpers\SetTargetColumnQuoter;
 	use Quellabs\ObjectQuel\ObjectQuel\Helpers\WriteVerbIdentifierResolver;
 	use Quellabs\ObjectQuel\ObjectQuel\Helpers\WriteVerbParameterNormalizer;
+	use Quellabs\ObjectQuel\ObjectQuel\Visitors\CoerceDateTimeParameters;
+	use Quellabs\ObjectQuel\ObjectQuel\Visitors\NormalizeDateTime;
 	use Quellabs\ObjectQuel\Serialization\Serializers\SQLSerializer;
 
 	/**
@@ -57,7 +60,7 @@
 		 * @param AstDelete $statement
 		 * @param array<string, mixed> $parameters Bound parameters, by reference
 		 * @return string
-		 * @throws SemanticException|EntityResolutionException
+		 * @throws SemanticException|QuelException|EntityResolutionException
 		 */
 		public function convertToSQL(AstDelete $statement, array &$parameters): string {
 			// The WHERE clause's identifiers need a resolved type/range
@@ -73,12 +76,16 @@
 			// this a raw PHP value (a \DateTime object, a json column's
 			// array, a backed enum) would reach the driver unconverted.
 			$metadata = $this->entityStore->getMetadata($range->getEntityName());
-			$normalizer = new WriteVerbParameterNormalizer($metadata, $this->serializer, $parameters);
-			$statement->getConditionsOrFail()->accept($normalizer);
+			$conditions = $statement->getConditionsOrFail();
+
+			// Datetime comparisons work in Unix timestamps, as in retrieve
+			$conditions->accept(new NormalizeDateTime($this->entityStore));
+			$conditions->accept(new WriteVerbParameterNormalizer($metadata, $this->serializer, $parameters));
+			$conditions->accept(new CoerceDateTimeParameters($parameters));
 
 			$tableName = RangeTableName::resolve($range, $this->entityStore);
 			$builder = new BuildSqlFromAst($this->entityStore, $parameters, 'WHERE', $this->platform);
-			$whereSql = $builder->visitNodeAndReturnSQL($statement->getConditionsOrFail());
+			$whereSql = $builder->visitNodeAndReturnSQL($conditions);
 
 			if (!$statement->getDirective('ignoreSoftDelete')) {
 				$softDeleteSetClause = $this->buildSoftDeleteSetClause($metadata, $range->getName());

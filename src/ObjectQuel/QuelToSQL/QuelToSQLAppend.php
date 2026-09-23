@@ -8,11 +8,13 @@
 	use Quellabs\ObjectQuel\Exception\EntityResolutionException;
 	use Quellabs\AnnotationReader\Exception\AnnotationReaderException;
 	use Quellabs\ObjectQuel\Capabilities\PlatformCapabilitiesInterface;
+	use Quellabs\ObjectQuel\DatabaseAdapter\Mapper\TypeMapper;
 	use Quellabs\ObjectQuel\DatabaseAdapter\SqlIdentifierQuoter;
 	use Quellabs\ObjectQuel\EntityManager;
 	use Quellabs\ObjectQuel\EntityStore;
 	use Quellabs\ObjectQuel\Exception\QuelException;
 	use Quellabs\ObjectQuel\Exception\SemanticException;
+	use Quellabs\ObjectQuel\Execution\Helpers\ResolveType;
 	use Quellabs\ObjectQuel\Execution\Visitors\BuildSqlFromAst;
 	use Quellabs\ObjectQuel\Metadata\DiscriminatorInfoResolver;
 	use Quellabs\ObjectQuel\Metadata\EntityMetadataRecord;
@@ -23,7 +25,9 @@
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRangeDatabaseTempTable;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRetrieve;
 	use Quellabs\ObjectQuel\ObjectQuel\Helpers\AssignmentValidator;
+	use Quellabs\ObjectQuel\ObjectQuel\Helpers\DateTimeWriteSql;
 	use Quellabs\ObjectQuel\ObjectQuel\Visitors\CoerceDateTimeParameters;
+	use Quellabs\ObjectQuel\ObjectQuel\Visitors\NormalizeDateTime;
 	use Quellabs\ObjectQuel\ObjectQuel\Visitors\ResolveIdentifierRange;
 	use Quellabs\ObjectQuel\ObjectQuel\Visitors\ResolvePropertyType;
 	use Quellabs\ObjectQuel\ObjectQuel\Visitors\ResolveRootIdentifierType;
@@ -52,6 +56,7 @@
 		private PlatformCapabilitiesInterface $platform;
 		private QuelToSQLUpsert $upsertCompiler;
 		private VersionValueHandler $versionValueHandler;
+		private ResolveType $valueTypes;
 
 		/**
 		 * QuelToSQLAppend constructor
@@ -63,14 +68,16 @@
 		 * @param VersionValueHandler $versionValueHandler Reused as-is so the
 		 *        literal-values form initializes @Orm\Version columns using the
 		 *        same logic InsertPersister's INSERT path does — see compileValues().
+		 * @param ResolveType|null $valueTypes Types inserted values; defaults to one that knows entity columns only
 		 */
-		public function __construct(EntityManager $entityManager, PlatformCapabilitiesInterface $platform, QuelToSQLUpsert $upsertCompiler, VersionValueHandler $versionValueHandler) {
+		public function __construct(EntityManager $entityManager, PlatformCapabilitiesInterface $platform, QuelToSQLUpsert $upsertCompiler, VersionValueHandler $versionValueHandler, ?ResolveType $valueTypes = null) {
 			$this->entityManager = $entityManager;
 			$this->entityStore = $entityManager->getEntityStore();
 			$this->identifierQuoter = new SqlIdentifierQuoter($platform);
 			$this->platform = $platform;
 			$this->upsertCompiler = $upsertCompiler;
 			$this->versionValueHandler = $versionValueHandler;
+			$this->valueTypes = $valueTypes ?? new ResolveType($this->entityStore);
 		}
 
 		/**
@@ -177,7 +184,7 @@
 		 * @param array{column: non-empty-string, value: non-empty-string}|null $discriminatorInfo STI discriminator column/value to add
 		 * @param array<string, mixed> $defaultColumnsToInit property => declared @Orm\Column default value to add
 		 * @return array<string, string> property (or discriminator column name) => compiled SQL value
-		 * @throws SemanticException|OrmException
+		 * @throws SemanticException|OrmException|EntityResolutionException|QuelException
 		 */
 		private function compileRow(array $row, EntityMetadataRecord $metadata, array &$parameters, array $versionColumnsToInit = [], ?array $discriminatorInfo = null, array $defaultColumnsToInit = []): array {
 			$compiled = [];
@@ -186,8 +193,11 @@
 			foreach ($row as $assignment) {
 				$this->assertAssignmentValueTypeCompatible($assignment, $metadata);
 
+				$value = $assignment->getValue();
+				$value->accept(new NormalizeDateTime($this->entityStore, $this->valueTypes));
+
 				$builder = new BuildSqlFromAst($this->entityStore, $parameters, 'VALUES', $this->platform);
-				$compiled[$assignment->getProperty()] = $builder->visitNodeAndReturnSQL($assignment->getValue());
+				$compiled[$assignment->getProperty()] = $this->convertTimestamp($builder->visitNodeAndReturnSQL($value), $this->valueTypes->inferReturnType($value), $assignment->getProperty(), $metadata);
 			}
 
 			// @Orm\Version columns the caller didn't assign: initial value for this row.
@@ -356,10 +366,12 @@
 
 			$derivedTableAlias = $this->identifierQuoter->quoteIdentifier('__append_source');
 
-			$selectColumns = array_map(
-				fn(string $alias) => $derivedTableAlias . '.' . $this->identifierQuoter->quoteIdentifier($alias),
-				$visibleAliases
-			);
+			$selectColumns = [];
+
+			foreach ($visibleAliases as $i => $alias) {
+				$columnSql = $derivedTableAlias . '.' . $this->identifierQuoter->quoteIdentifier($alias);
+				$selectColumns[] = $this->convertTimestamp($columnSql, $this->sourceValueType($source, $alias), $properties[$i], $metadata);
+			}
 
 			// STI subclass: inject the discriminator column as a literal
 			// SELECT expression, same rule compileValues() applies to its
@@ -379,6 +391,44 @@
 				$selectSql,
 				$derivedTableAlias
 			);
+		}
+
+		/**
+		 * Converts a Unix timestamp written to a datetime column to a datetime.
+		 * @param string $valueSql Compiled value
+		 * @param string|null $valueType Inferred PHP-level type of the value, or null when unknown
+		 * @param string $property Target property
+		 * @param EntityMetadataRecord $metadata Target entity
+		 * @return string
+		 * @throws SemanticException
+		 */
+		private function convertTimestamp(string $valueSql, ?string $valueType, string $property, EntityMetadataRecord $metadata): string {
+			$columnName = $metadata->getColumnName($property);
+			$columnDef = $columnName === null ? null : ($metadata->columnDefinitions[$columnName] ?? null);
+
+			return DateTimeWriteSql::convert(
+				$valueSql,
+				$valueType,
+				$columnDef === null ? null : TypeMapper::phinxTypeToPhpType($columnDef['type']),
+				$property,
+				$this->platform
+			);
+		}
+
+		/**
+		 * @param AstRetrieve $source Prepared source retrieve
+		 * @param string $alias Name of one of its values
+		 * @return string|null Inferred PHP-level type of that value, or null when unknown
+		 * @throws EntityResolutionException
+		 */
+		public function sourceValueType(AstRetrieve $source, string $alias): ?string {
+			foreach ($source->getValues() as $value) {
+				if ($value->getName() === $alias) {
+					return $this->valueTypes->inferReturnType($value->getExpression());
+				}
+			}
+
+			return null;
 		}
 
 		/**
