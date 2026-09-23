@@ -17,8 +17,8 @@
 	 * Folding rule for is_float(), is_integer(), and is_numeric() calls.
 	 *
 	 * Resolves these nodes to a boolean constant when the argument type is
-	 * statically known from entity metadata. Returns null when the type cannot
-	 * be determined, leaving the node for runtime REGEXP evaluation.
+	 * statically known to be numeric. Returns null otherwise, leaving the node
+	 * for runtime REGEXP evaluation.
 	 */
 	class TypeCheckFoldingRule implements FoldingRuleInterface {
 		
@@ -27,15 +27,18 @@
 		
 		/**
 		 * Maps each supported type-check node class to the set of PHP types that
-		 * make it evaluate to true. Any other known type evaluates to false.
+		 * make it evaluate to true. Any other numeric type evaluates to false.
 		 * Classes not present in this map are ignored by this rule.
 		 * @var array<class-string, string[]>
 		 */
 		private const TYPE_MAP = [
 			AstIsFloat::class   => ['float'],
-			AstIsInteger::class => ['integer'],
-			AstIsNumeric::class => ['integer', 'float'],
+			AstIsInteger::class => ['int', 'integer'],
+			AstIsNumeric::class => ['int', 'integer', 'float'],
 		];
+
+		/** Only numeric types fold; a string or bool value may still hold a numeric string, so it's checked at runtime */
+		private const FOLDABLE_TYPES = ['int', 'integer', 'float'];
 		
 		/**
 		 * @param EntityManager $entityManager Provides entity metadata for type inference
@@ -71,7 +74,7 @@
 		
 		/**
 		 * Infers the argument type and maps it to a boolean constant.
-		 * Returns null when the type cannot be determined statically.
+		 * Returns null when the type is unknown or not numeric.
 		 * @param AstInterface $argument The function's argument node
 		 * @param string[] $trueTypes PHP types for which the type-check evaluates to true
 		 * @return AstBool|null Folded constant, or null if type is unknown
@@ -80,8 +83,8 @@
 		private function foldByType(AstInterface $argument, array $trueTypes): ?AstBool {
 			$type = $this->typeInference->inferReturnType($argument);
 			
-			// Type unknown — cannot fold, leave for runtime REGEXP
-			if ($type === null) {
+			// Type unknown or not numeric — cannot fold, leave for runtime REGEXP
+			if (!in_array($type, self::FOLDABLE_TYPES, true)) {
 				return null;
 			}
 			

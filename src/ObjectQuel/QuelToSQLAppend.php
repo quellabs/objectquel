@@ -29,6 +29,7 @@
 	use Quellabs\ObjectQuel\ObjectQuel\Visitors\ResolveIdentifierRange;
 	use Quellabs\ObjectQuel\ObjectQuel\Visitors\ResolvePropertyType;
 	use Quellabs\ObjectQuel\ObjectQuel\Visitors\ResolveRootIdentifierType;
+	use Quellabs\ObjectQuel\ObjectQuel\Visitors\ValidateNoTemporalScalarMix;
 	use Quellabs\ObjectQuel\Persistence\VersionValueHandler;
 	use Quellabs\ObjectQuel\Planner\QueryOptimizer;
 
@@ -193,6 +194,7 @@
 
 				$value = $assignment->getValue();
 				$value->accept(new NormalizeDateTime($this->entityStore, $this->valueTypes));
+				$value->accept(new ValidateNoTemporalScalarMix($this->entityStore, $this->valueTypes));
 
 				$builder = new BuildSqlFromAst($this->entityStore, $parameters, 'VALUES', $this->platform);
 				$compiled[$assignment->getProperty()] = $this->convertTimestamp($builder->visitNodeAndReturnSQL($value), $this->valueTypes->inferReturnType($value), $assignment->getProperty(), $metadata);
