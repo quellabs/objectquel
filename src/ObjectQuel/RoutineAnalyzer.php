@@ -9,6 +9,7 @@
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstAbort;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstAppend;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstBeginTransaction;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstCall;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstDeclare;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstDelete;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstDeleteCurrent;
@@ -22,7 +23,6 @@
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstReplaceCurrent;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRetrieve;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstReturn;
-	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRoutineCall;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRoutineDefinition;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstVariableAssignment;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstWhile;
@@ -67,13 +67,6 @@
 
 			if (QueryFunction::isBuiltin($routine->getName())) {
 				throw new SemanticException("'{$routine->getName()}' is a built-in function, so a routine by that name could never be called.");
-			}
-
-			$calls = new CollectNodes(AstRoutineCall::class);
-			$routine->accept($calls);
-
-			if (!empty($calls->getCollectedNodes())) {
-				throw new SemanticException("Routines can't call routines yet; '{$calls->getCollectedNodes()[0]->getName()}' is called here.");
 			}
 
 			$placeholders = new CollectNodes(AstParameter::class);
@@ -190,6 +183,10 @@
 					$statement->accept($this->referenceResolver(true));
 					break;
 
+				case $statement instanceof AstCall:
+					$this->analyzeCall($statement);
+					break;
+
 				default:
 					throw new SemanticException('Unsupported statement in routine body: ' . get_class($statement));
 			}
@@ -285,6 +282,25 @@
 				}
 
 				$assignment->getValue()->accept($this->referenceResolver(false));
+			}
+		}
+
+		/**
+		 * `call name(args)`: arguments must be literals, variables or cursor fields, since SQL Server's EXEC takes nothing else.
+		 * @param AstCall $statement The call
+		 * @return void
+		 * @throws SemanticException|EntityResolutionException
+		 */
+		private function analyzeCall(AstCall $statement): void {
+			$call = $statement->getCall();
+			$statement->accept($this->referenceResolver(false));
+
+			foreach ($call->getArguments() as $argument) {
+				$isVariable = $argument instanceof AstIdentifier && $argument->getType()->isRoutineReference();
+
+				if (!$isVariable && !in_array(get_class($argument), QuelToSQLCall::LITERAL_ARGUMENTS, true)) {
+					throw new SemanticException("The arguments of 'call {$call->getName()}' must be literals or variables; assign other values to a local first.");
+				}
 			}
 		}
 

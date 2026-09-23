@@ -29,7 +29,7 @@
 	class RoutineBlock {
 
 		/** Words that start a procedural statement; recognized by text, like other contextual keywords. */
-		public const array STATEMENT_KEYWORDS = ['if', 'else', 'while', 'foreach', 'return', 'begin', 'abort', 'replace', 'delete'];
+		public const array STATEMENT_KEYWORDS = ['if', 'else', 'while', 'foreach', 'return', 'begin', 'abort', 'replace', 'delete', 'call'];
 
 		private Lexer $lexer;
 		private Range $rangeRule;
@@ -140,6 +140,9 @@
 
 				case 'delete':
 					return $this->parseDelete();
+
+				case 'call':
+					return (new Call($this->lexer))->parse();
 
 				case 'else':
 					throw new ParserException("'else' without a preceding 'if' on line {$this->lexer->getLineNumber()}");

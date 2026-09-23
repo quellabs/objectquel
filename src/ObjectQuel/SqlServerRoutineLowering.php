@@ -4,6 +4,7 @@
 
 	use Quellabs\ObjectQuel\Exception\SemanticException;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstBeginTransaction;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstCall;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstForeach;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstIf;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstReturn;
@@ -18,7 +19,7 @@
 	 *   reads the variables in a cursor query at DECLARE; the loop deallocates it.
 	 *   Read-only loops use a STATIC cursor, loops that write the current row a
 	 *   SCROLL_LOCKS `FOR UPDATE` cursor and `WHERE CURRENT OF`.
-	 * - A function can't write tables, so a non-void routine that does is rejected.
+	 * - A function can't write tables or run a procedure, so a non-void routine that does is rejected.
 	 */
 	class SqlServerRoutineLowering extends FetchIntoRoutineLowering {
 
@@ -40,7 +41,7 @@
 		/**
 		 * @param AstRoutineDefinition $routine The routine
 		 * @return void
-		 * @throws SemanticException When a function writes tables
+		 * @throws SemanticException When a function writes tables or calls a procedure
 		 */
 		protected function validate(AstRoutineDefinition $routine): void {
 			parent::validate($routine);
@@ -48,6 +49,10 @@
 
 			if (!$routine->isVoid() && $this->writesTables($routine)) {
 				throw new SemanticException("'{$routine->getName()}' returns a value, so SQL Server creates it as a FUNCTION, which can't write tables. Make it void to write.");
+			}
+
+			if (!$routine->isVoid() && $this->contains($routine, [AstCall::class])) {
+				throw new SemanticException("'{$routine->getName()}' returns a value, so SQL Server creates it as a FUNCTION, which can't run a procedure. Make it void to use 'call'.");
 			}
 		}
 

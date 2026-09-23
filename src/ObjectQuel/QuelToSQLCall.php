@@ -21,8 +21,8 @@
 	 */
 	class QuelToSQLCall {
 
-		/** Argument nodes SQL Server's EXEC accepts; the rule holds on every engine so calls stay portable */
-		private const array ARGUMENT_NODES = [AstNumber::class, AstString::class, AstBool::class, AstNull::class, AstParameter::class];
+		/** Literal nodes SQL Server's EXEC accepts as arguments; the rule holds on every engine so calls stay portable */
+		public const array LITERAL_ARGUMENTS = [AstNumber::class, AstString::class, AstBool::class, AstNull::class];
 
 		private EntityStore $entityStore;
 		private PlatformCapabilitiesInterface $platform;
@@ -87,6 +87,17 @@
 				return "SELECT {$name}({$arguments}) AS " . $this->identifierQuoter->quoteIdentifier($call->getName());
 			}
 
+			return $this->procedureCall($call->getName(), $arguments);
+		}
+
+		/**
+		 * @param string $name Procedure name as written in the source
+		 * @param string $arguments Compiled, comma-separated arguments
+		 * @return string `CALL name(args)`, or `EXEC name args` on SQL Server
+		 */
+		public function procedureCall(string $name, string $arguments): string {
+			$name = $this->identifierQuoter->quoteRoutineName($name);
+
 			if ($this->platform->getDatabaseType() === 'sqlsrv') {
 				return "EXEC {$name}" . ($arguments === '' ? '' : " {$arguments}");
 			}
@@ -106,7 +117,7 @@
 			$result = [];
 
 			foreach ($call->getArguments() as $argument) {
-				if (!in_array(get_class($argument), self::ARGUMENT_NODES, true)) {
+				if (!$argument instanceof AstParameter && !in_array(get_class($argument), self::LITERAL_ARGUMENTS, true)) {
 					throw new SemanticException("The arguments of 'call {$call->getName()}' must be literals or parameters; compute other values before the call.");
 				}
 

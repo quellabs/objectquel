@@ -14,6 +14,7 @@
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstAppend;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstAssignment;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstBool;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstCall;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstDelete;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRangeDatabase;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstReplace;
@@ -40,6 +41,7 @@
 		private QuelToSQLDelete $deleteCompiler;
 		private QuelToSQLReplace $replaceCompiler;
 		private QuelToSQLAppend $appendCompiler;
+		private QuelToSQLCall $callCompiler;
 
 		/**
 		 * @param EntityManager $entityManager Entity metadata and the optimizer's dependencies
@@ -57,6 +59,7 @@
 
 			$this->deleteCompiler = new QuelToSQLDelete($this->entityStore, $platform);
 			$this->replaceCompiler = new QuelToSQLReplace($this->entityStore, $platform, $versionValueHandler);
+			$this->callCompiler = new QuelToSQLCall($this->entityStore, $platform);
 			$this->appendCompiler = new QuelToSQLAppend($entityManager, $platform, new QuelToSQLUpsert($this->entityStore, $platform, $this->replaceCompiler), $versionValueHandler);
 		}
 
@@ -224,6 +227,19 @@
 			return $this->withoutBoundParameters('expression', function (array &$parameters) use ($value): string {
 				return (new BuildSqlFromAst($this->entityStore, $parameters, 'VALUES', $this->platform))->visitNodeAndReturnSQL($value);
 			});
+		}
+
+		/**
+		 * Compiles a `call` statement as a procedure call; functions are called from expressions instead.
+		 * @param AstCall $statement Analyzed call, whose arguments are literals or routine variables
+		 * @return string `CALL name(args)`, or `EXEC name args` on SQL Server
+		 * @throws SemanticException
+		 */
+		public function compileCall(AstCall $statement): string {
+			$call = $statement->getCall();
+			$arguments = array_map(fn(AstInterface $argument) => $this->compileValue($argument), $call->getArguments());
+
+			return $this->callCompiler->procedureCall($call->getName(), implode(', ', $arguments));
 		}
 
 		/**

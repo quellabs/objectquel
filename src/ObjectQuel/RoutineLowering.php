@@ -13,6 +13,7 @@
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstAbort;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstAppend;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstBeginTransaction;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstCall;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstDeclare;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstDelete;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstDeleteCurrent;
@@ -327,6 +328,7 @@
 				$statement instanceof AstAppend => $this->line($this->statements->compileAppend($statement) . ';', $depth),
 				$statement instanceof AstReplace => $this->line($this->statements->compileReplace($statement) . ';', $depth),
 				$statement instanceof AstDelete => $this->line($this->statements->compileDelete($statement) . ';', $depth),
+				$statement instanceof AstCall => $this->line($this->statements->compileCall($statement) . ';', $depth),
 				default => throw new \LogicException('Unsupported routine statement ' . get_class($statement) . '; RoutineAnalyzer should have rejected it.'),
 			};
 		}

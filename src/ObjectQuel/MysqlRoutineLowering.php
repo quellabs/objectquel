@@ -5,6 +5,7 @@
 	use Quellabs\ObjectQuel\Exception\SemanticException;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstAlias;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstBeginTransaction;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstCall;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstForeach;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstIdentifier;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstIf;
@@ -12,8 +13,10 @@
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRangeDeclaration;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRetrieve;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstReturn;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRoutineCall;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRoutineDefinition;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstWhile;
+	use Quellabs\ObjectQuel\ObjectQuel\Visitors\CollectNodes;
 
 	/**
 	 * Lowers an analyzed routine to a MySQL/MariaDB CREATE FUNCTION (non-void) or
@@ -55,6 +58,27 @@
 			parent::validate($routine);
 			$this->keyFields = [];
 			$this->loopCount = 0;
+
+			if (!$routine->isVoid()) {
+				$this->assertNotRecursive($routine);
+			}
+		}
+
+		/**
+		 * Rejects a function that calls itself. Functions and procedures have separate names, so a `call` doesn't count.
+		 * @param AstRoutineDefinition $routine Non-void routine
+		 * @return void
+		 * @throws SemanticException When the function calls itself
+		 */
+		private function assertNotRecursive(AstRoutineDefinition $routine): void {
+			$calls = new CollectNodes(AstRoutineCall::class);
+			$routine->accept($calls);
+
+			foreach ($calls->getCollectedNodes() as $call) {
+				if (!$call->getParent() instanceof AstCall && strcasecmp($call->getName(), $routine->getName()) === 0) {
+					throw new SemanticException("'{$routine->getName()}' calls itself, but {$this->engineName()} doesn't allow a stored function to be recursive.");
+				}
+			}
 		}
 
 		/**
