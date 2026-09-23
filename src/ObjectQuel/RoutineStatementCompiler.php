@@ -10,8 +10,10 @@
 	use Quellabs\ObjectQuel\Exception\SemanticException;
 	use Quellabs\ObjectQuel\Exception\TransformationException;
 	use Quellabs\ObjectQuel\Execution\Visitors\BuildSqlFromAst;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstAlias;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstAppend;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstAssignment;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstBool;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstDelete;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRangeDatabase;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstReplace;
@@ -60,14 +62,21 @@
 
 		/**
 		 * Runs a copy of an embedded retrieve through the ad hoc query pipeline, narrowed to the ranges it reads.
+		 * The copy selects exactly its target list: hidden projections the optimizer adds only serve PHP-side processing.
 		 * @param AstRetrieve $retrieve Analyzed standalone or cursor retrieve
+		 * @param AstAlias[] $extraValues Values appended to the copy's target list before the pipeline runs
 		 * @return AstRetrieve The optimized copy, ready for retrieveSql()
 		 * @throws SemanticException When the query needs PHP-side processing
 		 * @throws EntityResolutionException|TransformationException|QuelException
 		 */
-		public function prepareRetrieve(AstRetrieve $retrieve): AstRetrieve {
+		public function prepareRetrieve(AstRetrieve $retrieve, array $extraValues = []): AstRetrieve {
 			// Declared ranges are shared between statements and the pipeline mutates them
 			$query = $retrieve->deepClone();
+
+			foreach ($extraValues as $value) {
+				$query->addValue($value);
+			}
+
 			$this->narrowRanges($query);
 
 			$parameters = [];
@@ -82,6 +91,8 @@
 			if (count($stages) !== 1 || !$stages[0] instanceof ExecutionStage || $stages[0]->getRange() !== null) {
 				throw new SemanticException('This retrieve needs PHP-side processing (a JSON source, a temp table, or no range at all), which a routine can\'t run. Use an assignment for a value without a range.');
 			}
+
+			$query->setValues(array_values(array_filter($query->getValues(), fn(AstAlias $value) => $value->showInResult())));
 
 			return $query;
 		}
@@ -192,29 +203,34 @@
 		 * @throws SemanticException
 		 */
 		public function compileCondition(AstInterface $condition): string {
-			return $this->compileExpression($condition, 'WHERE');
+			return $this->withoutBoundParameters('expression', function (array &$parameters) use ($condition): string {
+				return (new BuildSqlFromAst($this->entityStore, $parameters, 'WHERE', $this->platform))->visitConditionAndReturnSQL($condition);
+			});
 		}
 
 		/**
-		 * Compiles a procedural value (assignment, initializer, `return`).
+		 * Compiles a procedural value (assignment, initializer, `return`). Without boolean literals (SQL Server)
+		 * a predicate isn't a value, so it becomes a CASE that yields 1, 0 or NULL like a boolean would.
 		 * @param AstInterface $value Analyzed expression
 		 * @return string
 		 * @throws SemanticException
 		 */
 		public function compileValue(AstInterface $value): string {
-			return $this->compileExpression($value, 'VALUES');
+			if (!$this->platform->supportsBooleanLiterals() && !$value instanceof AstBool && $value->getReturnType() === 'boolean') {
+				$predicate = $this->compileCondition($value);
+				return "CASE WHEN {$predicate} THEN 1 WHEN NOT ({$predicate}) THEN 0 END";
+			}
+
+			return $this->withoutBoundParameters('expression', function (array &$parameters) use ($value): string {
+				return (new BuildSqlFromAst($this->entityStore, $parameters, 'VALUES', $this->platform))->visitNodeAndReturnSQL($value);
+			});
 		}
 
 		/**
-		 * @param AstInterface $expression Analyzed expression
-		 * @param string $partOfQuery BuildSqlFromAst mode: 'WHERE' for predicates, 'VALUES' for values
-		 * @return string
-		 * @throws SemanticException
+		 * @return PlatformCapabilitiesInterface The target engine
 		 */
-		private function compileExpression(AstInterface $expression, string $partOfQuery): string {
-			return $this->withoutBoundParameters('expression', function (array &$parameters) use ($expression, $partOfQuery): string {
-				return (new BuildSqlFromAst($this->entityStore, $parameters, $partOfQuery, $this->platform))->visitNodeAndReturnSQL($expression);
-			});
+		public function getPlatform(): PlatformCapabilitiesInterface {
+			return $this->platform;
 		}
 
 		/**

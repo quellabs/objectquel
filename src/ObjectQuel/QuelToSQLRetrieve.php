@@ -269,17 +269,8 @@
 				return "";
 			}
 			
-			// Create a new instance of QuelToSQLConvertToString to convert the conditions to a SQL string.
-			// This object will process the Quel conditions and convert them into a format that SQL understands.
 			$retrieveEntitiesVisitor = new BuildSqlFromAst($this->entityStore, $this->parameters, "WHERE", $this->platform);
-			
-			// Use the accept method of the conditions to let the QuelToSQLConvertToString object perform the processing.
-			// This activates the logic for converting Quel to SQL.
-			$conditions->accept($retrieveEntitiesVisitor);
-			
-			// Get the result, which is now a SQL-compliant string, and add 'WHERE' for the SQL query.
-			// This is the result of converting Quel conditions to SQL.
-			return "WHERE " . $retrieveEntitiesVisitor->getResult();
+			return "WHERE " . $retrieveEntitiesVisitor->visitConditionAndReturnSQL($conditions);
 		}
 		
 		/**
@@ -495,8 +486,7 @@
 				
 				// Convert the join condition to a SQL string.
 				$visitor = new BuildSqlFromAst($this->entityStore, $this->parameters, "CONDITION", $this->platform);
-				$joinProperty->accept($visitor);
-				$joinColumn = $visitor->getResult();
+				$joinColumn = $visitor->visitConditionAndReturnSQL($joinProperty);
 				
 				// Determine join type
 				$joinType = $range->isRequired() ? "INNER" : "LEFT";

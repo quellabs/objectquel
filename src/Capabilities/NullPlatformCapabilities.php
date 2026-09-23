@@ -160,6 +160,24 @@
 		/**
 		 * @inheritDoc
 		 *
+		 * Defaults to MySQL/MariaDB behavior.
+		 */
+		public function supportsAliasAfterDmlTarget(): bool {
+			return true;
+		}
+
+		/**
+		 * @inheritDoc
+		 *
+		 * Defaults to MySQL/MariaDB behavior.
+		 */
+		public function supportsBooleanLiterals(): bool {
+			return true;
+		}
+
+		/**
+		 * @inheritDoc
+		 *
 		 * Defaults to 'mysql', the most widely deployed engine in the
 		 * Canvas/ObjectQuel target stack. Callers that need the real engine must
 		 * inject a real PlatformCapabilities instance instead of relying on this

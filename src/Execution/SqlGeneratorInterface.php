@@ -13,4 +13,11 @@
 		 * @return string The SQL representation of the node
 		 */
 		public function visitNodeAndReturnSQL(AstInterface $node): string;
+
+		/**
+		 * Visit a node in a predicate position (WHERE, ON, AND/OR/NOT operand) and return its SQL.
+		 * @param AstInterface $condition The condition node
+		 * @return string The SQL predicate
+		 */
+		public function visitConditionAndReturnSQL(AstInterface $condition): string;
 	}

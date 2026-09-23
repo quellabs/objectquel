@@ -83,7 +83,7 @@
 		 * @return string SQL join condition
 		 */
 		public function buildJoinCondition(AstInterface $joinCondition): string {
-			return $this->mainVisitor->visitNodeAndReturnSQL($joinCondition);
+			return $this->mainVisitor->visitConditionAndReturnSQL($joinCondition);
 		}
 		
 		/**
@@ -141,7 +141,7 @@
 		 * @return string SQL NOT expression
 		 */
 		public function handleNot(AstNot $ast): string {
-			return 'NOT(' . $this->visitNodeAndReturnSQL($ast->getExpression()) . ')';
+			return 'NOT(' . $this->mainVisitor->visitConditionAndReturnSQL($ast->getExpression()) . ')';
 		}
 		
 		/**
@@ -158,9 +158,13 @@
 		 * Process boolean literal values
 		 * Converts an AstBool node to SQL boolean representation.
 		 * @param AstBool $ast The boolean AST node
-		 * @return string SQL boolean literal ("true" or "false")
+		 * @return string SQL boolean literal ("true"/"false", or "1"/"0" on engines without boolean literals)
 		 */
 		public function handleBool(AstBool $ast): string {
+			if (!$this->platform->supportsBooleanLiterals()) {
+				return $ast->getValue() ? '1' : '0';
+			}
+
 			return $ast->getValue() ? 'true' : 'false';
 		}
 		

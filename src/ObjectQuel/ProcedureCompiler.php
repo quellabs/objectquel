@@ -32,11 +32,11 @@
 		/**
 		 * Parses, analyzes and lowers one routine.
 		 * @param string $source Routine source containing one `define function`
-		 * @return string The CREATE statement
+		 * @return string[] Statements to run in order, the last one creating the routine
 		 * @throws LexerException|ParserException|\ReflectionException
 		 * @throws SemanticException|EntityResolutionException|TransformationException|QuelException
 		 */
-		public function compile(string $source): string {
+		public function compile(string $source): array {
 			$entityStore = $this->entityManager->getEntityStore();
 			$routine = (new ProcedureParser(new Lexer($source), $entityStore))->parse();
 			(new RoutineAnalyzer($entityStore))->analyze($routine);
@@ -46,15 +46,20 @@
 
 		/**
 		 * @param AstRoutineDefinition $routine Routine that passed RoutineAnalyzer
-		 * @return string The CREATE statement
+		 * @return string[] Statements to run in order, the last one creating the routine
 		 * @throws SemanticException|EntityResolutionException|TransformationException|QuelException
 		 */
-		public function lower(AstRoutineDefinition $routine): string {
+		public function lower(AstRoutineDefinition $routine): array {
+			$entityStore = $this->entityManager->getEntityStore();
 			$statements = new RoutineStatementCompiler($this->entityManager, $this->platform);
 
-			return match ($this->platform->getDatabaseType()) {
-				'pgsql' => (new PostgresRoutineLowering($this->entityManager->getEntityStore(), $statements, $this->platform))->lower($routine),
-				default => throw new QuelException("Routines can't be compiled for '{$this->platform->getDatabaseType()}' yet."),
+			$lowering = match ($this->platform->getDatabaseType()) {
+				'pgsql' => new PostgresRoutineLowering($entityStore, $statements),
+				'sqlsrv' => new SqlServerRoutineLowering($entityStore, $statements),
+				'mysql', 'mariadb' => new MysqlRoutineLowering($entityStore, $statements),
+				default => throw new QuelException("Routines can't be compiled for '{$this->platform->getDatabaseType()}'."),
 			};
+
+			return $lowering->lower($routine);
 		}
 	}

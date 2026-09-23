@@ -239,6 +239,21 @@
 		public function supportsQualifiedSetTarget(): bool;
 
 		/**
+		 * Returns true if UPDATE/DELETE accept an alias right after the target
+		 * table (`UPDATE t AS a SET ...`). SQL Server doesn't; the alias must be
+		 * declared in a FROM clause (`UPDATE a SET ... FROM t AS a`).
+		 * @return bool
+		 */
+		public function supportsAliasAfterDmlTarget(): bool;
+
+		/**
+		 * Returns true if SQL has TRUE/FALSE literals. SQL Server has none and
+		 * uses 1/0 for BIT values.
+		 * @return bool
+		 */
+		public function supportsBooleanLiterals(): bool;
+
+		/**
 		 * Returns the connected database engine's type identifier.
 		 *
 		 * This is the most basic fact PlatformCapabilities reports — every other

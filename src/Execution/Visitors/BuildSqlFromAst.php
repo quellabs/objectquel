@@ -211,7 +211,25 @@
 			
 			return $sql;
 		}
-		
+
+		/**
+		 * Visit a node in a predicate position and return its SQL. Without boolean
+		 * literals (SQL Server) a bare BIT value isn't a predicate, so it's compared to 1.
+		 * @param AstInterface $condition The condition node
+		 * @return string The SQL predicate
+		 */
+		public function visitConditionAndReturnSQL(AstInterface $condition): string {
+			$sql = $this->visitNodeAndReturnSQL($condition);
+
+			$isBareValue = $condition instanceof AstIdentifier || $condition instanceof AstBool || $condition instanceof AstParameter;
+
+			if ($isBareValue && !$this->platform->supportsBooleanLiterals()) {
+				return "{$sql} = 1";
+			}
+
+			return $sql;
+		}
+
 		/**
 		 * Builds a fully qualified column name for SQL queries based on an AST identifier.
 		 * Handles both entity-based ranges (with metadata) and temporary table ranges

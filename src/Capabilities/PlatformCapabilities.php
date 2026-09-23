@@ -323,6 +323,20 @@
 		/**
 		 * @inheritDoc
 		 */
+		public function supportsAliasAfterDmlTarget(): bool {
+			return $this->adapter->getDatabaseType() !== 'sqlsrv';
+		}
+
+		/**
+		 * @inheritDoc
+		 */
+		public function supportsBooleanLiterals(): bool {
+			return $this->adapter->getDatabaseType() !== 'sqlsrv';
+		}
+
+		/**
+		 * @inheritDoc
+		 */
 		public function getDatabaseType(): string {
 			return $this->adapter->getDatabaseType();
 		}

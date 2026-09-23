@@ -10,6 +10,7 @@
 	use Quellabs\ObjectQuel\Metadata\EntityMetadataRecord;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstAssignment;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstReplace;
+	use Quellabs\ObjectQuel\ObjectQuel\Helpers\AliasedDmlSql;
 	use Quellabs\ObjectQuel\ObjectQuel\Helpers\ConflictTargetResolver;
 	use Quellabs\ObjectQuel\ObjectQuel\Helpers\WriteVerbIdentifierResolver;
 	use Quellabs\ObjectQuel\ObjectQuel\Helpers\WriteVerbParameterNormalizer;
@@ -208,14 +209,15 @@
 				: $this->buildDefaultFallbackSetClause($metadata, $properties, $columnNames, $compiledRows[0]);
 
 			$whereSql = (new BuildSqlFromAst($this->entityStore, $parameters, 'WHERE', $this->platform))
-				->visitNodeAndReturnSQL($onConflict->getConditionsOrFail());
+				->visitConditionAndReturnSQL($onConflict->getConditionsOrFail());
 
-			$updateSql = sprintf(
-				'UPDATE %s as %s SET %s WHERE %s',
-				$this->identifierQuoter->quoteIdentifier($tableName),
-				$this->identifierQuoter->quoteIdentifier($onConflict->getRange()->getName()),
+			$updateSql = AliasedDmlSql::update(
+				$tableName,
+				$onConflict->getRange()->getName(),
 				implode(', ', $setClauseParts),
-				$whereSql
+				$whereSql,
+				$this->identifierQuoter,
+				$this->platform
 			);
 
 			return CompiledAppendSql::withFallbackUpdate($insertSql, $updateSql);

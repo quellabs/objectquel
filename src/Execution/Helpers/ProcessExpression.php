@@ -179,8 +179,9 @@
 			// Operands are wrapped in parentheses when needed to preserve precedence
 			// (see operandSql()).
 			$parentPrecedence = self::OPERATOR_PRECEDENCE[$operator] ?? null;
-			$leftResult = $this->operandSql($ast->getLeft(), $parentPrecedence, false);
-			$rightResult = $this->operandSql($ast->getRight(), $parentPrecedence, true);
+			$isLogical = in_array($operator, ['AND', 'OR'], true);
+			$leftResult = $this->operandSql($ast->getLeft(), $parentPrecedence, false, $isLogical);
+			$rightResult = $this->operandSql($ast->getRight(), $parentPrecedence, true, $isLogical);
 
 			return "{$leftResult} {$operator} {$rightResult}";
 		}
@@ -204,10 +205,11 @@
 		 * @param AstInterface $operand The operand to render
 		 * @param int|null $parentPrecedence Precedence of the enclosing operator, or null if unranked
 		 * @param bool $isRightOperand Whether this is the right-hand operand
+		 * @param bool $isPredicate Whether the operand is itself a predicate (an AND/OR operand)
 		 * @return string The operand's SQL, parenthesized if required
 		 */
-		private function operandSql(AstInterface $operand, ?int $parentPrecedence, bool $isRightOperand): string {
-			$sql = $this->visitNodeAndReturnSQL($operand);
+		private function operandSql(AstInterface $operand, ?int $parentPrecedence, bool $isRightOperand, bool $isPredicate): string {
+			$sql = $isPredicate ? $this->mainVisitor->visitConditionAndReturnSQL($operand) : $this->visitNodeAndReturnSQL($operand);
 
 			if ($parentPrecedence === null || !$operand instanceof NodeBinary) {
 				return $sql;
@@ -985,7 +987,7 @@
 				return null;
 			}
 			
-			$leftResult = $this->operandSql($ast->getLeft(), self::OPERATOR_PRECEDENCE[$operator] ?? null, false);
+			$leftResult = $this->operandSql($ast->getLeft(), self::OPERATOR_PRECEDENCE[$operator] ?? null, false, false);
 
 			$stringValue = str_replace(
 				array_keys(self::WILDCARD_MAPPINGS),
@@ -1017,7 +1019,7 @@
 		 * @return string The REGEXP or REGEXP_LIKE expression
 		 */
 		private function handleRegularExpression(AstRegExp $rightAst, NodeBinary $ast, string $operator): string {
-			$leftResult = $this->operandSql($ast->getLeft(), self::OPERATOR_PRECEDENCE[$operator] ?? null, false);
+			$leftResult = $this->operandSql($ast->getLeft(), self::OPERATOR_PRECEDENCE[$operator] ?? null, false, false);
 			$flags = $rightAst->getFlags();
 			
 			// REGEXP_LIKE(col, pattern[, flags]) when the platform supports it.

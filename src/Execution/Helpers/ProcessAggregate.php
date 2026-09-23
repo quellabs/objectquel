@@ -132,7 +132,7 @@
 		 * @return string SQL CASE WHEN expression
 		 */
 		public function handleCase(AstCase $case): string {
-			$condition = $this->convertExpressionToSql($case->getConditions());
+			$condition = $this->convertConditionToSql($case->getConditions());
 			$thenExpression = $this->convertExpressionToSql($case->getExpression());
 			return "CASE WHEN {$condition} THEN {$thenExpression} END";
 		}
@@ -193,7 +193,7 @@
 			$whereClause = '';
 			
 			if ($subquery->getConditions() !== null) {
-				$conditionSql = trim($this->convertExpressionToSql($subquery->getConditions()));
+				$conditionSql = trim($this->convertConditionToSql($subquery->getConditions()));
 				
 				// Only add WHERE clause if we have actual conditions (avoid "WHERE" with empty string)
 				if ($conditionSql !== '') {
@@ -385,7 +385,7 @@
 			$whereClause = '';
 			
 			if ($subquery->getConditions() !== null) {
-				$condSql = trim($this->convertExpressionToSql($subquery->getConditions()));
+				$condSql = trim($this->convertConditionToSql($subquery->getConditions()));
 				
 				if ($condSql !== '') {
 					$whereClause = "WHERE {$condSql}";
@@ -478,7 +478,7 @@
 			$whereClause = '';
 			
 			if ($subquery->getConditions() !== null) {
-				$condSql = trim($this->convertExpressionToSql($subquery->getConditions()));
+				$condSql = trim($this->convertConditionToSql($subquery->getConditions()));
 				
 				if ($condSql !== '') {
 					$whereClause = "WHERE {$condSql}";
@@ -570,7 +570,7 @@
 		): string {
 			// Handle conditional aggregation: aggregate WHERE condition → CASE WHEN condition
 			if ($ast->getConditions() !== null) {
-				$condition = $this->convertExpressionToSql($ast->getConditions());
+				$condition = $this->convertConditionToSql($ast->getConditions());
 				$expression = $this->convertExpressionToSql($ast->getIdentifier());
 				$caseExpression = "CASE WHEN {$condition} THEN {$expression} END";
 				
@@ -610,6 +610,15 @@
 		 */
 		private function convertExpressionToSql(AstInterface $expression): string {
 			return $this->convertToString->visitNodeAndReturnSQL($expression);
+		}
+
+		/**
+		 * Converts a condition to a SQL predicate.
+		 * @param AstInterface $condition The condition
+		 * @return string SQL predicate
+		 */
+		private function convertConditionToSql(AstInterface $condition): string {
+			return $this->convertToString->visitConditionAndReturnSQL($condition);
 		}
 		
 		/**

@@ -12,6 +12,7 @@
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRangeDatabase;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstReplace;
 	use Quellabs\ObjectQuel\ObjectQuel\AstInterface;
+	use Quellabs\ObjectQuel\ObjectQuel\Helpers\AliasedDmlSql;
 	use Quellabs\ObjectQuel\ObjectQuel\Helpers\AssignmentValidator;
 	use Quellabs\ObjectQuel\ObjectQuel\Helpers\SetTargetColumnQuoter;
 	use Quellabs\ObjectQuel\ObjectQuel\Helpers\WriteVerbIdentifierResolver;
@@ -97,17 +98,19 @@
 
 			$setClauseParts = $this->buildSetClause($statement->getAssignments(), $metadata, $parameters, $range->getName());
 
-			return sprintf(
-				'UPDATE %s as %s SET %s WHERE %s',
-				$this->identifierQuoter->quoteIdentifier($metadata->tableName),
-				$this->identifierQuoter->quoteIdentifier($range->getName()),
+			return AliasedDmlSql::update(
+				$metadata->tableName,
+				$range->getName(),
 				implode(', ', $setClauseParts),
-				$this->compileCondition($statement->getConditionsOrFail(), $parameters)
+				$this->compileCondition($statement->getConditionsOrFail(), $parameters),
+				$this->identifierQuoter,
+				$this->platform
 			);
 		}
 
 		/**
 		 * Compiles a routine's current-row `replace x (...)` against the cursor's source range, bumping version columns like `replace`.
+		 * Where the alias would need a FROM clause (SQL Server), the table is left unaliased, the documented `WHERE CURRENT OF` form.
 		 * @param AstRangeDatabase $range The cursor's source range
 		 * @param AstAssignment[] $assignments Column assignments
 		 * @param string $rowCondition SQL condition selecting the current row, e.g. `CURRENT OF cursor`
@@ -118,13 +121,13 @@
 		public function convertCurrentRowToSQL(AstRangeDatabase $range, array $assignments, string $rowCondition, array &$parameters): string {
 			$metadata = $this->entityStore->getMetadata($range->getEntityName());
 
-			return sprintf(
-				'UPDATE %s as %s SET %s WHERE %s',
-				$this->identifierQuoter->quoteIdentifier($metadata->tableName),
-				$this->identifierQuoter->quoteIdentifier($range->getName()),
-				implode(', ', $this->buildSetClause($assignments, $metadata, $parameters, $range->getName())),
-				$rowCondition
-			);
+			if (!$this->platform->supportsAliasAfterDmlTarget()) {
+				$setSql = implode(', ', $this->buildSetClause($assignments, $metadata, $parameters));
+				return 'UPDATE ' . $this->identifierQuoter->quoteIdentifier($metadata->tableName) . " SET {$setSql} WHERE {$rowCondition}";
+			}
+
+			$setSql = implode(', ', $this->buildSetClause($assignments, $metadata, $parameters, $range->getName()));
+			return AliasedDmlSql::update($metadata->tableName, $range->getName(), $setSql, $rowCondition, $this->identifierQuoter, $this->platform);
 		}
 
 		/**
@@ -242,6 +245,6 @@
 		 */
 		private function compileCondition(AstInterface $condition, array &$parameters): string {
 			$builder = new BuildSqlFromAst($this->entityStore, $parameters, 'WHERE', $this->platform);
-			return $builder->visitNodeAndReturnSQL($condition);
+			return $builder->visitConditionAndReturnSQL($condition);
 		}
 	}

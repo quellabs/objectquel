@@ -10,6 +10,7 @@
 	use Quellabs\ObjectQuel\Metadata\EntityMetadataRecord;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstDelete;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRangeDatabase;
+	use Quellabs\ObjectQuel\ObjectQuel\Helpers\AliasedDmlSql;
 	use Quellabs\ObjectQuel\ObjectQuel\Helpers\RangeTableName;
 	use Quellabs\ObjectQuel\ObjectQuel\Helpers\SetTargetColumnQuoter;
 	use Quellabs\ObjectQuel\ObjectQuel\Helpers\WriteVerbIdentifierResolver;
@@ -84,20 +85,22 @@
 			$statement->getConditionsOrFail()->accept($normalizer);
 
 			$builder = new BuildSqlFromAst($this->entityStore, $parameters, 'WHERE', $this->platform);
-			$whereSql = $builder->visitNodeAndReturnSQL($statement->getConditionsOrFail());
+			$whereSql = $builder->visitConditionAndReturnSQL($statement->getConditionsOrFail());
 
-			return $this->buildStatement($range, $metadata, $whereSql, (bool)$statement->getDirective('ignoreSoftDelete'));
+			return $this->buildStatement($range, $metadata, $whereSql, (bool)$statement->getDirective('ignoreSoftDelete'), $range->getName());
 		}
 
 		/**
 		 * Compiles a routine's current-row `delete x` against the cursor's source range, soft-deleting like `delete`.
+		 * Where the alias would need a FROM clause (SQL Server), the table is left unaliased, the documented `WHERE CURRENT OF` form.
 		 * @param AstRangeDatabase $range The cursor's source range
 		 * @param string $rowCondition SQL condition selecting the current row, e.g. `CURRENT OF cursor`
 		 * @return string
 		 */
 		public function convertCurrentRowToSQL(AstRangeDatabase $range, string $rowCondition): string {
 			$metadata = $this->entityStore->getMetadata($range->getEntityName());
-			return $this->buildStatement($range, $metadata, $rowCondition, false);
+			$alias = $this->platform->supportsAliasAfterDmlTarget() ? $range->getName() : null;
+			return $this->buildStatement($range, $metadata, $rowCondition, false, $alias);
 		}
 
 		/**
@@ -106,31 +109,26 @@
 		 * @param EntityMetadataRecord $metadata Target entity metadata
 		 * @param string $whereSql Compiled WHERE condition
 		 * @param bool $ignoreSoftDelete True to always emit a real DELETE
+		 * @param string|null $alias Range alias of the target table, or null for an unaliased table
 		 * @return string
 		 */
-		private function buildStatement(AstRangeDatabase $range, EntityMetadataRecord $metadata, string $whereSql, bool $ignoreSoftDelete): string {
+		private function buildStatement(AstRangeDatabase $range, EntityMetadataRecord $metadata, string $whereSql, bool $ignoreSoftDelete, ?string $alias): string {
 			$tableName = RangeTableName::resolve($range, $this->entityStore);
+			$softDeleteSetClause = $ignoreSoftDelete ? null : $this->buildSoftDeleteSetClause($metadata, $alias);
 
-			if (!$ignoreSoftDelete) {
-				$softDeleteSetClause = $this->buildSoftDeleteSetClause($metadata, $range->getName());
+			if ($alias === null) {
+				$table = $this->identifierQuoter->quoteIdentifier($tableName);
 
-				if ($softDeleteSetClause !== null) {
-					return sprintf(
-						'UPDATE %s as %s SET %s WHERE %s',
-						$this->identifierQuoter->quoteIdentifier($tableName),
-						$this->identifierQuoter->quoteIdentifier($range->getName()),
-						$softDeleteSetClause,
-						$whereSql
-					);
-				}
+				return $softDeleteSetClause !== null
+					? "UPDATE {$table} SET {$softDeleteSetClause} WHERE {$whereSql}"
+					: "DELETE FROM {$table} WHERE {$whereSql}";
 			}
 
-			return sprintf(
-				'DELETE FROM %s as %s WHERE %s',
-				$this->identifierQuoter->quoteIdentifier($tableName),
-				$this->identifierQuoter->quoteIdentifier($range->getName()),
-				$whereSql
-			);
+			if ($softDeleteSetClause !== null) {
+				return AliasedDmlSql::update($tableName, $alias, $softDeleteSetClause, $whereSql, $this->identifierQuoter, $this->platform);
+			}
+
+			return AliasedDmlSql::delete($tableName, $alias, $whereSql, $this->identifierQuoter, $this->platform);
 		}
 
 		/**
@@ -147,10 +145,10 @@
 		 * expression for the same reason (this is a system-generated value,
 		 * not user-supplied data going through AssignmentValidator).
 		 * @param EntityMetadataRecord $metadata
-		 * @param string $alias The DELETE/UPDATE statement's own range alias
+		 * @param string|null $alias The DELETE/UPDATE statement's own range alias, or null when the table is unaliased
 		 * @return string|null
 		 */
-		private function buildSoftDeleteSetClause(EntityMetadataRecord $metadata, string $alias): ?string {
+		private function buildSoftDeleteSetClause(EntityMetadataRecord $metadata, ?string $alias): ?string {
 			if (!$metadata->hasSoftDelete()) {
 				return null;
 			}
@@ -167,7 +165,7 @@
 				'datetime' => "{$targetColumn} = " . $this->platform->getCurrentDatetimeFunction(),
 
 				// false means active; true means deleted — see InjectSoftDeleteCondition.
-				'boolean'  => "{$targetColumn} = true",
+				'boolean'  => "{$targetColumn} = " . ($this->platform->supportsBooleanLiterals() ? 'true' : '1'),
 
 				default    => null,
 			};
