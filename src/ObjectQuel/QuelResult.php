@@ -126,6 +126,15 @@
 		}
 
 		/**
+		 * Builds a QuelResult holding one row as the database returned it, without hydration.
+		 * @param array<string, mixed> $row The row
+		 * @return self
+		 */
+		public static function fromRow(array $row): self {
+			return new self([$row], 0, null);
+		}
+
+		/**
 		 * Returns the number of rows inside this recordset
 		 * @return int Total count of records in the result set
 		 */

@@ -4,6 +4,7 @@
 	
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstAlterTable;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstAppend;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstCall;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstCreateIndex;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstCreateTable;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstDelete;
@@ -33,6 +34,7 @@
 	use Quellabs\ObjectQuel\ObjectQuel\QuelResult;
 	use Quellabs\ObjectQuel\Execution\Executors\AlterTableExecutor;
 	use Quellabs\ObjectQuel\Execution\Executors\AppendExecutor;
+	use Quellabs\ObjectQuel\Execution\Executors\CallExecutor;
 	use Quellabs\ObjectQuel\Execution\Executors\CreateIndexExecutor;
 	use Quellabs\ObjectQuel\Execution\Executors\CreateTableExecutor;
 	use Quellabs\ObjectQuel\Execution\Executors\RetrieveExecutor;
@@ -87,6 +89,7 @@
 		private AppendExecutor $appendExecutor;
 		private ReplaceExecutor $replaceExecutor;
 		private DeleteExecutor $deleteExecutor;
+		private CallExecutor $callExecutor;
 		
 		/**
 		 * Constructor
@@ -124,6 +127,7 @@
 			$this->appendExecutor = new AppendExecutor($this->connection, $entityManager, $this->capabilities, $this->planExecutor);
 			$this->replaceExecutor = new ReplaceExecutor($this->connection, $entityManager, $this->capabilities);
 			$this->deleteExecutor = new DeleteExecutor($this->connection, $entityManager->getEntityStore(), $this->capabilities);
+			$this->callExecutor = new CallExecutor($this->connection, $entityManager->getEntityStore(), $this->capabilities);
 
 			// Init the transformers
 			$this->optimizer = new QueryOptimizer($entityManager, $this->capabilities);
@@ -231,8 +235,12 @@
 					};
 				}
 				
+				if ($ast instanceof AstCall) {
+					return $this->callExecutor->execute($ast, $context);
+				}
+
 				// Every other AstStatement variant was handled by one of the
-				// two blocks above, so this is always AstRetrieve — parse()'s
+				// blocks above, so this is always AstRetrieve — parse()'s
 				// return type just can't say so, since AstStatement doesn't
 				// enumerate its implementors.
 				if (!$ast instanceof AstRetrieve) {
@@ -395,7 +403,7 @@
 			
 			// Ensure the parsed AST represents a statement type this executor knows how to run
 			if (!$ast instanceof AstStatement) {
-				throw new QuelException("Invalid query type: expected retrieve, create, alter, destroy, index, hide, show, or write-verb (append/replace/delete) operation");
+				throw new QuelException("Invalid query type: expected retrieve, create, alter, destroy, index, hide, show, call, or write-verb (append/replace/delete) operation");
 			}
 			
 			// The AST is now fully validated

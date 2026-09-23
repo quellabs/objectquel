@@ -112,7 +112,7 @@
 		 * @return AstRoutineCall
 		 * @throws LexerException|ParserException|\ReflectionException
 		 */
-		private function parseRoutineCall(string $name): AstRoutineCall {
+		public function parseRoutineCall(string $name): AstRoutineCall {
 			$this->lexer->match(Token::ParenthesesOpen);
 			$arguments = [];
 

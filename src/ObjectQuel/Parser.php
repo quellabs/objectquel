@@ -6,6 +6,7 @@
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRange;
 	use Quellabs\ObjectQuel\ObjectQuel\Rules\AlterTable;
 	use Quellabs\ObjectQuel\ObjectQuel\Rules\Append;
+	use Quellabs\ObjectQuel\ObjectQuel\Rules\Call;
 	use Quellabs\ObjectQuel\ObjectQuel\Rules\CreateIndex;
 	use Quellabs\ObjectQuel\ObjectQuel\Rules\CreateTable;
 	use Quellabs\ObjectQuel\ObjectQuel\Rules\Delete;
@@ -28,6 +29,7 @@
 		private Append $appendRule;
 		private Replace $replaceRule;
 		private Delete $deleteRule;
+		private Call $callRule;
 
 		/**
          * Parser constructor.
@@ -46,6 +48,7 @@
             $this->appendRule = new Append($lexer);
             $this->replaceRule = new Replace($lexer);
             $this->deleteRule = new Delete($lexer);
+            $this->callRule = new Call($lexer);
         }
 		
 	    /**
@@ -67,7 +70,7 @@
 		    // Get the next token without changing the position in the lexer.
 			    $token = $this->lexer->peek();
 
-			    // create/destroy/hide/show/index/replace/delete have no token
+			    // create/destroy/hide/show/index/replace/delete/call have no token
 			    // type (see Lexer::peekKeyword()) so — unlike Retrieve/Append —
 			    // they're recognized by text.
 			    if ($token->getType() === Token::Retrieve) {
@@ -99,6 +102,8 @@
 				    // separate keyword; the literal word `delete` always
 				    // means this DML verb.
 				    $queries[] = $this->deleteRule->parse($directives, $ranges);
+			    } elseif ($this->lexer->peekKeyword('call')) {
+				    $queries[] = $this->callRule->parse();
 			    } else {
 				    $tokenName = Token::toString($token->getType()) ?: 'unknown';
 				    throw new ParserException("Unexpected token '{$tokenName}' on line {$this->lexer->getLineNumber()}");
