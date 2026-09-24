@@ -212,6 +212,7 @@
 
 				// The name isn't in scope yet, so the query can't refer to itself
 				$this->analyzeRoutineRetrieve($initializer);
+				$this->assertFieldNamesDistinctIgnoringCase($name, $initializer);
 				$this->scope->declareCursor($declaration);
 				return;
 			}
@@ -366,6 +367,27 @@
 				$this->scope->isDeclaredAnywhere($name) => "Cursor '{$name}' is used before its declaration.",
 				default => "Undefined cursor '{$name}'.",
 			});
+		}
+
+		/**
+		 * Rejects cursor fields that differ only in case; each field is fetched into its own variable on some engines.
+		 * @param string $cursorName Cursor name, for the error message
+		 * @param AstRetrieve $query The cursor's query
+		 * @return void
+		 * @throws SemanticException
+		 */
+		private function assertFieldNamesDistinctIgnoringCase(string $cursorName, AstRetrieve $query): void {
+			$seen = [];
+
+			foreach ($query->getValues() as $value) {
+				$key = strtolower($value->getName());
+
+				if (isset($seen[$key])) {
+					throw new SemanticException("Fields '{$cursorName}.{$seen[$key]}' and '{$cursorName}.{$value->getName()}' differ only in case; rename one.");
+				}
+
+				$seen[$key] = $value->getName();
+			}
 		}
 
 		/**

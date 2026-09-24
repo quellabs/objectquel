@@ -21,6 +21,9 @@
 		/** @var array<string, AstDeclare> Cursor name => its declaration */
 		private array $cursors = [];
 
+		/** @var array<string, string> Lowercased variable and cursor name => name as declared */
+		private array $variableNamesIgnoringCase = [];
+
 		/** @var array<string, AstRange> Range alias => range */
 		private array $ranges = [];
 
@@ -45,6 +48,7 @@
 		 */
 		public function declareScalar(string $name): void {
 			$this->assertNameAvailable($name);
+			$this->declareVariableName($name);
 			$this->scalars[$name] = true;
 		}
 
@@ -56,6 +60,7 @@
 		 */
 		public function declareCursor(AstDeclare $declaration): void {
 			$this->assertNameAvailable($declaration->getName());
+			$this->declareVariableName($declaration->getName());
 			$this->cursors[$declaration->getName()] = $declaration;
 		}
 
@@ -161,5 +166,22 @@
 			if (isset($this->scalars[$name]) || isset($this->cursors[$name]) || isset($this->ranges[$name])) {
 				throw new SemanticException("'{$name}' is already declared in this routine. Routines have one flat scope; every name can be declared once.");
 			}
+		}
+
+		/**
+		 * Records a variable or cursor name, rejecting one that differs only in case from an earlier one.
+		 * @param string $name Name being declared
+		 * @return void
+		 * @throws SemanticException
+		 */
+		private function declareVariableName(string $name): void {
+			$key = strtolower($name);
+
+			// Rejected on every engine, since MySQL/MariaDB and SQL Server can't tell them apart
+			if (isset($this->variableNamesIgnoringCase[$key])) {
+				throw new SemanticException("'{$this->variableNamesIgnoringCase[$key]}' and '{$name}' differ only in case; rename one.");
+			}
+
+			$this->variableNamesIgnoringCase[$key] = $name;
 		}
 	}

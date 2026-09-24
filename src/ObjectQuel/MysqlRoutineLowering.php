@@ -156,7 +156,6 @@
 				$variables[self::DISCARD_VARIABLE] = 'INT';
 			}
 
-			$this->assertDistinctIgnoringCase(array_merge(array_keys($parameters), array_keys($variables)));
 			$this->assertNoColumnShadowed($routine, array_merge(array_keys($parameters), array_keys($variables)));
 
 			$declarations = [];

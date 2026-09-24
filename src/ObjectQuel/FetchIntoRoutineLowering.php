@@ -102,26 +102,6 @@
 		}
 
 		/**
-		 * Rejects variable names that differ only in case, which both engines treat as the same variable.
-		 * @param string[] $names Every variable name as written in SQL
-		 * @return void
-		 * @throws SemanticException
-		 */
-		protected function assertDistinctIgnoringCase(array $names): void {
-			$seen = [];
-
-			foreach ($names as $name) {
-				$key = strtolower($name);
-
-				if (isset($seen[$key])) {
-					throw new SemanticException("'{$seen[$key]}' and '{$name}' differ only in case, which {$this->engineName()} doesn't distinguish for variables. Rename one.");
-				}
-
-				$seen[$key] = $name;
-			}
-		}
-
-		/**
 		 * Resets the per-routine lowering state.
 		 * @param AstRoutineDefinition $routine The routine
 		 * @return void

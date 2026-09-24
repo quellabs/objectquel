@@ -80,8 +80,6 @@
 				$locals[self::NOOP_VARIABLE] = 'BIT';
 			}
 
-			$this->assertDistinctIgnoringCase(array_merge(array_keys($parameters), array_keys($locals)));
-
 			$declarations = '';
 
 			foreach ($locals as $name => $type) {
