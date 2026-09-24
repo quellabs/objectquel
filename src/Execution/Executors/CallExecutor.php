@@ -8,30 +8,37 @@
 	use Quellabs\ObjectQuel\Exception\QuelException;
 	use Quellabs\ObjectQuel\Exception\SemanticException;
 	use Quellabs\ObjectQuel\Execution\ExecutionContext;
+	use Quellabs\ObjectQuel\Execution\Helpers\RoutineCatalog;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstCall;
 	use Quellabs\ObjectQuel\ObjectQuel\QuelResult;
 	use Quellabs\ObjectQuel\ObjectQuel\QuelToSQL\QuelToSQLCall;
+	use Quellabs\ObjectQuel\Serialization\Serializers\Serializer;
 
 	/**
-	 * Executes the `name(args)` statement. Calls are untyped, so the catalog says whether the routine
-	 * is a procedure (run, yields null) or a function (selected, yields one row).
+	 * Executes the `name(args)` statement. The catalog says whether the routine is a procedure (run, yields null)
+	 * or a function (selected, yields one row converted to its return type).
 	 */
 	class CallExecutor {
 
 		private DatabaseAdapter $connection;
 		private EntityStore $entityStore;
 		private PlatformCapabilitiesInterface $platform;
+		private RoutineCatalog $catalog;
+		private Serializer $serializer;
 		private ?QuelToSQLCall $compiler = null;
 
 		/**
 		 * @param DatabaseAdapter $connection Connection the call runs on
 		 * @param EntityStore $entityStore Needed by the SQL builder for literals
 		 * @param PlatformCapabilitiesInterface $platform Connected engine
+		 * @param RoutineCatalog $catalog Kind and return type of each routine
 		 */
-		public function __construct(DatabaseAdapter $connection, EntityStore $entityStore, PlatformCapabilitiesInterface $platform) {
+		public function __construct(DatabaseAdapter $connection, EntityStore $entityStore, PlatformCapabilitiesInterface $platform, RoutineCatalog $catalog) {
 			$this->connection = $connection;
 			$this->entityStore = $entityStore;
 			$this->platform = $platform;
+			$this->catalog = $catalog;
+			$this->serializer = new Serializer($entityStore);
 		}
 
 		/**
@@ -52,15 +59,15 @@
 		public function execute(AstCall $statement, ExecutionContext $context): ?QuelResult {
 			$name = $statement->getCall()->getName();
 			$parameters = $context->getParameters();
-			$isProcedure = $this->isProcedure($statement);
-			$sql = $this->compiler()->convertToSQL($statement, $isProcedure, $parameters);
+			$signature = $this->catalog->signature($name);
+			$sql = $this->compiler()->convertToSQL($statement, $signature->isProcedure, $parameters);
 			$result = $this->connection->execute($sql, $parameters);
 
 			if ($result === null) {
 				throw new QuelException("Failed to call routine '{$name}': {$this->connection->getLastErrorMessage()}", 'routine_call_error');
 			}
 
-			if ($isProcedure) {
+			if ($signature->isProcedure) {
 				// Frees the connection; MySQL leaves a status result after CALL
 				$result->closeCursor();
 				return null;
@@ -73,37 +80,19 @@
 				throw new QuelException("Failed to call routine '{$name}': the function returned no row.", 'routine_call_error');
 			}
 
-			return QuelResult::fromRow([$name => $row[0]]);
+			return QuelResult::fromRow([$name => $this->convert($row[0], $signature->returnType)]);
 		}
 
 		/**
-		 * @param AstCall $statement The call
-		 * @return bool True when the routine is a procedure, false when it's a function
-		 * @throws QuelException When no routine or more than one kind of routine has the name, or the lookup fails
+		 * @param mixed $value The function's raw value
+		 * @param string|null $returnType Abstract column type, or null when unknown
+		 * @return mixed The value as its return type's PHP type; unchanged when the type is unknown or the value is null
 		 */
-		private function isProcedure(AstCall $statement): bool {
-			$name = $statement->getCall()->getName();
-			[$sql, $parameters] = $this->compiler()->kindQuery($statement);
-			$result = $this->connection->execute($sql, $parameters);
-
-			if ($result === null) {
-				throw new QuelException("Failed to look up routine '{$name}': {$this->connection->getLastErrorMessage()}", 'routine_call_error');
+		private function convert(mixed $value, ?string $returnType): mixed {
+			if ($value === null || $returnType === null) {
+				return $value;
 			}
 
-			$kinds = [];
-
-			foreach ($result->fetchAll('assoc') as $row) {
-				$kinds[(int)$row['is_procedure']] = true;
-			}
-
-			if ($kinds === []) {
-				throw new QuelException("Can't call '{$name}': no routine by that name exists.", 'routine_call_error');
-			}
-
-			if (count($kinds) > 1) {
-				throw new QuelException("Can't call '{$name}': both a function and a procedure have that name.", 'routine_call_error');
-			}
-
-			return isset($kinds[1]);
+			return $this->serializer->normalizeValueOfType($returnType, $value);
 		}
 	}

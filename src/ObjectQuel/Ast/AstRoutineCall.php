@@ -2,11 +2,12 @@
 
 	namespace Quellabs\ObjectQuel\ObjectQuel\Ast;
 
+	use Quellabs\ObjectQuel\DatabaseAdapter\Mapper\TypeMapper;
 	use Quellabs\ObjectQuel\ObjectQuel\AstInterface;
 	use Quellabs\ObjectQuel\ObjectQuel\AstVisitorInterface;
 
 	/**
-	 * A call to a stored routine, `name(args)`. Its return type is unknown.
+	 * A call to a stored routine, `name(args)`. Its return type comes from the database catalog, when looked up.
 	 */
 	class AstRoutineCall extends Ast {
 
@@ -15,6 +16,9 @@
 
 		/** @var AstInterface[] Arguments in order */
 		protected array $arguments;
+
+		/** @var string|null Abstract column type the routine returns, or null when unknown */
+		protected ?string $routineReturnType = null;
 
 		/**
 		 * @param string $name Routine name as written
@@ -57,10 +61,35 @@
 		}
 
 		/**
-		 * @return static A copy with cloned arguments
+		 * @return string|null Abstract column type the routine returns, or null when unknown
+		 */
+		public function getRoutineReturnType(): ?string {
+			return $this->routineReturnType;
+		}
+
+		/**
+		 * @param string|null $routineReturnType Abstract column type the routine returns, or null when unknown
+		 * @return void
+		 */
+		public function setRoutineReturnType(?string $routineReturnType): void {
+			$this->routineReturnType = $routineReturnType;
+		}
+
+		/**
+		 * Types the call like a column of the routine's return type.
+		 * @return string|null PHP type, or null when the return type is unknown
+		 */
+		public function getReturnType(): ?string {
+			return $this->routineReturnType === null ? null : TypeMapper::phinxTypeToPhpType($this->routineReturnType);
+		}
+
+		/**
+		 * @return static A copy with cloned arguments and the same return type
 		 */
 		public function deepClone(): static {
 			// @phpstan-ignore-next-line new.static
-			return new static($this->name, $this->cloneArray($this->arguments));
+			$clone = new static($this->name, $this->cloneArray($this->arguments));
+			$clone->routineReturnType = $this->routineReturnType;
+			return $clone;
 		}
 	}

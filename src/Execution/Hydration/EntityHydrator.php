@@ -11,6 +11,7 @@
 	use Quellabs\ObjectQuel\UnitOfWork;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstAlias;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstCast;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRoutineCall;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstDate;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstIdentifier;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRangeJsonSource;
@@ -624,6 +625,8 @@
 					$hydrators[$name] = $this->hydratorForDate($name, $node);
 				} elseif ($node instanceof AstIdentifier) {
 					$hydrators[$name] = $this->hydratorForIdentifier($name, $node);
+				} elseif ($node instanceof AstRoutineCall && $node->getRoutineReturnType() !== null) {
+					$hydrators[$name] = $this->hydratorForRoutineCall($name, $node->getRoutineReturnType());
 				} else {
 					$hydrators[$name] = static fn(array $row) => $row[$name] ?? null;
 				}
@@ -693,6 +696,21 @@
 				default:
 					return static fn(array $row) => $row[$name] ?? null;
 			}
+		}
+		
+		/**
+		 * Builds a hydration closure that converts a routine's value to its return type, keeping NULL.
+		 * @param string $name Result column
+		 * @param string $returnType Abstract column type the routine returns
+		 * @return ValueHydrator
+		 */
+		private function hydratorForRoutineCall(string $name, string $returnType): \Closure {
+			$serializer = $this->serializer;
+
+			return static function (array $row) use ($name, $returnType, $serializer): mixed {
+				$raw = $row[$name] ?? null;
+				return $raw === null ? null : $serializer->normalizeValueOfType($returnType, $raw);
+			};
 		}
 		
 		/**

@@ -47,6 +47,7 @@
 	use Quellabs\ObjectQuel\Execution\Executors\ShowIndexExecutor;
 	use Quellabs\ObjectQuel\Execution\Executors\JsonRetrieveExecutor;
 	use Quellabs\ObjectQuel\Execution\Executors\ReplaceExecutor;
+	use Quellabs\ObjectQuel\Execution\Helpers\RoutineCatalog;
 	use Quellabs\ObjectQuel\ObjectQuel\Passes\DateTimeParameterCoercer;
 	use Quellabs\ObjectQuel\ObjectQuel\Passes\IdentifierTypeResolver;
 	use Quellabs\ObjectQuel\ObjectQuel\Passes\QueryNormalizer;
@@ -90,6 +91,7 @@
 		private ReplaceExecutor $replaceExecutor;
 		private DeleteExecutor $deleteExecutor;
 		private CallExecutor $callExecutor;
+		private RoutineCatalog $routineCatalog;
 		
 		/**
 		 * Constructor
@@ -127,7 +129,8 @@
 			$this->appendExecutor = new AppendExecutor($this->connection, $entityManager, $this->capabilities, $this->planExecutor);
 			$this->replaceExecutor = new ReplaceExecutor($this->connection, $entityManager, $this->capabilities);
 			$this->deleteExecutor = new DeleteExecutor($this->connection, $entityManager->getEntityStore(), $this->capabilities);
-			$this->callExecutor = new CallExecutor($this->connection, $entityManager->getEntityStore(), $this->capabilities);
+			$this->routineCatalog = new RoutineCatalog($this->connection, $entityManager->getEntityStore(), $this->capabilities);
+			$this->callExecutor = new CallExecutor($this->connection, $entityManager->getEntityStore(), $this->capabilities, $this->routineCatalog);
 
 			// Init the transformers
 			$this->optimizer = new QueryOptimizer($entityManager, $this->capabilities);
@@ -251,6 +254,9 @@
 				// It just flags the type based on AST hierarchy
 				$this->identifierTypeResolver->resolve($ast);
 
+				// Type routine calls from the catalog, so inference and hydration treat them like columns
+				$this->routineCatalog->typeCalls($ast);
+
 				// Processing phase #1 - Transform and enhance the AST
 				$this->queryNormalizer->transform($ast);
 
@@ -321,6 +327,7 @@
 				}
 				
 				$this->identifierTypeResolver->resolve($ast);
+				$this->routineCatalog->typeCalls($ast);
 
 				// Normalize and validate the AST before handing it to the optimizer
 				$this->queryNormalizer->transform($ast);
