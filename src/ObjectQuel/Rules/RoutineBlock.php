@@ -34,7 +34,7 @@
 	class RoutineBlock {
 
 		/** Words that start a procedural statement; recognized by text, like other contextual keywords. */
-		public const array STATEMENT_KEYWORDS = ['if', 'else', 'while', 'foreach', 'return', 'begin', 'abort', 'break', 'continue', 'replace', 'delete', 'call'];
+		public const array STATEMENT_KEYWORDS = ['if', 'else', 'elseif', 'while', 'foreach', 'return', 'begin', 'abort', 'break', 'continue', 'replace', 'delete', 'call'];
 
 		private Lexer $lexer;
 		private Range $rangeRule;
@@ -126,7 +126,7 @@
 
 				case 'while':
 					$this->lexer->matchKeyword('while');
-					$condition = $this->expressionRule->parse();
+					$condition = $this->parseCondition('while');
 					return new AstWhile($condition, $this->parseBlock());
 
 				case 'foreach':
@@ -165,7 +165,8 @@
 					return (new Call($this->lexer))->parse();
 
 				case 'else':
-					throw new ParserException("'else' without a preceding 'if' on line {$this->lexer->getLineNumber()}");
+				case 'elseif':
+					throw new ParserException("'{$keyword}' without a preceding 'if' on line {$this->lexer->getLineNumber()}");
 			}
 
 			return match ($this->lexer->peekNext()) {
@@ -177,18 +178,42 @@
 		}
 
 		/**
-		 * Parses `if condition { ... } [else { ... }]`.
+		 * Parses the parenthesized condition of an if, elseif or while.
+		 * @param string $keyword Statement word, for error messages
+		 * @return AstInterface
+		 * @throws LexerException|ParserException
+		 */
+		private function parseCondition(string $keyword): AstInterface {
+			$this->expect(Token::ParenthesesOpen, "'(' after '{$keyword}'");
+			$condition = $this->expressionRule->parse();
+			$this->expect(Token::ParenthesesClose, "')' to close the '{$keyword}' condition");
+			return $condition;
+		}
+
+		/**
+		 * Parses `if (condition) { ... }` with any `elseif`/`else if (condition) { ... }` and a final `else { ... }`; an elseif becomes an if nested in the else body.
+		 * @param string $keyword 'if', or 'elseif' for a later branch
 		 * @return AstIf
 		 * @throws LexerException|ParserException|\ReflectionException
 		 */
-		private function parseIf(): AstIf {
-			$this->lexer->matchKeyword('if');
-			$condition = $this->expressionRule->parse();
+		private function parseIf(string $keyword = 'if'): AstIf {
+			$this->lexer->matchKeyword($keyword);
+			$condition = $this->parseCondition($keyword);
 			$thenBody = $this->parseBlock();
 
-			$elseBody = $this->lexer->optionalMatchKeyword('else') !== null ? $this->parseBlock() : null;
+			if ($this->lexer->peekKeyword('elseif')) {
+				return new AstIf($condition, $thenBody, [$this->parseIf('elseif')]);
+			}
 
-			return new AstIf($condition, $thenBody, $elseBody);
+			if ($this->lexer->optionalMatchKeyword('else') === null) {
+				return new AstIf($condition, $thenBody, null);
+			}
+
+			if ($this->lexer->peekKeyword('if')) {
+				return new AstIf($condition, $thenBody, [$this->parseIf()]);
+			}
+
+			return new AstIf($condition, $thenBody, $this->parseBlock());
 		}
 
 		/**
