@@ -761,11 +761,34 @@
 				return $columnRef;
 			}
 			
-			// Nullable columns need a COALESCE default so NULLs sort consistently.
-			// Integers default to 0 (sorts before positive values);
-			// everything else defaults to '' (sorts before any non-empty string).
-			$default = $columnAnnotation->getType() === "integer" ? "0" : "''";
-			return "COALESCE({$columnRef}, {$default})";
+			// Nullable columns sort as their type's zero value, so NULLs land in the same place on every engine
+			$default = $this->sortDefaultForNull(strtolower($columnAnnotation->getType()));
+			return $default === null ? $columnRef : "COALESCE({$columnRef}, {$default})";
+		}
+
+		/**
+		 * Returns the zero value a NULL sorts as, written as a literal the engine accepts for the column's SQL type.
+		 * @param string $columnType Abstract column type, lowercased
+		 * @return string|null SQL literal, or null for JSON, which has no meaningful zero value
+		 */
+		private function sortDefaultForNull(string $columnType): ?string {
+			$databaseType = $this->platform->getDatabaseType();
+
+			return match ($columnType) {
+				'tinyinteger', 'smallinteger', 'integer', 'biginteger', 'year', 'float', 'decimal' => '0',
+				'boolean' => $databaseType === 'pgsql' ? 'false' : '0',
+				'date', 'datetime', 'timestamp' => match ($databaseType) {
+					// Earliest value each engine's date types accept
+					'mysql', 'mariadb' => "'1000-01-01'",
+					'sqlsrv' => "'1753-01-01'",
+					default => "'0001-01-01'",
+				},
+				'time' => "'00:00:00'",
+				'uuid' => "'00000000-0000-0000-0000-000000000000'",
+				'binary', 'blob' => $databaseType === 'sqlsrv' ? '0x' : "''",
+				'json' => null,
+				default => "''",
+			};
 		}
 		
 		/**
