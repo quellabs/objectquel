@@ -306,6 +306,24 @@
 		}
 
 		/**
+		 * Replaces the expression of a sort term, keeping its order.
+		 * @param AstInterface $oldExpression Sort-term expression to replace
+		 * @param AstInterface $newExpression Replacement expression
+		 * @return bool True when $oldExpression was a sort-term expression
+		 */
+		public function replaceSortExpression(AstInterface $oldExpression, AstInterface $newExpression): bool {
+			foreach ($this->sort as $index => $sortItem) {
+				if ($sortItem['ast'] === $oldExpression) {
+					$this->sort[$index]['ast'] = $newExpression;
+					$newExpression->setParent($this);
+					return true;
+				}
+			}
+
+			return false;
+		}
+
+		/**
 		 * Returns the current sorting specifications.
 		 * @return array<int, array{ast: AstInterface, order?: string}>
 		 */

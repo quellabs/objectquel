@@ -2,6 +2,7 @@
 	
 	namespace Quellabs\ObjectQuel\Planner\Helpers;
 	
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRetrieve;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\NodeBinary;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\NodeSingleExpression;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\NodeWithAggregation;
@@ -60,6 +61,11 @@
 				return;
 			}
 			
+			// Replace a sort term's expression (e.g., an ORDER BY alias expanded to its target expression)
+			if ($parent instanceof AstRetrieve && $parent->replaceSortExpression($oldChild, $newChild)) {
+				return;
+			}
+
 			// If we reach here, the parent-child relationship is not recognized
 			throw new \InvalidArgumentException(
 				sprintf(

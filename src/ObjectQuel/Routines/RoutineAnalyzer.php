@@ -350,10 +350,6 @@
 		 * @throws SemanticException|EntityResolutionException
 		 */
 		private function analyzeRoutineRetrieve(AstRetrieve $retrieve): void {
-			if (!empty($retrieve->getSort())) {
-				throw new SemanticException("'sort by' is not supported in a routine retrieve.");
-			}
-
 			if ($retrieve->getWindow() !== null || $retrieve->getWindowSize() !== null) {
 				throw new SemanticException("'window' is not supported in a routine retrieve.");
 			}

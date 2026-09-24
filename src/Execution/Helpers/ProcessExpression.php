@@ -691,6 +691,11 @@
 		 * @throws \LogicException|EntityResolutionException
 		 */
 		public function buildSortableColumn(AstIdentifier $ast, string $partOfQuery): string {
+			// Routine variables and cursor fields have no range; they render as routine-local names
+			if ($ast->getType()->isRoutineReference()) {
+				return $this->buildColumnName($ast);
+			}
+
 			// Fetch the range
 			$range = $ast->getRange();
 			
