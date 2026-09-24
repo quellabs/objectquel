@@ -90,7 +90,10 @@
 		
 		/** @var array<string, mixed> */
 		protected array $extraData;
-		
+
+		/** Byte offset of the token in the source, or -1 when not set */
+		protected int $offset = -1;
+
 		/**
 		 * Token constructor.
 		 * @param int $type
@@ -162,5 +165,22 @@
 		 */
 		public function getExtraData(): array {
 			return $this->extraData;
+		}
+
+		/**
+		 * Returns the byte offset of the token in the source
+		 * @return int Offset, or -1 when not set
+		 */
+		public function getOffset(): int {
+			return $this->offset;
+		}
+
+		/**
+		 * Records the byte offset of the token in the source
+		 * @param int $offset Offset of the token's first character
+		 * @return void
+		 */
+		public function setOffset(int $offset): void {
+			$this->offset = $offset;
 		}
 	}

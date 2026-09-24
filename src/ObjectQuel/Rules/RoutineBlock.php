@@ -10,11 +10,14 @@
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstDeclare;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstDeleteCurrent;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstForeach;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstIdentifier;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstIf;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstNumber;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRange;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRangeDeclaration;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstReplaceCurrent;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstReturn;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstTerm;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstVariableAssignment;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstWhile;
 	use Quellabs\ObjectQuel\ObjectQuel\AstInterface;
@@ -94,6 +97,10 @@
 
 				case Token::Identifier:
 					return $this->parseIdentifierStatement();
+				
+				case Token::Plus:
+				case Token::Minus:
+					return $this->parsePrefixIncrement();
 
 				default:
 					$tokenName = Token::toString($this->lexer->lookahead()) ?: 'unknown';
@@ -103,7 +110,7 @@
 
 		/**
 		 * Dispatches statements that begin with an identifier: contextual
-		 * statement keywords first, then `type name` declarations and `name =` assignments.
+		 * statement keywords first, then `type name` declarations, `name =` assignments and `name++`/`name += expr`.
 		 * @return AstInterface The parsed statement node
 		 * @throws LexerException|ParserException|\ReflectionException
 		 */
@@ -161,6 +168,7 @@
 			return match ($this->lexer->peekNext()) {
 				Token::Identifier => $this->parseDeclaration(),
 				Token::Equals => $this->parseAssignment(),
+				Token::Plus, Token::Minus => $this->parseCompoundAssignment(),
 				default => throw new ParserException("Expected a declaration, assignment, or statement keyword on line {$this->lexer->getLineNumber()}"),
 			};
 		}
@@ -212,6 +220,88 @@
 			return new AstVariableAssignment($name, $this->expressionRule->parse());
 		}
 
+		/**
+		 * Parses `name++`, `name--`, `name += expr` and `name -= expr` as `name = name ± value`.
+		 * @return AstVariableAssignment
+		 * @throws LexerException|ParserException|\ReflectionException
+		 */
+		private function parseCompoundAssignment(): AstVariableAssignment {
+			$nameToken = $this->lexer->match(Token::Identifier);
+			$name = $nameToken->getStringValue();
+			
+			if ($this->lexer->peekIncrementOperator()) {
+				if ($this->lexer->peek()->getOffset() !== $nameToken->getOffset() + strlen($name)) {
+					throw new ParserException("Write '{$this->incrementOperator()}' directly after '{$name}' on line {$this->lexer->getLineNumber()}");
+				}
+				
+				return $this->increment($name, $this->matchIncrementOperator(), new AstNumber('1'));
+			}
+			
+			foreach ([Token::Plus, Token::Minus] as $sign) {
+				if ($this->lexer->peekAdjacent($sign, Token::Equals)) {
+					$this->lexer->match($sign);
+					$this->lexer->match(Token::Equals);
+					return $this->increment($name, $sign === Token::Plus ? '+' : '-', $this->expressionRule->parse());
+				}
+			}
+			
+			throw new ParserException("Expected '++', '--', '+=' or '-=' after '{$name}' on line {$this->lexer->getLineNumber()}");
+		}
+		
+		/**
+		 * Parses `++name` and `--name` as `name = name ± 1`.
+		 * @return AstVariableAssignment
+		 * @throws LexerException|ParserException
+		 */
+		private function parsePrefixIncrement(): AstVariableAssignment {
+			if (!$this->lexer->peekIncrementOperator()) {
+				$tokenName = Token::toString($this->lexer->lookahead()) ?: 'unknown';
+				throw new ParserException("Unexpected token '{$tokenName}' in routine body on line {$this->lexer->getLineNumber()}");
+			}
+			
+			$operatorText = $this->incrementOperator();
+			$operandOffset = $this->lexer->peek()->getOffset() + 2;
+			$operator = $this->matchIncrementOperator();
+			
+			if ($this->lexer->lookahead() !== Token::Identifier || $this->lexer->peek()->getOffset() !== $operandOffset) {
+				throw new ParserException("Write a variable name directly after '{$operatorText}' on line {$this->lexer->getLineNumber()}");
+			}
+			
+			$name = $this->lexer->match(Token::Identifier)->getStringValue();
+			return $this->increment($name, $operator, new AstNumber('1'));
+		}
+		
+		/**
+		 * The upcoming `++` or `--`, as text.
+		 * @return string
+		 */
+		private function incrementOperator(): string {
+			return $this->lexer->lookahead() === Token::Plus ? '++' : '--';
+		}
+		
+		/**
+		 * Consumes the upcoming `++` or `--`.
+		 * @return string '+' or '-'
+		 * @throws LexerException
+		 */
+		private function matchIncrementOperator(): string {
+			$sign = $this->lexer->lookahead();
+			$this->lexer->match($sign);
+			$this->lexer->match($sign);
+			return $sign === Token::Plus ? '+' : '-';
+		}
+		
+		/**
+		 * Builds `name = name <operator> value`.
+		 * @param string $name Variable assigned to
+		 * @param string $operator '+' or '-'
+		 * @param AstInterface $value Amount added or subtracted
+		 * @return AstVariableAssignment
+		 */
+		private function increment(string $name, string $operator, AstInterface $value): AstVariableAssignment {
+			return new AstVariableAssignment($name, new AstTerm(new AstIdentifier($name), $value, $operator));
+		}
+		
 		/**
 		 * Target-list entries without an alias are named after the bare
 		 * property (`u.id` -> `id`), so a cursor row exposes them as `cursor.id`.

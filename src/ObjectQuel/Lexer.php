@@ -194,10 +194,22 @@
 			// copy pos to previousPos for accurate positioning
 			$this->previousPreviousPos = $this->previousPos;
 			$this->previousPos = $this->pos;
-			
+
 			// advance pos to next token
             $this->advance();
-			
+
+			$offset = $this->pos;
+			$token = $this->scanToken();
+			$token->setOffset($offset);
+			return $token;
+        }
+
+        /**
+         * Scans the token starting at the current position, which advance() has placed past any whitespace
+         * @return Token
+         * @throws LexerException
+         */
+        protected function scanToken(): Token {
             // end of file
 	        if ($this->pos === $this->length) {
                 return new Token(Token::Eof);
@@ -451,6 +463,35 @@
 		 */
 		public function peekNext(): int {
 			return $this->lookahead->getType();
+		}
+
+		/**
+		 * Whether the next two tokens are $first and $second with nothing between them, e.g. `+=`.
+		 * @param int $first Type of the next token; must be a single-character token
+		 * @param int $second Type of the token after it
+		 * @return bool
+		 */
+		public function peekAdjacent(int $first, int $second): bool {
+			return $this->next_token->getType() === $first
+				&& $this->lookahead->getType() === $second
+				&& $this->lookahead->getOffset() === $this->next_token->getOffset() + 1;
+		}
+
+		/**
+		 * Whether the next two tokens form `++` or `--`.
+		 * @return bool
+		 */
+		public function peekIncrementOperator(): bool {
+			return $this->peekAdjacent(Token::Plus, Token::Plus) || $this->peekAdjacent(Token::Minus, Token::Minus);
+		}
+
+		/**
+		 * Whether whitespace, or the start of the source, directly precedes the next token.
+		 * @return bool
+		 */
+		public function peekFollowsWhitespace(): bool {
+			$offset = $this->next_token->getOffset();
+			return $offset <= 0 || in_array($this->string[$offset - 1], [" ", "\n", "\r", "\t"], true);
 		}
 		
 		/**

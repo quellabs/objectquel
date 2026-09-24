@@ -11,6 +11,7 @@
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstAssignment;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstDeclare;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstExpression;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstFactor;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstIdentifier;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstIf;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstIn;
@@ -21,8 +22,10 @@
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRetrieve;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstReturn;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRoutineDefinition;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstTerm;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstVariableAssignment;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstWhile;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\NodeBinary;
 	use Quellabs\ObjectQuel\ObjectQuel\AstInterface;
 	use Quellabs\ObjectQuel\ObjectQuel\Visitors\CollectNodes;
 
@@ -30,7 +33,7 @@
 	 * Checks value types by category (numeric, string, boolean, datetime, array): return
 	 * values, assignments, initializers and `if`/`while` conditions against their declared
 	 * types, and comparisons and column writes that involve a routine variable or cursor
-	 * field. Values whose type can't be inferred, NULL included, are accepted.
+	 * field, and arithmetic on such values. Values whose type can't be inferred, NULL included, are accepted.
 	 */
 	class RoutineTypeChecker {
 
@@ -97,15 +100,22 @@
 				$this->fieldTypes->recordCursor($cursorName, $query);
 			}
 
-			$collector = new CollectNodes([
-				AstDeclare::class, AstVariableAssignment::class, AstReturn::class, AstIf::class, AstWhile::class,
-				AstExpression::class, AstIn::class, AstReplace::class, AstAppend::class, AstReplaceCurrent::class,
-			]);
+			// Arithmetic first, so a string operand is reported as such rather than as the string result it produces
+			$passes = [
+				[AstTerm::class, AstFactor::class],
+				[
+					AstDeclare::class, AstVariableAssignment::class, AstReturn::class, AstIf::class, AstWhile::class,
+					AstExpression::class, AstIn::class, AstReplace::class, AstAppend::class, AstReplaceCurrent::class,
+				],
+			];
 
-			$routine->accept($collector);
+			foreach ($passes as $nodeTypes) {
+				$collector = new CollectNodes($nodeTypes);
+				$routine->accept($collector);
 
-			foreach ($collector->getCollectedNodes() as $node) {
-				$this->checkNode($node, $routine);
+				foreach ($collector->getCollectedNodes() as $node) {
+					$this->checkNode($node, $routine);
+				}
 			}
 		}
 
@@ -127,6 +137,7 @@
 				$node instanceof AstReplace => $this->checkColumnWrites($node->getRange()->getEntityName(), $node->getAssignments(), false),
 				$node instanceof AstAppend => $this->checkAppend($node),
 				$node instanceof AstReplaceCurrent => $this->checkColumnWrites($this->cursorEntity($node->getCursorName()), $node->getAssignments(), true),
+				$node instanceof AstTerm, $node instanceof AstFactor => $this->checkArithmetic($node),
 				default => null,
 			};
 		}
@@ -216,6 +227,26 @@
 
 				if (!self::compatibleInQuery($leftCategory, $rightCategory)) {
 					throw new SemanticException("{$what} involving '{$reference}' mixes {$leftCategory} and {$rightCategory} values.");
+				}
+			}
+		}
+
+		/**
+		 * Rejects arithmetic on a string when it reads a routine variable or cursor field; engines disagree on what it means.
+		 * @param NodeBinary $arithmetic An AstTerm or AstFactor
+		 * @return void
+		 * @throws SemanticException|EntityResolutionException
+		 */
+		private function checkArithmetic(NodeBinary $arithmetic): void {
+			$reference = $this->routineReference([$arithmetic]);
+
+			if ($reference === null) {
+				return;
+			}
+
+			foreach ([$arithmetic->getLeft(), $arithmetic->getRight()] as $operand) {
+				if ($this->category($operand) === 'string') {
+					throw new SemanticException("Arithmetic involving '{$reference}' has a string operand; '{$arithmetic->getOperator()}' only works on numbers and dates.");
 				}
 			}
 		}

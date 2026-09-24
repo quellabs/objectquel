@@ -51,6 +51,15 @@
 					return $left;
 				}
 				
+				// After whitespace, `++x` is the next routine statement; attached, `x++` is misplaced
+				if ($this->lexer->peekIncrementOperator()) {
+					if ($this->lexer->peekFollowsWhitespace()) {
+						return $left;
+					}
+					
+					throw $this->incrementInExpression();
+				}
+				
 				$this->lexer->match($lookahead);
 				$right = $this->parseFactor();
 				$left = new AstTerm($left, $right, $lookahead === Token::Plus ? "+" : "-");
@@ -224,6 +233,10 @@
 			switch ($tokenType) {
 				case Token::Plus:
 				case Token::Minus:
+					if ($this->lexer->peekIncrementOperator()) {
+						throw $this->incrementInExpression();
+					}
+					
 					$this->lexer->match($tokenType);
 					
 					if (($resultToken = $this->lexer->optionalMatch(Token::Number)) === null) {
@@ -239,6 +252,15 @@
 					// If not a unary operator, parse a primary expression
 					return $this->parsePrimaryExpression();
 			}
+		}
+		
+		/**
+		 * Error for `++`/`--` inside an expression; they exist only as routine statements.
+		 * @return ParserException
+		 */
+		private function incrementInExpression(): ParserException {
+			$operator = $this->lexer->lookahead() === Token::Plus ? '++' : '--';
+			return new ParserException("'{$operator}' can't be used inside an expression, only as a statement of its own, on line {$this->lexer->getLineNumber()}");
 		}
 		
 		/**
