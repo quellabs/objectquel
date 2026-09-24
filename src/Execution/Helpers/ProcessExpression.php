@@ -700,9 +700,9 @@
 			$range = $ast->getRange();
 			
 			// Alias identifiers (e.g. `score` from `score=search_score(...)`) have no
-			// range and no property chain. Return the bare name so ORDER BY score works.
+			// range and no property chain. Quoted like the SELECT alias so ORDER BY score matches it.
 			if ($range === null) {
-				return $ast->getName();
+				return $this->identifierQuoter->quoteIdentifier($ast->getName());
 			}
 			
 			// Resolve the next node now so static analysis can track its nullability
@@ -731,18 +731,8 @@
 				return $this->buildColumnNameForJson($ast, $rangeName, $entityName);
 			}
 			
-			// Map the ORM property name to its physical database column name.
-			$metadata = $this->entityStore->getMetadata($entityName);
-			
-			if (!isset($metadata->columnMap[$propertyName])) {
-				// If semantic validation ran correctly this should never happen
-				throw new \LogicException(
-					"Property '{$propertyName}' has no column mapping in entity '{$entityName}'"
-				);
-			}
-			
-			// Create the column
-			$columnRef = "{$rangeName}.{$metadata->columnMap[$propertyName]}";
+			// Quoted range.column, as in every other clause
+			$columnRef = $this->buildColumnNameForEntity($ast, $rangeName, $entityName);
 			
 			// Outside a SORT clause there is no need for NULL handling; return as-is.
 			if ($partOfQuery !== "SORT") {
