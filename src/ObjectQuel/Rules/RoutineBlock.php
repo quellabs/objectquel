@@ -9,6 +9,7 @@
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstContinue;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstDeclare;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstDeleteCurrent;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstFactor;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstForeach;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstIdentifier;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstIf;
@@ -35,6 +36,9 @@
 
 		/** Words that start a procedural statement; recognized by text, like other contextual keywords. */
 		public const array STATEMENT_KEYWORDS = ['if', 'else', 'elseif', 'while', 'foreach', 'return', 'begin', 'abort', 'break', 'continue', 'replace', 'delete'];
+
+		/** Compound-assignment operator tokens (the `x` in `x=`) and the arithmetic operator each applies */
+		private const array COMPOUND_OPERATORS = [Token::Plus => '+', Token::Minus => '-', Token::Star => '*', Token::Slash => '/'];
 
 		private Lexer $lexer;
 		private Range $rangeRule;
@@ -113,7 +117,7 @@
 
 		/**
 		 * Dispatches statements that begin with an identifier: contextual
-		 * statement keywords first, then `type name` declarations, `name =` assignments, `name++`/`name += expr` and `name(args)` procedure calls.
+		 * statement keywords first, then `type name` declarations, `name =` assignments, `name++`/`name += expr` (also `-=`, `*=`, `/=`) and `name(args)` procedure calls.
 		 * @return AstInterface The parsed statement node
 		 * @throws LexerException|ParserException|\ReflectionException
 		 */
@@ -169,7 +173,7 @@
 			return match ($this->lexer->peekNext()) {
 				Token::Identifier => $this->parseDeclaration(),
 				Token::Equals => $this->parseAssignment(),
-				Token::Plus, Token::Minus => $this->parseCompoundAssignment(),
+				Token::Plus, Token::Minus, Token::Star, Token::Slash => $this->parseCompoundAssignment(),
 				Token::ParenthesesOpen => (new Call($this->lexer))->parse(),
 				default => throw new ParserException("Expected a declaration, assignment, call, or statement keyword on line {$this->lexer->getLineNumber()}"),
 			};
@@ -247,7 +251,7 @@
 		}
 
 		/**
-		 * Parses `name++`, `name--`, `name += expr` and `name -= expr` as `name = name ± value`.
+		 * Parses `name++`, `name--` and `name op= expr` (`+=`, `-=`, `*=`, `/=`) as `name = name op value`.
 		 * @return AstVariableAssignment
 		 * @throws LexerException|ParserException|\ReflectionException
 		 */
@@ -260,18 +264,18 @@
 					throw new ParserException("Write '{$this->incrementOperator()}' directly after '{$name}' on line {$this->lexer->getLineNumber()}");
 				}
 				
-				return $this->increment($name, $this->matchIncrementOperator(), new AstNumber('1'));
+				return $this->compound($name, $this->matchIncrementOperator(), new AstNumber('1'));
 			}
 			
-			foreach ([Token::Plus, Token::Minus] as $sign) {
-				if ($this->lexer->peekAdjacent($sign, Token::Equals)) {
-					$this->lexer->match($sign);
+			foreach (self::COMPOUND_OPERATORS as $token => $operator) {
+				if ($this->lexer->peekAdjacent($token, Token::Equals)) {
+					$this->lexer->match($token);
 					$this->lexer->match(Token::Equals);
-					return $this->increment($name, $sign === Token::Plus ? '+' : '-', $this->expressionRule->parse());
+					return $this->compound($name, $operator, $this->expressionRule->parse());
 				}
 			}
 			
-			throw new ParserException("Expected '++', '--', '+=' or '-=' after '{$name}' on line {$this->lexer->getLineNumber()}");
+			throw new ParserException("Expected '++', '--', '+=', '-=', '*=' or '/=' after '{$name}' on line {$this->lexer->getLineNumber()}");
 		}
 		
 		/**
@@ -297,12 +301,18 @@
 		/**
 		 * Builds `name = name <operator> value`.
 		 * @param string $name Variable assigned to
-		 * @param string $operator '+' or '-'
-		 * @param AstInterface $value Amount added or subtracted
+		 * @param string $operator '+', '-', '*' or '/'
+		 * @param AstInterface $value Right-hand operand
 		 * @return AstVariableAssignment
 		 */
-		private function increment(string $name, string $operator, AstInterface $value): AstVariableAssignment {
-			return new AstVariableAssignment($name, new AstTerm(new AstIdentifier($name), $value, $operator));
+		private function compound(string $name, string $operator, AstInterface $value): AstVariableAssignment {
+			$current = new AstIdentifier($name);
+			
+			$expression = in_array($operator, ['*', '/'], true)
+				? new AstFactor($current, $value, $operator)
+				: new AstTerm($current, $value, $operator);
+			
+			return new AstVariableAssignment($name, $expression);
 		}
 		
 		/**
