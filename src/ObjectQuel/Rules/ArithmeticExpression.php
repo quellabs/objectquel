@@ -51,12 +51,7 @@
 					return $left;
 				}
 				
-				// After whitespace, `++x` is the next routine statement; attached, `x++` is misplaced
 				if ($this->lexer->peekIncrementOperator()) {
-					if ($this->lexer->peekFollowsWhitespace()) {
-						return $left;
-					}
-					
 					throw $this->incrementInExpression();
 				}
 				

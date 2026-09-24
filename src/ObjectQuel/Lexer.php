@@ -484,16 +484,6 @@
 		public function peekIncrementOperator(): bool {
 			return $this->peekAdjacent(Token::Plus, Token::Plus) || $this->peekAdjacent(Token::Minus, Token::Minus);
 		}
-
-		/**
-		 * Whether whitespace, or the start of the source, directly precedes the next token.
-		 * @return bool
-		 */
-		public function peekFollowsWhitespace(): bool {
-			$offset = $this->next_token->getOffset();
-			return $offset <= 0 || in_array($this->string[$offset - 1], [" ", "\n", "\r", "\t"], true);
-		}
-		
 		/**
 		 * Returns the source code
 		 * @return string

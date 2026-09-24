@@ -100,7 +100,10 @@
 				
 				case Token::Plus:
 				case Token::Minus:
-					return $this->parsePrefixIncrement();
+					if ($this->lexer->peekIncrementOperator()) {
+						throw new ParserException("Write '{$this->incrementOperator()}' after the variable name, not before it, on line {$this->lexer->getLineNumber()}");
+					}
+					// A single sign falls through to the generic error
 
 				default:
 					$tokenName = Token::toString($this->lexer->lookahead()) ?: 'unknown';
@@ -246,29 +249,6 @@
 			}
 			
 			throw new ParserException("Expected '++', '--', '+=' or '-=' after '{$name}' on line {$this->lexer->getLineNumber()}");
-		}
-		
-		/**
-		 * Parses `++name` and `--name` as `name = name ± 1`.
-		 * @return AstVariableAssignment
-		 * @throws LexerException|ParserException
-		 */
-		private function parsePrefixIncrement(): AstVariableAssignment {
-			if (!$this->lexer->peekIncrementOperator()) {
-				$tokenName = Token::toString($this->lexer->lookahead()) ?: 'unknown';
-				throw new ParserException("Unexpected token '{$tokenName}' in routine body on line {$this->lexer->getLineNumber()}");
-			}
-			
-			$operatorText = $this->incrementOperator();
-			$operandOffset = $this->lexer->peek()->getOffset() + 2;
-			$operator = $this->matchIncrementOperator();
-			
-			if ($this->lexer->lookahead() !== Token::Identifier || $this->lexer->peek()->getOffset() !== $operandOffset) {
-				throw new ParserException("Write a variable name directly after '{$operatorText}' on line {$this->lexer->getLineNumber()}");
-			}
-			
-			$name = $this->lexer->match(Token::Identifier)->getStringValue();
-			return $this->increment($name, $operator, new AstNumber('1'));
 		}
 		
 		/**
