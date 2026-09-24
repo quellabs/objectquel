@@ -16,7 +16,7 @@
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstString;
 
 	/**
-	 * Compiles `call name(args)`: the catalog query that tells a procedure from a function,
+	 * Compiles the `name(args)` statement: the catalog query that tells a procedure from a function,
 	 * and the statement that runs either kind.
 	 */
 	class QuelToSQLCall {
@@ -123,7 +123,7 @@
 
 			foreach ($call->getArguments() as $argument) {
 				if (!$argument instanceof AstParameter && !in_array(get_class($argument), self::LITERAL_ARGUMENTS, true)) {
-					throw new SemanticException("The arguments of 'call {$call->getName()}' must be literals or parameters; compute other values before the call.");
+					throw new SemanticException("The arguments of '{$call->getName()}()' must be literals or parameters; compute other values before the call.");
 				}
 
 				$result[] = $builder->visitNodeAndReturnSQL($argument);

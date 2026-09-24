@@ -18,6 +18,9 @@
 
     class Parser {
 
+		/** Words that start a top-level statement by text; `define` is dispatched by QueryExecutor. A routine by such a name couldn't be called as a statement. */
+		public const array STATEMENT_KEYWORDS = ['create', 'alter', 'destroy', 'hide', 'show', 'index', 'replace', 'delete', 'define'];
+
         protected Lexer $lexer;
         private Range $rangeRule;
 		private Retrieve $retrieveRule;
@@ -70,9 +73,9 @@
 		    // Get the next token without changing the position in the lexer.
 			    $token = $this->lexer->peek();
 
-			    // create/destroy/hide/show/index/replace/delete/call have no token
+			    // create/destroy/hide/show/index/replace/delete have no token
 			    // type (see Lexer::peekKeyword()) so — unlike Retrieve/Append —
-			    // they're recognized by text.
+			    // they're recognized by text. Any other `name(` is a routine call.
 			    if ($token->getType() === Token::Retrieve) {
 				    $queries[] = $this->retrieveRule->parse($directives, $ranges);
 			    } elseif ($token->getType() === Token::Append) {
@@ -102,7 +105,7 @@
 				    // separate keyword; the literal word `delete` always
 				    // means this DML verb.
 				    $queries[] = $this->deleteRule->parse($directives, $ranges);
-			    } elseif ($this->lexer->peekKeyword('call')) {
+			    } elseif ($token->getType() === Token::Identifier && $this->lexer->peekNext() === Token::ParenthesesOpen) {
 				    $queries[] = $this->callRule->parse();
 			    } else {
 				    $tokenName = Token::toString($token->getType()) ?: 'unknown';

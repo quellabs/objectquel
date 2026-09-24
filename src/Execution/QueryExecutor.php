@@ -403,7 +403,7 @@
 			
 			// Ensure the parsed AST represents a statement type this executor knows how to run
 			if (!$ast instanceof AstStatement) {
-				throw new QuelException("Invalid query type: expected retrieve, create, alter, destroy, index, hide, show, call, or write-verb (append/replace/delete) operation");
+				throw new QuelException("Invalid query type: expected retrieve, create, alter, destroy, index, hide, show, routine call, or write-verb (append/replace/delete) operation");
 			}
 			
 			// The AST is now fully validated

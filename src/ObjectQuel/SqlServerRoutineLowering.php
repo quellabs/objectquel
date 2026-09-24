@@ -52,7 +52,7 @@
 			}
 
 			if (!$routine->isVoid() && $this->contains($routine, [AstCall::class])) {
-				throw new SemanticException("'{$routine->getName()}' returns a value, so SQL Server creates it as a FUNCTION, which can't run a procedure. Make it void to use 'call'.");
+				throw new SemanticException("'{$routine->getName()}' returns a value, so SQL Server creates it as a FUNCTION, which can't run a procedure. Make it void to call a procedure as a statement.");
 			}
 		}
 

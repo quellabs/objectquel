@@ -5,7 +5,7 @@
 	use Quellabs\ObjectQuel\ObjectQuel\AstVisitorInterface;
 
 	/**
-	 * `call name(args)`: runs a routine on its own. A procedure yields nothing, a function one row.
+	 * `name(args)` as a statement: runs a routine on its own. A procedure yields nothing, a function one row.
 	 */
 	class AstCall extends Ast implements AstStatement {
 

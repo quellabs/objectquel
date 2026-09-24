@@ -9,7 +9,7 @@
 	use Quellabs\ObjectQuel\ObjectQuel\Token;
 
 	/**
-	 * Parser for `call name(args)`.
+	 * Parser for a routine called as a statement: `name(args)`.
 	 */
 	class Call {
 
@@ -23,12 +23,11 @@
 		}
 
 		/**
-		 * Parses a complete `call` statement.
+		 * Parses a complete `name(args)` statement.
 		 * @return AstCall
 		 * @throws LexerException|ParserException|\ReflectionException
 		 */
 		public function parse(): AstCall {
-			$this->lexer->matchKeyword('call');
 			$name = $this->lexer->match(Token::Identifier)->getStringValue();
 
 			if (QueryFunction::isBuiltin($name)) {

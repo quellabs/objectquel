@@ -29,8 +29,10 @@
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstVariableAssignment;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstWhile;
 	use Quellabs\ObjectQuel\ObjectQuel\AstInterface;
+	use Quellabs\ObjectQuel\ObjectQuel\Parser;
 	use Quellabs\ObjectQuel\ObjectQuel\QuelToSQL\QuelToSQLCall;
 	use Quellabs\ObjectQuel\ObjectQuel\Rules\QueryFunction;
+	use Quellabs\ObjectQuel\ObjectQuel\Rules\RoutineBlock;
 	use Quellabs\ObjectQuel\ObjectQuel\Visitors\CollectNodes;
 	use Quellabs\ObjectQuel\ObjectQuel\Visitors\ResolveRoutineReferences;
 
@@ -71,6 +73,10 @@
 
 			if (QueryFunction::isBuiltin($routine->getName())) {
 				throw new SemanticException("'{$routine->getName()}' is a built-in function, so a routine by that name could never be called.");
+			}
+
+			if ($this->isStatementKeyword($routine->getName())) {
+				throw new SemanticException("'{$routine->getName()}' is a statement keyword, so a routine by that name couldn't be called as a statement.");
 			}
 
 			$placeholders = new CollectNodes(AstParameter::class);
@@ -293,7 +299,7 @@
 		}
 
 		/**
-		 * `call name(args)`: arguments must be literals, variables or cursor fields, since SQL Server's EXEC takes nothing else.
+		 * `name(args)` statement: arguments must be literals, variables or cursor fields, since SQL Server's EXEC takes nothing else.
 		 * @param AstCall $statement The call
 		 * @return void
 		 * @throws SemanticException|EntityResolutionException
@@ -306,9 +312,18 @@
 				$isVariable = $argument instanceof AstIdentifier && $argument->getType()->isRoutineReference();
 
 				if (!$isVariable && !in_array(get_class($argument), QuelToSQLCall::LITERAL_ARGUMENTS, true)) {
-					throw new SemanticException("The arguments of 'call {$call->getName()}' must be literals or variables; assign other values to a local first.");
+					throw new SemanticException("The arguments of '{$call->getName()}()' must be literals or variables; assign other values to a local first.");
 				}
 			}
+		}
+
+		/**
+		 * @param string $name Routine name
+		 * @return bool True when a top-level or routine-body statement starts with this word
+		 */
+		private function isStatementKeyword(string $name): bool {
+			$name = strtolower($name);
+			return in_array($name, Parser::STATEMENT_KEYWORDS, true) || in_array($name, RoutineBlock::STATEMENT_KEYWORDS, true);
 		}
 
 		/**

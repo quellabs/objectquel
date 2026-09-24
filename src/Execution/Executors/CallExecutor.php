@@ -13,7 +13,7 @@
 	use Quellabs\ObjectQuel\ObjectQuel\QuelToSQL\QuelToSQLCall;
 
 	/**
-	 * Executes `call name(args)`. Calls are untyped, so the catalog says whether the routine
+	 * Executes the `name(args)` statement. Calls are untyped, so the catalog says whether the routine
 	 * is a procedure (run, yields null) or a function (selected, yields one row).
 	 */
 	class CallExecutor {

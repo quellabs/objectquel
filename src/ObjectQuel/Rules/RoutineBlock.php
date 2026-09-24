@@ -34,7 +34,7 @@
 	class RoutineBlock {
 
 		/** Words that start a procedural statement; recognized by text, like other contextual keywords. */
-		public const array STATEMENT_KEYWORDS = ['if', 'else', 'elseif', 'while', 'foreach', 'return', 'begin', 'abort', 'break', 'continue', 'replace', 'delete', 'call'];
+		public const array STATEMENT_KEYWORDS = ['if', 'else', 'elseif', 'while', 'foreach', 'return', 'begin', 'abort', 'break', 'continue', 'replace', 'delete'];
 
 		private Lexer $lexer;
 		private Range $rangeRule;
@@ -113,7 +113,7 @@
 
 		/**
 		 * Dispatches statements that begin with an identifier: contextual
-		 * statement keywords first, then `type name` declarations, `name =` assignments and `name++`/`name += expr`.
+		 * statement keywords first, then `type name` declarations, `name =` assignments, `name++`/`name += expr` and `name(args)` procedure calls.
 		 * @return AstInterface The parsed statement node
 		 * @throws LexerException|ParserException|\ReflectionException
 		 */
@@ -161,9 +161,6 @@
 				case 'delete':
 					return $this->parseDelete();
 
-				case 'call':
-					return (new Call($this->lexer))->parse();
-
 				case 'else':
 				case 'elseif':
 					throw new ParserException("'{$keyword}' without a preceding 'if' on line {$this->lexer->getLineNumber()}");
@@ -173,7 +170,8 @@
 				Token::Identifier => $this->parseDeclaration(),
 				Token::Equals => $this->parseAssignment(),
 				Token::Plus, Token::Minus => $this->parseCompoundAssignment(),
-				default => throw new ParserException("Expected a declaration, assignment, or statement keyword on line {$this->lexer->getLineNumber()}"),
+				Token::ParenthesesOpen => (new Call($this->lexer))->parse(),
+				default => throw new ParserException("Expected a declaration, assignment, call, or statement keyword on line {$this->lexer->getLineNumber()}"),
 			};
 		}
 
