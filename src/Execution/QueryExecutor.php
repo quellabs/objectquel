@@ -231,6 +231,9 @@
 				// executor's own docblock) but, unlike DDL, do return a QuelResult
 				// (affected-row count and, for append, a generated primary key).
 				if ($ast instanceof AstAppend || $ast instanceof AstReplace || $ast instanceof AstDelete) {
+					// Typed calls convert like columns of their return type, e.g. an integer written to a datetime column
+					$this->routineCatalog->typeCalls($ast);
+
 					return match (true) {
 						$ast instanceof AstAppend => $this->appendExecutor->execute($ast, $context),
 						$ast instanceof AstReplace => $this->replaceExecutor->execute($ast, $context),
