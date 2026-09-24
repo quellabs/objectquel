@@ -5,6 +5,8 @@
 	use Quellabs\ObjectQuel\EntityStore;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstAbort;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstBeginTransaction;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstBreak;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstContinue;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstDeclare;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstDeleteCurrent;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstForeach;
@@ -29,7 +31,7 @@
 	class RoutineBlock {
 
 		/** Words that start a procedural statement; recognized by text, like other contextual keywords. */
-		public const array STATEMENT_KEYWORDS = ['if', 'else', 'while', 'foreach', 'return', 'begin', 'abort', 'replace', 'delete', 'call'];
+		public const array STATEMENT_KEYWORDS = ['if', 'else', 'while', 'foreach', 'return', 'begin', 'abort', 'break', 'continue', 'replace', 'delete', 'call'];
 
 		private Lexer $lexer;
 		private Range $rangeRule;
@@ -134,6 +136,14 @@
 				case 'abort':
 					$this->lexer->matchKeyword('abort');
 					return new AstAbort();
+
+				case 'break':
+					$this->lexer->matchKeyword('break');
+					return new AstBreak();
+
+				case 'continue':
+					$this->lexer->matchKeyword('continue');
+					return new AstContinue();
 
 				case 'replace':
 					return $this->parseReplace();

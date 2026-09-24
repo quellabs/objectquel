@@ -9,7 +9,9 @@
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstAbort;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstAppend;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstBeginTransaction;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstBreak;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstCall;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstContinue;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstDeclare;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstDelete;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstDeleteCurrent;
@@ -164,6 +166,8 @@
 					break;
 
 				case $statement instanceof AstAbort:
+				case $statement instanceof AstBreak:
+				case $statement instanceof AstContinue:
 					// Placement is checked by RoutineControlFlowValidator
 					break;
 

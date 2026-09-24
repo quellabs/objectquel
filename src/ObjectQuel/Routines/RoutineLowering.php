@@ -13,7 +13,9 @@
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstAbort;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstAppend;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstBeginTransaction;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstBreak;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstCall;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstContinue;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstDeclare;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstDelete;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstDeleteCurrent;
@@ -175,6 +177,16 @@
 		abstract protected function abortStatement(): string;
 
 		/**
+		 * @return string The statement that leaves the innermost loop, for `break`
+		 */
+		abstract protected function breakStatement(): string;
+
+		/**
+		 * @return string The statement that starts the innermost loop's next iteration, for `continue`
+		 */
+		abstract protected function continueStatement(): string;
+
+		/**
 		 * @param AstRetrieve $retrieve A retrieve whose rows are discarded
 		 * @return string One statement that runs it
 		 * @throws SemanticException|EntityResolutionException|TransformationException|QuelException
@@ -325,6 +337,8 @@
 				$statement instanceof AstForeach => $this->lowerForeach($statement, $depth),
 				$statement instanceof AstBeginTransaction => $this->lowerTransaction($statement, $depth),
 				$statement instanceof AstAbort => $this->line($this->abortStatement(), $depth),
+				$statement instanceof AstBreak => $this->line($this->breakStatement(), $depth),
+				$statement instanceof AstContinue => $this->line($this->continueStatement(), $depth),
 				$statement instanceof AstDeleteCurrent => $this->line($this->statements->compileCurrentRowDelete(
 					$this->currentRowSource($statement->getCursorName()),
 					$this->currentRowCondition($statement->getCursorName())

@@ -46,6 +46,9 @@
 
 		private int $loopCount;
 
+		/** @var string[] Labels of the loops enclosing the statement being lowered, outermost first */
+		private array $loopLabels;
+
 		/** Collation of string variables and return values, or null for the database default */
 		private ?string $collation;
 
@@ -81,6 +84,7 @@
 			parent::validate($routine);
 			$this->keyFields = [];
 			$this->loopCount = 0;
+			$this->loopLabels = [];
 
 			if (!$routine->isVoid()) {
 				$this->assertNotRecursive($routine);
@@ -271,18 +275,23 @@
 		}
 
 		/**
+		 * Labelled, since LEAVE and ITERATE name their loop.
 		 * @param AstWhile $while The loop
 		 * @param int $depth Indentation depth
 		 * @return string
 		 */
 		protected function lowerWhile(AstWhile $while, int $depth): string {
-			return $this->line('WHILE ' . $this->statements->compileCondition($while->getCondition()) . ' DO', $depth)
-				. $this->statementList($this->lowerBlock($while->getBody(), $depth + 1), $depth + 1)
-				. $this->line('END WHILE;', $depth);
+			$label = $this->nextLoopLabel();
+			$this->loopLabels[] = $label;
+			$body = $this->statementList($this->lowerBlock($while->getBody(), $depth + 1), $depth + 1);
+			array_pop($this->loopLabels);
+
+			return $this->line("{$label}: WHILE " . $this->statements->compileCondition($while->getCondition()) . ' DO', $depth)
+				. $body
+				. $this->line("END WHILE {$label};", $depth);
 		}
 
 		/**
-		 * Labels are numbered: MySQL limits them to 16 characters.
 		 * @param AstForeach $foreach The loop
 		 * @param int $depth Indentation depth
 		 * @return string
@@ -290,7 +299,7 @@
 		protected function lowerForeach(AstForeach $foreach, int $depth): string {
 			$cursorName = $foreach->getCursorName();
 			$cursor = $this->cursorName($cursorName);
-			$label = '_loop' . (++$this->loopCount);
+			$label = $this->nextLoopLabel();
 
 			// Reset before each FETCH: an inner loop, or anything else raising NOT FOUND, may have set it
 			$fetch = $this->lines([
@@ -299,10 +308,22 @@
 				'IF ' . self::DONE_VARIABLE . " THEN LEAVE {$label}; END IF;",
 			], $depth + 1);
 
+			$this->loopLabels[] = $label;
+			$body = $this->lowerLoopBody($foreach, $depth + 1);
+			array_pop($this->loopLabels);
+
 			return $this->lines(["OPEN {$cursor};", "{$label}: LOOP"], $depth)
 				. $fetch
-				. $this->lowerLoopBody($foreach, $depth + 1)
+				. $body
 				. $this->lines(["END LOOP {$label};", "CLOSE {$cursor};"], $depth);
+		}
+
+		/**
+		 * Labels are numbered: MySQL limits them to 16 characters.
+		 * @return string A label no other loop in the routine uses
+		 */
+		private function nextLoopLabel(): string {
+			return '_loop' . (++$this->loopCount);
 		}
 
 		/**
@@ -322,6 +343,22 @@
 		 */
 		protected function abortStatement(): string {
 			return 'ROLLBACK;';
+		}
+
+		/**
+		 * A foreach's CLOSE follows its loop, so leaving it closes the cursor too.
+		 * @return string
+		 */
+		protected function breakStatement(): string {
+			return 'LEAVE ' . end($this->loopLabels) . ';';
+		}
+
+		/**
+		 * A foreach's ITERATE re-runs the `_done` reset and FETCH at the top of the loop.
+		 * @return string
+		 */
+		protected function continueStatement(): string {
+			return 'ITERATE ' . end($this->loopLabels) . ';';
 		}
 
 		/**

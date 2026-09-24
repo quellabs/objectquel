@@ -204,6 +204,21 @@
 		}
 
 		/**
+		 * @return string
+		 */
+		protected function breakStatement(): string {
+			return 'BREAK;';
+		}
+
+		/**
+		 * Jumps to `WHILE`; a cursor loop fetches its next row at the top of the body.
+		 * @return string
+		 */
+		protected function continueStatement(): string {
+			return 'CONTINUE;';
+		}
+
+		/**
 		 * @param string $derivedTable Parenthesized SELECT
 		 * @return string
 		 */

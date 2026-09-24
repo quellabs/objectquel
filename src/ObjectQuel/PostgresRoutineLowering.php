@@ -215,6 +215,21 @@
 		}
 
 		/**
+		 * An unlabelled EXIT leaves the innermost loop, never the `_routine` block.
+		 * @return string
+		 */
+		protected function breakStatement(): string {
+			return 'EXIT;';
+		}
+
+		/**
+		 * @return string
+		 */
+		protected function continueStatement(): string {
+			return 'CONTINUE;';
+		}
+
+		/**
 		 * PERFORM runs a query and discards its rows.
 		 * @param AstRetrieve $retrieve The retrieve
 		 * @return string
