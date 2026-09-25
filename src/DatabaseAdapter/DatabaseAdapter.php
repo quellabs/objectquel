@@ -9,6 +9,7 @@
 	use Quellabs\ObjectQuel\DatabaseAdapter\Inspector\MysqlSchemaIntrospector;
 	use Quellabs\ObjectQuel\DatabaseAdapter\Inspector\NullSchemaIntrospector;
 	use Quellabs\ObjectQuel\DatabaseAdapter\Inspector\PostgresSchemaIntrospector;
+	use Quellabs\ObjectQuel\DatabaseAdapter\Inspector\RoutineInspector;
 	use Quellabs\ObjectQuel\DatabaseAdapter\Inspector\RoutineSchemaInspector;
 	use Quellabs\ObjectQuel\DatabaseAdapter\Inspector\SchemaIntrospectorInterface;
 	use Quellabs\ObjectQuel\DatabaseAdapter\Inspector\SqlServerCompatibilityLevelInspector;
@@ -104,6 +105,9 @@
 		 * @var RoutineSchemaInspector|null
 		 */
 		private ?RoutineSchemaInspector $routineSchemaInspectorCache = null;
+
+		/** @var RoutineInspector|null Lazily created inspector; routine metadata itself is not cached */
+		private ?RoutineInspector $routineInspectorCache = null;
 		
 		/**
 		 * Constructs a new database adapter instance
@@ -279,6 +283,17 @@
 		public function getSqlServerCompatibilityLevel(): ?int {
 			$this->sqlServerCompatibilityLevelInspectorCache ??= new SqlServerCompatibilityLevelInspector($this);
 			return $this->sqlServerCompatibilityLevelInspectorCache->getCompatibilityLevel();
+		}
+
+		/**
+		 * Reads a routine's kind and normalized return type from the database catalog.
+		 * @param string $name Routine name as written
+		 * @return RoutineSignature
+		 * @throws \Quellabs\ObjectQuel\Exception\QuelException When missing, ambiguous, unsupported, or the lookup fails
+		 */
+		public function getRoutineSignature(string $name): RoutineSignature {
+			$this->routineInspectorCache ??= new RoutineInspector($this);
+			return $this->routineInspectorCache->getRoutineSignature($name);
 		}
 
 		/**

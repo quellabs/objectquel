@@ -8,7 +8,6 @@
 	use Quellabs\ObjectQuel\Exception\QuelException;
 	use Quellabs\ObjectQuel\Exception\SemanticException;
 	use Quellabs\ObjectQuel\Execution\ExecutionContext;
-	use Quellabs\ObjectQuel\Execution\Helpers\RoutineCatalog;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstCall;
 	use Quellabs\ObjectQuel\ObjectQuel\QuelResult;
 	use Quellabs\ObjectQuel\ObjectQuel\QuelToSQL\QuelToSQLCall;
@@ -23,21 +22,20 @@
 		private DatabaseAdapter $connection;
 		private EntityStore $entityStore;
 		private PlatformCapabilitiesInterface $platform;
-		private RoutineCatalog $catalog;
 		private Serializer $serializer;
 		private ?QuelToSQLCall $compiler = null;
 
 		/**
+		 * Creates an executor for stored routine calls.
 		 * @param DatabaseAdapter $connection Connection the call runs on
 		 * @param EntityStore $entityStore Needed by the SQL builder for literals
 		 * @param PlatformCapabilitiesInterface $platform Connected engine
-		 * @param RoutineCatalog $catalog Kind and return type of each routine
+		 * @return void
 		 */
-		public function __construct(DatabaseAdapter $connection, EntityStore $entityStore, PlatformCapabilitiesInterface $platform, RoutineCatalog $catalog) {
+		public function __construct(DatabaseAdapter $connection, EntityStore $entityStore, PlatformCapabilitiesInterface $platform) {
 			$this->connection = $connection;
 			$this->entityStore = $entityStore;
 			$this->platform = $platform;
-			$this->catalog = $catalog;
 			$this->serializer = new Serializer($entityStore);
 		}
 
@@ -50,6 +48,7 @@
 		}
 
 		/**
+		 * Looks up and executes a routine, converting a function's result.
 		 * @param AstCall $statement The call
 		 * @param ExecutionContext $context Bound parameters
 		 * @return QuelResult|null The function's value as a one-row result, or null for a procedure
@@ -59,7 +58,7 @@
 		public function execute(AstCall $statement, ExecutionContext $context): ?QuelResult {
 			$name = $statement->getCall()->getName();
 			$parameters = $context->getParameters();
-			$signature = $this->catalog->signature($name);
+			$signature = $this->connection->getRoutineSignature($name);
 			$sql = $this->compiler()->convertToSQL($statement, $signature->isProcedure, $parameters);
 			$result = $this->connection->execute($sql, $parameters);
 
