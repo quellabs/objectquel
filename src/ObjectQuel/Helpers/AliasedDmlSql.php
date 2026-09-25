@@ -21,15 +21,22 @@
 		 * @param PlatformCapabilitiesInterface $platform Target engine
 		 * @return string
 		 */
-		public static function update(string $tableName, string $alias, string $setSql, string $whereSql, SqlIdentifierQuoter $quoter, PlatformCapabilitiesInterface $platform): string {
+		public static function update(
+			string $tableName,
+			string $alias,
+			string $setSql,
+			string $whereSql,
+			SqlIdentifierQuoter $quoter,
+			PlatformCapabilitiesInterface $platform
+		): string {
 			$table = $quoter->quoteIdentifier($tableName);
 			$quotedAlias = $quoter->quoteIdentifier($alias);
 
 			if (!$platform->supportsAliasAfterDmlTarget()) {
 				return "UPDATE {$quotedAlias} SET {$setSql} FROM {$table} as {$quotedAlias} WHERE {$whereSql}";
+			} else {
+				return "UPDATE {$table} as {$quotedAlias} SET {$setSql} WHERE {$whereSql}";
 			}
-
-			return "UPDATE {$table} as {$quotedAlias} SET {$setSql} WHERE {$whereSql}";
 		}
 
 		/**
@@ -40,14 +47,20 @@
 		 * @param PlatformCapabilitiesInterface $platform Target engine
 		 * @return string
 		 */
-		public static function delete(string $tableName, string $alias, string $whereSql, SqlIdentifierQuoter $quoter, PlatformCapabilitiesInterface $platform): string {
+		public static function delete(
+			string $tableName,
+			string $alias,
+			string $whereSql,
+			SqlIdentifierQuoter $quoter,
+			PlatformCapabilitiesInterface $platform
+		): string {
 			$table = $quoter->quoteIdentifier($tableName);
 			$quotedAlias = $quoter->quoteIdentifier($alias);
 
 			if (in_array($platform->getDatabaseType(), ['mariadb', 'sqlsrv'], true)) {
 				return "DELETE {$quotedAlias} FROM {$table} as {$quotedAlias} WHERE {$whereSql}";
+			} else {
+				return "DELETE FROM {$table} as {$quotedAlias} WHERE {$whereSql}";
 			}
-
-			return "DELETE FROM {$table} as {$quotedAlias} WHERE {$whereSql}";
 		}
 	}
