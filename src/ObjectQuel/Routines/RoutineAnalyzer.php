@@ -244,7 +244,7 @@
 		 * `name = expr`: the target must be a parameter or scalar local declared earlier.
 		 * @param AstVariableAssignment $assignment The assignment
 		 * @return void
-		 * @throws SemanticException|EntityResolutionException
+		 * @throws SemanticException
 		 */
 		private function analyzeAssignment(AstVariableAssignment $assignment): void {
 			$name = $assignment->getName();
@@ -349,7 +349,7 @@
 		 * Checks a standalone or cursor-initializer retrieve, then types its references.
 		 * @param AstRetrieve $retrieve The retrieve
 		 * @return void
-		 * @throws SemanticException|EntityResolutionException
+		 * @throws SemanticException
 		 */
 		private function analyzeRoutineRetrieve(AstRetrieve $retrieve): void {
 			if ($retrieve->getWindow() !== null || $retrieve->getWindowSize() !== null) {

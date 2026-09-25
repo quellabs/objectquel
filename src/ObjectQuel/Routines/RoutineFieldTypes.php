@@ -165,32 +165,6 @@
 		}
 
 		/**
-		 * Infers the type definition of an expression.
-		 * @param AstInterface $expression A target-list expression after the query pipeline
-		 * @return TypeDefinition|null The value's type, or null when it can't be determined
-		 * @throws EntityResolutionException
-		 */
-		private function definitionOf(AstInterface $expression): ?array {
-			if ($expression instanceof AstIdentifier) {
-				$definition = $expression->getType()->isRoutineReference()
-					? $this->routineReferenceDefinition($expression)
-					: $this->columnDefinition($expression);
-
-				if ($definition !== null) {
-					return $definition;
-				}
-			}
-
-			$inferred = $this->inferReturnType($expression);
-
-			if ($inferred === null || !isset(self::INFERRED_TYPES[$inferred])) {
-				return null;
-			}
-
-			return self::definition(self::INFERRED_TYPES[$inferred]);
-		}
-
-		/**
 		 * Types column reads in embedded statements, whose identifiers aren't bound to ranges yet.
 		 * @param AstRange[] $ranges Ranges the routine declares
 		 * @return void
@@ -230,7 +204,33 @@
 				'values'    => $column['values'],
 			];
 		}
-
+		
+		/**
+		 * Infers the type definition of an expression.
+		 * @param AstInterface $expression A target-list expression after the query pipeline
+		 * @return TypeDefinition|null The value's type, or null when it can't be determined
+		 * @throws EntityResolutionException
+		 */
+		private function definitionOf(AstInterface $expression): ?array {
+			if ($expression instanceof AstIdentifier) {
+				$definition = $expression->getType()->isRoutineReference()
+					? $this->routineReferenceDefinition($expression)
+					: $this->columnDefinition($expression);
+				
+				if ($definition !== null) {
+					return $definition;
+				}
+			}
+			
+			$inferred = $this->inferReturnType($expression);
+			
+			if ($inferred === null || !isset(self::INFERRED_TYPES[$inferred])) {
+				return null;
+			}
+			
+			return self::definition(self::INFERRED_TYPES[$inferred]);
+		}
+		
 		/**
 		 * Resolves the type definition of a direct column reference.
 		 * @param AstIdentifier $identifier `range.property`, or a bare property of one declared range
