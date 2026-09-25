@@ -1,6 +1,6 @@
 <?php
 
-	namespace Quellabs\ObjectQuel\ObjectQuel;
+	namespace Quellabs\ObjectQuel\ObjectQuel\Routines\Lowering;
 
 	use Quellabs\ObjectQuel\Exception\EntityResolutionException;
 	use Quellabs\ObjectQuel\Exception\QuelException;
@@ -10,7 +10,6 @@
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstDeclare;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRetrieve;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRoutineDefinition;
-	use Quellabs\ObjectQuel\ObjectQuel\Routines\RoutineLowering;
 	use Quellabs\ObjectQuel\ObjectQuel\Routines\RoutineReferenceSql;
 
 	/**

@@ -1,6 +1,6 @@
 <?php
 
-	namespace Quellabs\ObjectQuel\ObjectQuel\Routines;
+	namespace Quellabs\ObjectQuel\ObjectQuel\Routines\Lowering;
 
 	use Quellabs\ObjectQuel\Capabilities\PlatformCapabilitiesInterface;
 	use Quellabs\ObjectQuel\DatabaseAdapter\Mapper\DDLTypeMapper;
@@ -33,6 +33,11 @@
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstWhile;
 	use Quellabs\ObjectQuel\ObjectQuel\AstInterface;
 	use Quellabs\ObjectQuel\ObjectQuel\Visitors\CollectNodes;
+	use Quellabs\ObjectQuel\ObjectQuel\Routines\RoutineAnalyzer;
+	use Quellabs\ObjectQuel\ObjectQuel\Routines\RoutineCursorSource;
+	use Quellabs\ObjectQuel\ObjectQuel\Routines\RoutineReferenceSql;
+	use Quellabs\ObjectQuel\ObjectQuel\Routines\RoutineStatementCompiler;
+	use Quellabs\ObjectQuel\ObjectQuel\Routines\RoutineTypeChecker;
 
 	/**
 	 * Lowers an analyzed routine to one engine's CREATE FUNCTION/PROCEDURE statements.

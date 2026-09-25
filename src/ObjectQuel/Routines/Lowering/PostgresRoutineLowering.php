@@ -1,8 +1,9 @@
 <?php
 
-	namespace Quellabs\ObjectQuel\ObjectQuel;
+	namespace Quellabs\ObjectQuel\ObjectQuel\Routines\Lowering;
 
 	use Quellabs\ObjectQuel\Exception\SemanticException;
+	use Quellabs\ObjectQuel\ObjectQuel\AstInterface;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstBeginTransaction;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstDeclare;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstForeach;
@@ -11,7 +12,6 @@
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstReturn;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRoutineDefinition;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstWhile;
-	use Quellabs\ObjectQuel\ObjectQuel\Routines\RoutineLowering;
 	use Quellabs\ObjectQuel\ObjectQuel\Routines\RoutineReferenceSql;
 
 	/**

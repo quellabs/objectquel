@@ -1,10 +1,11 @@
 <?php
 
-	namespace Quellabs\ObjectQuel\ObjectQuel;
+	namespace Quellabs\ObjectQuel\ObjectQuel\Routines\Lowering;
 
 	use Quellabs\ObjectQuel\EntityStore;
 	use Quellabs\ObjectQuel\Exception\QuelException;
 	use Quellabs\ObjectQuel\Exception\SemanticException;
+	use Quellabs\ObjectQuel\ObjectQuel\AstInterface;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstAlias;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstBeginTransaction;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstCall;
@@ -18,9 +19,9 @@
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRoutineCall;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRoutineDefinition;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstWhile;
+	use Quellabs\ObjectQuel\ObjectQuel\Visitors\CollectNodes;
 	use Quellabs\ObjectQuel\ObjectQuel\Routines\RoutineReferenceSql;
 	use Quellabs\ObjectQuel\ObjectQuel\Routines\RoutineStatementCompiler;
-	use Quellabs\ObjectQuel\ObjectQuel\Visitors\CollectNodes;
 
 	/**
 	 * Lowers an analyzed routine to a MySQL/MariaDB CREATE FUNCTION (non-void) or

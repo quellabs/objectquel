@@ -1,6 +1,6 @@
 <?php
 
-	namespace Quellabs\ObjectQuel\ObjectQuel;
+	namespace Quellabs\ObjectQuel\ObjectQuel\Routines;
 
 	use Quellabs\ObjectQuel\Capabilities\PlatformCapabilitiesInterface;
 	use Quellabs\ObjectQuel\EntityManager;
@@ -9,8 +9,12 @@
 	use Quellabs\ObjectQuel\Exception\SemanticException;
 	use Quellabs\ObjectQuel\Exception\TransformationException;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRoutineDefinition;
-	use Quellabs\ObjectQuel\ObjectQuel\Routines\RoutineAnalyzer;
-	use Quellabs\ObjectQuel\ObjectQuel\Routines\RoutineStatementCompiler;
+	use Quellabs\ObjectQuel\ObjectQuel\Lexer;
+	use Quellabs\ObjectQuel\ObjectQuel\LexerException;
+	use Quellabs\ObjectQuel\ObjectQuel\ParserException;
+	use Quellabs\ObjectQuel\ObjectQuel\Routines\Lowering\MysqlRoutineLowering;
+	use Quellabs\ObjectQuel\ObjectQuel\Routines\Lowering\PostgresRoutineLowering;
+	use Quellabs\ObjectQuel\ObjectQuel\Routines\Lowering\SqlServerRoutineLowering;
 
 	/**
 	 * Compiles EQUEL routine source (`define function ...`) to the target
