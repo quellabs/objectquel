@@ -86,6 +86,7 @@
 		}
 
 		/**
+		 * Collects root identifiers referenced by a routine expression.
 		 * @param AstInterface $node Node to search
 		 * @return AstIdentifier[] Identifiers that start a chain
 		 */

@@ -30,6 +30,7 @@
 		private SqlIdentifierQuoter $identifierQuoter;
 
 		/**
+		 * Initializes the compiler for the target engine and routine schema.
 		 * @param EntityStore $entityStore Needed by the SQL builder for literals
 		 * @param PlatformCapabilitiesInterface $platform Target engine
 		 * @param string|null $routineSchema Schema that qualifies routine names, or null for none
@@ -62,6 +63,7 @@
 		}
 
 		/**
+		 * Renders the procedure call using the target dialect's syntax.
 		 * @param string $name Procedure name as written in the source
 		 * @param string $arguments Compiled, comma-separated arguments
 		 * @return string `CALL name(args)`, or `EXEC name args` on SQL Server
@@ -77,6 +79,7 @@
 		}
 
 		/**
+		 * Compiles the call's literal and parameter arguments to SQL.
 		 * @param AstCall $statement The call
 		 * @param array<string, mixed> $parameters Bound parameters, by reference
 		 * @return list<string> SQL of each argument

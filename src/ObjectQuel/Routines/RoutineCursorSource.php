@@ -24,6 +24,7 @@
 		private RoutineRangeReferences $rangeReferences;
 
 		/**
+		 * Initializes cursor source resolution with the entity metadata store.
 		 * @param EntityStore $entityStore Entity metadata for property lookups
 		 */
 		public function __construct(EntityStore $entityStore) {
@@ -33,6 +34,7 @@
 		}
 
 		/**
+		 * Resolves the query and ranges used as a routine cursor source.
 		 * @param string $cursorName Cursor the write names, for error messages
 		 * @param AstRetrieve $query The cursor's query
 		 * @param AstRange[] $ranges Ranges declared before the cursor

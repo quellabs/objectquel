@@ -22,6 +22,7 @@
 		private const string MYSQL_VARIABLE_PREFIX = '_v_';
 
 		/**
+		 * Builds the SQL variable name for a cursor row.
 		 * @param string $cursorName Cursor name from the source
 		 * @return string Name of the PL/pgSQL record variable holding the cursor's current row
 		 */
@@ -30,6 +31,7 @@
 		}
 
 		/**
+		 * Builds the SQL variable name for a cursor field.
 		 * @param string $cursorName Cursor name from the source
 		 * @param string $field Field name (target-list alias) of the cursor's retrieve
 		 * @param string $databaseType 'sqlsrv', 'mysql' or 'mariadb'
@@ -45,6 +47,7 @@
 		}
 
 		/**
+		 * Builds the SQL variable name for a routine variable.
 		 * @param string $name Local or parameter name from the source
 		 * @param SqlIdentifierQuoter $quoter Quoter for the target engine
 		 * @param string $databaseType Target engine, as reported by PlatformCapabilitiesInterface::getDatabaseType()

@@ -56,6 +56,7 @@
 		}
 
 		/**
+		 * Builds the dialect-specific ALTER INDEX visibility statement.
 		 * @param string $indexName
 		 * @param string $tableName
 		 * @param 'hidden'|'visible' $keywordKey Selects which of
@@ -92,6 +93,7 @@
 		}
 
 		/**
+		 * Verifies that the target engine supports index visibility changes.
 		 * @return void
 		 * @throws QuelException If the connected engine doesn't support invisible indexes
 		 */

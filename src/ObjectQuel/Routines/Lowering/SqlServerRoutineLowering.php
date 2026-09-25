@@ -36,6 +36,7 @@
 		private int $discardCursorCount;
 
 		/**
+		 * Returns the target engine name.
 		 * @return string Engine name for error messages
 		 */
 		protected function engineName(): string {
@@ -43,6 +44,7 @@
 		}
 
 		/**
+		 * Checks routine constructs unsupported by the target engine.
 		 * @param AstRoutineDefinition $routine The routine
 		 * @return void
 		 * @throws SemanticException When a function writes tables or calls a procedure
@@ -63,6 +65,7 @@
 		}
 
 		/**
+		 * Renders the routine definition as SQL.
 		 * @param AstRoutineDefinition $routine The routine, with cursors prepared
 		 * @return list<string> The CREATE OR ALTER FUNCTION/PROCEDURE statement
 		 */
@@ -96,6 +99,7 @@
 		}
 
 		/**
+		 * Builds the SQL Server routine declaration header.
 		 * @param AstRoutineDefinition $routine The routine
 		 * @param array<string, string> $parameters SQL type of each parameter, by variable name
 		 * @return string
@@ -112,6 +116,7 @@
 		}
 
 		/**
+		 * Compiles a routine variable assignment.
 		 * @param string $name Variable name
 		 * @param AstInterface $value Value expression
 		 * @return string `SET @name = value;`
@@ -139,6 +144,7 @@
 		}
 
 		/**
+		 * Compiles a conditional routine statement.
 		 * @param AstIf $if The if statement
 		 * @param int $depth Indentation depth
 		 * @return string
@@ -156,6 +162,7 @@
 		}
 
 		/**
+		 * Compiles a while loop for the target database engine.
 		 * @param AstWhile $while The loop
 		 * @param int $depth Indentation depth
 		 * @return string
@@ -166,6 +173,7 @@
 		}
 
 		/**
+		 * Compiles a cursor iteration loop.
 		 * @param AstForeach $foreach The loop
 		 * @param int $depth Indentation depth
 		 * @return string
@@ -203,6 +211,7 @@
 		}
 
 		/**
+		 * Compiles the routine abort statement.
 		 * @return string
 		 */
 		protected function abortStatement(): string {
@@ -210,6 +219,7 @@
 		}
 
 		/**
+		 * Compiles a break statement for the target engine.
 		 * @return string
 		 */
 		protected function breakStatement(): string {
@@ -225,6 +235,7 @@
 		}
 
 		/**
+		 * Compiles a query row count assignment for SQL Server.
 		 * @param string $derivedTable Parenthesized SELECT
 		 * @return string
 		 */
@@ -259,6 +270,7 @@
 		}
 
 		/**
+		 * Builds the condition identifying the current cursor row.
 		 * @param string $cursorName Cursor of the enclosing loop
 		 * @return string `CURRENT OF cursor`
 		 */

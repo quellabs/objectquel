@@ -56,6 +56,7 @@
 		private array $cursorQueries = [];
 
 		/**
+		 * Initializes routine type checking with field and scope information.
 		 * @param RoutineFieldTypes $fieldTypes Types collected while preparing this routine
 		 */
 		public function __construct(RoutineFieldTypes $fieldTypes) {
@@ -63,6 +64,7 @@
 		}
 
 		/**
+		 * Checks the routine body against its declarations and return type.
 		 * @param AstRoutineDefinition $routine Routine that passed RoutineAnalyzer
 		 * @param array<string, AstRetrieve> $cursorQueries Prepared query of each cursor
 		 * @return void
@@ -92,6 +94,7 @@
 		}
 
 		/**
+		 * Checks a routine expression against its expected type.
 		 * @param AstInterface $node Collected node
 		 * @param AstRoutineDefinition $routine The routine, for its return type
 		 * @return void
@@ -115,6 +118,7 @@
 		}
 
 		/**
+		 * Validates a return statement against the routine return type.
 		 * @param AstReturn $return The return
 		 * @param AstRoutineDefinition $routine The routine
 		 * @return void
@@ -130,6 +134,7 @@
 		}
 
 		/**
+		 * Checks an initializer against its declared variable type.
 		 * @param AstDeclare $declaration The declaration
 		 * @return void
 		 * @throws SemanticException|EntityResolutionException
@@ -153,6 +158,7 @@
 		}
 
 		/**
+		 * Checks assignment values against their target variable types.
 		 * @param AstVariableAssignment $assignment The assignment
 		 * @return void
 		 * @throws SemanticException|EntityResolutionException
@@ -170,6 +176,7 @@
 		}
 
 		/**
+		 * Checks that a control-flow condition has a valid type.
 		 * @param string $statement 'if' or 'while'
 		 * @param AstInterface $condition The condition
 		 * @return void
@@ -230,6 +237,7 @@
 		}
 
 		/**
+		 * Checks an append statement against its target entity fields.
 		 * @param AstAppend $append The append
 		 * @return void
 		 * @throws SemanticException|EntityResolutionException
@@ -273,6 +281,7 @@
 		}
 
 		/**
+		 * Reports a routine type mismatch with its source context.
 		 * @param string $declaredType Normalized declared type
 		 * @param AstInterface $value Value stored into it
 		 * @return string|null The value's category when it differs from the declared type's, otherwise null
@@ -290,6 +299,7 @@
 		}
 
 		/**
+		 * Classifies a routine type for compatibility checks.
 		 * @param AstInterface $value Expression
 		 * @return string|null The value's category, or null when its type can't be inferred
 		 * @throws EntityResolutionException
@@ -316,6 +326,7 @@
 		}
 
 		/**
+		 * Resolves the declared type of a routine variable or cursor field.
 		 * @param AstInterface[] $nodes Expressions to search
 		 * @return string|null Name of the first routine variable or cursor field they read, or null when none
 		 */
@@ -335,6 +346,7 @@
 		}
 
 		/**
+		 * Finds the entity type associated with a cursor.
 		 * @param string $cursorName Cursor written through
 		 * @return string|null Entity of the cursor's single table, or null when it isn't one
 		 */

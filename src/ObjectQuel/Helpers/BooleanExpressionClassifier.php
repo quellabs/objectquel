@@ -22,6 +22,7 @@
 	class BooleanExpressionClassifier {
 
 		/**
+		 * Determines whether a node renders as a SQL predicate.
 		 * @param AstInterface $node Node to classify
 		 * @return bool True when the node renders to a SQL predicate (comparison, AND/OR, NOT, IN, IS [NOT] NULL)
 		 */
@@ -35,6 +36,7 @@
 		}
 
 		/**
+		 * Determines whether a node renders as a scalar SQL value.
 		 * @param AstInterface $node Node to classify
 		 * @return bool True when the node renders to a scalar value, which isn't a predicate without boolean literals
 		 */

@@ -14,6 +14,7 @@
 		private const array TIMESTAMP_TYPES = ['datetime', 'int', 'integer', 'float'];
 
 		/**
+		 * Converts Unix timestamp expressions written to datetime targets.
 		 * @param string $valueSql Compiled value
 		 * @param string|null $valueType Inferred PHP-level type of the value, after NormalizeDateTime
 		 * @param string|null $targetType PHP-level type of the column or variable receiving it

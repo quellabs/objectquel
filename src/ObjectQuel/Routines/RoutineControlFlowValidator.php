@@ -23,6 +23,7 @@
 	class RoutineControlFlowValidator {
 
 		/**
+		 * Validates routine control flow and required return paths.
 		 * @param AstRoutineDefinition $routine Routine whose names and placements are already validated
 		 * @return void
 		 * @throws SemanticException
@@ -133,6 +134,7 @@
 		}
 
 		/**
+		 * Checks whether all control-flow paths return a value.
 		 * @param AstInterface[] $statements Statements in source order
 		 * @return bool True when every path through the list reaches a `return`
 		 */

@@ -22,6 +22,7 @@
 		private EntityStore $entityStore;
 
 		/**
+		 * Creates a resolver using the entity metadata store.
 		 * @param EntityStore $entityStore
 		 */
 		public function __construct(EntityStore $entityStore) {

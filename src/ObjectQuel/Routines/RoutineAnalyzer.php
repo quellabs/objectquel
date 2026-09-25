@@ -54,6 +54,7 @@
 		private bool $isVoid;
 
 		/**
+		 * Initializes semantic analysis with the entity metadata store.
 		 * @param EntityStore $entityStore Entity metadata for property checks
 		 */
 		public function __construct(EntityStore $entityStore) {
@@ -318,6 +319,7 @@
 		}
 
 		/**
+		 * Checks whether a token begins a routine statement.
 		 * @param string $name Routine name
 		 * @return bool True when a top-level or routine-body statement starts with this word
 		 */
@@ -367,6 +369,7 @@
 		}
 
 		/**
+		 * Validates that a cursor reference is declared and in scope.
 		 * @param string $name Name used as a cursor
 		 * @param string $statement Statement keyword, for error messages
 		 * @return void
@@ -406,6 +409,7 @@
 		}
 
 		/**
+		 * Rejects routine statements that are not allowed at top level.
 		 * @param bool $isTopLevel True when the statement sits directly in the routine body
 		 * @param string $what Description of the declaration, for the error message
 		 * @return void
@@ -418,6 +422,7 @@
 		}
 
 		/**
+		 * Creates a resolver for routine range references.
 		 * @param bool $inQueryStatement True inside retrieve/append/replace/delete
 		 * @return ResolveRoutineReferences Visitor bound to the current scope
 		 */
@@ -436,6 +441,7 @@
 		}
 
 		/**
+		 * Collects routine declarations to check for name conflicts.
 		 * @param AstRoutineDefinition $routine Parsed routine
 		 * @return string[] Every local and range name the body declares, at any depth
 		 */

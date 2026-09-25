@@ -34,6 +34,7 @@
 		private array $openLoops = [];
 
 		/**
+		 * Initializes scope tracking with all names declared by the routine.
 		 * @param string[] $allDeclaredNames Every name the routine declares, in any position
 		 */
 		public function __construct(array $allDeclaredNames) {
@@ -76,6 +77,7 @@
 		}
 
 		/**
+		 * Reports whether a name is a declared scalar variable.
 		 * @param string $name Name to look up
 		 * @return bool True when $name is a parameter or scalar local declared so far
 		 */
@@ -84,6 +86,7 @@
 		}
 
 		/**
+		 * Reports whether a name is a declared cursor.
 		 * @param string $name Name to look up
 		 * @return bool True when $name is a cursor local declared so far
 		 */
@@ -92,6 +95,7 @@
 		}
 
 		/**
+		 * Reports whether a name is a declared range.
 		 * @param string $name Name to look up
 		 * @return bool True when $name is a range alias declared so far
 		 */
@@ -100,6 +104,7 @@
 		}
 
 		/**
+		 * Reports whether a name is declared anywhere in the routine.
 		 * @param string $name Name to look up
 		 * @return bool True when the routine declares $name somewhere, whether or not that point has been reached
 		 */
@@ -119,6 +124,7 @@
 		}
 
 		/**
+		 * Returns the ranges declared in the routine scope.
 		 * @return AstRange[] Ranges declared so far, in source order
 		 */
 		public function getRanges(): array {
@@ -143,6 +149,7 @@
 		}
 
 		/**
+		 * Reports whether a cursor loop is currently open.
 		 * @param string $cursorName Cursor name
 		 * @return bool True when a `foreach` over $cursorName encloses the current statement
 		 */

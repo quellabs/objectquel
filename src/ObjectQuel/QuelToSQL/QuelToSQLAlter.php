@@ -390,6 +390,7 @@
 		}
 
 		/**
+		 * Rejects primary-key changes when the target engine cannot apply them.
 		 * @param string $tableName
 		 * @return void
 		 * @throws QuelException

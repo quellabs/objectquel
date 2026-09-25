@@ -21,6 +21,7 @@
 		private RoutineDefinition $routineRule;
 
 		/**
+		 * Initializes the routine parser with its lexer.
 		 * @param Lexer $lexer Lexer over the routine source
 		 * @param EntityStore $entityStore Resolves `range of x is Entity` declarations
 		 */

@@ -61,6 +61,7 @@
 		private RoutineFieldTypes $fieldTypes;
 
 		/**
+		 * Initializes routine statement compilation for the target platform.
 		 * @param EntityManager $entityManager Entity metadata and the optimizer's dependencies
 		 * @param PlatformCapabilitiesInterface $platform Target engine, which need not be the connected one
 		 * @param string|null $routineSchema Schema that qualifies routine names, or null for none
@@ -86,6 +87,7 @@
 		}
 
 		/**
+		 * Returns the routine field type resolver.
 		 * @return RoutineFieldTypes Types of the routine's variables and cursor fields, filled in by the lowering
 		 */
 		public function getFieldTypes(): RoutineFieldTypes {
@@ -131,6 +133,7 @@
 		}
 
 		/**
+		 * Compiles a retrieve query for use inside a routine statement.
 		 * @param AstRetrieve $prepared Result of prepareRetrieve()
 		 * @return string The SELECT statement
 		 * @throws SemanticException|EntityResolutionException|QuelException
@@ -142,6 +145,7 @@
 		}
 
 		/**
+		 * Compiles a delete statement inside a routine.
 		 * @param AstDelete $delete Analyzed `delete range where ...`
 		 * @return string
 		 * @throws SemanticException
@@ -156,6 +160,7 @@
 		}
 
 		/**
+		 * Compiles a replace statement inside a routine.
 		 * @param AstReplace $replace Analyzed `replace range (...) where ...`
 		 * @return string
 		 * @throws SemanticException
@@ -170,6 +175,7 @@
 		}
 
 		/**
+		 * Compiles an append statement inside a routine.
 		 * @param AstAppend $append Analyzed `append to range ...`, literal values or insert-from-select
 		 * @return string
 		 * @throws SemanticException When the insert needs PHP-generated keys, a PHP-side fallback or the planner
@@ -212,6 +218,7 @@
 		}
 
 		/**
+		 * Compiles a delete targeting the row currently fetched by a cursor.
 		 * @param AstRangeDatabase $source The cursor's source range
 		 * @param string $rowCondition SQL condition selecting the current row
 		 * @return string
@@ -224,6 +231,7 @@
 		}
 
 		/**
+		 * Compiles a replace targeting the row currently fetched by a cursor.
 		 * @param AstRangeDatabase $source The cursor's source range
 		 * @param AstAssignment[] $assignments Analyzed `column = value` assignments
 		 * @param string $rowCondition SQL condition selecting the current row
@@ -296,6 +304,7 @@
 		}
 
 		/**
+		 * Returns the target database platform.
 		 * @return PlatformCapabilitiesInterface The target engine
 		 */
 		public function getPlatform(): PlatformCapabilitiesInterface {
@@ -303,6 +312,7 @@
 		}
 
 		/**
+		 * Returns the schema used to qualify routine names.
 		 * @return string|null Schema that qualifies routine names, or null for none
 		 */
 		public function getRoutineSchema(): ?string {

@@ -26,6 +26,7 @@
 		protected bool $usesDiscardVariable;
 
 		/**
+		 * Builds the target engine name for a routine variable.
 		 * @param string $name Local or parameter name
 		 * @return string The variable as written in SQL
 		 * @throws QuelException
@@ -35,6 +36,7 @@
 		}
 
 		/**
+		 * Builds target-platform variables for the cursor result fields.
 		 * @param string $cursorName Cursor name
 		 * @return string[] Variables the cursor's fields are fetched into, in select-list order
 		 * @throws QuelException
@@ -47,6 +49,7 @@
 		}
 
 		/**
+		 * Builds the SQL name for a routine cursor.
 		 * @param string $cursorName Cursor name
 		 * @return string Name of the engine cursor
 		 */
@@ -55,6 +58,7 @@
 		}
 
 		/**
+		 * Builds SQL declarations for routine parameters.
 		 * @param AstRoutineDefinition $routine The routine
 		 * @return array<string, string> SQL type of every parameter, by variable name as written in SQL
 		 * @throws QuelException
@@ -70,6 +74,7 @@
 		}
 
 		/**
+		 * Builds SQL declarations for routine local variables.
 		 * @param AstRoutineDefinition $routine The routine
 		 * @return array<string, string> SQL type of every scalar local, by variable name as written in SQL
 		 * @throws QuelException
@@ -87,6 +92,7 @@
 		}
 
 		/**
+		 * Returns SQL types for variables holding cursor fields.
 		 * @return array<string, string> SQL type of every field variable, by variable name
 		 * @throws QuelException
 		 */
@@ -125,6 +131,7 @@
 		}
 
 		/**
+		 * Prepares the retrieve used to fetch rows into cursor variables.
 		 * @param string $cursorName Cursor name
 		 * @param AstRetrieve $initializer The cursor's retrieve, as analyzed
 		 * @return AstRetrieve The prepared query
@@ -150,6 +157,7 @@
 		}
 
 		/**
+		 * Lowers a transaction block while enforcing cursor transaction restrictions.
 		 * @param AstBeginTransaction $transaction The transaction block, outside any loop
 		 * @param int $depth Indentation depth
 		 * @return string
@@ -169,6 +177,7 @@
 		}
 
 		/**
+		 * Compiles a row-count assignment for the target engine.
 		 * @param string $derivedTable Parenthesized SELECT
 		 * @return string Statement counting the derived table's rows into the scratch variable
 		 */

@@ -14,6 +14,7 @@
 	class EntityRangeTableNameResolver {
 		
 		/**
+		 * Resolves an entity range to its physical table name.
 		 * @param AstRangeDatabase $range
 		 * @param EntityStore $entityStore
 		 * @return string

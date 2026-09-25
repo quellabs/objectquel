@@ -48,6 +48,7 @@
 		private array $cursorFields = [];
 
 		/**
+		 * Initializes routine field type resolution with entity and column metadata.
 		 * @param EntityStore $entityStore Entity metadata
 		 * @param DDLTypeMapper $typeMapper Maps type definitions to the target engine's SQL types
 		 */
@@ -58,6 +59,7 @@
 		}
 
 		/**
+		 * Records the declared type of a routine variable.
 		 * @param string $name Local or parameter name
 		 * @param string $routineType Declared routine type, e.g. `integer` or `int`
 		 * @return void
@@ -67,6 +69,7 @@
 		}
 
 		/**
+		 * Returns the declared type of a routine variable.
 		 * @param string $name Local or parameter name
 		 * @return string|null Its normalized routine type, or null when it isn't declared
 		 */
@@ -113,6 +116,7 @@
 		}
 
 		/**
+		 * Maps a routine field type to the platform SQL type.
 		 * @param string $routineType Routine type name
 		 * @return string SQL type on the target engine
 		 */
@@ -161,6 +165,7 @@
 		}
 
 		/**
+		 * Infers the type definition of an expression.
 		 * @param AstInterface $expression A target-list expression after the query pipeline
 		 * @return TypeDefinition|null The value's type, or null when it can't be determined
 		 * @throws EntityResolutionException
@@ -201,6 +206,7 @@
 		}
 
 		/**
+		 * Returns a mapped type definition for an entity property.
 		 * @param string $entityName Entity name
 		 * @param string $property Property name
 		 * @return TypeDefinition|null The property's column type, or null when it isn't a column
@@ -226,6 +232,7 @@
 		}
 
 		/**
+		 * Resolves the type definition of a direct column reference.
 		 * @param AstIdentifier $identifier `range.property`, or a bare property of one declared range
 		 * @return TypeDefinition|null The column's declared type, or null when it isn't a direct column read
 		 * @throws EntityResolutionException
@@ -248,6 +255,7 @@
 		}
 
 		/**
+		 * Finds the unique entity range exposing an unqualified property.
 		 * @param AstIdentifier $identifier Bare identifier
 		 * @return string|null The one declared entity with this property, or null when none, several, or it names a target-list entry
 		 * @throws EntityResolutionException
@@ -276,6 +284,7 @@
 		}
 
 		/**
+		 * Resolves the type of a routine variable or cursor field.
 		 * @param AstIdentifier $identifier Identifier typed RoutineVariable or CursorRoot
 		 * @return TypeDefinition|null
 		 */
@@ -290,6 +299,7 @@
 		}
 
 		/**
+		 * Creates a normalized definition for a routine type.
 		 * @param string $type Normalized routine or column type
 		 * @return TypeDefinition
 		 */

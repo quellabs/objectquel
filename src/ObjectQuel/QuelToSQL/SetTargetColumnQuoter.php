@@ -15,6 +15,7 @@
 	class SetTargetColumnQuoter {
 		
 		/**
+		 * Quotes a SET target column with an allowed range alias, if applicable.
 		 * @param string $columnName
 		 * @param string|null $qualifyWithAlias The statement's own range alias, or
 		 *        null to always render bare (e.g. an on-conflict UPDATE with no

@@ -427,6 +427,7 @@
 		}
 		
 		/**
+		 * Compiles the retrieve's GROUP BY expressions to SQL.
 		 * @param AstRetrieve $retrieve
 		 * @return string
 		 */

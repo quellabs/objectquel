@@ -54,6 +54,7 @@
 		private ?string $collation;
 
 		/**
+		 * Initializes SQL lowering for MySQL and MariaDB routines.
 		 * @param EntityStore $entityStore Entity metadata
 		 * @param RoutineStatementCompiler $statements Compiles embedded statements for the target engine
 		 * @param string|null $collation Collation of string variables and return values, or null for the database default
@@ -70,6 +71,7 @@
 		}
 
 		/**
+		 * Returns the target engine name.
 		 * @return string Engine name for error messages
 		 */
 		protected function engineName(): string {
@@ -77,6 +79,7 @@
 		}
 
 		/**
+		 * Checks routine constructs unsupported by the target engine.
 		 * @param AstRoutineDefinition $routine The routine
 		 * @return void
 		 * @throws SemanticException
@@ -145,6 +148,7 @@
 		}
 
 		/**
+		 * Renders the routine definition as SQL.
 		 * @param AstRoutineDefinition $routine The routine, with cursors prepared
 		 * @return list<string> DROP ... IF EXISTS (MySQL only) and the CREATE statement
 		 */
@@ -189,6 +193,7 @@
 		}
 
 		/**
+		 * Builds the MySQL or MariaDB routine declaration header.
 		 * @param AstRoutineDefinition $routine The routine
 		 * @param array<string, string> $parameters SQL type of each parameter, by variable name
 		 * @return string
@@ -209,6 +214,7 @@
 		}
 
 		/**
+		 * Maps a routine type to its SQL representation.
 		 * @param string $type Routine type name
 		 * @return string SQL type, with the configured collation when it's a character type
 		 */
@@ -217,6 +223,7 @@
 		}
 
 		/**
+		 * Returns SQL types for cursor field variables.
 		 * @return array<string, string> SQL type of every field variable, by variable name, with the configured collation
 		 * @throws QuelException
 		 */
@@ -239,6 +246,7 @@
 		}
 
 		/**
+		 * Compiles a routine variable assignment.
 		 * @param string $name Variable name
 		 * @param AstInterface $value Value expression
 		 * @return string `SET _v_name = value;`
@@ -260,6 +268,7 @@
 		}
 
 		/**
+		 * Compiles a conditional routine statement.
 		 * @param AstIf $if The if statement
 		 * @param int $depth Indentation depth
 		 * @return string
@@ -293,6 +302,7 @@
 		}
 
 		/**
+		 * Compiles a cursor iteration loop.
 		 * @param AstForeach $foreach The loop
 		 * @param int $depth Indentation depth
 		 * @return string
@@ -340,6 +350,7 @@
 		}
 
 		/**
+		 * Compiles the routine abort statement.
 		 * @return string
 		 */
 		protected function abortStatement(): string {
@@ -401,6 +412,7 @@
 		}
 
 		/**
+		 * Builds the alias used for a selected column.
 		 * @param AstRetrieve $retrieve Cursor retrieve, as analyzed
 		 * @param AstRangeDatabase $source The cursor's source range
 		 * @param string $property Column property of the source
@@ -424,6 +436,7 @@
 		}
 
 		/**
+		 * Builds a qualified SQL reference to a selected column.
 		 * @param AstRangeDatabase $source Range to read from
 		 * @param string $property Column property
 		 * @return AstIdentifier Unresolved `source.property`, as the parser builds it

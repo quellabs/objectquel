@@ -30,6 +30,7 @@
 		private ?string $routineSchema;
 
 		/**
+		 * Initializes the routine compiler with the entity manager and target platform.
 		 * @param EntityManager $entityManager Entity metadata and query pipeline dependencies
 		 * @param PlatformCapabilitiesInterface $platform Target engine
 		 * @param string|null $routineSchema Schema that qualifies routine names, or null for none
@@ -67,6 +68,7 @@
 		}
 
 		/**
+		 * Compiles an analyzed routine into ordered database statements.
 		 * @param AstRoutineDefinition $routine Routine that passed RoutineAnalyzer
 		 * @return list<string> Statements to run in order, the last one creating the routine
 		 * @throws SemanticException|EntityResolutionException|TransformationException|QuelException

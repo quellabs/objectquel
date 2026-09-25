@@ -15,6 +15,7 @@
 	class DateTimeParameterCoercer {
 
 		/**
+		 * Coerces datetime parameters in a query and its nested subqueries.
 		 * @param AstRetrieve $ast
 		 * @param array<string, mixed> $parameters Reference to the query's bound parameters
 		 * @return void

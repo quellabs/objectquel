@@ -20,6 +20,7 @@
 		private ?string $routineSchema;
 
 		/**
+		 * Initializes the compiler for the target engine and routine schema.
 		 * @param PlatformCapabilitiesInterface $platform Target engine
 		 * @param string|null $routineSchema Schema that qualifies routine names, or null for none
 		 */
@@ -30,6 +31,7 @@
 		}
 
 		/**
+		 * Compiles routine destruction into dialect-specific SQL statements.
 		 * @param AstDestroyRoutine $statement
 		 * @return list<string> Statements to run in order
 		 * @throws QuelException When the engine has no stored routines

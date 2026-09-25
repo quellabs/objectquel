@@ -13,6 +13,7 @@
 	class AliasedDmlSqlBuilder {
 
 		/**
+		 * Builds an aliased UPDATE statement for the target dialect.
 		 * @param string $tableName Unquoted table name
 		 * @param string $alias Unquoted range alias
 		 * @param string $setSql Compiled SET assignments
@@ -40,6 +41,7 @@
 		}
 
 		/**
+		 * Builds an aliased DELETE statement for the target dialect.
 		 * @param string $tableName Unquoted table name
 		 * @param string $alias Unquoted range alias
 		 * @param string $whereSql Compiled WHERE condition

@@ -421,6 +421,7 @@
 		}
 
 		/**
+		 * Infers the PHP-level type of a named value in the source retrieve.
 		 * @param AstRetrieve $source Prepared source retrieve
 		 * @param string $alias Name of one of its values
 		 * @return string|null Inferred PHP-level type of that value, or null when unknown

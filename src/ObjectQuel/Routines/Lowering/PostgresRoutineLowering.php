@@ -28,6 +28,7 @@
 	class PostgresRoutineLowering extends RoutineLowering {
 
 		/**
+		 * Returns the target engine name.
 		 * @return string Engine name for error messages
 		 */
 		protected function engineName(): string {
@@ -35,6 +36,7 @@
 		}
 
 		/**
+		 * Renders the routine definition as SQL.
 		 * @param AstRoutineDefinition $routine The routine, with cursors prepared
 		 * @return list<string> The CREATE OR REPLACE FUNCTION/PROCEDURE statement
 		 */
@@ -49,6 +51,7 @@
 		}
 
 		/**
+		 * Builds the PostgreSQL routine declaration header.
 		 * @param AstRoutineDefinition $routine The routine
 		 * @return string `CREATE OR REPLACE FUNCTION name(params) RETURNS type` or the PROCEDURE form
 		 */
@@ -103,6 +106,7 @@
 		}
 
 		/**
+		 * Compiles a routine variable assignment.
 		 * @param string $name Variable name
 		 * @param AstInterface $value Value expression
 		 * @return string `"name" := value;`
@@ -130,6 +134,7 @@
 		}
 
 		/**
+		 * Compiles a conditional routine statement.
 		 * @param AstIf $if The if statement
 		 * @param int $depth Indentation depth
 		 * @return string
@@ -147,6 +152,7 @@
 		}
 
 		/**
+		 * Compiles a while loop for the target database engine.
 		 * @param AstWhile $while The loop
 		 * @param int $depth Indentation depth
 		 * @return string
@@ -188,6 +194,7 @@
 		}
 
 		/**
+		 * Compiles a transaction block in the routine.
 		 * @param AstBeginTransaction $transaction The transaction block
 		 * @param int $depth Indentation depth
 		 * @return string
@@ -208,6 +215,7 @@
 		}
 
 		/**
+		 * Compiles the routine abort statement.
 		 * @return string
 		 */
 		protected function abortStatement(): string {
@@ -223,6 +231,7 @@
 		}
 
 		/**
+		 * Compiles a continue statement for the target engine.
 		 * @return string
 		 */
 		protected function continueStatement(): string {
@@ -245,6 +254,7 @@
 		}
 
 		/**
+		 * Builds the condition identifying the current cursor row.
 		 * @param string $cursorName Cursor of the enclosing loop
 		 * @return string `CURRENT OF "cursor"`
 		 */
@@ -253,6 +263,7 @@
 		}
 
 		/**
+		 * Opens the explicit cursors declared by the routine.
 		 * @return string[] Enclosing loops that use an explicit (OPENed) cursor, outermost first
 		 */
 		private function openExplicitCursors(): array {

@@ -77,6 +77,7 @@
 		private AstRoutineDefinition $routine;
 
 		/**
+		 * Initializes shared SQL lowering with the target platform and routine scope.
 		 * @param EntityStore $entityStore Entity metadata
 		 * @param RoutineStatementCompiler $statements Compiles embedded statements for the target engine
 		 */
@@ -91,6 +92,7 @@
 		}
 
 		/**
+		 * Lowers an analyzed routine to target-platform SQL.
 		 * @param AstRoutineDefinition $routine Routine that passed RoutineAnalyzer
 		 * @return list<string> Statements to run in order, the last one creating the routine
 		 * @throws SemanticException When the routine uses something the engine can't express
@@ -117,11 +119,13 @@
 		}
 
 		/**
+		 * Returns the target engine name.
 		 * @return string Engine name for error messages
 		 */
 		abstract protected function engineName(): string;
 
 		/**
+		 * Renders the routine definition as SQL.
 		 * @param AstRoutineDefinition $routine The routine, with cursors prepared
 		 * @return list<string> Statements to run in order
 		 * @throws SemanticException|EntityResolutionException|TransformationException|QuelException
@@ -129,6 +133,7 @@
 		abstract protected function render(AstRoutineDefinition $routine): array;
 
 		/**
+		 * Compiles a routine variable assignment.
 		 * @param string $name Variable name
 		 * @param AstInterface $value Value expression
 		 * @return string One assignment statement
@@ -137,6 +142,7 @@
 		abstract protected function assignment(string $name, AstInterface $value): string;
 
 		/**
+		 * Compiles a routine RETURN statement.
 		 * @param AstReturn $return The return
 		 * @param int $depth Indentation depth
 		 * @return string
@@ -145,6 +151,7 @@
 		abstract protected function lowerReturn(AstReturn $return, int $depth): string;
 
 		/**
+		 * Compiles a conditional routine statement.
 		 * @param AstIf $if The if statement
 		 * @param int $depth Indentation depth
 		 * @return string
@@ -153,6 +160,7 @@
 		abstract protected function lowerIf(AstIf $if, int $depth): string;
 
 		/**
+		 * Compiles a while loop for the target database engine.
 		 * @param AstWhile $while The loop
 		 * @param int $depth Indentation depth
 		 * @return string
@@ -161,6 +169,7 @@
 		abstract protected function lowerWhile(AstWhile $while, int $depth): string;
 
 		/**
+		 * Compiles a cursor iteration loop.
 		 * @param AstForeach $foreach The loop
 		 * @param int $depth Indentation depth
 		 * @return string
@@ -169,6 +178,7 @@
 		abstract protected function lowerForeach(AstForeach $foreach, int $depth): string;
 
 		/**
+		 * Compiles a transaction block in the routine.
 		 * @param AstBeginTransaction $transaction The transaction block
 		 * @param int $depth Indentation depth
 		 * @return string
@@ -177,21 +187,25 @@
 		abstract protected function lowerTransaction(AstBeginTransaction $transaction, int $depth): string;
 
 		/**
+		 * Compiles the routine abort statement.
 		 * @return string The rollback statement for `abort`
 		 */
 		abstract protected function abortStatement(): string;
 
 		/**
+		 * Compiles a break statement for the target engine.
 		 * @return string The statement that leaves the innermost loop, for `break`
 		 */
 		abstract protected function breakStatement(): string;
 
 		/**
+		 * Compiles a continue statement for the target engine.
 		 * @return string The statement that starts the innermost loop's next iteration, for `continue`
 		 */
 		abstract protected function continueStatement(): string;
 
 		/**
+		 * Runs a retrieve and discards its rows.
 		 * @param AstRetrieve $retrieve A retrieve whose rows are discarded
 		 * @return string One statement that runs it
 		 * @throws SemanticException|EntityResolutionException|TransformationException|QuelException
@@ -199,6 +213,7 @@
 		abstract protected function discardRetrieve(AstRetrieve $retrieve): string;
 
 		/**
+		 * Builds the condition identifying the current cursor row.
 		 * @param string $cursorName Cursor of the enclosing loop
 		 * @return string SQL condition selecting the loop's current row
 		 * @throws SemanticException|EntityResolutionException
@@ -233,6 +248,7 @@
 		}
 
 		/**
+		 * Lowers a block of routine statements.
 		 * @param AstInterface[] $statements Statements of one block
 		 * @param int $depth Indentation depth
 		 * @return string Lowered statements, one or more lines each
@@ -264,6 +280,7 @@
 		}
 
 		/**
+		 * Builds the SQL source for the cursor row being modified.
 		 * @param string $cursorName Cursor of the enclosing loop
 		 * @return AstRangeDatabase The table a current-row write targets
 		 * @throws SemanticException|EntityResolutionException
@@ -273,6 +290,7 @@
 		}
 
 		/**
+		 * Checks whether a routine block contains a node of the requested type.
 		 * @param AstRoutineDefinition $routine The routine
 		 * @param array<class-string<AstInterface>> $nodeClasses Node classes to look for
 		 * @return bool True when the body contains one of them
@@ -284,6 +302,7 @@
 		}
 
 		/**
+		 * Checks whether a routine block modifies database tables.
 		 * @param AstRoutineDefinition $routine The routine
 		 * @return bool True when the body writes a table
 		 */
@@ -292,6 +311,7 @@
 		}
 
 		/**
+		 * Maps a routine type to its SQL representation.
 		 * @param string $type Routine type name, e.g. `integer` or `int`
 		 * @return string SQL type on the target engine
 		 */
@@ -307,6 +327,7 @@
 		}
 
 		/**
+		 * Indents one generated SQL line to the requested depth.
 		 * @param string $text Line content
 		 * @param int $depth Indentation depth
 		 * @return string Indented line with a trailing newline
@@ -316,6 +337,7 @@
 		}
 
 		/**
+		 * Indents and joins generated SQL lines.
 		 * @param string[] $lines Lines without indentation or newline
 		 * @param int $depth Indentation depth
 		 * @return string
@@ -325,6 +347,7 @@
 		}
 
 		/**
+		 * Lowers one routine statement to SQL.
 		 * @param AstInterface $statement Statement to lower
 		 * @param int $depth Indentation depth
 		 * @return string Lowered lines
@@ -413,6 +436,7 @@
 		}
 
 		/**
+		 * Compiles and converts a value assigned in the routine.
 		 * @param string $name Variable name
 		 * @param AstInterface $value Value assigned to it
 		 * @return string The value's SQL, as a datetime when a Unix timestamp goes into a datetime variable
@@ -424,6 +448,7 @@
 		}
 
 		/**
+		 * Compiles the value returned by the routine.
 		 * @param AstReturn $return The return
 		 * @return string The returned value's SQL, as a datetime when a Unix timestamp is returned as one
 		 * @throws SemanticException|EntityResolutionException|QuelException
@@ -459,6 +484,7 @@
 		}
 
 		/**
+		 * Collects cursors whose current rows are modified by the routine.
 		 * @param AstRoutineDefinition $routine The routine
 		 * @return array<string, true> Cursors named by a current-row delete or replace
 		 */
