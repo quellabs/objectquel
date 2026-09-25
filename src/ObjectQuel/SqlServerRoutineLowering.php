@@ -9,6 +9,7 @@
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstIf;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstReturn;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRoutineDefinition;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRetrieve;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstWhile;
 
 	/**
@@ -26,10 +27,12 @@
 		/** Scratch variable that makes an otherwise empty block a valid statement list */
 		private const string NOOP_VARIABLE = '@_noop';
 
-		/** Scratch variable a discarded retrieve counts into */
+		/** Scratch variable a function uses to count rows from a discarded retrieve */
 		private const string DISCARD_VARIABLE = '@_discard';
 
 		private bool $usesNoopVariable;
+		private bool $isFunction;
+		private int $discardCursorCount;
 
 		/**
 		 * @return string Engine name for error messages
@@ -46,6 +49,8 @@
 		protected function validate(AstRoutineDefinition $routine): void {
 			parent::validate($routine);
 			$this->usesNoopVariable = false;
+			$this->isFunction = !$routine->isVoid();
+			$this->discardCursorCount = 0;
 
 			if (!$routine->isVoid() && $this->writesTables($routine)) {
 				throw new SemanticException("'{$routine->getName()}' returns a value, so SQL Server creates it as a FUNCTION, which can't write tables. Make it void to write.");
@@ -72,12 +77,12 @@
 			$parameters = $this->parameterVariables($routine);
 			$locals = $this->localVariables($routine) + $this->fieldVariableTypes();
 
-			if ($this->usesDiscardVariable) {
-				$locals[self::DISCARD_VARIABLE] = 'INT';
-			}
-
 			if ($this->usesNoopVariable) {
 				$locals[self::NOOP_VARIABLE] = 'BIT';
+			}
+
+			if ($this->usesDiscardVariable) {
+				$locals[self::DISCARD_VARIABLE] = 'INT';
 			}
 
 			$declarations = '';
@@ -224,6 +229,32 @@
 		 */
 		protected function countInto(string $derivedTable): string {
 			return 'SELECT ' . self::DISCARD_VARIABLE . " = COUNT(*) FROM {$derivedTable} AS " . $this->quoter->quoteIdentifier('_discard') . ';';
+		}
+
+		/**
+		 * Executes the complete retrieve while discarding each fetched row.
+		 * @param AstRetrieve $retrieve The retrieve
+		 * @return string T-SQL cursor statements
+		 */
+		protected function discardRetrieve(AstRetrieve $retrieve): string {
+			$sql = $this->statements->retrieveSql($this->statements->prepareRetrieve($retrieve));
+
+			if ($this->isFunction) {
+				$this->usesDiscardVariable = true;
+
+				if (!empty($retrieve->getSort())) {
+					$sql .= ' OFFSET 0 ROWS';
+				}
+
+				return $this->countInto('(' . $sql . ')');
+			}
+
+			$cursor = '_discard_' . ++$this->discardCursorCount;
+
+			return "DECLARE {$cursor} CURSOR LOCAL FAST_FORWARD FOR {$sql}; "
+				. "OPEN {$cursor}; FETCH NEXT FROM {$cursor}; "
+				. "WHILE @@FETCH_STATUS = 0 FETCH NEXT FROM {$cursor}; "
+				. "CLOSE {$cursor}; DEALLOCATE {$cursor};";
 		}
 
 		/**
