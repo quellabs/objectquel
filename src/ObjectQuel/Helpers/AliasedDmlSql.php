@@ -6,9 +6,9 @@
 	use Quellabs\ObjectQuel\DatabaseAdapter\SqlIdentifierQuoter;
 
 	/**
-	 * Renders UPDATE/DELETE statements whose target table carries a range alias,
-	 * in the form the engine accepts: `UPDATE t as a SET ...` on most engines,
-	 * `UPDATE a SET ... FROM t as a` on SQL Server.
+	 * Renders UPDATE/DELETE statements whose target table carries a range alias.
+	 * MariaDB and SQL Server place a DELETE alias before FROM; SQL Server also
+	 * declares UPDATE aliases in FROM.
 	 */
 	class AliasedDmlSql {
 
@@ -44,7 +44,7 @@
 			$table = $quoter->quoteIdentifier($tableName);
 			$quotedAlias = $quoter->quoteIdentifier($alias);
 
-			if (!$platform->supportsAliasAfterDmlTarget()) {
+			if (in_array($platform->getDatabaseType(), ['mariadb', 'sqlsrv'], true)) {
 				return "DELETE {$quotedAlias} FROM {$table} as {$quotedAlias} WHERE {$whereSql}";
 			}
 

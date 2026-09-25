@@ -248,8 +248,8 @@
 		public function supportsQualifiedSetTarget(): bool;
 
 		/**
-		 * Returns true if UPDATE/DELETE accept an alias after the target table (`UPDATE t AS a`).
-		 * SQL Server declares it in FROM instead (`UPDATE a SET ... FROM t AS a`).
+		 * Returns true if UPDATE accepts an alias after the target table (`UPDATE t AS a`).
+		 * SQL Server declares the UPDATE alias in FROM instead; DELETE syntax is rendered separately.
 		 * @return bool
 		 */
 		public function supportsAliasAfterDmlTarget(): bool;
