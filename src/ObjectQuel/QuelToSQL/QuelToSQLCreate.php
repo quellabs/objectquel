@@ -8,7 +8,7 @@
 	use Quellabs\ObjectQuel\Exception\QuelException;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstCreateTable;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstCreateTableForeignKey;
-	use Quellabs\ObjectQuel\ObjectQuel\ForeignKeyConstraintNamer;
+	use Quellabs\ObjectQuel\ObjectQuel\Schema\ForeignKeyConstraintNamer;
 
 	/**
 	 * Compiles an AstCreateTable statement to dialect-correct CREATE TABLE

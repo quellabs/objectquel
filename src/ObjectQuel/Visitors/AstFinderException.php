@@ -1,6 +1,8 @@
 <?php
 	
-	namespace Quellabs\ObjectQuel\ObjectQuel;
+	namespace Quellabs\ObjectQuel\ObjectQuel\Visitors;
+
+	use Quellabs\ObjectQuel\ObjectQuel\AstInterface;
 	
 	/**
 	 * Class AstFinderException

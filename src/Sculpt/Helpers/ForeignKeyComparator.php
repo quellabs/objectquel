@@ -8,7 +8,7 @@
 	use Quellabs\ObjectQuel\DatabaseAdapter\ForeignKeyDefinition;
 	use Quellabs\ObjectQuel\EntityStore;
 	use Quellabs\ObjectQuel\Exception\EntityResolutionException;
-	use Quellabs\ObjectQuel\ObjectQuel\ForeignKeyConstraintNamer;
+	use Quellabs\ObjectQuel\ObjectQuel\Schema\ForeignKeyConstraintNamer;
 	use Quellabs\ObjectQuel\Sculpt\SculptTypes;
 
 	/**

@@ -16,7 +16,7 @@
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstAlterSetPrimaryKey;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstAlterTable;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstColumnDefinition;
-	use Quellabs\ObjectQuel\ObjectQuel\ForeignKeyConstraintNamer;
+	use Quellabs\ObjectQuel\ObjectQuel\Schema\ForeignKeyConstraintNamer;
 
 	/**
 	 * Compiles an AstAlterTable statement's column, primary-key, and
