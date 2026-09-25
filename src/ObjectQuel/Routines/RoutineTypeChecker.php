@@ -2,9 +2,7 @@
 
 	namespace Quellabs\ObjectQuel\ObjectQuel\Routines;
 
-	use Quellabs\ObjectQuel\DatabaseAdapter\Mapper\DDLTypeMapper;
 	use Quellabs\ObjectQuel\DatabaseAdapter\Mapper\TypeMapper;
-	use Quellabs\ObjectQuel\EntityStore;
 	use Quellabs\ObjectQuel\Exception\EntityResolutionException;
 	use Quellabs\ObjectQuel\Exception\SemanticException;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstAppend;
@@ -16,7 +14,6 @@
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstIf;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstIn;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRangeDatabase;
-	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRangeDeclaration;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstReplace;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstReplaceCurrent;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRetrieve;
@@ -55,18 +52,14 @@
 
 		private RoutineFieldTypes $fieldTypes;
 
-		/** @var array<string, string> Normalized declared type of each parameter and scalar local */
-		private array $variableTypes = [];
-
 		/** @var array<string, AstRetrieve> Prepared query of each cursor */
 		private array $cursorQueries = [];
 
 		/**
-		 * @param EntityStore $entityStore Entity metadata
-		 * @param DDLTypeMapper $typeMapper Type mapper of the target engine
+		 * @param RoutineFieldTypes $fieldTypes Types collected while preparing this routine
 		 */
-		public function __construct(EntityStore $entityStore, DDLTypeMapper $typeMapper) {
-			$this->fieldTypes = new RoutineFieldTypes($entityStore, $typeMapper);
+		public function __construct(RoutineFieldTypes $fieldTypes) {
+			$this->fieldTypes = $fieldTypes;
 		}
 
 		/**
@@ -78,27 +71,6 @@
 		 */
 		public function check(AstRoutineDefinition $routine, array $cursorQueries): void {
 			$this->cursorQueries = $cursorQueries;
-			$ranges = [];
-
-			foreach ($routine->getParameters() as $parameter) {
-				$this->declareVariable($parameter->getName(), $parameter->getType());
-			}
-
-			foreach ($routine->getBody() as $statement) {
-				if ($statement instanceof AstDeclare && !$statement->isCursor()) {
-					$this->declareVariable($statement->getName(), $statement->getType());
-				}
-
-				if ($statement instanceof AstRangeDeclaration) {
-					$ranges[] = $statement->getRange();
-				}
-			}
-
-			$this->fieldTypes->setDeclaredRanges($ranges);
-
-			foreach ($cursorQueries as $cursorName => $query) {
-				$this->fieldTypes->recordCursor($cursorName, $query);
-			}
 
 			// Arithmetic first, so a string operand is reported as such rather than as the string result it produces
 			$passes = [
@@ -169,7 +141,10 @@
 				return;
 			}
 
-			$type = $this->variableTypes[$declaration->getName()];
+			$type = $this->fieldTypes->variableType($declaration->getName());
+			if ($type === null) {
+				throw new \LogicException("Routine variable '{$declaration->getName()}' has no declared type.");
+			}
 			$mismatch = $this->mismatch($type, $initializer);
 
 			if ($mismatch !== null) {
@@ -183,7 +158,10 @@
 		 * @throws SemanticException|EntityResolutionException
 		 */
 		private function checkAssignment(AstVariableAssignment $assignment): void {
-			$type = $this->variableTypes[$assignment->getName()];
+			$type = $this->fieldTypes->variableType($assignment->getName());
+			if ($type === null) {
+				throw new \LogicException("Routine variable '{$assignment->getName()}' has no declared type.");
+			}
 			$mismatch = $this->mismatch($type, $assignment->getValue());
 
 			if ($mismatch !== null) {
@@ -365,13 +343,4 @@
 			return count($ranges) === 1 && $ranges[0] instanceof AstRangeDatabase ? $ranges[0]->getEntityName() : null;
 		}
 
-		/**
-		 * @param string $name Parameter or local name
-		 * @param string $type Declared type as written
-		 * @return void
-		 */
-		private function declareVariable(string $name, string $type): void {
-			$this->variableTypes[$name] = RoutineAnalyzer::normalizeType($type);
-			$this->fieldTypes->declareVariable($name, $type);
-		}
 	}

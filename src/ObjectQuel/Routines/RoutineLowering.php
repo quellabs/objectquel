@@ -106,7 +106,7 @@
 			$this->validate($routine);
 			$this->declareVariableTypes($routine);
 			$this->prepareCursors($routine);
-			(new RoutineTypeChecker($this->entityStore, $this->typeMapper))->check($routine, $this->cursorQueries);
+			(new RoutineTypeChecker($this->statements->getFieldTypes()))->check($routine, $this->cursorQueries);
 
 			return $this->render($routine);
 		}
@@ -434,6 +434,7 @@
 		 */
 		private function declareVariableTypes(AstRoutineDefinition $routine): void {
 			$fieldTypes = $this->statements->getFieldTypes();
+			$ranges = [];
 
 			foreach ($routine->getParameters() as $parameter) {
 				$fieldTypes->declareVariable($parameter->getName(), $parameter->getType());
@@ -443,7 +444,13 @@
 				if ($statement instanceof AstDeclare && !$statement->isCursor()) {
 					$fieldTypes->declareVariable($statement->getName(), $statement->getType());
 				}
+
+				if ($statement instanceof AstRangeDeclaration) {
+					$ranges[] = $statement->getRange();
+				}
 			}
+
+			$fieldTypes->setDeclaredRanges($ranges);
 		}
 
 		/**
