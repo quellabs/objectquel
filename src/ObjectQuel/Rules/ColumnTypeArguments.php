@@ -10,14 +10,19 @@
 	 */
 	final class ColumnTypeArguments {
 
+		public readonly ?int $limit;
+		public readonly ?int $precision;
+		public readonly ?int $scale;
+		/** @var string[]|null */
+		public readonly ?array $enumValues;
+
 		/**
 		 * @param string[]|null $enumValues
 		 */
-		public function __construct(
-			public readonly ?int $limit = null,
-			public readonly ?int $precision = null,
-			public readonly ?int $scale = null,
-			public readonly ?array $enumValues = null,
-		) {
+		public function __construct(?int $limit = null, ?int $precision = null, ?int $scale = null, ?array $enumValues = null) {
+			$this->limit = $limit;
+			$this->precision = $precision;
+			$this->scale = $scale;
+			$this->enumValues = $enumValues;
 		}
 	}

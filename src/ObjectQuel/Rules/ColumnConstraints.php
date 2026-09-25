@@ -9,9 +9,11 @@
 	 */
 	final class ColumnConstraints {
 
-		public function __construct(
-			public readonly bool $nullable = false,
-			public readonly bool $identity = false,
-		) {
+		public readonly bool $nullable;
+		public readonly bool $identity;
+
+		public function __construct(bool $nullable = false, bool $identity = false) {
+			$this->nullable = $nullable;
+			$this->identity = $identity;
 		}
 	}
