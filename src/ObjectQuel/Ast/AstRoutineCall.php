@@ -61,6 +61,24 @@
 		}
 
 		/**
+		 * Replaces an argument by identity, preserving its position and setting its parent.
+		 * @param AstInterface $oldArgument Argument to replace
+		 * @param AstInterface $newArgument Replacement expression
+		 * @return bool True when the argument was found and replaced
+		 */
+		public function replaceArgument(AstInterface $oldArgument, AstInterface $newArgument): bool {
+			foreach ($this->arguments as $index => $argument) {
+				if ($argument === $oldArgument) {
+					$this->arguments[$index] = $newArgument;
+					$newArgument->setParent($this);
+					return true;
+				}
+			}
+
+			return false;
+		}
+
+		/**
 		 * @return string|null Abstract column type the routine returns, or null when unknown
 		 */
 		public function getRoutineReturnType(): ?string {

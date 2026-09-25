@@ -3,6 +3,7 @@
 	namespace Quellabs\ObjectQuel\Planner\Helpers;
 	
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRetrieve;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRoutineCall;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\NodeBinary;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\NodeSingleExpression;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\NodeWithAggregation;
@@ -21,6 +22,7 @@
 		 * @param AstInterface $parent The parent node containing the child to replace
 		 * @param AstInterface $oldChild The existing child node to be replaced
 		 * @param AstInterface $newChild The new child node to replace the old one
+		 * @return void
 		 * @throws \InvalidArgumentException When the old child cannot be found or replacement is not supported
 		 */
 		public static function replaceChild(AstInterface $parent, AstInterface $oldChild, AstInterface $newChild): void {
@@ -63,6 +65,10 @@
 			
 			// Replace a sort term's expression (e.g., an ORDER BY alias expanded to its target expression)
 			if ($parent instanceof AstRetrieve && $parent->replaceSortExpression($oldChild, $newChild)) {
+				return;
+			}
+
+			if ($parent instanceof AstRoutineCall && $parent->replaceArgument($oldChild, $newChild)) {
 				return;
 			}
 
