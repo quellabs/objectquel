@@ -254,16 +254,15 @@
 		/**
 		 * Renders an assignment's value expression to SQL via BuildSqlFromAst
 		 * — the same expression-to-SQL visitor the retrieve pipeline uses.
-		 * Compiled in 'VALUES' mode, not 'WHERE': a SET target's value is an
-		 * ordinary scalar expression, never a boolean predicate (see
-		 * compileCondition() for the WHERE-clause counterpart).
+		 * Compiled as a value, not a predicate: a predicate becomes a 1/0 value on
+		 * engines without boolean literals (see compileCondition() for the WHERE clause).
 		 * @param AstInterface $expression
 		 * @param array<string, mixed> $parameters
 		 * @return string
 		 */
 		private function compileExpression(AstInterface $expression, array &$parameters): string {
 			$builder = new BuildSqlFromAst($this->entityStore, $parameters, 'VALUES', $this->platform, $this->routineSchema);
-			return $builder->visitNodeAndReturnSQL($expression);
+			return $builder->visitValueAndReturnSQL($expression);
 		}
 
 		/**

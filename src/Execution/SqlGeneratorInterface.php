@@ -20,4 +20,11 @@
 		 * @return string The SQL predicate
 		 */
 		public function visitConditionAndReturnSQL(AstInterface $condition): string;
+
+		/**
+		 * Visit a node in a value position (select list, assigned value, argument, comparison operand) and return its SQL.
+		 * @param AstInterface $value The value node
+		 * @return string The SQL value
+		 */
+		public function visitValueAndReturnSQL(AstInterface $value): string;
 	}

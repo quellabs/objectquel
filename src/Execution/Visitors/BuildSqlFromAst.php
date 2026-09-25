@@ -53,6 +53,7 @@
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstUnaryOperation;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\NodeBinary;
 	use Quellabs\ObjectQuel\ObjectQuel\AstInterface;
+	use Quellabs\ObjectQuel\ObjectQuel\Helpers\BooleanExpressionKind;
 	use Quellabs\ObjectQuel\Capabilities\PlatformCapabilitiesInterface;
 	use Quellabs\ObjectQuel\Capabilities\NullPlatformCapabilities;
 	use Quellabs\ObjectQuel\DatabaseAdapter\Mapper\CastTypeMapper;
@@ -221,20 +222,34 @@
 
 		/**
 		 * Visit a node in a predicate position and return its SQL. Without boolean
-		 * literals (SQL Server) a bare BIT value isn't a predicate, so it's compared to 1.
+		 * literals (SQL Server) a scalar BIT value isn't a predicate, so it's compared to 1.
 		 * @param AstInterface $condition The condition node
 		 * @return string The SQL predicate
 		 */
 		public function visitConditionAndReturnSQL(AstInterface $condition): string {
 			$sql = $this->visitNodeAndReturnSQL($condition);
 
-			$isBareValue = $condition instanceof AstIdentifier || $condition instanceof AstBool || $condition instanceof AstParameter;
-
-			if ($isBareValue && !$this->platform->supportsBooleanLiterals()) {
+			if (!$this->platform->supportsBooleanLiterals() && BooleanExpressionKind::isScalarValue($condition)) {
 				return "{$sql} = 1";
 			}
 
 			return $sql;
+		}
+
+		/**
+		 * Visit a node in a value position and return its SQL. Without boolean literals (SQL Server)
+		 * a predicate isn't a value, so it becomes a CASE yielding 1, 0 or NULL like a BIT would.
+		 * The predicate appears twice in the CASE, so the engine may evaluate it twice.
+		 * @param AstInterface $value The value node
+		 * @return string The SQL value
+		 */
+		public function visitValueAndReturnSQL(AstInterface $value): string {
+			if ($this->platform->supportsBooleanLiterals() || !BooleanExpressionKind::isPredicate($value)) {
+				return $this->visitNodeAndReturnSQL($value);
+			}
+
+			$predicate = $this->visitConditionAndReturnSQL($value);
+			return "CASE WHEN {$predicate} THEN 1 WHEN NOT ({$predicate}) THEN 0 END";
 		}
 
 		/**
@@ -282,6 +297,12 @@
 				return;
 			}
 			
+			// A predicate selected as a value needs converting on engines without boolean literals
+			if (BooleanExpressionKind::isPredicate($expression)) {
+				$this->result[] = $this->visitValueAndReturnSQL($expression);
+				return;
+			}
+
 			// Only process if the expression is an identifier
 			if (!$expression instanceof AstIdentifier) {
 				return;
@@ -389,7 +410,7 @@
 			$sqlType = $supportedTypes[$ast->getCastType()] ?? strtoupper($ast->getCastType());
 
 			// Generate the SQL fragment for the inner expression
-			$innerSql = $this->visitNodeAndReturnSQL($ast->getExpression());
+			$innerSql = $this->visitValueAndReturnSQL($ast->getExpression());
 
 			// Emit standard SQL CAST(), supported by all engines
 			$this->result[] = "CAST({$innerSql} AS {$sqlType})";

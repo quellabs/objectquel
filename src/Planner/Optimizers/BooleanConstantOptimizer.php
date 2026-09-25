@@ -5,11 +5,11 @@
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstBinaryOperator;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstBool;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstExpression;
-	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstIdentifier;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstNot;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstNumber;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRetrieve;
 	use Quellabs\ObjectQuel\ObjectQuel\AstInterface;
+	use Quellabs\ObjectQuel\ObjectQuel\Helpers\BooleanExpressionKind;
 	
 	/**
 	 * Propagates boolean constants upward through the WHERE clause, collapsing
@@ -180,11 +180,12 @@
 			/** @var AstBool $right */
 			$constValue = $right->getValue();
 
-			// Do not fold comparisons like `p.published = true` when the non-constant
-			// side is a plain column identifier. ConditionFilter only accepts
-			// AstExpression leaves, so reducing to AstIdentifier drops the WHERE clause.
+			// Do not fold comparisons like `p.published = true` or `f(x) = 1` when the
+			// non-constant side is a scalar value: ConditionFilter only accepts
+			// AstExpression leaves, so reducing to AstIdentifier drops the WHERE clause,
+			// and a non-boolean value (an integer routine result) isn't a predicate.
 			// Folding is only safe for derived boolean expressions (e.g. is_float()).
-			if ($left instanceof AstIdentifier) {
+			if (!$left instanceof AstBool && BooleanExpressionKind::isScalarValue($left)) {
 				return null;
 			}
 			

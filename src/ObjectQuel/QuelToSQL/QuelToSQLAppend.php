@@ -202,7 +202,7 @@
 				$value->accept(new NormalizeDateTime($this->entityStore, $this->valueTypes));
 
 				$builder = new BuildSqlFromAst($this->entityStore, $parameters, 'VALUES', $this->platform, $this->routineSchema);
-				$compiled[$assignment->getProperty()] = $this->convertTimestamp($builder->visitNodeAndReturnSQL($value), $this->valueTypes->inferReturnType($value), $assignment->getProperty(), $metadata);
+				$compiled[$assignment->getProperty()] = $this->convertTimestamp($builder->visitValueAndReturnSQL($value), $this->valueTypes->inferReturnType($value), $assignment->getProperty(), $metadata);
 			}
 
 			// @Orm\Version columns the caller didn't assign: initial value for this row.

@@ -34,6 +34,7 @@
 	use Quellabs\ObjectQuel\ObjectQuel\AstInterface;
 	use Quellabs\ObjectQuel\ObjectQuel\AstVisitorInterface;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\IdentifierType;
+	use Quellabs\ObjectQuel\ObjectQuel\Helpers\BooleanExpressionKind;
 	use Quellabs\ObjectQuel\ObjectQuel\Routines\RoutineReferenceSql;
 	
 	/**
@@ -67,10 +68,14 @@
 		private const array OPERATOR_PRECEDENCE = [
 			'OR'  => 1,
 			'AND' => 2,
-			'='   => 3, '<>' => 3, '<' => 3, '>' => 3, '<=' => 3, '>=' => 3,
+			'='   => self::COMPARISON_PRECEDENCE, '<>' => self::COMPARISON_PRECEDENCE, '<' => self::COMPARISON_PRECEDENCE,
+			'>'   => self::COMPARISON_PRECEDENCE, '<=' => self::COMPARISON_PRECEDENCE, '>=' => self::COMPARISON_PRECEDENCE,
 			'+'   => 4, '-'  => 4,
 			'*'   => 5, '/'  => 5,
 		];
+
+		/** Precedence shared by all comparison operators */
+		private const int COMPARISON_PRECEDENCE = 3;
 
 		/**
 		 * Wildcard character mappings for converting user-friendly patterns to SQL LIKE syntax
@@ -189,6 +194,7 @@
 		/**
 		 * Renders one operand of a binary operator, parenthesized when it binds more loosely than
 		 * its parent, or equally on the right side (`a - (b - c)`; the parser left-folds same-precedence chains).
+		 * Comparisons don't chain (PostgreSQL rejects `a > b = c`), so a comparison operand of one is always parenthesized.
 		 * @param AstInterface $operand The operand to render
 		 * @param int|null $parentPrecedence Precedence of the enclosing operator, or null if unranked
 		 * @param bool $isRightOperand Whether this is the right-hand operand
@@ -196,7 +202,12 @@
 		 * @return string The operand's SQL, parenthesized if required
 		 */
 		private function operandSql(AstInterface $operand, ?int $parentPrecedence, bool $isRightOperand, bool $isPredicate): string {
-			$sql = $isPredicate ? $this->mainVisitor->visitConditionAndReturnSQL($operand) : $this->visitNodeAndReturnSQL($operand);
+			$sql = $isPredicate ? $this->mainVisitor->visitConditionAndReturnSQL($operand) : $this->mainVisitor->visitValueAndReturnSQL($operand);
+
+			// A predicate converted to a CASE value is self-delimiting
+			if (!$isPredicate && !$this->platform->supportsBooleanLiterals() && BooleanExpressionKind::isPredicate($operand)) {
+				return $sql;
+			}
 
 			if ($parentPrecedence === null || !$operand instanceof NodeBinary) {
 				return $sql;
@@ -208,7 +219,7 @@
 				return $sql;
 			}
 
-			$needsParens = $isRightOperand
+			$needsParens = $isRightOperand || $parentPrecedence === self::COMPARISON_PRECEDENCE
 				? $childPrecedence <= $parentPrecedence
 				: $childPrecedence < $parentPrecedence;
 

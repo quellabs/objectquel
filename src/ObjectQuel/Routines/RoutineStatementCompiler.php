@@ -15,7 +15,6 @@
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstAlias;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstAppend;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstAssignment;
-	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstBool;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstCall;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstDelete;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRangeDatabase;
@@ -253,23 +252,17 @@
 		}
 
 		/**
-		 * Compiles a procedural value (assignment, initializer, `return`). Without boolean literals (SQL Server)
-		 * a predicate isn't a value, so it becomes a CASE that yields 1, 0 or NULL like a boolean would.
+		 * Compiles a procedural value (assignment, initializer, `return`, call argument).
 		 * @param AstInterface $value Analyzed expression
 		 * @return string
 		 * @throws SemanticException
 		 */
 		public function compileValue(AstInterface $value): string {
-			if (!$this->platform->supportsBooleanLiterals() && !$value instanceof AstBool && $value->getReturnType() === 'boolean') {
-				$predicate = $this->compileCondition($value);
-				return "CASE WHEN {$predicate} THEN 1 WHEN NOT ({$predicate}) THEN 0 END";
-			}
-
 			$value = $value->deepClone();
 			$this->normalizeDateTimes($value);
 
 			return $this->withoutBoundParameters('expression', function (array &$parameters) use ($value): string {
-				return (new BuildSqlFromAst($this->entityStore, $parameters, 'VALUES', $this->platform, $this->routineSchema))->visitNodeAndReturnSQL($value);
+				return (new BuildSqlFromAst($this->entityStore, $parameters, 'VALUES', $this->platform, $this->routineSchema))->visitValueAndReturnSQL($value);
 			});
 		}
 

@@ -217,7 +217,7 @@
 		 * @return string E.g. `"f"(1)` or `[dbo].[f](1)`
 		 */
 		public function handleRoutineCall(AstRoutineCall $call): string {
-			$arguments = array_map(fn(AstInterface $argument) => $this->visitNodeAndReturnSQL($argument), $call->getArguments());
+			$arguments = array_map(fn(AstInterface $argument) => $this->mainVisitor->visitValueAndReturnSQL($argument), $call->getArguments());
 			return $this->identifierQuoter->quoteRoutineName($call->getName(), $this->routineSchema) . '(' . implode(', ', $arguments) . ')';
 		}
 		
