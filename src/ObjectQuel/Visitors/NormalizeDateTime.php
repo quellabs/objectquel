@@ -16,8 +16,8 @@
 
 	/**
 	 * Expresses the datetime operands of binary expressions as Unix timestamps, which date arithmetic works in.
-	 * A datetime identifier operand (a column, or a routine variable or cursor field when the type
-	 * resolver knows them) is wrapped in AstDate; a date string compared with one becomes an integer.
+	 * A known native datetime operand (column, typed routine call, routine variable or cursor field)
+	 * is wrapped in AstDate; a date string compared with one becomes an integer.
 	 * Bound parameters are converted at execution by CoerceDateTimeParameters.
 	 */
 	class NormalizeDateTime implements AstVisitorInterface {
@@ -36,7 +36,7 @@
 		}
 
 		/**
-		 * Wraps the datetime identifier operands of a binary expression, then converts a date string compared with a timestamp.
+		 * Wraps known datetime operands, then converts a date string compared with a timestamp.
 		 * @param AstInterface $node
 		 * @return void
 		 * @throws EntityResolutionException|QuelException
@@ -46,11 +46,11 @@
 				return;
 			}
 
-			if ($this->isDateTimeIdentifier($node->getLeft())) {
+			if ($this->isDateTimeValue($node->getLeft())) {
 				$node->setLeft($this->attach(new AstDate($node->getLeft(), null), $node));
 			}
 
-			if ($this->isDateTimeIdentifier($node->getRight())) {
+			if ($this->isDateTimeValue($node->getRight())) {
 				$node->setRight($this->attach(new AstDate($node->getRight(), null), $node));
 			}
 
@@ -69,12 +69,12 @@
 
 		/**
 		 * @param AstInterface $operand Operand of a binary expression
-		 * @return bool True when it's an identifier chain ending in a datetime value
+		 * @return bool True when the expression returns a native datetime value
 		 * @throws EntityResolutionException
 		 */
-		private function isDateTimeIdentifier(AstInterface $operand): bool {
+		private function isDateTimeValue(AstInterface $operand): bool {
 			if (!$operand instanceof AstIdentifier) {
-				return false;
+				return $this->resolveType->inferReturnType($operand) === '\\DateTime';
 			}
 
 			// The chain's last node carries the value's type: "createdAt" in "p.createdAt"
