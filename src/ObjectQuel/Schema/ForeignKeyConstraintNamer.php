@@ -28,6 +28,12 @@
 		 */
 		private const int MAX_LENGTH = 63;
 
+		/**
+		 * Derives the canonical foreign-key constraint name.
+		 * @param string $tableName
+		 * @param string $column
+		 * @return string
+		 */
 		public static function name(string $tableName, string $column): string {
 			return self::nameForColumns($tableName, [$column]);
 		}

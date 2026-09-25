@@ -66,6 +66,11 @@
 			$conditions->setParent($this);
 		}
 
+		/**
+		 * Passes this node to the visitor.
+		 * @param AstVisitorInterface $visitor
+		 * @return void
+		 */
 		public function accept(AstVisitorInterface $visitor): void {
 			// Process the range first, mirroring AstRetrieve's accept() order.
 			$this->range->accept($visitor);
@@ -79,6 +84,10 @@
 			$this->conditions?->accept($visitor);
 		}
 
+		/**
+		 * Returns the range.
+		 * @return AstRangeDatabase
+		 */
 		public function getRange(): AstRangeDatabase {
 			return $this->range;
 		}
@@ -97,6 +106,10 @@
 			return $this->assignments;
 		}
 
+		/**
+		 * Returns the conditions.
+		 * @return ?AstInterface
+		 */
 		public function getConditions(): ?AstInterface {
 			return $this->conditions;
 		}
@@ -117,11 +130,20 @@
 			return $this->conditions;
 		}
 
+		/**
+		 * Updates the statement conditions.
+		 * @param ?AstInterface $conditions
+		 * @return void
+		 */
 		public function setConditions(?AstInterface $conditions): void {
 			$this->conditions = $conditions;
 			$this->conditions?->setParent($this);
 		}
 
+		/**
+		 * Returns a deep clone of this node.
+		 * @return static
+		 */
 		public function deepClone(): static {
 			$clonedRange = $this->range->deepClone();
 			$clonedAssignments = $this->cloneArray($this->assignments);

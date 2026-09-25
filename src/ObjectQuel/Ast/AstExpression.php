@@ -100,6 +100,10 @@
 			return "boolean";
 		}
 		
+		/**
+		 * Returns a deep clone of this node.
+		 * @return static
+		 */
 		public function deepClone(): static {
 			// Clone both operands
 			$clonedLeft = $this->left->deepClone();

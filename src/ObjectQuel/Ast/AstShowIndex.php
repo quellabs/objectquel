@@ -15,19 +15,37 @@
 
 		private string $tableName;
 
+		/**
+		 * Initializes this AST node.
+		 * @param string $indexName
+		 * @param string $tableName
+		 * @return void
+		 */
 		public function __construct(string $indexName, string $tableName) {
 			$this->indexName = $indexName;
 			$this->tableName = $tableName;
 		}
 
+		/**
+		 * Returns the index name.
+		 * @return string
+		 */
 		public function getIndexName(): string {
 			return $this->indexName;
 		}
 
+		/**
+		 * Returns the table name.
+		 * @return string
+		 */
 		public function getTableName(): string {
 			return $this->tableName;
 		}
 
+		/**
+		 * Returns a deep clone of this node.
+		 * @return static
+		 */
 		public function deepClone(): static {
 			// @phpstan-ignore-next-line new.static
 			$clone = new static($this->indexName, $this->tableName);

@@ -30,19 +30,36 @@
 			$this->value->setParent($this);
 		}
 
+		/**
+		 * Passes this node to the visitor.
+		 * @param AstVisitorInterface $visitor
+		 * @return void
+		 */
 		public function accept(AstVisitorInterface $visitor): void {
 			parent::accept($visitor);
 			$this->value->accept($visitor);
 		}
 
+		/**
+		 * Returns the property.
+		 * @return string
+		 */
 		public function getProperty(): string {
 			return $this->property;
 		}
 
+		/**
+		 * Returns the value.
+		 * @return AstInterface
+		 */
 		public function getValue(): AstInterface {
 			return $this->value;
 		}
 
+		/**
+		 * Returns a deep clone of this node.
+		 * @return static
+		 */
 		public function deepClone(): static {
 			// @phpstan-ignore-next-line new.static
 			$clone = new static($this->property, $this->value->deepClone());

@@ -31,24 +31,47 @@
 
 		private bool $ifExists;
 
+		/**
+		 * Initializes this AST node.
+		 * @param string $indexName
+		 * @param string $tableName
+		 * @param bool $ifExists
+		 * @return void
+		 */
 		public function __construct(string $indexName, string $tableName, bool $ifExists = false) {
 			$this->indexName = $indexName;
 			$this->tableName = $tableName;
 			$this->ifExists = $ifExists;
 		}
 
+		/**
+		 * Returns the index name.
+		 * @return string
+		 */
 		public function getIndexName(): string {
 			return $this->indexName;
 		}
 
+		/**
+		 * Returns the table name.
+		 * @return string
+		 */
 		public function getTableName(): string {
 			return $this->tableName;
 		}
 
+		/**
+		 * Reports whether the statement includes an IF EXISTS clause.
+		 * @return bool
+		 */
 		public function isIfExists(): bool {
 			return $this->ifExists;
 		}
 
+		/**
+		 * Returns a deep clone of this node.
+		 * @return static
+		 */
 		public function deepClone(): static {
 			// @phpstan-ignore-next-line new.static
 			$clone = new static($this->indexName, $this->tableName, $this->ifExists);

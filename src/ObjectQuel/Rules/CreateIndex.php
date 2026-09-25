@@ -26,10 +26,19 @@
 
 		private Lexer $lexer;
 
+		/**
+		 * Initializes this parser rule.
+		 * @param Lexer $lexer
+		 * @return void
+		 */
 		public function __construct(Lexer $lexer) {
 			$this->lexer = $lexer;
 		}
 
+		/**
+		 * Parses the input and returns its AST node.
+		 * @return AstCreateIndex
+		 */
 		public function parse(): AstCreateIndex {
 			$this->lexer->matchKeyword('index');
 
@@ -48,6 +57,10 @@
 			return new AstCreateIndex($tableName, $indexName, $columns, $modifiers['unique'], $modifiers['type']);
 		}
 
+		/**
+		 * Consumes an optional trailing semicolon.
+		 * @return void
+		 */
 		private function consumeOptionalSemicolon(): void {
 			if ($this->lexer->lookahead() === Token::Semicolon) {
 				$this->lexer->match(Token::Semicolon);

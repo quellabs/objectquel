@@ -50,6 +50,10 @@
 			return "string";
 		}
 		
+		/**
+		 * Returns a deep clone of this node.
+		 * @return static
+		 */
 		public function deepClone(): static {
 			// @phpstan-ignore-next-line new.static
 			return new static($this->getValue(), $this->getEnclosingChar());

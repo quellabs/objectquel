@@ -55,6 +55,11 @@
 			$this->aggregation?->setParent($this);
 		}
 		
+		/**
+		 * Passes this node to the visitor.
+		 * @param AstVisitorInterface $visitor
+		 * @return void
+		 */
 		public function accept(AstVisitorInterface $visitor): void {
 			parent::accept($visitor);
 			$this->aggregation?->accept($visitor);

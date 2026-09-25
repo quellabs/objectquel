@@ -39,24 +39,47 @@
 
 		private bool $ifExists;
 
+		/**
+		 * Initializes this AST node.
+		 * @param string $name
+		 * @param bool $temporary
+		 * @param bool $ifExists
+		 * @return void
+		 */
 		public function __construct(string $name, bool $temporary = false, bool $ifExists = false) {
 			$this->name = $name;
 			$this->temporary = $temporary;
 			$this->ifExists = $ifExists;
 		}
 
+		/**
+		 * Returns the name.
+		 * @return string
+		 */
 		public function getName(): string {
 			return $this->name;
 		}
 
+		/**
+		 * Reports whether the statement targets a temporary table.
+		 * @return bool
+		 */
 		public function isTemporary(): bool {
 			return $this->temporary;
 		}
 
+		/**
+		 * Reports whether the statement includes an IF EXISTS clause.
+		 * @return bool
+		 */
 		public function isIfExists(): bool {
 			return $this->ifExists;
 		}
 
+		/**
+		 * Returns a deep clone of this node.
+		 * @return static
+		 */
 		public function deepClone(): static {
 			// @phpstan-ignore-next-line new.static
 			$clone = new static($this->name, $this->temporary, $this->ifExists);

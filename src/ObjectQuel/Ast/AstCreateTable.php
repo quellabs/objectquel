@@ -81,6 +81,11 @@
 			}
 		}
 
+		/**
+		 * Passes this node to the visitor.
+		 * @param AstVisitorInterface $visitor
+		 * @return void
+		 */
 		public function accept(AstVisitorInterface $visitor): void {
 			parent::accept($visitor);
 
@@ -97,6 +102,10 @@
 			}
 		}
 
+		/**
+		 * Returns the table name.
+		 * @return string
+		 */
 		public function getTableName(): string {
 			return $this->tableName;
 		}
@@ -108,10 +117,18 @@
 			return $this->columns;
 		}
 
+		/**
+		 * Reports whether the statement targets a temporary table.
+		 * @return bool
+		 */
 		public function isTemporary(): bool {
 			return $this->temporary;
 		}
 
+		/**
+		 * Reports whether the statement includes an IF NOT EXISTS clause.
+		 * @return bool
+		 */
 		public function isIfNotExists(): bool {
 			return $this->ifNotExists;
 		}
@@ -137,6 +154,10 @@
 			return $this->foreignKeys;
 		}
 
+		/**
+		 * Returns a deep clone of this node.
+		 * @return static
+		 */
 		public function deepClone(): static {
 			$clonedColumns = $this->cloneArray($this->columns);
 			$clonedIndexes = $this->cloneArray($this->indexes);

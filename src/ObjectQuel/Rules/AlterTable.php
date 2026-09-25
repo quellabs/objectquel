@@ -56,6 +56,11 @@
 
 		private Lexer $lexer;
 
+		/**
+		 * Initializes this parser rule.
+		 * @param Lexer $lexer
+		 * @return void
+		 */
 		public function __construct(Lexer $lexer) {
 			$this->lexer = $lexer;
 		}

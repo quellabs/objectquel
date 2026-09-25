@@ -99,6 +99,11 @@
 			return new self($range, null, $columns, $source);
 		}
 
+		/**
+		 * Passes this node to the visitor.
+		 * @param AstVisitorInterface $visitor
+		 * @return void
+		 */
 		public function accept(AstVisitorInterface $visitor): void {
 			parent::accept($visitor);
 
@@ -112,6 +117,10 @@
 			$this->onConflict?->accept($visitor);
 		}
 
+		/**
+		 * Returns the range.
+		 * @return AstRangeDatabase|AstRangeJsonSource
+		 */
 		public function getRange(): AstRangeDatabase|AstRangeJsonSource {
 			return $this->range;
 		}
@@ -132,6 +141,10 @@
 			return $this->range instanceof AstRangeJsonSource ? $this->range->getPath() : null;
 		}
 
+		/**
+		 * Reports whether the append statement reads rows from a SELECT query.
+		 * @return bool
+		 */
 		public function isInsertFromSelect(): bool {
 			return $this->source !== null;
 		}
@@ -180,6 +193,10 @@
 			return $this->columns;
 		}
 
+		/**
+		 * Returns the source.
+		 * @return ?AstRetrieve
+		 */
 		public function getSource(): ?AstRetrieve {
 			return $this->source;
 		}
@@ -198,10 +215,18 @@
 			return $this->source;
 		}
 
+		/**
+		 * Returns the optional ON CONFLICT clause.
+		 * @return ?AstReplace
+		 */
 		public function getOnConflict(): ?AstReplace {
 			return $this->onConflict;
 		}
 
+		/**
+		 * Returns a deep clone of this node.
+		 * @return static
+		 */
 		public function deepClone(): static {
 			$clonedOnConflict = $this->onConflict?->deepClone();
 			$clonedRange = $this->range->deepClone();
