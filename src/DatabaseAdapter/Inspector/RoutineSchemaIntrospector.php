@@ -7,7 +7,7 @@
 	/**
 	 * Reads the schema that qualifies stored routine names on the connected engine.
 	 */
-	class RoutineSchemaInspector {
+	class RoutineSchemaIntrospector {
 
 		/**
 		 * @var DatabaseAdapter

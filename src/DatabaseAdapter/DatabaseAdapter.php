@@ -9,8 +9,8 @@
 	use Quellabs\ObjectQuel\DatabaseAdapter\Inspector\MysqlSchemaIntrospector;
 	use Quellabs\ObjectQuel\DatabaseAdapter\Inspector\NullSchemaIntrospector;
 	use Quellabs\ObjectQuel\DatabaseAdapter\Inspector\PostgresSchemaIntrospector;
-	use Quellabs\ObjectQuel\DatabaseAdapter\Inspector\RoutineInspector;
-	use Quellabs\ObjectQuel\DatabaseAdapter\Inspector\RoutineSchemaInspector;
+	use Quellabs\ObjectQuel\DatabaseAdapter\Inspector\RoutineDefinitionInspector;
+	use Quellabs\ObjectQuel\DatabaseAdapter\Inspector\RoutineSchemaIntrospector;
 	use Quellabs\ObjectQuel\DatabaseAdapter\Inspector\SchemaIntrospectorInterface;
 	use Quellabs\ObjectQuel\DatabaseAdapter\Inspector\SqlServerCompatibilityLevelInspector;
 	use Quellabs\ObjectQuel\DatabaseAdapter\Inspector\SqlServerFulltextIndexInspector;
@@ -101,13 +101,13 @@
 		private ?SqlServerCompatibilityLevelInspector $sqlServerCompatibilityLevelInspectorCache = null;
 
 		/**
-		 * Cached RoutineSchemaInspector instance, lazily created by getRoutineSchema().
-		 * @var RoutineSchemaInspector|null
+		 * Cached RoutineSchemaIntrospector instance, lazily created by getRoutineSchema().
+		 * @var RoutineSchemaIntrospector|null
 		 */
-		private ?RoutineSchemaInspector $routineSchemaInspectorCache = null;
+		private ?RoutineSchemaIntrospector $routineSchemaIntrospectorCache = null;
 
-		/** @var RoutineInspector|null Lazily created inspector; routine metadata itself is not cached */
-		private ?RoutineInspector $routineInspectorCache = null;
+		/** @var RoutineDefinitionInspector|null Lazily created inspector; routine metadata itself is not cached */
+		private ?RoutineDefinitionInspector $routineDefinitionInspectorCache = null;
 		
 		/**
 		 * Constructs a new database adapter instance
@@ -292,8 +292,8 @@
 		 * @throws \Quellabs\ObjectQuel\Exception\QuelException When missing, ambiguous, unsupported, or the lookup fails
 		 */
 		public function getRoutineSignature(string $name): RoutineSignature {
-			$this->routineInspectorCache ??= new RoutineInspector($this);
-			return $this->routineInspectorCache->getRoutineSignature($name);
+			$this->routineDefinitionInspectorCache ??= new RoutineDefinitionInspector($this);
+			return $this->routineDefinitionInspectorCache->getRoutineSignature($name);
 		}
 
 		/**
@@ -303,19 +303,19 @@
 		 * @throws \Quellabs\ObjectQuel\Exception\QuelException When the lookup fails or routines are unsupported
 		 */
 		public function routineExists(string $name): bool {
-			$this->routineInspectorCache ??= new RoutineInspector($this);
-			return $this->routineInspectorCache->routineExists($name);
+			$this->routineDefinitionInspectorCache ??= new RoutineDefinitionInspector($this);
+			return $this->routineDefinitionInspectorCache->routineExists($name);
 		}
 
 		/**
 		 * Returns the schema that qualifies routine names, or null when unqualified names are used.
 		 * @return string|null
 		 * @throws \RuntimeException When the default schema can't be read
-		 * @see RoutineSchemaInspector::getRoutineSchema()
+		 * @see RoutineSchemaIntrospector::getRoutineSchema()
 		 */
 		public function getRoutineSchema(): ?string {
-			$this->routineSchemaInspectorCache ??= new RoutineSchemaInspector($this);
-			return $this->routineSchemaInspectorCache->getRoutineSchema();
+			$this->routineSchemaIntrospectorCache ??= new RoutineSchemaIntrospector($this);
+			return $this->routineSchemaIntrospectorCache->getRoutineSchema();
 		}
 		
 		/**

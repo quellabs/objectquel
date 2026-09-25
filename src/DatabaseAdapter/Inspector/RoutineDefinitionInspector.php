@@ -10,7 +10,7 @@
 	/**
 	 * Reads routine kinds and return types from the connected database catalog.
 	 */
-	class RoutineInspector {
+	class RoutineDefinitionInspector {
 
 		/**
 		 * Creates an inspector for the connected database.
