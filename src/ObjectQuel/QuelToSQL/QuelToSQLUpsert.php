@@ -12,7 +12,7 @@
 	use Quellabs\ObjectQuel\Metadata\EntityMetadataRecord;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstAssignment;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstReplace;
-	use Quellabs\ObjectQuel\ObjectQuel\Helpers\AliasedDmlSql;
+	use Quellabs\ObjectQuel\ObjectQuel\Helpers\AliasedDmlSqlBuilder;
 	use Quellabs\ObjectQuel\ObjectQuel\Helpers\ConflictTargetResolver;
 	use Quellabs\ObjectQuel\ObjectQuel\Helpers\WriteVerbIdentifierResolver;
 	use Quellabs\ObjectQuel\ObjectQuel\Helpers\WriteVerbParameterNormalizer;
@@ -225,7 +225,7 @@
 			$whereSql = (new BuildSqlFromAst($this->entityStore, $parameters, 'WHERE', $this->platform, $this->routineSchema))
 				->visitConditionAndReturnSQL($conditions);
 
-			$updateSql = AliasedDmlSql::update(
+			$updateSql = AliasedDmlSqlBuilder::update(
 				$tableName,
 				$onConflict->getRange()->getName(),
 				implode(', ', $setClauseParts),

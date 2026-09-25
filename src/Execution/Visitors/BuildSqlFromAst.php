@@ -53,7 +53,7 @@
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstUnaryOperation;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\NodeBinary;
 	use Quellabs\ObjectQuel\ObjectQuel\AstInterface;
-	use Quellabs\ObjectQuel\ObjectQuel\Helpers\BooleanExpressionKind;
+	use Quellabs\ObjectQuel\ObjectQuel\Helpers\BooleanExpressionClassifier;
 	use Quellabs\ObjectQuel\Capabilities\PlatformCapabilitiesInterface;
 	use Quellabs\ObjectQuel\Capabilities\NullPlatformCapabilities;
 	use Quellabs\ObjectQuel\DatabaseAdapter\Mapper\CastTypeMapper;
@@ -229,7 +229,7 @@
 		public function visitConditionAndReturnSQL(AstInterface $condition): string {
 			$sql = $this->visitNodeAndReturnSQL($condition);
 
-			if (!$this->platform->supportsBooleanLiterals() && BooleanExpressionKind::isScalarValue($condition)) {
+			if (!$this->platform->supportsBooleanLiterals() && BooleanExpressionClassifier::isScalarValue($condition)) {
 				return "{$sql} = 1";
 			}
 
@@ -244,7 +244,7 @@
 		 * @return string The SQL value
 		 */
 		public function visitValueAndReturnSQL(AstInterface $value): string {
-			if ($this->platform->supportsBooleanLiterals() || !BooleanExpressionKind::isPredicate($value)) {
+			if ($this->platform->supportsBooleanLiterals() || !BooleanExpressionClassifier::isPredicate($value)) {
 				return $this->visitNodeAndReturnSQL($value);
 			}
 
@@ -298,7 +298,7 @@
 			}
 			
 			// A predicate selected as a value needs converting on engines without boolean literals
-			if (BooleanExpressionKind::isPredicate($expression)) {
+			if (BooleanExpressionClassifier::isPredicate($expression)) {
 				$this->result[] = $this->visitValueAndReturnSQL($expression);
 				return;
 			}

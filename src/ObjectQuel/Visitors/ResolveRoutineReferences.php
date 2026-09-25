@@ -10,7 +10,7 @@
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRetrieve;
 	use Quellabs\ObjectQuel\ObjectQuel\AstInterface;
 	use Quellabs\ObjectQuel\ObjectQuel\AstVisitorInterface;
-	use Quellabs\ObjectQuel\ObjectQuel\Helpers\FindPropertyRange;
+	use Quellabs\ObjectQuel\ObjectQuel\Helpers\PropertyRangeFinder;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\IdentifierType;
 	use Quellabs\ObjectQuel\ObjectQuel\Routines\RoutineScope;
 
@@ -20,7 +20,7 @@
 	 * scope doesn't allow at this point. Range references are left for the
 	 * regular query pipeline.
 	 */
-	class ResolveRoutineReferences extends FindPropertyRange implements AstVisitorInterface {
+	class ResolveRoutineReferences extends PropertyRangeFinder implements AstVisitorInterface {
 
 		private RoutineScope $scope;
 
@@ -94,7 +94,7 @@
 			}
 
 			if ($this->inQueryStatement) {
-				// ResolveUnqualifiedProperty and ExpandMacros would otherwise rewrite
+				// UnqualifiedPropertyResolver and ExpandMacros would otherwise rewrite
 				// this node; reject the ambiguity instead of picking a winner.
 				if (!empty($this->findRanges($name, $this->scope->getRanges()))) {
 					throw new SemanticException("'{$name}' is both a routine variable and a property of a declared range. Rename the variable or qualify the property.");

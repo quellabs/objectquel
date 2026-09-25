@@ -10,7 +10,7 @@
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRange;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRangeDatabase;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRetrieve;
-	use Quellabs\ObjectQuel\ObjectQuel\Helpers\FindPropertyRange;
+	use Quellabs\ObjectQuel\ObjectQuel\Helpers\PropertyRangeFinder;
 	use Quellabs\ObjectQuel\ObjectQuel\Visitors\CollectNodes;
 
 	/**
@@ -18,7 +18,7 @@
 	 * v1 only allows this when the cursor reads a single, unjoined entity range
 	 * with no `unique` and no aggregates, so every row maps to one table row.
 	 */
-	class RoutineCursorSource extends FindPropertyRange {
+	class RoutineCursorSource extends PropertyRangeFinder {
 
 		private EntityStore $entityStore;
 		private RoutineRangeReferences $rangeReferences;

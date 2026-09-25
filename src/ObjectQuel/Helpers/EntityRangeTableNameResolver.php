@@ -11,7 +11,7 @@
 	 * metadata — the range kind that can appear in a real FROM/JOIN clause
 	 * and as a write-verb target.
 	 */
-	class RangeTableName {
+	class EntityRangeTableNameResolver {
 		
 		/**
 		 * @param AstRangeDatabase $range

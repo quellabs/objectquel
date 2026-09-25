@@ -8,7 +8,7 @@
 	/**
 	 * Stores Unix timestamps (numbers, date() and date arithmetic) into datetime columns and variables as native datetimes.
 	 */
-	class DateTimeWriteSql {
+	class DateTimeWriteSqlConverter {
 
 		/** Inferred types whose value is a Unix timestamp; 'datetime' is what date() and date arithmetic produce */
 		private const array TIMESTAMP_TYPES = ['datetime', 'int', 'integer', 'float'];

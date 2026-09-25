@@ -21,7 +21,7 @@
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRange;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRangeDatabase;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstSubquery;
-	use Quellabs\ObjectQuel\ObjectQuel\Helpers\RangeTableName;
+	use Quellabs\ObjectQuel\ObjectQuel\Helpers\EntityRangeTableNameResolver;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstSum;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstSumU;
 	use Quellabs\ObjectQuel\ObjectQuel\AstInterface;
@@ -677,7 +677,7 @@
 			}
 
 			// Start with the main table and its alias.
-			$tableName = RangeTableName::resolve($mainRange, $this->entityStore);
+			$tableName = EntityRangeTableNameResolver::resolve($mainRange, $this->entityStore);
 
 			// Convert to SQL
 			$sql = $this->identifierQuoter->quoteIdentifier($tableName) . ' ' . $this->identifierQuoter->quoteIdentifier($mainRange->getName());
@@ -685,7 +685,7 @@
 			// Add JOIN clauses for each related range
 			foreach ($joinRanges as $range) {
 				// Fetch the joined range's physical table name
-				$tableName = RangeTableName::resolve($range, $this->entityStore);
+				$tableName = EntityRangeTableNameResolver::resolve($range, $this->entityStore);
 
 				// Convert join property to SQL condition
 				$joinProperty = $range->getJoinProperty();

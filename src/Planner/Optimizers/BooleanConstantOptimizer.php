@@ -9,7 +9,7 @@
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstNumber;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRetrieve;
 	use Quellabs\ObjectQuel\ObjectQuel\AstInterface;
-	use Quellabs\ObjectQuel\ObjectQuel\Helpers\BooleanExpressionKind;
+	use Quellabs\ObjectQuel\ObjectQuel\Helpers\BooleanExpressionClassifier;
 	
 	/**
 	 * Propagates boolean constants upward through the WHERE clause, collapsing
@@ -185,7 +185,7 @@
 			// AstExpression leaves, so reducing to AstIdentifier drops the WHERE clause,
 			// and a non-boolean value (an integer routine result) isn't a predicate.
 			// Folding is only safe for derived boolean expressions (e.g. is_float()).
-			if (!$left instanceof AstBool && BooleanExpressionKind::isScalarValue($left)) {
+			if (!$left instanceof AstBool && BooleanExpressionClassifier::isScalarValue($left)) {
 				return null;
 			}
 			

@@ -25,7 +25,7 @@
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRangeDatabaseTempTable;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRetrieve;
 	use Quellabs\ObjectQuel\ObjectQuel\Helpers\AssignmentValidator;
-	use Quellabs\ObjectQuel\ObjectQuel\Helpers\DateTimeWriteSql;
+	use Quellabs\ObjectQuel\ObjectQuel\Helpers\DateTimeWriteSqlConverter;
 	use Quellabs\ObjectQuel\ObjectQuel\Visitors\CoerceDateTimeParameters;
 	use Quellabs\ObjectQuel\ObjectQuel\Visitors\NormalizeDateTime;
 	use Quellabs\ObjectQuel\ObjectQuel\Visitors\ResolveIdentifierRange;
@@ -411,7 +411,7 @@
 			$columnName = $metadata->getColumnName($property);
 			$columnDef = $columnName === null ? null : ($metadata->columnDefinitions[$columnName] ?? null);
 
-			return DateTimeWriteSql::convert(
+			return DateTimeWriteSqlConverter::convert(
 				$valueSql,
 				$valueType,
 				$columnDef === null ? null : TypeMapper::phinxTypeToPhpType($columnDef['type']),

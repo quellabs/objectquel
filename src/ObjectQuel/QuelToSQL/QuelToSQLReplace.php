@@ -17,9 +17,9 @@
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRangeDatabase;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstReplace;
 	use Quellabs\ObjectQuel\ObjectQuel\AstInterface;
-	use Quellabs\ObjectQuel\ObjectQuel\Helpers\AliasedDmlSql;
+	use Quellabs\ObjectQuel\ObjectQuel\Helpers\AliasedDmlSqlBuilder;
 	use Quellabs\ObjectQuel\ObjectQuel\Helpers\AssignmentValidator;
-	use Quellabs\ObjectQuel\ObjectQuel\Helpers\DateTimeWriteSql;
+	use Quellabs\ObjectQuel\ObjectQuel\Helpers\DateTimeWriteSqlConverter;
 	use Quellabs\ObjectQuel\ObjectQuel\Helpers\SetTargetColumnQuoter;
 	use Quellabs\ObjectQuel\ObjectQuel\Helpers\WriteVerbIdentifierResolver;
 	use Quellabs\ObjectQuel\ObjectQuel\Helpers\WriteVerbParameterNormalizer;
@@ -120,7 +120,7 @@
 
 			$setClauseParts = $this->buildSetClause($statement->getAssignments(), $metadata, $parameters, $range->getName());
 
-			return AliasedDmlSql::update(
+			return AliasedDmlSqlBuilder::update(
 				$metadata->tableName,
 				$range->getName(),
 				implode(', ', $setClauseParts),
@@ -149,7 +149,7 @@
 			}
 
 			$setSql = implode(', ', $this->buildSetClause($assignments, $metadata, $parameters, $range->getName()));
-			return AliasedDmlSql::update($metadata->tableName, $range->getName(), $setSql, $rowCondition, $this->identifierQuoter, $this->platform);
+			return AliasedDmlSqlBuilder::update($metadata->tableName, $range->getName(), $setSql, $rowCondition, $this->identifierQuoter, $this->platform);
 		}
 
 		/**
@@ -225,7 +225,7 @@
 			$value = $assignment->getValue();
 			$value->accept(new NormalizeDateTime($this->entityStore, $this->valueTypes));
 
-			$valueSql = DateTimeWriteSql::convert(
+			$valueSql = DateTimeWriteSqlConverter::convert(
 				$this->compileExpression($value, $parameters),
 				$this->valueTypes->inferReturnType($value),
 				$columnDef === null ? null : TypeMapper::phinxTypeToPhpType($columnDef['type']),

@@ -15,7 +15,7 @@
 	use Quellabs\ObjectQuel\ObjectQuel\Visitors\ResolveRootIdentifierType;
 	use Quellabs\ObjectQuel\ObjectQuel\Visitors\RewriteViaRelationToJoinCondition;
 	use Quellabs\ObjectQuel\ObjectQuel\Visitors\NormalizeDateTime;
-	use Quellabs\ObjectQuel\ObjectQuel\Helpers\ResolveUnqualifiedProperty;
+	use Quellabs\ObjectQuel\ObjectQuel\Helpers\UnqualifiedPropertyResolver;
 	use Quellabs\ObjectQuel\ObjectQuel\Visitors\InjectSoftDeleteCondition;
 	
 	/**
@@ -59,7 +59,7 @@
 			
 			// Step 2: Resolve unqualified property names to range-prefixed identifiers
 			// Allows bare names like 'name' to be written instead of 'p.name' when unambiguous
-			$this->processWithVisitor($ast, ResolveUnqualifiedProperty::class, $this->entityStore, $ast->getRanges());
+			$this->processWithVisitor($ast, UnqualifiedPropertyResolver::class, $this->entityStore, $ast->getRanges());
 			
 			// Step 3: Expand alias references from the SELECT list into WHERE / ORDER BY.
 			// Runs after namespace resolution and unqualified-property expansion so that

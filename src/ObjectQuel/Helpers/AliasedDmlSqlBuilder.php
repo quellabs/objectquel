@@ -10,7 +10,7 @@
 	 * MariaDB and SQL Server place a DELETE alias before FROM; SQL Server also
 	 * declares UPDATE aliases in FROM.
 	 */
-	class AliasedDmlSql {
+	class AliasedDmlSqlBuilder {
 
 		/**
 		 * @param string $tableName Unquoted table name

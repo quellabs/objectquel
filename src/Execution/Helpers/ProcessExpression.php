@@ -34,7 +34,7 @@
 	use Quellabs\ObjectQuel\ObjectQuel\AstInterface;
 	use Quellabs\ObjectQuel\ObjectQuel\AstVisitorInterface;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\IdentifierType;
-	use Quellabs\ObjectQuel\ObjectQuel\Helpers\BooleanExpressionKind;
+	use Quellabs\ObjectQuel\ObjectQuel\Helpers\BooleanExpressionClassifier;
 	use Quellabs\ObjectQuel\ObjectQuel\Routines\RoutineReferenceSql;
 	
 	/**
@@ -205,7 +205,7 @@
 			$sql = $isPredicate ? $this->mainVisitor->visitConditionAndReturnSQL($operand) : $this->mainVisitor->visitValueAndReturnSQL($operand);
 
 			// A predicate converted to a CASE value is self-delimiting
-			if (!$isPredicate && !$this->platform->supportsBooleanLiterals() && BooleanExpressionKind::isPredicate($operand)) {
+			if (!$isPredicate && !$this->platform->supportsBooleanLiterals() && BooleanExpressionClassifier::isPredicate($operand)) {
 				return $sql;
 			}
 

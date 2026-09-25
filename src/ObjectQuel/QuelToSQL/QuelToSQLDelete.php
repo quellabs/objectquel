@@ -12,8 +12,8 @@
 	use Quellabs\ObjectQuel\Metadata\EntityMetadataRecord;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstDelete;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRangeDatabase;
-	use Quellabs\ObjectQuel\ObjectQuel\Helpers\AliasedDmlSql;
-	use Quellabs\ObjectQuel\ObjectQuel\Helpers\RangeTableName;
+	use Quellabs\ObjectQuel\ObjectQuel\Helpers\AliasedDmlSqlBuilder;
+	use Quellabs\ObjectQuel\ObjectQuel\Helpers\EntityRangeTableNameResolver;
 	use Quellabs\ObjectQuel\ObjectQuel\Helpers\SetTargetColumnQuoter;
 	use Quellabs\ObjectQuel\ObjectQuel\Helpers\WriteVerbIdentifierResolver;
 	use Quellabs\ObjectQuel\ObjectQuel\Helpers\WriteVerbParameterNormalizer;
@@ -126,7 +126,7 @@
 		 * @return string
 		 */
 		private function buildStatement(AstRangeDatabase $range, EntityMetadataRecord $metadata, string $whereSql, bool $ignoreSoftDelete, ?string $alias): string {
-			$tableName = RangeTableName::resolve($range, $this->entityStore);
+			$tableName = EntityRangeTableNameResolver::resolve($range, $this->entityStore);
 			$softDeleteSetClause = $ignoreSoftDelete ? null : $this->buildSoftDeleteSetClause($metadata, $alias);
 
 			if ($alias === null) {
@@ -138,10 +138,10 @@
 			}
 
 			if ($softDeleteSetClause !== null) {
-				return AliasedDmlSql::update($tableName, $alias, $softDeleteSetClause, $whereSql, $this->identifierQuoter, $this->platform);
+				return AliasedDmlSqlBuilder::update($tableName, $alias, $softDeleteSetClause, $whereSql, $this->identifierQuoter, $this->platform);
 			}
 
-			return AliasedDmlSql::delete($tableName, $alias, $whereSql, $this->identifierQuoter, $this->platform);
+			return AliasedDmlSqlBuilder::delete($tableName, $alias, $whereSql, $this->identifierQuoter, $this->platform);
 		}
 
 		/**

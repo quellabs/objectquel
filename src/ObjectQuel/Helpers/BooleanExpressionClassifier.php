@@ -19,7 +19,7 @@
 	 * Classifies nodes by the SQL they render to: a predicate, or a scalar value that may hold a boolean.
 	 * Nodes in neither class (e.g. is_empty(), search()) render the same in both positions.
 	 */
-	class BooleanExpressionKind {
+	class BooleanExpressionClassifier {
 
 		/**
 		 * @param AstInterface $node Node to classify

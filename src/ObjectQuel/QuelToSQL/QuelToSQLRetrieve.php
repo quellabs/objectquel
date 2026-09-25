@@ -13,7 +13,7 @@
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRetrieve;
 	use Quellabs\ObjectQuel\ObjectQuel\AstInterface;
 	use Quellabs\ObjectQuel\ObjectQuel\Helpers\PrimaryKeyInfo;
-	use Quellabs\ObjectQuel\ObjectQuel\Helpers\RangeTableName;
+	use Quellabs\ObjectQuel\ObjectQuel\Helpers\EntityRangeTableNameResolver;
 	use Quellabs\ObjectQuel\Execution\Visitors\BuildSqlFromAst;
 	use Quellabs\ObjectQuel\Execution\Visitors\DetectPrimaryKeyInClause;
 	use Quellabs\ObjectQuel\Execution\Visitors\DetectPrimaryKeyInClauseException;
@@ -245,8 +245,8 @@
 					$subSQL = $this->convertToSQL($range->getQuery(), $rangeName);
 					$tableNames[] = $this->quoteAsAlias("({$subSQL})", $rangeName);
 				} else {
-					// Entity ranges resolve their table name via metadata (see RangeTableName).
-					$tableName = RangeTableName::resolve($range, $this->entityStore);
+					// Entity ranges resolve their table name via metadata (see EntityRangeTableNameResolver).
+					$tableName = EntityRangeTableNameResolver::resolve($range, $this->entityStore);
 
 					// Add the table name and alias to the list for the FROM clause.
 					$tableNames[] = $this->quoteAsAlias($this->identifierQuoter->quoteIdentifier($tableName), $rangeName);
@@ -509,7 +509,7 @@
 				} else {
 					// $range is AstRangeDatabase here — the earlier guard already
 					// excluded every other AstRange subtype.
-					$tableName = RangeTableName::resolve($range, $this->entityStore);
+					$tableName = EntityRangeTableNameResolver::resolve($range, $this->entityStore);
 					$result[] = $this->buildJoinClause($joinType, $this->identifierQuoter->quoteIdentifier($tableName), $rangeName, $joinColumn);
 				}
 			}

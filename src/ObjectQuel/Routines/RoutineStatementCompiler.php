@@ -21,7 +21,7 @@
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstReplace;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRetrieve;
 	use Quellabs\ObjectQuel\ObjectQuel\AstInterface;
-	use Quellabs\ObjectQuel\ObjectQuel\Helpers\DateTimeWriteSql;
+	use Quellabs\ObjectQuel\ObjectQuel\Helpers\DateTimeWriteSqlConverter;
 	use Quellabs\ObjectQuel\ObjectQuel\Passes\IdentifierTypeResolver;
 	use Quellabs\ObjectQuel\ObjectQuel\Passes\QueryNormalizer;
 	use Quellabs\ObjectQuel\ObjectQuel\QuelToSQL\QuelToSQLAppend;
@@ -279,7 +279,7 @@
 			$this->normalizeDateTimes($normalized);
 
 			$targetType = TypeMapper::phinxTypeToPhpType(RoutineAnalyzer::normalizeType($routineType));
-			return DateTimeWriteSql::convert($this->compileValue($value), $this->fieldTypes->inferReturnType($normalized), $targetType, $receiver, $this->platform);
+			return DateTimeWriteSqlConverter::convert($this->compileValue($value), $this->fieldTypes->inferReturnType($normalized), $targetType, $receiver, $this->platform);
 		}
 
 		/**

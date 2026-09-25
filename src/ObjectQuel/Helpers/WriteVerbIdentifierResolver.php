@@ -18,7 +18,7 @@
 	 * identifier pipeline through NodeWithRanges.
 	 *
 	 * Bare properties are resolved after typing against the single range;
-	 * ResolveUnqualifiedProperty assigns the rewritten node's final type, so
+	 * UnqualifiedPropertyResolver assigns the rewritten node's final type, so
 	 * no second typing pass is needed.
 	 */
 	class WriteVerbIdentifierResolver {
@@ -38,7 +38,7 @@
 			$statement->accept(new ResolveIdentifierRange($statement));
 
 			// Resolve bare properties against this statement's ranges.
-			$statement->accept(new ResolveUnqualifiedProperty($entityStore, $ranges));
+			$statement->accept(new UnqualifiedPropertyResolver($entityStore, $ranges));
 
 			// Preserve the specific ambiguity error before the declared-range check.
 			$statement->accept(new ValidateUnambiguousProperty($entityStore, $ranges));

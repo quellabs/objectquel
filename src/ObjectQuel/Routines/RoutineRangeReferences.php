@@ -8,7 +8,7 @@
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRetrieve;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\IdentifierType;
 	use Quellabs\ObjectQuel\ObjectQuel\AstInterface;
-	use Quellabs\ObjectQuel\ObjectQuel\Helpers\FindPropertyRange;
+	use Quellabs\ObjectQuel\ObjectQuel\Helpers\PropertyRangeFinder;
 	use Quellabs\ObjectQuel\ObjectQuel\Visitors\CollectNodes;
 
 	/**
@@ -16,7 +16,7 @@
 	 * Every embedded statement is handed all ranges declared before it, but the
 	 * query pipeline cross-joins any range it is given, so callers narrow the list.
 	 */
-	class RoutineRangeReferences extends FindPropertyRange {
+	class RoutineRangeReferences extends PropertyRangeFinder {
 
 		/**
 		 * Ranges named by root identifiers, or reached through an unqualified property with exactly one owner.
