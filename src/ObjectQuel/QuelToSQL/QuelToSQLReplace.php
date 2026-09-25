@@ -17,11 +17,11 @@
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRangeDatabase;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstReplace;
 	use Quellabs\ObjectQuel\ObjectQuel\AstInterface;
-	use Quellabs\ObjectQuel\ObjectQuel\Helpers\AliasedDmlSqlBuilder;
-	use Quellabs\ObjectQuel\ObjectQuel\Helpers\AssignmentValidator;
+	use Quellabs\ObjectQuel\ObjectQuel\QuelToSQL\AliasedDmlSqlBuilder;
+	use Quellabs\ObjectQuel\ObjectQuel\QuelToSQL\AssignmentValidator;
 	use Quellabs\ObjectQuel\ObjectQuel\Helpers\DateTimeWriteSqlConverter;
-	use Quellabs\ObjectQuel\ObjectQuel\Helpers\SetTargetColumnQuoter;
-	use Quellabs\ObjectQuel\ObjectQuel\Helpers\WriteVerbIdentifierResolver;
+	use Quellabs\ObjectQuel\ObjectQuel\QuelToSQL\SetTargetColumnQuoter;
+	use Quellabs\ObjectQuel\ObjectQuel\QuelToSQL\WriteVerbIdentifierResolver;
 	use Quellabs\ObjectQuel\ObjectQuel\Helpers\WriteVerbParameterNormalizer;
 	use Quellabs\ObjectQuel\ObjectQuel\Visitors\CoerceDateTimeParameters;
 	use Quellabs\ObjectQuel\ObjectQuel\Visitors\NormalizeDateTime;

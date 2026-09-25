@@ -22,8 +22,8 @@
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRetrieve;
 	use Quellabs\ObjectQuel\ObjectQuel\AstInterface;
 	use Quellabs\ObjectQuel\ObjectQuel\Helpers\DateTimeWriteSqlConverter;
-	use Quellabs\ObjectQuel\ObjectQuel\Passes\IdentifierTypeResolver;
-	use Quellabs\ObjectQuel\ObjectQuel\Passes\QueryNormalizer;
+	use Quellabs\ObjectQuel\ObjectQuel\Pipeline\IdentifierTypeResolver;
+	use Quellabs\ObjectQuel\ObjectQuel\Pipeline\QueryNormalizer;
 	use Quellabs\ObjectQuel\ObjectQuel\QuelToSQL\QuelToSQLAppend;
 	use Quellabs\ObjectQuel\ObjectQuel\QuelToSQL\QuelToSQLCall;
 	use Quellabs\ObjectQuel\ObjectQuel\QuelToSQL\QuelToSQLDelete;

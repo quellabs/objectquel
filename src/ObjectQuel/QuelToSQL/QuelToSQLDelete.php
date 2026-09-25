@@ -12,10 +12,10 @@
 	use Quellabs\ObjectQuel\Metadata\EntityMetadataRecord;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstDelete;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRangeDatabase;
-	use Quellabs\ObjectQuel\ObjectQuel\Helpers\AliasedDmlSqlBuilder;
+	use Quellabs\ObjectQuel\ObjectQuel\QuelToSQL\AliasedDmlSqlBuilder;
 	use Quellabs\ObjectQuel\ObjectQuel\Helpers\EntityRangeTableNameResolver;
-	use Quellabs\ObjectQuel\ObjectQuel\Helpers\SetTargetColumnQuoter;
-	use Quellabs\ObjectQuel\ObjectQuel\Helpers\WriteVerbIdentifierResolver;
+	use Quellabs\ObjectQuel\ObjectQuel\QuelToSQL\SetTargetColumnQuoter;
+	use Quellabs\ObjectQuel\ObjectQuel\QuelToSQL\WriteVerbIdentifierResolver;
 	use Quellabs\ObjectQuel\ObjectQuel\Helpers\WriteVerbParameterNormalizer;
 	use Quellabs\ObjectQuel\ObjectQuel\Visitors\CoerceDateTimeParameters;
 	use Quellabs\ObjectQuel\ObjectQuel\Visitors\NormalizeDateTime;

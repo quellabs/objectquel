@@ -12,9 +12,9 @@
 	use Quellabs\ObjectQuel\Metadata\EntityMetadataRecord;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstAssignment;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstReplace;
-	use Quellabs\ObjectQuel\ObjectQuel\Helpers\AliasedDmlSqlBuilder;
-	use Quellabs\ObjectQuel\ObjectQuel\Helpers\ConflictTargetResolver;
-	use Quellabs\ObjectQuel\ObjectQuel\Helpers\WriteVerbIdentifierResolver;
+	use Quellabs\ObjectQuel\ObjectQuel\QuelToSQL\AliasedDmlSqlBuilder;
+	use Quellabs\ObjectQuel\ObjectQuel\QuelToSQL\ConflictTargetResolver;
+	use Quellabs\ObjectQuel\ObjectQuel\QuelToSQL\WriteVerbIdentifierResolver;
 	use Quellabs\ObjectQuel\ObjectQuel\Helpers\WriteVerbParameterNormalizer;
 	use Quellabs\ObjectQuel\ObjectQuel\Visitors\NormalizeDateTime;
 	use Quellabs\ObjectQuel\Serialization\Serializers\SQLSerializer;

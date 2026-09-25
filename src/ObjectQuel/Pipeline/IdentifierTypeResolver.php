@@ -1,6 +1,6 @@
 <?php
 
-	namespace Quellabs\ObjectQuel\ObjectQuel\Passes;
+	namespace Quellabs\ObjectQuel\ObjectQuel\Pipeline;
 
 	use Quellabs\ObjectQuel\EntityStore;
 	use Quellabs\ObjectQuel\Exception\EntityResolutionException;

@@ -1,10 +1,11 @@
 <?php
 
-	namespace Quellabs\ObjectQuel\ObjectQuel\Helpers;
+	namespace Quellabs\ObjectQuel\ObjectQuel\QuelToSQL;
 
 	use Quellabs\ObjectQuel\EntityStore;
 	use Quellabs\ObjectQuel\Exception\SemanticException;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\NodeWithRanges;
+	use Quellabs\ObjectQuel\ObjectQuel\Visitors\UnqualifiedPropertyResolver;
 	use Quellabs\ObjectQuel\ObjectQuel\Visitors\ResolveIdentifierRange;
 	use Quellabs\ObjectQuel\ObjectQuel\Visitors\ResolvePropertyType;
 	use Quellabs\ObjectQuel\ObjectQuel\Visitors\ResolveRootIdentifierType;

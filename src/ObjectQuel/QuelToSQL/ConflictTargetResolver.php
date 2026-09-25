@@ -1,6 +1,6 @@
 <?php
 
-	namespace Quellabs\ObjectQuel\ObjectQuel\Helpers;
+	namespace Quellabs\ObjectQuel\ObjectQuel\QuelToSQL;
 
 	use Quellabs\ObjectQuel\Annotations\Orm\UniqueIndex;
 	use Quellabs\ObjectQuel\Metadata\EntityMetadataRecord;

@@ -1,6 +1,6 @@
 <?php
 	
-	namespace Quellabs\ObjectQuel\ObjectQuel\Passes;
+	namespace Quellabs\ObjectQuel\ObjectQuel\Pipeline;
 	
 	use Quellabs\ObjectQuel\EntityStore;
 	use Quellabs\ObjectQuel\Exception\EntityResolutionException;
@@ -15,7 +15,7 @@
 	use Quellabs\ObjectQuel\ObjectQuel\Visitors\ResolveRootIdentifierType;
 	use Quellabs\ObjectQuel\ObjectQuel\Visitors\RewriteViaRelationToJoinCondition;
 	use Quellabs\ObjectQuel\ObjectQuel\Visitors\NormalizeDateTime;
-	use Quellabs\ObjectQuel\ObjectQuel\Helpers\UnqualifiedPropertyResolver;
+	use Quellabs\ObjectQuel\ObjectQuel\Visitors\UnqualifiedPropertyResolver;
 	use Quellabs\ObjectQuel\ObjectQuel\Visitors\InjectSoftDeleteCondition;
 	
 	/**

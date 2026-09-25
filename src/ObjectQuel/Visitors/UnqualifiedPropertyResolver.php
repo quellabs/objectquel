@@ -1,9 +1,10 @@
 <?php
 	
-	namespace Quellabs\ObjectQuel\ObjectQuel\Helpers;
+	namespace Quellabs\ObjectQuel\ObjectQuel\Visitors;
 	
 	use Quellabs\ObjectQuel\EntityStore;
 	use Quellabs\ObjectQuel\Exception\EntityResolutionException;
+	use Quellabs\ObjectQuel\ObjectQuel\Helpers\PropertyRangeFinder;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstIdentifier;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRange;
 	use Quellabs\ObjectQuel\ObjectQuel\AstInterface;

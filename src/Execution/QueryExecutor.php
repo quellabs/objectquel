@@ -48,9 +48,9 @@
 	use Quellabs\ObjectQuel\Execution\Executors\JsonRetrieveExecutor;
 	use Quellabs\ObjectQuel\Execution\Executors\ReplaceExecutor;
 	use Quellabs\ObjectQuel\Execution\Helpers\RoutineCallTyper;
-	use Quellabs\ObjectQuel\ObjectQuel\Passes\DateTimeParameterCoercer;
-	use Quellabs\ObjectQuel\ObjectQuel\Passes\IdentifierTypeResolver;
-	use Quellabs\ObjectQuel\ObjectQuel\Passes\QueryNormalizer;
+	use Quellabs\ObjectQuel\ObjectQuel\Pipeline\DateTimeParameterCoercer;
+	use Quellabs\ObjectQuel\ObjectQuel\Pipeline\IdentifierTypeResolver;
+	use Quellabs\ObjectQuel\ObjectQuel\Pipeline\QueryNormalizer;
 	use Quellabs\ObjectQuel\ObjectQuel\SemanticAnalyzer;
 	use Quellabs\ObjectQuel\Planner\ExecutionPlanBuilder;
 	use Quellabs\ObjectQuel\Planner\QueryOptimizer;

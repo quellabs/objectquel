@@ -1,6 +1,6 @@
 <?php
 
-	namespace Quellabs\ObjectQuel\ObjectQuel\Passes;
+	namespace Quellabs\ObjectQuel\ObjectQuel\Pipeline;
 
 	use Quellabs\ObjectQuel\Exception\QuelException;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRangeDatabaseSubquery;

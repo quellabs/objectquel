@@ -2,7 +2,7 @@
 
 	namespace Quellabs\ObjectQuel\ObjectQuel\QuelToSQL;
 
-	use Quellabs\ObjectQuel\ObjectQuel\Passes\QueryNormalizer;
+	use Quellabs\ObjectQuel\ObjectQuel\Pipeline\QueryNormalizer;
 	use Quellabs\ObjectQuel\ObjectQuel\SemanticAnalyzer;
 	use Quellabs\ObjectQuel\OrmException;
 	use Quellabs\ObjectQuel\Exception\EntityResolutionException;
@@ -24,7 +24,7 @@
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRangeDatabaseSubquery;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRangeDatabaseTempTable;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRetrieve;
-	use Quellabs\ObjectQuel\ObjectQuel\Helpers\AssignmentValidator;
+	use Quellabs\ObjectQuel\ObjectQuel\QuelToSQL\AssignmentValidator;
 	use Quellabs\ObjectQuel\ObjectQuel\Helpers\DateTimeWriteSqlConverter;
 	use Quellabs\ObjectQuel\ObjectQuel\Visitors\CoerceDateTimeParameters;
 	use Quellabs\ObjectQuel\ObjectQuel\Visitors\NormalizeDateTime;
