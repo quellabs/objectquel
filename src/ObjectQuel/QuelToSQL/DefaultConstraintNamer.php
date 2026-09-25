@@ -21,6 +21,12 @@
 		 */
 		private const int MAX_LENGTH = 63;
 
+		/**
+		 * Derives the canonical name for a column's DEFAULT constraint.
+		 * @param string $tableName
+		 * @param string $column
+		 * @return string
+		 */
 		public static function name(string $tableName, string $column): string {
 			return 'df_' . $tableName . '_' . $column;
 		}

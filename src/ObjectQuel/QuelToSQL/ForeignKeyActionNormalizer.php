@@ -12,6 +12,12 @@
 	 */
 	class ForeignKeyActionNormalizer {
 
+		/**
+		 * Normalizes a foreign-key action for the target database dialect.
+		 * @param string $action
+		 * @param string $databaseType
+		 * @return string
+		 */
 		public static function forDialect(string $action, string $databaseType): string {
 			if ($databaseType === 'sqlsrv' && $action === 'RESTRICT') {
 				return 'NO ACTION';
