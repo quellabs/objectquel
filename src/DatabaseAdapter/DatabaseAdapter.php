@@ -297,6 +297,17 @@
 		}
 
 		/**
+		 * Checks whether a function or procedure has this name, without resolving its call signature.
+		 * @param string $name Routine name as written
+		 * @return bool True when either routine kind exists
+		 * @throws \Quellabs\ObjectQuel\Exception\QuelException When the lookup fails or routines are unsupported
+		 */
+		public function routineExists(string $name): bool {
+			$this->routineInspectorCache ??= new RoutineInspector($this);
+			return $this->routineInspectorCache->routineExists($name);
+		}
+
+		/**
 		 * Returns the schema that qualifies routine names, or null when unqualified names are used.
 		 * @return string|null
 		 * @throws \RuntimeException When the default schema can't be read

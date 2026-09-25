@@ -54,7 +54,7 @@
 			if (
 				in_array($this->platform->getDatabaseType(), ['mysql', 'mariadb'], true) &&
 				!$statement->isIfExists() &&
-				!$this->mysqlRoutineExists($statement->getName())
+				!$this->connection->routineExists($statement->getName())
 			) {
 				throw new QuelException("Failed to destroy routine '{$statement->getName()}': it doesn't exist", 'routine_destruction_error');
 			}
@@ -62,22 +62,4 @@
 			$this->ddlRunner->run($statements, "Failed to destroy routine '{$statement->getName()}'", 'routine_destruction_error');
 		}
 
-		/**
-		 * @param string $name Routine name; matched case-insensitively, like MySQL routine names
-		 * @return bool True when a function or procedure by this name exists in the current database
-		 * @throws QuelException When the lookup fails
-		 */
-		private function mysqlRoutineExists(string $name): bool {
-			$result = $this->connection->execute(
-				'SELECT COUNT(*) AS routine_count FROM information_schema.ROUTINES WHERE ROUTINE_SCHEMA = DATABASE() AND ROUTINE_NAME = :name',
-				['name' => $name]
-			);
-
-			if ($result === null) {
-				throw new QuelException("Failed to look up routine '{$name}': {$this->connection->getLastErrorMessage()}", 'routine_destruction_error');
-			}
-
-			$row = $result->fetch('assoc');
-			return is_array($row) && is_numeric($row['routine_count']) && $row['routine_count'] > 0;
-		}
 	}

@@ -65,6 +65,24 @@
 		}
 
 		/**
+		 * Checks whether any function or procedure has this name.
+		 * @param string $name Routine name as written
+		 * @return bool True when at least one routine exists
+		 * @throws QuelException When the lookup fails or the engine has no stored routines
+		 */
+		public function routineExists(string $name): bool {
+			[$sql, $parameters] = $this->existenceQuery($name);
+			$result = $this->connection->execute($sql, $parameters);
+
+			if ($result === null) {
+				throw new QuelException("Failed to look up routine '{$name}': {$this->connection->getLastErrorMessage()}", 'routine_destruction_error');
+			}
+
+			$row = $result->fetch('assoc');
+			return is_array($row) && is_numeric($row['routine_count'] ?? null) && (int)$row['routine_count'] > 0;
+		}
+
+		/**
 		 * Builds the catalog query for a routine. Each row has `is_procedure` (1 or 0) and, for a function,
 		 * its return type as `data_type`, `type_detail` and `max_length`; no rows means no routine by that name.
 		 * @param string $name Routine name as written
@@ -92,6 +110,33 @@
 				],
 
 				default => throw new QuelException("Routines can't be called on '{$this->connection->getDatabaseType()}'.", 'routine_call_error'),
+			};
+		}
+
+		/**
+		 * Builds a catalog query that counts functions and procedures without applying call-signature ambiguity rules.
+		 * @param string $name Routine name as written
+		 * @return array{string, array<string, string>} SQL and its parameters
+		 * @throws QuelException When the engine has no stored routines
+		 */
+		private function existenceQuery(string $name): array {
+			return match ($this->connection->getDatabaseType()) {
+				'pgsql' => [
+					'SELECT COUNT(*) AS routine_count FROM pg_proc WHERE proname = :name AND pg_function_is_visible(oid)',
+					['name' => $name],
+				],
+
+				'sqlsrv' => [
+					"SELECT COUNT(*) AS routine_count FROM sys.objects WHERE object_id = OBJECT_ID(:name) AND type IN ('P', 'PC', 'FN', 'FS', 'IF', 'TF', 'FT')",
+					['name' => $this->sqlServerRoutineName($name)],
+				],
+
+				'mysql', 'mariadb' => [
+					'SELECT COUNT(*) AS routine_count FROM information_schema.ROUTINES WHERE ROUTINE_SCHEMA = DATABASE() AND ROUTINE_NAME = :name',
+					['name' => $name],
+				],
+
+				default => throw new QuelException("Routines can't be looked up on '{$this->connection->getDatabaseType()}'.", 'routine_destruction_error'),
 			};
 		}
 
