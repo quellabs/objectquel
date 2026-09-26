@@ -108,13 +108,22 @@
 			$this->lexer->match(Token::ParenthesesOpen);
 			
 			// Parse the parameter - either as property chain (entity.field) or general expression
-			$parameter = $this->expressionRule->parse();
+			$parameter = $this->parseArgument();
 			
 			// Match closing parenthesis
 			$this->lexer->match(Token::ParenthesesClose);
 			
 			// Create and return the appropriate AST node
 			return new $astClass($parameter);
+		}
+		
+		/**
+		 * Parses a value argument as a full expression, so a comparison or AND/OR needs no extra parentheses.
+		 * @return AstInterface The argument node
+		 * @throws LexerException|ParserException
+		 */
+		private function parseArgument(): AstInterface {
+			return (new LogicalExpression($this->lexer))->parse();
 		}
 		
 		/**
