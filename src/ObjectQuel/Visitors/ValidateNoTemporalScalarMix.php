@@ -36,9 +36,10 @@
 		
 		/**
 		 * @param EntityStore $entityStore Required by ResolveType to look up column annotations
+		 * @param ResolveType|null $resolveType Type resolver; defaults to one that knows entity columns only
 		 */
-		public function __construct(EntityStore $entityStore) {
-			$this->resolveType = new ResolveType($entityStore);
+		public function __construct(EntityStore $entityStore, ?ResolveType $resolveType = null) {
+			$this->resolveType = $resolveType ?? new ResolveType($entityStore);
 		}
 		
 		/**
