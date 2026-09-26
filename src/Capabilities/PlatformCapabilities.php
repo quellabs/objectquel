@@ -234,13 +234,13 @@
 		 * Unix timestamp conversion function per engine:
 		 * - MySQL / MariaDB: UNIX_TIMESTAMP(col)
 		 * - PostgreSQL:      EXTRACT(EPOCH FROM col)::BIGINT
-		 * - SQLite:          strftime('%s', col)
+		 * - SQLite:          CAST(strftime('%s', col) AS INTEGER); strftime() returns text, which SQLite ranks above every number
 		 * - SQL Server:      DATEDIFF_BIG(SECOND, '1970-01-01', col); like PostgreSQL, a column without offset counts as UTC
 		 */
 		public function getUnixTimestampFunction(): string {
 			return match ($this->adapter->getDatabaseType()) {
 				'pgsql' => 'EXTRACT(EPOCH FROM %s)::BIGINT',
-				'sqlite' => "strftime('%%s', %s)",
+				'sqlite' => "CAST(strftime('%%s', %s) AS INTEGER)",
 				'sqlsrv' => "DATEDIFF_BIG(SECOND, '1970-01-01', %s)",
 				default => 'UNIX_TIMESTAMP(%s)',
 			};
@@ -252,13 +252,13 @@
 		 * Current time as Unix timestamp per engine:
 		 * - MySQL / MariaDB: UNIX_TIMESTAMP()
 		 * - PostgreSQL:      EXTRACT(EPOCH FROM NOW())::BIGINT
-		 * - SQLite:          strftime('%s','now')
+		 * - SQLite:          CAST(strftime('%s','now') AS INTEGER)
 		 * - SQL Server:      DATEDIFF_BIG(SECOND, '1970-01-01', SYSUTCDATETIME())
 		 */
 		public function getCurrentUnixTimestamp(): string {
 			return match ($this->adapter->getDatabaseType()) {
 				'pgsql' => 'EXTRACT(EPOCH FROM NOW())::BIGINT',
-				'sqlite' => "strftime('%s','now')",
+				'sqlite' => "CAST(strftime('%s','now') AS INTEGER)",
 				'sqlsrv' => "DATEDIFF_BIG(SECOND, '1970-01-01', SYSUTCDATETIME())",
 				default => 'UNIX_TIMESTAMP()',
 			};
