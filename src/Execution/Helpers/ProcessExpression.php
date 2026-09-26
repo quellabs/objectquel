@@ -247,9 +247,15 @@
 			
 			if (in_array($inferredType, ['int', 'integer', 'float'], true)) {
 				return "({$string} IS NULL OR {$string} = 0)";
-			} else {
-				return "({$string} IS NULL OR {$string} = '')";
 			}
+			
+			// PostgreSQL rejects comparing a boolean with '' or 0, and a chained comparison like `a > b = false`
+			if (in_array($inferredType, ['bool', 'boolean'], true)) {
+				$operand = $valueNode instanceof NodeBinary ? "({$string})" : $string;
+				return "({$operand} IS NULL OR {$operand} = false)";
+			}
+			
+			return "({$string} IS NULL OR {$string} = '')";
 		}
 		
 		/**
