@@ -245,7 +245,7 @@
 			$inferredType = $this->typeInference->inferReturnType($valueNode);
 			$string = $this->visitNodeAndReturnSQL($valueNode);
 			
-			if ($inferredType === 'integer' || $inferredType === 'float') {
+			if (in_array($inferredType, ['int', 'integer', 'float'], true)) {
 				return "({$string} IS NULL OR {$string} = 0)";
 			} else {
 				return "({$string} IS NULL OR {$string} = '')";
@@ -911,11 +911,11 @@
 			$string = $this->visitNodeAndReturnSQL($valueNode);
 			
 			return match ([$patternKey, $inferredType]) {
-				['NUMERIC', 'integer'], ['NUMERIC', 'float'] => '1',
-				['INTEGER', 'integer'] => '1',
+				['NUMERIC', 'int'], ['NUMERIC', 'integer'], ['NUMERIC', 'float'] => '1',
+				['INTEGER', 'int'], ['INTEGER', 'integer'] => '1',
 				['INTEGER', 'float'] => '0',
 				['FLOAT', 'float'] => '1',
-				['FLOAT', 'integer'] => '0',
+				['FLOAT', 'int'], ['FLOAT', 'integer'] => '0',
 				default => $this->buildRegexMatch($string, self::REGEX_PATTERNS[$patternKey]),
 			};
 		}

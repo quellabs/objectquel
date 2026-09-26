@@ -82,7 +82,7 @@
 		public function inferReturnType(AstInterface $ast): ?string {
 			// Process identifiers - lookup their type from entity annotations
 			if ($ast instanceof AstIdentifier) {
-				return $this->inferReturnTypeOfIdentifier($ast);
+				return $this->inferReturnTypeOfIdentifier($this->columnNode($ast));
 			}
 			
 			// Aggregates (SUM, AVG, MIN, MAX, and their DISTINCT variants) produce the
@@ -174,5 +174,15 @@
 			
 			// No Column annotation found
 			return null;
+		}
+
+		/**
+		 * A longer chain is a JSON path and is returned as-is, since the extracted value's type isn't the column's.
+		 * @param AstIdentifier $identifier Identifier as it appears in an expression
+		 * @return AstIdentifier The column node of `range.column`, otherwise the identifier itself
+		 */
+		private function columnNode(AstIdentifier $identifier): AstIdentifier {
+			$next = $identifier->getNext();
+			return $next !== null && !$next->hasNext() ? $next : $identifier;
 		}
 	}
