@@ -14,7 +14,7 @@
 		/** @var string Routine name as written */
 		protected string $name;
 
-		/** @var AstInterface[] Arguments in order */
+		/** @var list<AstInterface> Arguments in order */
 		protected array $arguments;
 
 		/** @var string|null Abstract column type the routine returns, or null when unknown */
@@ -22,7 +22,7 @@
 
 		/**
 		 * @param string $name Routine name as written
-		 * @param AstInterface[] $arguments Arguments in order
+		 * @param list<AstInterface> $arguments Arguments in order
 		 */
 		public function __construct(string $name, array $arguments) {
 			$this->name = $name;
@@ -54,7 +54,7 @@
 		}
 
 		/**
-		 * @return AstInterface[] Arguments in order
+		 * @return list<AstInterface> Arguments in order
 		 */
 		public function getArguments(): array {
 			return $this->arguments;

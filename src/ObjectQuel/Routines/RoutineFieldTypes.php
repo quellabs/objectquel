@@ -125,17 +125,23 @@
 		}
 
 		/**
-		 * Adds routine variables, cursor fields, `range.column` reads and boolean predicates to the parent's inference.
+		 * Returns the SQL type a variable holding this value gets, as for a cursor field.
+		 * @param AstInterface $expression Analyzed expression
+		 * @return string|null SQL type on the target engine, or null when it can't be determined
+		 * @throws EntityResolutionException
+		 */
+		public function valueSqlType(AstInterface $expression): ?string {
+			$definition = $this->definitionOf($expression);
+			return $definition === null ? null : $this->typeMapper->getTempTableColumnType($definition);
+		}
+
+		/**
+		 * Adds routine variables, cursor fields and `range.column` reads to the parent's inference.
 		 * @param AstInterface $ast Expression node
 		 * @return string|null PHP-level type, or null when unknown
 		 * @throws EntityResolutionException
 		 */
 		public function inferReturnType(AstInterface $ast): ?string {
-			// Comparisons and AND/OR are NodeBinary, which the parent types like arithmetic
-			if ($ast instanceof AstExpression || $ast instanceof AstBinaryOperator) {
-				return 'boolean';
-			}
-
 			if ($ast instanceof AstIdentifier) {
 				$definition = $ast->getType()->isRoutineReference() ? $this->routineReferenceDefinition($ast) : $this->columnDefinition($ast);
 

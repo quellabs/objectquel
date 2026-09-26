@@ -292,15 +292,64 @@
 
 		/**
 		 * Compiles a `call` statement as a procedure call; functions are called from expressions instead.
-		 * @param AstCall $statement Analyzed call, whose arguments are literals or routine variables
+		 * @param AstCall $statement Analyzed call
+		 * @param array<int, string> $argumentSql SQL replacing the argument at each index, e.g. a variable holding it
 		 * @return string `CALL name(args)`, or `EXEC name args` on SQL Server
-		 * @throws SemanticException
+		 * @throws SemanticException|EntityResolutionException|QuelException
 		 */
-		public function compileCall(AstCall $statement): string {
+		public function compileCall(AstCall $statement, array $argumentSql = []): string {
 			$call = $statement->getCall();
-			$arguments = array_map(fn(AstInterface $argument) => $this->compileValue($argument), $call->getArguments());
+			$arguments = [];
+
+			foreach ($call->getArguments() as $index => $argument) {
+				$arguments[] = $argumentSql[$index] ?? $this->compileCallArgument($argument, $call->getName());
+			}
 
 			return $this->callCompiler->procedureCall($call->getName(), implode(', ', $arguments));
+		}
+
+		/**
+		 * Compiles a procedure argument; date arithmetic, computed as a Unix timestamp, is passed as a datetime.
+		 * @param AstInterface $argument Analyzed argument
+		 * @param string $routineName Called procedure, for error messages
+		 * @return string
+		 * @throws SemanticException|EntityResolutionException|QuelException
+		 */
+		public function compileCallArgument(AstInterface $argument, string $routineName): string {
+			if ($this->isDateArithmetic($argument)) {
+				return $this->compileStoredValue($argument, "an argument of '{$routineName}()'", 'datetime');
+			}
+
+			return $this->compileValue($argument);
+		}
+
+		/**
+		 * Returns the SQL type of a variable that holds a procedure argument; call before compiling the argument.
+		 * @param AstInterface $argument Analyzed argument
+		 * @param string $routineName Called procedure, for error messages
+		 * @return string SQL type on the target engine
+		 * @throws SemanticException When the argument's type can't be determined
+		 * @throws EntityResolutionException
+		 */
+		public function callArgumentSqlType(AstInterface $argument, string $routineName): string {
+			$type = $this->isDateArithmetic($argument) ? $this->fieldTypes->sqlType('datetime') : $this->fieldTypes->valueSqlType($argument);
+
+			if ($type === null) {
+				throw new SemanticException("The type of an argument of '{$routineName}()' can't be determined, so it can't be stored for the call. Cast the value, e.g. (int)x.");
+			}
+
+			return $type;
+		}
+
+		/**
+		 * @param AstInterface $value Analyzed expression, left unchanged
+		 * @return bool True when it's date arithmetic yielding a point in time
+		 * @throws EntityResolutionException|QuelException
+		 */
+		private function isDateArithmetic(AstInterface $value): bool {
+			$normalized = $value->deepClone();
+			$this->normalizeDateTimes($normalized);
+			return $this->fieldTypes->inferReturnType($normalized) === 'datetime';
 		}
 
 		/**

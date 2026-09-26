@@ -8,6 +8,8 @@
 	use Quellabs\ObjectQuel\EntityStore;
 	use Quellabs\ObjectQuel\Exception\EntityResolutionException;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstAggregate;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstBinaryOperator;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstExpression;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstIdentifier;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstUnaryOperation;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\NodeBinary;
@@ -98,6 +100,11 @@
 				return $this->inferReturnType($ast->getExpression());
 			}
 			
+			// Comparisons and AND/OR are NodeBinary too, but yield a boolean regardless of their operands
+			if ($ast instanceof AstExpression || $ast instanceof AstBinaryOperator) {
+				return 'boolean';
+			}
+
 			// Traverse down the parse tree for binary operations (terms/factors)
 			if ($ast instanceof NodeBinary) {
 				// Recursively get types of left and right operands

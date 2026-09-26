@@ -380,9 +380,20 @@
 				$statement instanceof AstAppend => $this->line($this->statements->compileAppend($statement) . ';', $depth),
 				$statement instanceof AstReplace => $this->line($this->statements->compileReplace($statement) . ';', $depth),
 				$statement instanceof AstDelete => $this->line($this->statements->compileDelete($statement) . ';', $depth),
-				$statement instanceof AstCall => $this->line($this->statements->compileCall($statement) . ';', $depth),
+				$statement instanceof AstCall => $this->lowerCall($statement, $depth),
 				default => throw new \LogicException('Unsupported routine statement ' . get_class($statement) . '; RoutineAnalyzer should have rejected it.'),
 			};
+		}
+
+		/**
+		 * Lowers a procedure call statement.
+		 * @param AstCall $statement The call
+		 * @param int $depth Indentation depth
+		 * @return string
+		 * @throws SemanticException|EntityResolutionException|QuelException
+		 */
+		protected function lowerCall(AstCall $statement, int $depth): string {
+			return $this->line($this->statements->compileCall($statement) . ';', $depth);
 		}
 
 		/**

@@ -267,13 +267,20 @@
 			
 			// Identifier: build dynamic check based on inferred type
 			$inferredType = $this->typeInference->inferReturnType($valueNode);
-			$string = $this->visitNodeAndReturnSQL($valueNode);
-			
+			$string = $this->mainVisitor->visitValueAndReturnSQL($valueNode);
+
 			if (in_array($inferredType, ['int', 'integer', 'float'], true)) {
 				return "({$string} IS NULL OR {$string} = 0)";
-			} else {
-				return "({$string} IS NULL OR {$string} = '')";
 			}
+
+			// PostgreSQL rejects comparing a boolean with '' or 0, and a chained comparison like `a > b = false`
+			if (in_array($inferredType, ['bool', 'boolean'], true)) {
+				$false = $this->platform->supportsBooleanLiterals() ? 'false' : '0';
+				$operand = $valueNode instanceof NodeBinary ? "({$string})" : $string;
+				return "({$operand} IS NULL OR {$operand} = {$false})";
+			}
+
+			return "({$string} IS NULL OR {$string} = '')";
 		}
 		
 		/**

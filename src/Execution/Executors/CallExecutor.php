@@ -53,13 +53,20 @@
 		 * @param ExecutionContext $context Bound parameters
 		 * @return QuelResult|null The function's value as a one-row result, or null for a procedure
 		 * @throws QuelException When the routine is missing or ambiguous, or the call fails
-		 * @throws SemanticException When an argument isn't a literal or a parameter
 		 */
 		public function execute(AstCall $statement, ExecutionContext $context): ?QuelResult {
 			$name = $statement->getCall()->getName();
 			$parameters = $context->getParameters();
 			$signature = $this->connection->getRoutineSignature($name);
-			$sql = $this->compiler()->convertToSQL($statement, $signature->isProcedure, $parameters);
+			$evaluatedArguments = null;
+
+			// The EXEC then binds only the evaluated values, not the parameters the arguments read
+			if ($this->compiler()->requiresEvaluatedArguments($statement, $signature->isProcedure)) {
+				$evaluatedArguments = $this->evaluateArguments($statement, $parameters);
+				$parameters = [];
+			}
+
+			$sql = $this->compiler()->convertToSQL($statement, $signature->isProcedure, $parameters, $evaluatedArguments);
 			$result = $this->connection->execute($sql, $parameters);
 
 			if ($result === null) {
@@ -80,6 +87,31 @@
 			}
 
 			return QuelResult::fromRow([$name => $this->convert($row[0], $signature->returnType)]);
+		}
+
+		/**
+		 * Evaluates the call's arguments in a separate SELECT, since SQL Server's EXEC takes no expressions.
+		 * @param AstCall $statement The call
+		 * @param array<string, mixed> $parameters Bound parameters, by reference
+		 * @return list<mixed> Argument values, in call order
+		 * @throws QuelException When the arguments can't be evaluated
+		 */
+		private function evaluateArguments(AstCall $statement, array &$parameters): array {
+			$name = $statement->getCall()->getName();
+			$result = $this->connection->execute($this->compiler()->argumentsQuery($statement, $parameters), $parameters);
+
+			if ($result === null) {
+				throw new QuelException("Failed to evaluate the arguments of '{$name}': {$this->connection->getLastErrorMessage()}", 'routine_call_error');
+			}
+
+			$row = $result->fetch('num');
+			$result->closeCursor();
+
+			if (!is_array($row)) {
+				throw new QuelException("Failed to evaluate the arguments of '{$name}': the query returned no row.", 'routine_call_error');
+			}
+
+			return array_values($row);
 		}
 
 		/**

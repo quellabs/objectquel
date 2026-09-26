@@ -300,22 +300,13 @@
 		}
 
 		/**
-		 * `name(args)` statement: arguments must be literals, variables or cursor fields, since SQL Server's EXEC takes nothing else.
+		 * `name(args)` statement: arguments read variables and cursor fields, like an assigned value.
 		 * @param AstCall $statement The call
 		 * @return void
 		 * @throws SemanticException|EntityResolutionException
 		 */
 		private function analyzeCall(AstCall $statement): void {
-			$call = $statement->getCall();
 			$statement->accept($this->referenceResolver(false));
-
-			foreach ($call->getArguments() as $argument) {
-				$isVariable = $argument instanceof AstIdentifier && $argument->getType()->isRoutineReference();
-
-				if (!$isVariable && !in_array(get_class($argument), QuelToSQLCall::LITERAL_ARGUMENTS, true)) {
-					throw new SemanticException("The arguments of '{$call->getName()}()' must be literals or variables; assign other values to a local first.");
-				}
-			}
 		}
 
 		/**

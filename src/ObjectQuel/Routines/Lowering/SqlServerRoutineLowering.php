@@ -2,16 +2,20 @@
 
 	namespace Quellabs\ObjectQuel\ObjectQuel\Routines\Lowering;
 
+	use Quellabs\ObjectQuel\Exception\EntityResolutionException;
+	use Quellabs\ObjectQuel\Exception\QuelException;
 	use Quellabs\ObjectQuel\Exception\SemanticException;
 	use Quellabs\ObjectQuel\ObjectQuel\AstInterface;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstBeginTransaction;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstCall;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstForeach;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstIdentifier;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstIf;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstReturn;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRoutineDefinition;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRetrieve;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstWhile;
+	use Quellabs\ObjectQuel\ObjectQuel\QuelToSQL\QuelToSQLCall;
 
 	/**
 	 * Lowers an analyzed routine to a T-SQL CREATE OR ALTER FUNCTION (non-void)
@@ -22,6 +26,7 @@
 	 *   Read-only loops use a STATIC cursor, loops that write the current row a
 	 *   SCROLL_LOCKS `FOR UPDATE` cursor and `WHERE CURRENT OF`.
 	 * - A function can't write tables or run a procedure, so a non-void routine that does is rejected.
+	 * - EXEC takes only literals and variables, so any other procedure argument is first stored in a local.
 	 */
 	class SqlServerRoutineLowering extends FetchIntoRoutineLowering {
 
@@ -30,6 +35,9 @@
 
 		/** Scratch variable a function uses to count rows from a discarded retrieve */
 		private const string DISCARD_VARIABLE = '@_discard';
+
+		/** @var array<string, string> SQL type of each local holding a procedure argument, by variable name */
+		private array $argumentVariables;
 
 		private bool $usesNoopVariable;
 		private bool $isFunction;
@@ -52,6 +60,7 @@
 		protected function validate(AstRoutineDefinition $routine): void {
 			parent::validate($routine);
 			$this->usesNoopVariable = false;
+			$this->argumentVariables = [];
 			$this->isFunction = !$routine->isVoid();
 			$this->discardCursorCount = 0;
 
@@ -79,7 +88,7 @@
 			}
 
 			$parameters = $this->parameterVariables($routine);
-			$locals = $this->localVariables($routine) + $this->fieldVariableTypes();
+			$locals = $this->localVariables($routine) + $this->fieldVariableTypes() + $this->argumentVariables;
 
 			if ($this->usesNoopVariable) {
 				$locals[self::NOOP_VARIABLE] = 'BIT';
@@ -232,6 +241,35 @@
 		 */
 		protected function continueStatement(): string {
 			return 'CONTINUE;';
+		}
+
+		/**
+		 * Stores each argument EXEC can't take in a local, then calls the procedure with it.
+		 * @param AstCall $statement The call
+		 * @param int $depth Indentation depth
+		 * @return string
+		 * @throws SemanticException|EntityResolutionException|QuelException
+		 */
+		protected function lowerCall(AstCall $statement, int $depth): string {
+			$name = $statement->getCall()->getName();
+			$lines = [];
+			$argumentSql = [];
+
+			foreach ($statement->getCall()->getArguments() as $index => $argument) {
+				$isVariable = $argument instanceof AstIdentifier && $argument->getType()->isRoutineReference();
+
+				if ($isVariable || in_array(get_class($argument), QuelToSQLCall::LITERAL_ARGUMENTS, true)) {
+					continue;
+				}
+
+				$variable = '@_arg' . (count($this->argumentVariables) + 1);
+				$this->argumentVariables[$variable] = $this->statements->callArgumentSqlType($argument, $name);
+				$lines[] = "SET {$variable} = " . $this->statements->compileCallArgument($argument, $name) . ';';
+				$argumentSql[$index] = $variable;
+			}
+
+			$lines[] = $this->statements->compileCall($statement, $argumentSql) . ';';
+			return $this->lines($lines, $depth);
 		}
 
 		/**
