@@ -20,6 +20,7 @@
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstIf;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstParameter;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRangeDatabase;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRangeJsonSource;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRangeDeclaration;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstReplace;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstReplaceCurrent;
@@ -343,8 +344,10 @@
 		 * @throws SemanticException
 		 */
 		private function analyzeRoutineRetrieve(AstRetrieve $retrieve): void {
-			if ($retrieve->getWindow() !== null || $retrieve->getWindowSize() !== null) {
-				throw new SemanticException("'window' is not supported in a routine retrieve.");
+			foreach ($retrieve->getRanges() as $range) {
+				if ($range instanceof AstRangeJsonSource) {
+					throw new SemanticException("JSON ranges aren't supported in routine retrieves; use a plain entity range.");
+				}
 			}
 
 			// Target-list entries become cursor-row fields fetched into scalar variables

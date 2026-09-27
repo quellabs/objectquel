@@ -139,9 +139,44 @@
 		 * @throws SemanticException|EntityResolutionException|QuelException
 		 */
 		public function retrieveSql(AstRetrieve $prepared): string {
-			return $this->withoutBoundParameters('retrieve', function (array &$parameters) use ($prepared): string {
+			$databaseType = $this->platform->getDatabaseType();
+			$window = $prepared->getWindow();
+
+			if ($window !== null && $databaseType === 'sqlsrv') {
+				if (empty($prepared->getSort()) || $prepared->getSortInApplicationLogic()) {
+					throw new SemanticException("SQL Server requires an explicit 'sort by' for a windowed routine retrieve.");
+				}
+
+				$connection = $this->entityManager->getConnection();
+				if ($connection->getDatabaseType() === 'sqlsrv' && !$connection->supportsSqlServerOffsetFetch()) {
+					throw new SemanticException('SQL Server windowed routine retrieves require server version 2012 or later and database compatibility level 110 or later.');
+				}
+			}
+
+			$sql = $this->withoutBoundParameters('retrieve', function (array &$parameters) use ($prepared): string {
 				return (new QuelToSQLRetrieve($this->entityStore, $parameters, $this->platform, $this->routineSchema))->convertToSQL($prepared);
 			});
+
+			if ($window === null) {
+				return $sql;
+			}
+
+			$size = $prepared->getWindowSize() ?? 1;
+			if ($window < 0 || $size <= 0) {
+				throw new SemanticException('A routine retrieve window requires a nonnegative page and a positive size.');
+			}
+
+			if ($window > intdiv(PHP_INT_MAX, $size)) {
+				throw new SemanticException('The window page and size produce an offset that is too large.');
+			}
+
+			$offset = $window * $size;
+
+			return match ($databaseType) {
+				'mysql', 'mariadb', 'pgsql' => "{$sql} LIMIT {$size} OFFSET {$offset}",
+				'sqlsrv' => "{$sql} OFFSET {$offset} ROWS FETCH NEXT {$size} ROWS ONLY",
+				default => throw new SemanticException("Windowed routine retrieves aren't supported for '{$databaseType}'."),
+			};
 		}
 
 		/**

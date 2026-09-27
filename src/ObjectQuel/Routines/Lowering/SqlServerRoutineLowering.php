@@ -292,7 +292,7 @@
 			if ($this->isFunction) {
 				$this->usesDiscardVariable = true;
 
-				if (!empty($retrieve->getSort())) {
+				if ($retrieve->getWindow() === null && !empty($retrieve->getSort())) {
 					$sql .= ' OFFSET 0 ROWS';
 				}
 

@@ -271,13 +271,14 @@
 			// Parse the required window number (which window/page to retrieve)
 			// This represents the page number or window index in the result set
 			$windowNumber = $this->lexer->match(Token::Number);
+			$page = $this->positiveInteger($windowNumber, 'window page', true);
 			
 			// Parse the window size specification (how many records per window)
 			$windowSize = $this->parseWindowSize();
 			
 			// Apply the parsed pagination settings to the retrieve AST node
 			// Set which window/page number to retrieve (0-based)
-			$retrieve->setWindow((int)$windowNumber->getNumericValue());
+			$retrieve->setWindow($page);
 			
 			// Set how many records should be included in each window/page
 			$retrieve->setWindowSize($windowSize);
@@ -292,17 +293,39 @@
 			// Short notation: WINDOW 1, 10
 			if ($this->lexer->optionalMatch(Token::Comma)) {
 				$sizeToken = $this->lexer->match(Token::Number);
-				return (int)$sizeToken->getNumericValue();
+				return $this->positiveInteger($sizeToken, 'window size');
 			}
 			
 			// Explicit notation: WINDOW 1 USING WINDOW_SIZE 10
 			if ($this->lexer->optionalMatch(Token::Using)) {
 				$this->lexer->match(Token::WindowSize);
 				$sizeToken = $this->lexer->match(Token::Number);
-				return (int)$sizeToken->getNumericValue();
+				return $this->positiveInteger($sizeToken, 'window size');
 			}
 			
 			return self::DEFAULT_WINDOW_SIZE;
+		}
+
+		/**
+		 * Validates an integer pagination value before converting it from its token.
+		 * @param Token $token Numeric token
+		 * @param string $label Value name used in the error
+		 * @param bool $allowZero Whether zero is valid
+		 * @return int
+		 * @throws LexerException
+		 */
+		private function positiveInteger(Token $token, string $label, bool $allowZero = false): int {
+			$value = $token->getNumericValue();
+
+			if (!is_int($value) && (!is_finite($value) || floor($value) !== $value)) {
+				throw new LexerException("The {$label} must be an integer.");
+			}
+
+			if ($value < ($allowZero ? 0 : 1) || $value > PHP_INT_MAX) {
+				throw new LexerException("The {$label} must be " . ($allowZero ? 'zero or greater' : 'greater than zero') . '.');
+			}
+
+			return (int)$value;
 		}
 		
 		/**
