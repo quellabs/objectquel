@@ -128,9 +128,12 @@
 		 * @throws SemanticException|EntityResolutionException
 		 */
 		private function analyzeStatement(AstInterface $statement, bool $isTopLevel): void {
-			switch (true) {
+				switch (true) {
 				case $statement instanceof AstRangeDeclaration:
 					$this->assertTopLevel($isTopLevel, "'range of {$statement->getRange()->getName()}'");
+					if ($statement->getRange() instanceof AstRangeJsonSource) {
+						throw new SemanticException("JSON ranges aren't supported in routines; declare a plain entity range.");
+					}
 
 					// Declared first: a `via` condition refers to its own range
 					$this->scope->declareRange($statement->getRange());
