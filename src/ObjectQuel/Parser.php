@@ -7,7 +7,7 @@
 	use Quellabs\ObjectQuel\ObjectQuel\Rules\AlterTable;
 	use Quellabs\ObjectQuel\ObjectQuel\Rules\Append;
 	use Quellabs\ObjectQuel\ObjectQuel\Rules\Call;
-	use Quellabs\ObjectQuel\ObjectQuel\Rules\CreateIndex;
+	use Quellabs\ObjectQuel\ObjectQuel\Rules\Index;
 	use Quellabs\ObjectQuel\ObjectQuel\Rules\CreateTable;
 	use Quellabs\ObjectQuel\ObjectQuel\Rules\Delete;
 	use Quellabs\ObjectQuel\ObjectQuel\Rules\Destroy;
@@ -25,7 +25,7 @@
         private Range $rangeRule;
 		private Retrieve $retrieveRule;
 		private CreateTable $createTableRule;
-		private CreateIndex $createIndexRule;
+		private Index $indexRule;
 		private AlterTable $alterTableRule;
 		private Destroy $destroyRule;
 		private IndexVisibility $indexVisibilityRule;
@@ -44,7 +44,7 @@
             $this->rangeRule = new Range($lexer, $entityStore);
             $this->retrieveRule = new Retrieve($lexer);
             $this->createTableRule = new CreateTable($lexer);
-            $this->createIndexRule = new CreateIndex($lexer);
+            $this->indexRule = new Index($lexer);
             $this->alterTableRule = new AlterTable($lexer);
             $this->destroyRule = new Destroy($lexer);
             $this->indexVisibilityRule = new IndexVisibility($lexer);
@@ -91,7 +91,7 @@
 				    $query = $this->indexVisibilityRule->parseShow();
 			    } elseif ($this->lexer->peekKeyword('index')) {
 				    // Ranges ahead of `index` (if any) are unused.
-				    $query = $this->createIndexRule->parse();
+				    $query = $this->indexRule->parse();
 			    } elseif ($this->lexer->peekKeyword('replace')) {
 				    $query = $this->replaceRule->parse($ranges);
 			    } elseif ($this->lexer->peekKeyword('delete')) {

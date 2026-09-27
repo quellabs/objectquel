@@ -1,6 +1,6 @@
 <?php
 
-	namespace Quellabs\ObjectQuel\ObjectQuel\Rules;
+	namespace Quellabs\ObjectQuel\ObjectQuel\Helpers;
 
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRange;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRangeDatabase;
@@ -16,7 +16,7 @@
 	 * (see Rules\Range) and must be a real persisted entity range, not a
 	 * subquery/temp-table/JSON range.
 	 */
-	class TargetRange {
+	class TargetRangeResolver {
 
 		/**
 		 * @param string $name The range name written after the statement keyword

@@ -16,7 +16,7 @@
 	 * no-restriction governance answer as `create`/`destroy`).
 	 *
 	 * $unique and $type are set from `unique`/`fulltext`, which occupy the
-	 * same grammar slot right after `index` in Rules\CreateIndex — at most
+	 * same grammar slot right after `index` in Rules\Index — at most
 	 * one of them is ever true/non-null, since the parser can match only one
 	 * of the two keywords. There is no "unique fulltext index" case to guard
 	 * against here (see QuelToSQLCreateIndex): the combination is

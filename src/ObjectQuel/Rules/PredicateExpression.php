@@ -21,7 +21,7 @@
 	 * or as arguments to other functions, because they are parsed at a level
 	 * above ComparisonExpression and ArithmeticExpression.
 	 *
-	 * Extends AbstractExpressionRule to gain $lexer, parsePropertyChain(), and
+	 * Extends ExpressionRuleBase to gain $lexer, parsePropertyChain(), and
 	 * parseIdentifierList(). Delegation downward to ComparisonExpression is done
 	 * explicitly rather than via inheritance, since ComparisonExpression does not
 	 * need those shared primitives and correctly stands alone.

@@ -10,7 +10,7 @@
 	/**
 	 * Grammar fragments shared by every place an index gets parsed —
 	 * standalone `index [unique|fulltext] on Table is name (...)`
-	 * (Rules\CreateIndex), `create`'s embedded `[unique|fulltext] index name
+	 * (Rules\Index), `create`'s embedded `[unique|fulltext] index name
 	 * (...)` entries (Rules\CreateTable), and `alter`'s `add [unique|fulltext]
 	 * index name (...)` sub-operation (Rules\AlterTable) — rather than
 	 * duplicating the same two token-consuming routines in all three (mirrors

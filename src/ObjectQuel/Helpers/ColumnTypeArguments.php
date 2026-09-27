@@ -1,6 +1,6 @@
 <?php
 
-	namespace Quellabs\ObjectQuel\ObjectQuel\Rules;
+	namespace Quellabs\ObjectQuel\ObjectQuel\Helpers;
 
 	/**
 	 * The optional `(limit)`, `(precision, scale)`, or `('value', ...)` suffix

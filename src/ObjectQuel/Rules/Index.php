@@ -22,7 +22,7 @@
 	 * concept — see QuelToSQLCreateIndex) is unrepresentable by construction,
 	 * not parsed-then-rejected.
 	 */
-	class CreateIndex {
+	class Index {
 
 		private Lexer $lexer;
 

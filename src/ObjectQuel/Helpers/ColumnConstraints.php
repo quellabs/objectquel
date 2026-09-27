@@ -1,10 +1,10 @@
 <?php
 
-	namespace Quellabs\ObjectQuel\ObjectQuel\Rules;
+	namespace Quellabs\ObjectQuel\ObjectQuel\Helpers;
 
 	/**
 	 * The `nullable`/`identity` constraint keywords following a column's type.
-	 * See ColumnDefinitionClause::parseColumnConstraints() for why columns are
+	 * See Rules\ColumnDefinitionClause::parseColumnConstraints() for why columns are
 	 * NOT NULL by default.
 	 */
 	final class ColumnConstraints {

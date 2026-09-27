@@ -6,6 +6,7 @@
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRange;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRangeDatabase;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstReplace;
+	use Quellabs\ObjectQuel\ObjectQuel\Helpers\TargetRangeResolver;
 	use Quellabs\ObjectQuel\ObjectQuel\Lexer;
 	use Quellabs\ObjectQuel\ObjectQuel\LexerException;
 	use Quellabs\ObjectQuel\ObjectQuel\ParserException;
@@ -53,7 +54,7 @@
 			$this->lexer->matchKeyword('replace');
 
 			$targetName = $this->lexer->match(Token::Identifier)->getStringValue();
-			$range = TargetRange::resolve($targetName, $ranges, 'replace');
+			$range = TargetRangeResolver::resolve($targetName, $ranges, 'replace');
 			$replace = $this->parseAssignmentsAndConditions($range);
 
 			$this->consumeOptionalSemicolon();
