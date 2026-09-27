@@ -39,6 +39,13 @@
 		public function supportsWindowFunctions(): bool {
 			return false;
 		}
+
+		/**
+		 * @inheritDoc
+		 */
+		public function supportsSqlServerOffsetFetch(): bool {
+			return false;
+		}
 		
 		/**
 		 * @inheritDoc

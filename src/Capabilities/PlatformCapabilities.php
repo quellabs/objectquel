@@ -133,6 +133,19 @@
 			$stmt->closeCursor();
 			return $this->windowFunctionsCache = true;
 		}
+
+		/**
+		 * Reports whether this SQL Server supports OFFSET/FETCH pagination.
+		 * SQL Server 2012+ is required, and the database compatibility level must be 110+.
+		 * @return bool
+		 */
+		public function supportsSqlServerOffsetFetch(): bool {
+			if ($this->adapter->getDatabaseType() !== 'sqlsrv' || version_compare($this->adapter->getServerVersion(), '11.0', '<')) {
+				return false;
+			}
+
+			return ($this->adapter->getSqlServerCompatibilityLevel() ?? 0) >= 110;
+		}
 		
 		/**
 		 * @inheritDoc

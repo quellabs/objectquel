@@ -147,8 +147,7 @@
 					throw new SemanticException("SQL Server requires an explicit 'sort by' for a windowed routine retrieve.");
 				}
 
-				$connection = $this->entityManager->getConnection();
-				if ($connection->getDatabaseType() === 'sqlsrv' && !$connection->supportsSqlServerOffsetFetch()) {
+				if (!$this->platform->supportsSqlServerOffsetFetch()) {
 					throw new SemanticException('SQL Server windowed routine retrieves require server version 2012 or later and database compatibility level 110 or later.');
 				}
 			}

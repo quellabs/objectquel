@@ -286,18 +286,6 @@
 		}
 
 		/**
-		 * Reports whether this SQL Server supports OFFSET/FETCH pagination.
-		 * @return bool True when both server version and database compatibility level support it
-		 */
-		public function supportsSqlServerOffsetFetch(): bool {
-			if ($this->getDatabaseType() !== 'sqlsrv' || version_compare($this->getServerVersion(), '11.0', '<')) {
-				return false;
-			}
-
-			return ($this->getSqlServerCompatibilityLevel() ?? 0) >= 110;
-		}
-
-		/**
 		 * Reads a routine's kind and normalized return type from the database catalog.
 		 * @param string $name Routine name as written
 		 * @return RoutineSignature
