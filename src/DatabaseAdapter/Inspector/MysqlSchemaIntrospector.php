@@ -64,12 +64,15 @@
 			}
 
 			$primaryKey = $this->adapter->getPrimaryKeyColumns($tableName);
+			$jsonColumns = $this->adapter->getDatabaseType() === 'mariadb' ? $this->mariadbJsonColumns($tableName) : [];
 			$result = [];
 
 			/** @var array{column_name: string, data_type: string, column_type: string, character_maximum_length: string|null, column_default: string|null, is_nullable: string, extra: string} $row */
 			foreach ($statement->fetchAll('assoc') as $row) {
 				$charLimit = $row['character_maximum_length'] !== null ? (int)$row['character_maximum_length'] : null;
-				$type = NativeColumnTypeMapper::mysqlType($row['data_type'], $row['column_type'], $charLimit);
+				$type = $row['data_type'] === 'longtext' && isset($jsonColumns[$row['column_name']])
+					? 'json'
+					: NativeColumnTypeMapper::mysqlType($row['data_type'], $row['column_type'], $charLimit);
 				$values = $type === 'enum' ? $this->parseMysqlEnumValues($row['column_type']) : null;
 				$precisionScale = $type === 'decimal' ? $this->parseMysqlPrecisionScale($row['column_type']) : new NumericPrecisionScale(null, null);
 
@@ -94,6 +97,31 @@
 					primary_key: in_array($row['column_name'], $primaryKey, true),
 					values: $values,
 				);
+			}
+
+			return $result;
+		}
+
+		/**
+		 * MariaDB stores JSON as LONGTEXT with a json_valid check constraint.
+		 * @return array<string, true> JSON column names
+		 */
+		private function mariadbJsonColumns(string $tableName): array {
+			$statement = $this->adapter->execute('
+				SELECT CHECK_CLAUSE AS check_clause
+				FROM information_schema.CHECK_CONSTRAINTS
+				WHERE CONSTRAINT_SCHEMA = DATABASE() AND TABLE_NAME = :tableName
+			', ['tableName' => $tableName]);
+			$result = [];
+
+			if ($statement === null) {
+				throw new \RuntimeException("Could not read JSON constraints for '{$tableName}'.");
+			}
+
+			foreach ($statement->fetchAll('assoc') as $row) {
+				if (preg_match('/^json_valid\(`([^`]+)`\)$/i', $row['check_clause'], $matches) === 1) {
+					$result[$matches[1]] = true;
+				}
 			}
 
 			return $result;
@@ -263,6 +291,10 @@
 			
 			if (preg_match('/^_[A-Za-z0-9]+\\\\\'(.*)\\\\\'$/s', $default, $matches) === 1) {
 				return $matches[1];
+			}
+
+			if ($this->adapter->getDatabaseType() === 'mariadb' && preg_match("/^'((?:[^']|'')*)'$/s", $default, $matches) === 1) {
+				return str_replace("''", "'", $matches[1]);
 			}
 			
 			return $default;

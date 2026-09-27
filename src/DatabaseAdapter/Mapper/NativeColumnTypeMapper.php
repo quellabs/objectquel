@@ -32,7 +32,7 @@
 			return match (strtolower($dataType)) {
 				'varchar' => 'string',
 				'char' => $characterMaximumLength === 36 ? 'uuid' : 'char',
-				'text' => 'text',
+				'text', 'tinytext', 'mediumtext', 'longtext' => 'text',
 				'tinyint' => str_starts_with(strtolower($columnType), 'tinyint(1)') ? 'boolean' : 'tinyinteger',
 				'smallint' => 'smallinteger',
 				'int' => 'integer',
