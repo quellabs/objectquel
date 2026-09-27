@@ -1,10 +1,9 @@
 <?php
 	
-	namespace Quellabs\ObjectQuel\ObjectQuel\QuelToSQL;
+	namespace Quellabs\ObjectQuel\ObjectQuel\Helpers\SqlDialect;
 	
 	use Quellabs\ObjectQuel\Capabilities\PlatformCapabilitiesInterface;
-	use Quellabs\ObjectQuel\DatabaseAdapter\SqlIdentifierQuoter;
-	
+
 	/**
 	 * Quotes a SET-clause target column for `replace`/`delete`-as-update SQL,
 	 * qualifying it with the statement's own range alias only where the

@@ -3,7 +3,7 @@
 	namespace Quellabs\ObjectQuel\ObjectQuel\Routines;
 
 	use Quellabs\ObjectQuel\Capabilities\PlatformCapabilitiesInterface;
-	use Quellabs\ObjectQuel\DatabaseAdapter\Mapper\DDLTypeMapper;
+	use Quellabs\ObjectQuel\ObjectQuel\Helpers\SqlDialect\DDLTypeMapper;
 	use Quellabs\ObjectQuel\DatabaseAdapter\Mapper\TypeMapper;
 	use Quellabs\ObjectQuel\EntityManager;
 	use Quellabs\ObjectQuel\EntityStore;

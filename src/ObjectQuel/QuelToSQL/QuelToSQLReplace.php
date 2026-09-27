@@ -4,7 +4,7 @@
 
 	use Quellabs\ObjectQuel\Capabilities\PlatformCapabilitiesInterface;
 	use Quellabs\ObjectQuel\DatabaseAdapter\Mapper\TypeMapper;
-	use Quellabs\ObjectQuel\DatabaseAdapter\SqlIdentifierQuoter;
+	use Quellabs\ObjectQuel\ObjectQuel\Helpers\SqlDialect\SqlIdentifierQuoter;
 	use Quellabs\ObjectQuel\EntityStore;
 	use Quellabs\ObjectQuel\Exception\EntityResolutionException;
 	use Quellabs\ObjectQuel\Exception\QuelException;
@@ -17,10 +17,10 @@
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRangeDatabase;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstReplace;
 	use Quellabs\ObjectQuel\ObjectQuel\AstInterface;
-	use Quellabs\ObjectQuel\ObjectQuel\QuelToSQL\AliasedDmlSqlBuilder;
+	use Quellabs\ObjectQuel\ObjectQuel\Helpers\SqlDialect\AliasedDmlSqlBuilder;
 	use Quellabs\ObjectQuel\ObjectQuel\QuelToSQL\AssignmentValidator;
 	use Quellabs\ObjectQuel\ObjectQuel\Helpers\DateTimeWriteSqlConverter;
-	use Quellabs\ObjectQuel\ObjectQuel\QuelToSQL\SetTargetColumnQuoter;
+	use Quellabs\ObjectQuel\ObjectQuel\Helpers\SqlDialect\SetTargetColumnQuoter;
 	use Quellabs\ObjectQuel\ObjectQuel\QuelToSQL\WriteVerbIdentifierResolver;
 	use Quellabs\ObjectQuel\ObjectQuel\Helpers\WriteVerbParameterNormalizer;
 	use Quellabs\ObjectQuel\ObjectQuel\Visitors\CoerceDateTimeParameters;

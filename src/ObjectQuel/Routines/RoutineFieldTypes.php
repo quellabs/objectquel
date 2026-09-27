@@ -2,7 +2,7 @@
 
 	namespace Quellabs\ObjectQuel\ObjectQuel\Routines;
 
-	use Quellabs\ObjectQuel\DatabaseAdapter\Mapper\DDLTypeMapper;
+	use Quellabs\ObjectQuel\ObjectQuel\Helpers\SqlDialect\DDLTypeMapper;
 	use Quellabs\ObjectQuel\DatabaseAdapter\Mapper\TypeMapper;
 	use Quellabs\ObjectQuel\EntityStore;
 	use Quellabs\ObjectQuel\Exception\EntityResolutionException;

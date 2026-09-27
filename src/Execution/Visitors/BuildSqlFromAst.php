@@ -56,7 +56,7 @@
 	use Quellabs\ObjectQuel\ObjectQuel\Helpers\BooleanExpressionClassifier;
 	use Quellabs\ObjectQuel\Capabilities\PlatformCapabilitiesInterface;
 	use Quellabs\ObjectQuel\Capabilities\NullPlatformCapabilities;
-	use Quellabs\ObjectQuel\DatabaseAdapter\Mapper\CastTypeMapper;
+	use Quellabs\ObjectQuel\ObjectQuel\Helpers\SqlDialect\CastTypeMapper;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstCast;
 	use Quellabs\ObjectQuel\ObjectQuel\AstVisitorInterface;
 	
@@ -442,14 +442,41 @@
 
 			// date("now") — emit the platform's current-timestamp expression.
 			if ($ast->isNow()) {
-				$this->result[] = $this->platform->getCurrentUnixTimestamp();
+				$this->result[] = $this->currentUnixTimestamp();
 				$this->addToVisitedNodes($ast->getExpression());
 				return;
 			}
 
 			// Column reference or parameter — wrap with the platform's timestamp function.
 			$innerSql = $this->visitNodeAndReturnSQL($ast->getExpression());
-			$this->result[] = sprintf($this->platform->getUnixTimestampFunction(), $innerSql);
+			$this->result[] = $this->unixTimestamp($innerSql);
+		}
+
+		/**
+		 * Converts a datetime expression to integer Unix seconds.
+		 * @param string $valueSql Datetime expression
+		 * @return string SQL expression
+		 */
+		private function unixTimestamp(string $valueSql): string {
+			return match ($this->platform->getDatabaseType()) {
+				'pgsql' => "CAST(EXTRACT(EPOCH FROM {$valueSql}) AS BIGINT)",
+				'sqlite' => "CAST(strftime('%s', {$valueSql}) AS INTEGER)",
+				'sqlsrv' => "DATEDIFF_BIG(SECOND, '1970-01-01', {$valueSql})",
+				default => "UNIX_TIMESTAMP({$valueSql})",
+			};
+		}
+
+		/**
+		 * Returns the current time as integer Unix seconds.
+		 * @return string SQL expression
+		 */
+		private function currentUnixTimestamp(): string {
+			return match ($this->platform->getDatabaseType()) {
+				'pgsql' => 'CAST(EXTRACT(EPOCH FROM NOW()) AS BIGINT)',
+				'sqlite' => "CAST(strftime('%s','now') AS INTEGER)",
+				'sqlsrv' => "DATEDIFF_BIG(SECOND, '1970-01-01', SYSUTCDATETIME())",
+				default => 'UNIX_TIMESTAMP()',
+			};
 		}
 
 		/**

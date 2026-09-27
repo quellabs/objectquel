@@ -32,6 +32,21 @@
 				throw new SemanticException("'{$target}' is a datetime, but the value written to it is an interval. Add it to a point in time, e.g. date(\"now\") + date(\"1 day\").");
 			}
 
-			return in_array($valueType, self::TIMESTAMP_TYPES, true) ? $platform->getDatetimeFromUnixTimestamp($valueSql) : $valueSql;
+			return in_array($valueType, self::TIMESTAMP_TYPES, true) ? self::datetimeFromUnixTimestamp($platform->getDatabaseType(), $valueSql) : $valueSql;
+		}
+
+		/**
+		 * Converts Unix seconds to a native datetime expression.
+		 * @param string $databaseType Database engine identifier
+		 * @param string $timestampSql Unix seconds expression
+		 * @return string SQL expression
+		 */
+		private static function datetimeFromUnixTimestamp(string $databaseType, string $timestampSql): string {
+			return match ($databaseType) {
+				'pgsql' => "(TO_TIMESTAMP({$timestampSql}) AT TIME ZONE 'UTC')",
+				'sqlite' => "datetime({$timestampSql}, 'unixepoch')",
+				'sqlsrv' => "DATEADD(SECOND, CAST({$timestampSql} AS BIGINT) % 86400, DATEADD(DAY, CAST({$timestampSql} AS BIGINT) / 86400, CAST('1970-01-01' AS DATETIME2)))",
+				default => "FROM_UNIXTIME({$timestampSql})",
+			};
 		}
 	}

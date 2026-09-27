@@ -19,7 +19,7 @@
 	use Quellabs\ObjectQuel\Execution\Visitors\DetectPrimaryKeyInClauseException;
 	use Quellabs\ObjectQuel\Capabilities\PlatformCapabilitiesInterface;
 	use Quellabs\ObjectQuel\Capabilities\NullPlatformCapabilities;
-	use Quellabs\ObjectQuel\DatabaseAdapter\SqlIdentifierQuoter;
+	use Quellabs\ObjectQuel\ObjectQuel\Helpers\SqlDialect\SqlIdentifierQuoter;
 
 	/**
 	 * Compiles an AstRetrieve statement to dialect-correct SELECT SQL.

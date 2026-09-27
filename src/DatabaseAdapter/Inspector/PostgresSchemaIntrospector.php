@@ -6,7 +6,7 @@
 	use Quellabs\ObjectQuel\DatabaseAdapter\ColumnDefinition;
 	use Quellabs\ObjectQuel\DatabaseAdapter\DatabaseAdapter;
 	use Quellabs\ObjectQuel\DatabaseAdapter\ForeignKeyDefinition;
-	use Quellabs\ObjectQuel\DatabaseAdapter\SqlIdentifierQuoter;
+	use Quellabs\ObjectQuel\ObjectQuel\Helpers\SqlDialect\SqlIdentifierQuoter;
 	use Quellabs\ObjectQuel\DatabaseAdapter\Mapper\NativeColumnTypeMapper;
 	use Quellabs\ObjectQuel\DatabaseAdapter\Mapper\TypeMapper;
 

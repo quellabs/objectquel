@@ -3,7 +3,8 @@
 	namespace Quellabs\ObjectQuel\ObjectQuel\QuelToSQL;
 
 	use Quellabs\ObjectQuel\Capabilities\PlatformCapabilitiesInterface;
-	use Quellabs\ObjectQuel\DatabaseAdapter\SqlIdentifierQuoter;
+	use Quellabs\ObjectQuel\ObjectQuel\Helpers\SqlDialect\SqlIdentifierQuoter;
+	use Quellabs\ObjectQuel\ObjectQuel\Helpers\SqlDialect\SqlDialectSyntax;
 	use Quellabs\ObjectQuel\EntityStore;
 	use Quellabs\ObjectQuel\Exception\EntityResolutionException;
 	use Quellabs\ObjectQuel\Exception\QuelException;
@@ -12,9 +13,9 @@
 	use Quellabs\ObjectQuel\Metadata\EntityMetadataRecord;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstDelete;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRangeDatabase;
-	use Quellabs\ObjectQuel\ObjectQuel\QuelToSQL\AliasedDmlSqlBuilder;
+	use Quellabs\ObjectQuel\ObjectQuel\Helpers\SqlDialect\AliasedDmlSqlBuilder;
 	use Quellabs\ObjectQuel\ObjectQuel\Helpers\EntityRangeTableNameResolver;
-	use Quellabs\ObjectQuel\ObjectQuel\QuelToSQL\SetTargetColumnQuoter;
+	use Quellabs\ObjectQuel\ObjectQuel\Helpers\SqlDialect\SetTargetColumnQuoter;
 	use Quellabs\ObjectQuel\ObjectQuel\QuelToSQL\WriteVerbIdentifierResolver;
 	use Quellabs\ObjectQuel\ObjectQuel\Helpers\WriteVerbParameterNormalizer;
 	use Quellabs\ObjectQuel\ObjectQuel\Visitors\CoerceDateTimeParameters;
@@ -167,7 +168,7 @@
 
 			return match ($metadata->softDeleteColumnType) {
 				// NULL means active; any timestamp means deleted — see InjectSoftDeleteCondition.
-				'datetime' => "{$targetColumn} = " . $this->platform->getCurrentDatetimeFunction(),
+				'datetime' => "{$targetColumn} = " . SqlDialectSyntax::currentDatetime($this->platform->getDatabaseType()),
 
 				// false means active; true means deleted — see InjectSoftDeleteCondition.
 				'boolean'  => "{$targetColumn} = " . ($this->platform->supportsBooleanLiterals() ? 'true' : '1'),

@@ -5,6 +5,7 @@
 	use Quellabs\ObjectQuel\Capabilities\NullPlatformCapabilities;
 	use Quellabs\ObjectQuel\Capabilities\PlatformCapabilitiesInterface;
 	use Quellabs\ObjectQuel\DatabaseAdapter\ColumnDefinition;
+	use Quellabs\ObjectQuel\ObjectQuel\Helpers\SqlDialect\SqlDialectSyntax;
 	use Quellabs\ObjectQuel\DatabaseAdapter\Mapper\TypeMapper;
 	use Quellabs\ObjectQuel\Sculpt\SculptTypes;
 	
@@ -187,7 +188,7 @@
 			// type 'json'. On PostgreSQL the database returns 'jsonb', but the entity
 			// always declares 'json'. Without this step every run would generate a
 			// spurious ALTER COLUMN for every JSON column on PostgreSQL.
-			if ($normalized['type'] === $this->platform->getNativeJsonType() && $normalized['type'] !== 'json') {
+			if ($normalized['type'] === SqlDialectSyntax::nativeJsonType($this->platform->getDatabaseType()) && $normalized['type'] !== 'json') {
 				$normalized['type'] = 'json';
 			}
 

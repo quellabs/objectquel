@@ -3,8 +3,8 @@
 	namespace Quellabs\ObjectQuel\ObjectQuel\Routines\Lowering;
 
 	use Quellabs\ObjectQuel\Capabilities\PlatformCapabilitiesInterface;
-	use Quellabs\ObjectQuel\DatabaseAdapter\Mapper\DDLTypeMapper;
-	use Quellabs\ObjectQuel\DatabaseAdapter\SqlIdentifierQuoter;
+	use Quellabs\ObjectQuel\ObjectQuel\Helpers\SqlDialect\DDLTypeMapper;
+	use Quellabs\ObjectQuel\ObjectQuel\Helpers\SqlDialect\SqlIdentifierQuoter;
 	use Quellabs\ObjectQuel\EntityStore;
 	use Quellabs\ObjectQuel\Exception\EntityResolutionException;
 	use Quellabs\ObjectQuel\Exception\QuelException;
@@ -35,7 +35,7 @@
 	use Quellabs\ObjectQuel\ObjectQuel\Visitors\CollectNodes;
 	use Quellabs\ObjectQuel\ObjectQuel\Routines\RoutineAnalyzer;
 	use Quellabs\ObjectQuel\ObjectQuel\Routines\RoutineCursorSource;
-	use Quellabs\ObjectQuel\ObjectQuel\Routines\RoutineReferenceSql;
+	use Quellabs\ObjectQuel\ObjectQuel\Helpers\SqlDialect\RoutineReferenceSql;
 	use Quellabs\ObjectQuel\ObjectQuel\Routines\RoutineStatementCompiler;
 	use Quellabs\ObjectQuel\ObjectQuel\Routines\RoutineTypeChecker;
 

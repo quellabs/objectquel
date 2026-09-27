@@ -7,7 +7,8 @@
 	use Quellabs\ObjectQuel\DatabaseAdapter\ColumnDefinition;
 	use Quellabs\ObjectQuel\DatabaseAdapter\DatabaseAdapter;
 	use Quellabs\ObjectQuel\DatabaseAdapter\ForeignKeyDefinition;
-	use Quellabs\ObjectQuel\DatabaseAdapter\SqlIdentifierQuoter;
+	use Quellabs\ObjectQuel\ObjectQuel\Helpers\SqlDialect\SqlIdentifierQuoter;
+	use Quellabs\ObjectQuel\ObjectQuel\Helpers\SqlDialect\SqlDialectSyntax;
 	use Quellabs\ObjectQuel\Sculpt\SculptTypes;
 
 	/**
@@ -767,7 +768,7 @@ PHP;
 		private function resolveType(ColumnDefinition $definition): string {
 			$type = $definition->type;
 
-			if ($type === $this->platform->getNativeJsonType() && $type !== 'json') {
+			if ($type === SqlDialectSyntax::nativeJsonType($this->platform->getDatabaseType()) && $type !== 'json') {
 				return 'json';
 			}
 

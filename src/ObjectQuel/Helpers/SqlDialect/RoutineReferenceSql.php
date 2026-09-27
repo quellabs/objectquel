@@ -1,9 +1,8 @@
 <?php
 
-	namespace Quellabs\ObjectQuel\ObjectQuel\Routines;
+	namespace Quellabs\ObjectQuel\ObjectQuel\Helpers\SqlDialect;
 
-	use Quellabs\ObjectQuel\DatabaseAdapter\SqlIdentifierQuoter;
-	use Quellabs\ObjectQuel\Exception\QuelException;
+		use Quellabs\ObjectQuel\Exception\QuelException;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstIdentifier;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\IdentifierType;
 

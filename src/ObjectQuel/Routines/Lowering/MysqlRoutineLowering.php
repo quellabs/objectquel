@@ -20,7 +20,7 @@
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRoutineDefinition;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstWhile;
 	use Quellabs\ObjectQuel\ObjectQuel\Visitors\CollectNodes;
-	use Quellabs\ObjectQuel\ObjectQuel\Routines\RoutineReferenceSql;
+	use Quellabs\ObjectQuel\ObjectQuel\Helpers\SqlDialect\RoutineReferenceSql;
 	use Quellabs\ObjectQuel\ObjectQuel\Routines\RoutineStatementCompiler;
 
 	/**

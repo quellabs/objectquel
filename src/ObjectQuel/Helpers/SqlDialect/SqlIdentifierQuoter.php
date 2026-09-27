@@ -1,6 +1,6 @@
 <?php
 
-	namespace Quellabs\ObjectQuel\DatabaseAdapter;
+	namespace Quellabs\ObjectQuel\ObjectQuel\Helpers\SqlDialect;
 
 	use Quellabs\ObjectQuel\Capabilities\PlatformCapabilitiesInterface;
 

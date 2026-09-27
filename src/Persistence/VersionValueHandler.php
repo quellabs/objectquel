@@ -6,7 +6,8 @@
 	use Quellabs\ObjectQuel\Annotations\Orm\Version;
 	use Quellabs\ObjectQuel\Capabilities\PlatformCapabilitiesInterface;
 	use Quellabs\ObjectQuel\DatabaseAdapter\DatabaseAdapter;
-	use Quellabs\ObjectQuel\DatabaseAdapter\SqlIdentifierQuoter;
+	use Quellabs\ObjectQuel\ObjectQuel\Helpers\SqlDialect\SqlIdentifierQuoter;
+	use Quellabs\ObjectQuel\ObjectQuel\Helpers\SqlDialect\SqlDialectSyntax;
 	use Quellabs\ObjectQuel\EntityStore;
 	use Quellabs\ObjectQuel\Exception\EntityResolutionException;
 	use Quellabs\ObjectQuel\Metadata\EntityMetadataRecord;
@@ -41,8 +42,7 @@
 		private DatabaseAdapter $connection;
 
 		/**
-		 * Used to generate engine-appropriate SQL fragments (e.g. the correct
-		 * "current datetime" expression) instead of hardcoding MySQL syntax.
+		 * Describes the connected engine for SQL generation.
 		 * @var PlatformCapabilitiesInterface
 		 */
 		private PlatformCapabilitiesInterface $platformCapabilities;
@@ -135,7 +135,7 @@
 						// Use the engine-appropriate "current datetime" expression rather
 						// than hardcoding MySQL's NOW() — SQLite and SQL Server use
 						// different syntax for this.
-						$setClauseParts[] = "{$targetColumnName}=" . $this->platformCapabilities->getCurrentDatetimeFunction();
+						$setClauseParts[] = "{$targetColumnName}=" . SqlDialectSyntax::currentDatetime($this->platformCapabilities->getDatabaseType());
 						break;
 
 					case 'uuid':
@@ -186,7 +186,7 @@
 		public function getInitialVersionValue(string $columnType): int|string {
 			return match ($columnType) {
 				'int', 'integer', 'biginteger' => 1,
-				'datetime', 'timestamp' => $this->platformCapabilities->getCurrentDatetimeFunction(),
+				'datetime', 'timestamp' => SqlDialectSyntax::currentDatetime($this->platformCapabilities->getDatabaseType()),
 				'uuid', 'guid' => "'" . Tools::createUUIDv7() . "'",
 				default => throw new OrmException("Invalid column type {$columnType} for Version annotation"),
 			};

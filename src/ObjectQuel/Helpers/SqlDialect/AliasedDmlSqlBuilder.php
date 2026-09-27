@@ -1,9 +1,8 @@
 <?php
 
-	namespace Quellabs\ObjectQuel\ObjectQuel\QuelToSQL;
+	namespace Quellabs\ObjectQuel\ObjectQuel\Helpers\SqlDialect;
 
 	use Quellabs\ObjectQuel\Capabilities\PlatformCapabilitiesInterface;
-	use Quellabs\ObjectQuel\DatabaseAdapter\SqlIdentifierQuoter;
 
 	/**
 	 * Renders UPDATE/DELETE statements whose target table carries a range alias.

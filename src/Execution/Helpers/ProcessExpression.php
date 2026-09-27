@@ -29,13 +29,13 @@
 	use Quellabs\ObjectQuel\Capabilities\FulltextIndexStyle;
 	use Quellabs\ObjectQuel\Capabilities\NullPlatformCapabilities;
 	use Quellabs\ObjectQuel\Capabilities\PlatformCapabilitiesInterface;
-	use Quellabs\ObjectQuel\DatabaseAdapter\SqlIdentifierQuoter;
+	use Quellabs\ObjectQuel\ObjectQuel\Helpers\SqlDialect\SqlIdentifierQuoter;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\NodeBinary;
 	use Quellabs\ObjectQuel\ObjectQuel\AstInterface;
 	use Quellabs\ObjectQuel\ObjectQuel\AstVisitorInterface;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\IdentifierType;
 	use Quellabs\ObjectQuel\ObjectQuel\Helpers\BooleanExpressionClassifier;
-	use Quellabs\ObjectQuel\ObjectQuel\Routines\RoutineReferenceSql;
+	use Quellabs\ObjectQuel\ObjectQuel\Helpers\SqlDialect\RoutineReferenceSql;
 	
 	/**
 	 * ExpressionHandler - Converts AST expression nodes to SQL equivalents
@@ -978,7 +978,7 @@
 		 * Builds a platform-appropriate "does this expression match this pattern"
 		 * SQL fragment. Used for the flag-less, always-positive matches needed by
 		 * handleTypeCheckWithPattern() — never negated, so this only ever needs
-		 * the 'match' half of getRegexpFallbackOperators(), not 'notMatch'.
+		 * the positive fallback operator.
 		 * @param string $sqlExpression Already-generated SQL for the value being tested
 		 * @param string $pattern Raw regex pattern (no delimiters)
 		 * @return string SQL boolean expression
@@ -990,7 +990,7 @@
 				return "REGEXP_LIKE({$sqlExpression}, {$quotedPattern})";
 			}
 
-			$operator = $this->platform->getRegexpFallbackOperators()['match'];
+			$operator = $this->regexpFallbackOperators()['match'];
 			return "{$sqlExpression} {$operator} {$quotedPattern}";
 		}
 		
@@ -1061,11 +1061,27 @@
 			
 			// Fallback: platform-specific plain match operator. Flags are dropped
 			// — behavior depends on collation.
-			$operators = $this->platform->getRegexpFallbackOperators();
+			$operators = $this->regexpFallbackOperators();
 			$regexpOperator = $operator === '=' ? $operators['match'] : $operators['notMatch'];
 			return "{$leftResult} {$regexpOperator} {$pattern}";
 		}
 		
+		/**
+		 * Returns the engine's fallback regular-expression operators.
+		 * @return array{match: string, notMatch: string}
+		 */
+		private function regexpFallbackOperators(): array {
+			return match ($this->platform->getDatabaseType()) {
+				'pgsql' => ['match' => '~', 'notMatch' => '!~'],
+				'sqlsrv' => throw new \RuntimeException(
+					'No regular expression support is available on this SQL Server ' .
+					'connection. REGEXP_LIKE() requires SQL Server 2025 (compatibility ' .
+					'level 170+); no fallback operator exists on earlier versions.'
+				),
+				default => ['match' => 'REGEXP', 'notMatch' => 'NOT REGEXP'],
+			};
+		}
+
 		/**
 		 * Checks whether all given identifiers belong to the same entity and whether
 		 * that entity has a FullTextIndex covering all of them. Returns the matching
