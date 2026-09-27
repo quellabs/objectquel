@@ -3,16 +3,16 @@
 	namespace Quellabs\ObjectQuel\ObjectQuel\Ast;
 
 	/**
-	 * `begin transaction { ... }` — an atomic block that preserves any caller-owned transaction.
+	 * `exit` — rolls back and exits the innermost enclosing `transaction { }`.
 	 */
-	class AstBeginTransaction extends AstStatementBlock {
+	class AstExit extends Ast {
 
 		/**
 		 * @return static
 		 */
 		public function deepClone(): static {
 			// @phpstan-ignore-next-line new.static
-			$clone = new static($this->cloneArray($this->getBody()));
+			$clone = new static();
 			$clone->setParent($this->getParent());
 			return $clone;
 		}

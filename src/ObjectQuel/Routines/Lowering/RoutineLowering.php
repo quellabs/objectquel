@@ -10,9 +10,9 @@
 	use Quellabs\ObjectQuel\Exception\QuelException;
 	use Quellabs\ObjectQuel\Exception\SemanticException;
 	use Quellabs\ObjectQuel\Exception\TransformationException;
-	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstAbort;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstExit;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstAppend;
-	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstBeginTransaction;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstTransaction;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstBreak;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstCall;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstContinue;
@@ -105,8 +105,8 @@
 			$this->cursorDeclarations = [];
 			$this->writeCursors = $this->collectWriteCursors($routine);
 			$this->openLoops = [];
-			if (!$routine->isVoid() && $this->contains($routine, [AstBeginTransaction::class])) {
-				throw new SemanticException("'begin transaction' is only supported in void functions.");
+			if (!$routine->isVoid() && $this->contains($routine, [AstTransaction::class])) {
+				throw new SemanticException("'transaction' is only supported in void functions.");
 			}
 
 			$this->validate($routine);
@@ -178,18 +178,18 @@
 
 		/**
 		 * Compiles a transaction block in the routine.
-		 * @param AstBeginTransaction $transaction The transaction block
+		 * @param AstTransaction $transaction The transaction block
 		 * @param int $depth Indentation depth
 		 * @return string
 		 * @throws SemanticException|EntityResolutionException|TransformationException|QuelException
 		 */
-		abstract protected function lowerTransaction(AstBeginTransaction $transaction, int $depth): string;
+		abstract protected function lowerTransaction(AstTransaction $transaction, int $depth): string;
 
 		/**
-		 * Compiles the routine abort statement.
-		 * @return string The rollback statement for `abort`
+		 * Compiles the routine exit statement.
+		 * @return string The rollback statement for `exit`
 		 */
-		abstract protected function abortStatement(): string;
+		abstract protected function exitStatement(): string;
 
 		/**
 		 * Compiles a break statement for the target engine.
@@ -362,8 +362,8 @@
 				$statement instanceof AstIf => $this->lowerIf($statement, $depth),
 				$statement instanceof AstWhile => $this->lowerWhile($statement, $depth),
 				$statement instanceof AstForeach => $this->lowerForeach($statement, $depth),
-				$statement instanceof AstBeginTransaction => $this->lowerTransaction($statement, $depth),
-				$statement instanceof AstAbort => $this->line($this->abortStatement(), $depth),
+				$statement instanceof AstTransaction => $this->lowerTransaction($statement, $depth),
+				$statement instanceof AstExit => $this->line($this->exitStatement(), $depth),
 				$statement instanceof AstBreak => $this->line($this->breakStatement(), $depth),
 				$statement instanceof AstContinue => $this->line($this->continueStatement(), $depth),
 				$statement instanceof AstDeleteCurrent => $this->line($this->statements->compileCurrentRowDelete(

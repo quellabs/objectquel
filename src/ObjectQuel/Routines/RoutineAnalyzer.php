@@ -6,9 +6,9 @@
 	use Quellabs\ObjectQuel\EntityStore;
 	use Quellabs\ObjectQuel\Exception\EntityResolutionException;
 	use Quellabs\ObjectQuel\Exception\SemanticException;
-	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstAbort;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstExit;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstAppend;
-	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstBeginTransaction;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstTransaction;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstBreak;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstCall;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstContinue;
@@ -172,11 +172,11 @@
 					$this->analyzeForeach($statement);
 					break;
 
-				case $statement instanceof AstBeginTransaction:
+				case $statement instanceof AstTransaction:
 					$this->analyzeBlock($statement->getBody(), false);
 					break;
 
-				case $statement instanceof AstAbort:
+				case $statement instanceof AstExit:
 				case $statement instanceof AstBreak:
 				case $statement instanceof AstContinue:
 					// Placement is checked by RoutineControlFlowValidator
@@ -414,7 +414,7 @@
 		 */
 		private function assertTopLevel(bool $isTopLevel, string $what): void {
 			if (!$isTopLevel) {
-				throw new SemanticException("{$what} must be at the top level of the routine body, not inside if/else, while, foreach or begin transaction.");
+				throw new SemanticException("{$what} must be at the top level of the routine body, not inside if/else, while, foreach or transaction.");
 			}
 		}
 

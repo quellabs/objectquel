@@ -3,8 +3,8 @@
 	namespace Quellabs\ObjectQuel\ObjectQuel\Rules;
 
 	use Quellabs\ObjectQuel\EntityStore;
-	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstAbort;
-	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstBeginTransaction;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstExit;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstTransaction;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstBreak;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstContinue;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstDeclare;
@@ -35,7 +35,7 @@
 	class RoutineBlock {
 
 		/** Words that start a procedural statement; recognized by text, like other contextual keywords. */
-		public const array STATEMENT_KEYWORDS = ['if', 'else', 'elseif', 'while', 'foreach', 'return', 'begin', 'abort', 'break', 'continue', 'replace', 'delete'];
+		public const array STATEMENT_KEYWORDS = ['if', 'else', 'elseif', 'while', 'foreach', 'return', 'transaction', 'exit', 'break', 'continue', 'replace', 'delete'];
 
 		/** Compound-assignment operator tokens (the `x` in `x=`) and the arithmetic operator each applies */
 		private const array COMPOUND_OPERATORS = [Token::Plus => '+', Token::Minus => '-', Token::Star => '*', Token::Slash => '/'];
@@ -142,14 +142,13 @@
 					$this->lexer->matchKeyword('return');
 					return new AstReturn($this->expressionRule->parse());
 
-				case 'begin':
-					$this->lexer->matchKeyword('begin');
+				case 'transaction':
 					$this->lexer->matchKeyword('transaction');
-					return new AstBeginTransaction($this->parseBlock());
+					return new AstTransaction($this->parseBlock());
 
-				case 'abort':
-					$this->lexer->matchKeyword('abort');
-					return new AstAbort();
+				case 'exit':
+					$this->lexer->matchKeyword('exit');
+					return new AstExit();
 
 				case 'break':
 					$this->lexer->matchKeyword('break');

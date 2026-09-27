@@ -3,8 +3,8 @@
 	namespace Quellabs\ObjectQuel\ObjectQuel\Routines;
 
 	use Quellabs\ObjectQuel\Exception\SemanticException;
-	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstAbort;
-	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstBeginTransaction;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstExit;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstTransaction;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstBreak;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstContinue;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstForeach;
@@ -16,8 +16,8 @@
 
 	/**
 	 * Path checks over a routine body: every path of a non-void routine ends in
-	 * `return`, `abort` is the last statement on its path through its
-	 * `begin transaction` block,
+	 * `return`, `exit` is the last statement on its path through its
+	 * `transaction` block,
 	 * and `break`/`continue` sit in a loop without leaving a transaction block.
 	 */
 	class RoutineControlFlowValidator {
@@ -37,45 +37,45 @@
 		}
 
 		/**
-		 * Checks transaction/abort/return/break/continue placement in a statement list.
+		 * Checks transaction/exit/return/break/continue placement in a statement list.
 		 * @param AstInterface[] $statements Statements in source order
-		 * @param bool $inTransaction True inside a `begin transaction` body
+		 * @param bool $inTransaction True inside a `transaction` body
 		 * @param bool $inLoop True inside a loop that is itself inside the transaction
 		 * @param bool $inAnyLoop True inside any loop
-		 * @return bool True when some path through the list ends in `abort`
+		 * @return bool True when some path through the list ends in `exit`
 		 * @throws SemanticException
 		 */
 		private function checkBlock(array $statements, bool $inTransaction, bool $inLoop, bool $inAnyLoop): bool {
-			$mayAbort = false;
+			$mayExit = false;
 
 			foreach ($statements as $statement) {
-				if ($mayAbort) {
-					throw new SemanticException("A statement follows 'abort' on the same path. 'abort' must be the last statement on its path through the transaction block.");
+				if ($mayExit) {
+					throw new SemanticException("A statement follows 'exit' on the same path. 'exit' must be the last statement on its path through the transaction block.");
 				}
 
-				$mayAbort = $this->checkStatement($statement, $inTransaction, $inLoop, $inAnyLoop);
+				$mayExit = $this->checkStatement($statement, $inTransaction, $inLoop, $inAnyLoop);
 			}
 
-			return $mayAbort;
+			return $mayExit;
 		}
 
 		/**
 		 * Checks one statement, recursing into nested blocks.
 		 * @param AstInterface $statement The statement
-		 * @param bool $inTransaction True inside a `begin transaction` body
+		 * @param bool $inTransaction True inside a `transaction` body
 		 * @param bool $inLoop True inside a loop that is itself inside the transaction
 		 * @param bool $inAnyLoop True inside any loop
-		 * @return bool True when some path through the statement ends in `abort`
+		 * @return bool True when some path through the statement ends in `exit`
 		 * @throws SemanticException
 		 */
 		private function checkStatement(AstInterface $statement, bool $inTransaction, bool $inLoop, bool $inAnyLoop): bool {
-			if ($statement instanceof AstAbort) {
+			if ($statement instanceof AstExit) {
 				if (!$inTransaction) {
-					throw new SemanticException("'abort' is only valid inside 'begin transaction { }'.");
+					throw new SemanticException("'exit' is only valid inside 'transaction { }'.");
 				}
 
 				if ($inLoop) {
-					throw new SemanticException("'abort' inside a loop would let later iterations run after the rollback; move it out of the loop.");
+					throw new SemanticException("'exit' inside a loop would let later iterations run after the rollback; move it out of the loop.");
 				}
 
 				return true;
@@ -87,7 +87,7 @@
 			}
 
 			if ($statement instanceof AstReturn && $inTransaction) {
-				throw new SemanticException("'return' inside 'begin transaction { }' is not supported; move it after the block.");
+				throw new SemanticException("'return' inside 'transaction { }' is not supported; move it after the block.");
 			}
 
 			if ($statement instanceof AstIf) {
@@ -101,12 +101,12 @@
 				return false;
 			}
 
-			if ($statement instanceof AstBeginTransaction) {
+			if ($statement instanceof AstTransaction) {
 				if ($inTransaction) {
-					throw new SemanticException("'begin transaction' blocks can't be nested.");
+					throw new SemanticException("'transaction' blocks can't be nested.");
 				}
 
-				// abort ends the transaction block, not the enclosing path
+				// exit ends the transaction block, not the enclosing path
 				$this->checkBlock($statement->getBody(), true, false, $inAnyLoop);
 				return false;
 			}
@@ -117,7 +117,7 @@
 		/**
 		 * Rejects `break`/`continue` outside a loop, or whose loop encloses the atomic block, skipping its cleanup.
 		 * @param string $keyword 'break' or 'continue', for error messages
-		 * @param bool $inTransaction True inside a `begin transaction` body
+		 * @param bool $inTransaction True inside a `transaction` body
 		 * @param bool $inLoop True inside a loop that is itself inside the transaction
 		 * @param bool $inAnyLoop True inside any loop
 		 * @return void
@@ -129,7 +129,7 @@
 			}
 
 			if ($inTransaction && !$inLoop) {
-				throw new SemanticException("'{$keyword}' would leave 'begin transaction { }' without finishing it; move the loop inside the block or the block out of the loop.");
+				throw new SemanticException("'{$keyword}' would leave 'transaction { }' without finishing it; move the loop inside the block or the block out of the loop.");
 			}
 		}
 

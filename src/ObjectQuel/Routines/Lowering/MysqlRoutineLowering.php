@@ -7,7 +7,7 @@
 	use Quellabs\ObjectQuel\Exception\SemanticException;
 	use Quellabs\ObjectQuel\ObjectQuel\AstInterface;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstAlias;
-	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstBeginTransaction;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstTransaction;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstCall;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstForeach;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstIdentifier;
@@ -201,7 +201,7 @@
 			$dataAccess = $this->writesTables($routine) ? 'MODIFIES SQL DATA' : 'READS SQL DATA';
 
 			if ($routine->isVoid()) {
-				$marker = $this->contains($routine, [AstBeginTransaction::class]) ? "\nCOMMENT 'ObjectQuel:atomic-block'" : '';
+				$marker = $this->contains($routine, [AstTransaction::class]) ? "\nCOMMENT 'ObjectQuel:atomic-block'" : '';
 				return "CREATE PROCEDURE {$signature}\n{$dataAccess}{$marker}";
 			}
 
@@ -334,11 +334,11 @@
 
 		/**
 		 * Uses a savepoint inside a caller transaction; the preflight release rejects an autocommit call before body writes.
-		 * @param AstBeginTransaction $transaction The transaction block
+		 * @param AstTransaction $transaction The transaction block
 		 * @param int $depth Indentation depth
 		 * @return string
 		 */
-		protected function lowerTransactionBlock(AstBeginTransaction $transaction, int $depth): string {
+		protected function lowerTransactionBlock(AstTransaction $transaction, int $depth): string {
 			$savepoint = $this->atomicSavepoint();
 			$guard = $this->atomicGuard();
 			return $this->line("IF COALESCE({$guard}, 0) <> 0 THEN SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Recursive atomic block is not supported'; END IF;", $depth)
@@ -361,10 +361,10 @@
 		}
 
 		/**
-		 * Compiles the routine abort statement.
+		 * Compiles the routine exit statement.
 		 * @return string
 		 */
-		protected function abortStatement(): string {
+		protected function exitStatement(): string {
 			$savepoint = $this->atomicSavepoint();
 			return "ROLLBACK TO SAVEPOINT {$savepoint}; RELEASE SAVEPOINT {$savepoint}; SET {$this->atomicGuard()} = 0; LEAVE " . self::ATOMIC_LABEL . ';';
 		}

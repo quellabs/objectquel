@@ -4,7 +4,7 @@
 
 	use Quellabs\ObjectQuel\Exception\SemanticException;
 	use Quellabs\ObjectQuel\ObjectQuel\AstInterface;
-	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstBeginTransaction;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstTransaction;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstDeclare;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstForeach;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstIf;
@@ -22,7 +22,7 @@
 	 *   and are read as `"_routine"."name"`, so they never resolve as columns.
 	 * - A `foreach` whose body writes the current row uses an explicit
 	 *   `FOR UPDATE` cursor and `WHERE CURRENT OF`; other loops use `FOR ... IN`.
-	 * - `begin transaction { }` uses a PL/pgSQL exception block as a subtransaction.
+	 * - `transaction { }` uses a PL/pgSQL exception block as a subtransaction.
 	 */
 	class PostgresRoutineLowering extends RoutineLowering {
 
@@ -194,15 +194,15 @@
 
 		/**
 		 * Compiles a transaction block in the routine.
-		 * @param AstBeginTransaction $transaction The transaction block
+		 * @param AstTransaction $transaction The transaction block
 		 * @param int $depth Indentation depth
 		 * @return string
 		 * @throws SemanticException When an embedded statement can't be compiled
 		 */
-		protected function lowerTransaction(AstBeginTransaction $transaction, int $depth): string {
+		protected function lowerTransaction(AstTransaction $transaction, int $depth): string {
 			$explicit = $this->openExplicitCursors();
 			if (!empty($explicit)) {
-				throw new SemanticException("'begin transaction' inside 'foreach {$explicit[0]}' isn't supported on PostgreSQL while its writable cursor is open.");
+				throw new SemanticException("'transaction' inside 'foreach {$explicit[0]}' isn't supported on PostgreSQL while its writable cursor is open.");
 			}
 
 			$body = $this->lowerBlock($transaction->getBody(), $depth + 1);
@@ -214,10 +214,10 @@
 		}
 
 		/**
-		 * Compiles the routine abort statement.
+		 * Compiles the routine exit statement.
 		 * @return string
 		 */
-		protected function abortStatement(): string {
+		protected function exitStatement(): string {
 			return "RAISE SQLSTATE 'PZ001';";
 		}
 

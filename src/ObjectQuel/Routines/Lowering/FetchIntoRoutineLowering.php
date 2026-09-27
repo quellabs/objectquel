@@ -6,7 +6,7 @@
 	use Quellabs\ObjectQuel\Exception\QuelException;
 	use Quellabs\ObjectQuel\Exception\SemanticException;
 	use Quellabs\ObjectQuel\Exception\TransformationException;
-	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstBeginTransaction;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstTransaction;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstDeclare;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRetrieve;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRoutineDefinition;
@@ -143,14 +143,14 @@
 
 		/**
 		 * Avoids changing transaction state while a cursor loop is open.
-		 * @param AstBeginTransaction $transaction The transaction block
+		 * @param AstTransaction $transaction The transaction block
 		 * @param int $depth Indentation depth
 		 * @return string
 		 * @throws SemanticException|EntityResolutionException|TransformationException|QuelException
 		 */
-		protected function lowerTransaction(AstBeginTransaction $transaction, int $depth): string {
+		protected function lowerTransaction(AstTransaction $transaction, int $depth): string {
 			if (!empty($this->openLoops)) {
-				throw new SemanticException("'begin transaction' inside 'foreach {$this->openLoops[0]}' isn't supported on {$this->engineName()} while its cursor is open.");
+				throw new SemanticException("'transaction' inside 'foreach {$this->openLoops[0]}' isn't supported on {$this->engineName()} while its cursor is open.");
 			}
 
 			return $this->lowerTransactionBlock($transaction, $depth);
@@ -158,12 +158,12 @@
 
 		/**
 		 * Lowers a transaction block while enforcing cursor transaction restrictions.
-		 * @param AstBeginTransaction $transaction The transaction block, outside any loop
+		 * @param AstTransaction $transaction The transaction block, outside any loop
 		 * @param int $depth Indentation depth
 		 * @return string
 		 * @throws SemanticException|EntityResolutionException|TransformationException|QuelException
 		 */
-		abstract protected function lowerTransactionBlock(AstBeginTransaction $transaction, int $depth): string;
+		abstract protected function lowerTransactionBlock(AstTransaction $transaction, int $depth): string;
 
 		/**
 		 * Runs the query and counts its rows into a scratch variable, discarding them.

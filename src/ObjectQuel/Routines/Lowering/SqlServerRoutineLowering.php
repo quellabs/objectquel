@@ -6,7 +6,7 @@
 	use Quellabs\ObjectQuel\Exception\QuelException;
 	use Quellabs\ObjectQuel\Exception\SemanticException;
 	use Quellabs\ObjectQuel\ObjectQuel\AstInterface;
-	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstBeginTransaction;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstTransaction;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstCall;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstForeach;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstIdentifier;
@@ -216,11 +216,11 @@
 
 		/**
 		 * Uses a savepoint for caller-owned transactions and commits only transactions started here.
-		 * @param AstBeginTransaction $transaction The transaction block
+		 * @param AstTransaction $transaction The transaction block
 		 * @param int $depth Indentation depth
 		 * @return string
 		 */
-		protected function lowerTransactionBlock(AstBeginTransaction $transaction, int $depth): string {
+		protected function lowerTransactionBlock(AstTransaction $transaction, int $depth): string {
 			$number = ++$this->atomicBlockCount;
 			$this->atomicOwnerVariable = '@_equel_owns_' . $number;
 			$this->atomicSavepointVariable = '@_equel_savepoint_' . $number;
@@ -248,10 +248,10 @@
 		}
 
 		/**
-		 * Compiles the routine abort statement.
+		 * Compiles the routine exit statement.
 		 * @return string
 		 */
-		protected function abortStatement(): string {
+		protected function exitStatement(): string {
 			return "IF {$this->atomicOwnerVariable} = 1 BEGIN ROLLBACK TRANSACTION; END ELSE BEGIN ROLLBACK TRANSACTION {$this->atomicSavepointVariable}; END;";
 		}
 
