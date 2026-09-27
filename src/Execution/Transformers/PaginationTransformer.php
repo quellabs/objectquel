@@ -50,14 +50,11 @@
 			$window = $ast->getWindow();
 			$windowSize = $ast->getWindowSize();
 			
-			if (
-				$window !== null &&
-				$windowSize !== null &&
-				!$ast->getSortInApplicationLogic()
+			if ($window !== null && $windowSize !== null && !$ast->getSortInApplicationLogic()
 			) {
 				try {
 					$this->primaryKeyInfo = PrimaryKeyInfo::fromRetrieve($ast, $this->entityStore);
-				$this->processPagination($ast, $parameters, (int)$window, (int)$windowSize);
+					$this->processPagination($ast, $parameters, (int)$window, (int)$windowSize);
 				} finally {
 					$this->primaryKeyInfo = null;
 				}
@@ -206,7 +203,7 @@
 				$ast->setUnique($originalUnique);
 			}
 		}
-
+		
 		/**
 		 * Gets the subset of primary keys for the current page.
 		 * @param list<int|string> $primaryKeys
