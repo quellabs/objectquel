@@ -17,7 +17,7 @@
 	/**
 	 * Path checks over a routine body: every path of a non-void routine ends in
 	 * `return`, `abort` is the last statement on its path through its
-	 * `begin transaction` block (v1 has no guard for statements after a rollback),
+	 * `begin transaction` block,
 	 * and `break`/`continue` sit in a loop without leaving a transaction block.
 	 */
 	class RoutineControlFlowValidator {
@@ -87,7 +87,7 @@
 			}
 
 			if ($statement instanceof AstReturn && $inTransaction) {
-				throw new SemanticException("'return' inside 'begin transaction { }' is not supported: it would leave the transaction neither committed nor rolled back.");
+				throw new SemanticException("'return' inside 'begin transaction { }' is not supported; move it after the block.");
 			}
 
 			if ($statement instanceof AstIf) {
@@ -115,7 +115,7 @@
 		}
 
 		/**
-		 * Rejects `break`/`continue` outside a loop, or whose loop encloses the transaction block, skipping its COMMIT.
+		 * Rejects `break`/`continue` outside a loop, or whose loop encloses the atomic block, skipping its cleanup.
 		 * @param string $keyword 'break' or 'continue', for error messages
 		 * @param bool $inTransaction True inside a `begin transaction` body
 		 * @param bool $inLoop True inside a loop that is itself inside the transaction
@@ -129,7 +129,7 @@
 			}
 
 			if ($inTransaction && !$inLoop) {
-				throw new SemanticException("'{$keyword}' would leave 'begin transaction { }' without committing it; move the loop inside the transaction or the transaction out of the loop.");
+				throw new SemanticException("'{$keyword}' would leave 'begin transaction { }' without finishing it; move the loop inside the block or the block out of the loop.");
 			}
 		}
 

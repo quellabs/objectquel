@@ -42,6 +42,11 @@
 		private bool $usesNoopVariable;
 		private bool $isFunction;
 		private int $discardCursorCount;
+		private int $atomicBlockCount;
+		/** @var array<string, string> Scratch variables used by atomic blocks */
+		private array $atomicVariables;
+		private string $atomicOwnerVariable;
+		private string $atomicSavepointVariable;
 
 		/**
 		 * Returns the target engine name.
@@ -63,6 +68,8 @@
 			$this->argumentVariables = [];
 			$this->isFunction = !$routine->isVoid();
 			$this->discardCursorCount = 0;
+			$this->atomicBlockCount = 0;
+			$this->atomicVariables = [];
 
 			if (!$routine->isVoid() && $this->writesTables($routine)) {
 				throw new SemanticException("'{$routine->getName()}' returns a value, so SQL Server creates it as a FUNCTION, which can't write tables. Make it void to write.");
@@ -88,7 +95,7 @@
 			}
 
 			$parameters = $this->parameterVariables($routine);
-			$locals = $this->localVariables($routine) + $this->fieldVariableTypes() + $this->argumentVariables;
+			$locals = $this->localVariables($routine) + $this->fieldVariableTypes() + $this->argumentVariables + $this->atomicVariables;
 
 			if ($this->usesNoopVariable) {
 				$locals[self::NOOP_VARIABLE] = 'BIT';
@@ -208,15 +215,36 @@
 		}
 
 		/**
-		 * The closing COMMIT is skipped after `abort`, whose ROLLBACK already ended the transaction.
+		 * Uses a savepoint for caller-owned transactions and commits only transactions started here.
 		 * @param AstBeginTransaction $transaction The transaction block
 		 * @param int $depth Indentation depth
 		 * @return string
 		 */
 		protected function lowerTransactionBlock(AstBeginTransaction $transaction, int $depth): string {
-			return $this->line('BEGIN TRANSACTION;', $depth)
-				. $this->lowerBlock($transaction->getBody(), $depth)
-				. $this->line('IF @@TRANCOUNT > 0 COMMIT TRANSACTION;', $depth);
+			$number = ++$this->atomicBlockCount;
+			$this->atomicOwnerVariable = '@_equel_owns_' . $number;
+			$this->atomicSavepointVariable = '@_equel_savepoint_' . $number;
+			$this->atomicVariables[$this->atomicOwnerVariable] = 'BIT';
+			$this->atomicVariables[$this->atomicSavepointVariable] = 'VARCHAR(32)';
+			$owner = $this->atomicOwnerVariable;
+			$savepoint = $this->atomicSavepointVariable;
+			$body = $this->lowerBlock($transaction->getBody(), $depth + 1);
+
+			return $this->line("SET {$owner} = CASE WHEN @@TRANCOUNT = 0 THEN 1 ELSE 0 END;", $depth)
+				. $this->line("IF {$owner} = 1 BEGIN TRANSACTION;", $depth)
+				. $this->line("IF {$owner} = 0 BEGIN", $depth)
+				. $this->line("SET {$savepoint} = REPLACE(CONVERT(VARCHAR(36), NEWID()), '-', '');", $depth + 1)
+				. $this->line("SAVE TRANSACTION {$savepoint};", $depth + 1)
+				. $this->line('END;', $depth)
+				. $this->line('BEGIN TRY', $depth)
+				. $body
+				. $this->line("IF {$owner} = 1 AND @@TRANCOUNT > 0 COMMIT TRANSACTION;", $depth + 1)
+				. $this->line('END TRY', $depth)
+				. $this->line('BEGIN CATCH', $depth)
+				. $this->line("IF {$owner} = 1 AND @@TRANCOUNT > 0 ROLLBACK TRANSACTION;", $depth + 1)
+				. $this->line("ELSE IF {$owner} = 0 AND XACT_STATE() = 1 ROLLBACK TRANSACTION {$savepoint};", $depth + 1)
+				. $this->line('THROW;', $depth + 1)
+				. $this->line('END CATCH;', $depth);
 		}
 
 		/**
@@ -224,7 +252,7 @@
 		 * @return string
 		 */
 		protected function abortStatement(): string {
-			return 'ROLLBACK TRANSACTION;';
+			return "IF {$this->atomicOwnerVariable} = 1 BEGIN ROLLBACK TRANSACTION; END ELSE BEGIN ROLLBACK TRANSACTION {$this->atomicSavepointVariable}; END;";
 		}
 
 		/**

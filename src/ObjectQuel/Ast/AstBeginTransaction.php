@@ -3,7 +3,7 @@
 	namespace Quellabs\ObjectQuel\ObjectQuel\Ast;
 
 	/**
-	 * `begin transaction { ... }` — falling off the end commits; `abort` rolls back.
+	 * `begin transaction { ... }` — an atomic block that preserves any caller-owned transaction.
 	 */
 	class AstBeginTransaction extends AstStatementBlock {
 

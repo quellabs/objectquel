@@ -22,8 +22,7 @@
 	 *   and are read as `"_routine"."name"`, so they never resolve as columns.
 	 * - A `foreach` whose body writes the current row uses an explicit
 	 *   `FOR UPDATE` cursor and `WHERE CURRENT OF`; other loops use `FOR ... IN`.
-	 * - `begin transaction { }` commits the work done so far, runs its body and
-	 *   commits; `abort` rolls back. Procedures only, as PL/pgSQL requires.
+	 * - `begin transaction { }` uses a PL/pgSQL exception block as a subtransaction.
 	 */
 	class PostgresRoutineLowering extends RoutineLowering {
 
@@ -198,20 +197,20 @@
 		 * @param AstBeginTransaction $transaction The transaction block
 		 * @param int $depth Indentation depth
 		 * @return string
-		 * @throws SemanticException When an enclosing loop uses a cursor COMMIT would close
+		 * @throws SemanticException When an embedded statement can't be compiled
 		 */
 		protected function lowerTransaction(AstBeginTransaction $transaction, int $depth): string {
 			$explicit = $this->openExplicitCursors();
-
-			// COMMIT closes cursors opened with OPEN; only FOR ... IN loops survive it
 			if (!empty($explicit)) {
-				throw new SemanticException("'begin transaction' inside 'foreach {$explicit[0]}' isn't possible on PostgreSQL: that loop writes the current row, so it uses a cursor that COMMIT would close.");
+				throw new SemanticException("'begin transaction' inside 'foreach {$explicit[0]}' isn't supported on PostgreSQL while its writable cursor is open.");
 			}
 
-			// abort is always last on its path (RoutineControlFlowValidator), so the closing COMMIT only ends the empty transaction ROLLBACK started
-			return $this->line('COMMIT;', $depth)
-				. $this->lowerBlock($transaction->getBody(), $depth)
-				. $this->line('COMMIT;', $depth);
+			$body = $this->lowerBlock($transaction->getBody(), $depth + 1);
+			return $this->line('BEGIN', $depth)
+				. ($body === '' ? $this->line('NULL;', $depth + 1) : $body)
+				. $this->line('EXCEPTION WHEN SQLSTATE \'PZ001\' THEN', $depth)
+				. $this->line('NULL;', $depth + 1)
+				. $this->line('END;', $depth);
 		}
 
 		/**
@@ -219,7 +218,7 @@
 		 * @return string
 		 */
 		protected function abortStatement(): string {
-			return 'ROLLBACK;';
+			return "RAISE SQLSTATE 'PZ001';";
 		}
 
 		/**

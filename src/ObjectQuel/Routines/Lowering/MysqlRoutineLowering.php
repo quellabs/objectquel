@@ -37,6 +37,7 @@
 
 		private const string DONE_VARIABLE = '_done';
 		private const string DISCARD_VARIABLE = '_discard';
+		private const string ATOMIC_LABEL = '_equel_atomic';
 
 		/** Target-list alias of an added primary-key column; QUEL aliases can't start with '_' */
 		private const string KEY_ALIAS_PREFIX = '_pk_';
@@ -200,7 +201,8 @@
 			$dataAccess = $this->writesTables($routine) ? 'MODIFIES SQL DATA' : 'READS SQL DATA';
 
 			if ($routine->isVoid()) {
-				return "CREATE PROCEDURE {$signature}\n{$dataAccess}";
+				$marker = $this->contains($routine, [AstBeginTransaction::class]) ? "\nCOMMENT 'ObjectQuel:atomic-block'" : '';
+				return "CREATE PROCEDURE {$signature}\n{$dataAccess}{$marker}";
 			}
 
 			return "CREATE FUNCTION {$signature}\nRETURNS " . $this->sqlType($routine->getDeclaredReturnType()) . "\n{$dataAccess}";
@@ -331,15 +333,31 @@
 		}
 
 		/**
-		 * START TRANSACTION commits the work done so far; the closing COMMIT after `abort` has nothing left to commit.
+		 * Uses a savepoint inside a caller transaction; the preflight release rejects an autocommit call before body writes.
 		 * @param AstBeginTransaction $transaction The transaction block
 		 * @param int $depth Indentation depth
 		 * @return string
 		 */
 		protected function lowerTransactionBlock(AstBeginTransaction $transaction, int $depth): string {
-			return $this->line('START TRANSACTION;', $depth)
-				. $this->lowerBlock($transaction->getBody(), $depth)
-				. $this->line('COMMIT;', $depth);
+			$savepoint = $this->atomicSavepoint();
+			$guard = $this->atomicGuard();
+			return $this->line("IF COALESCE({$guard}, 0) <> 0 THEN SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Recursive atomic block is not supported'; END IF;", $depth)
+				. $this->line("SAVEPOINT {$savepoint};", $depth)
+				. $this->line("RELEASE SAVEPOINT {$savepoint};", $depth)
+				. $this->line("SAVEPOINT {$savepoint};", $depth)
+				. $this->line("SET {$guard} = 1;", $depth)
+				. $this->line(self::ATOMIC_LABEL . ': BEGIN', $depth)
+				. $this->line('DECLARE EXIT HANDLER FOR SQLEXCEPTION', $depth + 1)
+				. $this->line('BEGIN', $depth + 1)
+				. $this->line("SET {$guard} = 0;", $depth + 2)
+				. $this->line("ROLLBACK TO SAVEPOINT {$savepoint};", $depth + 2)
+				. $this->line("RELEASE SAVEPOINT {$savepoint};", $depth + 2)
+				. $this->line('RESIGNAL;', $depth + 2)
+				. $this->line('END;', $depth + 1)
+				. $this->lowerBlock($transaction->getBody(), $depth + 1)
+				. $this->line("RELEASE SAVEPOINT {$savepoint};", $depth + 1)
+				. $this->line("SET {$guard} = 0;", $depth + 1)
+				. $this->line('END ' . self::ATOMIC_LABEL . ';', $depth);
 		}
 
 		/**
@@ -347,7 +365,24 @@
 		 * @return string
 		 */
 		protected function abortStatement(): string {
-			return 'ROLLBACK;';
+			$savepoint = $this->atomicSavepoint();
+			return "ROLLBACK TO SAVEPOINT {$savepoint}; RELEASE SAVEPOINT {$savepoint}; SET {$this->atomicGuard()} = 0; LEAVE " . self::ATOMIC_LABEL . ';';
+		}
+
+		/**
+		 * Names the savepoint per routine so ordinary nested procedure calls do not replace it.
+		 * @return string A legal static savepoint identifier
+		 */
+		private function atomicSavepoint(): string {
+			return 'equel_' . substr(hash('sha256', $this->routine->getName()), 0, 16);
+		}
+
+		/**
+		 * Tracks an active block across procedure calls so recursion cannot overwrite its savepoint.
+		 * @return string A session-variable name unique to this routine
+		 */
+		private function atomicGuard(): string {
+			return '@_equel_guard_' . substr(hash('sha256', $this->routine->getName()), 0, 16);
 		}
 
 		/**

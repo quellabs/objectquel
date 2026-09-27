@@ -36,10 +36,12 @@
 
 			$kinds = [];
 			$returnTypes = [];
+			$needsTransaction = false;
 
 			foreach ($result->fetchAll('assoc') as $row) {
 				$isProcedure = (int)$row['is_procedure'] === 1;
 				$kinds[(int)$isProcedure] = true;
+				$needsTransaction = $needsTransaction || ($row['routine_comment'] ?? null) === 'ObjectQuel:atomic-block';
 
 				if (!$isProcedure) {
 					$returnTypes[] = self::returnType(
@@ -61,7 +63,7 @@
 
 			// PostgreSQL overloads that return different types leave the type unknown
 			$distinctTypes = array_unique($returnTypes);
-			return new RoutineSignature(isset($kinds[1]), count($distinctTypes) === 1 ? $distinctTypes[0] : null);
+			return new RoutineSignature(isset($kinds[1]), count($distinctTypes) === 1 ? $distinctTypes[0] : null, $needsTransaction);
 		}
 
 		/**
@@ -93,19 +95,19 @@
 			return match ($this->connection->getDatabaseType()) {
 				// Routine return types carry no type modifier, so format_type() gets none
 				'pgsql' => [
-					"SELECT DISTINCT CASE WHEN prokind = 'p' THEN 1 ELSE 0 END AS is_procedure, format_type(prorettype, NULL) AS data_type, NULL AS type_detail, NULL AS max_length FROM pg_proc WHERE proname = :name AND pg_function_is_visible(oid)",
+					"SELECT DISTINCT CASE WHEN prokind = 'p' THEN 1 ELSE 0 END AS is_procedure, format_type(prorettype, NULL) AS data_type, NULL AS type_detail, NULL AS max_length, NULL AS routine_comment FROM pg_proc WHERE proname = :name AND pg_function_is_visible(oid)",
 					['name' => $name],
 				],
 
 				// Procedures and scalar functions, native or CLR; a scalar function's return value is parameter 0
 				'sqlsrv' => [
-					"SELECT CASE WHEN o.type IN ('P', 'PC') THEN 1 ELSE 0 END AS is_procedure, TYPE_NAME(p.system_type_id) AS data_type, NULL AS type_detail, p.max_length AS max_length FROM sys.objects o LEFT JOIN sys.parameters p ON p.object_id = o.object_id AND p.parameter_id = 0 WHERE o.object_id = OBJECT_ID(:name) AND o.type IN ('P', 'PC', 'FN', 'FS')",
+					"SELECT CASE WHEN o.type IN ('P', 'PC') THEN 1 ELSE 0 END AS is_procedure, TYPE_NAME(p.system_type_id) AS data_type, NULL AS type_detail, p.max_length AS max_length, NULL AS routine_comment FROM sys.objects o LEFT JOIN sys.parameters p ON p.object_id = o.object_id AND p.parameter_id = 0 WHERE o.object_id = OBJECT_ID(:name) AND o.type IN ('P', 'PC', 'FN', 'FS')",
 					['name' => $this->sqlServerRoutineName($name)],
 				],
 
 				// Functions and procedures have separate namespaces, so both can match
 				'mysql', 'mariadb' => [
-					"SELECT CASE WHEN ROUTINE_TYPE = 'PROCEDURE' THEN 1 ELSE 0 END AS is_procedure, DATA_TYPE AS data_type, DTD_IDENTIFIER AS type_detail, CHARACTER_MAXIMUM_LENGTH AS max_length FROM information_schema.ROUTINES WHERE ROUTINE_SCHEMA = DATABASE() AND ROUTINE_NAME = :name",
+					"SELECT CASE WHEN ROUTINE_TYPE = 'PROCEDURE' THEN 1 ELSE 0 END AS is_procedure, DATA_TYPE AS data_type, DTD_IDENTIFIER AS type_detail, CHARACTER_MAXIMUM_LENGTH AS max_length, ROUTINE_COMMENT AS routine_comment FROM information_schema.ROUTINES WHERE ROUTINE_SCHEMA = DATABASE() AND ROUTINE_NAME = :name",
 					['name' => $name],
 				],
 

@@ -74,7 +74,7 @@
 		protected array $openLoops;
 
 		/** Routine being lowered */
-		private AstRoutineDefinition $routine;
+		protected AstRoutineDefinition $routine;
 
 		/**
 		 * Initializes shared SQL lowering with the target platform and routine scope.
@@ -105,9 +105,8 @@
 			$this->cursorDeclarations = [];
 			$this->writeCursors = $this->collectWriteCursors($routine);
 			$this->openLoops = [];
-
 			if (!$routine->isVoid() && $this->contains($routine, [AstBeginTransaction::class])) {
-				throw new SemanticException("'{$routine->getName()}' returns a value, so {$this->engineName()} creates it as a FUNCTION, which can't commit or roll back. Make it void to use 'begin transaction'.");
+				throw new SemanticException("'begin transaction' is only supported in void functions.");
 			}
 
 			$this->validate($routine);

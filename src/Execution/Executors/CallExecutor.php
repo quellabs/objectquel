@@ -67,15 +67,37 @@
 			}
 
 			$sql = $this->compiler()->convertToSQL($statement, $signature->isProcedure, $parameters, $evaluatedArguments);
-			$result = $this->connection->execute($sql, $parameters);
+			$ownsTransaction = $signature->isProcedure && $signature->needsTransaction
+				&& !$this->connection->getConnection()->getDriver()->inTransaction();
 
-			if ($result === null) {
-				throw new QuelException("Failed to call routine '{$name}': {$this->connection->getLastErrorMessage()}", 'routine_call_error');
+			if ($ownsTransaction) {
+				$this->connection->beginTrans();
+			}
+
+			try {
+				$result = $this->connection->execute($sql, $parameters);
+
+				if ($result === null) {
+					throw new QuelException("Failed to call routine '{$name}': {$this->connection->getLastErrorMessage()}", 'routine_call_error');
+				}
+
+				if ($signature->isProcedure) {
+					// Frees the connection; MySQL leaves a status result after CALL
+					$result->closeCursor();
+				}
+			} catch (\Throwable $exception) {
+				if ($ownsTransaction && $this->connection->getConnection()->getDriver()->inTransaction()) {
+					$this->connection->rollbackTrans();
+				}
+
+				throw $exception;
 			}
 
 			if ($signature->isProcedure) {
-				// Frees the connection; MySQL leaves a status result after CALL
-				$result->closeCursor();
+				if ($ownsTransaction) {
+					$this->connection->commitTrans();
+				}
+
 				return null;
 			}
 

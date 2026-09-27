@@ -142,7 +142,7 @@
 		}
 
 		/**
-		 * Every loop here runs on an OPENed cursor, which a COMMIT may close.
+		 * Avoids changing transaction state while a cursor loop is open.
 		 * @param AstBeginTransaction $transaction The transaction block
 		 * @param int $depth Indentation depth
 		 * @return string
@@ -150,7 +150,7 @@
 		 */
 		protected function lowerTransaction(AstBeginTransaction $transaction, int $depth): string {
 			if (!empty($this->openLoops)) {
-				throw new SemanticException("'begin transaction' inside 'foreach {$this->openLoops[0]}' isn't supported on {$this->engineName()}: the loop's cursor may not survive the COMMIT.");
+				throw new SemanticException("'begin transaction' inside 'foreach {$this->openLoops[0]}' isn't supported on {$this->engineName()} while its cursor is open.");
 			}
 
 			return $this->lowerTransactionBlock($transaction, $depth);
