@@ -50,8 +50,7 @@
 			$window = $ast->getWindow();
 			$windowSize = $ast->getWindowSize();
 			
-			if ($window !== null && $windowSize !== null && !$ast->getSortInApplicationLogic()
-			) {
+			if ($window !== null && $windowSize !== null && !$ast->getSortInApplicationLogic()) {
 				try {
 					$this->primaryKeyInfo = PrimaryKeyInfo::fromRetrieve($ast, $this->entityStore);
 					$this->processPagination($ast, $parameters, (int)$window, (int)$windowSize);
