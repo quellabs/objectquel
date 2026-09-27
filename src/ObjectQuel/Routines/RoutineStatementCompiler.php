@@ -142,13 +142,15 @@
 			$databaseType = $this->platform->getDatabaseType();
 			$window = $prepared->getWindow();
 
+			// Routine pagination must run in SQL; it cannot use the ordinary PHP key-fetch pass.
+			if ($window !== null && !$this->platform->supportsOffsetPagination()) {
+				throw new SemanticException("Windowed routine retrieves aren't supported by '{$databaseType}'.");
+			}
+
+			// SQL Server requires ORDER BY for OFFSET/FETCH; EQUEL doesn't add an implicit sort.
 			if ($window !== null && $databaseType === 'sqlsrv') {
 				if (empty($prepared->getSort()) || $prepared->getSortInApplicationLogic()) {
 					throw new SemanticException("SQL Server requires an explicit 'sort by' for a windowed routine retrieve.");
-				}
-
-				if (!$this->platform->supportsSqlServerOffsetFetch()) {
-					throw new SemanticException('SQL Server windowed routine retrieves require server version 2012 or later and database compatibility level 110 or later.');
 				}
 			}
 
@@ -161,10 +163,13 @@
 			}
 
 			$size = $prepared->getWindowSize() ?? 1;
+			$window = (int)$window;
+			$size = (int)$size;
 			if ($window < 0 || $size <= 0) {
 				throw new SemanticException('A routine retrieve window requires a nonnegative page and a positive size.');
 			}
 
+			// Guard the page-size multiplication before embedding its SQL integer literal.
 			if ($window > intdiv(PHP_INT_MAX, $size)) {
 				throw new SemanticException('The window page and size produce an offset that is too large.');
 			}
@@ -172,9 +177,8 @@
 			$offset = $window * $size;
 
 			return match ($databaseType) {
-				'mysql', 'mariadb', 'pgsql' => "{$sql} LIMIT {$size} OFFSET {$offset}",
 				'sqlsrv' => "{$sql} OFFSET {$offset} ROWS FETCH NEXT {$size} ROWS ONLY",
-				default => throw new SemanticException("Windowed routine retrieves aren't supported for '{$databaseType}'."),
+				default => "{$sql} LIMIT {$size} OFFSET {$offset}",
 			};
 		}
 

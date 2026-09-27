@@ -43,7 +43,7 @@
 		/**
 		 * @inheritDoc
 		 */
-		public function supportsSqlServerOffsetFetch(): bool {
+		public function supportsOffsetPagination(): bool {
 			return false;
 		}
 		

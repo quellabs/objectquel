@@ -52,10 +52,10 @@
 		public function supportsWindowFunctions(): bool;
 
 		/**
-		 * Returns whether SQL Server supports OFFSET/FETCH pagination on this database.
-		 * @return bool True for SQL Server 2012+ with compatibility level 110+
+		 * Returns whether the database supports native offset-based pagination.
+		 * @return bool
 		 */
-		public function supportsSqlServerOffsetFetch(): bool;
+		public function supportsOffsetPagination(): bool;
 		
 		/**
 		 * Returns true if the database engine supports invisible (hidden) indexes.

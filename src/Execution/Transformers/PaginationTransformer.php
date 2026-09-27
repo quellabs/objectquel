@@ -57,7 +57,7 @@
 			) {
 				try {
 					$this->primaryKeyInfo = PrimaryKeyInfo::fromRetrieve($ast, $this->entityStore);
-				$this->processPagination($ast, $parameters, $window, $windowSize);
+				$this->processPagination($ast, $parameters, (int)$window, (int)$windowSize);
 				} finally {
 					$this->primaryKeyInfo = null;
 				}

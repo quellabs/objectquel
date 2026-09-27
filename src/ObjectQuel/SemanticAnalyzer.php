@@ -68,6 +68,8 @@
 		 * @throws SemanticException|EntityResolutionException If any validation fails
 		 */
 		public function validate(AstRetrieve $ast): void {
+			$this->validateWindow($ast);
+
 			// First, recursively validate all nested queries in temporary ranges
 			// This ensures inner queries are valid before validating the outer query
 			foreach ($ast->getRanges() as $range) {
@@ -179,6 +181,45 @@
 			//          combined with plain scalars in arithmetic expressions.
 			//          date("6 days") + 1 has no defined meaning and is a type error.
 			$this->processWithVisitor($ast, ValidateNoTemporalScalarMix::class, $this->entityStore);
+		}
+
+		/**
+		 * Validates pagination values and normalizes valid values to integers.
+		 * @param AstRetrieve $ast Query to validate
+		 * @return void
+		 * @throws SemanticException When a window value is outside its allowed range
+		 */
+		private function validateWindow(AstRetrieve $ast): void {
+			$window = $ast->getWindow();
+			$windowSize = $ast->getWindowSize();
+
+			if ($window !== null) {
+				$ast->setWindow($this->validateWindowValue($window, 'window page', true));
+			}
+
+			if ($windowSize !== null) {
+				$ast->setWindowSize($this->validateWindowValue($windowSize, 'window size', false));
+			}
+		}
+
+		/**
+		 * Ensures a pagination value is an integer in its allowed range.
+		 * @param int|float $value Value from the parsed window clause
+		 * @param string $label Value name used in the error
+		 * @param bool $allowZero Whether zero is valid
+		 * @return int
+		 * @throws SemanticException
+		 */
+		private function validateWindowValue(int|float $value, string $label, bool $allowZero): int {
+			if (!is_int($value) && (!is_finite($value) || floor($value) !== $value)) {
+				throw new SemanticException("The {$label} must be an integer.");
+			}
+
+			if ($value < ($allowZero ? 0 : 1) || (is_float($value) && $value >= (float)PHP_INT_MAX)) {
+				throw new SemanticException("The {$label} must be " . ($allowZero ? 'zero or greater' : 'greater than zero') . ' and within the supported integer range.');
+			}
+
+			return (int)$value;
 		}
 		
 		/**
