@@ -43,8 +43,7 @@
 		}
 
 		/**
-		 * On MySQL the existing routine is dropped before the CREATE runs, so a failing
-		 * CREATE leaves no routine behind.
+		 * Rejects an existing routine before running CREATE, preserving its definition.
 		 * @param AstStatement $statement
 		 * @param ExecutionContext $context
 		 * @return void
@@ -53,9 +52,21 @@
 		 */
 		public function execute(AstStatement $statement, ExecutionContext $context): void {
 			assert($statement instanceof AstRoutineDefinition);
+			$connection = $this->entityManager->getConnection();
+			$statements = $this->compiler()->compileRoutine($statement);
+
+			try {
+				$exists = $connection->routineExists($statement->getName());
+			} catch (QuelException $exception) {
+				throw new QuelException("Failed to define routine '{$statement->getName()}': {$exception->getMessage()}", 'routine_definition_error', 0, $exception);
+			}
+
+			if ($exists) {
+				throw new QuelException("Failed to define routine '{$statement->getName()}': a routine with that name already exists", 'routine_definition_error');
+			}
 
 			$this->ddlRunner->run(
-				$this->compiler()->compileRoutine($statement),
+				$statements,
 				"Failed to define routine '{$statement->getName()}'",
 				'routine_definition_error'
 			);

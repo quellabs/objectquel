@@ -25,8 +25,7 @@
 
 	/**
 	 * Lowers an analyzed routine to a MySQL/MariaDB CREATE FUNCTION (non-void) or
-	 * PROCEDURE (void). MySQL has no CREATE OR REPLACE for routines, so it gets a
-	 * DROP ... IF EXISTS first; MariaDB gets CREATE OR REPLACE.
+	 * PROCEDURE (void).
 	 *
 	 * - Locals and parameters are prefixed `_v_`, because MySQL resolves a name to
 	 *   a variable before a column.
@@ -150,7 +149,7 @@
 		/**
 		 * Renders the routine definition as SQL.
 		 * @param AstRoutineDefinition $routine The routine, with cursors prepared
-		 * @return list<string> DROP ... IF EXISTS (MySQL only) and the CREATE statement
+		 * @return list<string> The CREATE statement
 		 */
 		protected function render(AstRoutineDefinition $routine): array {
 			$body = $this->lowerBlock($routine->getBody(), 1);
@@ -184,12 +183,7 @@
 
 			$create = $this->header($routine, $parameters) . "\nBEGIN\n" . $this->lines($declarations, 1) . $body . 'END';
 
-			if ($this->platform->getDatabaseType() === 'mariadb') {
-				return [$create];
-			}
-
-			$kind = $routine->isVoid() ? 'PROCEDURE' : 'FUNCTION';
-			return ["DROP {$kind} IF EXISTS " . $this->quoter->quoteRoutineName($routine->getName(), $this->routineSchema), $create];
+			return [$create];
 		}
 
 		/**
@@ -200,17 +194,16 @@
 		 */
 		private function header(AstRoutineDefinition $routine, array $parameters): string {
 			$list = implode(', ', array_map(fn(string $name, string $type) => "{$name} {$type}", array_keys($parameters), $parameters));
-			$orReplace = $this->platform->getDatabaseType() === 'mariadb' ? 'OR REPLACE ' : '';
 			$signature = $this->quoter->quoteRoutineName($routine->getName(), $this->routineSchema) . "({$list})";
 
 			// Advisory on MySQL, but binary logging rejects a function without READS SQL DATA (or NO SQL/DETERMINISTIC)
 			$dataAccess = $this->writesTables($routine) ? 'MODIFIES SQL DATA' : 'READS SQL DATA';
 
 			if ($routine->isVoid()) {
-				return "CREATE {$orReplace}PROCEDURE {$signature}\n{$dataAccess}";
+				return "CREATE PROCEDURE {$signature}\n{$dataAccess}";
 			}
 
-			return "CREATE {$orReplace}FUNCTION {$signature}\nRETURNS " . $this->sqlType($routine->getDeclaredReturnType()) . "\n{$dataAccess}";
+			return "CREATE FUNCTION {$signature}\nRETURNS " . $this->sqlType($routine->getDeclaredReturnType()) . "\n{$dataAccess}";
 		}
 
 		/**

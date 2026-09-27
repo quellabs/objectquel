@@ -38,7 +38,7 @@
 		/**
 		 * Renders the routine definition as SQL.
 		 * @param AstRoutineDefinition $routine The routine, with cursors prepared
-		 * @return list<string> The CREATE OR REPLACE FUNCTION/PROCEDURE statement
+		 * @return list<string> The CREATE FUNCTION/PROCEDURE statement
 		 */
 		protected function render(AstRoutineDefinition $routine): array {
 			$body = $this->lowerBlock($routine->getBody(), 1);
@@ -53,7 +53,7 @@
 		/**
 		 * Builds the PostgreSQL routine declaration header.
 		 * @param AstRoutineDefinition $routine The routine
-		 * @return string `CREATE OR REPLACE FUNCTION name(params) RETURNS type` or the PROCEDURE form
+		 * @return string `CREATE FUNCTION name(params) RETURNS type` or the PROCEDURE form
 		 */
 		private function header(AstRoutineDefinition $routine): string {
 			$parameters = [];
@@ -65,10 +65,10 @@
 			$signature = $this->quoter->quoteRoutineName($routine->getName(), $this->routineSchema) . '(' . implode(', ', $parameters) . ')';
 
 			if ($routine->isVoid()) {
-				return "CREATE OR REPLACE PROCEDURE {$signature}";
+				return "CREATE PROCEDURE {$signature}";
 			}
 
-			return "CREATE OR REPLACE FUNCTION {$signature}\nRETURNS " . $this->sqlType($routine->getDeclaredReturnType());
+			return "CREATE FUNCTION {$signature}\nRETURNS " . $this->sqlType($routine->getDeclaredReturnType());
 		}
 
 		/**

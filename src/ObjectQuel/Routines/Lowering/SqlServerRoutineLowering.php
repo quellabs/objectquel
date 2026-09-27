@@ -18,7 +18,7 @@
 	use Quellabs\ObjectQuel\ObjectQuel\QuelToSQL\QuelToSQLCall;
 
 	/**
-	 * Lowers an analyzed routine to a T-SQL CREATE OR ALTER FUNCTION (non-void)
+	 * Lowers an analyzed routine to a T-SQL CREATE FUNCTION (non-void)
 	 * or PROCEDURE (void).
 	 *
 	 * - Each `foreach` declares a LOCAL cursor when the loop starts, because T-SQL
@@ -76,7 +76,7 @@
 		/**
 		 * Renders the routine definition as SQL.
 		 * @param AstRoutineDefinition $routine The routine, with cursors prepared
-		 * @return list<string> The CREATE OR ALTER FUNCTION/PROCEDURE statement
+		 * @return list<string> The CREATE FUNCTION/PROCEDURE statement
 		 */
 		protected function render(AstRoutineDefinition $routine): array {
 			$body = $this->lowerBlock($routine->getBody(), 1);
@@ -118,10 +118,10 @@
 			$name = $this->quoter->quoteRoutineName($routine->getName(), $this->routineSchema);
 
 			if ($routine->isVoid()) {
-				return "CREATE OR ALTER PROCEDURE {$name}" . ($list === '' ? '' : " {$list}");
+				return "CREATE PROCEDURE {$name}" . ($list === '' ? '' : " {$list}");
 			}
 
-			return "CREATE OR ALTER FUNCTION {$name}({$list})\nRETURNS " . $this->sqlType($routine->getDeclaredReturnType());
+			return "CREATE FUNCTION {$name}({$list})\nRETURNS " . $this->sqlType($routine->getDeclaredReturnType());
 		}
 
 		/**

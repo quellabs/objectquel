@@ -187,6 +187,42 @@ $results = Order::with('customer:id,name')
 The difference becomes more pronounced with regex filtering, existence checks, hybrid sources, and multi-relationship
 traversals — operations that require raw SQL or post-processing in other ORMs.
 
+## Write verbs
+
+Use `append` to insert, `replace` to update, and `delete` to remove rows through `executeQuery()`. `append ... or replace` provides an upsert. These set-based statements operate on mapped entity ranges and bypass the Unit of Work; use `persist()`/`flush()` when you need entity lifecycle behavior. `replace` and `delete` require a `where` clause.
+
+```php
+$entityManager->executeQuery('
+    range of u is App\Entity\UserEntity
+    replace u (banned = true) where u.id = :id
+', ['id' => $userId]);
+```
+
+See [append](https://objectquel.com/docs?section=language-append), [replace](https://objectquel.com/docs?section=language-replace), [delete](https://objectquel.com/docs?section=language-delete), and [upsert](https://objectquel.com/docs?section=language-upsert) for syntax and result handling.
+
+## DDL queries
+
+ObjectQuel also accepts DDL queries: `create`, `alter`, and `destroy` for tables, plus `index` and `destroy ... on` for indexes. These are useful for ad hoc schema work; use entity annotations and migrations for schema you maintain over time.
+
+```php
+$entityManager->executeQuery('create AuditLog (id = integer identity, message = string(255), primary key (id))');
+```
+
+See [table and index statements](https://objectquel.com/docs?section=language-create-destroy) for the supported types, constraints, and dialect rules.
+
+## EQUEL routines
+
+EQUEL lets you define stored functions and procedures using ObjectQuel syntax. A `define function` with a return type creates a stored function; `void` creates a procedure. Definitions can use entity ranges, queries, writes, variables, and control flow, and are compiled for the connected database.
+
+```php
+$entityManager->executeQuery('define function double_value (int value) integer { return value * 2 }');
+$result = $entityManager->executeQuery('double_value(:value)', ['value' => 21]);
+```
+
+Routine compilation targets MySQL/MariaDB, PostgreSQL, and SQL Server. SQLite does not support stored routines. See the [documentation](https://objectquel.com/docs) for the broader query language and ORM.
+
+Defining an existing routine is an error and leaves it unchanged. Use `destroy function name` explicitly before defining a replacement.
+
 ## ORM capabilities
 
 ObjectQuel is a full Data Mapper ORM, not just a query language:
