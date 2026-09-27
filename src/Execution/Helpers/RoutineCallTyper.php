@@ -5,6 +5,7 @@
 	use Quellabs\ObjectQuel\DatabaseAdapter\DatabaseAdapter;
 	use Quellabs\ObjectQuel\DatabaseAdapter\RoutineSignature;
 	use Quellabs\ObjectQuel\Exception\QuelException;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstCall;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRoutineCall;
 	use Quellabs\ObjectQuel\ObjectQuel\AstInterface;
 	use Quellabs\ObjectQuel\ObjectQuel\Visitors\CollectNodes;
@@ -23,12 +24,13 @@
 		}
 
 		/**
-		 * Sets the return type of every routine call in a query, looking each routine up once.
+		 * Sets the return type of every expression call, looking each routine up once.
 		 * @param AstInterface $query Query whose calls are typed in place
+		 * @param bool $skipStatementCalls Whether standalone calls may name procedures
 		 * @return void
 		 * @throws QuelException When a routine is missing or ambiguous, is a procedure, or the lookup fails
 		 */
-		public function typeCalls(AstInterface $query): void {
+		public function typeCalls(AstInterface $query, bool $skipStatementCalls = false): void {
 			$collector = new CollectNodes(AstRoutineCall::class);
 			$query->accept($collector);
 
@@ -36,6 +38,10 @@
 			$signatures = [];
 
 			foreach ($collector->getCollectedNodes() as $call) {
+				if ($skipStatementCalls && $call->getParent() instanceof AstCall) {
+					continue;
+				}
+
 				$name = $call->getName();
 				$signatures[$name] ??= $this->connection->getRoutineSignature($name);
 

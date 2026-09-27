@@ -8,6 +8,7 @@
 	use Quellabs\ObjectQuel\Exception\QuelException;
 	use Quellabs\ObjectQuel\Exception\SemanticException;
 	use Quellabs\ObjectQuel\Exception\TransformationException;
+	use Quellabs\ObjectQuel\Execution\Helpers\RoutineCallTyper;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRoutineDefinition;
 	use Quellabs\ObjectQuel\ObjectQuel\Lexer;
 	use Quellabs\ObjectQuel\ObjectQuel\LexerException;
@@ -28,17 +29,20 @@
 
 		/** @var string|null Schema that qualifies routine names, or null for none */
 		private ?string $routineSchema;
+		private ?RoutineCallTyper $routineCallTyper;
 
 		/**
 		 * Initializes the routine compiler with the entity manager and target platform.
 		 * @param EntityManager $entityManager Entity metadata and query pipeline dependencies
 		 * @param PlatformCapabilitiesInterface $platform Target engine
 		 * @param string|null $routineSchema Schema that qualifies routine names, or null for none
+		 * @param RoutineCallTyper|null $routineCallTyper Catalog lookup for live compilation; null for offline compilation
 		 */
-		public function __construct(EntityManager $entityManager, PlatformCapabilitiesInterface $platform, ?string $routineSchema) {
+		public function __construct(EntityManager $entityManager, PlatformCapabilitiesInterface $platform, ?string $routineSchema, ?RoutineCallTyper $routineCallTyper = null) {
 			$this->entityManager = $entityManager;
 			$this->platform = $platform;
 			$this->routineSchema = $routineSchema;
+			$this->routineCallTyper = $routineCallTyper;
 		}
 
 		/**
@@ -74,6 +78,7 @@
 		 * @throws SemanticException|EntityResolutionException|TransformationException|QuelException
 		 */
 		public function lower(AstRoutineDefinition $routine): array {
+			$this->routineCallTyper?->typeCalls($routine, true);
 			$entityStore = $this->entityManager->getEntityStore();
 			$statements = new RoutineStatementCompiler($this->entityManager, $this->platform, $this->routineSchema);
 

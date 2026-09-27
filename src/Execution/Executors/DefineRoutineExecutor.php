@@ -9,13 +9,14 @@
 	use Quellabs\ObjectQuel\Exception\SemanticException;
 	use Quellabs\ObjectQuel\Exception\TransformationException;
 	use Quellabs\ObjectQuel\Execution\ExecutionContext;
+	use Quellabs\ObjectQuel\Execution\Helpers\RoutineCallTyper;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRoutineDefinition;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstStatement;
 	use Quellabs\ObjectQuel\ObjectQuel\Routines\ProcedureCompiler;
 
 	/**
 	 * Executes `define function ...`: compiles the routine for the connected engine and
-	 * creates or replaces it on the server.
+	 * creates it on the server.
 	 */
 	class DefineRoutineExecutor implements DdlStatementExecutorInterface {
 
@@ -39,7 +40,8 @@
 		 * @return ProcedureCompiler
 		 */
 		private function compiler(): ProcedureCompiler {
-			return $this->compiler ??= new ProcedureCompiler($this->entityManager, $this->platform, $this->entityManager->getConnection()->getRoutineSchema());
+			$connection = $this->entityManager->getConnection();
+			return $this->compiler ??= new ProcedureCompiler($this->entityManager, $this->platform, $connection->getRoutineSchema(), new RoutineCallTyper($connection));
 		}
 
 		/**
