@@ -110,7 +110,7 @@
 		 *
 		 * Examples by engine:
 		 *   MySQL/MariaDB  → 'UNIX_TIMESTAMP(%s)'
-		 *   PostgreSQL     → 'EXTRACT(EPOCH FROM %s)::BIGINT'
+		 *   PostgreSQL     → 'CAST(EXTRACT(EPOCH FROM %s) AS BIGINT)'
 		 *   SQLite         → "CAST(strftime('%%s', %s) AS INTEGER)"
 		 *   SQL Server     → "DATEDIFF_BIG(SECOND, '1970-01-01', %s)"
 		 *
@@ -124,7 +124,7 @@
 		 *
 		 * Examples by engine:
 		 *   MySQL/MariaDB  → 'UNIX_TIMESTAMP()'
-		 *   PostgreSQL     → 'EXTRACT(EPOCH FROM NOW())::BIGINT'
+		 *   PostgreSQL     → 'CAST(EXTRACT(EPOCH FROM NOW()) AS BIGINT)'
 		 *   SQLite         → "CAST(strftime('%s','now') AS INTEGER)"
 		 *   SQL Server     → "DATEDIFF_BIG(SECOND, '1970-01-01', SYSUTCDATETIME())"
 		 *

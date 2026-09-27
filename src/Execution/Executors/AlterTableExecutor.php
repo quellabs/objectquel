@@ -217,6 +217,17 @@
 			if (!in_array($this->platform->getDatabaseType(), ['pgsql', 'sqlsrv'], true)) {
 				return new AlterTablePrimaryKeyState($columns, null);
 			}
+			if ($this->platform->getDatabaseType() === 'pgsql') {
+				$statement = $this->connection->execute(
+					"SELECT c.conname FROM pg_constraint c JOIN pg_class t ON t.oid = c.conrelid JOIN pg_namespace n ON n.oid = t.relnamespace WHERE n.nspname = current_schema() AND t.relname = :tableName AND c.contype = 'p'",
+					['tableName' => $tableName]
+				);
+				$row = $statement?->fetch('assoc');
+				$name = is_array($row) && isset($row['conname']) && is_string($row['conname'])
+					? $row['conname']
+					: null;
+				return new AlterTablePrimaryKeyState($columns, $name);
+			}
 
 			$constraintName = null;
 

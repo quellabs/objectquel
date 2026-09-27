@@ -177,19 +177,48 @@
 				return $this->executeUpsertFallback($compiled, $parameters, $metadata);
 			}
 
+			// PostgreSQL 18 can distinguish INSERT from conflict UPDATE through OLD.
+			$postgresUpsertReadback = $this->platform->getDatabaseType() === 'pgsql'
+				&& $statement->getOnConflict() !== null
+				&& $metadata->autoIncrementColumn !== null
+				&& !$statement->isInsertFromSelect()
+				&& count($statement->getRowsOrFail()) === 1
+				&& version_compare($this->connection->getServerVersion(), '18.0', '>=');
+			if ($postgresUpsertReadback) {
+				foreach ($statement->getRowsOrFail()[0] as $assignment) {
+					if ($assignment->getProperty() !== $metadata->autoIncrementColumn) {
+						continue;
+					}
+					$value = $assignment->getValue();
+					$postgresUpsertReadback = $value instanceof AstParameter
+						&& array_key_exists($value->getName(), $parameters)
+						&& $parameters[$value->getName()] === null;
+					break;
+				}
+			}
+			$sql = $compiled->primarySql;
+			if ($postgresUpsertReadback) {
+				$identityProperty = $metadata->autoIncrementColumn ?? throw new \LogicException('PostgreSQL upsert readback requires an identity column');
+				$idColumn = $this->connection->escapeIdentifier($metadata->getColumnNameOrFail($identityProperty));
+				$sql .= " RETURNING WITH (OLD AS previous) CASE WHEN previous.{$idColumn} IS NULL THEN {$idColumn} END AS __objectquel_generated_id";
+			}
+
 			// execute() swallows the exception and returns null on failure
 			// rather than throwing — a try/catch here would never fire.
-			$rs = $this->assertInsertSucceeded($this->connection->execute($compiled->primarySql, $parameters), $target);
+			$rs = $this->assertInsertSucceeded(
+				$this->connection->execute($sql, $this->filterParametersForSql($sql, $parameters)),
+				$target
+			);
 
 			// Insert ID is only unambiguous for single-row literal appends.
 			// Multi-row or insert-from-select is engine-dependent, so leave it null.
 			$eligibleForReadback = $metadata->autoIncrementColumn !== null;
 
 			// An upsert's on-conflict branch may have run an UPDATE, not an INSERT,
-			// leaving the driver's last-insert-id stale. Only MySQL/MariaDB's
-			// affected-row count reliably distinguishes the two (1 = inserted,
-			// 2/0 = updated); Postgres/SQLite/SQL Server report the same count
-			// either way, so readback is skipped entirely for those dialects.
+			// leaving the driver's last-insert-id stale. MySQL/MariaDB's
+			// affected-row count distinguishes the two (1 = inserted, 2/0 = updated).
+			// PostgreSQL 18 uses OLD above; other engines do not distinguish the
+			// branches here.
 			if ($eligibleForReadback && $statement->getOnConflict() !== null) {
 				$eligibleForReadback =
 					in_array($this->platform->getDatabaseType(), ['mysql', 'mariadb'], true) &&
@@ -197,6 +226,12 @@
 			}
 
 			$generatedId = $prepared->getGeneratedId();
+			if ($postgresUpsertReadback) {
+				$row = $rs->fetch('assoc');
+				if (is_array($row) && is_numeric($row['__objectquel_generated_id'] ?? null)) {
+					$generatedId = (int)$row['__objectquel_generated_id'];
+				}
+			}
 
 			if ($generatedId === null && $eligibleForReadback && !$statement->isInsertFromSelect() && count($statement->getRowsOrFail()) === 1) {
 				$insertId = $this->connection->getInsertId();

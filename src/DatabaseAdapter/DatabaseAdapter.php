@@ -46,8 +46,8 @@
 		/** @var Connection CakePHP database connection instance */
 		protected Connection $connection;
 		
-		/** @var int Error code from the last failed database operation (0 = no error) */
-		protected int $last_error;
+		/** @var int|string Error code or SQLSTATE from the last failed operation (0 = no error) */
+		protected int|string $last_error;
 		
 		/** @var string Error message from the last failed database operation */
 		protected string $last_error_message;
@@ -425,6 +425,29 @@
 					'length'  => null,
 				];
 			}
+
+			if ($this->getDatabaseType() === 'pgsql' && $result !== []) {
+				$statement = $this->execute("
+					SELECT i.relname AS index_name, a.attname AS column_name
+					FROM pg_class t
+					JOIN pg_namespace n ON n.oid = t.relnamespace
+					JOIN pg_index x ON x.indrelid = t.oid
+					JOIN pg_class i ON i.oid = x.indexrelid
+					JOIN LATERAL unnest(x.indkey) WITH ORDINALITY AS k(attnum, position) ON true
+					JOIN pg_attribute a ON a.attrelid = t.oid AND a.attnum = k.attnum
+					WHERE n.nspname = current_schema() AND t.relname = :tableName
+					ORDER BY i.relname, k.position
+				", ['tableName' => $tableName]);
+				$orderedColumns = [];
+				foreach ($statement?->fetchAll('assoc') ?? [] as $row) {
+					$orderedColumns[$row['index_name']][] = $row['column_name'];
+				}
+				foreach ($orderedColumns as $indexName => $columns) {
+					if (isset($result[$indexName])) {
+						$result[$indexName]['columns'] = $columns;
+					}
+				}
+			}
 			
 			return $result;
 		}
@@ -519,7 +542,10 @@
 				$this->deduplicateParameters($query, $parameters);
 				return $this->connection->execute($query, $parameters, $this->booleanParameterTypes($parameters));
 			} catch (\Exception $exception) {
-				$this->last_error = $exception->getCode();
+				$previous = $exception->getPrevious();
+				$this->last_error = $this->getDatabaseType() === 'pgsql' && $previous instanceof \PDOException
+					? $previous->getCode()
+					: $exception->getCode();
 				$this->last_error_message = $exception->getMessage();
 				return null;
 			}
@@ -546,9 +572,9 @@
 		
 		/**
 		 * Returns the error code from the last failed query
-		 * @return int Error code (0 indicates no error)
+		 * @return int|string Error code or SQLSTATE (0 indicates no error)
 		 */
-		public function getLastError(): int {
+		public function getLastError(): int|string {
 			return $this->last_error;
 		}
 		

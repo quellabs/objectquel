@@ -21,6 +21,7 @@
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstAlias;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstAppend;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstAssignment;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstParameter;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRangeDatabaseSubquery;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRangeDatabaseTempTable;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRetrieve;
@@ -200,6 +201,14 @@
 				$this->assertAssignmentValueTypeCompatible($assignment, $metadata);
 
 				$value = $assignment->getValue();
+				if ($this->platform->getDatabaseType() === 'pgsql'
+					&& $assignment->getProperty() === $metadata->autoIncrementColumn
+					&& $value instanceof AstParameter
+					&& array_key_exists($value->getName(), $parameters)
+					&& $parameters[$value->getName()] === null) {
+					$compiled[$assignment->getProperty()] = 'DEFAULT';
+					continue;
+				}
 				$value->accept(new NormalizeDateTime($this->entityStore, $this->valueTypes));
 				$value->accept(new ValidateNoTemporalScalarMix($this->entityStore, $this->valueTypes));
 
