@@ -220,22 +220,12 @@
                 return new Token(Token::Number, $this->fetchNumber(), $this->lineNumber);
             }
     
-            // negative number
-	        if ($this->pos + 1 < $this->length && ($this->string[$this->pos] == '-' && ctype_digit($this->string[$this->pos + 1]))) {
-		        ++$this->pos;
-		        return new Token(Token::Number, $this->fetchNumber() * -1, $this->lineNumber);
-            }
-    
             // double quote or single quote = string
             if (($this->string[$this->pos] == '"') || ($this->string[$this->pos] == '\'')) {
 				$firstChar = $this->string[$this->pos];
                 $string = "";
     
-                while ($this->string[++$this->pos] !== $firstChar) {
-					// Controleer op een niet afgesloten string op basis van end-of-stream
-	                if ($this->pos === $this->length) {
-						throw new LexerException("Unexpected end of data");
-					}
+				while (++$this->pos < $this->length && $this->string[$this->pos] !== $firstChar) {
 					
 					// Behandel een niet afgesloten string op basis van een enter
 					if ($this->string[$this->pos] === "\n") {
@@ -269,6 +259,10 @@
 					// Voeg het karakter toe
 					$string .= $this->string[$this->pos];
                 }
+
+				if ($this->pos >= $this->length) {
+					throw new LexerException("Unexpected end of data");
+				}
     
                 ++$this->pos;
                 return new Token(Token::String, $string, $this->lineNumber, ['char' => $firstChar]);
