@@ -60,16 +60,16 @@
 			try {
 				$exists = $connection->routineExists($statement->getName());
 			} catch (QuelException $exception) {
-				throw new QuelException("Failed to define routine '{$statement->getName()}': {$exception->getMessage()}", 'routine_definition_error', 0, $exception);
+				throw new QuelException("Failed to define function '{$statement->getName()}': {$exception->getMessage()}", 'routine_definition_error', 0, $exception);
 			}
 
 			if ($exists) {
-				throw new QuelException("Failed to define routine '{$statement->getName()}': a routine with that name already exists", 'routine_definition_error');
+				throw new QuelException("Failed to define function '{$statement->getName()}': a function with that name already exists", 'routine_definition_error');
 			}
 
 			$this->ddlRunner->run(
 				$statements,
-				"Failed to define routine '{$statement->getName()}'",
+				"Failed to define function '{$statement->getName()}'",
 				'routine_definition_error'
 			);
 		}

@@ -58,7 +58,7 @@
 			}
 
 			if (count($kinds) > 1) {
-				throw new QuelException("Can't call '{$name}': both a function and a procedure have that name.", 'routine_call_error');
+				throw new QuelException("Can't call '{$name}': both a void and a value-returning function have that name.", 'routine_call_error');
 			}
 
 			// PostgreSQL overloads that return different types leave the type unknown
