@@ -35,8 +35,8 @@
 	use Quellabs\ObjectQuel\ObjectQuel\Visitors\ResolveRoutineReferences;
 
 	/**
-	 * Semantic analysis for a parsed routine: one flat scope with
-	 * declare-before-use, top-level-only declarations, position-specific type
+	 * Semantic analysis for a parsed routine: block-scoped locals/cursors with
+	 * declare-before-use, top-level-only `range of`, position-specific type
 	 * names, cursor/foreach rules and control-flow checks. Types routine
 	 * variable and cursor-field identifiers in place (see IdentifierType).
 	 * Dialect restrictions are checked by the compiler, not here.
@@ -102,7 +102,7 @@
 		/**
 		 * Analyzes a statement list in source order.
 		 * @param AstInterface[] $statements Statements of one block
-		 * @param bool $isTopLevel True for the routine body itself, the only place names may be declared
+		 * @param bool $isTopLevel True for the routine body itself, the only place `range of` may be declared
 		 * @return void
 		 * @throws SemanticException|EntityResolutionException
 		 */
@@ -133,7 +133,6 @@
 					break;
 
 				case $statement instanceof AstDeclare:
-					$this->assertTopLevel($isTopLevel, "Declaration of '{$statement->getName()}'");
 					$this->analyzeDeclaration($statement);
 					break;
 
@@ -151,13 +150,19 @@
 
 				case $statement instanceof AstIf:
 					$statement->getCondition()->accept($this->referenceResolver(false));
+					$this->scope->pushScope();
 					$this->analyzeBlock($statement->getThenBody(), false);
+					$this->scope->popScope();
+					$this->scope->pushScope();
 					$this->analyzeBlock($statement->getElseBody() ?? [], false);
+					$this->scope->popScope();
 					break;
 
 				case $statement instanceof AstWhile:
 					$statement->getCondition()->accept($this->referenceResolver(false));
+					$this->scope->pushScope();
 					$this->analyzeBlock($statement->getBody(), false);
+					$this->scope->popScope();
 					break;
 
 				case $statement instanceof AstForeach:
@@ -165,7 +170,9 @@
 					break;
 
 				case $statement instanceof AstTransaction:
+					$this->scope->pushScope();
 					$this->analyzeBlock($statement->getBody(), false);
+					$this->scope->popScope();
 					break;
 
 				case $statement instanceof AstExit:
@@ -212,7 +219,12 @@
 				// The name isn't in scope yet, so the query can't refer to itself
 				$this->analyzeRoutineRetrieve($initializer);
 				$this->assertFieldNamesDistinctIgnoringCase($name, $initializer);
-				$this->scope->declareCursor($declaration);
+				$resolved = $this->scope->declareCursor($declaration);
+
+				if ($resolved !== $name) {
+					$declaration->setName($resolved);
+				}
+
 				return;
 			}
 
@@ -225,7 +237,11 @@
 			}
 
 			$initializer?->accept($this->referenceResolver(false));
-			$this->scope->declareScalar($name);
+			$resolved = $this->scope->declareScalar($name);
+
+			if ($resolved !== $name) {
+				$declaration->setName($resolved);
+			}
 		}
 
 		/**
@@ -246,6 +262,13 @@
 				});
 			}
 
+			// isScalar($name) was already confirmed above, so resolveScalar() can't return null here
+			$resolved = $this->scope->resolveScalar($name) ?? $name;
+
+			if ($resolved !== $name) {
+				$assignment->setName($resolved);
+			}
+
 			$assignment->getValue()->accept($this->referenceResolver(false));
 		}
 
@@ -260,14 +283,20 @@
 			$cursorName = $foreach->getCursorName();
 			$this->assertCursor($cursorName, 'foreach');
 
-			if ($this->scope->isLoopOpen($cursorName)) {
+			// assertCursor() already confirmed isCursor($cursorName), so resolveCursor() can't return null here
+			$resolvedCursorName = $this->scope->resolveCursor($cursorName) ?? $cursorName;
+			$foreach->setCursorName($resolvedCursorName);
+
+			if ($this->scope->isLoopOpen($resolvedCursorName)) {
 				throw new SemanticException("'foreach {$cursorName}' is nested inside another loop over the same cursor, which is still open.");
 			}
 
-			$this->scope->openLoop($cursorName);
-			$this->scope->bindRow($foreach->getRowName(), $cursorName);
+			$this->scope->openLoop($resolvedCursorName);
+			$this->scope->pushScope();
+			$this->scope->bindRow($foreach->getRowName(), $resolvedCursorName);
 			$this->analyzeBlock($foreach->getBody(), false);
 			$this->scope->unbindRow();
+			$this->scope->popScope();
 			$this->scope->closeLoop();
 		}
 

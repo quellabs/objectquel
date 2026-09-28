@@ -45,6 +45,15 @@
 		}
 
 		/**
+		 * Rewrites the declared name, used to resolve block-scoped name reuse to a routine-wide-unique name.
+		 * @param string $name The resolved name
+		 * @return void
+		 */
+		public function setName(string $name): void {
+			$this->name = $name;
+		}
+
+		/**
 		 * @return string Type name as written in the source
 		 */
 		public function getType(): string {

@@ -112,6 +112,8 @@
 				}
 			}
 
+			// isScalar($name) was already confirmed by visitNode(), so resolveScalar() can't return null here
+			$node->setName($this->scope->resolveScalar($name) ?? $name);
 			$node->setType(IdentifierType::RoutineVariable);
 		}
 

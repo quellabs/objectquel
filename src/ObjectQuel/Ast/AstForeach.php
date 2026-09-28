@@ -33,6 +33,15 @@
 		}
 
 		/**
+		 * Rewrites the looped cursor's name, used to resolve block-scoped name reuse to a routine-wide-unique name.
+		 * @param string $cursorName The resolved cursor name
+		 * @return void
+		 */
+		public function setCursorName(string $cursorName): void {
+			$this->cursorName = $cursorName;
+		}
+
+		/**
 		 * @return string Name bound to the current row inside the body
 		 */
 		public function getRowName(): string {

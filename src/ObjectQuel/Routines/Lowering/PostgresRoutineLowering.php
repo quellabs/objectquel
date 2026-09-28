@@ -5,7 +5,6 @@
 	use Quellabs\ObjectQuel\Exception\SemanticException;
 	use Quellabs\ObjectQuel\ObjectQuel\AstInterface;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstTransaction;
-	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstDeclare;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstForeach;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstIf;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRetrieve;
@@ -85,10 +84,8 @@
 				$lines[] = $this->quoter->quoteIdentifier($parameter->getName()) . ' ' . $this->sqlType($parameter->getType()) . ' := $' . ($index + 1) . ';';
 			}
 
-			foreach ($routine->getBody() as $statement) {
-				if ($statement instanceof AstDeclare && !$statement->isCursor()) {
-					$lines[] = $this->quoter->quoteIdentifier($statement->getName()) . ' ' . $this->sqlType($statement->getType()) . ';';
-				}
+			foreach ($this->scalarDeclarations($routine) as $statement) {
+				$lines[] = $this->quoter->quoteIdentifier($statement->getName()) . ' ' . $this->sqlType($statement->getType()) . ';';
 			}
 
 			foreach (array_keys($this->cursorQueries) as $cursorName) {

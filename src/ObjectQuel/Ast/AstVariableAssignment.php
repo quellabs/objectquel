@@ -42,6 +42,15 @@
 		}
 
 		/**
+		 * Rewrites the assigned name, used to resolve block-scoped name reuse to a routine-wide-unique name.
+		 * @param string $name The resolved name
+		 * @return void
+		 */
+		public function setName(string $name): void {
+			$this->name = $name;
+		}
+
+		/**
 		 * @return AstInterface Expression producing the new value
 		 */
 		public function getValue(): AstInterface {

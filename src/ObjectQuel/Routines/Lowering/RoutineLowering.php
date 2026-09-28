@@ -245,6 +245,36 @@
 		}
 
 		/**
+		 * Collects every scalar local declaration in the routine, at any depth.
+		 * @param AstRoutineDefinition $routine The routine, as analyzed
+		 * @return AstDeclare[] Scalar local declarations, in source order
+		 */
+		protected function scalarDeclarations(AstRoutineDefinition $routine): array {
+			$collector = new CollectNodes(AstDeclare::class);
+			$routine->accept($collector);
+
+			return array_values(array_filter(
+				$collector->getCollectedNodes(),
+				fn(AstDeclare $d) => !$d->isCursor()
+			));
+		}
+
+		/**
+		 * Collects every cursor declaration in the routine, at any depth.
+		 * @param AstRoutineDefinition $routine The routine, as analyzed
+		 * @return AstDeclare[] Cursor declarations, in source order
+		 */
+		protected function cursorDeclarations(AstRoutineDefinition $routine): array {
+			$collector = new CollectNodes(AstDeclare::class);
+			$routine->accept($collector);
+
+			return array_values(array_filter(
+				$collector->getCollectedNodes(),
+				fn(AstDeclare $d) => $d->isCursor()
+			));
+		}
+
+		/**
 		 * Checks whether a routine block contains a node of the requested type.
 		 * @param AstRoutineDefinition $routine The routine
 		 * @param array<class-string<AstInterface>> $nodeClasses Node classes to look for
@@ -361,16 +391,12 @@
 
 		/**
 		 * Prepares every cursor query up front, so unused cursors are checked too.
-		 * @param AstRoutineDefinition $routine The routine; declarations are top-level only
+		 * @param AstRoutineDefinition $routine The routine, as analyzed
 		 * @return void
 		 * @throws SemanticException|EntityResolutionException|TransformationException|QuelException
 		 */
 		private function prepareCursors(AstRoutineDefinition $routine): void {
-			foreach ($routine->getBody() as $statement) {
-				if (!$statement instanceof AstDeclare || !$statement->isCursor()) {
-					continue;
-				}
-
+			foreach ($this->cursorDeclarations($routine) as $statement) {
 				$initializer = $statement->getInitializer();
 
 				if (!$initializer instanceof AstRetrieve) {
@@ -407,22 +433,23 @@
 
 		/**
 		 * Records the declared type of every parameter and scalar local, for statements that read them.
-		 * @param AstRoutineDefinition $routine The routine; declarations are top-level only
+		 * @param AstRoutineDefinition $routine The routine; `range of` declarations are top-level only
 		 * @return void
 		 */
 		private function declareVariableTypes(AstRoutineDefinition $routine): void {
 			$fieldTypes = $this->statements->getFieldTypes();
-			$ranges = [];
 
 			foreach ($routine->getParameters() as $parameter) {
 				$fieldTypes->declareVariable($parameter->getName(), $parameter->getType());
 			}
 
-			foreach ($routine->getBody() as $statement) {
-				if ($statement instanceof AstDeclare && !$statement->isCursor()) {
-					$fieldTypes->declareVariable($statement->getName(), $statement->getType());
-				}
+			foreach ($this->scalarDeclarations($routine) as $statement) {
+				$fieldTypes->declareVariable($statement->getName(), $statement->getType());
+			}
 
+			$ranges = [];
+
+			foreach ($routine->getBody() as $statement) {
 				if ($statement instanceof AstRangeDeclaration) {
 					$ranges[] = $statement->getRange();
 				}

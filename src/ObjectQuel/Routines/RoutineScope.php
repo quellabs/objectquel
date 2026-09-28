@@ -9,20 +9,33 @@
 	use Quellabs\ObjectQuel\ObjectQuel\Rules\RoutineBlock;
 
 	/**
-	 * The single flat namespace of a routine: parameters, locals and range
-	 * aliases, filled in source order so declare-before-use falls out of it.
-	 * Also tracks which `foreach` loops are currently open.
+	 * A routine's names: block-scoped locals and cursors (a stack of frames,
+	 * pushed/popped around if/while/foreach/transaction bodies; the routine's
+	 * own top-level body is the never-popped root frame), plus range aliases
+	 * and parameters, which stay one flat, always-visible namespace since
+	 * `range of` remains top-level-only. Declaring a name returns the name
+	 * downstream code must use from here on: the name itself, unless it was
+	 * already used by an earlier, now-closed declaration, in which case a
+	 * fresh `name_2`, `name_3`, ... is minted so the routine's single flat SQL
+	 * `DECLARE` section stays collision-free. Also tracks which `foreach`
+	 * loops are currently open.
 	 */
 	class RoutineScope {
 
-		/** @var array<string, true> Parameter and scalar local names */
-		private array $scalars = [];
+		/** @var array<int, array{scalars: array<string, string>, cursors: array<string, string>}> Scope stack, root frame first, current frame last */
+		private array $frames;
 
-		/** @var array<string, AstDeclare> Cursor name => its declaration */
+		/** @var array<string, AstDeclare> Resolved cursor name => its declaration */
 		private array $cursors = [];
 
-		/** @var array<string, string> Lowercased variable and cursor name => name as declared */
+		/** @var array<string, string> Lowercased resolved name => resolved name as declared */
 		private array $variableNamesIgnoringCase = [];
+
+		/** @var array<string, true> Lowercased resolved name => true, for every resolved scalar/cursor/range name handed out so far */
+		private array $allResolvedNamesLower = [];
+
+		/** @var array<string, true> Lowercased source name => true, for a name whose declaring scope has closed, so it may be reused (mangled) */
+		private array $closedNamesLower = [];
 
 		/** @var array<string, AstRange> Range alias => range */
 		private array $ranges = [];
@@ -30,7 +43,7 @@
 		/** @var array<string, true> Every name the routine declares anywhere, for "used before declaration" errors */
 		private array $allDeclaredNames;
 
-		/** @var string[] Cursor names of the enclosing `foreach` loops, outermost first */
+		/** @var string[] Resolved cursor names of the enclosing `foreach` loops, outermost first */
 		private array $openLoops = [];
 
 		/** @var array<int, array{name: string, cursor: string}> Active `foreach ... as` row bindings, outermost first */
@@ -42,59 +55,92 @@
 		 */
 		public function __construct(array $allDeclaredNames) {
 			$this->allDeclaredNames = array_fill_keys($allDeclaredNames, true);
+			$this->frames = [['scalars' => [], 'cursors' => []]];
 		}
 
 		/**
-		 * Adds a parameter or scalar local.
-		 * @param string $name Variable name
+		 * Opens a new block scope, entering an if/elseif/else, while, foreach or transaction body.
 		 * @return void
-		 * @throws SemanticException When the name is reserved or already declared
 		 */
-		public function declareScalar(string $name): void {
-			$this->assertNameAvailable($name);
-			$this->declareVariableName($name);
-			$this->scalars[$name] = true;
+		public function pushScope(): void {
+			$this->frames[] = ['scalars' => [], 'cursors' => []];
 		}
 
 		/**
-		 * Adds a `cursor` local.
+		 * Closes the innermost block scope, leaving its locals and cursors out of view but reusable.
+		 * @return void
+		 */
+		public function popScope(): void {
+			$frame = array_pop($this->frames);
+
+			if ($frame === null) {
+				return;
+			}
+
+			foreach ([...array_keys($frame['scalars']), ...array_keys($frame['cursors'])] as $name) {
+				$this->closedNamesLower[strtolower($name)] = true;
+			}
+		}
+
+		/**
+		 * Adds a parameter or scalar local to the current scope.
+		 * @param string $name Variable name as written
+		 * @return string The resolved name to use from here on; equal to $name unless it reuses a now-closed one
+		 * @throws SemanticException When the name is reserved or already visible here
+		 */
+		public function declareScalar(string $name): string {
+			$resolved = $this->resolveNewName($name);
+			$this->frames[count($this->frames) - 1]['scalars'][$name] = $resolved;
+			return $resolved;
+		}
+
+		/**
+		 * Adds a `cursor` local to the current scope.
 		 * @param AstDeclare $declaration The cursor's declaration; its initializer is an AstRetrieve
-		 * @return void
-		 * @throws SemanticException When the name is reserved or already declared
+		 * @return string The resolved name to use from here on; equal to the declared name unless it reuses a now-closed one
+		 * @throws SemanticException When the name is reserved or already visible here
 		 */
-		public function declareCursor(AstDeclare $declaration): void {
-			$this->assertNameAvailable($declaration->getName());
-			$this->declareVariableName($declaration->getName());
-			$this->cursors[$declaration->getName()] = $declaration;
+		public function declareCursor(AstDeclare $declaration): string {
+			$resolved = $this->resolveNewName($declaration->getName());
+			$this->frames[count($this->frames) - 1]['cursors'][$declaration->getName()] = $resolved;
+			$this->cursors[$resolved] = $declaration;
+			return $resolved;
 		}
 
 		/**
-		 * Adds a `range of` alias.
+		 * Adds a `range of` alias. Ranges are always root-scoped and never reused, so their name never changes.
 		 * @param AstRange $range The declared range
 		 * @return void
 		 * @throws SemanticException When the name is reserved or already declared
 		 */
 		public function declareRange(AstRange $range): void {
-			$this->assertNameAvailable($range->getName());
-			$this->ranges[$range->getName()] = $range;
+			$name = $range->getName();
+			$this->assertNotKeyword($name);
+
+			if ($this->isVisibleInChain($name)) {
+				throw new SemanticException("'{$name}' is already declared in this scope.");
+			}
+
+			$this->ranges[$name] = $range;
+			$this->allResolvedNamesLower[strtolower($name)] = true;
 		}
 
 		/**
-		 * Reports whether a name is a declared scalar variable.
+		 * Reports whether a name is a declared scalar variable visible from the current scope.
 		 * @param string $name Name to look up
-		 * @return bool True when $name is a parameter or scalar local declared so far
+		 * @return bool True when $name is a parameter or scalar local visible here
 		 */
 		public function isScalar(string $name): bool {
-			return isset($this->scalars[$name]);
+			return $this->findInChain('scalars', $name) !== null;
 		}
 
 		/**
-		 * Reports whether a name is a declared cursor.
+		 * Reports whether a name is a declared cursor visible from the current scope.
 		 * @param string $name Name to look up
-		 * @return bool True when $name is a cursor local declared so far
+		 * @return bool True when $name is a cursor local visible here
 		 */
 		public function isCursor(string $name): bool {
-			return isset($this->cursors[$name]);
+			return $this->findInChain('cursors', $name) !== null;
 		}
 
 		/**
@@ -107,7 +153,7 @@
 		}
 
 		/**
-		 * Reports whether a name is declared anywhere in the routine.
+		 * Reports whether a name is declared anywhere in the routine, at any depth.
 		 * @param string $name Name to look up
 		 * @return bool True when the routine declares $name somewhere, whether or not that point has been reached
 		 */
@@ -116,8 +162,26 @@
 		}
 
 		/**
+		 * Resolves a scalar reference to the name downstream code should use, from the current scope outward.
+		 * @param string $name Name as written at the reference
+		 * @return string|null The visible declaration's resolved name, or null when none is visible
+		 */
+		public function resolveScalar(string $name): ?string {
+			return $this->findInChain('scalars', $name);
+		}
+
+		/**
+		 * Resolves a cursor reference to the name downstream code should use, from the current scope outward.
+		 * @param string $name Name as written at the reference
+		 * @return string|null The visible declaration's resolved name, or null when none is visible
+		 */
+		public function resolveCursor(string $name): ?string {
+			return $this->findInChain('cursors', $name);
+		}
+
+		/**
 		 * Returns the query a cursor local was declared with.
-		 * @param string $name Cursor name, which must be declared
+		 * @param string $name Resolved cursor name, which must be declared
 		 * @return AstRetrieve
 		 */
 		public function getCursorQuery(string $name): AstRetrieve {
@@ -135,8 +199,8 @@
 		}
 
 		/**
-		 * Marks a `foreach` over $cursorName as open.
-		 * @param string $cursorName Cursor being looped
+		 * Marks a `foreach` over $cursorName (resolved) as open.
+		 * @param string $cursorName Resolved name of the cursor being looped
 		 * @return void
 		 */
 		public function openLoop(string $cursorName): void {
@@ -153,7 +217,7 @@
 
 		/**
 		 * Reports whether a cursor loop is currently open.
-		 * @param string $cursorName Cursor name
+		 * @param string $cursorName Resolved cursor name
 		 * @return bool True when a `foreach` over $cursorName encloses the current statement
 		 */
 		public function isLoopOpen(string $cursorName): bool {
@@ -162,19 +226,17 @@
 
 		/**
 		 * Binds a `foreach (cursorName as rowName)` loop's row name for its body, checked against
-		 * whatever else is in scope right now. Unlike a scalar/cursor/range, the binding is
-		 * popped when the loop's body finishes (see unbindRow()), so sibling loops may reuse it.
+		 * whatever else is in scope right now. Unlike a scalar/cursor, the binding is popped when
+		 * the loop's body finishes (see unbindRow()), so sibling loops may reuse it as-is.
 		 * @param string $rowName Name the loop binds to its current row
-		 * @param string $cursorName Cursor the row is read from
+		 * @param string $cursorName Resolved name of the cursor the row is read from
 		 * @return void
 		 * @throws SemanticException When $rowName collides with something already visible
 		 */
 		public function bindRow(string $rowName, string $cursorName): void {
-			if (in_array(strtolower($rowName), RoutineBlock::STATEMENT_KEYWORDS, true)) {
-				throw new SemanticException("'{$rowName}' is a statement keyword and can't be used as a name.");
-			}
+			$this->assertNotKeyword($rowName);
 
-			if (isset($this->scalars[$rowName]) || isset($this->cursors[$rowName]) || isset($this->ranges[$rowName]) || $this->isRowBinding($rowName)) {
+			if ($this->isVisibleInChain($rowName) || $this->isRowBinding($rowName)) {
 				throw new SemanticException("'{$rowName}' is already in use in this routine and can't be reused as 'foreach ({$cursorName} as {$rowName})'.");
 			}
 
@@ -207,7 +269,7 @@
 		/**
 		 * Returns the cursor a row binding reads from.
 		 * @param string $rowName Row binding name, which must be currently open (see isRowBinding())
-		 * @return string Cursor name
+		 * @return string Resolved cursor name
 		 */
 		public function getRowCursor(string $rowName): string {
 			for ($i = count($this->rowBindings) - 1; $i >= 0; $i--) {
@@ -220,26 +282,87 @@
 		}
 
 		/**
-		 * Rejects statement keywords and names already in the routine's one namespace.
-		 * @param string $name Name about to be declared
-		 * @return void
+		 * Computes the resolved name for a new scalar/cursor declaration: rejects a reserved word or a
+		 * name still visible here, reuses the name as-is unless it was used by an earlier, now-closed
+		 * declaration (in which case a fresh `name_2`, `name_3`, ... is minted), then registers it.
+		 * @param string $name Name as written at the declaration
+		 * @return string The resolved name
 		 * @throws SemanticException
 		 */
-		private function assertNameAvailable(string $name): void {
-			// Statement keywords are matched before declarations/assignments, so a
-			// variable with such a name could never be assigned or read back.
-			if (in_array(strtolower($name), RoutineBlock::STATEMENT_KEYWORDS, true)) {
-				throw new SemanticException("'{$name}' is a statement keyword and can't be used as a name.");
+		private function resolveNewName(string $name): string {
+			$this->assertNotKeyword($name);
+
+			if ($this->isVisibleInChain($name)) {
+				throw new SemanticException("'{$name}' is already declared in this scope.");
 			}
 
-			if (isset($this->scalars[$name]) || isset($this->cursors[$name]) || isset($this->ranges[$name])) {
-				throw new SemanticException("'{$name}' is already declared in this routine. Routines have one flat scope; every name can be declared once.");
+			$resolved = isset($this->closedNamesLower[strtolower($name)]) ? $this->mintUnusedName($name) : $name;
+			$this->allResolvedNamesLower[strtolower($resolved)] = true;
+			$this->declareVariableName($resolved);
+
+			return $resolved;
+		}
+
+		/**
+		 * Generates the first `name_2`, `name_3`, ... not already handed out to any local, cursor, range or parameter.
+		 * @param string $name Base name being reused
+		 * @return string An unused resolved name
+		 */
+		private function mintUnusedName(string $name): string {
+			for ($suffix = 2;; $suffix++) {
+				$candidate = "{$name}_{$suffix}";
+
+				if (!isset($this->allResolvedNamesLower[strtolower($candidate)])) {
+					return $candidate;
+				}
 			}
 		}
 
 		/**
-		 * Records a variable or cursor name, rejecting one that differs only in case from an earlier one.
-		 * @param string $name Name being declared
+		 * Reports whether a name is visible anywhere in the current scope chain: the root-level ranges,
+		 * or a scalar/cursor declared in the current frame or an enclosing one.
+		 * @param string $name Name to look up
+		 * @return bool
+		 */
+		private function isVisibleInChain(string $name): bool {
+			if (isset($this->ranges[$name])) {
+				return true;
+			}
+
+			return $this->findInChain('scalars', $name) !== null || $this->findInChain('cursors', $name) !== null;
+		}
+
+		/**
+		 * Looks up a name from the innermost frame outward.
+		 * @param 'scalars'|'cursors' $kind Which per-frame map to search
+		 * @param string $name Name to look up
+		 * @return string|null The resolved name of the innermost visible declaration, or null when none is visible
+		 */
+		private function findInChain(string $kind, string $name): ?string {
+			for ($i = count($this->frames) - 1; $i >= 0; $i--) {
+				if (isset($this->frames[$i][$kind][$name])) {
+					return $this->frames[$i][$kind][$name];
+				}
+			}
+
+			return null;
+		}
+
+		/**
+		 * Rejects a statement keyword used as a name.
+		 * @param string $name Name about to be declared
+		 * @return void
+		 * @throws SemanticException
+		 */
+		private function assertNotKeyword(string $name): void {
+			if (in_array(strtolower($name), RoutineBlock::STATEMENT_KEYWORDS, true)) {
+				throw new SemanticException("'{$name}' is a statement keyword and can't be used as a name.");
+			}
+		}
+
+		/**
+		 * Records a resolved variable or cursor name, rejecting one that differs only in case from an earlier one.
+		 * @param string $name Resolved name being declared
 		 * @return void
 		 * @throws SemanticException
 		 */

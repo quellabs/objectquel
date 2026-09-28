@@ -7,7 +7,6 @@
 	use Quellabs\ObjectQuel\Exception\SemanticException;
 	use Quellabs\ObjectQuel\Exception\TransformationException;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstTransaction;
-	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstDeclare;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRetrieve;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRoutineDefinition;
 	use Quellabs\ObjectQuel\ObjectQuel\Helpers\SqlDialect\RoutineReferenceSql;
@@ -82,10 +81,8 @@
 		protected function localVariables(AstRoutineDefinition $routine): array {
 			$variables = [];
 
-			foreach ($routine->getBody() as $statement) {
-				if ($statement instanceof AstDeclare && !$statement->isCursor()) {
-					$variables[$this->variableName($statement->getName())] = $this->sqlType($statement->getType());
-				}
+			foreach ($this->scalarDeclarations($routine) as $statement) {
+				$variables[$this->variableName($statement->getName())] = $this->sqlType($statement->getType());
 			}
 
 			return $variables;
