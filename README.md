@@ -86,35 +86,6 @@ It works standalone or with [Canvas](https://canvasphp.com) through `quellabs/ca
 
 The full query language and ORM reference is at [objectquel.com/docs](https://objectquel.com/docs).
 
-## Tests
-
-The repository's PHPUnit tests are split into `ObjectQuelUniversal`,
-`ObjectQuelMySQL`, `ObjectQuelPostgreSQL`, `ObjectQuelSQLite`, and
-`ObjectQuelSQLServer` suites.
-The universal suite covers shared behavior and dialect checks that require no
-particular server; it runs with each engine's configuration. SQLite uses a
-temporary database and needs no server.
-The default `phpunit.xml` runs ObjectQuel on MySQL and the SQL Server compiler
-and adapter tests alongside the other packages' suites. PostgreSQL and SQLite
-use `phpunit.postgres.xml` and `phpunit.sqlite.xml`. The SQL Server tests use
-mocks and generated SQL; `phpunit.sqlserver.xml` runs them with SQLite fixtures
-and does not connect to a SQL Server instance.
-
-```bash
-composer test:objectquel:universal  # universal suite on SQLite
-composer test:objectquel:mysql      # MySQL-specific suite
-composer test:objectquel:postgres   # universal and PostgreSQL-specific suites
-composer test:objectquel:sqlserver  # SQL Server compiler and adapter tests
-composer test:objectquel:sqlite     # universal and SQLite-specific suites
-```
-
-The MySQL suite uses `TEST_DB_HOST`, `TEST_DB_PORT`, `TEST_DB_NAME`,
-`TEST_DB_USER`, and `TEST_DB_PASS`. The PostgreSQL suite uses the corresponding
-`TEST_PG_*` variables and creates a temporary schema in the selected database.
-For a local password, `tests/postgres.local.php` may return a string; Git ignores
-that file, and `TEST_PG_PASS` takes precedence when set.
-`composer test:objectquel` runs the universal, MySQL, and SQL Server suites together.
-
 ## Support
 
 If ObjectQuel saves you time, consider [sponsoring development](https://github.com/sponsors/quellabs).
