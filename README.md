@@ -93,6 +93,8 @@ The repository's PHPUnit tests are split into `ObjectQuelUniversal`,
 The universal suite covers shared behavior and dialect checks that require no
 particular server; it runs with each engine's configuration. SQLite uses a
 temporary database and needs no server.
+The default `phpunit.xml` runs ObjectQuel on MySQL alongside the other packages'
+suites. PostgreSQL and SQLite use `phpunit.postgres.xml` and `phpunit.sqlite.xml`.
 
 ```bash
 composer test:objectquel:universal  # universal suite on SQLite
