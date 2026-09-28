@@ -56,7 +56,7 @@
 	use Quellabs\ObjectQuel\ObjectQuel\Helpers\BooleanExpressionClassifier;
 	use Quellabs\ObjectQuel\Capabilities\PlatformCapabilitiesInterface;
 	use Quellabs\ObjectQuel\Capabilities\NullPlatformCapabilities;
-	use Quellabs\ObjectQuel\ObjectQuel\Helpers\SqlDialect\CastTypeMapper;
+	use Quellabs\ObjectQuel\DatabaseAdapter\Mapper\TypeMapper;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstCast;
 	use Quellabs\ObjectQuel\ObjectQuel\AstVisitorInterface;
 	
@@ -106,9 +106,6 @@
 		/** @var string|null Schema that qualifies routine names, or null for none */
 		private ?string $routineSchema;
 
-		/** @var CastTypeMapper Resolves QUEL cast types to SQL type tokens for the connected engine */
-		private CastTypeMapper $castTypeMapper;
-
 		/**
 		 * Initialize the SQL converter with required dependencies
 		 * @param EntityStore $store Entity storage containing schema and metadata
@@ -136,7 +133,6 @@
 			$this->partOfQuery = $partOfQuery;
 			$this->platform = $platform;
 			$this->routineSchema = $routineSchema;
-			$this->castTypeMapper = new CastTypeMapper($platform);
 
 			// Initialize helper classes with proper dependencies and references
 			$this->sqlFragmentBuilder = new BuildSqlFragments($this->entityStore, $this, $subqueryAliasRangeName, $this->platform, $this->routineSchema);
@@ -390,7 +386,7 @@
 		 *
 		 * Emits standard CAST(col AS TYPE), supported by every engine ObjectQuel
 		 * targets. The SQL type token (e.g. SIGNED, DOUBLE, TEXT) is resolved from
-		 * CastTypeMapper::getSupportedCastTypes() using the canonical QUEL cast
+		 * TypeMapper::getSupportedCastTypes() using the canonical QUEL cast
 		 * type stored on the node (e.g. int, float, string).
 		 *
 		 * @param AstCast $ast The cast node to process
@@ -406,7 +402,7 @@
 			// Resolve the SQL type token for the target engine.
 			// The semantic analyser has already verified that this cast type is
 			// supported, so the key is guaranteed to exist here.
-			$supportedTypes = $this->castTypeMapper->getSupportedCastTypes();
+			$supportedTypes = TypeMapper::getSupportedCastTypes($this->platform->getDatabaseType());
 			$sqlType = $supportedTypes[$ast->getCastType()] ?? strtoupper($ast->getCastType());
 
 			// Generate the SQL fragment for the inner expression

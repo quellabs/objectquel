@@ -8,7 +8,7 @@
 	use Quellabs\ObjectQuel\Exception\SemanticException;
 	use Quellabs\ObjectQuel\Capabilities\NullPlatformCapabilities;
 	use Quellabs\ObjectQuel\Capabilities\PlatformCapabilitiesInterface;
-	use Quellabs\ObjectQuel\ObjectQuel\Helpers\SqlDialect\CastTypeMapper;
+	use Quellabs\ObjectQuel\DatabaseAdapter\Mapper\TypeMapper;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstCast;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstAggregate;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstIdentifier;
@@ -44,10 +44,9 @@
 		private EntityStore $entityStore;
 		
 		/**
-		 * Resolves cast types against engine-specific supported sets.
-		 * @var CastTypeMapper
+		 * @var array<string, string> Cast names and SQL types for the connected engine
 		 */
-		private CastTypeMapper $castTypeMapper;
+		private array $supportedCastTypes;
 
 		/**
 		 * Constructor - initializes the validator with entity schema information
@@ -59,7 +58,7 @@
 			PlatformCapabilitiesInterface $platform = new NullPlatformCapabilities()
 		) {
 			$this->entityStore = $entityStore;
-			$this->castTypeMapper = new CastTypeMapper($platform);
+			$this->supportedCastTypes = TypeMapper::getSupportedCastTypes($platform->getDatabaseType());
 		}
 		
 		/**
@@ -1025,7 +1024,7 @@
 		 * the connected database engine supports.
 		 *
 		 * The set of valid types is engine-specific and is retrieved from
-		 * CastTypeMapper::getSupportedCastTypes(). An unsupported type name
+		 * TypeMapper::getSupportedCastTypes(). An unsupported type name
 		 * (e.g. (blob)x.data on MySQL) is rejected here with a clear message
 		 * listing the valid alternatives.
 		 *
@@ -1034,7 +1033,7 @@
 		 */
 		private function validateCastTypes(AstRetrieve $ast): void {
 			// Fetch all cast types the database supports
-			$supportedTypes = $this->castTypeMapper->getSupportedCastTypes();
+			$supportedTypes = $this->supportedCastTypes;
 			
 			// Collect every AstCast node in the entire query tree
 			$collector = new CollectNodes(AstCast::class);
