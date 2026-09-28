@@ -1,6 +1,6 @@
 <?php
 
-	namespace Quellabs\ObjectQuel\ObjectQuel\QuelToSQL;
+	namespace Quellabs\ObjectQuel\ObjectQuel\Schema;
 
 	use Quellabs\ObjectQuel\Exception\QuelException;
 
