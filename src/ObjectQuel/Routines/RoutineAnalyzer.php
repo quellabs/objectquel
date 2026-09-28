@@ -46,9 +46,6 @@
 	 */
 	class RoutineAnalyzer {
 
-		/** Type names the source may use in place of a TypeMapper key */
-		private const array TYPE_ALIASES = ['int' => 'integer'];
-
 		private EntityStore $entityStore;
 		private RoutineCursorSource $cursorSource;
 		private RoutineScope $scope;
@@ -433,8 +430,7 @@
 		 * @return string Normalized type name
 		 */
 		public static function normalizeType(string $type): string {
-			$type = strtolower($type);
-			return self::TYPE_ALIASES[$type] ?? $type;
+			return TypeMapper::normalizeType($type);
 		}
 
 		/**

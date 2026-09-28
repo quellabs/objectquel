@@ -63,7 +63,7 @@ Schema statements include `create`, `alter`, `destroy`, and index operations. Us
 EQUEL defines stored functions in ObjectQuel syntax. A value-returning definition produces a database function; `void` produces a database procedure. For example:
 
 ```php
-$entityManager->executeQuery('define function double_value (int value) integer { return value * 2 }');
+$entityManager->executeQuery('define function double_value (int value) int { return value * 2 }');
 $result = $entityManager->executeQuery('double_value(:value)', ['value' => 21]);
 ```
 

@@ -6,14 +6,7 @@
 	use Quellabs\ObjectQuel\DatabaseAdapter\Mapper\TypeMapper;
 
 	/**
-	 * Renders engine-specific SQL DDL for session-scoped temporary tables,
-	 * driven by a PlatformCapabilitiesInterface's reported facts. Unlike
-	 * TypeMapper (abstract @Column type → PHP type, engine-agnostic), this
-	 * maps to literal engine-specific SQL syntax.
-	 *
-	 * Used only by TempTableExecutor. Identifier/alias quoting lives in
-	 * SqlIdentifierQuoter instead, since it's needed by every SQL statement,
-	 * not just DDL — QuelToSQLRetrieve depends on that class, not this one.
+	 * Builds engine-specific table and column DDL using TypeMapper for SQL types.
 	 */
 	class DDLTypeMapper {
 
@@ -152,12 +145,13 @@
 		 * @return string
 		 */
 		public function getTempTableColumnType(array $columnDefinition): string {
-			return match ($this->platform->getDatabaseType()) {
-				'pgsql' => $this->getPostgresTempTableColumnType($columnDefinition),
-				'sqlite' => $this->getSqliteTempTableColumnType($columnDefinition),
-				'sqlsrv' => $this->getSqlServerTempTableColumnType($columnDefinition),
-				default => $this->getMysqlTempTableColumnType($columnDefinition),
-			};
+			return TypeMapper::sqlColumnType(
+				$columnDefinition,
+				$this->platform->getDatabaseType(),
+				$this->platform->supportsUnsignedIntegers(),
+				$this->platform->supportsNativeEnums(),
+				fn(string $value): string => $this->identifierQuoter->quoteStringLiteral($value)
+			);
 		}
 		
 		
@@ -178,7 +172,7 @@
 			bool $notNull,
 			bool $identity
 		): string {
-			$type = $this->getMysqlTempTableColumnType($columnDefinition);
+			$type = $this->getTempTableColumnType($columnDefinition);
 			$fragment = "{$quotedColumnName} {$type}";
 			
 			if ($notNull || $identity) {
@@ -209,7 +203,7 @@
 			bool $notNull,
 			bool $identity
 		): string {
-			$type = $this->getPostgresTempTableColumnType($columnDefinition);
+			$type = $this->getTempTableColumnType($columnDefinition);
 			$fragment = "{$quotedColumnName} {$type}";
 			
 			if ($identity) {
@@ -246,7 +240,7 @@
 				return "{$quotedColumnName} INTEGER PRIMARY KEY AUTOINCREMENT";
 			}
 			
-			$type = $this->getSqliteTempTableColumnType($columnDefinition);
+			$type = $this->getTempTableColumnType($columnDefinition);
 			$fragment = "{$quotedColumnName} {$type}";
 			
 			if ($notNull) {
@@ -271,7 +265,7 @@
 			bool $notNull,
 			bool $identity
 		): string {
-			$type = $this->getSqlServerTempTableColumnType($columnDefinition);
+			$type = $this->getTempTableColumnType($columnDefinition);
 			$fragment = "{$quotedColumnName} {$type}";
 			
 			if ($identity) {
@@ -285,156 +279,5 @@
 			return $fragment;
 		}
 		
-		/**
-		 * Declared enum values, defaulting to an empty list — nullable
-		 * because the broader ColumnDefinition shape covers every column
-		 * type, most of which never set 'values' at all.
-		 * @param array{values: string[]|null} $columnDefinition
-		 * @return string[]
-		 */
-		private function enumValues(array $columnDefinition): array {
-			return $columnDefinition['values'] ?? [];
-		}
-		
-		/**
-		 * MySQL/MariaDB DDL type mapping. Also the fallback for any database
-		 * type value this class doesn't otherwise recognise — which is why the
-		 * UNSIGNED suffix is gated on supportsUnsignedIntegers() rather than
-		 * assumed: an unrecognised engine reaching this branch is not
-		 * guaranteed to have MySQL's UNSIGNED modifier, and 'unsigned' on a
-		 * column definition is a request, not a promise the engine keeps.
-		 * @param array{type: string, limit: int|array<int,int>|null, unsigned: bool, precision: int|null, scale: int|null, values: string[]|null} $columnDefinition
-		 * @return string
-		 */
-		private function getMysqlTempTableColumnType(array $columnDefinition): string {
-			$limit = is_int($columnDefinition['limit']) ? $columnDefinition['limit'] : (TypeMapper::getDefaultLimit($columnDefinition['type']) ?? 255);
-			$unsigned = ($columnDefinition['unsigned'] && $this->platform->supportsUnsignedIntegers()) ? ' UNSIGNED' : '';
 
-			return match ($columnDefinition['type']) {
-				'tinyinteger' => "TINYINT{$unsigned}",
-				'smallinteger' => "SMALLINT{$unsigned}",
-				'integer' => "INT{$unsigned}",
-				'biginteger' => "BIGINT{$unsigned}",
-				'float' => "FLOAT{$unsigned}",
-				'decimal' => sprintf('DECIMAL(%d,%d)%s', $columnDefinition['precision'] ?? 10, $columnDefinition['scale'] ?? 0, $unsigned),
-				'boolean' => 'TINYINT(1)',
-				'date' => 'DATE',
-				'datetime' => 'DATETIME',
-				'time' => 'TIME',
-				'timestamp' => 'TIMESTAMP',
-				'text' => 'TEXT',
-				'blob' => 'BLOB',
-				'binary' => "VARBINARY({$limit})",
-				'json' => 'JSON',
-				'uuid' => 'CHAR(36)',
-				'year' => 'YEAR',
-				'char' => "CHAR({$limit})",
-				'enum' => $this->platform->supportsNativeEnums()
-					? sprintf('ENUM(%s)', implode(', ', array_map(fn(string $value) => $this->identifierQuoter->quoteStringLiteral($value), $this->enumValues($columnDefinition))))
-					: sprintf('VARCHAR(%d)', TypeMapper::enumFallbackLimit($this->enumValues($columnDefinition))),
-				// 'string', 'set', and any unrecognized type
-				default => "VARCHAR({$limit})",
-			};
-		}
-
-		/**
-		 * PostgreSQL DDL type mapping: no UNSIGNED, no TINYINT/YEAR (SMALLINT
-		 * covers both — Postgres has no 1-byte integer type); native
-		 * BOOLEAN/UUID/BYTEA replace MySQL's TINYINT(1)/CHAR(36)/BLOB.
-		 * @param array{type: string, limit: int|array<int,int>|null, unsigned: bool, precision: int|null, scale: int|null, values: string[]|null} $columnDefinition
-		 * @return string
-		 */
-		private function getPostgresTempTableColumnType(array $columnDefinition): string {
-			$limit = is_int($columnDefinition['limit']) ? $columnDefinition['limit'] : (TypeMapper::getDefaultLimit($columnDefinition['type']) ?? 255);
-
-			return match ($columnDefinition['type']) {
-				'tinyinteger', 'smallinteger', 'year' => 'SMALLINT',
-				'integer' => 'INTEGER',
-				'biginteger' => 'BIGINT',
-				'float' => 'REAL',
-				'decimal' => sprintf('DECIMAL(%d,%d)', $columnDefinition['precision'] ?? 10, $columnDefinition['scale'] ?? 0),
-				'boolean' => 'BOOLEAN',
-				'date' => 'DATE',
-				'datetime', 'timestamp' => 'TIMESTAMP',
-				'time' => 'TIME',
-				'text' => 'TEXT',
-				'blob', 'binary' => 'BYTEA',
-				'json' => 'JSONB',
-				'uuid' => 'UUID',
-				'char' => "CHAR({$limit})",
-				// PostgreSQL has no inline ENUM(...) column syntax (a native enum
-				// requires a separate CREATE TYPE ... AS ENUM statement, out of
-				// scope here — see supportsNativeEnums()), so this always falls
-				// back to the VARCHAR floor regardless of platform capability.
-				'enum' => sprintf('VARCHAR(%d)', TypeMapper::enumFallbackLimit($this->enumValues($columnDefinition))),
-				// 'string', 'set', and any unrecognized type
-				default => "VARCHAR({$limit})",
-			};
-		}
-
-		/**
-		 * SQLite DDL type mapping. SQLite derives storage affinity from the type
-		 * name rather than enforcing a fixed type system, so this only needs to
-		 * avoid syntax it can't parse (e.g. UNSIGNED), not a distinct name per case.
-		 * @param array{type: string, limit: int|array<int,int>|null, unsigned: bool, precision: int|null, scale: int|null, values: string[]|null} $columnDefinition
-		 * @return string
-		 */
-		private function getSqliteTempTableColumnType(array $columnDefinition): string {
-			$limit = is_int($columnDefinition['limit']) ? $columnDefinition['limit'] : (TypeMapper::getDefaultLimit($columnDefinition['type']) ?? 255);
-
-			return match ($columnDefinition['type']) {
-				'tinyinteger', 'smallinteger', 'integer', 'biginteger', 'year' => 'INTEGER',
-				'float' => 'REAL',
-				'decimal' => sprintf('NUMERIC(%d,%d)', $columnDefinition['precision'] ?? 10, $columnDefinition['scale'] ?? 0),
-				'boolean' => 'BOOLEAN',
-				'date' => 'DATE',
-				'datetime' => 'DATETIME',
-				'time' => 'TIME',
-				'timestamp' => 'TIMESTAMP',
-				'text', 'json', 'uuid' => 'TEXT',
-				'blob', 'binary' => 'BLOB',
-				'char' => "CHAR({$limit})",
-				// SQLite has no native ENUM type; always the VARCHAR floor. See
-				// TypeMapper::enumFallbackLimit() for why this is a 255-character
-				// floor rather than an exact fit — SQLite's ALTER TABLE can't
-				// widen a column later.
-				'enum' => sprintf('VARCHAR(%d)', TypeMapper::enumFallbackLimit($this->enumValues($columnDefinition))),
-				// 'string', 'set', and any unrecognized type
-				default => "VARCHAR({$limit})",
-			};
-		}
-
-		/**
-		 * SQL Server DDL type mapping. No UNSIGNED (TINYINT is already 0-255 by
-		 * definition). TIMESTAMP is deliberately never emitted — in T-SQL that
-		 * name means a rowversion, not a datetime — so DATETIME2 covers both
-		 * 'datetime' and 'timestamp'. TEXT/IMAGE are deprecated; their
-		 * MAX-length replacements are used instead.
-		 * @param array{type: string, limit: int|array<int,int>|null, unsigned: bool, precision: int|null, scale: int|null, values: string[]|null} $columnDefinition
-		 * @return string
-		 */
-		private function getSqlServerTempTableColumnType(array $columnDefinition): string {
-			$limit = is_int($columnDefinition['limit']) ? $columnDefinition['limit'] : (TypeMapper::getDefaultLimit($columnDefinition['type']) ?? 255);
-
-			return match ($columnDefinition['type']) {
-				'tinyinteger' => 'TINYINT',
-				'smallinteger', 'year' => 'SMALLINT',
-				'integer' => 'INT',
-				'biginteger' => 'BIGINT',
-				'float' => 'REAL',
-				'decimal' => sprintf('DECIMAL(%d,%d)', $columnDefinition['precision'] ?? 10, $columnDefinition['scale'] ?? 0),
-				'boolean' => 'BIT',
-				'date' => 'DATE',
-				'datetime', 'timestamp' => 'DATETIME2',
-				'time' => 'TIME',
-				'text', 'json' => 'NVARCHAR(MAX)',
-				'blob', 'binary' => 'VARBINARY(MAX)',
-				'uuid' => 'UNIQUEIDENTIFIER',
-				'char' => "CHAR({$limit})",
-				// SQL Server has no native ENUM type; always the VARCHAR floor.
-				'enum' => sprintf('VARCHAR(%d)', TypeMapper::enumFallbackLimit($this->enumValues($columnDefinition))),
-				// 'string', 'set', and any unrecognized type
-				default => "VARCHAR({$limit})",
-			};
-		}
 	}
