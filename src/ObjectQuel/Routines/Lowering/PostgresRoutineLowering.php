@@ -20,8 +20,9 @@
 	 *
 	 * - Locals and parameter copies live in the top block labelled `_routine`
 	 *   and are read as `"_routine"."name"`, so they never resolve as columns.
-	 * - A `foreach` whose body writes the current row uses an explicit
-	 *   `FOR UPDATE` cursor and `WHERE CURRENT OF`; other loops use `FOR ... IN`.
+	 * - Every `foreach` is a plain `FOR row IN query LOOP`; a `replace`/`delete`
+	 *   naming a table inside it writes it the ordinary way, with its own
+	 *   explicit `where`, same as anywhere else in the routine.
 	 * - `transaction { }` uses a PL/pgSQL exception block as a subtransaction.
 	 */
 	class PostgresRoutineLowering extends RoutineLowering {
@@ -94,13 +95,6 @@
 				$lines[] = $this->quoter->quoteIdentifier(RoutineReferenceSql::cursorRowVariable($cursorName)) . ' RECORD;';
 			}
 
-			// Cursors last: their queries read the variables above when opened
-			foreach ($this->cursorQueries as $cursorName => $query) {
-				if (isset($this->writeCursors[$cursorName])) {
-					$lines[] = $this->quoter->quoteIdentifier($cursorName) . ' CURSOR FOR ' . $this->statements->retrieveSql($query) . ' FOR UPDATE;';
-				}
-			}
-
 			return $this->lines($lines, 1);
 		}
 
@@ -116,20 +110,14 @@
 		}
 
 		/**
-		 * Closes the explicit cursors of enclosing loops before returning.
+		 * Compiles a routine RETURN statement.
 		 * @param AstReturn $return The return
 		 * @param int $depth Indentation depth
 		 * @return string
 		 * @throws SemanticException
 		 */
 		protected function lowerReturn(AstReturn $return, int $depth): string {
-			$result = '';
-
-			foreach (array_reverse($this->openExplicitCursors()) as $cursorName) {
-				$result .= $this->line('CLOSE ' . $this->quoter->quoteIdentifier($cursorName) . ';', $depth);
-			}
-
-			return $result . $this->line('RETURN ' . $this->returnedValue($return) . ';', $depth);
+			return $this->line('RETURN ' . $this->returnedValue($return) . ';', $depth);
 		}
 
 		/**
@@ -163,7 +151,7 @@
 		}
 
 		/**
-		 * `FOR row IN query LOOP` for read-only loops; OPEN/FETCH/CLOSE when the body writes the current row.
+		 * `FOR row IN query LOOP`, PL/pgSQL's own cursor loop.
 		 * @param AstForeach $foreach The loop
 		 * @param int $depth Indentation depth
 		 * @return string
@@ -173,23 +161,9 @@
 			$row = $this->quoter->quoteIdentifier(RoutineReferenceSql::cursorRowVariable($cursorName));
 			$body = $this->lowerLoopBody($foreach, $depth + 1);
 
-			if (!isset($this->writeCursors[$cursorName])) {
-				return $this->line("FOR {$row} IN " . $this->statements->retrieveSql($this->cursorQueries[$cursorName]) . ' LOOP', $depth)
-					. $body
-					. $this->line('END LOOP;', $depth);
-			}
-
-			$cursor = $this->quoter->quoteIdentifier($cursorName);
-
-			// A null cursor variable makes OPEN pick a portal name no other routine is using
-			return $this->line("{$cursor} := NULL;", $depth)
-				. $this->line("OPEN {$cursor};", $depth)
-				. $this->line('LOOP', $depth)
-				. $this->line("FETCH {$cursor} INTO {$row};", $depth + 1)
-				. $this->line('EXIT WHEN NOT FOUND;', $depth + 1)
+			return $this->line("FOR {$row} IN " . $this->statements->retrieveSql($this->cursorQueries[$cursorName]) . ' LOOP', $depth)
 				. $body
-				. $this->line('END LOOP;', $depth)
-				. $this->line("CLOSE {$cursor};", $depth);
+				. $this->line('END LOOP;', $depth);
 		}
 
 		/**
@@ -200,11 +174,6 @@
 		 * @throws SemanticException When an embedded statement can't be compiled
 		 */
 		protected function lowerTransaction(AstTransaction $transaction, int $depth): string {
-			$explicit = $this->openExplicitCursors();
-			if (!empty($explicit)) {
-				throw new SemanticException("'transaction' inside 'foreach {$explicit[0]}' isn't supported on PostgreSQL while its writable cursor is open.");
-			}
-
 			$body = $this->lowerBlock($transaction->getBody(), $depth + 1);
 			return $this->line('BEGIN', $depth)
 				. ($body === '' ? $this->line('NULL;', $depth + 1) : $body)
@@ -250,23 +219,6 @@
 			}
 
 			return 'PERFORM ' . substr($sql, strlen('SELECT ')) . ';';
-		}
-
-		/**
-		 * Builds the condition identifying the current cursor row.
-		 * @param string $cursorName Cursor of the enclosing loop
-		 * @return string `CURRENT OF "cursor"`
-		 */
-		protected function currentRowCondition(string $cursorName): string {
-			return 'CURRENT OF ' . $this->quoter->quoteIdentifier($cursorName);
-		}
-
-		/**
-		 * Opens the explicit cursors declared by the routine.
-		 * @return string[] Enclosing loops that use an explicit (OPENed) cursor, outermost first
-		 */
-		private function openExplicitCursors(): array {
-			return array_values(array_filter($this->openLoops, fn(string $cursorName) => isset($this->writeCursors[$cursorName])));
 		}
 
 		/**

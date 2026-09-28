@@ -14,7 +14,6 @@
 	use Quellabs\ObjectQuel\Metadata\EntityMetadataRecord;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstAssignment;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstParameter;
-	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRangeDatabase;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstReplace;
 	use Quellabs\ObjectQuel\ObjectQuel\AstInterface;
 	use Quellabs\ObjectQuel\ObjectQuel\Helpers\SqlDialect\AliasedDmlSqlBuilder;
@@ -130,28 +129,6 @@
 				$this->identifierQuoter,
 				$this->platform
 			);
-		}
-
-		/**
-		 * Compiles a routine's current-row `replace x (...)` against the cursor's source range, bumping version columns like `replace`.
-		 * On SQL Server the table is left unaliased, the documented `WHERE CURRENT OF` form.
-		 * @param AstRangeDatabase $range The cursor's source range
-		 * @param AstAssignment[] $assignments Column assignments
-		 * @param string $rowCondition SQL condition selecting the current row, e.g. `CURRENT OF cursor`
-		 * @param array<string, mixed> $parameters Bound parameters, by reference
-		 * @return string
-		 * @throws SemanticException
-		 */
-		public function convertCurrentRowToSQL(AstRangeDatabase $range, array $assignments, string $rowCondition, array &$parameters): string {
-			$metadata = $this->entityStore->getMetadata($range->getEntityName());
-
-			if (!$this->platform->supportsAliasAfterDmlTarget()) {
-				$setSql = implode(', ', $this->buildSetClause($assignments, $metadata, $parameters));
-				return 'UPDATE ' . $this->identifierQuoter->quoteIdentifier($metadata->tableName) . " SET {$setSql} WHERE {$rowCondition}";
-			}
-
-			$setSql = implode(', ', $this->buildSetClause($assignments, $metadata, $parameters, $range->getName()));
-			return AliasedDmlSqlBuilder::update($metadata->tableName, $range->getName(), $setSql, $rowCondition, $this->identifierQuoter, $this->platform);
 		}
 
 		/**

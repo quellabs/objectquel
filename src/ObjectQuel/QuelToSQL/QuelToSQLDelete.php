@@ -107,19 +107,6 @@
 		}
 
 		/**
-		 * Compiles a routine's current-row `delete x` against the cursor's source range, soft-deleting like `delete`.
-		 * On SQL Server the table is left unaliased, the documented `WHERE CURRENT OF` form.
-		 * @param AstRangeDatabase $range The cursor's source range
-		 * @param string $rowCondition SQL condition selecting the current row, e.g. `CURRENT OF cursor`
-		 * @return string
-		 */
-		public function convertCurrentRowToSQL(AstRangeDatabase $range, string $rowCondition): string {
-			$metadata = $this->entityStore->getMetadata($range->getEntityName());
-			$alias = $this->platform->supportsAliasAfterDmlTarget() ? $range->getName() : null;
-			return $this->buildStatement($range, $metadata, $rowCondition, false, $alias);
-		}
-
-		/**
 		 * Builds the DELETE, or the soft-delete UPDATE when the entity has one and it isn't ignored.
 		 * @param AstRangeDatabase $range Target range
 		 * @param EntityMetadataRecord $metadata Target entity metadata

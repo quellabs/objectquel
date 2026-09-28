@@ -14,10 +14,8 @@
 	use Quellabs\ObjectQuel\Execution\Visitors\BuildSqlFromAst;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstAlias;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstAppend;
-	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstAssignment;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstCall;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstDelete;
-	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRangeDatabase;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstReplace;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRetrieve;
 	use Quellabs\ObjectQuel\ObjectQuel\AstInterface;
@@ -98,18 +96,13 @@
 		 * Runs a copy of an embedded retrieve through the ad hoc query pipeline, narrowed to the ranges it reads.
 		 * The copy selects only its target list, without the optimizer's PHP-side projections.
 		 * @param AstRetrieve $retrieve Analyzed standalone or cursor retrieve
-		 * @param AstAlias[] $extraValues Values appended to the copy's target list before the pipeline runs
 		 * @return AstRetrieve The optimized copy, ready for retrieveSql()
 		 * @throws SemanticException When the query needs PHP-side processing
 		 * @throws EntityResolutionException|TransformationException|QuelException
 		 */
-		public function prepareRetrieve(AstRetrieve $retrieve, array $extraValues = []): AstRetrieve {
+		public function prepareRetrieve(AstRetrieve $retrieve): AstRetrieve {
 			// Declared ranges are shared between statements and the pipeline mutates them
 			$query = $retrieve->deepClone();
-
-			foreach ($extraValues as $value) {
-				$query->addValue($value);
-			}
 
 			$this->narrowRanges($query);
 
@@ -252,33 +245,6 @@
 				}
 
 				return $compiled->primarySql;
-			});
-		}
-
-		/**
-		 * Compiles a delete targeting the row currently fetched by a cursor.
-		 * @param AstRangeDatabase $source The cursor's source range
-		 * @param string $rowCondition SQL condition selecting the current row
-		 * @return string
-		 * @throws SemanticException
-		 */
-		public function compileCurrentRowDelete(AstRangeDatabase $source, string $rowCondition): string {
-			return $this->withoutBoundParameters('delete', function () use ($source, $rowCondition): string {
-				return $this->deleteCompiler->convertCurrentRowToSQL($source, $rowCondition);
-			});
-		}
-
-		/**
-		 * Compiles a replace targeting the row currently fetched by a cursor.
-		 * @param AstRangeDatabase $source The cursor's source range
-		 * @param AstAssignment[] $assignments Analyzed `column = value` assignments
-		 * @param string $rowCondition SQL condition selecting the current row
-		 * @return string
-		 * @throws SemanticException
-		 */
-		public function compileCurrentRowReplace(AstRangeDatabase $source, array $assignments, string $rowCondition): string {
-			return $this->withoutBoundParameters('replace', function (array &$parameters) use ($source, $assignments, $rowCondition): string {
-				return $this->replaceCompiler->convertCurrentRowToSQL($source, $assignments, $rowCondition, $parameters);
 			});
 		}
 

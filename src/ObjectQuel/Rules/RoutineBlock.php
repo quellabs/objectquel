@@ -8,7 +8,6 @@
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstBreak;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstContinue;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstDeclare;
-	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstDeleteCurrent;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstFactor;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstForeach;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstIdentifier;
@@ -16,7 +15,6 @@
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstNumber;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRange;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRangeDeclaration;
-	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstReplaceCurrent;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstReturn;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstTerm;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstVariableAssignment;
@@ -135,8 +133,8 @@
 
 				case 'foreach':
 					$this->lexer->matchKeyword('foreach');
-					$cursorName = $this->lexer->match(Token::Identifier)->getStringValue();
-					return new AstForeach($cursorName, $this->parseBlock());
+					[$cursorName, $rowName] = $this->parseForeachClause();
+					return new AstForeach($cursorName, $rowName, $this->parseBlock());
 
 				case 'return':
 					$this->lexer->matchKeyword('return');
@@ -189,6 +187,20 @@
 			$condition = $this->expressionRule->parse();
 			$this->expect(Token::ParenthesesClose, "')' to close the '{$keyword}' condition");
 			return $condition;
+		}
+
+		/**
+		 * Parses `(cursorName as rowName)`, mirroring if/while's own parenthesized clause.
+		 * @return array{string, string} Cursor name and the row binding it's given
+		 * @throws LexerException|ParserException
+		 */
+		private function parseForeachClause(): array {
+			$this->expect(Token::ParenthesesOpen, "'(' after 'foreach'");
+			$cursorName = $this->lexer->match(Token::Identifier)->getStringValue();
+			$this->lexer->matchKeyword('as');
+			$rowName = $this->lexer->match(Token::Identifier)->getStringValue();
+			$this->expect(Token::ParenthesesClose, "')' to close the 'foreach' clause");
+			return [$cursorName, $rowName];
 		}
 
 		/**
@@ -325,61 +337,24 @@
 		}
 
 		/**
-		 * `replace <range> (...) where ...` when the name is a declared range,
-		 * otherwise the current-tuple form `replace cursorName (...)`.
-		 * @return AstInterface AstReplace or AstReplaceCurrent
+		 * `replace <range> (...) where ...`; the target must be a declared range
+		 * (see Rules\Replace/TargetRangeResolver) — a cursor name is rejected
+		 * there as an undefined range, same as any other undeclared name.
+		 * @return AstInterface AstReplace
 		 * @throws LexerException|ParserException
 		 */
 		private function parseReplace(): AstInterface {
-			if ($this->targetIsDeclaredRange('replace')) {
-				return (new Replace($this->lexer))->parse($this->ranges);
-			}
-
-			$this->lexer->matchKeyword('replace');
-			$cursorName = $this->lexer->match(Token::Identifier)->getStringValue();
-
-			return new AstReplaceCurrent($cursorName, (new Replace($this->lexer))->parseAssignments());
+			return (new Replace($this->lexer))->parse($this->ranges);
 		}
 
 		/**
-		 * `delete <range> where ...` when the name is a declared range,
-		 * otherwise the current-tuple form `delete cursorName`.
-		 * @return AstInterface AstDelete or AstDeleteCurrent
+		 * `delete <range> where ...`; the target must be a declared range
+		 * (see Rules\Delete/TargetRangeResolver).
+		 * @return AstInterface AstDelete
 		 * @throws LexerException|ParserException
 		 */
 		private function parseDelete(): AstInterface {
-			if ($this->targetIsDeclaredRange('delete')) {
-				return (new Delete($this->lexer))->parse([], $this->ranges);
-			}
-
-			$this->lexer->matchKeyword('delete');
-
-			return new AstDeleteCurrent($this->lexer->match(Token::Identifier)->getStringValue());
-		}
-
-		/**
-		 * Peeks past `$keyword` to see whether its target names a declared range.
-		 * @param string $keyword The statement keyword (`replace` or `delete`)
-		 * @return bool True when the target is a declared range name
-		 * @throws LexerException
-		 */
-		private function targetIsDeclaredRange(string $keyword): bool {
-			$state = $this->lexer->saveState();
-
-			try {
-				$this->lexer->matchKeyword($keyword);
-				$targetName = $this->lexer->match(Token::Identifier)->getStringValue();
-			} finally {
-				$this->lexer->restoreState($state);
-			}
-
-			foreach ($this->ranges as $range) {
-				if ($range->getName() === $targetName) {
-					return true;
-				}
-			}
-
-			return false;
+			return (new Delete($this->lexer))->parse([], $this->ranges);
 		}
 
 		/**

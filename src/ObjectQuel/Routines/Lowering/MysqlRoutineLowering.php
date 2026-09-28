@@ -6,21 +6,17 @@
 	use Quellabs\ObjectQuel\Exception\QuelException;
 	use Quellabs\ObjectQuel\Exception\SemanticException;
 	use Quellabs\ObjectQuel\ObjectQuel\AstInterface;
-	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstAlias;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstTransaction;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstCall;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstForeach;
-	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstIdentifier;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstIf;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRangeDatabase;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRangeDeclaration;
-	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRetrieve;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstReturn;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRoutineCall;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRoutineDefinition;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstWhile;
 	use Quellabs\ObjectQuel\ObjectQuel\Visitors\CollectNodes;
-	use Quellabs\ObjectQuel\ObjectQuel\Helpers\SqlDialect\RoutineReferenceSql;
 	use Quellabs\ObjectQuel\ObjectQuel\Routines\RoutineStatementCompiler;
 
 	/**
@@ -29,21 +25,16 @@
 	 *
 	 * - Locals and parameters are prefixed `_v_`, because MySQL resolves a name to
 	 *   a variable before a column.
-	 * - Cursors are read-only, so a current-row write matches the row's primary key,
-	 *   which the cursor query fetches too (an approved exception to the no-hidden-
-	 *   column rule). One NOT FOUND handler sets `_done`; each FETCH resets it first.
+	 * - Cursors are read-only: `foreach` only ever fetches rows into typed
+	 *   variables. A `replace`/`delete` naming a table writes it in the
+	 *   ordinary way, with its own explicit `where`, same as anywhere else in
+	 *   the routine. One NOT FOUND handler sets `_done`; each FETCH resets it first.
 	 */
 	class MysqlRoutineLowering extends FetchIntoRoutineLowering {
 
 		private const string DONE_VARIABLE = '_done';
 		private const string DISCARD_VARIABLE = '_discard';
 		private const string ATOMIC_LABEL = '_equel_atomic';
-
-		/** Target-list alias of an added primary-key column; QUEL aliases can't start with '_' */
-		private const string KEY_ALIAS_PREFIX = '_pk_';
-
-		/** @var array<string, array<string, string>> Field holding each primary-key property, by write cursor */
-		private array $keyFields;
 
 		private int $loopCount;
 
@@ -86,7 +77,6 @@
 		 */
 		protected function validate(AstRoutineDefinition $routine): void {
 			parent::validate($routine);
-			$this->keyFields = [];
 			$this->loopCount = 0;
 			$this->loopLabels = [];
 
@@ -110,41 +100,6 @@
 					throw new SemanticException("'{$routine->getName()}' calls itself, but {$this->engineName()} doesn't allow a stored function to be recursive.");
 				}
 			}
-		}
-
-		/**
-		 * Adds the source's primary-key columns to a write cursor's query unless it already selects them.
-		 * @param string $cursorName Cursor name
-		 * @param AstRetrieve $initializer The cursor's retrieve, as analyzed
-		 * @return AstRetrieve The prepared query
-		 * @throws SemanticException When the source entity has no primary key
-		 */
-		protected function prepareFetchedQuery(string $cursorName, AstRetrieve $initializer): AstRetrieve {
-			if (!isset($this->writeCursors[$cursorName])) {
-				return $this->statements->prepareRetrieve($initializer);
-			}
-
-			$source = $this->currentRowSource($cursorName);
-			$keys = $this->entityStore->getMetadata($source->getEntityName())->identifierKeys;
-
-			if (empty($keys)) {
-				throw new SemanticException("Cursor '{$cursorName}' reads {$source->getEntityName()}, which has no primary key, so {$this->engineName()} can't find the current row for 'delete {$cursorName}'/'replace {$cursorName}'.");
-			}
-
-			$extraValues = [];
-
-			foreach ($keys as $key) {
-				$field = $this->selectedColumnAlias($initializer, $source, $key);
-
-				if ($field === null) {
-					$field = self::KEY_ALIAS_PREFIX . $key;
-					$extraValues[] = new AstAlias($field, $this->columnReference($source, $key));
-				}
-
-				$this->keyFields[$cursorName][$key] = $field;
-			}
-
-			return $this->statements->prepareRetrieve($initializer, $extraValues);
 		}
 
 		/**
@@ -411,25 +366,6 @@
 		}
 
 		/**
-		 * Matches the fetched primary key, since MySQL cursors can't be updated through.
-		 * @param string $cursorName Cursor of the enclosing loop
-		 * @return string
-		 */
-		protected function currentRowCondition(string $cursorName): string {
-			$source = $this->currentRowSource($cursorName);
-			$metadata = $this->entityStore->getMetadata($source->getEntityName());
-			$alias = $this->quoter->quoteIdentifier($source->getName());
-			$conditions = [];
-
-			foreach ($this->keyFields[$cursorName] as $key => $field) {
-				$column = $alias . '.' . $this->quoter->quoteIdentifier($metadata->getColumnNameOrFail($key));
-				$conditions[] = $column . ' = ' . RoutineReferenceSql::cursorFieldVariable($cursorName, $field, $this->platform->getDatabaseType());
-			}
-
-			return implode(' AND ', $conditions);
-		}
-
-		/**
 		 * MySQL rejects an empty statement list in IF/WHILE; an empty BEGIN END is a valid statement.
 		 * @param string $statements Lowered statements
 		 * @param int $depth Indentation depth of the statements
@@ -437,45 +373,6 @@
 		 */
 		private function statementList(string $statements, int $depth): string {
 			return $statements === '' ? $this->line('BEGIN END;', $depth) : $statements;
-		}
-
-		/**
-		 * Builds the alias used for a selected column.
-		 * @param AstRetrieve $retrieve Cursor retrieve, as analyzed
-		 * @param AstRangeDatabase $source The cursor's source range
-		 * @param string $property Column property of the source
-		 * @return string|null Alias of a target-list entry that reads exactly `source.property`, or null
-		 */
-		private function selectedColumnAlias(AstRetrieve $retrieve, AstRangeDatabase $source, string $property): ?string {
-			foreach ($retrieve->getValues() as $value) {
-				$expression = $value->getExpression();
-
-				if (
-					$expression instanceof AstIdentifier &&
-					$expression->getName() === $source->getName() &&
-					$expression->getNext()?->getName() === $property &&
-					!$expression->getNext()->hasNext()
-				) {
-					return $value->getName();
-				}
-			}
-
-			return null;
-		}
-
-		/**
-		 * Builds a qualified SQL reference to a selected column.
-		 * @param AstRangeDatabase $source Range to read from
-		 * @param string $property Column property
-		 * @return AstIdentifier Unresolved `source.property`, as the parser builds it
-		 */
-		private function columnReference(AstRangeDatabase $source, string $property): AstIdentifier {
-			$root = new AstIdentifier($source->getName());
-			$next = new AstIdentifier($property);
-			$next->setParent($root);
-			$root->setNext($next);
-
-			return $root;
 		}
 
 		/**

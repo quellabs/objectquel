@@ -21,10 +21,11 @@
 	 * Lowers an analyzed routine to a T-SQL CREATE FUNCTION (non-void)
 	 * or PROCEDURE (void).
 	 *
-	 * - Each `foreach` declares a LOCAL cursor when the loop starts, because T-SQL
-	 *   reads the variables in a cursor query at DECLARE; the loop deallocates it.
-	 *   Read-only loops use a STATIC cursor, loops that write the current row a
-	 *   SCROLL_LOCKS `FOR UPDATE` cursor and `WHERE CURRENT OF`.
+	 * - Each `foreach` declares a LOCAL STATIC READ_ONLY cursor when the loop
+	 *   starts, because T-SQL reads the variables in a cursor query at DECLARE;
+	 *   the loop deallocates it. A `replace`/`delete` naming a table inside it
+	 *   writes it the ordinary way, with its own explicit `where`, same as
+	 *   anywhere else in the routine.
 	 * - A function can't write tables or run a procedure, so a non-void routine that does is rejected.
 	 * - EXEC takes only literals and variables, so any other procedure argument is first stored in a local.
 	 */
@@ -198,10 +199,7 @@
 			$cursorName = $foreach->getCursorName();
 			$cursor = $this->cursorName($cursorName);
 			$select = $this->statements->retrieveSql($this->cursorQueries[$cursorName]);
-
-			$declaration = isset($this->writeCursors[$cursorName])
-				? "DECLARE {$cursor} CURSOR LOCAL FORWARD_ONLY DYNAMIC SCROLL_LOCKS FOR {$select} FOR UPDATE;"
-				: "DECLARE {$cursor} CURSOR LOCAL FORWARD_ONLY STATIC READ_ONLY FOR {$select};";
+			$declaration = "DECLARE {$cursor} CURSOR LOCAL FORWARD_ONLY STATIC READ_ONLY FOR {$select};";
 
 			$fetch = $this->lines([
 				"FETCH NEXT FROM {$cursor} INTO " . implode(', ', $this->fieldVariables($cursorName)) . ';',
@@ -333,15 +331,6 @@
 				. "OPEN {$cursor}; FETCH NEXT FROM {$cursor}; "
 				. "WHILE @@FETCH_STATUS = 0 FETCH NEXT FROM {$cursor}; "
 				. "CLOSE {$cursor}; DEALLOCATE {$cursor};";
-		}
-
-		/**
-		 * Builds the condition identifying the current cursor row.
-		 * @param string $cursorName Cursor of the enclosing loop
-		 * @return string `CURRENT OF cursor`
-		 */
-		protected function currentRowCondition(string $cursorName): string {
-			return 'CURRENT OF ' . $this->cursorName($cursorName);
 		}
 
 		/**

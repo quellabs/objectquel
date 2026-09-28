@@ -33,6 +33,9 @@
 		/** @var string[] Cursor names of the enclosing `foreach` loops, outermost first */
 		private array $openLoops = [];
 
+		/** @var array<int, array{name: string, cursor: string}> Active `foreach ... as` row bindings, outermost first */
+		private array $rowBindings = [];
+
 		/**
 		 * Initializes scope tracking with all names declared by the routine.
 		 * @param string[] $allDeclaredNames Every name the routine declares, in any position
@@ -155,6 +158,65 @@
 		 */
 		public function isLoopOpen(string $cursorName): bool {
 			return in_array($cursorName, $this->openLoops, true);
+		}
+
+		/**
+		 * Binds a `foreach (cursorName as rowName)` loop's row name for its body, checked against
+		 * whatever else is in scope right now. Unlike a scalar/cursor/range, the binding is
+		 * popped when the loop's body finishes (see unbindRow()), so sibling loops may reuse it.
+		 * @param string $rowName Name the loop binds to its current row
+		 * @param string $cursorName Cursor the row is read from
+		 * @return void
+		 * @throws SemanticException When $rowName collides with something already visible
+		 */
+		public function bindRow(string $rowName, string $cursorName): void {
+			if (in_array(strtolower($rowName), RoutineBlock::STATEMENT_KEYWORDS, true)) {
+				throw new SemanticException("'{$rowName}' is a statement keyword and can't be used as a name.");
+			}
+
+			if (isset($this->scalars[$rowName]) || isset($this->cursors[$rowName]) || isset($this->ranges[$rowName]) || $this->isRowBinding($rowName)) {
+				throw new SemanticException("'{$rowName}' is already in use in this routine and can't be reused as 'foreach ({$cursorName} as {$rowName})'.");
+			}
+
+			$this->rowBindings[] = ['name' => $rowName, 'cursor' => $cursorName];
+		}
+
+		/**
+		 * Unbinds the innermost `foreach ... as` row name, once its body has been checked.
+		 * @return void
+		 */
+		public function unbindRow(): void {
+			array_pop($this->rowBindings);
+		}
+
+		/**
+		 * Reports whether a name is a currently open `foreach ... as` row binding.
+		 * @param string $name Name to look up
+		 * @return bool True when $name is bound by an enclosing `foreach ... as`
+		 */
+		public function isRowBinding(string $name): bool {
+			foreach ($this->rowBindings as $binding) {
+				if ($binding['name'] === $name) {
+					return true;
+				}
+			}
+
+			return false;
+		}
+
+		/**
+		 * Returns the cursor a row binding reads from.
+		 * @param string $rowName Row binding name, which must be currently open (see isRowBinding())
+		 * @return string Cursor name
+		 */
+		public function getRowCursor(string $rowName): string {
+			for ($i = count($this->rowBindings) - 1; $i >= 0; $i--) {
+				if ($this->rowBindings[$i]['name'] === $rowName) {
+					return $this->rowBindings[$i]['cursor'];
+				}
+			}
+
+			throw new \LogicException("'{$rowName}' is not an open row binding; isRowBinding() should have been checked first.");
 		}
 
 		/**

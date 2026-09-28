@@ -18,14 +18,10 @@
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstContinue;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstDeclare;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstDelete;
-	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstDeleteCurrent;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstForeach;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstIf;
-	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRange;
-	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRangeDatabase;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRangeDeclaration;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstReplace;
-	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstReplaceCurrent;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRetrieve;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstReturn;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRoutineDefinition;
@@ -34,7 +30,6 @@
 	use Quellabs\ObjectQuel\ObjectQuel\AstInterface;
 	use Quellabs\ObjectQuel\ObjectQuel\Visitors\CollectNodes;
 	use Quellabs\ObjectQuel\ObjectQuel\Routines\RoutineAnalyzer;
-	use Quellabs\ObjectQuel\ObjectQuel\Routines\RoutineCursorSource;
 	use Quellabs\ObjectQuel\ObjectQuel\Helpers\SqlDialect\RoutineReferenceSql;
 	use Quellabs\ObjectQuel\ObjectQuel\Routines\RoutineStatementCompiler;
 	use Quellabs\ObjectQuel\ObjectQuel\Routines\RoutineTypeChecker;
@@ -56,19 +51,9 @@
 		/** Schema that qualifies routine names, or null for none */
 		protected ?string $routineSchema;
 		protected DDLTypeMapper $typeMapper;
-		private RoutineCursorSource $cursorSource;
 
 		/** @var array<string, AstRetrieve> Prepared query of each cursor, in declaration order */
 		protected array $cursorQueries;
-
-		/** @var array<string, AstRange[]> Ranges declared before each cursor */
-		private array $cursorRanges;
-
-		/** @var array<string, AstRetrieve> Original query of each cursor, as analyzed */
-		private array $cursorDeclarations;
-
-		/** @var array<string, true> Cursors whose loops write the current row */
-		protected array $writeCursors;
 
 		/** @var string[] Cursors of the loops enclosing the statement being lowered, outermost first */
 		protected array $openLoops;
@@ -88,7 +73,6 @@
 			$this->quoter = new SqlIdentifierQuoter($this->platform);
 			$this->routineSchema = $statements->getRoutineSchema();
 			$this->typeMapper = new DDLTypeMapper($this->platform);
-			$this->cursorSource = new RoutineCursorSource($entityStore);
 		}
 
 		/**
@@ -101,9 +85,6 @@
 		public function lower(AstRoutineDefinition $routine): array {
 			$this->routine = $routine;
 			$this->cursorQueries = [];
-			$this->cursorRanges = [];
-			$this->cursorDeclarations = [];
-			$this->writeCursors = $this->collectWriteCursors($routine);
 			$this->openLoops = [];
 			if (!$routine->isVoid() && $this->contains($routine, [AstTransaction::class])) {
 				throw new SemanticException("'transaction' is only supported in void functions.");
@@ -112,7 +93,7 @@
 			$this->validate($routine);
 			$this->declareVariableTypes($routine);
 			$this->prepareCursors($routine);
-			(new RoutineTypeChecker($this->statements->getFieldTypes()))->check($routine, $this->cursorQueries);
+			(new RoutineTypeChecker($this->statements->getFieldTypes()))->check($routine);
 
 			return $this->render($routine);
 		}
@@ -212,14 +193,6 @@
 		abstract protected function discardRetrieve(AstRetrieve $retrieve): string;
 
 		/**
-		 * Builds the condition identifying the current cursor row.
-		 * @param string $cursorName Cursor of the enclosing loop
-		 * @return string SQL condition selecting the loop's current row
-		 * @throws SemanticException|EntityResolutionException
-		 */
-		abstract protected function currentRowCondition(string $cursorName): string;
-
-		/**
 		 * Engine-specific checks before lowering starts.
 		 * @param AstRoutineDefinition $routine The routine
 		 * @return void
@@ -229,21 +202,14 @@
 		}
 
 		/**
-		 * Prepares a cursor query; a cursor that takes current-row writes must still read one table.
+		 * Prepares a cursor query.
 		 * @param string $cursorName Cursor name
 		 * @param AstRetrieve $initializer The cursor's retrieve, as analyzed
 		 * @return AstRetrieve The prepared query
 		 * @throws SemanticException|EntityResolutionException|TransformationException|QuelException
 		 */
 		protected function prepareCursorQuery(string $cursorName, AstRetrieve $initializer): AstRetrieve {
-			$query = $this->statements->prepareRetrieve($initializer);
-
-			// Positioned writes need one plain table, which the optimizer may have changed
-			if (isset($this->writeCursors[$cursorName]) && count($query->getRanges()) !== 1) {
-				throw new SemanticException("Cursor '{$cursorName}' compiles to a query over more than one table, so {$this->engineName()} can't update it through 'WHERE CURRENT OF'; 'delete {$cursorName}'/'replace {$cursorName}' aren't possible here.");
-			}
-
-			return $query;
+			return $this->statements->prepareRetrieve($initializer);
 		}
 
 		/**
@@ -279,16 +245,6 @@
 		}
 
 		/**
-		 * Builds the SQL source for the cursor row being modified.
-		 * @param string $cursorName Cursor of the enclosing loop
-		 * @return AstRangeDatabase The table a current-row write targets
-		 * @throws SemanticException|EntityResolutionException
-		 */
-		protected function currentRowSource(string $cursorName): AstRangeDatabase {
-			return $this->cursorSource->resolve($cursorName, $this->cursorDeclarations[$cursorName], $this->cursorRanges[$cursorName]);
-		}
-
-		/**
 		 * Checks whether a routine block contains a node of the requested type.
 		 * @param AstRoutineDefinition $routine The routine
 		 * @param array<class-string<AstInterface>> $nodeClasses Node classes to look for
@@ -306,7 +262,7 @@
 		 * @return bool True when the body writes a table
 		 */
 		protected function writesTables(AstRoutineDefinition $routine): bool {
-			return $this->contains($routine, [AstAppend::class, AstReplace::class, AstDelete::class, AstDeleteCurrent::class, AstReplaceCurrent::class]);
+			return $this->contains($routine, [AstAppend::class, AstReplace::class, AstDelete::class]);
 		}
 
 		/**
@@ -366,15 +322,6 @@
 				$statement instanceof AstExit => $this->line($this->exitStatement(), $depth),
 				$statement instanceof AstBreak => $this->line($this->breakStatement(), $depth),
 				$statement instanceof AstContinue => $this->line($this->continueStatement(), $depth),
-				$statement instanceof AstDeleteCurrent => $this->line($this->statements->compileCurrentRowDelete(
-					$this->currentRowSource($statement->getCursorName()),
-					$this->currentRowCondition($statement->getCursorName())
-				) . ';', $depth),
-				$statement instanceof AstReplaceCurrent => $this->line($this->statements->compileCurrentRowReplace(
-					$this->currentRowSource($statement->getCursorName()),
-					$statement->getAssignments(),
-					$this->currentRowCondition($statement->getCursorName())
-				) . ';', $depth),
 				$statement instanceof AstRetrieve => $this->line($this->discardRetrieve($statement), $depth),
 				$statement instanceof AstAppend => $this->line($this->statements->compileAppend($statement) . ';', $depth),
 				$statement instanceof AstReplace => $this->line($this->statements->compileReplace($statement) . ';', $depth),
@@ -419,14 +366,7 @@
 		 * @throws SemanticException|EntityResolutionException|TransformationException|QuelException
 		 */
 		private function prepareCursors(AstRoutineDefinition $routine): void {
-			$ranges = [];
-
 			foreach ($routine->getBody() as $statement) {
-				if ($statement instanceof AstRangeDeclaration) {
-					$ranges[] = $statement->getRange();
-					continue;
-				}
-
 				if (!$statement instanceof AstDeclare || !$statement->isCursor()) {
 					continue;
 				}
@@ -438,8 +378,6 @@
 				}
 
 				$name = $statement->getName();
-				$this->cursorDeclarations[$name] = $initializer;
-				$this->cursorRanges[$name] = $ranges;
 				$this->cursorQueries[$name] = $this->prepareCursorQuery($name, $initializer);
 				$this->statements->getFieldTypes()->recordCursor($name, $this->cursorQueries[$name]);
 			}
@@ -491,23 +429,5 @@
 			}
 
 			$fieldTypes->setDeclaredRanges($ranges);
-		}
-
-		/**
-		 * Collects cursors whose current rows are modified by the routine.
-		 * @param AstRoutineDefinition $routine The routine
-		 * @return array<string, true> Cursors named by a current-row delete or replace
-		 */
-		private function collectWriteCursors(AstRoutineDefinition $routine): array {
-			$collector = new CollectNodes([AstDeleteCurrent::class, AstReplaceCurrent::class]);
-			$routine->accept($collector);
-
-			$cursors = [];
-
-			foreach ($collector->getCollectedNodes() as $write) {
-				$cursors[$write->getCursorName()] = true;
-			}
-
-			return $cursors;
 		}
 	}

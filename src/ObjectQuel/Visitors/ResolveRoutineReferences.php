@@ -16,9 +16,12 @@
 
 	/**
 	 * Types identifiers that name routine variables (RoutineVariable) or read a
-	 * cursor row (CursorRoot/CursorField), and rejects references the routine's
-	 * scope doesn't allow at this point. Range references are left for the
-	 * regular query pipeline.
+	 * cursor row through its `foreach ... as` binding (CursorRoot/CursorField),
+	 * and rejects references the routine's scope doesn't allow at this point.
+	 * A resolved row-binding identifier is rewritten in place to the cursor's
+	 * own name, so downstream compilation sees exactly what it already
+	 * expected before `foreach` required a separate row name. Range references
+	 * are left for the regular query pipeline.
 	 */
 	class ResolveRoutineReferences extends PropertyRangeFinder implements AstVisitorInterface {
 
@@ -64,9 +67,13 @@
 				return;
 			}
 
-			if ($this->scope->isCursor($name)) {
-				$this->resolveCursorField($node);
+			if ($this->scope->isRowBinding($name)) {
+				$this->resolveRowField($node);
 				return;
+			}
+
+			if ($this->scope->isCursor($name)) {
+				throw new SemanticException("Cursor '{$name}' is not a value; read its fields through its 'foreach ({$name} as row)' binding.");
 			}
 
 			if ($this->scope->isDeclaredAnywhere($name)) {
@@ -109,31 +116,33 @@
 		}
 
 		/**
-		 * Types `cursorName.field`, which is only valid inside that cursor's own `foreach`.
-		 * @param AstIdentifier $node Root identifier naming a cursor
+		 * Types `rowName.field`, reading the row bound by an enclosing `foreach cursor as rowName`.
+		 * Rewrites $node's name in place to the underlying cursor's own name, so every later pass
+		 * (RoutineFieldTypes, RoutineReferenceSql, the dialect lowerings) sees the same identifier
+		 * shape it already handled before a loop's row got its own name.
+		 * @param AstIdentifier $node Root identifier naming a row binding
 		 * @return void
 		 * @throws SemanticException
 		 */
-		private function resolveCursorField(AstIdentifier $node): void {
-			$cursorName = $node->getName();
+		private function resolveRowField(AstIdentifier $node): void {
+			$rowName = $node->getName();
 			$field = $node->getNext();
 
 			if ($field === null) {
-				throw new SemanticException("Cursor '{$cursorName}' is not a value. Read its fields as '{$cursorName}.field' inside 'foreach {$cursorName}'.");
+				throw new SemanticException("'{$rowName}' is not a value. Read its fields as '{$rowName}.field'.");
 			}
 
 			if ($field->getNext() !== null) {
 				throw new SemanticException("'{$node->getCompleteName()}' is invalid: a cursor row field has no further fields.");
 			}
 
-			if (!$this->scope->isLoopOpen($cursorName)) {
-				throw new SemanticException("'{$node->getCompleteName()}' can only be read inside 'foreach {$cursorName}'.");
-			}
+			$cursorName = $this->scope->getRowCursor($rowName);
 
 			if (!$this->scope->getCursorQuery($cursorName)->hasValueAlias($field->getName())) {
 				throw new SemanticException("Cursor '{$cursorName}' has no field '{$field->getName()}'.");
 			}
 
+			$node->setName($cursorName);
 			$node->setType(IdentifierType::CursorRoot);
 			$field->setType(IdentifierType::CursorField);
 		}

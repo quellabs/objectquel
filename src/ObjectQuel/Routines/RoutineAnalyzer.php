@@ -14,16 +14,13 @@
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstContinue;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstDeclare;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstDelete;
-	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstDeleteCurrent;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstForeach;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstIdentifier;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstIf;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstParameter;
-	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRangeDatabase;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRangeJsonSource;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRangeDeclaration;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstReplace;
-	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstReplaceCurrent;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRetrieve;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstReturn;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRoutineDefinition;
@@ -47,7 +44,6 @@
 	class RoutineAnalyzer {
 
 		private EntityStore $entityStore;
-		private RoutineCursorSource $cursorSource;
 		private RoutineScope $scope;
 		private bool $isVoid;
 
@@ -57,7 +53,6 @@
 		 */
 		public function __construct(EntityStore $entityStore) {
 			$this->entityStore = $entityStore;
-			$this->cursorSource = new RoutineCursorSource($entityStore);
 		}
 
 		/**
@@ -179,14 +174,6 @@
 					// Placement is checked by RoutineControlFlowValidator
 					break;
 
-				case $statement instanceof AstDeleteCurrent:
-					$this->resolveCurrentRowSource($statement->getCursorName(), 'delete');
-					break;
-
-				case $statement instanceof AstReplaceCurrent:
-					$this->analyzeReplaceCurrent($statement);
-					break;
-
 				case $statement instanceof AstRetrieve:
 					$this->analyzeRoutineRetrieve($statement);
 					break;
@@ -263,7 +250,8 @@
 		}
 
 		/**
-		 * `foreach x { }`: x must be a cursor with no loop over it already open.
+		 * `foreach x as row { }`: x must be a cursor with no loop over it already open;
+		 * row is bound to its fields for the body, checked against whatever else is in scope.
 		 * @param AstForeach $foreach The loop
 		 * @return void
 		 * @throws SemanticException|EntityResolutionException
@@ -277,27 +265,10 @@
 			}
 
 			$this->scope->openLoop($cursorName);
+			$this->scope->bindRow($foreach->getRowName(), $cursorName);
 			$this->analyzeBlock($foreach->getBody(), false);
+			$this->scope->unbindRow();
 			$this->scope->closeLoop();
-		}
-
-		/**
-		 * `replace x (attr = value, ...)`: attributes must be columns of the cursor's source entity.
-		 * @param AstReplaceCurrent $replace The current-row replace
-		 * @return void
-		 * @throws SemanticException|EntityResolutionException
-		 */
-		private function analyzeReplaceCurrent(AstReplaceCurrent $replace): void {
-			$source = $this->resolveCurrentRowSource($replace->getCursorName(), 'replace');
-			$columnMap = $this->entityStore->getMetadata($source->getEntityName())->columnMap;
-
-			foreach ($replace->getAssignments() as $assignment) {
-				if (!isset($columnMap[$assignment->getProperty()])) {
-					throw new SemanticException("'{$assignment->getProperty()}' is not a column of {$source->getEntityName()}, the entity cursor '{$replace->getCursorName()}' reads.");
-				}
-
-				$assignment->getValue()->accept($this->referenceResolver(false));
-			}
 		}
 
 		/**
@@ -318,23 +289,6 @@
 		private function isStatementKeyword(string $name): bool {
 			$name = strtolower($name);
 			return in_array($name, Parser::STATEMENT_KEYWORDS, true) || in_array($name, RoutineBlock::STATEMENT_KEYWORDS, true);
-		}
-
-		/**
-		 * Checks a current-row write names an open loop's cursor and returns the table it writes to.
-		 * @param string $cursorName Cursor named by the write
-		 * @param string $verb 'delete' or 'replace', for error messages
-		 * @return AstRangeDatabase
-		 * @throws SemanticException|EntityResolutionException
-		 */
-		private function resolveCurrentRowSource(string $cursorName, string $verb): AstRangeDatabase {
-			$this->assertCursor($cursorName, $verb);
-
-			if (!$this->scope->isLoopOpen($cursorName)) {
-				throw new SemanticException("'{$verb} {$cursorName}' writes the current row, so it must be inside 'foreach {$cursorName}'.");
-			}
-
-			return $this->cursorSource->resolve($cursorName, $this->scope->getCursorQuery($cursorName), $this->scope->getRanges());
 		}
 
 		/**

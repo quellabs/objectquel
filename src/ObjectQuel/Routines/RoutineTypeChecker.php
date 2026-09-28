@@ -13,10 +13,7 @@
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstIdentifier;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstIf;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstIn;
-	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRangeDatabase;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstReplace;
-	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstReplaceCurrent;
-	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRetrieve;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstReturn;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRoutineDefinition;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstTerm;
@@ -52,9 +49,6 @@
 
 		private RoutineFieldTypes $fieldTypes;
 
-		/** @var array<string, AstRetrieve> Prepared query of each cursor */
-		private array $cursorQueries = [];
-
 		/**
 		 * Initializes routine type checking with field and scope information.
 		 * @param RoutineFieldTypes $fieldTypes Types collected while preparing this routine
@@ -66,20 +60,17 @@
 		/**
 		 * Checks the routine body against its declarations and return type.
 		 * @param AstRoutineDefinition $routine Routine that passed RoutineAnalyzer
-		 * @param array<string, AstRetrieve> $cursorQueries Prepared query of each cursor
 		 * @return void
 		 * @throws SemanticException When a value doesn't fit its declared type or the value it meets
 		 * @throws EntityResolutionException
 		 */
-		public function check(AstRoutineDefinition $routine, array $cursorQueries): void {
-			$this->cursorQueries = $cursorQueries;
-
+		public function check(AstRoutineDefinition $routine): void {
 			// Arithmetic first, so a string operand is reported as such rather than as the string result it produces
 			$passes = [
 				[AstTerm::class, AstFactor::class],
 				[
 					AstDeclare::class, AstVariableAssignment::class, AstReturn::class, AstIf::class, AstWhile::class,
-					AstExpression::class, AstIn::class, AstReplace::class, AstAppend::class, AstReplaceCurrent::class,
+					AstExpression::class, AstIn::class, AstReplace::class, AstAppend::class,
 				],
 			];
 
@@ -109,9 +100,8 @@
 				$node instanceof AstWhile => $this->checkCondition('while', $node->getCondition()),
 				$node instanceof AstExpression => $this->checkComparison('A comparison', $node->getLeft(), [$node->getRight()]),
 				$node instanceof AstIn => $this->checkComparison("An 'in' list", $node->getIdentifier(), $node->getParameters()),
-				$node instanceof AstReplace => $this->checkColumnWrites($node->getRange()->getEntityName(), $node->getAssignments(), false),
+				$node instanceof AstReplace => $this->checkColumnWrites($node->getRange()->getEntityName(), $node->getAssignments()),
 				$node instanceof AstAppend => $this->checkAppend($node),
-				$node instanceof AstReplaceCurrent => $this->checkColumnWrites($this->cursorEntity($node->getCursorName()), $node->getAssignments(), true),
 				$node instanceof AstTerm, $node instanceof AstFactor => $this->checkArithmetic($node),
 				default => null,
 			};
@@ -248,25 +238,24 @@
 			}
 
 			foreach ($append->getRowsOrFail() as $row) {
-				$this->checkColumnWrites($append->getEntityName(), $row, false);
+				$this->checkColumnWrites($append->getEntityName(), $row);
 			}
 		}
 
 		/**
-		 * Checks `column = value` writes; outside current-row replaces only values that read a routine variable or cursor field.
+		 * Checks `column = value` writes whose value reads a routine variable or cursor field.
 		 * @param string|null $entityName Target entity, or null when it isn't an entity
 		 * @param AstAssignment[] $assignments The writes
-		 * @param bool $always True to check every value, not only those reading routine names
 		 * @return void
 		 * @throws SemanticException|EntityResolutionException
 		 */
-		private function checkColumnWrites(?string $entityName, array $assignments, bool $always): void {
+		private function checkColumnWrites(?string $entityName, array $assignments): void {
 			if ($entityName === null) {
 				return;
 			}
 
 			foreach ($assignments as $assignment) {
-				if (!$always && $this->routineReference([$assignment->getValue()]) === null) {
+				if ($this->routineReference([$assignment->getValue()]) === null) {
 					continue;
 				}
 
@@ -344,15 +333,4 @@
 
 			return null;
 		}
-
-		/**
-		 * Finds the entity type associated with a cursor.
-		 * @param string $cursorName Cursor written through
-		 * @return string|null Entity of the cursor's single table, or null when it isn't one
-		 */
-		private function cursorEntity(string $cursorName): ?string {
-			$ranges = ($this->cursorQueries[$cursorName] ?? null)?->getRanges() ?? [];
-			return count($ranges) === 1 && $ranges[0] instanceof AstRangeDatabase ? $ranges[0]->getEntityName() : null;
-		}
-
 	}
