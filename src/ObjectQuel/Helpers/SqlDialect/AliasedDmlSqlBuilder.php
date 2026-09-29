@@ -1,0 +1,67 @@
+<?php
+
+	namespace Quellabs\ObjectQuel\ObjectQuel\Helpers\SqlDialect;
+
+	use Quellabs\ObjectQuel\Capabilities\PlatformCapabilitiesInterface;
+
+	/**
+	 * Renders UPDATE/DELETE statements whose target table carries a range alias.
+	 * MariaDB and SQL Server place a DELETE alias before FROM; SQL Server also
+	 * declares UPDATE aliases in FROM.
+	 */
+	class AliasedDmlSqlBuilder {
+
+		/**
+		 * Builds an aliased UPDATE statement for the target dialect.
+		 * @param string $tableName Unquoted table name
+		 * @param string $alias Unquoted range alias
+		 * @param string $setSql Compiled SET assignments
+		 * @param string $whereSql Compiled WHERE condition
+		 * @param SqlIdentifierQuoter $quoter Quoter for the target engine
+		 * @param PlatformCapabilitiesInterface $platform Target engine
+		 * @return string
+		 */
+		public static function update(
+			string $tableName,
+			string $alias,
+			string $setSql,
+			string $whereSql,
+			SqlIdentifierQuoter $quoter,
+			PlatformCapabilitiesInterface $platform
+		): string {
+			$table = $quoter->quoteIdentifier($tableName);
+			$quotedAlias = $quoter->quoteIdentifier($alias);
+
+			if (!$platform->supportsAliasAfterDmlTarget()) {
+				return "UPDATE {$quotedAlias} SET {$setSql} FROM {$table} as {$quotedAlias} WHERE {$whereSql}";
+			} else {
+				return "UPDATE {$table} as {$quotedAlias} SET {$setSql} WHERE {$whereSql}";
+			}
+		}
+
+		/**
+		 * Builds an aliased DELETE statement for the target dialect.
+		 * @param string $tableName Unquoted table name
+		 * @param string $alias Unquoted range alias
+		 * @param string $whereSql Compiled WHERE condition
+		 * @param SqlIdentifierQuoter $quoter Quoter for the target engine
+		 * @param PlatformCapabilitiesInterface $platform Target engine
+		 * @return string
+		 */
+		public static function delete(
+			string $tableName,
+			string $alias,
+			string $whereSql,
+			SqlIdentifierQuoter $quoter,
+			PlatformCapabilitiesInterface $platform
+		): string {
+			$table = $quoter->quoteIdentifier($tableName);
+			$quotedAlias = $quoter->quoteIdentifier($alias);
+
+			if (in_array($platform->getDatabaseType(), ['mariadb', 'sqlsrv'], true)) {
+				return "DELETE {$quotedAlias} FROM {$table} as {$quotedAlias} WHERE {$whereSql}";
+			} else {
+				return "DELETE FROM {$table} as {$quotedAlias} WHERE {$whereSql}";
+			}
+		}
+	}

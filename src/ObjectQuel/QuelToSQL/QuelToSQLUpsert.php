@@ -1,9 +1,9 @@
 <?php
-	
+
 	namespace Quellabs\ObjectQuel\ObjectQuel\QuelToSQL;
 
 	use Quellabs\ObjectQuel\Capabilities\PlatformCapabilitiesInterface;
-	use Quellabs\ObjectQuel\DatabaseAdapter\SqlIdentifierQuoter;
+	use Quellabs\ObjectQuel\ObjectQuel\Helpers\SqlDialect\SqlIdentifierQuoter;
 	use Quellabs\ObjectQuel\EntityStore;
 	use Quellabs\ObjectQuel\Exception\EntityResolutionException;
 	use Quellabs\ObjectQuel\Exception\QuelException;
@@ -12,8 +12,9 @@
 	use Quellabs\ObjectQuel\Metadata\EntityMetadataRecord;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstAssignment;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstReplace;
-	use Quellabs\ObjectQuel\ObjectQuel\Helpers\ConflictTargetResolver;
-	use Quellabs\ObjectQuel\ObjectQuel\Helpers\WriteVerbIdentifierResolver;
+	use Quellabs\ObjectQuel\ObjectQuel\Helpers\SqlDialect\AliasedDmlSqlBuilder;
+	use Quellabs\ObjectQuel\ObjectQuel\QuelToSQL\ConflictTargetResolver;
+	use Quellabs\ObjectQuel\ObjectQuel\QuelToSQL\WriteVerbIdentifierResolver;
 	use Quellabs\ObjectQuel\ObjectQuel\Helpers\WriteVerbParameterNormalizer;
 	use Quellabs\ObjectQuel\ObjectQuel\Visitors\NormalizeDateTime;
 	use Quellabs\ObjectQuel\ObjectQuel\Visitors\ValidateNoTemporalScalarMix;
@@ -49,6 +50,9 @@
 		private EntityStore $entityStore;
 		private SqlIdentifierQuoter $identifierQuoter;
 		private PlatformCapabilitiesInterface $platform;
+
+		/** @var string|null Schema that qualifies routine names, or null for none */
+		private ?string $routineSchema;
 		private QuelToSQLReplace $replaceCompiler;
 		private SQLSerializer $serializer;
 
@@ -56,15 +60,17 @@
 		 * QuelToSQLUpsert constructor
 		 * @param EntityStore $entityStore
 		 * @param PlatformCapabilitiesInterface $platform
+		 * @param string|null $routineSchema Schema that qualifies routine names, or null for none
 		 * @param QuelToSQLReplace $replaceCompiler Reused (not reconstructed) for
 		 *        an explicit on-conflict UPDATE SET clause, so it's built with the
 		 *        exact same property-exists/type/@Orm\Version-bump rules a
 		 *        standalone `replace` uses — see QuelToSQLReplace::buildSetClause().
 		 */
-		public function __construct(EntityStore $entityStore, PlatformCapabilitiesInterface $platform, QuelToSQLReplace $replaceCompiler) {
+		public function __construct(EntityStore $entityStore, PlatformCapabilitiesInterface $platform, ?string $routineSchema, QuelToSQLReplace $replaceCompiler) {
 			$this->entityStore = $entityStore;
 			$this->identifierQuoter = new SqlIdentifierQuoter($platform);
 			$this->platform = $platform;
+			$this->routineSchema = $routineSchema;
 			$this->replaceCompiler = $replaceCompiler;
 			// Same reasoning as QuelToSQLReplace's own — an explicit `or
 			// replace (...)` list is assignments too, and must denormalize
@@ -222,15 +228,16 @@
 				$setClauseParts = $this->buildDefaultFallbackSetClause($metadata, $properties, $columnNames, $compiledRows[0]);
 			}
 
-			$whereSql = (new BuildSqlFromAst($this->entityStore, $parameters, 'WHERE', $this->platform))
-				->visitNodeAndReturnSQL($conditions);
+			$whereSql = (new BuildSqlFromAst($this->entityStore, $parameters, 'WHERE', $this->platform, $this->routineSchema))
+				->visitConditionAndReturnSQL($conditions);
 
-			$updateSql = sprintf(
-				'UPDATE %s as %s SET %s WHERE %s',
-				$this->identifierQuoter->quoteIdentifier($tableName),
-				$this->identifierQuoter->quoteIdentifier($onConflict->getRange()->getName()),
+			$updateSql = AliasedDmlSqlBuilder::update(
+				$tableName,
+				$onConflict->getRange()->getName(),
 				implode(', ', $setClauseParts),
-				$whereSql
+				$whereSql,
+				$this->identifierQuoter,
+				$this->platform
 			);
 
 			return CompiledAppendSql::withFallbackUpdate($insertSql, $updateSql);

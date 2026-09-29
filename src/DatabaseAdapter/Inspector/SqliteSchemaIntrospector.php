@@ -8,7 +8,7 @@
 	use Quellabs\ObjectQuel\DatabaseAdapter\Mapper\NativeColumnTypeMapper;
 	use Quellabs\ObjectQuel\DatabaseAdapter\Mapper\NumericPrecisionScale;
 	use Quellabs\ObjectQuel\DatabaseAdapter\Mapper\TypeMapper;
-	use Quellabs\ObjectQuel\ObjectQuel\ForeignKeyConstraintNamer;
+	use Quellabs\ObjectQuel\ObjectQuel\Schema\ForeignKeyConstraintNamer;
 
 	/**
 	 * SQLite schema introspection: columns via `PRAGMA table_info()`, foreign

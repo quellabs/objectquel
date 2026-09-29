@@ -4,7 +4,7 @@
 	
 	use Quellabs\ObjectQuel\Capabilities\NullPlatformCapabilities;
 	use Quellabs\ObjectQuel\Capabilities\PlatformCapabilitiesInterface;
-	use Quellabs\ObjectQuel\DatabaseAdapter\SqlIdentifierQuoter;
+	use Quellabs\ObjectQuel\ObjectQuel\Helpers\SqlDialect\SqlIdentifierQuoter;
 	use Quellabs\ObjectQuel\EntityStore;
 	use Quellabs\ObjectQuel\Exception\EntityResolutionException;
 	use Quellabs\ObjectQuel\Execution\Visitors\BuildSqlFromAst;
@@ -21,7 +21,7 @@
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRange;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRangeDatabase;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstSubquery;
-	use Quellabs\ObjectQuel\ObjectQuel\Helpers\RangeTableName;
+	use Quellabs\ObjectQuel\ObjectQuel\Helpers\EntityRangeTableNameResolver;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstSum;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstSumU;
 	use Quellabs\ObjectQuel\ObjectQuel\AstInterface;
@@ -132,7 +132,7 @@
 		 * @return string SQL CASE WHEN expression
 		 */
 		public function handleCase(AstCase $case): string {
-			$condition = $this->convertExpressionToSql($case->getConditions());
+			$condition = $this->convertConditionToSql($case->getConditions());
 			$thenExpression = $this->convertExpressionToSql($case->getExpression());
 			return "CASE WHEN {$condition} THEN {$thenExpression} END";
 		}
@@ -206,7 +206,7 @@
 			$whereClause = '';
 			
 			if ($subquery->getConditions() !== null) {
-				$conditionSql = trim($this->convertExpressionToSql($subquery->getConditions()));
+				$conditionSql = trim($this->convertConditionToSql($subquery->getConditions()));
 				
 				// Only add WHERE clause if we have actual conditions (avoid "WHERE" with empty string)
 				if ($conditionSql !== '') {
@@ -398,7 +398,7 @@
 			$whereClause = '';
 			
 			if ($subquery->getConditions() !== null) {
-				$condSql = trim($this->convertExpressionToSql($subquery->getConditions()));
+				$condSql = trim($this->convertConditionToSql($subquery->getConditions()));
 				
 				if ($condSql !== '') {
 					$whereClause = "WHERE {$condSql}";
@@ -543,7 +543,7 @@
 			$whereClause = '';
 			
 			if ($subquery->getConditions() !== null) {
-				$condSql = trim($this->convertExpressionToSql($subquery->getConditions()));
+				$condSql = trim($this->convertConditionToSql($subquery->getConditions()));
 				
 				if ($condSql !== '') {
 					$whereClause = "WHERE {$condSql}";
@@ -653,7 +653,7 @@
 
 			// Handle conditional aggregation: aggregate WHERE condition → CASE WHEN condition
 			if ($ast->getConditions() !== null) {
-				$condition = $this->convertExpressionToSql($ast->getConditions());
+				$condition = $this->convertConditionToSql($ast->getConditions());
 				$expression = $this->convertExpressionToSql($identifier);
 				$caseExpression = "CASE WHEN {$condition} THEN {$expression} END";
 
@@ -693,6 +693,15 @@
 		 */
 		private function convertExpressionToSql(AstInterface $expression): string {
 			return $this->convertToString->visitNodeAndReturnSQL($expression);
+		}
+
+		/**
+		 * Converts a condition to a SQL predicate.
+		 * @param AstInterface $condition The condition
+		 * @return string SQL predicate
+		 */
+		private function convertConditionToSql(AstInterface $condition): string {
+			return $this->convertToString->visitConditionAndReturnSQL($condition);
 		}
 		
 		/**
@@ -751,7 +760,7 @@
 			}
 
 			// Start with the main table and its alias.
-			$tableName = RangeTableName::resolve($mainRange, $this->entityStore);
+			$tableName = EntityRangeTableNameResolver::resolve($mainRange, $this->entityStore);
 
 			// Convert to SQL
 			$sql = $this->identifierQuoter->quoteIdentifier($tableName) . ' ' . $this->identifierQuoter->quoteIdentifier($mainRange->getName());
@@ -759,7 +768,7 @@
 			// Add JOIN clauses for each related range
 			foreach ($joinRanges as $range) {
 				// Fetch the joined range's physical table name
-				$tableName = RangeTableName::resolve($range, $this->entityStore);
+				$tableName = EntityRangeTableNameResolver::resolve($range, $this->entityStore);
 
 				// Convert join property to SQL condition
 				$joinProperty = $range->getJoinProperty();

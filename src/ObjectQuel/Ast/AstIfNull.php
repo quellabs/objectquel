@@ -43,22 +43,44 @@
 			$this->altValue->accept($visitor);
 		}
 		
+		/**
+		 * Returns the expression.
+		 * @return AstInterface
+		 */
 		public function getExpression(): AstInterface {
 			return $this->expression;
 		}
 		
+		/**
+		 * Sets the expression.
+		 * @param AstInterface $expression
+		 * @return void
+		 */
 		public function setExpression(AstInterface $expression): void {
 			$this->expression = $expression;
 		}
 		
+		/**
+		 * Returns the alternate value.
+		 * @return AstInterface
+		 */
 		public function getAltValue(): AstInterface {
 			return $this->altValue;
 		}
 		
+		/**
+		 * Sets the alternate value.
+		 * @param AstInterface $altValue
+		 * @return void
+		 */
 		public function setAltValue(AstInterface $altValue): void {
 			$this->altValue = $altValue;
 		}
 		
+		/**
+		 * Returns a deep clone of this node.
+		 * @return static
+		 */
 		public function deepClone(): static {
 			// Clone both operands
 			$clonedExpression = $this->expression->deepClone();

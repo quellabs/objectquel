@@ -48,11 +48,11 @@
 		/** @var bool Whether to return only unique results (DISTINCT) */
 		protected bool $unique;
 		
-		/** @var int|null Starting offset for pagination (OFFSET) */
-		protected ?int $window;
+		/** @var int|float|null Starting offset until semantic validation (OFFSET) */
+		protected int|float|null $window;
 		
-		/** @var int|null Maximum number of results to return (LIMIT) */
-		protected ?int $window_size;
+		/** @var int|float|null Maximum number until semantic validation (LIMIT) */
+		protected int|float|null $window_size;
 		
 		/** @var AstInterface[] Grouping specifications (GROUP BY clause) */
 		protected array $group_by;
@@ -334,6 +334,24 @@
 		}
 
 		/**
+		 * Replaces the expression of a sort term, keeping its order.
+		 * @param AstInterface $oldExpression Sort-term expression to replace
+		 * @param AstInterface $newExpression Replacement expression
+		 * @return bool True when $oldExpression was a sort-term expression
+		 */
+		public function replaceSortExpression(AstInterface $oldExpression, AstInterface $newExpression): bool {
+			foreach ($this->sort as $index => $sortItem) {
+				if ($sortItem['ast'] === $oldExpression) {
+					$this->sort[$index]['ast'] = $newExpression;
+					$newExpression->setParent($this);
+					return true;
+				}
+			}
+
+			return false;
+		}
+
+		/**
 		 * Returns the current sorting specifications.
 		 * @return array<int, array{ast: AstInterface, order?: string}>
 		 */
@@ -343,35 +361,35 @@
 		
 		/**
 		 * Sets the pagination window
-		 * @param int $window
+		 * @param int|float $window Parsed page number, normalized by semantic validation
 		 * @return void
 		 */
-		public function setWindow(int $window): void {
+		public function setWindow(int|float $window): void {
 			$this->window = $window;
 		}
 		
 		/**
 		 * Returns the pagination window.
-		 * @return int|null
+		 * @return int|float|null
 		 */
-		public function getWindow(): ?int {
+		public function getWindow(): int|float|null {
 			return $this->window;
 		}
 		
 		/**
 		 * Sets the maximum number of results to return.
-		 * @param int|null $windowSize
+		 * @param int|float|null $windowSize Parsed page size, normalized by semantic validation
 		 * @return void
 		 */
-		public function setWindowSize(?int $windowSize): void {
+		public function setWindowSize(int|float|null $windowSize): void {
 			$this->window_size = $windowSize;
 		}
 		
 		/**
 		 * Returns the maximum number of results to return.
-		 * @return int|null The limit value or null if not set
+		 * @return int|float|null The limit value or null if not set
 		 */
-		public function getWindowSize(): ?int {
+		public function getWindowSize(): int|float|null {
 			return $this->window_size;
 		}
 		

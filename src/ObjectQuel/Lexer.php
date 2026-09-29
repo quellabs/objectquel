@@ -95,6 +95,8 @@
 				'<'  => Token::SmallerThan,
 				'('  => Token::ParenthesesOpen,
 				')'  => Token::ParenthesesClose,
+				'{'  => Token::CurlyBraceOpen,
+				'}'  => Token::CurlyBraceClose,
 				'+'  => Token::Plus,
 				'-'  => Token::Minus,
 				'*'  => Token::Star,
@@ -192,10 +194,22 @@
 			// copy pos to previousPos for accurate positioning
 			$this->previousPreviousPos = $this->previousPos;
 			$this->previousPos = $this->pos;
-			
+
 			// advance pos to next token
             $this->advance();
-			
+
+			$offset = $this->pos;
+			$token = $this->scanToken();
+			$token->setOffset($offset);
+			return $token;
+        }
+
+        /**
+         * Scans the token starting at the current position, which advance() has placed past any whitespace
+         * @return Token
+         * @throws LexerException
+         */
+        protected function scanToken(): Token {
             // end of file
 	        if ($this->pos === $this->length) {
                 return new Token(Token::Eof);
@@ -206,22 +220,12 @@
                 return new Token(Token::Number, $this->fetchNumber(), $this->lineNumber);
             }
     
-            // negative number
-	        if ($this->pos + 1 < $this->length && ($this->string[$this->pos] == '-' && ctype_digit($this->string[$this->pos + 1]))) {
-		        ++$this->pos;
-		        return new Token(Token::Number, $this->fetchNumber() * -1, $this->lineNumber);
-            }
-    
             // double quote or single quote = string
             if (($this->string[$this->pos] == '"') || ($this->string[$this->pos] == '\'')) {
 				$firstChar = $this->string[$this->pos];
                 $string = "";
     
-                while ($this->string[++$this->pos] !== $firstChar) {
-					// Controleer op een niet afgesloten string op basis van end-of-stream
-	                if ($this->pos === $this->length) {
-						throw new LexerException("Unexpected end of data");
-					}
+				while (++$this->pos < $this->length && $this->string[$this->pos] !== $firstChar) {
 					
 					// Behandel een niet afgesloten string op basis van een enter
 					if ($this->string[$this->pos] === "\n") {
@@ -255,6 +259,10 @@
 					// Voeg het karakter toe
 					$string .= $this->string[$this->pos];
                 }
+
+				if ($this->pos >= $this->length) {
+					throw new LexerException("Unexpected end of data");
+				}
     
                 ++$this->pos;
                 return new Token(Token::String, $string, $this->lineNumber, ['char' => $firstChar]);
@@ -450,7 +458,26 @@
 		public function peekNext(): int {
 			return $this->lookahead->getType();
 		}
-		
+
+		/**
+		 * Whether the next two tokens are $first and $second with nothing between them, e.g. `+=`.
+		 * @param int $first Type of the next token; must be a single-character token
+		 * @param int $second Type of the token after it
+		 * @return bool
+		 */
+		public function peekAdjacent(int $first, int $second): bool {
+			return $this->next_token->getType() === $first
+				&& $this->lookahead->getType() === $second
+				&& $this->lookahead->getOffset() === $this->next_token->getOffset() + 1;
+		}
+
+		/**
+		 * Whether the next two tokens form `++` or `--`.
+		 * @return bool
+		 */
+		public function peekIncrementOperator(): bool {
+			return $this->peekAdjacent(Token::Plus, Token::Plus) || $this->peekAdjacent(Token::Minus, Token::Minus);
+		}
 		/**
 		 * Returns the source code
 		 * @return string

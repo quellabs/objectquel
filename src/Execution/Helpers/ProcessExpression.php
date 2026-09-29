@@ -29,11 +29,13 @@
 	use Quellabs\ObjectQuel\Capabilities\FulltextIndexStyle;
 	use Quellabs\ObjectQuel\Capabilities\NullPlatformCapabilities;
 	use Quellabs\ObjectQuel\Capabilities\PlatformCapabilitiesInterface;
-	use Quellabs\ObjectQuel\DatabaseAdapter\SqlIdentifierQuoter;
+	use Quellabs\ObjectQuel\ObjectQuel\Helpers\SqlDialect\SqlIdentifierQuoter;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\NodeBinary;
 	use Quellabs\ObjectQuel\ObjectQuel\AstInterface;
 	use Quellabs\ObjectQuel\ObjectQuel\AstVisitorInterface;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\IdentifierType;
+	use Quellabs\ObjectQuel\ObjectQuel\Helpers\BooleanExpressionClassifier;
+	use Quellabs\ObjectQuel\ObjectQuel\Helpers\SqlDialect\RoutineReferenceSql;
 	
 	/**
 	 * ExpressionHandler - Converts AST expression nodes to SQL equivalents
@@ -56,10 +58,14 @@
 		private const array OPERATOR_PRECEDENCE = [
 			'OR'  => 1,
 			'AND' => 2,
-			'='   => 3, '<>' => 3, '<' => 3, '>' => 3, '<=' => 3, '>=' => 3,
+			'='   => self::COMPARISON_PRECEDENCE, '<>' => self::COMPARISON_PRECEDENCE, '<' => self::COMPARISON_PRECEDENCE,
+			'>'   => self::COMPARISON_PRECEDENCE, '<=' => self::COMPARISON_PRECEDENCE, '>=' => self::COMPARISON_PRECEDENCE,
 			'+'   => 4, '-'  => 4,
 			'*'   => 5, '/'  => 5,
 		];
+
+		/** Precedence shared by all comparison operators */
+		private const int COMPARISON_PRECEDENCE = 3;
 
 		/**
 		 * Wildcard character mappings for converting user-friendly patterns to SQL LIKE syntax
@@ -166,24 +172,30 @@
 			
 			// Parenthesize operands as needed to preserve precedence (see operandSql()).
 			$parentPrecedence = self::OPERATOR_PRECEDENCE[$operator] ?? null;
-			$leftResult = $this->operandSql($ast->getLeft(), $parentPrecedence, false);
-			$rightResult = $this->operandSql($ast->getRight(), $parentPrecedence, true);
+			$isLogical = in_array($operator, ['AND', 'OR'], true);
+			$leftResult = $this->operandSql($ast->getLeft(), $parentPrecedence, false, $isLogical);
+			$rightResult = $this->operandSql($ast->getRight(), $parentPrecedence, true, $isLogical);
 
 			return "{$leftResult} {$operator} {$rightResult}";
 		}
 
 		/**
-		 * Renders one operand, parenthesizing it when needed to preserve SQL operator
-		 * precedence/associativity — a same-precedence right operand always needs
-		 * parentheses (e.g. "a - (b - c)"), since the parser already left-folds same-
-		 * precedence chains on the left.
+		 * Renders one operand of a binary operator, parenthesized when it binds more loosely than
+		 * its parent, or equally on the right side (`a - (b - c)`; the parser left-folds same-precedence chains).
+		 * Comparisons don't chain (PostgreSQL rejects `a > b = c`), so a comparison operand of one is always parenthesized.
 		 * @param AstInterface $operand The operand to render
 		 * @param int|null $parentPrecedence Precedence of the enclosing operator, or null if unranked
 		 * @param bool $isRightOperand Whether this is the right-hand operand
+		 * @param bool $isPredicate Whether the operand is itself a predicate (an AND/OR operand)
 		 * @return string The operand's SQL, parenthesized if required
 		 */
-		private function operandSql(AstInterface $operand, ?int $parentPrecedence, bool $isRightOperand): string {
-			$sql = $this->visitNodeAndReturnSQL($operand);
+		private function operandSql(AstInterface $operand, ?int $parentPrecedence, bool $isRightOperand, bool $isPredicate): string {
+			$sql = $isPredicate ? $this->mainVisitor->visitConditionAndReturnSQL($operand) : $this->mainVisitor->visitValueAndReturnSQL($operand);
+
+			// A predicate converted to a CASE value is self-delimiting
+			if (!$isPredicate && !$this->platform->supportsBooleanLiterals() && BooleanExpressionClassifier::isPredicate($operand)) {
+				return $sql;
+			}
 
 			if ($parentPrecedence === null || !$operand instanceof NodeBinary) {
 				return $sql;
@@ -195,7 +207,7 @@
 				return $sql;
 			}
 
-			$needsParens = $isRightOperand
+			$needsParens = $isRightOperand || $parentPrecedence === self::COMPARISON_PRECEDENCE
 				? $childPrecedence <= $parentPrecedence
 				: $childPrecedence < $parentPrecedence;
 
@@ -243,18 +255,19 @@
 			
 			// Identifier: build dynamic check based on inferred type
 			$inferredType = $this->typeInference->inferReturnType($valueNode);
-			$string = $this->visitNodeAndReturnSQL($valueNode);
-			
+			$string = $this->mainVisitor->visitValueAndReturnSQL($valueNode);
+
 			if (in_array($inferredType, ['int', 'integer', 'float'], true)) {
 				return "({$string} IS NULL OR {$string} = 0)";
 			}
-			
+
 			// PostgreSQL rejects comparing a boolean with '' or 0, and a chained comparison like `a > b = false`
 			if (in_array($inferredType, ['bool', 'boolean'], true)) {
+				$false = $this->platform->supportsBooleanLiterals() ? 'false' : '0';
 				$operand = $valueNode instanceof NodeBinary ? "({$string})" : $string;
-				return "({$operand} IS NULL OR {$operand} = false)";
+				return "({$operand} IS NULL OR {$operand} = {$false})";
 			}
-			
+
 			return "({$string} IS NULL OR {$string} = '')";
 		}
 		
@@ -639,6 +652,11 @@
 		 * @throws QuelException
 		 */
 		public function buildColumnName(AstIdentifier $identifier): string {
+			// Routine variables and cursor fields have no range; they render as routine-local names
+			if ($identifier->getType()->isRoutineReference()) {
+				return RoutineReferenceSql::render($identifier, $this->identifierQuoter, $this->platform->getDatabaseType());
+			}
+
 			// Get the range (table alias) from the identifier
 			$range = $identifier->getRange();
 			
@@ -679,13 +697,18 @@
 		 * @throws \LogicException|EntityResolutionException
 		 */
 		public function buildSortableColumn(AstIdentifier $ast, string $partOfQuery): string {
+			// Routine variables and cursor fields have no range; they render as routine-local names
+			if ($ast->getType()->isRoutineReference()) {
+				return $this->buildColumnName($ast);
+			}
+
 			// Fetch the range
 			$range = $ast->getRange();
 			
 			// Alias identifiers (e.g. `score` from `score=search_score(...)`) have no
-			// range and no property chain. Return the bare name so ORDER BY score works.
+			// range and no property chain. Quoted like the SELECT alias so ORDER BY score matches it.
 			if ($range === null) {
-				return $ast->getName();
+				return $this->identifierQuoter->quoteIdentifier($ast->getName());
 			}
 			
 			// Resolve the next node now so static analysis can track its nullability
@@ -714,18 +737,8 @@
 				return $this->buildColumnNameForJson($ast, $rangeName, $entityName);
 			}
 			
-			// Map the ORM property name to its physical database column name.
-			$metadata = $this->entityStore->getMetadata($entityName);
-			
-			if (!isset($metadata->columnMap[$propertyName])) {
-				// If semantic validation ran correctly this should never happen
-				throw new \LogicException(
-					"Property '{$propertyName}' has no column mapping in entity '{$entityName}'"
-				);
-			}
-			
-			// Create the column
-			$columnRef = "{$rangeName}.{$metadata->columnMap[$propertyName]}";
+			// Quoted range.column, as in every other clause
+			$columnRef = $this->buildColumnNameForEntity($ast, $rangeName, $entityName);
 			
 			// Outside a SORT clause there is no need for NULL handling; return as-is.
 			if ($partOfQuery !== "SORT") {
@@ -754,11 +767,34 @@
 				return $columnRef;
 			}
 			
-			// Nullable columns need a COALESCE default so NULLs sort consistently.
-			// Integers default to 0 (sorts before positive values);
-			// everything else defaults to '' (sorts before any non-empty string).
-			$default = $columnAnnotation->getType() === "integer" ? "0" : "''";
-			return "COALESCE({$columnRef}, {$default})";
+			// Nullable columns sort as their type's zero value, so NULLs land in the same place on every engine
+			$default = $this->sortDefaultForNull(strtolower($columnAnnotation->getType()));
+			return $default === null ? $columnRef : "COALESCE({$columnRef}, {$default})";
+		}
+
+		/**
+		 * Returns the zero value a NULL sorts as, written as a literal the engine accepts for the column's SQL type.
+		 * @param string $columnType Abstract column type, lowercased
+		 * @return string|null SQL literal, or null for JSON, which has no meaningful zero value
+		 */
+		private function sortDefaultForNull(string $columnType): ?string {
+			$databaseType = $this->platform->getDatabaseType();
+
+			return match ($columnType) {
+				'tinyinteger', 'smallinteger', 'integer', 'biginteger', 'year', 'float', 'decimal' => '0',
+				'boolean' => $databaseType === 'pgsql' ? 'false' : '0',
+				'date', 'datetime', 'timestamp' => match ($databaseType) {
+					// Earliest value each engine's date types accept
+					'mysql', 'mariadb' => "'1000-01-01'",
+					'sqlsrv' => "'1753-01-01'",
+					default => "'0001-01-01'",
+				},
+				'time' => "'00:00:00'",
+				'uuid' => "'00000000-0000-0000-0000-000000000000'",
+				'binary', 'blob' => $databaseType === 'sqlsrv' ? '0x' : "''",
+				'json' => null,
+				default => "''",
+			};
 		}
 		
 		/**
@@ -893,8 +929,8 @@
 			
 			// String literal: use a platform-appropriate regex match with the pattern
 			if ($valueNode instanceof AstString) {
-				$escaped = "'" . $this->escapeSqlString($valueNode->getValue()) . "'";
-				return $this->buildRegexMatch($escaped, self::REGEX_PATTERNS[$patternKey]);
+				$literal = $this->identifierQuoter->quoteStringLiteral($valueNode->getValue());
+				return $this->buildRegexMatch($literal, self::REGEX_PATTERNS[$patternKey]);
 			}
 			
 			// Numeric literal: evaluate at compile time
@@ -930,18 +966,20 @@
 		 * Builds a platform-appropriate "does this expression match this pattern"
 		 * SQL fragment. Used for the flag-less, always-positive matches needed by
 		 * handleTypeCheckWithPattern() — never negated, so this only ever needs
-		 * the 'match' half of getRegexpFallbackOperators(), not 'notMatch'.
+		 * the positive fallback operator.
 		 * @param string $sqlExpression Already-generated SQL for the value being tested
 		 * @param string $pattern Raw regex pattern (no delimiters)
 		 * @return string SQL boolean expression
 		 */
 		private function buildRegexMatch(string $sqlExpression, string $pattern): string {
+			$quotedPattern = $this->identifierQuoter->quoteStringLiteral($pattern);
+
 			if ($this->platform->supportsRegexpLike()) {
-				return "REGEXP_LIKE({$sqlExpression}, \"{$pattern}\")";
+				return "REGEXP_LIKE({$sqlExpression}, {$quotedPattern})";
 			}
-			
-			$operator = $this->platform->getRegexpFallbackOperators()['match'];
-			return "{$sqlExpression} {$operator} '{$pattern}'";
+
+			$operator = $this->regexpFallbackOperators()['match'];
+			return "{$sqlExpression} {$operator} {$quotedPattern}";
 		}
 		
 		/**
@@ -962,7 +1000,7 @@
 				return null;
 			}
 			
-			$leftResult = $this->operandSql($ast->getLeft(), self::OPERATOR_PRECEDENCE[$operator] ?? null, false);
+			$leftResult = $this->operandSql($ast->getLeft(), self::OPERATOR_PRECEDENCE[$operator] ?? null, false, false);
 
 			$stringValue = str_replace(
 				array_keys(self::WILDCARD_MAPPINGS),
@@ -972,14 +1010,14 @@
 			
 			$likeOperator = $operator === '=' ? ' LIKE ' : ' NOT LIKE ';
 			
-			return "{$leftResult}{$likeOperator}\"" . $this->escapeSqlString($stringValue) . '"';
+			return $leftResult . $likeOperator . $this->visitNodeAndReturnSQL(new AstString($stringValue, '"'));
 		}
 		
 		/**
 		 * Handle regular expression patterns for SQL REGEXP / REGEXP_LIKE conversion.
 		 *
 		 * When the platform supports REGEXP_LIKE() (MySQL 8.0+, SQL Server 2025+),
-		 * emits REGEXP_LIKE(col, "pattern"[, "flags"]) — with the flags argument
+		 * emits REGEXP_LIKE(col, 'pattern'[, 'flags']) — with the flags argument
 		 * included only when flags are present, since REGEXP_LIKE accepts the
 		 * 2-argument form on both supporting engines.
 		 *
@@ -994,9 +1032,10 @@
 		 * @return string The REGEXP or REGEXP_LIKE expression
 		 */
 		private function handleRegularExpression(AstRegExp $rightAst, NodeBinary $ast, string $operator): string {
-			$leftResult = $this->operandSql($ast->getLeft(), self::OPERATOR_PRECEDENCE[$operator] ?? null, false);
+			$leftResult = $this->operandSql($ast->getLeft(), self::OPERATOR_PRECEDENCE[$operator] ?? null, false, false);
 			$flags = $rightAst->getFlags();
-			
+			$pattern = $this->identifierQuoter->quoteStringLiteral($rightAst->getValue());
+
 			// REGEXP_LIKE(col, pattern[, flags]) when the platform supports it.
 			// Used regardless of whether flags are present — REGEXP_LIKE with no
 			// third argument is valid on every engine that supports the function,
@@ -1004,17 +1043,33 @@
 			// because this particular pattern has no flags.
 			if ($this->platform->supportsRegexpLike()) {
 				$not = $operator === '<>' ? 'NOT ' : '';
-				$flagsArg = $flags !== '' ? ", \"{$flags}\"" : '';
-				return "{$not}REGEXP_LIKE({$leftResult}, \"{$rightAst->getValue()}\"{$flagsArg})";
+				$flagsArg = $flags !== '' ? ', ' . $this->identifierQuoter->quoteStringLiteral($flags) : '';
+				return "{$not}REGEXP_LIKE({$leftResult}, {$pattern}{$flagsArg})";
 			}
 			
 			// Fallback: platform-specific plain match operator. Flags are dropped
 			// — behavior depends on collation.
-			$operators = $this->platform->getRegexpFallbackOperators();
+			$operators = $this->regexpFallbackOperators();
 			$regexpOperator = $operator === '=' ? $operators['match'] : $operators['notMatch'];
-			return "{$leftResult}{$regexpOperator}\"{$rightAst->getValue()}\"";
+			return "{$leftResult} {$regexpOperator} {$pattern}";
 		}
 		
+		/**
+		 * Returns the engine's fallback regular-expression operators.
+		 * @return array{match: string, notMatch: string}
+		 */
+		private function regexpFallbackOperators(): array {
+			return match ($this->platform->getDatabaseType()) {
+				'pgsql' => ['match' => '~', 'notMatch' => '!~'],
+				'sqlsrv' => throw new \RuntimeException(
+					'No regular expression support is available on this SQL Server ' .
+					'connection. REGEXP_LIKE() requires SQL Server 2025 (compatibility ' .
+					'level 170+); no fallback operator exists on earlier versions.'
+				),
+				default => ['match' => 'REGEXP', 'notMatch' => 'NOT REGEXP'],
+			};
+		}
+
 		/**
 		 * Checks whether all given identifiers belong to the same entity and whether
 		 * that entity has a FullTextIndex covering all of them. Returns the matching
@@ -1070,23 +1125,6 @@
 					return $identifier->getName();
 				}
 			}, $identifiers);
-		}
-		
-		/**
-		 * Escape a string value for safe inclusion in a SQL literal.
-		 *
-		 * NOTE: This centralizes escaping so it can be swapped for a PDO/mysqli
-		 * real_escape_string call once a connection reference is available here.
-		 * Do not inline addslashes() calls elsewhere in this class.
-		 *
-		 * @param string $value Raw string value
-		 * @return string Escaped string safe for embedding between SQL quotes
-		 */
-		private function escapeSqlString(string $value): string {
-			// addslashes() is a stopgap. Replace this body with:
-			//   return $this->connection->real_escape_string($value);
-			// or route through the parameter binding system when that becomes feasible.
-			return addslashes($value);
 		}
 		
 		/**

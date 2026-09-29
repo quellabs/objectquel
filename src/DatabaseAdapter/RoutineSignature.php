@@ -1,0 +1,23 @@
+<?php
+
+	namespace Quellabs\ObjectQuel\DatabaseAdapter;
+
+	/**
+	 * What the database catalog says about a routine: its kind, return type, and call requirements.
+	 */
+	final readonly class RoutineSignature {
+
+		/**
+		 * Describes a routine's kind and normalized return type.
+		 * @param bool $isProcedure True for a procedure, false for a function
+		 * @param string|null $returnType Abstract column type the function returns, or null for a procedure or an unrecognized type
+		 * @param bool $needsTransaction Whether a generated MySQL/MariaDB procedure needs a transaction around the call
+		 * @return void
+		 */
+		public function __construct(
+			public bool $isProcedure,
+			public ?string $returnType,
+			public bool $needsTransaction = false,
+		) {
+		}
+	}

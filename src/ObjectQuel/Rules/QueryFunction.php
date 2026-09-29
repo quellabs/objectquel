@@ -26,6 +26,7 @@
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstParameter;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRank;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRowNumber;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRoutineCall;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstSearchScore;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstString;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstCountU;
@@ -41,6 +42,35 @@
 	 * QueryFunction class handles parsing of function calls in ObjectQuel queries.
 	 */
 	class QueryFunction {
+		
+		/** Parser method of each built-in function, by lowercase name */
+		private const array BUILTIN_PARSERS = [
+			'count' => 'parseCount',
+			'countu' => 'parseCountU',
+			'avg' => 'parseAvg',
+			'avgu' => 'parseAvgU',
+			'max' => 'parseMax',
+			'min' => 'parseMin',
+			'sum' => 'parseSum',
+			'sumu' => 'parseSumU',
+			'any' => 'parseAny',
+			'rank' => 'parseRank',
+			'dense_rank' => 'parseDenseRank',
+			'row_number' => 'parseRowNumber',
+			'ntile' => 'parseNtile',
+			'lag' => 'parseLag',
+			'lead' => 'parseLead',
+			'concat' => 'parseConcat',
+			'search_score' => 'parseSearchScore',
+			'is_empty' => 'parseIsEmpty',
+			'is_null' => 'parseIsNull',
+			'is_numeric' => 'parseIsNumeric',
+			'is_integer' => 'parseIsInteger',
+			'is_float' => 'parseIsFloat',
+			'ifnull' => 'parseIfNull',
+			'exists' => 'parseExists',
+			'date' => 'parseDate',
+		];
 		
 		/** @var Lexer The lexer instance used for tokenizing input */
 		private Lexer $lexer;
@@ -58,54 +88,54 @@
 		}
 		
 		/**
-		 * Main parsing method - dispatches to appropriate function parser
-		 *
-		 * This method acts as a router, determining which specific function parser
-		 * to call based on the function name. It uses PHP 8's match expression
-		 * for clean, efficient dispatching.
-		 *
-		 * Supported functions:
-		 * - Aggregate: count, countu, avg, avgu
-		 * - String: concat, search
-		 * - Type checking: is_empty, is_numeric, is_integer, is_float, is_null
-		 * - Temporal: date
-		 * - Utility: exists
-		 *
-		 * @param string $command The function name to parse (case-insensitive)
-		 * @return AstInterface The appropriate AST node for the parsed function
+		 * Parses a function call: a built-in by name (case-insensitive), otherwise a routine call.
+		 * @param string $command The function name as written
+		 * @return AstInterface The node for the parsed call
 		 * @throws LexerException When token matching fails
-		 * @throws ParserException When function name is not recognized or parsing fails
+		 * @throws ParserException When the name is dotted or parsing fails
 		 * @throws \ReflectionException When reflection fails
 		 */
 		public function parse(string $command): AstInterface {
-			return match (strtolower($command)) {
-				'count' => $this->parseCount(),
-				'countu' => $this->parseCountU(),
-				'avg' => $this->parseAvg(),
-				'avgu' => $this->parseAvgU(),
-				'max' => $this->parseMax(),
-				'min' => $this->parseMin(),
-				'sum' => $this->parseSum(),
-				'sumu' => $this->parseSumU(),
-				'any' => $this->parseAny(),
-				'rank' => $this->parseRank(),
-				'dense_rank' => $this->parseDenseRank(),
-				'row_number' => $this->parseRowNumber(),
-				'ntile' => $this->parseNtile(),
-				'lag' => $this->parseLag(),
-				'lead' => $this->parseLead(),
-				'concat' => $this->parseConcat(),
-				'search_score' => $this->parseSearchScore(),
-				'is_empty' => $this->parseIsEmpty(),
-				'is_null' => $this->parseIsNull(),
-				'is_numeric' => $this->parseIsNumeric(),
-				'is_integer' => $this->parseIsInteger(),
-				'is_float' => $this->parseIsFloat(),
-				'ifnull' => $this->parseIfNull(),
-				'exists' => $this->parseExists(),
-				'date' => $this->parseDate(),
-				default => throw new ParserException("Command {$command} is not valid."),
-			};
+			$parser = self::BUILTIN_PARSERS[strtolower($command)] ?? null;
+
+			if ($parser !== null) {
+				return $this->{$parser}();
+			}
+
+			if (str_contains($command, '.')) {
+				throw new ParserException("Command {$command} is not valid.");
+			}
+
+			return $this->parseRoutineCall($command);
+		}
+
+		/**
+		 * @param string $name A function name
+		 * @return bool True when the name is a built-in function, which takes precedence over a routine
+		 */
+		public static function isBuiltin(string $name): bool {
+			// search() is parsed as a predicate, before reaching this class
+			return isset(self::BUILTIN_PARSERS[strtolower($name)]) || strtolower($name) === 'search';
+		}
+
+		/**
+		 * Parses the parenthesized, possibly empty argument list of a routine call.
+		 * @param string $name Routine name
+		 * @return AstRoutineCall
+		 * @throws LexerException|ParserException|\ReflectionException
+		 */
+		public function parseRoutineCall(string $name): AstRoutineCall {
+			$this->lexer->match(Token::ParenthesesOpen);
+			$arguments = [];
+
+			if ($this->lexer->lookahead() !== Token::ParenthesesClose) {
+				do {
+					$arguments[] = $this->parseArgument();
+				} while ($this->lexer->optionalMatch(Token::Comma));
+			}
+
+			$this->lexer->match(Token::ParenthesesClose);
+			return new AstRoutineCall($name, $arguments);
 		}
 		
 		/**
@@ -121,14 +151,14 @@
 			
 			// Parse the parameter - either as property chain (entity.field) or general expression
 			$parameter = $this->parseArgument();
-			
+
 			// Match closing parenthesis
 			$this->lexer->match(Token::ParenthesesClose);
-			
+
 			// Create and return the appropriate AST node
 			return new $astClass($parameter);
 		}
-		
+
 		/**
 		 * Parses a value argument as a full expression, so a comparison or AND/OR needs no extra parentheses.
 		 * @return AstInterface The argument node

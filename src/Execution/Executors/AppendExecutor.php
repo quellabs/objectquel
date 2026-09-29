@@ -4,8 +4,6 @@
 
 	use Cake\Database\StatementInterface;
 	use Quellabs\ObjectQuel\Exception\SemanticException;
-	use Quellabs\ObjectQuel\ObjectQuel\QuelToSQL\CompiledAppendSql;
-	use Quellabs\ObjectQuel\Annotations\Orm\PrimaryKeyStrategy;
 	use Quellabs\ObjectQuel\Exception\EntityResolutionException;
 	use Quellabs\ObjectQuel\Capabilities\PlatformCapabilitiesInterface;
 	use Quellabs\ObjectQuel\DatabaseAdapter\DatabaseAdapter;
@@ -19,7 +17,10 @@
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstAssignment;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstParameter;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRangeJsonSource;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRoutineCall;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstStatement;
+	use Quellabs\ObjectQuel\ObjectQuel\Visitors\CollectNodes;
+	use Quellabs\ObjectQuel\ObjectQuel\QuelToSQL\CompiledAppendSql;
 	use Quellabs\ObjectQuel\ObjectQuel\Helpers\WriteVerbParameterNormalizer;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRetrieve;
 	use Quellabs\ObjectQuel\ObjectQuel\QuelResult;
@@ -61,7 +62,7 @@
 		private EntityStore $entityStore;
 		private EntityManager $entityManager;
 		private PlatformCapabilitiesInterface $platform;
-		private QuelToSQLAppend $compiler;
+		private ?QuelToSQLAppend $compiler = null;
 		private JsonAppendExecutor $jsonAppendExecutor;
 		private PlanExecutor $planExecutor;
 
@@ -85,6 +86,17 @@
 			$this->entityStore = $entityManager->getEntityStore();
 			$this->platform = $platform;
 			$this->planExecutor = $planExecutor;
+			$this->jsonAppendExecutor = new JsonAppendExecutor();
+		}
+
+		/**
+		 * Returns the append compiler. Built on first use, so SQL Server reads the routine schema only when a statement needs compiling.
+		 * @return QuelToSQLAppend
+		 */
+		private function compiler(): QuelToSQLAppend {
+			if ($this->compiler !== null) {
+				return $this->compiler;
+			}
 
 			// QuelToSQLReplace is reused (not reconstructed) so upsert's
 			// on-conflict UPDATE SET clause is built by the exact same
@@ -93,11 +105,11 @@
 			// itself isn't a compiler for its own AST node (there's no
 			// AstUpsert — see QuelToSQLAppend's docblock); it just keeps the
 			// on-conflict dialect-branching logic out of QuelToSQLAppend.
-			$versionValueHandler = $entityManager->getUnitOfWork()->getVersionValueHandler();
-			$replaceCompiler = new QuelToSQLReplace($this->entityStore, $platform, $versionValueHandler);
-			$upsertCompiler = new QuelToSQLUpsert($this->entityStore, $platform, $replaceCompiler);
-			$this->compiler = new QuelToSQLAppend($entityManager, $platform, $upsertCompiler, $versionValueHandler);
-			$this->jsonAppendExecutor = new JsonAppendExecutor();
+			$routineSchema = $this->connection->getRoutineSchema();
+			$versionValueHandler = $this->entityManager->getUnitOfWork()->getVersionValueHandler();
+			$replaceCompiler = new QuelToSQLReplace($this->entityStore, $this->platform, $routineSchema, $versionValueHandler);
+			$upsertCompiler = new QuelToSQLUpsert($this->entityStore, $this->platform, $routineSchema, $replaceCompiler);
+			return $this->compiler = new QuelToSQLAppend($this->entityManager, $this->platform, $routineSchema, $upsertCompiler, $versionValueHandler);
 		}
 
 		/**
@@ -113,13 +125,14 @@
 			$parameters = $context->getParameters();
 
 			if ($statement->getRange() instanceof AstRangeJsonSource) {
+				$this->assertNoRoutineCall($statement);
 				return $this->jsonAppendExecutor->execute($statement, $context);
 			}
 
 			if ($statement->isInsertFromSelect()) {
 				$source = $this->prepareInsertFromSelectSource($statement, $parameters);
 
-				if ($this->compiler->needsPlanner($source)) {
+				if ($this->compiler()->needsPlanner($source)) {
 					return $this->executeInsertFromSelectViaPlanner($statement, $source, $parameters);
 				}
 			}
@@ -127,6 +140,21 @@
 			return $this->executeDirectInsert($statement, $parameters);
 		}
 		
+		/**
+		 * PHP writes a JSON source, so its values can't call a routine, which the database runs.
+		 * @param AstAppend $statement Append to a JSON source
+		 * @return void
+		 * @throws SemanticException When a value calls a routine
+		 */
+		private function assertNoRoutineCall(AstAppend $statement): void {
+			$calls = new CollectNodes(AstRoutineCall::class);
+			$statement->accept($calls);
+
+			if (!empty($calls->getCollectedNodes())) {
+				throw new SemanticException("'{$calls->getCollectedNodes()[0]->getName()}' is a routine call, which the database runs, but PHP writes a JSON source.");
+			}
+		}
+
 		/**
 		 * Prepares, compiles, and runs the literal-values (or planner-ineligible
 		 * insert-from-select) form of an append statement directly against the
@@ -142,26 +170,55 @@
 			$prepared = $this->prepare($statement, $parameters);
 			$statement = $prepared->getStatement();
 			$metadata = $prepared->getMetadata();
-			$compiled = $this->compiler->convertToSQL($statement, $parameters);
+			$compiled = $this->compiler()->convertToSQL($statement, $parameters);
 			$target = $metadata->tableName;
 
 			if ($compiled->hasFallbackUpdate()) {
 				return $this->executeUpsertFallback($compiled, $parameters, $metadata);
 			}
 
+			// PostgreSQL 18 can distinguish INSERT from conflict UPDATE through OLD.
+			$postgresUpsertReadback = $this->platform->getDatabaseType() === 'pgsql'
+				&& $statement->getOnConflict() !== null
+				&& $metadata->autoIncrementColumn !== null
+				&& !$statement->isInsertFromSelect()
+				&& count($statement->getRowsOrFail()) === 1
+				&& version_compare($this->connection->getServerVersion(), '18.0', '>=');
+			if ($postgresUpsertReadback) {
+				foreach ($statement->getRowsOrFail()[0] as $assignment) {
+					if ($assignment->getProperty() !== $metadata->autoIncrementColumn) {
+						continue;
+					}
+					$value = $assignment->getValue();
+					$postgresUpsertReadback = $value instanceof AstParameter
+						&& array_key_exists($value->getName(), $parameters)
+						&& $parameters[$value->getName()] === null;
+					break;
+				}
+			}
+			$sql = $compiled->primarySql;
+			if ($postgresUpsertReadback) {
+				$identityProperty = $metadata->autoIncrementColumn ?? throw new \LogicException('PostgreSQL upsert readback requires an identity column');
+				$idColumn = $this->connection->escapeIdentifier($metadata->getColumnNameOrFail($identityProperty));
+				$sql .= " RETURNING WITH (OLD AS previous) CASE WHEN previous.{$idColumn} IS NULL THEN {$idColumn} END AS __objectquel_generated_id";
+			}
+
 			// execute() swallows the exception and returns null on failure
 			// rather than throwing — a try/catch here would never fire.
-			$rs = $this->assertInsertSucceeded($this->connection->execute($compiled->primarySql, $parameters), $target);
+			$rs = $this->assertInsertSucceeded(
+				$this->connection->execute($sql, $this->filterParametersForSql($sql, $parameters)),
+				$target
+			);
 
 			// Insert ID is only unambiguous for single-row literal appends.
 			// Multi-row or insert-from-select is engine-dependent, so leave it null.
 			$eligibleForReadback = $metadata->autoIncrementColumn !== null;
 
 			// An upsert's on-conflict branch may have run an UPDATE, not an INSERT,
-			// leaving the driver's last-insert-id stale. Only MySQL/MariaDB's
-			// affected-row count reliably distinguishes the two (1 = inserted,
-			// 2/0 = updated); Postgres/SQLite/SQL Server report the same count
-			// either way, so readback is skipped entirely for those dialects.
+			// leaving the driver's last-insert-id stale. MySQL/MariaDB's
+			// affected-row count distinguishes the two (1 = inserted, 2/0 = updated).
+			// PostgreSQL 18 uses OLD above; other engines do not distinguish the
+			// branches here.
 			if ($eligibleForReadback && $statement->getOnConflict() !== null) {
 				$eligibleForReadback =
 					in_array($this->platform->getDatabaseType(), ['mysql', 'mariadb'], true) &&
@@ -169,6 +226,12 @@
 			}
 
 			$generatedId = $prepared->getGeneratedId();
+			if ($postgresUpsertReadback) {
+				$row = $rs->fetch('assoc');
+				if (is_array($row) && is_numeric($row['__objectquel_generated_id'] ?? null)) {
+					$generatedId = (int)$row['__objectquel_generated_id'];
+				}
+			}
 
 			if ($generatedId === null && $eligibleForReadback && !$statement->isInsertFromSelect() && count($statement->getRowsOrFail()) === 1) {
 				$insertId = $this->connection->getInsertId();
@@ -275,7 +338,7 @@
 		 */
 		private function prepareInsertFromSelectSource(AstAppend $statement, array &$parameters): AstRetrieve {
 			$source = $statement->getSourceOrFail();
-			$this->compiler->prepareSource($source, $parameters);
+			$this->compiler()->prepareSource($source, $parameters);
 			return $source;
 		}
 		
@@ -323,10 +386,10 @@
 			// Maps $properties[$i] to the source retrieve's $i-th visible
 			// projection alias, so a fetched row's column ($row[$alias]) can be
 			// read back out under the target property name below.
-			$visibleAliases = $this->compiler->resolveVisibleAliases($properties, $source, $targetLabel);
+			$visibleAliases = $this->compiler()->resolveVisibleAliases($properties, $source, $targetLabel);
 
 			// Typed placeholders let the compiler convert a Unix timestamp bound into a datetime column
-			$valueTypes = array_map(fn(string $alias) => $this->compiler->sourceValueType($source, $alias), $visibleAliases);
+			$valueTypes = array_map(fn(string $alias) => $this->compiler()->sourceValueType($source, $alias), $visibleAliases);
 
 			// Runs the source retrieve exactly like a top-level `retrieve`
 			// query (JSON joins, temp-table promotion and all) and materializes
@@ -371,7 +434,7 @@
 					// prepare()/fillGeneratedPrimaryKeys() are deliberately
 					// skipped here.
 					$chunkStatement = AstAppend::forValues($statement->getRange(), $assignmentRows);
-					$sql = $this->compiler->convertToSQL($chunkStatement, $chunkParams)->primarySql;
+					$sql = $this->compiler()->convertToSQL($chunkStatement, $chunkParams)->primarySql;
 					$rs = $this->assertInsertSucceeded($this->connection->execute($sql, $chunkParams), $tableName);
 					$totalAffected += $rs->rowCount();
 				}
@@ -514,7 +577,7 @@
 			// 'identity' means an auto-increment/serial column — the database
 			// assigns it on insert, so there's nothing to generate here (and
 			// nothing to add to the SQL or $parameters).
-			$strategy = $this->resolvePrimaryKeyStrategy($metadata, $primaryKey);
+			$strategy = $metadata->getPrimaryKeyStrategy($primaryKey);
 
 			if ($strategy === 'identity') {
 				return new PreparedAppend($statement, $metadata, null);
@@ -565,24 +628,5 @@
 			$generatedId = count($rows) === 1 ? $firstGeneratedValue : null;
 
 			return new PreparedAppend(AstAppend::forValues($statement->getRange(), $newRows), $metadata, $generatedId);
-		}
-
-		/**
-		 * Mirrors InsertPersister::getPrimaryKeyStrategy(), adapted to read
-		 * straight from metadata instead of requiring an entity instance.
-		 * @param EntityMetadataRecord $metadata
-		 * @param string $primaryKey
-		 * @return string
-		 */
-		private function resolvePrimaryKeyStrategy(EntityMetadataRecord $metadata, string $primaryKey): string {
-			$annotations = $metadata->getAnnotations()[$primaryKey] ?? [];
-
-			foreach ($annotations as $annotation) {
-				if ($annotation instanceof PrimaryKeyStrategy) {
-					return $annotation->getValue();
-				}
-			}
-
-			return 'identity';
 		}
 	}

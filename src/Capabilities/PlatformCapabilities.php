@@ -11,8 +11,8 @@
 	 * available at runtime. Construct this once (typically alongside your
 	 * EntityManager) and pass it into QuelToSQLRetrieve.
 	 *
-	 * This class only reports facts about the connected engine (booleans,
-	 * tokens, and getDatabaseType() itself) — it never builds SQL text.
+	 * This class only reports facts about the connected engine (feature flags,
+	 * supported styles, and getDatabaseType() itself) — it never builds SQL text.
 	 * Collaborators that render whole DDL/SQL fragments from those facts (e.g.
 	 * DDLTypeMapper) take a PlatformCapabilitiesInterface and query it, rather
 	 * than this class delegating out to them.
@@ -36,6 +36,7 @@
 		 * @var bool|null
 		 */
 		private ?bool $windowFunctionsCache = null;
+
 		
 		/**
 		 * Constructor
@@ -84,34 +85,6 @@
 		/**
 		 * @inheritDoc
 		 *
-		 * Only reached when supportsRegexpLike() is false. For 'sqlsrv' that
-		 * covers two cases: an engine older than SQL Server 2025, or a SQL Server
-		 * 2025+ engine hosting a database whose compatibility level hasn't been
-		 * raised to 170+. Either way there is no regex operator available, so
-		 * this throws rather than returning a syntactically-valid-looking
-		 * operator that isn't.
-		 */
-		public function getRegexpFallbackOperators(): array {
-			return match ($this->adapter->getDatabaseType()) {
-				'pgsql' => ['match' => '~', 'notMatch' => '!~'],
-				'sqlsrv' => throw new \RuntimeException(
-					'No regular expression support is available on this SQL Server ' .
-					'connection. REGEXP_LIKE() requires SQL Server 2025 (compatibility ' .
-					'level 170+); no fallback operator exists on earlier versions.'
-				),
-				
-				// MySQL, MariaDB, SQLite all parse the REGEXP keyword the same way.
-				// SQLite specifically requires a regexp() user function to be
-				// registered on the connection or this will fail at query time with
-				// "no such function: regexp" — that registration is outside what
-				// this interface can control.
-				default => ['match' => 'REGEXP', 'notMatch' => 'NOT REGEXP'],
-			};
-		}
-		
-		/**
-		 * @inheritDoc
-		 *
 		 * Performs feature detection by executing a probe query the first time it
 		 * is called. Result is cached per-instance for the lifetime of this object.
 		 */
@@ -131,6 +104,20 @@
 			
 			$stmt->closeCursor();
 			return $this->windowFunctionsCache = true;
+		}
+
+		/**
+		 * Reports whether the connected database supports native offset pagination.
+		 * SQL Server requires version 2012+ and compatibility level 110+.
+		 * @return bool
+		 */
+		public function supportsOffsetPagination(): bool {
+			if ($this->adapter->getDatabaseType() !== 'sqlsrv') {
+				return true;
+			}
+
+			return version_compare($this->adapter->getServerVersion(), '11.0', '>=')
+				&& ($this->adapter->getSqlServerCompatibilityLevel() ?? 0) >= 110;
 		}
 		
 		/**
@@ -183,20 +170,6 @@
 		/**
 		 * @inheritDoc
 		 *
-		 * PostgreSQL's 'jsonb' binary type is preferred over 'json' because it
-		 * supports GIN indexing and generally has better performance for reads.
-		 * All other engines use 'json'.
-		 */
-		public function getNativeJsonType(): string {
-			return match ($this->adapter->getDatabaseType()) {
-				'pgsql' => 'jsonb',
-				default => 'json',
-			};
-		}
-		
-		/**
-		 * @inheritDoc
-		 *
 		 * JSON path extraction style depends on the engine and version:
 		 * - PostgreSQL:       col #>> '{a,b}'          (all versions)
 		 * - MariaDB >= 10.9:  JSON_VALUE(col, '$.a.b')
@@ -228,76 +201,6 @@
 			}
 		}
 		
-		/**
-		 * @inheritDoc
-		 *
-		 * Unix timestamp conversion function per engine:
-		 * - MySQL / MariaDB: UNIX_TIMESTAMP(col)
-		 * - PostgreSQL:      EXTRACT(EPOCH FROM col)::BIGINT
-		 * - SQLite:          CAST(strftime('%s', col) AS INTEGER); strftime() returns text, which SQLite ranks above every number
-		 * - SQL Server:      DATEDIFF_BIG(SECOND, '1970-01-01', col); like PostgreSQL, a column without offset counts as UTC
-		 */
-		public function getUnixTimestampFunction(): string {
-			return match ($this->adapter->getDatabaseType()) {
-				'pgsql' => 'EXTRACT(EPOCH FROM %s)::BIGINT',
-				'sqlite' => "CAST(strftime('%%s', %s) AS INTEGER)",
-				'sqlsrv' => "DATEDIFF_BIG(SECOND, '1970-01-01', %s)",
-				default => 'UNIX_TIMESTAMP(%s)',
-			};
-		}
-		
-		/**
-		 * @inheritDoc
-		 *
-		 * Current time as Unix timestamp per engine:
-		 * - MySQL / MariaDB: UNIX_TIMESTAMP()
-		 * - PostgreSQL:      EXTRACT(EPOCH FROM NOW())::BIGINT
-		 * - SQLite:          CAST(strftime('%s','now') AS INTEGER)
-		 * - SQL Server:      DATEDIFF_BIG(SECOND, '1970-01-01', SYSUTCDATETIME())
-		 */
-		public function getCurrentUnixTimestamp(): string {
-			return match ($this->adapter->getDatabaseType()) {
-				'pgsql' => 'EXTRACT(EPOCH FROM NOW())::BIGINT',
-				'sqlite' => "CAST(strftime('%s','now') AS INTEGER)",
-				'sqlsrv' => "DATEDIFF_BIG(SECOND, '1970-01-01', SYSUTCDATETIME())",
-				default => 'UNIX_TIMESTAMP()',
-			};
-		}
-
-		/**
-		 * @inheritDoc
-		 *
-		 * Reads the timestamp in the same time zone getUnixTimestampFunction() writes it in.
-		 * SQL Server adds days and seconds separately: DATEADD takes an int before SQL Server 2025.
-		 */
-		public function getDatetimeFromUnixTimestamp(string $timestampSql): string {
-			return match ($this->adapter->getDatabaseType()) {
-				'pgsql' => "(TO_TIMESTAMP({$timestampSql}) AT TIME ZONE 'UTC')",
-				'sqlite' => "datetime({$timestampSql}, 'unixepoch')",
-				'sqlsrv' => "DATEADD(SECOND, CAST({$timestampSql} AS BIGINT) % 86400, DATEADD(DAY, CAST({$timestampSql} AS BIGINT) / 86400, CAST('1970-01-01' AS DATETIME2)))",
-				default => "FROM_UNIXTIME({$timestampSql})",
-			};
-		}
-		
-		/**
-		 * @inheritDoc
-		 *
-		 * Current date/time as a native datetime value per engine:
-		 * - MySQL / MariaDB: NOW()
-		 * - PostgreSQL:      NOW()
-		 * - SQLite:          CURRENT_TIMESTAMP
-		 * - SQL Server:      SYSDATETIME() — higher precision than GETDATE(),
-		 *                    which reduces the chance of two concurrent writes
-		 *                    producing an identical version timestamp.
-		 */
-		public function getCurrentDatetimeFunction(): string {
-			return match ($this->adapter->getDatabaseType()) {
-				'sqlite' => 'CURRENT_TIMESTAMP',
-				'sqlsrv' => 'SYSDATETIME()',
-				default => 'NOW()',
-			};
-		}
-
 		/**
 		 * @inheritDoc
 		 *
@@ -337,6 +240,20 @@
 		 */
 		public function supportsQualifiedSetTarget(): bool {
 			return !in_array($this->adapter->getDatabaseType(), ['pgsql', 'sqlite'], true);
+		}
+
+		/**
+		 * @inheritDoc
+		 */
+		public function supportsAliasAfterDmlTarget(): bool {
+			return $this->adapter->getDatabaseType() !== 'sqlsrv';
+		}
+
+		/**
+		 * @inheritDoc
+		 */
+		public function supportsBooleanLiterals(): bool {
+			return $this->adapter->getDatabaseType() !== 'sqlsrv';
 		}
 
 		/**

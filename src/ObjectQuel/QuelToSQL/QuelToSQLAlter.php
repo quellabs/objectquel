@@ -2,10 +2,11 @@
 
 	namespace Quellabs\ObjectQuel\ObjectQuel\QuelToSQL;
 
-	use Quellabs\ObjectQuel\ObjectQuel\ForeignKeyConstraintNamer;
 	use Quellabs\ObjectQuel\Capabilities\PlatformCapabilitiesInterface;
-	use Quellabs\ObjectQuel\DatabaseAdapter\Mapper\DDLTypeMapper;
-	use Quellabs\ObjectQuel\DatabaseAdapter\SqlIdentifierQuoter;
+	use Quellabs\ObjectQuel\ObjectQuel\Helpers\SqlDialect\DDLTypeMapper;
+	use Quellabs\ObjectQuel\ObjectQuel\Helpers\SqlDialect\ForeignKeyActionNormalizer;
+	use Quellabs\ObjectQuel\ObjectQuel\Helpers\SqlDialect\SqlIdentifierQuoter;
+	use Quellabs\ObjectQuel\ObjectQuel\Schema\DefaultConstraintNamer;
 	use Quellabs\ObjectQuel\Exception\QuelException;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstAlterAddColumn;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstAlterAddForeignKey;
@@ -17,6 +18,7 @@
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstAlterSetPrimaryKey;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstAlterTable;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstColumnDefinition;
+	use Quellabs\ObjectQuel\ObjectQuel\Schema\ForeignKeyConstraintNamer;
 
 	/**
 	 * Compiles an AstAlterTable statement's column, primary-key, and
@@ -390,6 +392,7 @@
 		}
 
 		/**
+		 * Rejects primary-key changes when the target engine cannot apply them.
 		 * @param string $tableName
 		 * @return void
 		 * @throws QuelException

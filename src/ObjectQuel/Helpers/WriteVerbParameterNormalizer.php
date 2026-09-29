@@ -72,6 +72,7 @@
 		private array $normalizedParamNames = [];
 
 		/**
+		 * Initializes the normalizer for the target entity and bound parameters.
 		 * @param EntityMetadataRecord $metadata The write verb's single target entity
 		 * @param Serializer $serializer
 		 * @param array<string, mixed> $parameters Bound parameters, by reference

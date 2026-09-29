@@ -9,7 +9,10 @@
 	use Quellabs\ObjectQuel\DatabaseAdapter\Inspector\MysqlSchemaIntrospector;
 	use Quellabs\ObjectQuel\DatabaseAdapter\Inspector\NullSchemaIntrospector;
 	use Quellabs\ObjectQuel\DatabaseAdapter\Inspector\PostgresSchemaIntrospector;
+	use Quellabs\ObjectQuel\DatabaseAdapter\Inspector\RoutineDefinitionInspector;
+	use Quellabs\ObjectQuel\DatabaseAdapter\Inspector\RoutineSchemaIntrospector;
 	use Quellabs\ObjectQuel\DatabaseAdapter\Inspector\SchemaIntrospectorInterface;
+	use Quellabs\ObjectQuel\DatabaseAdapter\Inspector\SqlServerCompatibilityLevelInspector;
 	use Quellabs\ObjectQuel\DatabaseAdapter\Inspector\SqlServerFulltextIndexInspector;
 	use Quellabs\ObjectQuel\DatabaseAdapter\Inspector\SqlServerSchemaIntrospector;
 	use Quellabs\ObjectQuel\DatabaseAdapter\Inspector\SqliteFulltextIndexInspector;
@@ -43,8 +46,8 @@
 		/** @var Connection CakePHP database connection instance */
 		protected Connection $connection;
 		
-		/** @var int Error code from the last failed database operation (0 = no error) */
-		protected int $last_error;
+		/** @var int|string Error code or SQLSTATE from the last failed operation (0 = no error) */
+		protected int|string $last_error;
 		
 		/** @var string Error message from the last failed database operation */
 		protected string $last_error_message;
@@ -92,13 +95,19 @@
 		private ?SqliteFulltextIndexInspector $sqliteFulltextIndexInspectorCache = null;
 
 		/**
-		 * Cached SQL Server database compatibility level (e.g. 170 for SQL
-		 * Server 2025), fetched via DATABASEPROPERTYEX(). Null means "not yet
-		 * queried, or the query failed". Only meaningful when getDatabaseType()
-		 * is 'sqlsrv' — irrelevant for every other engine.
-		 * @var int|null
+		 * Cached SqlServerCompatibilityLevelInspector instance, lazily created by getSqlServerCompatibilityLevel().
+		 * @var SqlServerCompatibilityLevelInspector|null
 		 */
-		private ?int $sqlServerCompatibilityLevelCache;
+		private ?SqlServerCompatibilityLevelInspector $sqlServerCompatibilityLevelInspectorCache = null;
+
+		/**
+		 * Cached RoutineSchemaIntrospector instance, lazily created by getRoutineSchema().
+		 * @var RoutineSchemaIntrospector|null
+		 */
+		private ?RoutineSchemaIntrospector $routineSchemaIntrospectorCache = null;
+
+		/** @var RoutineDefinitionInspector|null Lazily created inspector; routine metadata itself is not cached */
+		private ?RoutineDefinitionInspector $routineDefinitionInspectorCache = null;
 		
 		/**
 		 * Constructs a new database adapter instance
@@ -111,7 +120,6 @@
 			$this->transaction_depth = 0;
 			$this->transaction_rollback_only = false;
 			$this->databaseTypeCache = null;
-			$this->sqlServerCompatibilityLevelCache = null;
 
 			// SQLite disables foreign-key enforcement per-connection by default, even when
 			// the schema declares real FK constraints. Without this, a constraint generated
@@ -267,43 +275,47 @@
 		}
 		
 		/**
-		 * Returns the current database's compatibility level on SQL Server
-		 * (e.g. 170 for SQL Server 2025), or null if it could not be determined
-		 * or the connection is not SQL Server. Result is cached for the lifetime
-		 * of this adapter instance.
-		 *
-		 * Compatibility level is a per-database setting independent of the
-		 * engine version — a SQL Server 2025 instance can host a database still
-		 * pinned to an older compatibility level (e.g. migrated without ever
-		 * raising it), so the engine version returned by getServerVersion()
-		 * alone cannot answer "which T-SQL features does this database support".
-		 *
+		 * Returns the current database's compatibility level on SQL Server (e.g. 170 for SQL Server 2025),
+		 * or null if it could not be determined.
 		 * @return int|null
+		 * @see SqlServerCompatibilityLevelInspector::getCompatibilityLevel()
 		 */
 		public function getSqlServerCompatibilityLevel(): ?int {
-			// Return cache
-			if ($this->sqlServerCompatibilityLevelCache !== null) {
-				return $this->sqlServerCompatibilityLevelCache;
-			}
-			
-			// DB_NAME() resolves to the current connection's database, so this
-			// works without the caller needing to know or pass the database name.
-			$stmt = $this->execute(
-				"SELECT DATABASEPROPERTYEX(DB_NAME(), 'CompatibilityLevel') AS compat_level"
-			);
-			
-			if ($stmt === null) {
-				return null;
-			}
-			
-			$row = $stmt->fetchAssoc();
-			$stmt->closeCursor();
-			
-			if (!$row || !isset($row['compat_level'])) {
-				return null;
-			}
-			
-			return $this->sqlServerCompatibilityLevelCache = (int)$row['compat_level'];
+			$this->sqlServerCompatibilityLevelInspectorCache ??= new SqlServerCompatibilityLevelInspector($this);
+			return $this->sqlServerCompatibilityLevelInspectorCache->getCompatibilityLevel();
+		}
+
+		/**
+		 * Reads a routine's kind and normalized return type from the database catalog.
+		 * @param string $name Routine name as written
+		 * @return RoutineSignature
+		 * @throws \Quellabs\ObjectQuel\Exception\QuelException When missing, ambiguous, unsupported, or the lookup fails
+		 */
+		public function getRoutineSignature(string $name): RoutineSignature {
+			$this->routineDefinitionInspectorCache ??= new RoutineDefinitionInspector($this);
+			return $this->routineDefinitionInspectorCache->getRoutineSignature($name);
+		}
+
+		/**
+		 * Checks whether a function or procedure has this name, without resolving its call signature.
+		 * @param string $name Routine name as written
+		 * @return bool True when either routine kind exists
+		 * @throws \Quellabs\ObjectQuel\Exception\QuelException When the lookup fails or routines are unsupported
+		 */
+		public function routineExists(string $name): bool {
+			$this->routineDefinitionInspectorCache ??= new RoutineDefinitionInspector($this);
+			return $this->routineDefinitionInspectorCache->routineExists($name);
+		}
+
+		/**
+		 * Returns the schema that qualifies routine names, or null when unqualified names are used.
+		 * @return string|null
+		 * @throws \RuntimeException When the default schema can't be read
+		 * @see RoutineSchemaIntrospector::getRoutineSchema()
+		 */
+		public function getRoutineSchema(): ?string {
+			$this->routineSchemaIntrospectorCache ??= new RoutineSchemaIntrospector($this);
+			return $this->routineSchemaIntrospectorCache->getRoutineSchema();
 		}
 		
 		/**
@@ -413,6 +425,29 @@
 					'length'  => null,
 				];
 			}
+
+			if ($this->getDatabaseType() === 'pgsql' && $result !== []) {
+				$statement = $this->execute("
+					SELECT i.relname AS index_name, a.attname AS column_name
+					FROM pg_class t
+					JOIN pg_namespace n ON n.oid = t.relnamespace
+					JOIN pg_index x ON x.indrelid = t.oid
+					JOIN pg_class i ON i.oid = x.indexrelid
+					JOIN LATERAL unnest(x.indkey) WITH ORDINALITY AS k(attnum, position) ON true
+					JOIN pg_attribute a ON a.attrelid = t.oid AND a.attnum = k.attnum
+					WHERE n.nspname = current_schema() AND t.relname = :tableName
+					ORDER BY i.relname, k.position
+				", ['tableName' => $tableName]);
+				$orderedColumns = [];
+				foreach ($statement?->fetchAll('assoc') ?? [] as $row) {
+					$orderedColumns[$row['index_name']][] = $row['column_name'];
+				}
+				foreach ($orderedColumns as $indexName => $columns) {
+					if (isset($result[$indexName])) {
+						$result[$indexName]['columns'] = $columns;
+					}
+				}
+			}
 			
 			return $result;
 		}
@@ -507,7 +542,10 @@
 				$this->deduplicateParameters($query, $parameters);
 				return $this->connection->execute($query, $parameters, $this->booleanParameterTypes($parameters));
 			} catch (\Exception $exception) {
-				$this->last_error = $exception->getCode();
+				$previous = $exception->getPrevious();
+				$this->last_error = $this->getDatabaseType() === 'pgsql' && $previous instanceof \PDOException
+					? $previous->getCode()
+					: $exception->getCode();
 				$this->last_error_message = $exception->getMessage();
 				return null;
 			}
@@ -534,9 +572,9 @@
 		
 		/**
 		 * Returns the error code from the last failed query
-		 * @return int Error code (0 indicates no error)
+		 * @return int|string Error code or SQLSTATE (0 indicates no error)
 		 */
-		public function getLastError(): int {
+		public function getLastError(): int|string {
 			return $this->last_error;
 		}
 		

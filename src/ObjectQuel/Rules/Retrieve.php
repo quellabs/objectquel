@@ -229,14 +229,14 @@
 			
 			// Parse the required window number (which window/page to retrieve)
 			// This represents the page number or window index in the result set
-			$windowNumber = $this->lexer->match(Token::Number);
+			$page = $this->parseSignedNumber();
 			
 			// Parse the window size specification (how many records per window)
 			$windowSize = $this->parseWindowSize();
 			
 			// Apply the parsed pagination settings to the retrieve AST node
 			// Set which window/page number to retrieve (0-based)
-			$retrieve->setWindow((int)$windowNumber->getNumericValue());
+			$retrieve->setWindow($page);
 			
 			// Set how many records should be included in each window/page
 			$retrieve->setWindowSize($windowSize);
@@ -244,26 +244,35 @@
 		
 		/**
 		 * Parse the window size specification from a WINDOW clause.
-		 * @return int The parsed window size or default if not specified
+		 * @return int|float The parsed window size or default if not specified
 		 * @throws LexerException on parsing errors
 		 */
-		private function parseWindowSize(): int {
+		private function parseWindowSize(): int|float {
 			// Short notation: WINDOW 1, 10
 			if ($this->lexer->optionalMatch(Token::Comma)) {
-				$sizeToken = $this->lexer->match(Token::Number);
-				return (int)$sizeToken->getNumericValue();
+				return $this->parseSignedNumber();
 			}
 			
 			// Explicit notation: WINDOW 1 USING WINDOW_SIZE 10
 			if ($this->lexer->optionalMatch(Token::Using)) {
 				$this->lexer->match(Token::WindowSize);
-				$sizeToken = $this->lexer->match(Token::Number);
-				return (int)$sizeToken->getNumericValue();
+				return $this->parseSignedNumber();
 			}
 			
 			return self::DEFAULT_WINDOW_SIZE;
 		}
-		
+
+		/**
+		 * Parses a numeric window value, leaving range validation to the semantic analyzer.
+		 * @return int|float
+		 * @throws LexerException
+		 */
+		private function parseSignedNumber(): int|float {
+			$negative = $this->lexer->optionalMatch(Token::Minus) !== null;
+			$value = $this->lexer->match(Token::Number)->getNumericValue();
+			return $negative ? -$value : $value;
+		}
+
 		/**
 		 * Consume an optional trailing semicolon from the retrieve statement.
 		 * @throws LexerException if semicolon token cannot be properly consumed

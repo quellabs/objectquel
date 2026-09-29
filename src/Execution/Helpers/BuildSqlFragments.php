@@ -4,7 +4,7 @@
 	
 	use Quellabs\ObjectQuel\Capabilities\NullPlatformCapabilities;
 	use Quellabs\ObjectQuel\Capabilities\PlatformCapabilitiesInterface;
-	use Quellabs\ObjectQuel\DatabaseAdapter\SqlIdentifierQuoter;
+	use Quellabs\ObjectQuel\ObjectQuel\Helpers\SqlDialect\SqlIdentifierQuoter;
 	use Quellabs\ObjectQuel\EntityStore;
 	use Quellabs\ObjectQuel\Exception\EntityResolutionException;
 	use Quellabs\ObjectQuel\Execution\SqlGeneratorInterface;
@@ -19,6 +19,7 @@
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstNull;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstNumber;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstParameter;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRoutineCall;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstString;
 	use Quellabs\ObjectQuel\ObjectQuel\AstInterface;
 	
@@ -41,6 +42,12 @@
 		/** @var SqlIdentifierQuoter Quotes table/column identifiers correctly for the connected engine */
 		private SqlIdentifierQuoter $identifierQuoter;
 
+		/** @var PlatformCapabilitiesInterface Engine whose string literal syntax is rendered */
+		private PlatformCapabilitiesInterface $platform;
+
+		/** @var string|null Schema that qualifies routine names, or null for none */
+		private ?string $routineSchema;
+
 		/**
 		 * Constructor - initializes the SQL builder helper with required dependencies
 		 * @param EntityStore $entityStore Entity metadata store
@@ -49,17 +56,21 @@
 		 *        using this name instead of the inner range name, so derived table columns match
 		 *        what the outer query expects (e.g. "x.id" instead of "y.id")
 		 * @param PlatformCapabilitiesInterface $platform Database engine capability descriptor
+		 * @param string|null $routineSchema Schema that qualifies routine names, or null for none
 		 */
 		public function __construct(
 			EntityStore           $entityStore,
 			SqlGeneratorInterface $mainVisitor,
 			?string               $subqueryAliasRangeName = null,
-			PlatformCapabilitiesInterface $platform = new NullPlatformCapabilities()
+			PlatformCapabilitiesInterface $platform = new NullPlatformCapabilities(),
+			?string               $routineSchema = null
 		) {
 			$this->entityStore = $entityStore;
 			$this->mainVisitor = $mainVisitor;
 			$this->subqueryAliasRangeName = $subqueryAliasRangeName;
 			$this->identifierQuoter = new SqlIdentifierQuoter($platform);
+			$this->platform = $platform;
+			$this->routineSchema = $routineSchema;
 		}
 		
 		/**
@@ -79,7 +90,7 @@
 		 * @return string SQL join condition
 		 */
 		public function buildJoinCondition(AstInterface $joinCondition): string {
-			return $this->mainVisitor->visitNodeAndReturnSQL($joinCondition);
+			return $this->mainVisitor->visitConditionAndReturnSQL($joinCondition);
 		}
 		
 		/**
@@ -137,7 +148,7 @@
 		 * @return string SQL NOT expression
 		 */
 		public function handleNot(AstNot $ast): string {
-			return 'NOT(' . $this->visitNodeAndReturnSQL($ast->getExpression()) . ')';
+			return 'NOT(' . $this->mainVisitor->visitConditionAndReturnSQL($ast->getExpression()) . ')';
 		}
 		
 		/**
@@ -154,9 +165,13 @@
 		 * Process boolean literal values
 		 * Converts an AstBool node to SQL boolean representation.
 		 * @param AstBool $ast The boolean AST node
-		 * @return string SQL boolean literal ("true" or "false")
+		 * @return string SQL boolean literal ("true"/"false", or "1"/"0" on engines without boolean literals)
 		 */
 		public function handleBool(AstBool $ast): string {
+			if (!$this->platform->supportsBooleanLiterals()) {
+				return $ast->getValue() ? '1' : '0';
+			}
+
 			return $ast->getValue() ? 'true' : 'false';
 		}
 		
@@ -177,7 +192,7 @@
 		 * @return string SQL string literal with proper escaping
 		 */
 		public function handleString(AstString $ast): string {
-			return '"' . $this->escapeSqlString($ast->getValue()) . '"';
+			return $this->identifierQuoter->quoteStringLiteral($ast->getValue());
 		}
 		
 		/**
@@ -194,6 +209,16 @@
 			);
 			
 			return 'CONCAT(' . implode(', ', $parts) . ')';
+		}
+
+		/**
+		 * Renders a stored routine call with its arguments.
+		 * @param AstRoutineCall $call The call node
+		 * @return string E.g. `"f"(1)` or `[dbo].[f](1)`
+		 */
+		public function handleRoutineCall(AstRoutineCall $call): string {
+			$arguments = array_map(fn(AstInterface $argument) => $this->mainVisitor->visitValueAndReturnSQL($argument), $call->getArguments());
+			return $this->identifierQuoter->quoteRoutineName($call->getName(), $this->routineSchema) . '(' . implode(', ', $arguments) . ')';
 		}
 		
 		/**
@@ -264,19 +289,5 @@
 		 */
 		private function visitNodeAndReturnSQL(AstInterface $node): string {
 			return $this->mainVisitor->visitNodeAndReturnSQL($node);
-		}
-		
-		/**
-		 * Escape a string value for safe inclusion in a SQL literal.
-		 *
-		 * NOTE: This centralizes escaping so it can be swapped for a PDO/mysqli
-		 * real_escape_string call once a connection reference is available here.
-		 * Do not inline addslashes() calls elsewhere in this class.
-		 *
-		 * @param string $value Raw string value
-		 * @return string Escaped string safe for embedding between SQL quotes
-		 */
-		private function escapeSqlString(string $value): string {
-			return addslashes($value);
 		}
 	}

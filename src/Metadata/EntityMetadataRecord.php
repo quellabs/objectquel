@@ -31,6 +31,7 @@
 	use Quellabs\ObjectQuel\Annotations\Orm\InverseOf;
 	use Quellabs\ObjectQuel\Annotations\Orm\OneToOne;
 	use Quellabs\ObjectQuel\Annotations\Orm\ManyToOne;
+	use Quellabs\ObjectQuel\Annotations\Orm\PrimaryKeyStrategy;
 	use Quellabs\ObjectQuel\Annotations\Orm\UniqueIndex;
 	use Quellabs\ObjectQuel\Annotations\Orm\Version;
 	use Quellabs\ObjectQuel\DatabaseAdapter\ColumnDefinition;
@@ -118,6 +119,21 @@
 		 */
 		public function hasAutoIncrementPrimaryKey(): bool {
 			return $this->autoIncrementColumn !== null;
+		}
+
+		/**
+		 * Returns the @PrimaryKeyStrategy value of a primary key property; 'identity' when none is declared.
+		 * @param string $primaryKey Primary key property name
+		 * @return string
+		 */
+		public function getPrimaryKeyStrategy(string $primaryKey): string {
+			foreach ($this->getAnnotations()[$primaryKey] ?? [] as $annotation) {
+				if ($annotation instanceof PrimaryKeyStrategy) {
+					return $annotation->getValue();
+				}
+			}
+
+			return 'identity';
 		}
 		
 		/**

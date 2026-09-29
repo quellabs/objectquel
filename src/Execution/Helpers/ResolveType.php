@@ -107,7 +107,7 @@
 			if ($ast instanceof AstExpression || $ast instanceof AstBinaryOperator) {
 				return 'boolean';
 			}
-			
+
 			// Traverse down the parse tree for binary operations (terms/factors)
 			if ($ast instanceof NodeBinary) {
 				// Recursively get types of left and right operands

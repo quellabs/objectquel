@@ -14,14 +14,27 @@
 
 		private string $column;
 
+		/**
+		 * Initializes this AST node.
+		 * @param string $column
+		 * @return void
+		 */
 		public function __construct(string $column) {
 			$this->column = $column;
 		}
 
+		/**
+		 * Returns the column.
+		 * @return string
+		 */
 		public function getColumn(): string {
 			return $this->column;
 		}
 
+		/**
+		 * Returns a deep clone of this node.
+		 * @return static
+		 */
 		public function deepClone(): static {
 			// @phpstan-ignore-next-line new.static
 			$clone = new static($this->column);

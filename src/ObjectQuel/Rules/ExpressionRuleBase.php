@@ -9,7 +9,7 @@
 	use Quellabs\ObjectQuel\ObjectQuel\Token;
 	
 	/**
-	 * AbstractExpressionRule is the base class for expression rule classes.
+	 * Base class for expression parsing rules.
 	 *
 	 * It owns the Lexer instance and token-level parsing primitives that are
 	 * shared across multiple levels of the expression hierarchy. Rule classes

@@ -1,0 +1,349 @@
+<?php
+
+	namespace Quellabs\ObjectQuel\ObjectQuel\Routines;
+
+	use Quellabs\ObjectQuel\DatabaseAdapter\Mapper\TypeMapper;
+	use Quellabs\ObjectQuel\Exception\EntityResolutionException;
+	use Quellabs\ObjectQuel\Exception\SemanticException;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstAppend;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstAssignment;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstDeclare;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstExpression;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstFactor;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstIdentifier;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstIf;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstIn;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstReplace;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRetrieve;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstReturn;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRoutineDefinition;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstTerm;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstVariableAssignment;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstWhile;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\NodeBinary;
+	use Quellabs\ObjectQuel\ObjectQuel\AstInterface;
+	use Quellabs\ObjectQuel\ObjectQuel\Visitors\CollectNodes;
+
+	/**
+	 * Checks value types by category (numeric, string, boolean, datetime, array): return
+	 * values, assignments, initializers and `if`/`while` conditions against their declared
+	 * types, and comparisons and column writes that involve a routine variable or cursor
+	 * field, and arithmetic on such values. Values whose type can't be inferred, NULL included, are accepted.
+	 */
+	class RoutineTypeChecker {
+
+		/** Category of each PHP-level type that ResolveType and TypeMapper produce */
+		private const array CATEGORIES = [
+			'int'       => 'numeric',
+			'integer'   => 'numeric',
+			'float'     => 'numeric',
+			'string'    => 'string',
+			'bool'      => 'boolean',
+			'boolean'   => 'boolean',
+			'\DateTime' => 'datetime',
+			'datetime'  => 'datetime',
+			'array'     => 'array',
+		];
+
+		/** Categories a datetime column may be compared with or written from; queries convert them to Unix timestamps */
+		private const array DATETIME_COMPATIBLE = ['numeric', 'string'];
+
+		private RoutineFieldTypes $fieldTypes;
+
+		/**
+		 * Initializes routine type checking with field and scope information.
+		 * @param RoutineFieldTypes $fieldTypes Types collected while preparing this routine
+		 */
+		public function __construct(RoutineFieldTypes $fieldTypes) {
+			$this->fieldTypes = $fieldTypes;
+		}
+
+		/**
+		 * Checks the routine body against its declarations and return type.
+		 * @param AstRoutineDefinition $routine Routine that passed RoutineAnalyzer
+		 * @return void
+		 * @throws SemanticException When a value doesn't fit its declared type or the value it meets
+		 * @throws EntityResolutionException
+		 */
+		public function check(AstRoutineDefinition $routine): void {
+			// Arithmetic first, so a string operand is reported as such rather than as the string result it produces
+			$passes = [
+				[AstTerm::class, AstFactor::class],
+				[
+					AstDeclare::class, AstVariableAssignment::class, AstReturn::class, AstIf::class, AstWhile::class,
+					AstExpression::class, AstIn::class, AstReplace::class, AstAppend::class,
+				],
+			];
+
+			foreach ($passes as $nodeTypes) {
+				$collector = new CollectNodes($nodeTypes);
+				$routine->accept($collector);
+
+				foreach ($collector->getCollectedNodes() as $node) {
+					$this->checkNode($node, $routine);
+				}
+			}
+		}
+
+		/**
+		 * Checks a routine expression against its expected type.
+		 * @param AstInterface $node Collected node
+		 * @param AstRoutineDefinition $routine The routine, for its return type
+		 * @return void
+		 * @throws SemanticException|EntityResolutionException
+		 */
+		private function checkNode(AstInterface $node, AstRoutineDefinition $routine): void {
+			match (true) {
+				$node instanceof AstReturn => $this->checkReturn($node, $routine),
+				$node instanceof AstDeclare => $this->checkInitializer($node),
+				$node instanceof AstVariableAssignment => $this->checkAssignment($node),
+				$node instanceof AstIf => $this->checkCondition('if', $node->getCondition()),
+				$node instanceof AstWhile => $this->checkCondition('while', $node->getCondition()),
+				$node instanceof AstExpression => $this->checkComparison('A comparison', $node->getLeft(), [$node->getRight()]),
+				$node instanceof AstIn => $this->checkComparison("An 'in' list", $node->getIdentifier(), $node->getParameters()),
+				$node instanceof AstReplace => $this->checkColumnWrites($node->getRange()->getEntityName(), $node->getAssignments()),
+				$node instanceof AstAppend => $this->checkAppend($node),
+				$node instanceof AstTerm, $node instanceof AstFactor => $this->checkArithmetic($node),
+				default => null,
+			};
+		}
+
+		/**
+		 * Validates a return statement against the routine return type.
+		 * @param AstReturn $return The return
+		 * @param AstRoutineDefinition $routine The routine
+		 * @return void
+		 * @throws SemanticException|EntityResolutionException
+		 */
+		private function checkReturn(AstReturn $return, AstRoutineDefinition $routine): void {
+			$value = $return->getValue();
+
+			// A bare `return` (void routines only) has no value to type-check
+			if ($value === null) {
+				return;
+			}
+
+			$returnType = RoutineAnalyzer::normalizeType($routine->getDeclaredReturnType());
+			$mismatch = $this->mismatch($returnType, $value);
+
+			if ($mismatch !== null) {
+				throw new SemanticException("'{$routine->getName()}' returns {$returnType}, but a returned value is {$mismatch}.");
+			}
+		}
+
+		/**
+		 * Checks an initializer against its declared variable type.
+		 * @param AstDeclare $declaration The declaration
+		 * @return void
+		 * @throws SemanticException|EntityResolutionException
+		 */
+		private function checkInitializer(AstDeclare $declaration): void {
+			$initializer = $declaration->getInitializer();
+
+			if ($declaration->isCursor() || $initializer === null) {
+				return;
+			}
+
+			$type = $this->fieldTypes->variableType($declaration->getName());
+			if ($type === null) {
+				throw new \LogicException("Routine variable '{$declaration->getName()}' has no declared type.");
+			}
+			$mismatch = $this->mismatch($type, $initializer);
+
+			if ($mismatch !== null) {
+				throw new SemanticException("'{$declaration->getName()}' is {$type}, but its initializer is {$mismatch}.");
+			}
+		}
+
+		/**
+		 * Checks assignment values against their target variable types.
+		 * @param AstVariableAssignment $assignment The assignment
+		 * @return void
+		 * @throws SemanticException|EntityResolutionException
+		 */
+		private function checkAssignment(AstVariableAssignment $assignment): void {
+			// A cursor rebind has no scalar type to check against
+			if ($assignment->getValue() instanceof AstRetrieve) {
+				return;
+			}
+
+			$type = $this->fieldTypes->variableType($assignment->getName());
+			if ($type === null) {
+				throw new \LogicException("Routine variable '{$assignment->getName()}' has no declared type.");
+			}
+			$mismatch = $this->mismatch($type, $assignment->getValue());
+
+			if ($mismatch !== null) {
+				throw new SemanticException("'{$assignment->getName()}' is {$type}, but the assigned value is {$mismatch}.");
+			}
+		}
+
+		/**
+		 * Checks that a control-flow condition has a valid type.
+		 * @param string $statement 'if' or 'while'
+		 * @param AstInterface $condition The condition
+		 * @return void
+		 * @throws SemanticException|EntityResolutionException
+		 */
+		private function checkCondition(string $statement, AstInterface $condition): void {
+			$category = $this->category($condition);
+
+			if ($category !== null && $category !== 'boolean') {
+				throw new SemanticException("The condition of '{$statement}' must be boolean, but it is {$category}. Compare it explicitly, e.g. x != 0.");
+			}
+		}
+
+		/**
+		 * Checks the operands of a comparison or `in` list when one of them reads a routine variable or cursor field.
+		 * @param string $what 'A comparison' or "An 'in' list", for the message
+		 * @param AstInterface $left Left operand
+		 * @param AstInterface[] $right Right operands
+		 * @return void
+		 * @throws SemanticException|EntityResolutionException
+		 */
+		private function checkComparison(string $what, AstInterface $left, array $right): void {
+			$reference = $this->routineReference([$left, ...$right]);
+
+			if ($reference === null) {
+				return;
+			}
+
+			$leftCategory = $this->category($left);
+
+			foreach ($right as $operand) {
+				$rightCategory = $this->category($operand);
+
+				if (!self::compatibleInQuery($leftCategory, $rightCategory)) {
+					throw new SemanticException("{$what} involving '{$reference}' mixes {$leftCategory} and {$rightCategory} values.");
+				}
+			}
+		}
+
+		/**
+		 * Rejects arithmetic on a string when it reads a routine variable or cursor field; engines disagree on what it means.
+		 * @param NodeBinary $arithmetic An AstTerm or AstFactor
+		 * @return void
+		 * @throws SemanticException|EntityResolutionException
+		 */
+		private function checkArithmetic(NodeBinary $arithmetic): void {
+			$reference = $this->routineReference([$arithmetic]);
+
+			if ($reference === null) {
+				return;
+			}
+
+			foreach ([$arithmetic->getLeft(), $arithmetic->getRight()] as $operand) {
+				if ($this->category($operand) === 'string') {
+					throw new SemanticException("Arithmetic involving '{$reference}' has a string operand; '{$arithmetic->getOperator()}' only works on numbers and dates.");
+				}
+			}
+		}
+
+		/**
+		 * Checks an append statement against its target entity fields.
+		 * @param AstAppend $append The append
+		 * @return void
+		 * @throws SemanticException|EntityResolutionException
+		 */
+		private function checkAppend(AstAppend $append): void {
+			if ($append->isInsertFromSelect()) {
+				return;
+			}
+
+			foreach ($append->getRowsOrFail() as $row) {
+				$this->checkColumnWrites($append->getEntityName(), $row);
+			}
+		}
+
+		/**
+		 * Checks `column = value` writes whose value reads a routine variable or cursor field.
+		 * @param string|null $entityName Target entity, or null when it isn't an entity
+		 * @param AstAssignment[] $assignments The writes
+		 * @return void
+		 * @throws SemanticException|EntityResolutionException
+		 */
+		private function checkColumnWrites(?string $entityName, array $assignments): void {
+			if ($entityName === null) {
+				return;
+			}
+
+			foreach ($assignments as $assignment) {
+				if ($this->routineReference([$assignment->getValue()]) === null) {
+					continue;
+				}
+
+				$column = $this->fieldTypes->columnType($entityName, $assignment->getProperty());
+				$columnCategory = $column === null ? null : (self::CATEGORIES[TypeMapper::phinxTypeToPhpType($column['type'])] ?? null);
+				$valueCategory = $this->category($assignment->getValue());
+
+				if (!self::compatibleInQuery($columnCategory, $valueCategory)) {
+					throw new SemanticException("Column '{$assignment->getProperty()}' of {$entityName} is {$column['type']}, but the value written to it is {$valueCategory}.");
+				}
+			}
+		}
+
+		/**
+		 * Reports a routine type mismatch with its source context.
+		 * @param string $declaredType Normalized declared type
+		 * @param AstInterface $value Value stored into it
+		 * @return string|null The value's category when it differs from the declared type's, otherwise null
+		 * @throws EntityResolutionException
+		 */
+		private function mismatch(string $declaredType, AstInterface $value): ?string {
+			$target = self::CATEGORIES[TypeMapper::phinxTypeToPhpType($declaredType)] ?? null;
+			$source = $this->category($value);
+
+			if ($target === null || $source === null || $target === $source) {
+				return null;
+			}
+
+			return $source;
+		}
+
+		/**
+		 * Classifies a routine type for compatibility checks.
+		 * @param AstInterface $value Expression
+		 * @return string|null The value's category, or null when its type can't be inferred
+		 * @throws EntityResolutionException
+		 */
+		private function category(AstInterface $value): ?string {
+			return self::CATEGORIES[$this->fieldTypes->inferReturnType($value) ?? ''] ?? null;
+		}
+
+		/**
+		 * Like an exact category match, but datetime also meets numeric and string, as queries allow.
+		 * @param string|null $a Category, or null when unknown
+		 * @param string|null $b Category, or null when unknown
+		 * @return bool
+		 * @phpstan-assert-if-false !null $a
+		 * @phpstan-assert-if-false !null $b
+		 */
+		private static function compatibleInQuery(?string $a, ?string $b): bool {
+			if ($a === null || $b === null || $a === $b) {
+				return true;
+			}
+
+			return ($a === 'datetime' && in_array($b, self::DATETIME_COMPATIBLE, true))
+				|| ($b === 'datetime' && in_array($a, self::DATETIME_COMPATIBLE, true));
+		}
+
+		/**
+		 * Resolves the declared type of a routine variable or cursor field.
+		 * @param AstInterface[] $nodes Expressions to search
+		 * @return string|null Name of the first routine variable or cursor field they read, or null when none
+		 */
+		private function routineReference(array $nodes): ?string {
+			foreach ($nodes as $node) {
+				$collector = new CollectNodes(AstIdentifier::class);
+				$node->accept($collector);
+
+				foreach ($collector->getCollectedNodes() as $identifier) {
+					if ($identifier->getType()->isRoutineReference() && !$identifier->getParent() instanceof AstIdentifier) {
+						return $identifier->getCompleteName();
+					}
+				}
+			}
+
+			return null;
+		}
+	}

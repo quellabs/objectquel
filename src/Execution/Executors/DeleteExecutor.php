@@ -25,7 +25,9 @@
 	class DeleteExecutor implements WriteVerbExecutorInterface {
 
 		private DatabaseAdapter $connection;
-		private QuelToSQLDelete $compiler;
+		private EntityStore $entityStore;
+		private PlatformCapabilitiesInterface $platform;
+		private ?QuelToSQLDelete $compiler = null;
 
 		/**
 		 * DeleteExecutor constructor
@@ -35,7 +37,16 @@
 		 */
 		public function __construct(DatabaseAdapter $connection, EntityStore $entityStore, PlatformCapabilitiesInterface $platform) {
 			$this->connection = $connection;
-			$this->compiler = new QuelToSQLDelete($entityStore, $platform);
+			$this->entityStore = $entityStore;
+			$this->platform = $platform;
+		}
+
+		/**
+		 * Returns the delete compiler. Built on first use, so SQL Server reads the routine schema only when a statement needs compiling.
+		 * @return QuelToSQLDelete
+		 */
+		private function compiler(): QuelToSQLDelete {
+			return $this->compiler ??= new QuelToSQLDelete($this->entityStore, $this->platform, $this->connection->getRoutineSchema());
 		}
 
 		/**
@@ -80,6 +91,6 @@
 		 * @throws QuelException|SemanticException On compile failure
 		 */
 		public function compileSql(AstDelete $statement, array &$parameters): string {
-			return $this->compiler->convertToSQL($statement, $parameters);
+			return $this->compiler()->convertToSQL($statement, $parameters);
 		}
 	}

@@ -32,7 +32,7 @@
 		 * Converts a database datetime value to a PHP \DateTime object.
 		 *
 		 * Accepts two input forms:
-		 *   - A string in "Y-m-d H:i:s" format (normal column hydration)
+		 *   - A string in "Y-m-d H:i:s" format, optionally with fractional seconds
 		 *   - An integer or numeric string Unix timestamp, produced when a
 		 *     date() expression appears in the SELECT list
 		 *
@@ -71,8 +71,9 @@
 				return null;
 			}
 			
-			// Accept "Y-m-d H:i:s" — the standard database datetime column format.
-			$date = DateTime::createFromFormat("Y-m-d H:i:s", $value, $timezone);
+			// PostgreSQL may include fractional seconds in timestamp values.
+			$format = str_contains($value, '.') ? 'Y-m-d H:i:s.u' : 'Y-m-d H:i:s';
+			$date = DateTime::createFromFormat($format, $value, $timezone);
 			return $date !== false ? $date : null;
 		}
 		

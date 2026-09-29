@@ -1,0 +1,439 @@
+<?php
+
+	namespace Quellabs\ObjectQuel\ObjectQuel\Routines;
+
+	use Quellabs\ObjectQuel\Capabilities\PlatformCapabilitiesInterface;
+	use Quellabs\ObjectQuel\ObjectQuel\Helpers\SqlDialect\DDLTypeMapper;
+	use Quellabs\ObjectQuel\DatabaseAdapter\Mapper\TypeMapper;
+	use Quellabs\ObjectQuel\EntityManager;
+	use Quellabs\ObjectQuel\EntityStore;
+	use Quellabs\ObjectQuel\Exception\EntityResolutionException;
+	use Quellabs\ObjectQuel\Exception\QuelException;
+	use Quellabs\ObjectQuel\Exception\SemanticException;
+	use Quellabs\ObjectQuel\Exception\TransformationException;
+	use Quellabs\ObjectQuel\Execution\Visitors\BuildSqlFromAst;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstAlias;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstAppend;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstCall;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstDelete;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstReplace;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRetrieve;
+	use Quellabs\ObjectQuel\ObjectQuel\AstInterface;
+	use Quellabs\ObjectQuel\ObjectQuel\Helpers\DateTimeWriteSqlConverter;
+	use Quellabs\ObjectQuel\ObjectQuel\Pipeline\IdentifierTypeResolver;
+	use Quellabs\ObjectQuel\ObjectQuel\Pipeline\QueryNormalizer;
+	use Quellabs\ObjectQuel\ObjectQuel\QuelToSQL\QuelToSQLAppend;
+	use Quellabs\ObjectQuel\ObjectQuel\QuelToSQL\QuelToSQLCall;
+	use Quellabs\ObjectQuel\ObjectQuel\QuelToSQL\QuelToSQLDelete;
+	use Quellabs\ObjectQuel\ObjectQuel\QuelToSQL\QuelToSQLReplace;
+	use Quellabs\ObjectQuel\ObjectQuel\QuelToSQL\QuelToSQLRetrieve;
+	use Quellabs\ObjectQuel\ObjectQuel\QuelToSQL\QuelToSQLUpsert;
+	use Quellabs\ObjectQuel\ObjectQuel\SemanticAnalyzer;
+	use Quellabs\ObjectQuel\Persistence\VersionValueHandler;
+	use Quellabs\ObjectQuel\Planner\ExecutionPlanBuilder;
+	use Quellabs\ObjectQuel\Planner\ExecutionStage;
+	use Quellabs\ObjectQuel\Planner\QueryOptimizer;
+	use Quellabs\ObjectQuel\ObjectQuel\Visitors\NormalizeDateTime;
+
+	/**
+	 * Compiles the statements and expressions embedded in a routine body to SQL
+	 * for one target engine, reusing the ad hoc query compilers. Dialect-neutral:
+	 * the routine lowerings wrap its output in engine-specific control flow.
+	 *
+	 * Nothing compiled here may need a bound parameter; a routine has no PHP
+	 * side to supply one, so such statements are rejected.
+	 */
+	class RoutineStatementCompiler {
+
+		private EntityManager $entityManager;
+		private EntityStore $entityStore;
+		private PlatformCapabilitiesInterface $platform;
+
+		/** @var string|null Schema that qualifies routine names, or null for none */
+		private ?string $routineSchema;
+		private RoutineRangeReferences $rangeReferences;
+		private QuelToSQLDelete $deleteCompiler;
+		private QuelToSQLReplace $replaceCompiler;
+		private QuelToSQLAppend $appendCompiler;
+		private QuelToSQLCall $callCompiler;
+		private RoutineFieldTypes $fieldTypes;
+
+		/**
+		 * Initializes routine statement compilation for the target platform.
+		 * @param EntityManager $entityManager Entity metadata and the optimizer's dependencies
+		 * @param PlatformCapabilitiesInterface $platform Target engine, which need not be the connected one
+		 * @param string|null $routineSchema Schema that qualifies routine names, or null for none
+		 */
+		public function __construct(EntityManager $entityManager, PlatformCapabilitiesInterface $platform, ?string $routineSchema) {
+			$this->entityManager = $entityManager;
+			$this->entityStore = $entityManager->getEntityStore();
+			$this->platform = $platform;
+			$this->routineSchema = $routineSchema;
+			$this->rangeReferences = new RoutineRangeReferences($this->entityStore);
+
+			// Built for the target platform; the unit of work's own handler renders for the connected engine
+			$unitOfWork = $entityManager->getUnitOfWork();
+			$versionValueHandler = new VersionValueHandler($entityManager->getConnection(), $this->entityStore, $unitOfWork, $unitOfWork->getPropertyHandler(), $platform);
+
+			// Written values may read routine variables and cursor fields, so the write compilers type them with these
+			$this->fieldTypes = new RoutineFieldTypes($this->entityStore, new DDLTypeMapper($platform));
+
+			$this->deleteCompiler = new QuelToSQLDelete($this->entityStore, $platform, $routineSchema);
+			$this->replaceCompiler = new QuelToSQLReplace($this->entityStore, $platform, $routineSchema, $versionValueHandler, $this->fieldTypes);
+			$this->callCompiler = new QuelToSQLCall($this->entityStore, $platform, $routineSchema);
+			$this->appendCompiler = new QuelToSQLAppend($entityManager, $platform, $routineSchema, new QuelToSQLUpsert($this->entityStore, $platform, $routineSchema, $this->replaceCompiler), $versionValueHandler, $this->fieldTypes);
+		}
+
+		/**
+		 * Returns the routine field type resolver.
+		 * @return RoutineFieldTypes Types of the routine's variables and cursor fields, filled in by the lowering
+		 */
+		public function getFieldTypes(): RoutineFieldTypes {
+			return $this->fieldTypes;
+		}
+
+		/**
+		 * Runs a copy of an embedded retrieve through the ad hoc query pipeline, narrowed to the ranges it reads.
+		 * The copy selects only its target list, without the optimizer's PHP-side projections.
+		 * @param AstRetrieve $retrieve Analyzed standalone or cursor retrieve
+		 * @return AstRetrieve The optimized copy, ready for retrieveSql()
+		 * @throws SemanticException When the query needs PHP-side processing
+		 * @throws EntityResolutionException|TransformationException|QuelException
+		 */
+		public function prepareRetrieve(AstRetrieve $retrieve): AstRetrieve {
+			// Declared ranges are shared between statements and the pipeline mutates them
+			$query = $retrieve->deepClone();
+
+			$this->narrowRanges($query);
+
+			$parameters = [];
+			(new IdentifierTypeResolver($this->entityStore))->resolve($query);
+			(new QueryNormalizer($this->entityStore))->transform($query);
+			$this->normalizeDateTimes($query);
+			(new SemanticAnalyzer($this->entityStore, $this->platform))->validate($query);
+			(new QueryOptimizer($this->entityManager, $this->platform))->transform($query, $parameters);
+
+			$stages = (new ExecutionPlanBuilder())->build($query, $parameters)->getStagesInOrder();
+
+			// The main database stage is the only one without a range of its own
+			if (count($stages) !== 1 || !$stages[0] instanceof ExecutionStage || $stages[0]->getRange() !== null) {
+				throw new SemanticException('This retrieve needs PHP-side processing (a JSON source, a temp table, or no range at all), which a routine can\'t run. Use an assignment for a value without a range.');
+			}
+
+			$query->setValues(array_values(array_filter($query->getValues(), fn(AstAlias $value) => $value->showInResult())));
+
+			return $query;
+		}
+
+		/**
+		 * Compiles a retrieve query for use inside a routine statement.
+		 * @param AstRetrieve $prepared Result of prepareRetrieve()
+		 * @return string The SELECT statement
+		 * @throws SemanticException|EntityResolutionException|QuelException
+		 */
+		public function retrieveSql(AstRetrieve $prepared): string {
+			$databaseType = $this->platform->getDatabaseType();
+			$window = $prepared->getWindow();
+
+			// Routine pagination must run in SQL; it cannot use the ordinary PHP key-fetch pass.
+			if ($window !== null && !$this->platform->supportsOffsetPagination()) {
+				throw new SemanticException("Windowed routine retrieves aren't supported by '{$databaseType}'.");
+			}
+
+			// SQL Server requires ORDER BY for OFFSET/FETCH; EQUEL doesn't add an implicit sort.
+			if ($window !== null && $databaseType === 'sqlsrv') {
+				if (empty($prepared->getSort()) || $prepared->getSortInApplicationLogic()) {
+					throw new SemanticException("SQL Server requires an explicit 'sort by' for a windowed routine retrieve.");
+				}
+			}
+
+			$sql = $this->withoutBoundParameters('retrieve', function (array &$parameters) use ($prepared): string {
+				return (new QuelToSQLRetrieve($this->entityStore, $parameters, $this->platform, $this->routineSchema))->convertToSQL($prepared);
+			});
+
+			if ($window === null) {
+				return $sql;
+			}
+
+			$size = $prepared->getWindowSize() ?? 1;
+			$window = (int)$window;
+			$size = (int)$size;
+			if ($window < 0 || $size <= 0) {
+				throw new SemanticException('A routine retrieve window requires a nonnegative page and a positive size.');
+			}
+
+			// Guard the page-size multiplication before embedding its SQL integer literal.
+			if ($window > intdiv(PHP_INT_MAX, $size)) {
+				throw new SemanticException('The window page and size produce an offset that is too large.');
+			}
+
+			$offset = $window * $size;
+
+			return match ($databaseType) {
+				'sqlsrv' => "{$sql} OFFSET {$offset} ROWS FETCH NEXT {$size} ROWS ONLY",
+				default => "{$sql} LIMIT {$size} OFFSET {$offset}",
+			};
+		}
+
+		/**
+		 * Compiles a delete statement inside a routine.
+		 * @param AstDelete $delete Analyzed `delete range where ...`
+		 * @return string
+		 * @throws SemanticException
+		 */
+		public function compileDelete(AstDelete $delete): string {
+			$statement = $delete->deepClone();
+			$this->normalizeDateTimes($statement->getConditionsOrFail());
+
+			return $this->withoutBoundParameters('delete', function (array &$parameters) use ($statement): string {
+				return $this->deleteCompiler->convertToSQL($statement, $parameters);
+			});
+		}
+
+		/**
+		 * Compiles a replace statement inside a routine.
+		 * @param AstReplace $replace Analyzed `replace range (...) where ...`
+		 * @return string
+		 * @throws SemanticException
+		 */
+		public function compileReplace(AstReplace $replace): string {
+			$statement = $replace->deepClone();
+			$this->normalizeDateTimes($statement->getConditionsOrFail());
+
+			return $this->withoutBoundParameters('replace', function (array &$parameters) use ($statement): string {
+				return $this->replaceCompiler->convertToSQL($statement, $parameters);
+			});
+		}
+
+		/**
+		 * Compiles an append statement inside a routine.
+		 * @param AstAppend $append Analyzed `append to range ...`, literal values or insert-from-select
+		 * @return string
+		 * @throws SemanticException When the insert needs PHP-generated keys, a PHP-side fallback or the planner
+		 * @throws EntityResolutionException|TransformationException|QuelException
+		 */
+		public function compileAppend(AstAppend $append): string {
+			$statement = $append->deepClone();
+			$entityName = $statement->getEntityName();
+
+			if ($statement->getOnConflict() !== null) {
+				$this->normalizeDateTimes($statement->getOnConflict()->getConditionsOrFail());
+			}
+
+			if ($entityName === null) {
+				throw new SemanticException("'append to {$statement->getRange()->getName()}' targets a JSON source, which a routine can't write.");
+			}
+
+			return $this->withoutBoundParameters('append', function (array &$parameters) use ($statement, $entityName): string {
+				if ($statement->isInsertFromSelect()) {
+					$source = $statement->getSourceOrFail();
+					$this->narrowRanges($source);
+					$this->appendCompiler->prepareSource($source, $parameters);
+					$this->normalizeDateTimes($source);
+
+					if ($this->appendCompiler->needsPlanner($source)) {
+						throw new SemanticException("The retrieve feeding 'append to {$statement->getRange()->getName()}' needs PHP-side processing (a JSON source or a temp table), which a routine can't run.");
+					}
+				} else {
+					$this->assertKeyNeedsNoPhp($statement, $entityName);
+				}
+
+				$compiled = $this->appendCompiler->convertToSQL($statement, $parameters);
+
+				if ($compiled->hasFallbackUpdate()) {
+					throw new SemanticException("'append to {$statement->getRange()->getName()} ... or replace' needs a separate fallback UPDATE run from PHP on this engine, which a routine can't do.");
+				}
+
+				return $compiled->primarySql;
+			});
+		}
+
+		/**
+		 * Compiles a procedural condition (`if`, `while`).
+		 * @param AstInterface $condition Analyzed condition
+		 * @return string
+		 * @throws SemanticException
+		 */
+		public function compileCondition(AstInterface $condition): string {
+			$condition = $condition->deepClone();
+			$this->normalizeDateTimes($condition);
+
+			return $this->withoutBoundParameters('expression', function (array &$parameters) use ($condition): string {
+				return (new BuildSqlFromAst($this->entityStore, $parameters, 'WHERE', $this->platform, $this->routineSchema))->visitConditionAndReturnSQL($condition);
+			});
+		}
+
+		/**
+		 * Compiles a procedural value (assignment, initializer, `return`, call argument).
+		 * @param AstInterface $value Analyzed expression
+		 * @return string
+		 * @throws SemanticException
+		 */
+		public function compileValue(AstInterface $value): string {
+			$value = $value->deepClone();
+			$this->normalizeDateTimes($value);
+
+			return $this->withoutBoundParameters('expression', function (array &$parameters) use ($value): string {
+				return (new BuildSqlFromAst($this->entityStore, $parameters, 'VALUES', $this->platform, $this->routineSchema))->visitValueAndReturnSQL($value);
+			});
+		}
+
+		/**
+		 * Compiles a value stored in a variable or returned; a Unix timestamp stored as a datetime is converted to one.
+		 * @param AstInterface $value Analyzed expression
+		 * @param string $receiver Variable name, or the routine name for a return value, for error messages
+		 * @param string $routineType Declared type of the variable or return value
+		 * @return string
+		 * @throws SemanticException|EntityResolutionException|QuelException
+		 */
+		public function compileStoredValue(AstInterface $value, string $receiver, string $routineType): string {
+			$normalized = $value->deepClone();
+			$this->normalizeDateTimes($normalized);
+
+			$targetType = TypeMapper::phinxTypeToPhpType(RoutineAnalyzer::normalizeType($routineType));
+			return DateTimeWriteSqlConverter::convert($this->compileValue($value), $this->fieldTypes->inferReturnType($normalized), $targetType, $receiver, $this->platform);
+		}
+
+		/**
+		 * Compiles a `call` statement as a procedure call; functions are called from expressions instead.
+		 * @param AstCall $statement Analyzed call
+		 * @param array<int, string> $argumentSql SQL replacing the argument at each index, e.g. a variable holding it
+		 * @return string `CALL name(args)`, or `EXEC name args` on SQL Server
+		 * @throws SemanticException|EntityResolutionException|QuelException
+		 */
+		public function compileCall(AstCall $statement, array $argumentSql = []): string {
+			$call = $statement->getCall();
+			$arguments = [];
+
+			foreach ($call->getArguments() as $index => $argument) {
+				$arguments[] = $argumentSql[$index] ?? $this->compileCallArgument($argument, $call->getName());
+			}
+
+			return $this->callCompiler->procedureCall($call->getName(), implode(', ', $arguments));
+		}
+
+		/**
+		 * Compiles a procedure argument; date arithmetic, computed as a Unix timestamp, is passed as a datetime.
+		 * @param AstInterface $argument Analyzed argument
+		 * @param string $routineName Called procedure, for error messages
+		 * @return string
+		 * @throws SemanticException|EntityResolutionException|QuelException
+		 */
+		public function compileCallArgument(AstInterface $argument, string $routineName): string {
+			if ($this->isDateArithmetic($argument)) {
+				return $this->compileStoredValue($argument, "an argument of '{$routineName}()'", 'datetime');
+			}
+
+			return $this->compileValue($argument);
+		}
+
+		/**
+		 * Returns the SQL type of a variable that holds a procedure argument; call before compiling the argument.
+		 * @param AstInterface $argument Analyzed argument
+		 * @param string $routineName Called procedure, for error messages
+		 * @return string SQL type on the target engine
+		 * @throws SemanticException When the argument's type can't be determined
+		 * @throws EntityResolutionException
+		 */
+		public function callArgumentSqlType(AstInterface $argument, string $routineName): string {
+			$type = $this->isDateArithmetic($argument) ? $this->fieldTypes->sqlType('datetime') : $this->fieldTypes->valueSqlType($argument);
+
+			if ($type === null) {
+				throw new SemanticException("The type of an argument of '{$routineName}()' can't be determined, so it can't be stored for the call. Cast the value, e.g. (int)x.");
+			}
+
+			return $type;
+		}
+
+		/**
+		 * @param AstInterface $value Analyzed expression, left unchanged
+		 * @return bool True when it's date arithmetic yielding a point in time
+		 * @throws EntityResolutionException|QuelException
+		 */
+		private function isDateArithmetic(AstInterface $value): bool {
+			$normalized = $value->deepClone();
+			$this->normalizeDateTimes($normalized);
+			return $this->fieldTypes->inferReturnType($normalized) === 'datetime';
+		}
+
+		/**
+		 * Returns the target database platform.
+		 * @return PlatformCapabilitiesInterface The target engine
+		 */
+		public function getPlatform(): PlatformCapabilitiesInterface {
+			return $this->platform;
+		}
+
+		/**
+		 * Returns the schema used to qualify routine names.
+		 * @return string|null Schema that qualifies routine names, or null for none
+		 */
+		public function getRoutineSchema(): ?string {
+			return $this->routineSchema;
+		}
+
+		/**
+		 * Drops the declared ranges $query doesn't read; the pipeline would cross-join them.
+		 * @param AstRetrieve $query Cloned query, modified in place
+		 * @return void
+		 * @throws EntityResolutionException
+		 */
+		private function narrowRanges(AstRetrieve $query): void {
+			$query->setRanges(array_values($this->rangeReferences->withJoinDependencies($query, $query->getRanges())));
+		}
+
+		/**
+		 * Expresses datetime routine variables and cursor fields in comparisons and arithmetic as Unix timestamps,
+		 * like datetime columns, so both sides of a comparison agree.
+		 * @param AstInterface $node Cloned statement part, modified in place
+		 * @return void
+		 * @throws EntityResolutionException|QuelException
+		 */
+		private function normalizeDateTimes(AstInterface $node): void {
+			$node->accept(new NormalizeDateTime($this->entityStore, $this->fieldTypes));
+		}
+
+		/**
+		 * Rejects a literal-values append whose primary key `append` would generate in PHP.
+		 * @param AstAppend $statement Literal-values append
+		 * @param string $entityName Target entity
+		 * @return void
+		 * @throws SemanticException
+		 */
+		private function assertKeyNeedsNoPhp(AstAppend $statement, string $entityName): void {
+			$metadata = $this->entityStore->getMetadata($entityName);
+			$primaryKey = $metadata->getPrimaryKey();
+
+			if ($primaryKey === null || $metadata->getPrimaryKeyStrategy($primaryKey) === 'identity') {
+				return;
+			}
+
+			// Rows share one column shape, so the first row decides
+			foreach ($statement->getRowsOrFail()[0] as $assignment) {
+				if ($assignment->getProperty() === $primaryKey) {
+					return;
+				}
+			}
+
+			throw new SemanticException("'append to {$statement->getRange()->getName()}' leaves primary key '{$primaryKey}' to its '{$metadata->getPrimaryKeyStrategy($primaryKey)}' strategy, which runs in PHP. Assign '{$primaryKey}' explicitly inside a routine.");
+		}
+
+		/**
+		 * Runs a compile step and rejects its output when it bound a parameter.
+		 * @param string $statement Statement keyword, for the error message
+		 * @param callable(array<string, mixed>&): string $compile Compile step receiving the parameter array by reference
+		 * @return string
+		 * @throws SemanticException
+		 */
+		private function withoutBoundParameters(string $statement, callable $compile): string {
+			$parameters = [];
+			$sql = $compile($parameters);
+
+			if (!empty($parameters)) {
+				$names = implode(', ', array_keys($parameters));
+				throw new SemanticException("This {$statement} needs values computed in PHP ({$names}), which a routine can't supply.");
+			}
+
+			return $sql;
+		}
+	}

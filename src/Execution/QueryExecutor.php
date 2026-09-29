@@ -4,13 +4,16 @@
 	
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstAlterTable;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstAppend;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstCall;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstCreateIndex;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstCreateTable;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstDelete;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstDestroy;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstDestroyIndex;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstDestroyRoutine;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstHideIndex;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstReplace;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRoutineDefinition;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstShowIndex;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstStatement;
 	use Quellabs\ObjectQuel\Capabilities\PlatformCapabilitiesInterface;
@@ -26,23 +29,28 @@
 	use Quellabs\ObjectQuel\ObjectQuel\LexerException;
 	use Quellabs\ObjectQuel\Exception\QuelException;
 	use Quellabs\ObjectQuel\ObjectQuel\Parser;
+	use Quellabs\ObjectQuel\ObjectQuel\Routines\ProcedureParser;
 	use Quellabs\ObjectQuel\ObjectQuel\ParserException;
 	use Quellabs\ObjectQuel\ObjectQuel\QuelResult;
 	use Quellabs\ObjectQuel\Execution\Executors\AlterTableExecutor;
 	use Quellabs\ObjectQuel\Execution\Executors\AppendExecutor;
+	use Quellabs\ObjectQuel\Execution\Executors\CallExecutor;
 	use Quellabs\ObjectQuel\Execution\Executors\CreateIndexExecutor;
 	use Quellabs\ObjectQuel\Execution\Executors\CreateTableExecutor;
 	use Quellabs\ObjectQuel\Execution\Executors\RetrieveExecutor;
 	use Quellabs\ObjectQuel\Execution\Executors\DeleteExecutor;
 	use Quellabs\ObjectQuel\Execution\Executors\DestroyExecutor;
 	use Quellabs\ObjectQuel\Execution\Executors\DestroyIndexExecutor;
+	use Quellabs\ObjectQuel\Execution\Executors\DestroyRoutineExecutor;
+	use Quellabs\ObjectQuel\Execution\Executors\DefineRoutineExecutor;
 	use Quellabs\ObjectQuel\Execution\Executors\HideIndexExecutor;
 	use Quellabs\ObjectQuel\Execution\Executors\ShowIndexExecutor;
 	use Quellabs\ObjectQuel\Execution\Executors\JsonRetrieveExecutor;
 	use Quellabs\ObjectQuel\Execution\Executors\ReplaceExecutor;
-	use Quellabs\ObjectQuel\ObjectQuel\Passes\DateTimeParameterCoercer;
-	use Quellabs\ObjectQuel\ObjectQuel\Passes\IdentifierTypeResolver;
-	use Quellabs\ObjectQuel\ObjectQuel\Passes\QueryNormalizer;
+	use Quellabs\ObjectQuel\Execution\Helpers\RoutineCallTyper;
+	use Quellabs\ObjectQuel\ObjectQuel\Pipeline\DateTimeParameterCoercer;
+	use Quellabs\ObjectQuel\ObjectQuel\Pipeline\IdentifierTypeResolver;
+	use Quellabs\ObjectQuel\ObjectQuel\Pipeline\QueryNormalizer;
 	use Quellabs\ObjectQuel\ObjectQuel\SemanticAnalyzer;
 	use Quellabs\ObjectQuel\Planner\ExecutionPlanBuilder;
 	use Quellabs\ObjectQuel\Planner\QueryOptimizer;
@@ -75,11 +83,15 @@
 		private AlterTableExecutor $alterTableExecutor;
 		private DestroyExecutor $destroyExecutor;
 		private DestroyIndexExecutor $destroyIndexExecutor;
+		private DefineRoutineExecutor $defineRoutineExecutor;
+		private DestroyRoutineExecutor $destroyRoutineExecutor;
 		private HideIndexExecutor $hideIndexExecutor;
 		private ShowIndexExecutor $showIndexExecutor;
 		private AppendExecutor $appendExecutor;
 		private ReplaceExecutor $replaceExecutor;
 		private DeleteExecutor $deleteExecutor;
+		private CallExecutor $callExecutor;
+		private RoutineCallTyper $routineCallTyper;
 		
 		/**
 		 * Constructor
@@ -110,11 +122,15 @@
 			$this->alterTableExecutor = new AlterTableExecutor($this->connection, $this->capabilities);
 			$this->destroyExecutor = new DestroyExecutor($this->connection, $this->capabilities);
 			$this->destroyIndexExecutor = new DestroyIndexExecutor($this->connection, $this->capabilities);
+			$this->defineRoutineExecutor = new DefineRoutineExecutor($entityManager, $this->capabilities);
+			$this->destroyRoutineExecutor = new DestroyRoutineExecutor($this->connection, $this->capabilities);
 			$this->hideIndexExecutor = new HideIndexExecutor($this->connection, $this->capabilities);
 			$this->showIndexExecutor = new ShowIndexExecutor($this->connection, $this->capabilities);
 			$this->appendExecutor = new AppendExecutor($this->connection, $entityManager, $this->capabilities, $this->planExecutor);
 			$this->replaceExecutor = new ReplaceExecutor($this->connection, $entityManager, $this->capabilities);
 			$this->deleteExecutor = new DeleteExecutor($this->connection, $entityManager->getEntityStore(), $this->capabilities);
+			$this->routineCallTyper = new RoutineCallTyper($this->connection);
+			$this->callExecutor = new CallExecutor($this->connection, $entityManager->getEntityStore(), $this->capabilities);
 
 			// Init the transformers
 			$this->optimizer = new QueryOptimizer($entityManager, $this->capabilities);
@@ -191,7 +207,9 @@
 					$ast instanceof AstDestroyIndex ||
 					$ast instanceof AstCreateIndex ||
 					$ast instanceof AstHideIndex ||
-					$ast instanceof AstShowIndex
+					$ast instanceof AstShowIndex ||
+					$ast instanceof AstRoutineDefinition ||
+					$ast instanceof AstDestroyRoutine
 				) {
 					match (true) {
 						$ast instanceof AstCreateTable => $this->createTableExecutor->execute($ast, $context),
@@ -200,6 +218,8 @@
 						$ast instanceof AstDestroyIndex => $this->destroyIndexExecutor->execute($ast, $context),
 						$ast instanceof AstHideIndex => $this->hideIndexExecutor->execute($ast, $context),
 						$ast instanceof AstShowIndex => $this->showIndexExecutor->execute($ast, $context),
+						$ast instanceof AstRoutineDefinition => $this->defineRoutineExecutor->execute($ast, $context),
+						$ast instanceof AstDestroyRoutine => $this->destroyRoutineExecutor->execute($ast, $context),
 						default => $this->createIndexExecutor->execute($ast, $context),
 					};
 
@@ -211,6 +231,9 @@
 				// executor's own docblock) but, unlike DDL, do return a QuelResult
 				// (affected-row count and, for append, a generated primary key).
 				if ($ast instanceof AstAppend || $ast instanceof AstReplace || $ast instanceof AstDelete) {
+					// Typed calls convert like columns of their return type, e.g. an integer written to a datetime column
+					$this->routineCallTyper->typeCalls($ast);
+
 					return match (true) {
 						$ast instanceof AstAppend => $this->appendExecutor->execute($ast, $context),
 						$ast instanceof AstReplace => $this->replaceExecutor->execute($ast, $context),
@@ -218,8 +241,12 @@
 					};
 				}
 				
+				if ($ast instanceof AstCall) {
+					return $this->callExecutor->execute($ast, $context);
+				}
+
 				// Every other AstStatement variant was handled by one of the
-				// two blocks above, so this is always AstRetrieve — parse()'s
+				// blocks above, so this is always AstRetrieve — parse()'s
 				// return type just can't say so, since AstStatement doesn't
 				// enumerate its implementors.
 				if (!$ast instanceof AstRetrieve) {
@@ -229,6 +256,9 @@
 				// Resolve all identifier types. Note: this does no semantic checking.
 				// It just flags the type based on AST hierarchy
 				$this->identifierTypeResolver->resolve($ast);
+
+				// Type routine calls from the catalog, so inference and hydration treat them like columns
+				$this->routineCallTyper->typeCalls($ast);
 
 				// Processing phase #1 - Transform and enhance the AST
 				$this->queryNormalizer->transform($ast);
@@ -300,6 +330,7 @@
 				}
 				
 				$this->identifierTypeResolver->resolve($ast);
+				$this->routineCallTyper->typeCalls($ast);
 
 				// Normalize and validate the AST before handing it to the optimizer
 				$this->queryNormalizer->transform($ast);
@@ -367,6 +398,11 @@
 			// Convert the raw query string into an Abstract Syntax Tree
 			// Create a lexer to break the query string into tokens (keywords, identifiers, operators, etc.)
 			$lexer = new Lexer($query);
+
+			// A routine definition has its own grammar and parser
+			if ($lexer->peekKeyword('define')) {
+				return (new ProcedureParser($lexer, $this->entityManager->getEntityStore()))->parse();
+			}
 			
 			// Create a parser that takes the tokenized input and builds an Abstract Syntax Tree
 			$parser = new Parser($lexer, $this->entityManager->getEntityStore());
@@ -377,7 +413,7 @@
 			
 			// Ensure the parsed AST represents a statement type this executor knows how to run
 			if (!$ast instanceof AstStatement) {
-				throw new QuelException("Invalid query type: expected retrieve, create, alter, destroy, index, hide, show, or write-verb (append/replace/delete) operation");
+				throw new QuelException("Invalid query type: expected retrieve, create, alter, destroy, index, hide, show, routine call, or write-verb (append/replace/delete) operation");
 			}
 			
 			// The AST is now fully validated

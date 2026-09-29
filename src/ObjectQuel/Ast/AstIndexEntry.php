@@ -13,6 +13,10 @@
 	 */
 	interface AstIndexEntry {
 
+		/**
+		 * Returns the index name.
+		 * @return string
+		 */
 		public function getIndexName(): string;
 
 		/**
@@ -20,7 +24,15 @@
 		 */
 		public function getColumns(): array;
 
+		/**
+		 * Reports whether the index is unique.
+		 * @return bool
+		 */
 		public function isUnique(): bool;
 
+		/**
+		 * Returns the type.
+		 * @return ?string
+		 */
 		public function getType(): ?string;
 	}

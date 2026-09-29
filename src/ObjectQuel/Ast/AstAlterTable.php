@@ -48,6 +48,11 @@
 			}
 		}
 
+		/**
+		 * Passes this node to the visitor.
+		 * @param AstVisitorInterface $visitor
+		 * @return void
+		 */
 		public function accept(AstVisitorInterface $visitor): void {
 			parent::accept($visitor);
 
@@ -58,6 +63,10 @@
 			}
 		}
 
+		/**
+		 * Returns the table name.
+		 * @return string
+		 */
 		public function getTableName(): string {
 			return $this->tableName;
 		}
@@ -69,6 +78,10 @@
 			return $this->operations;
 		}
 
+		/**
+		 * Returns a deep clone of this node.
+		 * @return static
+		 */
 		public function deepClone(): static {
 			$clonedOperations = $this->cloneArray($this->operations);
 

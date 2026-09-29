@@ -8,6 +8,7 @@
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRangeDatabase;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRangeJsonSource;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstReplace;
+	use Quellabs\ObjectQuel\ObjectQuel\Helpers\TargetRangeResolver;
 	use Quellabs\ObjectQuel\ObjectQuel\Lexer;
 	use Quellabs\ObjectQuel\ObjectQuel\LexerException;
 	use Quellabs\ObjectQuel\ObjectQuel\ParserException;
@@ -64,7 +65,7 @@
 			$this->lexer->matchKeyword('to');
 
 			$targetName = $this->lexer->match(Token::Identifier)->getStringValue();
-			$targetRange = TargetRange::resolveForAppend($targetName, $ranges, 'append');
+			$targetRange = TargetRangeResolver::resolveForAppend($targetName, $ranges, 'append');
 
 			// A JSON-source range declared with a JSONPath expression narrows
 			// into a sub-location of the decoded file (see AstRangeJsonSource)

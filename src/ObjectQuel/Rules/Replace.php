@@ -6,6 +6,7 @@
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRange;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRangeDatabase;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstReplace;
+	use Quellabs\ObjectQuel\ObjectQuel\Helpers\TargetRangeResolver;
 	use Quellabs\ObjectQuel\ObjectQuel\Lexer;
 	use Quellabs\ObjectQuel\ObjectQuel\LexerException;
 	use Quellabs\ObjectQuel\ObjectQuel\ParserException;
@@ -53,7 +54,7 @@
 			$this->lexer->matchKeyword('replace');
 
 			$targetName = $this->lexer->match(Token::Identifier)->getStringValue();
-			$range = TargetRange::resolve($targetName, $ranges, 'replace');
+			$range = TargetRangeResolver::resolve($targetName, $ranges, 'replace');
 			$replace = $this->parseAssignmentsAndConditions($range);
 
 			$this->consumeOptionalSemicolon();
@@ -89,11 +90,12 @@
 		}
 
 		/**
-		 * Parses the parenthesized, comma-separated assignment list.
+		 * Parses the parenthesized, comma-separated assignment list. Also used
+		 * by Rules\RoutineBlock for a current-tuple `replace cursorName (...)`.
 		 * @return AstAssignment[]
 		 * @throws LexerException|ParserException
 		 */
-		private function parseAssignments(): array {
+		public function parseAssignments(): array {
 			$this->lexer->match(Token::ParenthesesOpen);
 
 			$expressionRule = new ArithmeticExpression($this->lexer);

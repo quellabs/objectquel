@@ -50,6 +50,12 @@
 		 * @return bool
 		 */
 		public function supportsWindowFunctions(): bool;
+
+		/**
+		 * Returns whether the database supports native offset-based pagination.
+		 * @return bool
+		 */
+		public function supportsOffsetPagination(): bool;
 		
 		/**
 		 * Returns true if the database engine supports invisible (hidden) indexes.
@@ -77,112 +83,10 @@
 		public function getFulltextIndexStyle(): FulltextIndexStyle;
 		
 		/**
-		 * Returns the native JSON column type name for the current database engine.
-		 *
-		 * ObjectQuel uses 'json' as the canonical ORM type. This method maps it to
-		 * the correct DDL type for the connected engine:
-		 *   - MySQL / MariaDB / SQLite → 'json'
-		 *   - PostgreSQL               → 'jsonb'  (binary JSON; preferred over 'json'
-		 *                                           because it supports GIN indexing)
-		 *
-		 * @return string The DDL type string to use in migrations ('json' or 'jsonb').
-		 */
-		public function getNativeJsonType(): string;
-		
-		/**
 		 * Returns the JSON path extraction style used by the connected engine.
 		 * @return JsonExtractionStyle
 		 */
 		public function getJsonExtractionStyle(): JsonExtractionStyle;
-
-		/**
-		 * Returns a SQL expression that converts a datetime column or value to a
-		 * Unix timestamp (integer seconds since 1970-01-01 00:00:00 UTC).
-		 *
-		 * The placeholder %s must appear exactly once and will be replaced with the
-		 * already-generated SQL for the inner expression.
-		 *
-		 * Examples by engine:
-		 *   MySQL/MariaDB  → 'UNIX_TIMESTAMP(%s)'
-		 *   PostgreSQL     → 'EXTRACT(EPOCH FROM %s)::BIGINT'
-		 *   SQLite         → "CAST(strftime('%%s', %s) AS INTEGER)"
-		 *   SQL Server     → "DATEDIFF_BIG(SECOND, '1970-01-01', %s)"
-		 *
-		 * @return string  A sprintf-compatible template with one %s placeholder.
-		 */
-		public function getUnixTimestampFunction(): string;
-
-		/**
-		 * Returns the SQL expression that yields the current time as a Unix
-		 * timestamp (integer seconds since the epoch).
-		 *
-		 * Examples by engine:
-		 *   MySQL/MariaDB  → 'UNIX_TIMESTAMP()'
-		 *   PostgreSQL     → 'EXTRACT(EPOCH FROM NOW())::BIGINT'
-		 *   SQLite         → "CAST(strftime('%s','now') AS INTEGER)"
-		 *   SQL Server     → "DATEDIFF_BIG(SECOND, '1970-01-01', SYSUTCDATETIME())"
-		 *
-		 * @return string  A complete SQL expression, no placeholders.
-		 */
-		public function getCurrentUnixTimestamp(): string;
-
-		/**
-		 * Converts a Unix timestamp back to a native datetime, the inverse of getUnixTimestampFunction().
-		 * @param string $timestampSql SQL of the Unix timestamp
-		 * @return string SQL of the datetime
-		 */
-		public function getDatetimeFromUnixTimestamp(string $timestampSql): string;
-		
-		/**
-		 * Returns the SQL expression that yields the current date and time as a
-		 * native datetime/timestamp value (not a Unix timestamp).
-		 *
-		 * Used when writing a value into a datetime/timestamp-typed column — e.g.
-		 * an @Orm\Version column on insert/update — where the column's native type
-		 * is required rather than an integer epoch value.
-		 *
-		 * Examples by engine:
-		 *   MySQL/MariaDB  → 'NOW()'
-		 *   PostgreSQL     → 'NOW()'
-		 *   SQLite         → "datetime('now')"
-		 *   SQL Server     → 'SYSDATETIME()'
-		 *
-		 * @return string  A complete SQL expression, no placeholders.
-		 */
-		public function getCurrentDatetimeFunction(): string;
-		
-		/**
-		 * Returns the SQL infix operator(s) used for a regular expression match
-		 * on engines where REGEXP_LIKE() is not available (see supportsRegexpLike()).
-		 * Callers only reach this when supportsRegexpLike() is false, so flags
-		 * are never representable here and are dropped by design — case
-		 * sensitivity then depends on column collation rather than an explicit flag.
-		 *
-		 * Returned as ['match' => ..., 'notMatch' => ...] because some engines use
-		 * an unrelated token pair rather than a NOT-prefixed form of the same
-		 * operator (e.g. PostgreSQL's '~' vs '!~', not 'NOT ~').
-		 *
-		 * Examples by engine:
-		 *   MySQL/MariaDB  → ['match' => 'REGEXP',  'notMatch' => 'NOT REGEXP']
-		 *   PostgreSQL     → ['match' => '~',       'notMatch' => '!~']
-		 *   SQLite         → ['match' => 'REGEXP',  'notMatch' => 'NOT REGEXP']
-		 *                     (same keyword as MySQL; SQLite parses REGEXP natively
-		 *                     but it errors with "no such function: regexp" unless
-		 *                     the connection has registered a regexp() user
-		 *                     function — that registration is an application/driver
-		 *                     concern this interface cannot detect or guarantee)
-		 *
-		 * SQL Server has no equivalent at all below compatibility level 170
-		 * (SQL Server 2025) — there is no plain regex operator at any compatibility
-		 * level. Implementations for SQL Server should make supportsRegexpLike()
-		 * return true once compatibility level 170+ is confirmed (covering both the
-		 * flagged and flag-less cases via REGEXP_LIKE(col, pattern[, flags])), and
-		 * may throw from this method for older compatibility levels, since reaching
-		 * it there means no regex support exists on the connection at all.
-		 *
-		 * @return array{match: string, notMatch: string}
-		 */
-		public function getRegexpFallbackOperators(): array;
 
 		/**
 		 * Returns true if the database engine has real, independently addressable
@@ -246,6 +150,20 @@
 		 * @return bool
 		 */
 		public function supportsQualifiedSetTarget(): bool;
+
+		/**
+		 * Returns true if UPDATE accepts an alias after the target table (`UPDATE t AS a`).
+		 * SQL Server declares the UPDATE alias in FROM instead; DELETE syntax is rendered separately.
+		 * @return bool
+		 */
+		public function supportsAliasAfterDmlTarget(): bool;
+
+		/**
+		 * Returns true if SQL has TRUE/FALSE literals. SQL Server has none and
+		 * uses 1/0 for BIT values.
+		 * @return bool
+		 */
+		public function supportsBooleanLiterals(): bool;
 
 		/**
 		 * Returns the connected database engine's type identifier.

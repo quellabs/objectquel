@@ -39,6 +39,13 @@
 		public function supportsWindowFunctions(): bool {
 			return false;
 		}
+
+		/**
+		 * @inheritDoc
+		 */
+		public function supportsOffsetPagination(): bool {
+			return false;
+		}
 		
 		/**
 		 * @inheritDoc
@@ -59,16 +66,6 @@
 		}
 		
 		/**
-		 * @inheritDoc
-		 *
-		 * Falls back to 'json', the most broadly-compatible type, when no database
-		 * connection is available to detect the actual engine.
-		 */
-		public function getNativeJsonType(): string {
-			return 'json';
-		}
-		
-		/**
 		 * Returns the JSON path extraction style used by the connected engine.
 		 * @return JsonExtractionStyle
 		 */
@@ -76,53 +73,6 @@
 			return JsonExtractionStyle::JsonUnquote ;
 		}
 		
-		/**
-		 * @inheritDoc
-		 *
-		 * Defaults to MySQL/MariaDB syntax, the most widely deployed engine in the
-		 * Canvas/ObjectQuel target stack.
-		 */
-		public function getUnixTimestampFunction(): string {
-			return 'UNIX_TIMESTAMP(%s)';
-		}
-
-		/**
-		 * @inheritDoc
-		 *
-		 * Defaults to MySQL/MariaDB syntax.
-		 */
-		public function getCurrentUnixTimestamp(): string {
-			return 'UNIX_TIMESTAMP()';
-		}
-
-		/**
-		 * @inheritDoc
-		 *
-		 * Defaults to MySQL/MariaDB syntax.
-		 */
-		public function getDatetimeFromUnixTimestamp(string $timestampSql): string {
-			return "FROM_UNIXTIME({$timestampSql})";
-		}
-
-		/**
-		 * @inheritDoc
-		 *
-		 * Defaults to MySQL/MariaDB syntax, which PostgreSQL also accepts as-is.
-		 */
-		public function getCurrentDatetimeFunction(): string {
-			return 'NOW()';
-		}
-		
-		/**
-		 * @inheritDoc
-		 *
-		 * Defaults to MySQL/MariaDB syntax, the most broadly recognised default
-		 * when no database connection is available to detect the actual engine.
-		 */
-		public function getRegexpFallbackOperators(): array {
-			return ['match' => 'REGEXP', 'notMatch' => 'NOT REGEXP'];
-		}
-
 		/**
 		 * @inheritDoc
 		 *
@@ -164,6 +114,24 @@
 		 */
 		public function supportsQualifiedSetTarget(): bool {
 			return false;
+		}
+
+		/**
+		 * @inheritDoc
+		 *
+		 * Defaults to MySQL/MariaDB behavior.
+		 */
+		public function supportsAliasAfterDmlTarget(): bool {
+			return true;
+		}
+
+		/**
+		 * @inheritDoc
+		 *
+		 * Defaults to MySQL/MariaDB behavior.
+		 */
+		public function supportsBooleanLiterals(): bool {
+			return true;
 		}
 
 		/**

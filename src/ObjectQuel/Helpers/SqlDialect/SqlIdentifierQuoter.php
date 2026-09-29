@@ -1,0 +1,141 @@
+<?php
+
+	namespace Quellabs\ObjectQuel\ObjectQuel\Helpers\SqlDialect;
+
+	use Quellabs\ObjectQuel\Capabilities\PlatformCapabilitiesInterface;
+
+	/**
+	 * Quotes SQL identifiers and aliases for whichever engine a
+	 * PlatformCapabilitiesInterface describes.
+	 *
+	 * This is a general SQL-rendering concern, not a DDL one — every generated
+	 * statement needs identifiers quoted (SELECT, JOIN, INSERT, CREATE, all of
+	 * it), so this stays separate from DDLTypeMapper, which is specifically
+	 * about temporary-table DDL for TempTableExecutor. QuelToSQLRetrieve (the
+	 * retrieve compiler, which never emits DDL) depends on this class, not on
+	 * DDLTypeMapper, for exactly that reason.
+	 *
+	 * Deliberately does not delegate to DatabaseAdapter::escapeIdentifier()
+	 * (used throughout the Persistence\* classes for INSERT/UPDATE/DELETE),
+	 * even though both ultimately do "wrap in this engine's quote characters".
+	 * escapeIdentifier() delegates to the connected CakePHP driver's own
+	 * quoter, which is unsafe for two things this class is specifically used
+	 * for:
+	 *   - Alias quoting: the driver's quoter splits any '.' into a qualified
+	 *     `x`.`id` reference (it's built for real table.column identifiers).
+	 *     QuelToSQLRetrieve deliberately builds single-token aliases containing a
+	 *     literal '.' (e.g. 'x.id'); splitting them produces invalid SQL in
+	 *     alias position. See quoteIdentifier().
+	 *   - SQL Server temp table names: the driver's quoter's regexes all
+	 *     require the identifier to start with a word character, so a
+	 *     '#'-prefixed local temp table name (see DDLTypeMapper::getTempTableName())
+	 *     matches none of them and falls through to being returned completely
+	 *     UNQUOTED — verified directly against Cake\Database\IdentifierQuoter:
+	 *     quoteIdentifier('#tmp_x') returns '#tmp_x', not '[#tmp_x]'.
+	 *   - SQLite double-quote fallback: SQLite silently reinterprets an
+	 *     unresolvable double-quoted token as a string literal instead of
+	 *     raising an error (kept for compatibility with older code that used
+	 *     double quotes for string literals); backtick-quoted tokens have no
+	 *     such fallback. CakePHP's SQLite driver uses double quotes, so
+	 *     escapeIdentifier() carries this risk on SQLite; this class uses
+	 *     backticks for SQLite instead (grouped with MySQL/MariaDB below).
+	 * All three failure modes above are silent (no exception, just wrong or
+	 * unquoted SQL, or SQL that quietly changes meaning),
+	 * which is why this class always does the simple, predictable wrap rather
+	 * than reusing the driver's smarter-but-unsafe-for-us quoter. It's also
+	 * the only option for QuelToSQLRetrieve, which is deliberately never given a live
+	 * DatabaseAdapter/connection (see its own docblock) and so has no way to
+	 * reach escapeIdentifier() regardless.
+	 */
+	class SqlIdentifierQuoter {
+
+		/**
+		 * @var PlatformCapabilitiesInterface
+		 */
+		private PlatformCapabilitiesInterface $platform;
+
+		/**
+		 * SqlIdentifierQuoter constructor
+		 * @param PlatformCapabilitiesInterface $platform
+		 */
+		public function __construct(PlatformCapabilitiesInterface $platform) {
+			$this->platform = $platform;
+		}
+
+		/**
+		 * Quotes a table, column, or alias identifier for safe inclusion in
+		 * generated SQL.
+		 *
+		 * Wraps the identifier as a single opaque token in the connected engine's
+		 * quote characters — MySQL/MariaDB/SQLite use backticks, PostgreSQL uses
+		 * double quotes, SQL Server uses square brackets. Always treats the input
+		 * as one literal token and never splits on '.' into a qualified
+		 * table.column reference.
+		 *
+		 * That "never split" guarantee is load-bearing for QuelToSQLRetrieve's alias
+		 * positions: it deliberately builds alias names containing a literal '.'
+		 * (e.g. 'x.id', so a subquery's flattened columns can be looked up by the
+		 * outer range+property they came from) that must survive quoting as one
+		 * token — a qualifier-aware quoter would instead treat 'x.id' as a
+		 * qualified reference and emit the invalid `x`.`id` in alias position.
+		 * Real table/column names never contain '.', so the same guarantee is a
+		 * no-op (and therefore harmless) when this is used for those instead.
+		 *
+		 * @param string $identifier Unquoted identifier or alias text, which may itself contain '.'
+		 * @return string The identifier wrapped in the engine's quote characters
+		 */
+		public function quoteIdentifier(string $identifier): string {
+			return match ($this->platform->getDatabaseType()) {
+				'pgsql' => '"' . str_replace('"', '""', $identifier) . '"',
+				'sqlsrv' => '[' . str_replace(']', ']]', $identifier) . ']',
+				// mysql/mariadb/sqlite: see the SQLite double-quote note above.
+				default => '`' . str_replace('`', '``', $identifier) . '`',
+			};
+		}
+
+		/**
+		 * Quotes a routine name, qualified by the schema when one is given.
+		 * @param string $name Unquoted routine name
+		 * @param string|null $schema Schema that qualifies the name (see DatabaseAdapter::getRoutineSchema()), or null for none
+		 * @return string E.g. `"f"`, `` `f` `` or `[dbo].[f]`
+		 */
+		public function quoteRoutineName(string $name, ?string $schema): string {
+			$quotedName = $this->quoteIdentifier($name);
+			return $schema === null ? $quotedName : $this->quoteIdentifier($schema) . '.' . $quotedName;
+		}
+
+		/**
+		 * Quotes a comma-separated list of identifiers — the "N columns, each
+		 * individually quoted" shape used throughout column-list/conflict-target
+		 * rendering (INSERT's column list, CREATE INDEX's column list, etc).
+		 * @param string[] $identifiers Unquoted identifiers
+		 * @return string Comma-separated, quoted identifier list
+		 */
+		public function quoteIdentifierList(array $identifiers): string {
+			return implode(', ', array_map(fn(string $identifier) => $this->quoteIdentifier($identifier), $identifiers));
+		}
+
+		/**
+		 * Escapes a value for inclusion in a single-quoted SQL string literal by doubling embedded quotes.
+		 * MySQL/MariaDB also read backslash escapes (unless NO_BACKSLASH_ESCAPES is set), so backslashes are doubled there.
+		 * Does not add the surrounding quotes; see quoteStringLiteral().
+		 * @param string $value
+		 * @return string
+		 */
+		public function escapeStringLiteral(string $value): string {
+			if (in_array($this->platform->getDatabaseType(), ['mysql', 'mariadb'], true)) {
+				$value = str_replace('\\', '\\\\', $value);
+			}
+
+			return str_replace("'", "''", $value);
+		}
+
+		/**
+		 * Escapes and wraps a value as a single-quoted SQL string literal.
+		 * @param string $value
+		 * @return string
+		 */
+		public function quoteStringLiteral(string $value): string {
+			return "'" . $this->escapeStringLiteral($value) . "'";
+		}
+	}

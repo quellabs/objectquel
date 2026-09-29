@@ -6,7 +6,8 @@
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRange;
 	use Quellabs\ObjectQuel\ObjectQuel\Rules\AlterTable;
 	use Quellabs\ObjectQuel\ObjectQuel\Rules\Append;
-	use Quellabs\ObjectQuel\ObjectQuel\Rules\CreateIndex;
+	use Quellabs\ObjectQuel\ObjectQuel\Rules\Call;
+	use Quellabs\ObjectQuel\ObjectQuel\Rules\Index;
 	use Quellabs\ObjectQuel\ObjectQuel\Rules\CreateTable;
 	use Quellabs\ObjectQuel\ObjectQuel\Rules\Delete;
 	use Quellabs\ObjectQuel\ObjectQuel\Rules\Destroy;
@@ -17,17 +18,21 @@
 
     class Parser {
 
+		/** Words that start a top-level statement by text; `define` is dispatched by QueryExecutor. A routine by such a name couldn't be called as a statement. */
+		public const array STATEMENT_KEYWORDS = ['create', 'alter', 'destroy', 'hide', 'show', 'index', 'replace', 'delete', 'define'];
+
         protected Lexer $lexer;
         private Range $rangeRule;
 		private Retrieve $retrieveRule;
 		private CreateTable $createTableRule;
-		private CreateIndex $createIndexRule;
+		private Index $indexRule;
 		private AlterTable $alterTableRule;
 		private Destroy $destroyRule;
 		private IndexVisibility $indexVisibilityRule;
 		private Append $appendRule;
 		private Replace $replaceRule;
 		private Delete $deleteRule;
+		private Call $callRule;
 
 		/**
          * Parser constructor.
@@ -39,75 +44,72 @@
             $this->rangeRule = new Range($lexer, $entityStore);
             $this->retrieveRule = new Retrieve($lexer);
             $this->createTableRule = new CreateTable($lexer);
-            $this->createIndexRule = new CreateIndex($lexer);
+            $this->indexRule = new Index($lexer);
             $this->alterTableRule = new AlterTable($lexer);
             $this->destroyRule = new Destroy($lexer);
             $this->indexVisibilityRule = new IndexVisibility($lexer);
             $this->appendRule = new Append($lexer);
             $this->replaceRule = new Replace($lexer);
             $this->deleteRule = new Delete($lexer);
+            $this->callRule = new Call($lexer);
         }
 		
 	    /**
 	     * Parse queries
-	     * @return AstInterface|null
+	     * @return AstInterface
 	     * @throws LexerException|ParserException|\ReflectionException
 	     */
-	    public function parse(): ?AstInterface {
+	    public function parse(): AstInterface {
 		    // Compiler directives
 		    $directives = $this->parseCompilerDirectives();
 		    
 		    // Ranges
 		    $ranges = $this->parseRanges();
 		    
-		    // Continue parsing until a break condition is reached.
-		    $queries = [];
-		    
-		    do {
+		    // Parse exactly one statement; QueryExecutor executes one AST at a time.
 		    // Get the next token without changing the position in the lexer.
 			    $token = $this->lexer->peek();
 
 			    // create/destroy/hide/show/index/replace/delete have no token
 			    // type (see Lexer::peekKeyword()) so — unlike Retrieve/Append —
-			    // they're recognized by text.
+			    // they're recognized by text. Any other `name(` is a routine call.
 			    if ($token->getType() === Token::Retrieve) {
-				    $queries[] = $this->retrieveRule->parse($directives, $ranges);
+				    $query = $this->retrieveRule->parse($directives, $ranges);
 			    } elseif ($token->getType() === Token::Append) {
-				    $queries[] = $this->appendRule->parse($ranges);
+				    $query = $this->appendRule->parse($ranges);
 			    } elseif ($this->lexer->peekKeyword('create')) {
-				    // Ranges ahead of `create` (if any) are simply unused —
-				    // still available to any `retrieve` elsewhere in this loop.
-				    $queries[] = $this->createTableRule->parse();
+				    // Ranges ahead of `create` (if any) are unused.
+				    $query = $this->createTableRule->parse();
 			    } elseif ($this->lexer->peekKeyword('alter')) {
-				    // Ranges ahead of `alter` (if any) are simply unused,
-				    // same as `create` above.
-				    $queries[] = $this->alterTableRule->parse();
+				    // Ranges ahead of `alter` (if any) are unused.
+				    $query = $this->alterTableRule->parse();
 			    } elseif ($this->lexer->peekKeyword('destroy')) {
-				    $queries[] = $this->destroyRule->parse();
+				    $query = $this->destroyRule->parse();
 			    } elseif ($this->lexer->peekKeyword('hide')) {
-				    $queries[] = $this->indexVisibilityRule->parseHide();
+				    $query = $this->indexVisibilityRule->parseHide();
 			    } elseif ($this->lexer->peekKeyword('show')) {
-				    $queries[] = $this->indexVisibilityRule->parseShow();
+				    $query = $this->indexVisibilityRule->parseShow();
 			    } elseif ($this->lexer->peekKeyword('index')) {
-				    // Ranges ahead of `index` (if any) are simply unused,
-				    // same as `create` above.
-				    $queries[] = $this->createIndexRule->parse();
+				    // Ranges ahead of `index` (if any) are unused.
+				    $query = $this->indexRule->parse();
 			    } elseif ($this->lexer->peekKeyword('replace')) {
-				    $queries[] = $this->replaceRule->parse($ranges);
+				    $query = $this->replaceRule->parse($ranges);
 			    } elseif ($this->lexer->peekKeyword('delete')) {
 				    // No lookahead needed — QUEL's drop verb is `destroy`, a
 				    // separate keyword; the literal word `delete` always
 				    // means this DML verb.
-				    $queries[] = $this->deleteRule->parse($directives, $ranges);
+				    $query = $this->deleteRule->parse($directives, $ranges);
+			    } elseif ($token->getType() === Token::Identifier && $this->lexer->peekNext() === Token::ParenthesesOpen) {
+				    $query = $this->callRule->parse();
 			    } else {
 				    $tokenName = Token::toString($token->getType()) ?: 'unknown';
 				    throw new ParserException("Unexpected token '{$tokenName}' on line {$this->lexer->getLineNumber()}");
 			    }
-		    } while ($this->lexer->peek()->getType() !== Token::Eof);
+		    if ($this->lexer->lookahead() !== Token::Eof) {
+			    throw new ParserException('Unexpected content after the statement; only one statement is allowed per query.');
+		    }
 		    
-		    // Return the first query AST object from the array.
-		    // Note: This assumes there is only one query.
-		    return $queries[0];
+		    return $query;
 	    }
 	    
 	    /**
@@ -118,6 +120,10 @@
 	     * @throws LexerException
 	     */
 	    protected function matchDirectiveValue(string $directiveName): bool|int|float|string {
+		    if ($this->lexer->optionalMatch(Token::Minus)) {
+			    return -$this->lexer->match(Token::Number)->getNumericValue();
+		    }
+
 		    if ($this->lexer->optionalMatch(Token::True)) {
 			    return true;
 		    } elseif ($this->lexer->optionalMatch(Token::False)) {

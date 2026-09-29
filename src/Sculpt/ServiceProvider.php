@@ -66,7 +66,6 @@
 		 *      password: string,
 		 *      port: int,
 		 *      encoding: string,
-		 *      collation: string,
 		 *      migrations_path: string,
 		 *      migration_table: string,
 		 *      entity_namespace: string,
@@ -86,7 +85,6 @@
 				'password'              => '',
 				'port'                  => 3306,
 				'encoding'              => 'utf8mb4',
-				'collation'             => 'utf8mb4_unicode_ci',
 				'migrations_path'       => '',
 				'migration_table'       => 'quel_migrations',
 				'entity_namespace'      => '',
@@ -113,6 +111,7 @@
 			$configuration->setMetadataCachePath($this->getConfigValueAsString('metadata_cache_path', $defaults['metadata_cache_path']));
 			$configuration->setUseMetadataCache(!empty($this->getConfigValueAsString('metadata_cache_path', $defaults['metadata_cache_path'])));
 			$configuration->setGenerateForeignKeys($this->getConfigValueAsBool('generate_foreign_keys', $defaults['generate_foreign_keys']));
+			$configuration->setCollation($this->getConfigValueAsString('collation', '') ?: null);
 			return $configuration;
 		}
 		

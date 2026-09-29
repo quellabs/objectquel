@@ -1,9 +1,9 @@
 <?php
-	
+
 	namespace Quellabs\ObjectQuel\ObjectQuel\QuelToSQL;
 
 	use Quellabs\ObjectQuel\Capabilities\PlatformCapabilitiesInterface;
-	use Quellabs\ObjectQuel\DatabaseAdapter\SqlIdentifierQuoter;
+	use Quellabs\ObjectQuel\ObjectQuel\Helpers\SqlDialect\SqlIdentifierQuoter;
 	use Quellabs\ObjectQuel\Exception\QuelException;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstHideIndex;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstShowIndex;
@@ -56,6 +56,7 @@
 		}
 
 		/**
+		 * Builds the dialect-specific ALTER INDEX visibility statement.
 		 * @param string $indexName
 		 * @param string $tableName
 		 * @param 'hidden'|'visible' $keywordKey Selects which of
@@ -92,6 +93,7 @@
 		}
 
 		/**
+		 * Verifies that the target engine supports index visibility changes.
 		 * @return void
 		 * @throws QuelException If the connected engine doesn't support invisible indexes
 		 */

@@ -56,6 +56,11 @@
 			if ($node->getNext() !== null) {
 				return;
 			}
+
+			// Routine variables keep their own value, even when a target entry shares the name
+			if ($node->getType()->isRoutineReference()) {
+				return;
+			}
 			
 			$name = $node->getName();
 			

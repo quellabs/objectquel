@@ -1,10 +1,10 @@
 <?php
-	
+
 	namespace Quellabs\ObjectQuel\ObjectQuel\QuelToSQL;
 
 	use Quellabs\ObjectQuel\Capabilities\PlatformCapabilitiesInterface;
 	use Quellabs\ObjectQuel\DatabaseAdapter\Mapper\TypeMapper;
-	use Quellabs\ObjectQuel\DatabaseAdapter\SqlIdentifierQuoter;
+	use Quellabs\ObjectQuel\ObjectQuel\Helpers\SqlDialect\SqlIdentifierQuoter;
 	use Quellabs\ObjectQuel\EntityStore;
 	use Quellabs\ObjectQuel\Exception\EntityResolutionException;
 	use Quellabs\ObjectQuel\Exception\QuelException;
@@ -16,10 +16,11 @@
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstParameter;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstReplace;
 	use Quellabs\ObjectQuel\ObjectQuel\AstInterface;
-	use Quellabs\ObjectQuel\ObjectQuel\Helpers\AssignmentValidator;
-	use Quellabs\ObjectQuel\ObjectQuel\Helpers\DateTimeWriteSql;
-	use Quellabs\ObjectQuel\ObjectQuel\Helpers\SetTargetColumnQuoter;
-	use Quellabs\ObjectQuel\ObjectQuel\Helpers\WriteVerbIdentifierResolver;
+	use Quellabs\ObjectQuel\ObjectQuel\Helpers\SqlDialect\AliasedDmlSqlBuilder;
+	use Quellabs\ObjectQuel\ObjectQuel\QuelToSQL\AssignmentValidator;
+	use Quellabs\ObjectQuel\ObjectQuel\Helpers\DateTimeWriteSqlConverter;
+	use Quellabs\ObjectQuel\ObjectQuel\Helpers\SqlDialect\SetTargetColumnQuoter;
+	use Quellabs\ObjectQuel\ObjectQuel\QuelToSQL\WriteVerbIdentifierResolver;
 	use Quellabs\ObjectQuel\ObjectQuel\Helpers\WriteVerbParameterNormalizer;
 	use Quellabs\ObjectQuel\ObjectQuel\Visitors\CoerceDateTimeParameters;
 	use Quellabs\ObjectQuel\ObjectQuel\Visitors\NormalizeDateTime;
@@ -50,6 +51,9 @@
 		private EntityStore $entityStore;
 		private SqlIdentifierQuoter $identifierQuoter;
 		private PlatformCapabilitiesInterface $platform;
+
+		/** @var string|null Schema that qualifies routine names, or null for none */
+		private ?string $routineSchema;
 		private VersionValueHandler $versionValueHandler;
 		private SQLSerializer $serializer;
 		private ResolveType $valueTypes;
@@ -58,16 +62,18 @@
 		 * QuelToSQLReplace constructor
 		 * @param EntityStore $entityStore
 		 * @param PlatformCapabilitiesInterface $platform
+		 * @param string|null $routineSchema Schema that qualifies routine names, or null for none
 		 * @param VersionValueHandler $versionValueHandler Reused as-is (not
 		 *        reconstructed) so `replace` bumps @Orm\Version columns using
 		 *        the exact same logic persist()'s UPDATE path does.
 		 * @param ResolveType|null $valueTypes Types assigned values; defaults to one that knows entity columns only
 		 */
-		public function __construct(EntityStore $entityStore, PlatformCapabilitiesInterface $platform, VersionValueHandler $versionValueHandler, ?ResolveType $valueTypes = null) {
+		public function __construct(EntityStore $entityStore, PlatformCapabilitiesInterface $platform, ?string $routineSchema, VersionValueHandler $versionValueHandler, ?ResolveType $valueTypes = null) {
 			$this->entityStore = $entityStore;
 			$this->valueTypes = $valueTypes ?? new ResolveType($entityStore);
 			$this->identifierQuoter = new SqlIdentifierQuoter($platform);
 			$this->platform = $platform;
+			$this->routineSchema = $routineSchema;
 			$this->versionValueHandler = $versionValueHandler;
 			// Only needs EntityStore (see Serializer's constructor) — built
 			// here rather than threaded in from EntityManager, so
@@ -115,12 +121,13 @@
 
 			$setClauseParts = $this->buildSetClause($statement->getAssignments(), $metadata, $parameters, $range->getName());
 
-			return sprintf(
-				'UPDATE %s as %s SET %s WHERE %s',
-				$this->identifierQuoter->quoteIdentifier($metadata->tableName),
-				$this->identifierQuoter->quoteIdentifier($range->getName()),
+			return AliasedDmlSqlBuilder::update(
+				$metadata->tableName,
+				$range->getName(),
 				implode(', ', $setClauseParts),
-				$this->compileCondition($conditions, $parameters)
+				$this->compileCondition($conditions, $parameters),
+				$this->identifierQuoter,
+				$this->platform
 			);
 		}
 
@@ -198,7 +205,7 @@
 			$value->accept(new NormalizeDateTime($this->entityStore, $this->valueTypes));
 			$value->accept(new ValidateNoTemporalScalarMix($this->entityStore, $this->valueTypes));
 
-			$valueSql = DateTimeWriteSql::convert(
+			$valueSql = DateTimeWriteSqlConverter::convert(
 				$this->compileExpression($value, $parameters),
 				$this->valueTypes->inferReturnType($value),
 				$columnDef === null ? null : TypeMapper::phinxTypeToPhpType($columnDef['type']),
@@ -227,16 +234,15 @@
 		/**
 		 * Renders an assignment's value expression to SQL via BuildSqlFromAst
 		 * — the same expression-to-SQL visitor the retrieve pipeline uses.
-		 * Compiled in 'VALUES' mode, not 'WHERE': a SET target's value is an
-		 * ordinary scalar expression, never a boolean predicate (see
-		 * compileCondition() for the WHERE-clause counterpart).
+		 * Compiled as a value, not a predicate: a predicate becomes a 1/0 value on
+		 * engines without boolean literals (see compileCondition() for the WHERE clause).
 		 * @param AstInterface $expression
 		 * @param array<string, mixed> $parameters
 		 * @return string
 		 */
 		private function compileExpression(AstInterface $expression, array &$parameters): string {
-			$builder = new BuildSqlFromAst($this->entityStore, $parameters, 'VALUES', $this->platform);
-			return $builder->visitNodeAndReturnSQL($expression);
+			$builder = new BuildSqlFromAst($this->entityStore, $parameters, 'VALUES', $this->platform, $this->routineSchema);
+			return $builder->visitValueAndReturnSQL($expression);
 		}
 
 		/**
@@ -251,8 +257,8 @@
 		 * @return string
 		 */
 		private function compileCondition(AstInterface $condition, array &$parameters): string {
-			$builder = new BuildSqlFromAst($this->entityStore, $parameters, 'WHERE', $this->platform);
-			return $builder->visitNodeAndReturnSQL($condition);
+			$builder = new BuildSqlFromAst($this->entityStore, $parameters, 'WHERE', $this->platform, $this->routineSchema);
+			return $builder->visitConditionAndReturnSQL($condition);
 		}
 
 		/**

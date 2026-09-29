@@ -4,25 +4,17 @@
 [![PHPStan](https://img.shields.io/badge/PHPStan-level%209-brightgreen.svg)](https://phpstan.org)
 [![License](https://img.shields.io/badge/license-MIT-brightgreen.svg)](LICENSE)
 
-A domain-level query language and engine for PHP, with a full ORM attached. ObjectQuel's declarative syntax inspired
-by [QUEL](https://en.wikipedia.org/wiki/QUEL_query_languages) expresses entity queries above the table level — relationships, patterns, full-text search, and
-cross-source joins are first-class expressions, not raw SQL escapes.  Supports MySQL/MariaDB, PostgreSQL, SQLite, and
-SQL Server.
+ObjectQuel is a query language and ORM for PHP. Query mapped entities, traverse relationships, combine database and JSON sources, and let ObjectQuel compile the database work for MySQL/MariaDB, PostgreSQL, SQLite, or SQL Server.
 
 ```php
-$results = $entityManager->executeQuery("
-    range of p is App\\Entity\\Product
-    range of c is App\\Entity\\Category via p.categories
-    retrieve (p, categoryName=c.name)
+$results = $entityManager->executeQuery('
+    range of p is App\Entity\Product
+    range of c is App\Entity\Category via p.categories
+    retrieve (p, categoryName = c.name)
     where p.price < :maxPrice and c.active = true
     sort by p.name asc
-", [
-    'maxPrice' => 50.00
-]);
+', ['maxPrice' => 50.00]);
 ```
-
-The engine resolves entity relationships, decomposes the query into optimized SQL, and hydrates the results. You write
-intent; ObjectQuel handles the mechanics.
 
 ## Installation
 
@@ -32,22 +24,9 @@ composer require quellabs/objectquel
 
 ## Upgrading to 2.0
 
-Version 2.0 introduces breaking changes to the relationship annotation model:
+Version 2.0 changes relationship annotations: `@OneToMany` and the non-owning form of `@OneToOne` are replaced by `@InverseOf(targetEntity=..., relation="...")`. `@OneToOne` now marks only the side that owns the foreign key. For example:
 
-- **`@OneToMany` is removed.** Replace it with `@InverseOf(targetEntity=..., relation="...")` on the owning entity's inverse collection property. `InverseOf` is a hydration instruction only — it does not define a relationship or generate a join.
-- **Non-owning `@OneToOne` is removed.** The non-owning side of a OneToOne relationship should now be declared with `@InverseOf` instead.
-- **`@OneToOne` is owning-side only.** Every `@OneToOne` annotation must hold the foreign key column.
-
-Before:
 ```php
-// UserEntity
-/** @Orm\OneToMany(targetEntity=PostEntity::class, mappedBy="userId") */
-public Collection $posts;
-```
-
-After:
-```php
-// UserEntity
 /** @Orm\InverseOf(targetEntity=PostEntity::class, relation="user") */
 public CollectionInterface $posts;
 ```
@@ -63,180 +42,49 @@ $config->setEntityNamespace('App\\Entity');
 $config->setEntityPath(__DIR__ . '/src/Entity');
 
 $entityManager = new EntityManager($config, $connection);
-
-// Standard lookups
 $product = $entityManager->find(Product::class, 101);
-$active  = $entityManager->findBy(Product::class, ['active' => true]);
 
-// ObjectQuel for anything more complex
-$results = $entityManager->executeQuery("
-    range of p is App\\Entity\\Product
+$results = $entityManager->executeQuery('
+    range of p is App\Entity\Product
     retrieve (p) where p.name = /^Tech/i
     sort by p.createdAt desc
     window 0, 10
-");
+');
 ```
 
-## What the query language can do that others can't
+ObjectQuel supports regex and wildcard predicates, full-text search, existence checks, and queries that join mapped entities with JSON sources. It can split a query across database and PHP stages when needed. See the [query language guide](https://objectquel.com/docs) for examples and syntax.
 
-Most ORM query languages are SQL with different syntax. ObjectQuel's abstraction layer sits above SQL, which lets it do
-things that aren't possible in DQL, Eloquent, or raw query builders:
+## Writes, DDL, and EQUEL
 
-**Pattern matching and regex in where clauses:**
+Use `append`, `replace`, and `delete` for set-based writes through `executeQuery()`. These bypass the Unit of Work; use `persist()` and `flush()` when you need entity lifecycle behavior. See the [write statements](https://objectquel.com/docs?section=language-append).
+
+Schema statements include `create`, `alter`, `destroy`, and index operations. Use [DDL queries](https://objectquel.com/docs?section=language-create-destroy) for ad hoc schema work and migrations for maintained schemas.
+
+EQUEL defines stored functions in ObjectQuel syntax. A value-returning definition produces a database function; `void` produces a database procedure. For example:
 
 ```php
-// Wildcard matching — no LIKE syntax needed
-retrieve (p) where p.sku = "ABC*XYZ"
-
-// Regex with flags
-retrieve (p) where p.name = /^tech/i
+$entityManager->executeQuery('define function double_value (int value) int { return value * 2 }');
+$result = $entityManager->executeQuery('double_value(:value)', ['value' => 21]);
 ```
 
-The equivalent in Doctrine requires `$qb->expr()->like()` or a raw `REGEXP` call. In Eloquent you'd write
-`whereRaw('name REGEXP ?', [...])`. ObjectQuel treats patterns as first-class query expressions.
+EQUEL supports MySQL/MariaDB, PostgreSQL, and SQL Server. A definition fails if its name already exists; use `destroy function` before redefining it. See the [EQUEL guide](https://objectquel.com/docs?section=language-equel) for function bodies, calls, and engine notes.
 
-**Full-text search with boolean operators and weighting:**
+## ORM and tooling
 
-```php
-retrieve (p) where search(p.description, "banana +pear -apple")
-```
-
-No raw SQL, no engine-specific syntax. The query engine translates this to the appropriate full-text implementation for
-your database.
-
-**Hybrid data sources — database + JSON in one query:**
-
-```php
-range of order is App\\Entity\\OrderEntity
-range of product is json_source('external/product_catalog.json')
-retrieve (order, product.name, product.manufacturer)
-where order.productSku = product.sku and order.status = :status
-sort by order.orderDate desc
-```
-
-ObjectQuel can join database entities with JSON files in a single query, applying
-inner, left, or cross joins based on context — the engine handles the cross-source matching.
-Neither Doctrine nor Eloquent can do this. You'd query the database, load the JSON separately, and merge results in PHP.
-ObjectQuel also supports JSONPath pre-filtering to extract nested structures before the query runs, keeping memory usage
-low on large files.
-
-**Existence checks as expressions:**
-
-```php
-// In the retrieve clause
-retrieve (p.name, hasOrders=ANY(o.orderId))
-
-// In the where clause
-retrieve (p) where ANY(o.orderId)
-```
-
-**Automatic query decomposition:**
-
-Complex queries are split into optimized sub-tasks by the engine rather than sent as a single monolithic SQL statement.
-This means ObjectQuel can optimize execution paths that a single SQL query cannot express efficiently.
-
-**Database dialect abstraction:**
-
-Features like full-text search, regex matching, and window functions compile to the correct SQL for your target
-database. The same ObjectQuel query runs on MySQL, PostgreSQL, SQLite, and SQL Server without modification. Switching
-databases means changing the connection, not rewriting queries.
-
-## Comparison
-
-A multi-entity query with filtering and relationship traversal:
-
-**ObjectQuel:**
-
-```php
-$rs = $entityManager->executeQuery("
-    range of o is App\\Entity\\Order
-    range of c is App\\Entity\\Customer via o.customer
-    retrieve (o, c.name) where o.createdAt > :since
-    sort by o.createdAt desc
-    window 0, 20
-");
-
-foreach($rs as $row) { 
-    ...
-}
-```
-
-**Doctrine DQL:**
-
-```php
-$results = $entityManager->createQuery('
-     SELECT o, c.name FROM App\\Entity\\Order o
-     JOIN o.customer c
-     WHERE o.createdAt > :since
-     ORDER BY o.createdAt DESC
-')->setParameter('since', $since)
- ->setMaxResults(20)
- ->getResult();
-```
-
-**Eloquent:**
-
-```php
-$results = Order::with('customer:id,name')
-    ->where('created_at', '>', $since)
-    ->orderByDesc('created_at')
-    ->take(20)
-    ->get();
-```
-
-The difference becomes more pronounced with regex filtering, existence checks, hybrid sources, and multi-relationship
-traversals — operations that require raw SQL or post-processing in other ORMs.
-
-## ORM capabilities
-
-ObjectQuel is a full Data Mapper ORM, not just a query language:
-
-- **Entity mapping** — annotation-based with `@Orm\Table`, `@Orm\Column`, and relationship annotations
-- **Relationships** — OneToOne, ManyToOne, InverseOf (hydration target for inverse collections), ManyToMany (via bridge entities)
-- **Unit of Work** — change tracking with persist and flush
-- **Lazy loading** — configurable proxy generation with caching
-- **Immutable entities** — for database views and read-only tables
-- **Optimistic locking** — version-based concurrency control
-- **Cascading** — configurable cascade operations across relationships
-- **Lifecycle events** — pre/post persist, update, and delete via SignalHub
-- **Custom repositories** — optional repository pattern with type-safe access
-- **Indexing** — annotation-driven index management
-- **Migrations** — database schema migrations, generated from entity changes or hand-written, run as plain ObjectQuel DDL/DML
-
-## CLI tooling
-
-ObjectQuel ships with Sculpt, a CLI tool for entity and schema management:
+ObjectQuel includes entity and relationship mapping, a Unit of Work, lazy loading, optimistic locking, lifecycle events, repositories, and migrations. Its Sculpt CLI can generate entities from scratch or existing tables and create or run migrations:
 
 ```bash
-# Generate a new entity interactively
 php bin/sculpt make:entity
-
-# Reverse-engineer entities from an existing database table
 php bin/sculpt make:entity-from-table
-
-# Generate migrations from entity changes
 php bin/sculpt make:migrations
-
-# Create a blank migration for hand-written schema/data changes
-php bin/sculpt make:blank-migration <Name>
-
-# Run pending migrations
 php bin/sculpt quel:migrate
 ```
 
-`make:entity-from-table` is particularly useful when adopting ObjectQuel in an existing project — point it at your
-tables and get annotated entities without writing them by hand.
-
-## Framework integration
-
-ObjectQuel works standalone or with the [Canvas framework](https://canvasphp.com). The `quellabs/canvas-objectquel`
-package provides automatic service discovery, dependency injection, and Sculpt CLI integration within Canvas.
-
-For other frameworks, configure the `EntityManager` directly — it has no framework dependencies.
+It works standalone or with [Canvas](https://canvasphp.com) through `quellabs/canvas-objectquel`.
 
 ## Documentation
 
-Full query language reference, entity mapping guide, and architecture docs: **[objectquel.com/docs](https://objectquel.com/docs)**
+The full query language and ORM reference is at [objectquel.com/docs](https://objectquel.com/docs).
 
 ## Support
 

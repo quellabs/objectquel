@@ -47,6 +47,7 @@
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRangeJsonSource;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRank;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRowNumber;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRoutineCall;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstSearch;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstSearchFullText;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstSearchLike;
@@ -59,9 +60,10 @@
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstUnaryOperation;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\NodeBinary;
 	use Quellabs\ObjectQuel\ObjectQuel\AstInterface;
+	use Quellabs\ObjectQuel\ObjectQuel\Helpers\BooleanExpressionClassifier;
 	use Quellabs\ObjectQuel\Capabilities\PlatformCapabilitiesInterface;
 	use Quellabs\ObjectQuel\Capabilities\NullPlatformCapabilities;
-	use Quellabs\ObjectQuel\DatabaseAdapter\Mapper\CastTypeMapper;
+	use Quellabs\ObjectQuel\DatabaseAdapter\Mapper\TypeMapper;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstCast;
 	use Quellabs\ObjectQuel\ObjectQuel\AstVisitorInterface;
 	
@@ -108,8 +110,8 @@
 		/** @var PlatformCapabilitiesInterface Database engine capability descriptor */
 		private PlatformCapabilitiesInterface $platform;
 
-		/** @var CastTypeMapper Resolves QUEL cast types to SQL type tokens for the connected engine */
-		private CastTypeMapper $castTypeMapper;
+		/** @var string|null Schema that qualifies routine names, or null for none */
+		private ?string $routineSchema;
 
 		/**
 		 * Initialize the SQL converter with required dependencies
@@ -117,6 +119,7 @@
 		 * @param array<string, mixed> $parameters Reference to parameters array for parameterized queries
 		 * @param string $partOfQuery Current query part being processed (default: "VALUES")
 		 * @param PlatformCapabilitiesInterface $platform Database engine capability descriptor
+		 * @param string|null $routineSchema Schema that qualifies routine names, or null for none
 		 * @param string|null $subqueryAliasRangeName When non-null, column aliases in entity
 		 *        expansion use this name instead of the inner range name, so derived table
 		 *        columns match what the outer query expects (e.g. "x.id" instead of "y.id")
@@ -126,6 +129,7 @@
 			array &$parameters,
 			string $partOfQuery = "VALUES",
 			PlatformCapabilitiesInterface $platform = new NullPlatformCapabilities(),
+			?string $routineSchema = null,
 			?string $subqueryAliasRangeName = null
 		) {
 			// Initialize core properties
@@ -135,10 +139,10 @@
 			$this->parameters = &$parameters; // Use reference to allow parameter modification
 			$this->partOfQuery = $partOfQuery;
 			$this->platform = $platform;
-			$this->castTypeMapper = new CastTypeMapper($platform);
+			$this->routineSchema = $routineSchema;
 
 			// Initialize helper classes with proper dependencies and references
-			$this->sqlFragmentBuilder = new BuildSqlFragments($this->entityStore, $this, $subqueryAliasRangeName, $this->platform);
+			$this->sqlFragmentBuilder = new BuildSqlFragments($this->entityStore, $this, $subqueryAliasRangeName, $this->platform, $this->routineSchema);
 			$this->typeInference = new ResolveType($this->entityStore);
 			$this->aggregateHandler = new ProcessAggregate($this->entityStore, $this->partOfQuery, $this->sqlFragmentBuilder, $this, $this->platform);
 			$this->expressionHandler = new ProcessExpression($this->entityStore, $this->typeInference, $this->parameters, $this, $this->platform);
@@ -218,7 +222,39 @@
 			
 			return $sql;
 		}
-		
+
+		/**
+		 * Visit a node in a predicate position and return its SQL. Without boolean
+		 * literals (SQL Server) a scalar BIT value isn't a predicate, so it's compared to 1.
+		 * @param AstInterface $condition The condition node
+		 * @return string The SQL predicate
+		 */
+		public function visitConditionAndReturnSQL(AstInterface $condition): string {
+			$sql = $this->visitNodeAndReturnSQL($condition);
+
+			if (!$this->platform->supportsBooleanLiterals() && BooleanExpressionClassifier::isScalarValue($condition)) {
+				return "{$sql} = 1";
+			}
+
+			return $sql;
+		}
+
+		/**
+		 * Visit a node in a value position and return its SQL. Without boolean literals (SQL Server)
+		 * a predicate isn't a value, so it becomes a CASE yielding 1, 0 or NULL like a BIT would.
+		 * The predicate appears twice in the CASE, so the engine may evaluate it twice.
+		 * @param AstInterface $value The value node
+		 * @return string The SQL value
+		 */
+		public function visitValueAndReturnSQL(AstInterface $value): string {
+			if ($this->platform->supportsBooleanLiterals() || !BooleanExpressionClassifier::isPredicate($value)) {
+				return $this->visitNodeAndReturnSQL($value);
+			}
+
+			$predicate = $this->visitConditionAndReturnSQL($value);
+			return "CASE WHEN {$predicate} THEN 1 WHEN NOT ({$predicate}) THEN 0 END";
+		}
+
 		/**
 		 * Builds a fully qualified column name for SQL queries based on an AST identifier.
 		 * Handles both entity-based ranges (with metadata) and temporary table ranges
@@ -264,6 +300,12 @@
 				return;
 			}
 			
+			// A predicate selected as a value needs converting on engines without boolean literals
+			if (BooleanExpressionClassifier::isPredicate($expression)) {
+				$this->result[] = $this->visitValueAndReturnSQL($expression);
+				return;
+			}
+
 			// Only process if the expression is an identifier
 			if (!$expression instanceof AstIdentifier) {
 				return;
@@ -351,7 +393,7 @@
 		 *
 		 * Emits standard CAST(col AS TYPE), supported by every engine ObjectQuel
 		 * targets. The SQL type token (e.g. SIGNED, DOUBLE, TEXT) is resolved from
-		 * CastTypeMapper::getSupportedCastTypes() using the canonical QUEL cast
+		 * TypeMapper::getSupportedCastTypes() using the canonical QUEL cast
 		 * type stored on the node (e.g. int, float, string).
 		 *
 		 * @param AstCast $ast The cast node to process
@@ -367,11 +409,11 @@
 			// Resolve the SQL type token for the target engine.
 			// The semantic analyser has already verified that this cast type is
 			// supported, so the key is guaranteed to exist here.
-			$supportedTypes = $this->castTypeMapper->getSupportedCastTypes();
+			$supportedTypes = TypeMapper::getSupportedCastTypes($this->platform->getDatabaseType());
 			$sqlType = $supportedTypes[$ast->getCastType()] ?? strtoupper($ast->getCastType());
 
 			// Generate the SQL fragment for the inner expression
-			$innerSql = $this->visitNodeAndReturnSQL($ast->getExpression());
+			$innerSql = $this->visitValueAndReturnSQL($ast->getExpression());
 
 			// Emit standard SQL CAST(), supported by all engines
 			$this->result[] = "CAST({$innerSql} AS {$sqlType})";
@@ -403,14 +445,41 @@
 
 			// date("now") — emit the platform's current-timestamp expression.
 			if ($ast->isNow()) {
-				$this->result[] = $this->platform->getCurrentUnixTimestamp();
+				$this->result[] = $this->currentUnixTimestamp();
 				$this->addToVisitedNodes($ast->getExpression());
 				return;
 			}
 
 			// Column reference or parameter — wrap with the platform's timestamp function.
 			$innerSql = $this->visitNodeAndReturnSQL($ast->getExpression());
-			$this->result[] = sprintf($this->platform->getUnixTimestampFunction(), $innerSql);
+			$this->result[] = $this->unixTimestamp($innerSql);
+		}
+
+		/**
+		 * Converts a datetime expression to integer Unix seconds.
+		 * @param string $valueSql Datetime expression
+		 * @return string SQL expression
+		 */
+		private function unixTimestamp(string $valueSql): string {
+			return match ($this->platform->getDatabaseType()) {
+				'pgsql' => "CAST(EXTRACT(EPOCH FROM {$valueSql}) AS BIGINT)",
+				'sqlite' => "CAST(strftime('%s', {$valueSql}) AS INTEGER)",
+				'sqlsrv' => "DATEDIFF_BIG(SECOND, '1970-01-01', {$valueSql})",
+				default => "UNIX_TIMESTAMP({$valueSql})",
+			};
+		}
+
+		/**
+		 * Returns the current time as integer Unix seconds.
+		 * @return string SQL expression
+		 */
+		private function currentUnixTimestamp(): string {
+			return match ($this->platform->getDatabaseType()) {
+				'pgsql' => 'CAST(EXTRACT(EPOCH FROM NOW()) AS BIGINT)',
+				'sqlite' => "CAST(strftime('%s','now') AS INTEGER)",
+				'sqlsrv' => "DATEDIFF_BIG(SECOND, '1970-01-01', SYSUTCDATETIME())",
+				default => 'UNIX_TIMESTAMP()',
+			};
 		}
 
 		/**
@@ -443,6 +512,15 @@
 		 */
 		protected function handleConcat(AstConcat $concat): void {
 			$this->result[] = $this->sqlFragmentBuilder->handleConcat($concat);
+		}
+
+		/**
+		 * Process a stored routine call
+		 * @param AstRoutineCall $call The call node
+		 * @return void
+		 */
+		protected function handleRoutineCall(AstRoutineCall $call): void {
+			$this->result[] = $this->sqlFragmentBuilder->handleRoutineCall($call);
 		}
 		
 		/**

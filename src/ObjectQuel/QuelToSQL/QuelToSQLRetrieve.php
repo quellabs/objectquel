@@ -13,13 +13,13 @@
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRangeDatabaseSubquery;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRangeDatabaseTempTable;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRetrieve;
-	use Quellabs\ObjectQuel\ObjectQuel\Helpers\RangeTableName;
+	use Quellabs\ObjectQuel\ObjectQuel\Helpers\EntityRangeTableNameResolver;
 	use Quellabs\ObjectQuel\Execution\Visitors\BuildSqlFromAst;
 	use Quellabs\ObjectQuel\Execution\Visitors\DetectPrimaryKeyInClause;
 	use Quellabs\ObjectQuel\Execution\Visitors\DetectPrimaryKeyInClauseException;
 	use Quellabs\ObjectQuel\Capabilities\PlatformCapabilitiesInterface;
 	use Quellabs\ObjectQuel\Capabilities\NullPlatformCapabilities;
-	use Quellabs\ObjectQuel\DatabaseAdapter\SqlIdentifierQuoter;
+	use Quellabs\ObjectQuel\ObjectQuel\Helpers\SqlDialect\SqlIdentifierQuoter;
 
 	/**
 	 * Compiles an AstRetrieve statement to dialect-correct SELECT SQL.
@@ -39,6 +39,9 @@
 		private EntityStore $entityStore;
 		private PlatformCapabilitiesInterface $platform;
 
+		/** @var string|null Schema that qualifies routine names, or null for none */
+		private ?string $routineSchema;
+
 		/**
 		 * Quotes identifiers/aliases for whichever engine $platform describes.
 		 * @var SqlIdentifierQuoter
@@ -53,15 +56,18 @@
 		 * @param EntityStore $entityStore
 		 * @param array<string, mixed> $parameters
 		 * @param PlatformCapabilitiesInterface $platform Database engine capability descriptor
+		 * @param string|null $routineSchema Schema that qualifies routine names, or null for none
 		 */
 		public function __construct(
 			EntityStore $entityStore,
 			array &$parameters,
-			PlatformCapabilitiesInterface $platform = new NullPlatformCapabilities()
+			PlatformCapabilitiesInterface $platform = new NullPlatformCapabilities(),
+			?string $routineSchema = null
 		) {
 			$this->entityStore = $entityStore;
 			$this->parameters = &$parameters;
 			$this->platform = $platform;
+			$this->routineSchema = $routineSchema;
 			$this->identifierQuoter = new SqlIdentifierQuoter($platform);
 		}
 		
@@ -156,7 +162,7 @@
 			foreach ($retrieve->getValues() as $value) {
 				// Create a new QuelToSQLConvertToString converter, passing the outer range name
 				// so entity column aliases use the derived table's name (e.g. "x.id" not "y.id")
-				$quelToSQLConvertToString = new BuildSqlFromAst($this->entityStore, $this->parameters, "VALUES", $this->platform, $outerRangeName);
+				$quelToSQLConvertToString = new BuildSqlFromAst($this->entityStore, $this->parameters, "VALUES", $this->platform, $this->routineSchema, $outerRangeName);
 				$value->accept($quelToSQLConvertToString);
 				$sqlResult = $quelToSQLConvertToString->getResult();
 				
@@ -239,8 +245,8 @@
 					$subSQL = $this->convertToSQL($range->getQuery(), $rangeName);
 					$tableNames[] = $this->quoteAsAlias("({$subSQL})", $rangeName);
 				} else {
-					// Entity ranges resolve their table name via metadata (see RangeTableName).
-					$tableName = RangeTableName::resolve($range, $this->entityStore);
+					// Entity ranges resolve their table name via metadata (see EntityRangeTableNameResolver).
+					$tableName = EntityRangeTableNameResolver::resolve($range, $this->entityStore);
 
 					// Add the table name and alias to the list for the FROM clause.
 					$tableNames[] = $this->quoteAsAlias($this->identifierQuoter->quoteIdentifier($tableName), $rangeName);
@@ -271,17 +277,8 @@
 				return "";
 			}
 			
-			// Create a new instance of QuelToSQLConvertToString to convert the conditions to a SQL string.
-			// This object will process the Quel conditions and convert them into a format that SQL understands.
-			$retrieveEntitiesVisitor = new BuildSqlFromAst($this->entityStore, $this->parameters, "WHERE", $this->platform);
-			
-			// Use the accept method of the conditions to let the QuelToSQLConvertToString object perform the processing.
-			// This activates the logic for converting Quel to SQL.
-			$conditions->accept($retrieveEntitiesVisitor);
-			
-			// Get the result, which is now a SQL-compliant string, and add 'WHERE' for the SQL query.
-			// This is the result of converting Quel conditions to SQL.
-			return "WHERE " . $retrieveEntitiesVisitor->getResult();
+			$retrieveEntitiesVisitor = new BuildSqlFromAst($this->entityStore, $this->parameters, "WHERE", $this->platform, $this->routineSchema);
+			return "WHERE " . $retrieveEntitiesVisitor->visitConditionAndReturnSQL($conditions);
 		}
 		
 		/**
@@ -313,7 +310,7 @@
 				$astObject = $exception->getAstObject();
 				
 				// Convert Quel conditions to a SQL string
-				$retrieveEntitiesVisitor = new BuildSqlFromAst($this->entityStore, $this->parameters, "SORT", $this->platform);
+				$retrieveEntitiesVisitor = new BuildSqlFromAst($this->entityStore, $this->parameters, "SORT", $this->platform, $this->routineSchema);
 				$astObject->getIdentifier()->accept($retrieveEntitiesVisitor);
 				$column = $retrieveEntitiesVisitor->getResult();
 				
@@ -390,7 +387,7 @@
 			foreach ($sort as $s) {
 				// Create a new instance of QuelToSQLConvertToString to convert the conditions to a SQL string.
 				// This object will process the Quel conditions and convert them into a format that SQL understands.
-				$retrieveEntitiesVisitor = new BuildSqlFromAst($this->entityStore, $this->parameters, "SORT", $this->platform);
+				$retrieveEntitiesVisitor = new BuildSqlFromAst($this->entityStore, $this->parameters, "SORT", $this->platform, $this->routineSchema);
 				
 				// Guide the QUEL through to get a SQL query back
 				$s['ast']->accept($retrieveEntitiesVisitor);
@@ -430,6 +427,7 @@
 		}
 		
 		/**
+		 * Compiles the retrieve's GROUP BY expressions to SQL.
 		 * @param AstRetrieve $retrieve
 		 * @return string
 		 */
@@ -443,7 +441,7 @@
 			$groupSQL = [];
 			
 			foreach ($groupBy as $group) {
-				$visitor = new BuildSqlFromAst($this->entityStore, $this->parameters, "CONDITION", $this->platform);
+				$visitor = new BuildSqlFromAst($this->entityStore, $this->parameters, "CONDITION", $this->platform, $this->routineSchema);
 				$group->accept($visitor);
 				$groupSQL[] = $visitor->getResult();
 			}
@@ -496,9 +494,8 @@
 				$joinProperty = $range->getJoinProperty();
 				
 				// Convert the join condition to a SQL string.
-				$visitor = new BuildSqlFromAst($this->entityStore, $this->parameters, "CONDITION", $this->platform);
-				$joinProperty->accept($visitor);
-				$joinColumn = $visitor->getResult();
+				$visitor = new BuildSqlFromAst($this->entityStore, $this->parameters, "CONDITION", $this->platform, $this->routineSchema);
+				$joinColumn = $visitor->visitConditionAndReturnSQL($joinProperty);
 				
 				// Determine join type
 				$joinType = $range->isRequired() ? "INNER" : "LEFT";
@@ -513,7 +510,7 @@
 				} else {
 					// $range is AstRangeDatabase here — the earlier guard already
 					// excluded every other AstRange subtype.
-					$tableName = RangeTableName::resolve($range, $this->entityStore);
+					$tableName = EntityRangeTableNameResolver::resolve($range, $this->entityStore);
 					$result[] = $this->buildJoinClause($joinType, $this->identifierQuoter->quoteIdentifier($tableName), $rangeName, $joinColumn);
 				}
 			}

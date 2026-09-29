@@ -30,6 +30,15 @@
 
 		private string $onUpdate;
 
+		/**
+		 * Initializes this AST node.
+		 * @param string $column
+		 * @param string $referencedTable
+		 * @param ?string $referencedColumn
+		 * @param string $onDelete
+		 * @param string $onUpdate
+		 * @return void
+		 */
 		public function __construct(string $column, string $referencedTable, ?string $referencedColumn, string $onDelete, string $onUpdate) {
 			$this->column = $column;
 			$this->referencedTable = $referencedTable;
@@ -38,22 +47,42 @@
 			$this->onUpdate = $onUpdate;
 		}
 
+		/**
+		 * Returns the column.
+		 * @return string
+		 */
 		public function getColumn(): string {
 			return $this->column;
 		}
 
+		/**
+		 * Returns the referenced table.
+		 * @return string
+		 */
 		public function getReferencedTable(): string {
 			return $this->referencedTable;
 		}
 
+		/**
+		 * Returns the referenced column.
+		 * @return ?string
+		 */
 		public function getReferencedColumn(): ?string {
 			return $this->referencedColumn;
 		}
 
+		/**
+		 * Returns the foreign key ON DELETE action.
+		 * @return string
+		 */
 		public function getOnDelete(): string {
 			return $this->onDelete;
 		}
 
+		/**
+		 * Returns the foreign key ON UPDATE action.
+		 * @return string
+		 */
 		public function getOnUpdate(): string {
 			return $this->onUpdate;
 		}
@@ -65,6 +94,10 @@
 			return $clone;
 		}
 
+		/**
+		 * Returns a deep clone of this node.
+		 * @return static
+		 */
 		public function deepClone(): static {
 			// @phpstan-ignore-next-line new.static
 			$clone = new static($this->column, $this->referencedTable, $this->referencedColumn, $this->onDelete, $this->onUpdate);

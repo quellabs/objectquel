@@ -9,6 +9,10 @@
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRetrieve;
 	
 	final readonly class PrimaryKeyInfo {
+
+		public AstRange $range;
+		public string $entityName;
+		public string $primaryKey;
 		
 		/**
 		 * PrimaryKeyInfo constructor
@@ -16,11 +20,10 @@
 		 * @param string $entityName
 		 * @param string $primaryKey
 		 */
-		public function __construct(
-			public AstRange $range,
-			public string   $entityName,
-			public string   $primaryKey,
-		) {
+		public function __construct(AstRange $range, string $entityName, string $primaryKey) {
+			$this->range = $range;
+			$this->entityName = $entityName;
+			$this->primaryKey = $primaryKey;
 		}
 		
 		/**

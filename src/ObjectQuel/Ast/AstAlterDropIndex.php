@@ -13,14 +13,27 @@
 
 		private string $indexName;
 
+		/**
+		 * Initializes this AST node.
+		 * @param string $indexName
+		 * @return void
+		 */
 		public function __construct(string $indexName) {
 			$this->indexName = $indexName;
 		}
 
+		/**
+		 * Returns the index name.
+		 * @return string
+		 */
 		public function getIndexName(): string {
 			return $this->indexName;
 		}
 
+		/**
+		 * Returns a deep clone of this node.
+		 * @return static
+		 */
 		public function deepClone(): static {
 			// @phpstan-ignore-next-line new.static
 			$clone = new static($this->indexName);

@@ -38,6 +38,10 @@
 			$this->type = $type;
 		}
 
+		/**
+		 * Returns the index name.
+		 * @return string
+		 */
 		public function getIndexName(): string {
 			return $this->indexName;
 		}
@@ -49,14 +53,26 @@
 			return $this->columns;
 		}
 
+		/**
+		 * Reports whether the index is unique.
+		 * @return bool
+		 */
 		public function isUnique(): bool {
 			return $this->unique;
 		}
 
+		/**
+		 * Returns the type.
+		 * @return ?string
+		 */
 		public function getType(): ?string {
 			return $this->type;
 		}
 
+		/**
+		 * Returns a deep clone of this node.
+		 * @return static
+		 */
 		public function deepClone(): static {
 			// @phpstan-ignore-next-line new.static
 			$clone = new static($this->indexName, $this->columns, $this->unique, $this->type);

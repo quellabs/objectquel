@@ -1,15 +1,15 @@
 <?php
-	
+
 	namespace Quellabs\ObjectQuel\ObjectQuel\QuelToSQL;
 
-	use Quellabs\ObjectQuel\OrmException;
-	use Quellabs\ObjectQuel\ObjectQuel\Passes\QueryNormalizer;
+	use Quellabs\ObjectQuel\ObjectQuel\Pipeline\QueryNormalizer;
 	use Quellabs\ObjectQuel\ObjectQuel\SemanticAnalyzer;
+	use Quellabs\ObjectQuel\OrmException;
 	use Quellabs\ObjectQuel\Exception\EntityResolutionException;
 	use Quellabs\AnnotationReader\Exception\AnnotationReaderException;
 	use Quellabs\ObjectQuel\Capabilities\PlatformCapabilitiesInterface;
 	use Quellabs\ObjectQuel\DatabaseAdapter\Mapper\TypeMapper;
-	use Quellabs\ObjectQuel\DatabaseAdapter\SqlIdentifierQuoter;
+	use Quellabs\ObjectQuel\ObjectQuel\Helpers\SqlDialect\SqlIdentifierQuoter;
 	use Quellabs\ObjectQuel\EntityManager;
 	use Quellabs\ObjectQuel\EntityStore;
 	use Quellabs\ObjectQuel\Exception\QuelException;
@@ -21,11 +21,12 @@
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstAlias;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstAppend;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstAssignment;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstParameter;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRangeDatabaseSubquery;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRangeDatabaseTempTable;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRetrieve;
-	use Quellabs\ObjectQuel\ObjectQuel\Helpers\AssignmentValidator;
-	use Quellabs\ObjectQuel\ObjectQuel\Helpers\DateTimeWriteSql;
+	use Quellabs\ObjectQuel\ObjectQuel\QuelToSQL\AssignmentValidator;
+	use Quellabs\ObjectQuel\ObjectQuel\Helpers\DateTimeWriteSqlConverter;
 	use Quellabs\ObjectQuel\ObjectQuel\Visitors\CoerceDateTimeParameters;
 	use Quellabs\ObjectQuel\ObjectQuel\Visitors\NormalizeDateTime;
 	use Quellabs\ObjectQuel\ObjectQuel\Visitors\ResolveIdentifierRange;
@@ -55,6 +56,9 @@
 		private EntityManager $entityManager;
 		private SqlIdentifierQuoter $identifierQuoter;
 		private PlatformCapabilitiesInterface $platform;
+
+		/** @var string|null Schema that qualifies routine names, or null for none */
+		private ?string $routineSchema;
 		private QuelToSQLUpsert $upsertCompiler;
 		private VersionValueHandler $versionValueHandler;
 		private ResolveType $valueTypes;
@@ -65,17 +69,19 @@
 		 *        nested retrieve, prepared through the same pipeline a top-level
 		 *        retrieve uses — QueryOptimizer requires an EntityManager.
 		 * @param PlatformCapabilitiesInterface $platform
+		 * @param string|null $routineSchema Schema that qualifies routine names, or null for none
 		 * @param QuelToSQLUpsert $upsertCompiler Handles an AstAppend's on-conflict extension
 		 * @param VersionValueHandler $versionValueHandler Reused as-is so the
 		 *        literal-values form initializes @Orm\Version columns using the
 		 *        same logic InsertPersister's INSERT path does — see compileValues().
 		 * @param ResolveType|null $valueTypes Types inserted values; defaults to one that knows entity columns only
 		 */
-		public function __construct(EntityManager $entityManager, PlatformCapabilitiesInterface $platform, QuelToSQLUpsert $upsertCompiler, VersionValueHandler $versionValueHandler, ?ResolveType $valueTypes = null) {
+		public function __construct(EntityManager $entityManager, PlatformCapabilitiesInterface $platform, ?string $routineSchema, QuelToSQLUpsert $upsertCompiler, VersionValueHandler $versionValueHandler, ?ResolveType $valueTypes = null) {
 			$this->entityManager = $entityManager;
 			$this->entityStore = $entityManager->getEntityStore();
 			$this->identifierQuoter = new SqlIdentifierQuoter($platform);
 			$this->platform = $platform;
+			$this->routineSchema = $routineSchema;
 			$this->upsertCompiler = $upsertCompiler;
 			$this->versionValueHandler = $versionValueHandler;
 			$this->valueTypes = $valueTypes ?? new ResolveType($this->entityStore);
@@ -195,11 +201,19 @@
 				$this->assertAssignmentValueTypeCompatible($assignment, $metadata);
 
 				$value = $assignment->getValue();
+				if ($this->platform->getDatabaseType() === 'pgsql'
+					&& $assignment->getProperty() === $metadata->autoIncrementColumn
+					&& $value instanceof AstParameter
+					&& array_key_exists($value->getName(), $parameters)
+					&& $parameters[$value->getName()] === null) {
+					$compiled[$assignment->getProperty()] = 'DEFAULT';
+					continue;
+				}
 				$value->accept(new NormalizeDateTime($this->entityStore, $this->valueTypes));
 				$value->accept(new ValidateNoTemporalScalarMix($this->entityStore, $this->valueTypes));
 
-				$builder = new BuildSqlFromAst($this->entityStore, $parameters, 'VALUES', $this->platform);
-				$compiled[$assignment->getProperty()] = $this->convertTimestamp($builder->visitNodeAndReturnSQL($value), $this->valueTypes->inferReturnType($value), $assignment->getProperty(), $metadata);
+				$builder = new BuildSqlFromAst($this->entityStore, $parameters, 'VALUES', $this->platform, $this->routineSchema);
+				$compiled[$assignment->getProperty()] = $this->convertTimestamp($builder->visitValueAndReturnSQL($value), $this->valueTypes->inferReturnType($value), $assignment->getProperty(), $metadata);
 			}
 
 			// @Orm\Version columns the caller didn't assign: initial value for this row.
@@ -408,7 +422,7 @@
 			$columnName = $metadata->getColumnName($property);
 			$columnDef = $columnName === null ? null : ($metadata->columnDefinitions[$columnName] ?? null);
 
-			return DateTimeWriteSql::convert(
+			return DateTimeWriteSqlConverter::convert(
 				$valueSql,
 				$valueType,
 				$columnDef === null ? null : TypeMapper::phinxTypeToPhpType($columnDef['type']),
@@ -418,6 +432,7 @@
 		}
 
 		/**
+		 * Infers the PHP-level type of a named value in the source retrieve.
 		 * @param AstRetrieve $source Prepared source retrieve
 		 * @param string $alias Name of one of its values
 		 * @return string|null Inferred PHP-level type of that value, or null when unknown
@@ -471,7 +486,7 @@
 		 * @return string
 		 */
 		private function finalizeSourceRetrieveSql(AstRetrieve $source, array &$parameters): string {
-			return (new QuelToSQLRetrieve($this->entityStore, $parameters, $this->platform))->convertToSQL($source);
+			return (new QuelToSQLRetrieve($this->entityStore, $parameters, $this->platform, $this->routineSchema))->convertToSQL($source);
 		}
 
 		/**

@@ -1,9 +1,10 @@
 <?php
-	
+
 	namespace Quellabs\ObjectQuel\ObjectQuel\QuelToSQL;
 
 	use Quellabs\ObjectQuel\Capabilities\PlatformCapabilitiesInterface;
-	use Quellabs\ObjectQuel\DatabaseAdapter\SqlIdentifierQuoter;
+	use Quellabs\ObjectQuel\ObjectQuel\Helpers\SqlDialect\SqlIdentifierQuoter;
+	use Quellabs\ObjectQuel\ObjectQuel\Helpers\SqlDialect\SqlDialectSyntax;
 	use Quellabs\ObjectQuel\EntityStore;
 	use Quellabs\ObjectQuel\Exception\EntityResolutionException;
 	use Quellabs\ObjectQuel\Exception\QuelException;
@@ -11,9 +12,11 @@
 	use Quellabs\ObjectQuel\Execution\Visitors\BuildSqlFromAst;
 	use Quellabs\ObjectQuel\Metadata\EntityMetadataRecord;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstDelete;
-	use Quellabs\ObjectQuel\ObjectQuel\Helpers\RangeTableName;
-	use Quellabs\ObjectQuel\ObjectQuel\Helpers\SetTargetColumnQuoter;
-	use Quellabs\ObjectQuel\ObjectQuel\Helpers\WriteVerbIdentifierResolver;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRangeDatabase;
+	use Quellabs\ObjectQuel\ObjectQuel\Helpers\SqlDialect\AliasedDmlSqlBuilder;
+	use Quellabs\ObjectQuel\ObjectQuel\Helpers\EntityRangeTableNameResolver;
+	use Quellabs\ObjectQuel\ObjectQuel\Helpers\SqlDialect\SetTargetColumnQuoter;
+	use Quellabs\ObjectQuel\ObjectQuel\QuelToSQL\WriteVerbIdentifierResolver;
 	use Quellabs\ObjectQuel\ObjectQuel\Helpers\WriteVerbParameterNormalizer;
 	use Quellabs\ObjectQuel\ObjectQuel\Visitors\CoerceDateTimeParameters;
 	use Quellabs\ObjectQuel\ObjectQuel\Visitors\NormalizeDateTime;
@@ -39,17 +42,22 @@
 		private EntityStore $entityStore;
 		private SqlIdentifierQuoter $identifierQuoter;
 		private PlatformCapabilitiesInterface $platform;
+
+		/** @var string|null Schema that qualifies routine names, or null for none */
+		private ?string $routineSchema;
 		private SQLSerializer $serializer;
 
 		/**
 		 * QuelToSQLDelete constructor
 		 * @param EntityStore $entityStore
 		 * @param PlatformCapabilitiesInterface $platform
+		 * @param string|null $routineSchema Schema that qualifies routine names, or null for none
 		 */
-		public function __construct(EntityStore $entityStore, PlatformCapabilitiesInterface $platform) {
+		public function __construct(EntityStore $entityStore, PlatformCapabilitiesInterface $platform, ?string $routineSchema) {
 			$this->entityStore = $entityStore;
 			$this->identifierQuoter = new SqlIdentifierQuoter($platform);
 			$this->platform = $platform;
+			$this->routineSchema = $routineSchema;
 			// Only needs EntityStore (see Serializer's constructor) — built
 			// here so WriteVerbParameterNormalizer denormalizes a WHERE
 			// clause's bound-parameter values exactly like append/replace do.
@@ -85,40 +93,48 @@
 			$conditions->accept(new WriteVerbParameterNormalizer($metadata, $this->serializer, $parameters));
 			$conditions->accept(new CoerceDateTimeParameters($parameters));
 
-			$tableName = RangeTableName::resolve($range, $this->entityStore);
-			$builder = new BuildSqlFromAst($this->entityStore, $parameters, 'WHERE', $this->platform);
-			$whereSql = $builder->visitNodeAndReturnSQL($conditions);
+			$builder = new BuildSqlFromAst($this->entityStore, $parameters, 'WHERE', $this->platform, $this->routineSchema);
+			$whereSql = $builder->visitConditionAndReturnSQL($conditions);
 
-			if (!$statement->getDirective('ignoreSoftDelete')) {
-				$softDeleteSetClause = $this->buildSoftDeleteSetClause($metadata, $range->getName());
-
-				if ($softDeleteSetClause !== null) {
-					return sprintf(
-						'UPDATE %s as %s SET %s WHERE %s',
-						$this->identifierQuoter->quoteIdentifier($tableName),
-						$this->identifierQuoter->quoteIdentifier($range->getName()),
-						$softDeleteSetClause,
-						$whereSql
-					);
-				}
-			}
-
-			return sprintf(
-				'DELETE FROM %s as %s WHERE %s',
-				$this->identifierQuoter->quoteIdentifier($tableName),
-				$this->identifierQuoter->quoteIdentifier($range->getName()),
-				$whereSql
-			);
+			return $this->buildStatement($range, $metadata, $whereSql, (bool)$statement->getDirective('ignoreSoftDelete'), $range->getName());
 		}
 
 		/**
-		 * Builds the `col = <sql>` SET-clause fragment marking a row soft-deleted,
-		 * or null when the entity has no recognised soft-delete column type.
+		 * Builds the DELETE, or the soft-delete UPDATE when the entity has one and it isn't ignored.
+		 * @param AstRangeDatabase $range Target range
+		 * @param EntityMetadataRecord $metadata Target entity metadata
+		 * @param string $whereSql Compiled WHERE condition
+		 * @param bool $ignoreSoftDelete True to always emit a real DELETE
+		 * @param string|null $alias Range alias of the target table, or null for an unaliased table
+		 * @return string
+		 */
+		private function buildStatement(AstRangeDatabase $range, EntityMetadataRecord $metadata, string $whereSql, bool $ignoreSoftDelete, ?string $alias): string {
+			$tableName = EntityRangeTableNameResolver::resolve($range, $this->entityStore);
+			$softDeleteSetClause = $ignoreSoftDelete ? null : $this->buildSoftDeleteSetClause($metadata, $alias);
+
+			if ($alias === null) {
+				$table = $this->identifierQuoter->quoteIdentifier($tableName);
+
+				return $softDeleteSetClause !== null
+					? "UPDATE {$table} SET {$softDeleteSetClause} WHERE {$whereSql}"
+					: "DELETE FROM {$table} WHERE {$whereSql}";
+			}
+
+			if ($softDeleteSetClause !== null) {
+				return AliasedDmlSqlBuilder::update($tableName, $alias, $softDeleteSetClause, $whereSql, $this->identifierQuoter, $this->platform);
+			}
+
+			return AliasedDmlSqlBuilder::delete($tableName, $alias, $whereSql, $this->identifierQuoter, $this->platform);
+		}
+
+		/**
+		 * Builds the SET fragment that marks a row soft-deleted, or null (a real DELETE) when the entity
+		 * has no soft-delete column of a type InjectSoftDeleteCondition recognises.
 		 * @param EntityMetadataRecord $metadata
-		 * @param string $alias The DELETE/UPDATE statement's own range alias
+		 * @param string|null $alias The DELETE/UPDATE statement's own range alias, or null when the table is unaliased
 		 * @return string|null
 		 */
-		private function buildSoftDeleteSetClause(EntityMetadataRecord $metadata, string $alias): ?string {
+		private function buildSoftDeleteSetClause(EntityMetadataRecord $metadata, ?string $alias): ?string {
 			if (!$metadata->hasSoftDelete()) {
 				return null;
 			}
@@ -129,10 +145,10 @@
 
 			return match ($metadata->softDeleteColumnType) {
 				// NULL means active; any timestamp means deleted — see InjectSoftDeleteCondition.
-				'datetime' => "{$targetColumn} = " . $this->platform->getCurrentDatetimeFunction(),
+				'datetime' => "{$targetColumn} = " . SqlDialectSyntax::currentDatetime($this->platform->getDatabaseType()),
 
 				// false means active; true means deleted — see InjectSoftDeleteCondition.
-				'boolean'  => "{$targetColumn} = true",
+				'boolean'  => "{$targetColumn} = " . ($this->platform->supportsBooleanLiterals() ? 'true' : '1'),
 
 				default    => null,
 			};

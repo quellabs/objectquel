@@ -4,6 +4,8 @@
 
 	use Quellabs\ObjectQuel\DatabaseAdapter\Mapper\TypeMapper;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstColumnDefinition;
+	use Quellabs\ObjectQuel\ObjectQuel\Helpers\ColumnConstraints;
+	use Quellabs\ObjectQuel\ObjectQuel\Helpers\ColumnTypeArguments;
 	use Quellabs\ObjectQuel\ObjectQuel\Lexer;
 	use Quellabs\ObjectQuel\ObjectQuel\LexerException;
 	use Quellabs\ObjectQuel\ObjectQuel\ParserException;

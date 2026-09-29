@@ -64,12 +64,21 @@
 				return null;
 			}
 
-			// Extract the column type from the annotation object
-			$columnType = $annotation->getType();
-			
+			return $this->normalizeValueOfType($annotation->getType(), $value, $annotation->getParameters());
+		}
+		
+		/**
+		 * Normalizes a value by column type alone, for values that have no Column annotation (e.g. a routine's result).
+		 * @param string $columnType Abstract column type
+		 * @param mixed $value The raw value to be normalized
+		 * @param array<string, mixed> $parameters Column parameters handed to a dedicated normalizer
+		 * @return mixed The normalized value appropriate for the column type
+		 * @throws \RuntimeException If a normalizer class cannot be instantiated
+		 */
+		public function normalizeValueOfType(string $columnType, mixed $value, array $parameters = []): mixed {
 			// Check if this column type has a dedicated normalizer class
 			if (in_array(strtolower($columnType), $this->normalizers, true)) {
-				return $this->createNormalizer($annotation)->normalize($value);
+				return $this->createNormalizer($columnType, $parameters)->normalize($value);
 			}
 			
 			// Perform casting if needed
@@ -106,7 +115,7 @@
 			
 			// Check if this column type has a dedicated normalizer class
 			if (in_array(strtolower($columnType), $this->normalizers, true)) {
-				return $this->createNormalizer($annotation)->denormalize($value);
+				return $this->createNormalizer($columnType, $annotation->getParameters())->denormalize($value);
 			}
 			
 			// For all other column types, return the value unchanged
@@ -282,16 +291,17 @@
 		}
 		
 		/**
-		 * Instantiates and returns a normalizer for the given column annotation.
-		 * @param Column $annotation
+		 * Instantiates and returns a normalizer for the given column type.
+		 * @param string $columnType Abstract column type
+		 * @param array<string, mixed> $parameters Column parameters, e.g. an enum's enumType
 		 * @return NormalizerInterface
 		 * @throws \RuntimeException If the class does not exist or does not implement NormalizerInterface
 		 */
-		private function createNormalizer(Column $annotation): NormalizerInterface {
+		private function createNormalizer(string $columnType, array $parameters): NormalizerInterface {
 			// Derive the fully-qualified class name from the column type.
 			// e.g. type "date" → ...Normalizer\DateNormalizer
 			$class = "\\Quellabs\\ObjectQuel\\Serialization\\Normalizer\\"
-				. ucfirst($annotation->getType())
+				. ucfirst(strtolower($columnType))
 				. "Normalizer";
 			
 			// Guard against missing normalizer files; this catches typos in type names
@@ -300,9 +310,9 @@
 				throw new \RuntimeException("Normalizer class not found: {$class}");
 			}
 			
-			// Instantiate with the full annotation parameters so the normalizer
+			// Instantiate with the column parameters so the normalizer
 			// has access to any column-level metadata it may need (e.g. format, locale).
-			$instance = new $class($annotation->getParameters());
+			$instance = new $class($parameters);
 			
 			// Enforce the contract. A class_exists check alone is not sufficient —
 			// a file could define the class without implementing the interface.

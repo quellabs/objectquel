@@ -4,6 +4,7 @@
 
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstDelete;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRange;
+	use Quellabs\ObjectQuel\ObjectQuel\Helpers\TargetRangeResolver;
 	use Quellabs\ObjectQuel\ObjectQuel\Lexer;
 	use Quellabs\ObjectQuel\ObjectQuel\LexerException;
 	use Quellabs\ObjectQuel\ObjectQuel\ParserException;
@@ -51,7 +52,7 @@
 			$this->lexer->matchKeyword('delete');
 
 			$targetName = $this->lexer->match(Token::Identifier)->getStringValue();
-			$range = TargetRange::resolve($targetName, $ranges, 'delete');
+			$range = TargetRangeResolver::resolve($targetName, $ranges, 'delete');
 
 			$whereClauseRule = new WhereClause($this->lexer);
 			$conditions = $whereClauseRule->parseRequired('delete');

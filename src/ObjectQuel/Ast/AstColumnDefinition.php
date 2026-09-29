@@ -67,38 +67,75 @@
 			$this->enumValues = $enumValues;
 		}
 
+		/**
+		 * Passes this node to the visitor.
+		 * @param AstVisitorInterface $visitor
+		 * @return void
+		 */
 		public function accept(AstVisitorInterface $visitor): void {
 			parent::accept($visitor);
 		}
 
+		/**
+		 * Returns the name.
+		 * @return string
+		 */
 		public function getName(): string {
 			return $this->name;
 		}
 
+		/**
+		 * Returns the type.
+		 * @return string
+		 */
 		public function getType(): string {
 			return $this->type;
 		}
 
+		/**
+		 * Returns the limit.
+		 * @return ?int
+		 */
 		public function getLimit(): ?int {
 			return $this->limit;
 		}
 
+		/**
+		 * Returns the precision.
+		 * @return ?int
+		 */
 		public function getPrecision(): ?int {
 			return $this->precision;
 		}
 
+		/**
+		 * Returns the scale.
+		 * @return ?int
+		 */
 		public function getScale(): ?int {
 			return $this->scale;
 		}
 
+		/**
+		 * Reports whether the column is unsigned.
+		 * @return bool
+		 */
 		public function isUnsigned(): bool {
 			return $this->unsigned;
 		}
 
+		/**
+		 * Reports whether the column accepts NULL values.
+		 * @return bool
+		 */
 		public function isNullable(): bool {
 			return $this->nullable;
 		}
 
+		/**
+		 * Reports whether the column is an identity column.
+		 * @return bool
+		 */
 		public function isIdentity(): bool {
 			return $this->identity;
 		}
@@ -130,6 +167,10 @@
 			];
 		}
 
+		/**
+		 * Returns a deep clone of this node.
+		 * @return static
+		 */
 		public function deepClone(): static {
 			// @phpstan-ignore-next-line new.static
 			$clone = new static(

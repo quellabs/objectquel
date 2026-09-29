@@ -11,14 +11,27 @@
 
 		private string $columnName;
 
+		/**
+		 * Initializes this AST node.
+		 * @param string $columnName
+		 * @return void
+		 */
 		public function __construct(string $columnName) {
 			$this->columnName = $columnName;
 		}
 
+		/**
+		 * Returns the column name.
+		 * @return string
+		 */
 		public function getColumnName(): string {
 			return $this->columnName;
 		}
 
+		/**
+		 * Returns a deep clone of this node.
+		 * @return static
+		 */
 		public function deepClone(): static {
 			// @phpstan-ignore-next-line new.static
 			$clone = new static($this->columnName);

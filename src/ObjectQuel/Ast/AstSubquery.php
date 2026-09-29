@@ -64,6 +64,7 @@
 		 * Cascades into partitionBy independently of the aggregation so visitors
 		 * that need to see it (e.g. range discovery) still can.
 		 * @param AstVisitorInterface $visitor The visitor to accept.
+		 * @return void
 		 */
 		public function accept(AstVisitorInterface $visitor): void {
 			parent::accept($visitor);
