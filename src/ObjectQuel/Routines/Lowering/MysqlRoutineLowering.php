@@ -328,10 +328,10 @@
 		}
 
 		/**
-		 * Compiles the routine exit statement.
+		 * Compiles the routine rollback statement.
 		 * @return string
 		 */
-		protected function exitStatement(): string {
+		protected function rollbackStatement(): string {
 			$savepoint = $this->atomicSavepoint();
 			return "ROLLBACK TO SAVEPOINT {$savepoint}; RELEASE SAVEPOINT {$savepoint}; SET {$this->atomicGuard()} = 0; LEAVE " . self::ATOMIC_LABEL . ';';
 		}

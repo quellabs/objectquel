@@ -184,10 +184,10 @@
 		}
 
 		/**
-		 * Compiles the routine exit statement.
+		 * Compiles the routine rollback statement.
 		 * @return string
 		 */
-		protected function exitStatement(): string {
+		protected function rollbackStatement(): string {
 			return "RAISE SQLSTATE 'PZ001';";
 		}
 

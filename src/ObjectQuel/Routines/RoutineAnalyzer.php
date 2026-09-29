@@ -6,7 +6,7 @@
 	use Quellabs\ObjectQuel\EntityStore;
 	use Quellabs\ObjectQuel\Exception\EntityResolutionException;
 	use Quellabs\ObjectQuel\Exception\SemanticException;
-	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstExit;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRollback;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstAppend;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstTransaction;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstBreak;
@@ -183,7 +183,7 @@
 					$this->scope->popScope();
 					break;
 
-				case $statement instanceof AstExit:
+				case $statement instanceof AstRollback:
 				case $statement instanceof AstBreak:
 				case $statement instanceof AstContinue:
 					// Placement is checked by RoutineControlFlowValidator

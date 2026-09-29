@@ -250,10 +250,10 @@
 		}
 
 		/**
-		 * Compiles the routine exit statement.
+		 * Compiles the routine rollback statement.
 		 * @return string
 		 */
-		protected function exitStatement(): string {
+		protected function rollbackStatement(): string {
 			return "IF {$this->atomicOwnerVariable} = 1 BEGIN ROLLBACK TRANSACTION; END ELSE BEGIN ROLLBACK TRANSACTION {$this->atomicSavepointVariable}; END;";
 		}
 

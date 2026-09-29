@@ -10,7 +10,7 @@
 	use Quellabs\ObjectQuel\Exception\QuelException;
 	use Quellabs\ObjectQuel\Exception\SemanticException;
 	use Quellabs\ObjectQuel\Exception\TransformationException;
-	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstExit;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRollback;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstAppend;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstTransaction;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstBreak;
@@ -167,10 +167,10 @@
 		abstract protected function lowerTransaction(AstTransaction $transaction, int $depth): string;
 
 		/**
-		 * Compiles the routine exit statement.
-		 * @return string The rollback statement for `exit`
+		 * Compiles the routine rollback statement.
+		 * @return string The rollback statement for `rollback`
 		 */
-		abstract protected function exitStatement(): string;
+		abstract protected function rollbackStatement(): string;
 
 		/**
 		 * Compiles a break statement for the target engine.
@@ -349,7 +349,7 @@
 				$statement instanceof AstWhile => $this->lowerWhile($statement, $depth),
 				$statement instanceof AstForeach => $this->lowerForeach($statement, $depth),
 				$statement instanceof AstTransaction => $this->lowerTransaction($statement, $depth),
-				$statement instanceof AstExit => $this->line($this->exitStatement(), $depth),
+				$statement instanceof AstRollback => $this->line($this->rollbackStatement(), $depth),
 				$statement instanceof AstBreak => $this->line($this->breakStatement(), $depth),
 				$statement instanceof AstContinue => $this->line($this->continueStatement(), $depth),
 				$statement instanceof AstRetrieve => $this->line($this->discardRetrieve($statement), $depth),

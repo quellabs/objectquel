@@ -3,9 +3,9 @@
 	namespace Quellabs\ObjectQuel\ObjectQuel\Ast;
 
 	/**
-	 * `exit` — rolls back and exits the innermost enclosing `transaction { }`.
+	 * `rollback` — rolls back and exits the innermost enclosing `transaction { }`.
 	 */
-	class AstExit extends Ast {
+	class AstRollback extends Ast {
 
 		/**
 		 * @return static

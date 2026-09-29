@@ -3,7 +3,7 @@
 	namespace Quellabs\ObjectQuel\ObjectQuel\Routines;
 
 	use Quellabs\ObjectQuel\Exception\SemanticException;
-	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstExit;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRollback;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstTransaction;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstBreak;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstContinue;
@@ -16,7 +16,7 @@
 
 	/**
 	 * Path checks over a routine body: every path of a non-void routine ends in
-	 * `return`, `exit` is the last statement on its path through its
+	 * `return`, `rollback` is the last statement on its path through its
 	 * `transaction` block,
 	 * and `break`/`continue` sit in a loop without leaving a transaction block.
 	 */
@@ -37,26 +37,26 @@
 		}
 
 		/**
-		 * Checks transaction/exit/return/break/continue placement in a statement list.
+		 * Checks transaction/rollback/return/break/continue placement in a statement list.
 		 * @param AstInterface[] $statements Statements in source order
 		 * @param bool $inTransaction True inside a `transaction` body
 		 * @param bool $inLoop True inside a loop that is itself inside the transaction
 		 * @param bool $inAnyLoop True inside any loop
-		 * @return bool True when some path through the list ends in `exit`
+		 * @return bool True when some path through the list ends in `rollback`
 		 * @throws SemanticException
 		 */
 		private function checkBlock(array $statements, bool $inTransaction, bool $inLoop, bool $inAnyLoop): bool {
-			$mayExit = false;
+			$mayRollback = false;
 
 			foreach ($statements as $statement) {
-				if ($mayExit) {
-					throw new SemanticException("A statement follows 'exit' on the same path. 'exit' must be the last statement on its path through the transaction block.");
+				if ($mayRollback) {
+					throw new SemanticException("A statement follows 'rollback' on the same path. 'rollback' must be the last statement on its path through the transaction block.");
 				}
 
-				$mayExit = $this->checkStatement($statement, $inTransaction, $inLoop, $inAnyLoop);
+				$mayRollback = $this->checkStatement($statement, $inTransaction, $inLoop, $inAnyLoop);
 			}
 
-			return $mayExit;
+			return $mayRollback;
 		}
 
 		/**
@@ -65,17 +65,17 @@
 		 * @param bool $inTransaction True inside a `transaction` body
 		 * @param bool $inLoop True inside a loop that is itself inside the transaction
 		 * @param bool $inAnyLoop True inside any loop
-		 * @return bool True when some path through the statement ends in `exit`
+		 * @return bool True when some path through the statement ends in `rollback`
 		 * @throws SemanticException
 		 */
 		private function checkStatement(AstInterface $statement, bool $inTransaction, bool $inLoop, bool $inAnyLoop): bool {
-			if ($statement instanceof AstExit) {
+			if ($statement instanceof AstRollback) {
 				if (!$inTransaction) {
-					throw new SemanticException("'exit' is only valid inside 'transaction { }'.");
+					throw new SemanticException("'rollback' is only valid inside 'transaction { }'.");
 				}
 
 				if ($inLoop) {
-					throw new SemanticException("'exit' inside a loop would let later iterations run after the rollback; move it out of the loop.");
+					throw new SemanticException("'rollback' inside a loop would let later iterations run after it; move it out of the loop.");
 				}
 
 				return true;
@@ -91,9 +91,9 @@
 			}
 
 			if ($statement instanceof AstIf) {
-				$thenMayAbort = $this->checkBlock($statement->getThenBody(), $inTransaction, $inLoop, $inAnyLoop);
-				$elseMayAbort = $this->checkBlock($statement->getElseBody() ?? [], $inTransaction, $inLoop, $inAnyLoop);
-				return $thenMayAbort || $elseMayAbort;
+				$thenMayRollback = $this->checkBlock($statement->getThenBody(), $inTransaction, $inLoop, $inAnyLoop);
+				$elseMayRollback = $this->checkBlock($statement->getElseBody() ?? [], $inTransaction, $inLoop, $inAnyLoop);
+				return $thenMayRollback || $elseMayRollback;
 			}
 
 			if ($statement instanceof AstWhile || $statement instanceof AstForeach) {
@@ -106,7 +106,7 @@
 					throw new SemanticException("'transaction' blocks can't be nested.");
 				}
 
-				// exit ends the transaction block, not the enclosing path
+				// rollback ends the transaction block, not the enclosing path
 				$this->checkBlock($statement->getBody(), true, false, $inAnyLoop);
 				return false;
 			}
