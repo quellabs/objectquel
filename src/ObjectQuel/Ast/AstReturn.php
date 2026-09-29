@@ -6,34 +6,34 @@
 	use Quellabs\ObjectQuel\ObjectQuel\AstVisitorInterface;
 
 	/**
-	 * `return expr` — always carries a value; a bare `return` is not supported.
+	 * `return expr`, or a bare `return` with no value — only valid in a void routine.
 	 */
 	class AstReturn extends Ast {
 
-		private AstInterface $value;
+		private ?AstInterface $value;
 
 		/**
-		 * @param AstInterface $value Expression producing the returned value
+		 * @param AstInterface|null $value Expression producing the returned value, or null for a bare `return`
 		 */
-		public function __construct(AstInterface $value) {
+		public function __construct(?AstInterface $value = null) {
 			$this->value = $value;
-			$this->value->setParent($this);
+			$this->value?->setParent($this);
 		}
 
 		/**
-		 * Visits this node, then the returned value.
+		 * Visits this node, then the returned value, if any.
 		 * @param AstVisitorInterface $visitor
 		 * @return void
 		 */
 		public function accept(AstVisitorInterface $visitor): void {
 			parent::accept($visitor);
-			$this->value->accept($visitor);
+			$this->value?->accept($visitor);
 		}
 
 		/**
-		 * @return AstInterface Expression producing the returned value
+		 * @return AstInterface|null Expression producing the returned value, or null for a bare `return`
 		 */
-		public function getValue(): AstInterface {
+		public function getValue(): ?AstInterface {
 			return $this->value;
 		}
 
@@ -42,7 +42,7 @@
 		 */
 		public function deepClone(): static {
 			// @phpstan-ignore-next-line new.static
-			$clone = new static($this->value->deepClone());
+			$clone = new static($this->value?->deepClone());
 			$clone->setParent($this->getParent());
 			return $clone;
 		}

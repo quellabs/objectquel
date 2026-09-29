@@ -138,6 +138,11 @@
 
 				case 'return':
 					$this->lexer->matchKeyword('return');
+
+					if (in_array($this->lexer->lookahead(), [Token::CurlyBraceClose, Token::Semicolon], true)) {
+						return new AstReturn();
+					}
+
 					return new AstReturn($this->expressionRule->parse());
 
 				case 'transaction':

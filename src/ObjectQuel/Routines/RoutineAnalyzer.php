@@ -142,7 +142,15 @@
 
 				case $statement instanceof AstReturn:
 					if ($this->isVoid) {
-						throw new SemanticException("A void routine can't return a value.");
+						if ($statement->getValue() !== null) {
+							throw new SemanticException("A void routine can't return a value.");
+						}
+
+						break;
+					}
+
+					if ($statement->getValue() === null) {
+						throw new SemanticException("A non-void routine must return a value; bare 'return' is only allowed in a void routine.");
 					}
 
 					$statement->getValue()->accept($this->referenceResolver(false));

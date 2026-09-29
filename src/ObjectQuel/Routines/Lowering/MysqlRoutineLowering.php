@@ -35,6 +35,7 @@
 		private const string DONE_VARIABLE = '_done';
 		private const string DISCARD_VARIABLE = '_discard';
 		private const string ATOMIC_LABEL = '_equel_atomic';
+		private const string ROUTINE_LABEL = '_equel_routine';
 
 		private int $loopCount;
 
@@ -137,7 +138,12 @@
 				$declarations[] = 'DECLARE CONTINUE HANDLER FOR NOT FOUND SET ' . self::DONE_VARIABLE . ' = TRUE;';
 			}
 
-			$create = $this->header($routine, $parameters) . "\nBEGIN\n" . $this->lines($declarations, 1) . $body . 'END';
+			// MySQL procedures have no RETURN; a bare `return` needs a labeled body to LEAVE
+			$hasBareReturn = $routine->isVoid() && $this->contains($routine, [AstReturn::class]);
+			$beginLabel = $hasBareReturn ? self::ROUTINE_LABEL . ': ' : '';
+			$endLabel = $hasBareReturn ? ' ' . self::ROUTINE_LABEL : '';
+
+			$create = $this->header($routine, $parameters) . "\n{$beginLabel}BEGIN\n" . $this->lines($declarations, 1) . $body . "END{$endLabel}";
 
 			return [$create];
 		}
@@ -207,13 +213,19 @@
 		}
 
 		/**
-		 * Open cursors close at the end of the block they're declared in, so RETURN needs no CLOSE.
+		 * Open cursors close at the end of the block they're declared in, so neither form needs a CLOSE.
+		 * MySQL procedures don't allow RETURN at all, so a bare `return` (void routines only) instead
+		 * leaves the labeled routine body {@see render()} builds for exactly this.
 		 * @param AstReturn $return The return
 		 * @param int $depth Indentation depth
 		 * @return string
 		 * @throws SemanticException
 		 */
 		protected function lowerReturn(AstReturn $return, int $depth): string {
+			if ($return->getValue() === null) {
+				return $this->line('LEAVE ' . self::ROUTINE_LABEL . ';', $depth);
+			}
+
 			return $this->line('RETURN ' . $this->returnedValue($return) . ';', $depth);
 		}
 

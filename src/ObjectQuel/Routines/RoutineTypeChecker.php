@@ -115,8 +115,15 @@
 		 * @throws SemanticException|EntityResolutionException
 		 */
 		private function checkReturn(AstReturn $return, AstRoutineDefinition $routine): void {
+			$value = $return->getValue();
+
+			// A bare `return` (void routines only) has no value to type-check
+			if ($value === null) {
+				return;
+			}
+
 			$returnType = RoutineAnalyzer::normalizeType($routine->getDeclaredReturnType());
-			$mismatch = $this->mismatch($returnType, $return->getValue());
+			$mismatch = $this->mismatch($returnType, $value);
 
 			if ($mismatch !== null) {
 				throw new SemanticException("'{$routine->getName()}' returns {$returnType}, but a returned value is {$mismatch}.");
