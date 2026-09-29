@@ -6,7 +6,7 @@
 	use Quellabs\ObjectQuel\Exception\QuelException;
 	use Quellabs\ObjectQuel\Exception\SemanticException;
 	use Quellabs\ObjectQuel\ObjectQuel\AstInterface;
-	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstTransaction;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstAtomic;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstCall;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstForeach;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstIdentifier;
@@ -220,11 +220,11 @@
 
 		/**
 		 * Uses a savepoint for caller-owned transactions and commits only transactions started here.
-		 * @param AstTransaction $transaction The transaction block
+		 * @param AstAtomic $atomic The atomic block
 		 * @param int $depth Indentation depth
 		 * @return string
 		 */
-		protected function lowerTransactionBlock(AstTransaction $transaction, int $depth): string {
+		protected function lowerAtomicBlock(AstAtomic $atomic, int $depth): string {
 			$number = ++$this->atomicBlockCount;
 			$this->atomicOwnerVariable = '@_equel_owns_' . $number;
 			$this->atomicSavepointVariable = '@_equel_savepoint_' . $number;
@@ -232,7 +232,7 @@
 			$this->atomicVariables[$this->atomicSavepointVariable] = 'VARCHAR(32)';
 			$owner = $this->atomicOwnerVariable;
 			$savepoint = $this->atomicSavepointVariable;
-			$body = $this->lowerBlock($transaction->getBody(), $depth + 1);
+			$body = $this->lowerBlock($atomic->getBody(), $depth + 1);
 
 			return $this->line("SET {$owner} = CASE WHEN @@TRANCOUNT = 0 THEN 1 ELSE 0 END;", $depth)
 				. $this->line("IF {$owner} = 1 BEGIN TRANSACTION;", $depth)

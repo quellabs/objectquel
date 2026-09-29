@@ -3,7 +3,7 @@
 	namespace Quellabs\ObjectQuel\ObjectQuel\Ast;
 
 	/**
-	 * `rollback` — rolls back and exits the innermost enclosing `transaction { }`.
+	 * `rollback` — rolls back and exits the innermost enclosing `atomic { }`.
 	 */
 	class AstRollback extends Ast {
 

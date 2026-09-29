@@ -4,7 +4,7 @@
 
 	use Quellabs\ObjectQuel\Exception\SemanticException;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRollback;
-	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstTransaction;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstAtomic;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstBreak;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstContinue;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstForeach;
@@ -17,8 +17,8 @@
 	/**
 	 * Path checks over a routine body: every path of a non-void routine ends in
 	 * `return`, `rollback` is the last statement on its path through its
-	 * `transaction` block,
-	 * and `break`/`continue` sit in a loop without leaving a transaction block.
+	 * `atomic` block,
+	 * and `break`/`continue` sit in a loop without leaving an atomic block.
 	 */
 	class RoutineControlFlowValidator {
 
@@ -37,23 +37,23 @@
 		}
 
 		/**
-		 * Checks transaction/rollback/return/break/continue placement in a statement list.
+		 * Checks atomic/rollback/return/break/continue placement in a statement list.
 		 * @param AstInterface[] $statements Statements in source order
-		 * @param bool $inTransaction True inside a `transaction` body
-		 * @param bool $inLoop True inside a loop that is itself inside the transaction
+		 * @param bool $inAtomic True inside an `atomic` body
+		 * @param bool $inLoop True inside a loop that is itself inside the atomic block
 		 * @param bool $inAnyLoop True inside any loop
 		 * @return bool True when some path through the list ends in `rollback`
 		 * @throws SemanticException
 		 */
-		private function checkBlock(array $statements, bool $inTransaction, bool $inLoop, bool $inAnyLoop): bool {
+		private function checkBlock(array $statements, bool $inAtomic, bool $inLoop, bool $inAnyLoop): bool {
 			$mayRollback = false;
 
 			foreach ($statements as $statement) {
 				if ($mayRollback) {
-					throw new SemanticException("A statement follows 'rollback' on the same path. 'rollback' must be the last statement on its path through the transaction block.");
+					throw new SemanticException("A statement follows 'rollback' on the same path. 'rollback' must be the last statement on its path through the atomic block.");
 				}
 
-				$mayRollback = $this->checkStatement($statement, $inTransaction, $inLoop, $inAnyLoop);
+				$mayRollback = $this->checkStatement($statement, $inAtomic, $inLoop, $inAnyLoop);
 			}
 
 			return $mayRollback;
@@ -62,16 +62,16 @@
 		/**
 		 * Checks one statement, recursing into nested blocks.
 		 * @param AstInterface $statement The statement
-		 * @param bool $inTransaction True inside a `transaction` body
-		 * @param bool $inLoop True inside a loop that is itself inside the transaction
+		 * @param bool $inAtomic True inside an `atomic` body
+		 * @param bool $inLoop True inside a loop that is itself inside the atomic block
 		 * @param bool $inAnyLoop True inside any loop
 		 * @return bool True when some path through the statement ends in `rollback`
 		 * @throws SemanticException
 		 */
-		private function checkStatement(AstInterface $statement, bool $inTransaction, bool $inLoop, bool $inAnyLoop): bool {
+		private function checkStatement(AstInterface $statement, bool $inAtomic, bool $inLoop, bool $inAnyLoop): bool {
 			if ($statement instanceof AstRollback) {
-				if (!$inTransaction) {
-					throw new SemanticException("'rollback' is only valid inside 'transaction { }'.");
+				if (!$inAtomic) {
+					throw new SemanticException("'rollback' is only valid inside 'atomic { }'.");
 				}
 
 				if ($inLoop) {
@@ -82,31 +82,31 @@
 			}
 
 			if ($statement instanceof AstBreak || $statement instanceof AstContinue) {
-				$this->checkLoopExit($statement instanceof AstBreak ? 'break' : 'continue', $inTransaction, $inLoop, $inAnyLoop);
+				$this->checkLoopExit($statement instanceof AstBreak ? 'break' : 'continue', $inAtomic, $inLoop, $inAnyLoop);
 				return false;
 			}
 
-			if ($statement instanceof AstReturn && $inTransaction) {
-				throw new SemanticException("'return' inside 'transaction { }' is not supported; move it after the block.");
+			if ($statement instanceof AstReturn && $inAtomic) {
+				throw new SemanticException("'return' inside 'atomic { }' is not supported; move it after the block.");
 			}
 
 			if ($statement instanceof AstIf) {
-				$thenMayRollback = $this->checkBlock($statement->getThenBody(), $inTransaction, $inLoop, $inAnyLoop);
-				$elseMayRollback = $this->checkBlock($statement->getElseBody() ?? [], $inTransaction, $inLoop, $inAnyLoop);
+				$thenMayRollback = $this->checkBlock($statement->getThenBody(), $inAtomic, $inLoop, $inAnyLoop);
+				$elseMayRollback = $this->checkBlock($statement->getElseBody() ?? [], $inAtomic, $inLoop, $inAnyLoop);
 				return $thenMayRollback || $elseMayRollback;
 			}
 
 			if ($statement instanceof AstWhile || $statement instanceof AstForeach) {
-				$this->checkBlock($statement->getBody(), $inTransaction, $inTransaction, true);
+				$this->checkBlock($statement->getBody(), $inAtomic, $inAtomic, true);
 				return false;
 			}
 
-			if ($statement instanceof AstTransaction) {
-				if ($inTransaction) {
-					throw new SemanticException("'transaction' blocks can't be nested.");
+			if ($statement instanceof AstAtomic) {
+				if ($inAtomic) {
+					throw new SemanticException("'atomic' blocks can't be nested.");
 				}
 
-				// rollback ends the transaction block, not the enclosing path
+				// rollback ends the atomic block, not the enclosing path
 				$this->checkBlock($statement->getBody(), true, false, $inAnyLoop);
 				return false;
 			}
@@ -117,19 +117,19 @@
 		/**
 		 * Rejects `break`/`continue` outside a loop, or whose loop encloses the atomic block, skipping its cleanup.
 		 * @param string $keyword 'break' or 'continue', for error messages
-		 * @param bool $inTransaction True inside a `transaction` body
-		 * @param bool $inLoop True inside a loop that is itself inside the transaction
+		 * @param bool $inAtomic True inside an `atomic` body
+		 * @param bool $inLoop True inside a loop that is itself inside the atomic block
 		 * @param bool $inAnyLoop True inside any loop
 		 * @return void
 		 * @throws SemanticException
 		 */
-		private function checkLoopExit(string $keyword, bool $inTransaction, bool $inLoop, bool $inAnyLoop): void {
+		private function checkLoopExit(string $keyword, bool $inAtomic, bool $inLoop, bool $inAnyLoop): void {
 			if (!$inAnyLoop) {
 				throw new SemanticException("'{$keyword}' is only valid inside 'while' or 'foreach'.");
 			}
 
-			if ($inTransaction && !$inLoop) {
-				throw new SemanticException("'{$keyword}' would leave 'transaction { }' without finishing it; move the loop inside the block or the block out of the loop.");
+			if ($inAtomic && !$inLoop) {
+				throw new SemanticException("'{$keyword}' would leave 'atomic { }' without finishing it; move the loop inside the block or the block out of the loop.");
 			}
 		}
 

@@ -12,7 +12,7 @@
 	use Quellabs\ObjectQuel\Exception\TransformationException;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRollback;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstAppend;
-	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstTransaction;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstAtomic;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstBreak;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstCall;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstContinue;
@@ -86,8 +86,8 @@
 			$this->routine = $routine;
 			$this->cursorQueries = [];
 			$this->openLoops = [];
-			if (!$routine->isVoid() && $this->contains($routine, [AstTransaction::class])) {
-				throw new SemanticException("'transaction' is only supported in void functions.");
+			if (!$routine->isVoid() && $this->contains($routine, [AstAtomic::class])) {
+				throw new SemanticException("'atomic' is only supported in void functions.");
 			}
 
 			$this->validate($routine);
@@ -158,13 +158,13 @@
 		abstract protected function lowerForeach(AstForeach $foreach, int $depth): string;
 
 		/**
-		 * Compiles a transaction block in the routine.
-		 * @param AstTransaction $transaction The transaction block
+		 * Compiles an atomic block in the routine.
+		 * @param AstAtomic $atomic The atomic block
 		 * @param int $depth Indentation depth
 		 * @return string
 		 * @throws SemanticException|EntityResolutionException|TransformationException|QuelException
 		 */
-		abstract protected function lowerTransaction(AstTransaction $transaction, int $depth): string;
+		abstract protected function lowerAtomic(AstAtomic $atomic, int $depth): string;
 
 		/**
 		 * Compiles the routine rollback statement.
@@ -364,7 +364,7 @@
 				$statement instanceof AstIf => $this->lowerIf($statement, $depth),
 				$statement instanceof AstWhile => $this->lowerWhile($statement, $depth),
 				$statement instanceof AstForeach => $this->lowerForeach($statement, $depth),
-				$statement instanceof AstTransaction => $this->lowerTransaction($statement, $depth),
+				$statement instanceof AstAtomic => $this->lowerAtomic($statement, $depth),
 				$statement instanceof AstRollback => $this->line($this->rollbackStatement(), $depth),
 				$statement instanceof AstBreak => $this->line($this->breakStatement(), $depth),
 				$statement instanceof AstContinue => $this->line($this->continueStatement(), $depth),

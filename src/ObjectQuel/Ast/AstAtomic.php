@@ -3,9 +3,9 @@
 	namespace Quellabs\ObjectQuel\ObjectQuel\Ast;
 
 	/**
-	 * `transaction { ... }` — an atomic block that preserves any caller-owned transaction.
+	 * `atomic { ... }` — an atomic block that preserves any caller-owned transaction.
 	 */
-	class AstTransaction extends AstStatementBlock {
+	class AstAtomic extends AstStatementBlock {
 
 		/**
 		 * @return static

@@ -6,7 +6,7 @@
 	use Quellabs\ObjectQuel\Exception\QuelException;
 	use Quellabs\ObjectQuel\Exception\SemanticException;
 	use Quellabs\ObjectQuel\Exception\TransformationException;
-	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstTransaction;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstAtomic;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRetrieve;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRoutineDefinition;
 	use Quellabs\ObjectQuel\ObjectQuel\Helpers\SqlDialect\RoutineReferenceSql;
@@ -140,27 +140,27 @@
 
 		/**
 		 * Avoids changing transaction state while a cursor loop is open.
-		 * @param AstTransaction $transaction The transaction block
+		 * @param AstAtomic $atomic The atomic block
 		 * @param int $depth Indentation depth
 		 * @return string
 		 * @throws SemanticException|EntityResolutionException|TransformationException|QuelException
 		 */
-		protected function lowerTransaction(AstTransaction $transaction, int $depth): string {
+		protected function lowerAtomic(AstAtomic $atomic, int $depth): string {
 			if (!empty($this->openLoops)) {
-				throw new SemanticException("'transaction' inside 'foreach {$this->openLoops[0]}' isn't supported on {$this->engineName()} while its cursor is open.");
+				throw new SemanticException("'atomic' inside 'foreach {$this->openLoops[0]}' isn't supported on {$this->engineName()} while its cursor is open.");
 			}
 
-			return $this->lowerTransactionBlock($transaction, $depth);
+			return $this->lowerAtomicBlock($atomic, $depth);
 		}
 
 		/**
-		 * Lowers a transaction block while enforcing cursor transaction restrictions.
-		 * @param AstTransaction $transaction The transaction block, outside any loop
+		 * Lowers an atomic block while enforcing cursor transaction restrictions.
+		 * @param AstAtomic $atomic The atomic block, outside any loop
 		 * @param int $depth Indentation depth
 		 * @return string
 		 * @throws SemanticException|EntityResolutionException|TransformationException|QuelException
 		 */
-		abstract protected function lowerTransactionBlock(AstTransaction $transaction, int $depth): string;
+		abstract protected function lowerAtomicBlock(AstAtomic $atomic, int $depth): string;
 
 		/**
 		 * Runs the query and counts its rows into a scratch variable, discarding them.

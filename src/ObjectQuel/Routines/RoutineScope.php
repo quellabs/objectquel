@@ -10,7 +10,7 @@
 
 	/**
 	 * A routine's names: block-scoped locals and cursors (a stack of frames,
-	 * pushed/popped around if/while/foreach/transaction bodies; the routine's
+	 * pushed/popped around if/while/foreach/atomic bodies; the routine's
 	 * own top-level body is the never-popped root frame), plus range aliases
 	 * and parameters, which stay one flat, always-visible namespace since
 	 * `range of` remains top-level-only. Declaring a name returns the name
@@ -56,7 +56,7 @@
 		}
 
 		/**
-		 * Opens a new block scope, entering an if/elseif/else, while, foreach or transaction body.
+		 * Opens a new block scope, entering an if/elseif/else, while, foreach or atomic body.
 		 * @return void
 		 */
 		public function pushScope(): void {

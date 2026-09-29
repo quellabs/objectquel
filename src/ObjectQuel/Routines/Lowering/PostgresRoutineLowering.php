@@ -4,7 +4,7 @@
 
 	use Quellabs\ObjectQuel\Exception\SemanticException;
 	use Quellabs\ObjectQuel\ObjectQuel\AstInterface;
-	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstTransaction;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstAtomic;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstForeach;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstIf;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRetrieve;
@@ -22,7 +22,7 @@
 	 * - Every `foreach` is a plain `FOR row IN query LOOP`; a `replace`/`delete`
 	 *   naming a table inside it writes it the ordinary way, with its own
 	 *   explicit `where`, same as anywhere else in the routine.
-	 * - `transaction { }` uses a PL/pgSQL exception block as a subtransaction.
+	 * - `atomic { }` uses a PL/pgSQL exception block as a subtransaction.
 	 */
 	class PostgresRoutineLowering extends RoutineLowering {
 
@@ -170,14 +170,14 @@
 		}
 
 		/**
-		 * Compiles a transaction block in the routine.
-		 * @param AstTransaction $transaction The transaction block
+		 * Compiles an atomic block in the routine.
+		 * @param AstAtomic $atomic The atomic block
 		 * @param int $depth Indentation depth
 		 * @return string
 		 * @throws SemanticException When an embedded statement can't be compiled
 		 */
-		protected function lowerTransaction(AstTransaction $transaction, int $depth): string {
-			$body = $this->lowerBlock($transaction->getBody(), $depth + 1);
+		protected function lowerAtomic(AstAtomic $atomic, int $depth): string {
+			$body = $this->lowerBlock($atomic->getBody(), $depth + 1);
 			return $this->line('BEGIN', $depth)
 				. ($body === '' ? $this->line('NULL;', $depth + 1) : $body)
 				. $this->line('EXCEPTION WHEN SQLSTATE \'PZ001\' THEN', $depth)

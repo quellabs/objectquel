@@ -3,8 +3,8 @@
 	namespace Quellabs\ObjectQuel\ObjectQuel\Rules;
 
 	use Quellabs\ObjectQuel\EntityStore;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstAtomic;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRollback;
-	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstTransaction;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstBreak;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstContinue;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstDeclare;
@@ -33,7 +33,7 @@
 	class RoutineBlock {
 
 		/** Words that start a procedural statement; recognized by text, like other contextual keywords. */
-		public const array STATEMENT_KEYWORDS = ['if', 'else', 'elseif', 'while', 'foreach', 'return', 'transaction', 'rollback', 'break', 'continue', 'replace', 'delete'];
+		public const array STATEMENT_KEYWORDS = ['if', 'else', 'elseif', 'while', 'foreach', 'return', 'atomic', 'rollback', 'break', 'continue', 'replace', 'delete'];
 
 		/** Compound-assignment operator tokens (the `x` in `x=`) and the arithmetic operator each applies */
 		private const array COMPOUND_OPERATORS = [Token::Plus => '+', Token::Minus => '-', Token::Star => '*', Token::Slash => '/'];
@@ -145,9 +145,9 @@
 
 					return new AstReturn($this->expressionRule->parse());
 
-				case 'transaction':
-					$this->lexer->matchKeyword('transaction');
-					return new AstTransaction($this->parseBlock());
+				case 'atomic':
+					$this->lexer->matchKeyword('atomic');
+					return new AstAtomic($this->parseBlock());
 
 				case 'rollback':
 					$this->lexer->matchKeyword('rollback');

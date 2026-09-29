@@ -6,7 +6,7 @@
 	use Quellabs\ObjectQuel\Exception\QuelException;
 	use Quellabs\ObjectQuel\Exception\SemanticException;
 	use Quellabs\ObjectQuel\ObjectQuel\AstInterface;
-	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstTransaction;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstAtomic;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstCall;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstForeach;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstIf;
@@ -162,7 +162,7 @@
 			$dataAccess = $this->writesTables($routine) ? 'MODIFIES SQL DATA' : 'READS SQL DATA';
 
 			if ($routine->isVoid()) {
-				$marker = $this->contains($routine, [AstTransaction::class]) ? "\nCOMMENT 'ObjectQuel:atomic-block'" : '';
+				$marker = $this->contains($routine, [AstAtomic::class]) ? "\nCOMMENT 'ObjectQuel:atomic-block'" : '';
 				return "CREATE PROCEDURE {$signature}\n{$dataAccess}{$marker}";
 			}
 
@@ -303,11 +303,11 @@
 
 		/**
 		 * Uses a savepoint inside a caller transaction; the preflight release rejects an autocommit call before body writes.
-		 * @param AstTransaction $transaction The transaction block
+		 * @param AstAtomic $atomic The atomic block
 		 * @param int $depth Indentation depth
 		 * @return string
 		 */
-		protected function lowerTransactionBlock(AstTransaction $transaction, int $depth): string {
+		protected function lowerAtomicBlock(AstAtomic $atomic, int $depth): string {
 			$savepoint = $this->atomicSavepoint();
 			$guard = $this->atomicGuard();
 			return $this->line("IF COALESCE({$guard}, 0) <> 0 THEN SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Recursive atomic block is not supported'; END IF;", $depth)
@@ -323,7 +323,7 @@
 				. $this->line("RELEASE SAVEPOINT {$savepoint};", $depth + 2)
 				. $this->line('RESIGNAL;', $depth + 2)
 				. $this->line('END;', $depth + 1)
-				. $this->lowerBlock($transaction->getBody(), $depth + 1)
+				. $this->lowerBlock($atomic->getBody(), $depth + 1)
 				. $this->line("RELEASE SAVEPOINT {$savepoint};", $depth + 1)
 				. $this->line("SET {$guard} = 0;", $depth + 1)
 				. $this->line('END ' . self::ATOMIC_LABEL . ';', $depth);

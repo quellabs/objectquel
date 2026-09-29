@@ -8,7 +8,7 @@
 	use Quellabs\ObjectQuel\Exception\SemanticException;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRollback;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstAppend;
-	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstTransaction;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstAtomic;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstBreak;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstCall;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstContinue;
@@ -177,7 +177,7 @@
 					$this->analyzeForeach($statement);
 					break;
 
-				case $statement instanceof AstTransaction:
+				case $statement instanceof AstAtomic:
 					$this->scope->pushScope();
 					$this->analyzeBlock($statement->getBody(), false);
 					$this->scope->popScope();
@@ -443,7 +443,7 @@
 		 */
 		private function assertTopLevel(bool $isTopLevel, string $what): void {
 			if (!$isTopLevel) {
-				throw new SemanticException("{$what} must be at the top level of the routine body, not inside if/else, while, foreach or transaction.");
+				throw new SemanticException("{$what} must be at the top level of the routine body, not inside if/else, while, foreach or atomic.");
 			}
 		}
 
