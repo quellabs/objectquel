@@ -25,6 +25,7 @@
 	use Quellabs\ObjectQuel\Exception\TransformationException;
 	use Quellabs\ObjectQuel\OrmException;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRetrieve;
+	use Quellabs\ObjectQuel\ObjectQuel\Helpers\CompilerDirectiveParser;
 	use Quellabs\ObjectQuel\ObjectQuel\Lexer;
 	use Quellabs\ObjectQuel\ObjectQuel\LexerException;
 	use Quellabs\ObjectQuel\Exception\QuelException;
@@ -399,11 +400,20 @@
 			// Create a lexer to break the query string into tokens (keywords, identifiers, operators, etc.)
 			$lexer = new Lexer($query);
 
-			// A routine definition has its own grammar and parser
-			if ($lexer->peekKeyword('define')) {
+			// A routine definition has its own grammar and parser. It may be
+			// preceded by compiler directives (e.g. @ignoreSoftDelete true),
+			// same syntax as ahead of an ordinary statement — peek past them
+			// to detect 'define', restoring the lexer if this isn't a
+			// routine so Parser::parse() can consume the same directives itself.
+			$state = $lexer->saveState();
+			CompilerDirectiveParser::parse($lexer);
+			$isRoutine = $lexer->peekKeyword('define');
+			$lexer->restoreState($state);
+
+			if ($isRoutine) {
 				return (new ProcedureParser($lexer, $this->entityManager->getEntityStore()))->parse();
 			}
-			
+
 			// Create a parser that takes the tokenized input and builds an Abstract Syntax Tree
 			$parser = new Parser($lexer, $this->entityManager->getEntityStore());
 			

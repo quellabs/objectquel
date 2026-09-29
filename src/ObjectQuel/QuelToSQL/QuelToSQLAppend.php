@@ -457,9 +457,12 @@
 		 * can all be called freely.
 		 * @param AstRetrieve $source
 		 * @param array<string, mixed> $parameters
+		 * @param bool $ignoreSoftDelete True for a routine's `append to ... select ...` whose
+		 *        own `@ignoreSoftDelete true` directive is set: the source ignores @SoftDelete
+		 *        entirely, same as any other routine retrieve (see RoutineStatementCompiler)
 		 * @return void
 		 */
-		public function prepareSource(AstRetrieve $source, array &$parameters): void {
+		public function prepareSource(AstRetrieve $source, array &$parameters, bool $ignoreSoftDelete = false): void {
 			foreach ($source->getRanges() as $range) {
 				if ($range instanceof AstRangeDatabaseSubquery) {
 					$this->resolveIdentifierTypes($range->getQuery());
@@ -468,7 +471,7 @@
 
 			$this->resolveIdentifierTypes($source);
 
-			(new QueryNormalizer($this->entityStore))->transform($source);
+			(new QueryNormalizer($this->entityStore))->transform($source, $ignoreSoftDelete);
 			$source->accept(new CoerceDateTimeParameters($parameters));
 			(new SemanticAnalyzer($this->entityStore, $this->platform))->validate($source);
 			(new QueryOptimizer($this->entityManager, $this->platform))->transform($source, $parameters);

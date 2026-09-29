@@ -4,6 +4,7 @@
 
 	use Quellabs\ObjectQuel\EntityStore;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRange;
+	use Quellabs\ObjectQuel\ObjectQuel\Helpers\CompilerDirectiveParser;
 	use Quellabs\ObjectQuel\ObjectQuel\Rules\AlterTable;
 	use Quellabs\ObjectQuel\ObjectQuel\Rules\Append;
 	use Quellabs\ObjectQuel\ObjectQuel\Rules\Call;
@@ -61,7 +62,7 @@
 	     */
 	    public function parse(): AstInterface {
 		    // Compiler directives
-		    $directives = $this->parseCompilerDirectives();
+		    $directives = CompilerDirectiveParser::parse($this->lexer);
 		    
 		    // Ranges
 		    $ranges = $this->parseRanges();
@@ -110,50 +111,6 @@
 		    }
 		    
 		    return $query;
-	    }
-	    
-	    /**
-	     * Helper function to match and return the value of a directive.
-	     * @param string $directiveName
-	     * @return bool|int|float|string
-	     * @throws ParserException
-	     * @throws LexerException
-	     */
-	    protected function matchDirectiveValue(string $directiveName): bool|int|float|string {
-		    if ($this->lexer->optionalMatch(Token::Minus)) {
-			    return -$this->lexer->match(Token::Number)->getNumericValue();
-		    }
-
-		    if ($this->lexer->optionalMatch(Token::True)) {
-			    return true;
-		    } elseif ($this->lexer->optionalMatch(Token::False)) {
-			    return false;
-		    } elseif (($token = $this->lexer->optionalMatch(Token::Number)) !== null) {
-			    return $token->getNumericValue();
-		    } elseif (($token = $this->lexer->optionalMatch(Token::Identifier)) !== null) {
-			    return $token->getStringValue();
-		    } else {
-			    throw new ParserException("Invalid compiler directive value for @{$directiveName}");
-		    }
-	    }
-	    
-	    /**
-	     * Parser compiler directives
-	     * @return array<string, bool|int|float|string>
-	     * @throws LexerException|ParserException
-	     */
-	    protected function parseCompilerDirectives(): array {
-		    $directives = [];
-		    
-		    while ($this->lexer->peek()->getType() == Token::CompilerDirective) {
-			    $directive = $this->lexer->match(Token::CompilerDirective);
-			    $directiveName = $directive->getStringValue();
-
-			    // Stored lowercase to match getDirective()'s case-insensitive lookup.
-			    $directives[strtolower($directiveName)] = $this->matchDirectiveValue($directiveName);
-		    }
-		    
-		    return $directives;
 	    }
 	    
 	    /**

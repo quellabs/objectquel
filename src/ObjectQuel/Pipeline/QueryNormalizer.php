@@ -44,14 +44,18 @@
 		/**
 		 * Transform an ObjectQuel AST into SQL-ready format through multi-stage processing.
 		 * @param AstRetrieve $ast The parsed ObjectQuel query AST to transform
+		 * @param bool $ignoreSoftDelete True to skip step 7 (soft-delete filter injection)
+		 *        unconditionally — used for a routine's embedded retrieve/insert-from-select
+		 *        source when the routine's own `@ignoreSoftDelete true` directive is set
+		 *        (see RoutineStatementCompiler)
 		 * @return void Modifies the AST in-place
 		 * @throws TransformationException
 		 * @throws EntityResolutionException
 		 */
-		public function transform(AstRetrieve $ast): void {
+		public function transform(AstRetrieve $ast, bool $ignoreSoftDelete = false): void {
 			// First, recursively transform all nested queries in temporary ranges
 			// This ensures inner queries are fully resolved before outer query processing
-			$this->transformNestedQueries($ast);
+			$this->transformNestedQueries($ast, $ignoreSoftDelete);
 			
 			// Step 1: Add proper namespaces to all ranges
 			// Resolves entity names to their fully qualified forms using the entity store
@@ -83,27 +87,32 @@
 			// Step 7: Inject soft-delete filter conditions for every database range
 			// whose entity carries an @SoftDelete annotation. Runs last so that all
 			// identifier types are fully resolved before the injected nodes are added.
-			// Skipped when the query carries the @ignoreSoftDelete true directive.
-			(new InjectSoftDeleteCondition($this->entityStore))->inject($ast);
+			// Skipped when the query carries the @ignoreSoftDelete true directive, or
+			// when $ignoreSoftDelete forces the skip unconditionally (a routine whose
+			// own @ignoreSoftDelete directive is set).
+			if (!$ignoreSoftDelete) {
+				(new InjectSoftDeleteCondition($this->entityStore))->inject($ast);
+			}
 		}
 		
 		/**
 		 * Recursively transform all nested queries in temporary range definitions.
 		 * Ensures that inner queries are fully resolved before the outer query is processed.
 		 * @param AstRetrieve $ast The query AST containing potential nested queries
+		 * @param bool $ignoreSoftDelete Propagated to the inner transform() call — see transform()
 		 * @return void Modifies nested queries in-place
 		 * @throws TransformationException
 		 * @throws EntityResolutionException
 		 */
-		private function transformNestedQueries(AstRetrieve $ast): void {
+		private function transformNestedQueries(AstRetrieve $ast, bool $ignoreSoftDelete): void {
 			foreach ($ast->getRanges() as $range) {
 				// Only process temporary ranges that contain nested queries
 				if (!$range instanceof AstRangeDatabaseSubquery) {
 					continue;
 				}
-				
+
 				// Recursively transform the inner query with full transformation pipeline
-				$this->transform($range->getQuery());
+				$this->transform($range->getQuery(), $ignoreSoftDelete);
 			}
 		}
 		
