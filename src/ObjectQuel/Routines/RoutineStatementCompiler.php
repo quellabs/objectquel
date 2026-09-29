@@ -42,6 +42,14 @@
 	 *
 	 * Nothing compiled here may need a bound parameter; a routine has no PHP
 	 * side to supply one, so such statements are rejected.
+	 *
+	 * @SoftDelete handling for the whole routine is controlled by the
+	 * routine's own `@ignoreSoftDelete true` directive (ahead of `define
+	 * function`, see AstRoutineDefinition/ProcedureParser): when set,
+	 * `delete` always issues a real DELETE and an embedded `retrieve`/cursor
+	 * (including an insert-from-select source) sees soft-deleted rows too.
+	 * The routine language has no per-statement directive of its own, so
+	 * this one directive covers every delete/retrieve in the routine body.
 	 */
 	class RoutineStatementCompiler {
 
@@ -51,6 +59,9 @@
 
 		/** @var string|null Schema that qualifies routine names, or null for none */
 		private ?string $routineSchema;
+
+		/** @var bool True when the routine's own @ignoreSoftDelete directive is set — see this class's docblock */
+		private bool $ignoreSoftDelete;
 		private RoutineRangeReferences $rangeReferences;
 		private QuelToSQLDelete $deleteCompiler;
 		private QuelToSQLReplace $replaceCompiler;
@@ -63,12 +74,14 @@
 		 * @param EntityManager $entityManager Entity metadata and the optimizer's dependencies
 		 * @param PlatformCapabilitiesInterface $platform Target engine, which need not be the connected one
 		 * @param string|null $routineSchema Schema that qualifies routine names, or null for none
+		 * @param bool $ignoreSoftDelete True when the routine's own @ignoreSoftDelete directive is set
 		 */
-		public function __construct(EntityManager $entityManager, PlatformCapabilitiesInterface $platform, ?string $routineSchema) {
+		public function __construct(EntityManager $entityManager, PlatformCapabilitiesInterface $platform, ?string $routineSchema, bool $ignoreSoftDelete = false) {
 			$this->entityManager = $entityManager;
 			$this->entityStore = $entityManager->getEntityStore();
 			$this->platform = $platform;
 			$this->routineSchema = $routineSchema;
+			$this->ignoreSoftDelete = $ignoreSoftDelete;
 			$this->rangeReferences = new RoutineRangeReferences($this->entityStore);
 
 			// Built for the target platform; the unit of work's own handler renders for the connected engine
@@ -78,7 +91,7 @@
 			// Written values may read routine variables and cursor fields, so the write compilers type them with these
 			$this->fieldTypes = new RoutineFieldTypes($this->entityStore, new DDLTypeMapper($platform));
 
-			$this->deleteCompiler = new QuelToSQLDelete($this->entityStore, $platform, $routineSchema);
+			$this->deleteCompiler = new QuelToSQLDelete($this->entityStore, $platform, $routineSchema, $ignoreSoftDelete);
 			$this->replaceCompiler = new QuelToSQLReplace($this->entityStore, $platform, $routineSchema, $versionValueHandler, $this->fieldTypes);
 			$this->callCompiler = new QuelToSQLCall($this->entityStore, $platform, $routineSchema);
 			$this->appendCompiler = new QuelToSQLAppend($entityManager, $platform, $routineSchema, new QuelToSQLUpsert($this->entityStore, $platform, $routineSchema, $this->replaceCompiler), $versionValueHandler, $this->fieldTypes);
@@ -108,7 +121,7 @@
 
 			$parameters = [];
 			(new IdentifierTypeResolver($this->entityStore))->resolve($query);
-			(new QueryNormalizer($this->entityStore))->transform($query);
+			(new QueryNormalizer($this->entityStore))->transform($query, $this->ignoreSoftDelete);
 			$this->normalizeDateTimes($query);
 			(new SemanticAnalyzer($this->entityStore, $this->platform))->validate($query);
 			(new QueryOptimizer($this->entityManager, $this->platform))->transform($query, $parameters);
@@ -228,7 +241,7 @@
 				if ($statement->isInsertFromSelect()) {
 					$source = $statement->getSourceOrFail();
 					$this->narrowRanges($source);
-					$this->appendCompiler->prepareSource($source, $parameters);
+					$this->appendCompiler->prepareSource($source, $parameters, $this->ignoreSoftDelete);
 					$this->normalizeDateTimes($source);
 
 					if ($this->appendCompiler->needsPlanner($source)) {

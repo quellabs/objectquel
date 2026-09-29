@@ -35,6 +35,12 @@
 	 * `retrieve` uses. An entity with no recognised soft-delete column type
 	 * (see buildSoftDeleteSetClause()) falls back to a real DELETE too.
 	 *
+	 * A routine's delete compiler is built with $alwaysIgnoreSoftDelete
+	 * instead, set when the routine's own `@ignoreSoftDelete true` directive
+	 * (ahead of `define function`) is present — the routine language has no
+	 * per-statement directive of its own, so the routine-level directive
+	 * covers every delete/retrieve in its body (see RoutineStatementCompiler).
+	 *
 	 * The target table is aliased with the QUEL range name so WHERE-clause
 	 * identifiers resolve via BuildSqlFromAst same as `retrieve`. Like
 	 * `replace`, `delete` only ever has one range to resolve against, so
@@ -50,6 +56,9 @@
 
 		/** @var string|null Schema that qualifies routine names, or null for none */
 		private ?string $routineSchema;
+
+		/** @var bool True to always emit a real DELETE, ignoring @SoftDelete and the @ignoreSoftDelete directive alike */
+		private bool $alwaysIgnoreSoftDelete;
 		private SQLSerializer $serializer;
 
 		/**
@@ -57,12 +66,15 @@
 		 * @param EntityStore $entityStore
 		 * @param PlatformCapabilitiesInterface $platform
 		 * @param string|null $routineSchema Schema that qualifies routine names, or null for none
+		 * @param bool $alwaysIgnoreSoftDelete True for a routine's delete compiler, when the
+		 *        routine's own `@ignoreSoftDelete true` directive is set (see this class's docblock)
 		 */
-		public function __construct(EntityStore $entityStore, PlatformCapabilitiesInterface $platform, ?string $routineSchema) {
+		public function __construct(EntityStore $entityStore, PlatformCapabilitiesInterface $platform, ?string $routineSchema, bool $alwaysIgnoreSoftDelete = false) {
 			$this->entityStore = $entityStore;
 			$this->identifierQuoter = new SqlIdentifierQuoter($platform);
 			$this->platform = $platform;
 			$this->routineSchema = $routineSchema;
+			$this->alwaysIgnoreSoftDelete = $alwaysIgnoreSoftDelete;
 			// Only needs EntityStore (see Serializer's constructor) — built
 			// here so WriteVerbParameterNormalizer denormalizes a WHERE
 			// clause's bound-parameter values exactly like append/replace do.
@@ -103,7 +115,9 @@
 			$builder = new BuildSqlFromAst($this->entityStore, $parameters, 'WHERE', $this->platform, $this->routineSchema);
 			$whereSql = $builder->visitConditionAndReturnSQL($conditions);
 
-			return $this->buildStatement($range, $metadata, $whereSql, (bool)$statement->getDirective('ignoreSoftDelete'), $range->getName());
+			$ignoreSoftDelete = $this->alwaysIgnoreSoftDelete || (bool)$statement->getDirective('ignoreSoftDelete');
+
+			return $this->buildStatement($range, $metadata, $whereSql, $ignoreSoftDelete, $range->getName());
 		}
 
 		/**

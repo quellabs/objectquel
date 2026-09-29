@@ -80,7 +80,7 @@
 		public function lower(AstRoutineDefinition $routine): array {
 			$this->routineCallTyper?->typeCalls($routine, true);
 			$entityStore = $this->entityManager->getEntityStore();
-			$statements = new RoutineStatementCompiler($this->entityManager, $this->platform, $this->routineSchema);
+			$statements = new RoutineStatementCompiler($this->entityManager, $this->platform, $this->routineSchema, (bool)$routine->getDirective('ignoreSoftDelete'));
 
 			$lowering = match ($this->platform->getDatabaseType()) {
 				'pgsql' => new PostgresRoutineLowering($entityStore, $statements),

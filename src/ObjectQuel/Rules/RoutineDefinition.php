@@ -13,6 +13,8 @@
 	/**
 	 * Parses `define function name (type name, ...) returnType { ... }`.
 	 * Type names are plain identifiers here; they are validated by value later.
+	 * Compiler directives ahead of `define` are parsed by the caller (see
+	 * ProcedureParser) and threaded through unmodified.
 	 */
 	class RoutineDefinition {
 
@@ -30,10 +32,11 @@
 
 		/**
 		 * Parses the signature and body, starting at `define`.
+		 * @param array<string, mixed> $directives Compiler directives parsed ahead of `define`, e.g. @ignoreSoftDelete
 		 * @return AstRoutineDefinition
 		 * @throws LexerException|ParserException|\ReflectionException
 		 */
-		public function parse(): AstRoutineDefinition {
+		public function parse(array $directives = []): AstRoutineDefinition {
 			$this->lexer->matchKeyword('define');
 
 			if (!$this->lexer->peekKeyword('function')) {
@@ -52,7 +55,7 @@
 			$returnType = $this->lexer->match(Token::Identifier)->getStringValue();
 			$body = (new RoutineBlock($this->lexer, $this->entityStore))->parseBlock();
 
-			return new AstRoutineDefinition($name, $parameters, $returnType, $body);
+			return new AstRoutineDefinition($directives, $name, $parameters, $returnType, $body);
 		}
 
 		/**

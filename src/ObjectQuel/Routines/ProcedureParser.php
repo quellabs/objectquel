@@ -3,6 +3,7 @@
 	namespace Quellabs\ObjectQuel\ObjectQuel\Routines;
 
 	use Quellabs\ObjectQuel\EntityStore;
+	use Quellabs\ObjectQuel\ObjectQuel\Helpers\CompilerDirectiveParser;
 	use Quellabs\ObjectQuel\ObjectQuel\Lexer;
 	use Quellabs\ObjectQuel\ObjectQuel\LexerException;
 	use Quellabs\ObjectQuel\ObjectQuel\ParserException;
@@ -12,8 +13,9 @@
 
 	/**
 	 * Entry point for routine source files (EQUEL): exactly one
-	 * `define function ...` per source. Kept apart from Parser, which
-	 * handles ad hoc single-statement queries.
+	 * `define function ...` per source, optionally preceded by compiler
+	 * directives (e.g. `@ignoreSoftDelete true`). Kept apart from Parser,
+	 * which handles ad hoc single-statement queries.
 	 */
 	class ProcedureParser {
 
@@ -36,11 +38,13 @@
 		 * @throws LexerException|ParserException|\ReflectionException
 		 */
 		public function parse(): AstRoutineDefinition {
+			$directives = CompilerDirectiveParser::parse($this->lexer);
+
 			if (!$this->lexer->peekKeyword('define')) {
-				throw new ParserException("A routine source must start with 'define function'");
+				throw new ParserException("A routine source must start with 'define function', optionally preceded by compiler directives");
 			}
 
-			$routine = $this->routineRule->parse();
+			$routine = $this->routineRule->parse($directives);
 
 			if ($this->lexer->lookahead() !== Token::Eof) {
 				throw new ParserException("A routine source contains exactly one routine definition; unexpected input after '{$routine->getName()}' on line {$this->lexer->getLineNumber()}");
