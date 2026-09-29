@@ -289,8 +289,9 @@
 
 		/**
 		 * `name = retrieve (...)`: rebinds an existing cursor to a new query, from this point
-		 * in the current block onward. Forbidden while `name`'s own `foreach` loop is open,
-		 * since that loop's source is already fixed by the time this statement would run.
+		 * in the current block onward. Mints a fresh resolved name (see rebindCursor()), so this
+		 * is legal even while `name`'s own `foreach` loop is open: the open loop keeps iterating
+		 * the old resolved cursor, unaffected by `name` now shadowing a new one.
 		 * @param AstVariableAssignment $assignment The assignment
 		 * @param string $name Cursor name as written
 		 * @param AstRetrieve $query The new query
@@ -305,13 +306,6 @@
 					$this->scope->isDeclaredAnywhere($name) => "Cursor '{$name}' is used before its declaration.",
 					default => "Assignment to undeclared variable '{$name}'.",
 				});
-			}
-
-			// isCursor($name) was already confirmed above, so resolveCursor() can't return null here
-			$resolvedOld = $this->scope->resolveCursor($name) ?? $name;
-
-			if ($this->scope->isLoopOpen($resolvedOld)) {
-				throw new SemanticException("Cursor '{$name}' can't be assigned while its own 'foreach' loop is open.");
 			}
 
 			// The name isn't rebound yet, so the query can't refer to the cursor's own current row
