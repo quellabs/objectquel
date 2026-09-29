@@ -254,16 +254,23 @@
 
 		/**
 		 * `name = expr`: the target must be a parameter or scalar local declared earlier.
+		 * `name = retrieve (...)` instead rebinds an existing cursor to a new query.
 		 * @param AstVariableAssignment $assignment The assignment
 		 * @return void
-		 * @throws SemanticException
+		 * @throws SemanticException|EntityResolutionException
 		 */
 		private function analyzeAssignment(AstVariableAssignment $assignment): void {
 			$name = $assignment->getName();
+			$value = $assignment->getValue();
+
+			if ($value instanceof AstRetrieve) {
+				$this->analyzeCursorRebind($assignment, $name, $value);
+				return;
+			}
 
 			if (!$this->scope->isScalar($name)) {
 				throw new SemanticException(match (true) {
-					$this->scope->isCursor($name) => "Cursor '{$name}' can't be reassigned.",
+					$this->scope->isCursor($name) => "Cursor '{$name}' can only be assigned a retrieve: '{$name} = retrieve (...)'.",
 					$this->scope->isRange($name) => "Range '{$name}' can't be assigned; use replace to change its rows.",
 					$this->scope->isDeclaredAnywhere($name) => "'{$name}' is assigned before its declaration.",
 					default => "Assignment to undeclared variable '{$name}'.",
@@ -277,7 +284,41 @@
 				$assignment->setName($resolved);
 			}
 
-			$assignment->getValue()->accept($this->referenceResolver(false));
+			$value->accept($this->referenceResolver(false));
+		}
+
+		/**
+		 * `name = retrieve (...)`: rebinds an existing cursor to a new query, from this point
+		 * in the current block onward. Forbidden while `name`'s own `foreach` loop is open,
+		 * since that loop's source is already fixed by the time this statement would run.
+		 * @param AstVariableAssignment $assignment The assignment
+		 * @param string $name Cursor name as written
+		 * @param AstRetrieve $query The new query
+		 * @return void
+		 * @throws SemanticException|EntityResolutionException
+		 */
+		private function analyzeCursorRebind(AstVariableAssignment $assignment, string $name, AstRetrieve $query): void {
+			if (!$this->scope->isCursor($name)) {
+				throw new SemanticException(match (true) {
+					$this->scope->isScalar($name) => "'{$name}' is declared as a scalar, so it can't be assigned a retrieve.",
+					$this->scope->isRange($name) => "Range '{$name}' can't be assigned; use replace to change its rows.",
+					$this->scope->isDeclaredAnywhere($name) => "Cursor '{$name}' is used before its declaration.",
+					default => "Assignment to undeclared variable '{$name}'.",
+				});
+			}
+
+			// isCursor($name) was already confirmed above, so resolveCursor() can't return null here
+			$resolvedOld = $this->scope->resolveCursor($name) ?? $name;
+
+			if ($this->scope->isLoopOpen($resolvedOld)) {
+				throw new SemanticException("Cursor '{$name}' can't be assigned while its own 'foreach' loop is open.");
+			}
+
+			// The name isn't rebound yet, so the query can't refer to the cursor's own current row
+			$this->analyzeRoutineRetrieve($query);
+			$this->assertFieldNamesDistinctIgnoringCase($name, $query);
+
+			$assignment->setName($this->scope->rebindCursor($name, $query));
 		}
 
 		/**

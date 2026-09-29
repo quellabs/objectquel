@@ -6,8 +6,10 @@
 	use Quellabs\ObjectQuel\ObjectQuel\AstVisitorInterface;
 
 	/**
-	 * `name = expr` assigning to a routine parameter or scalar local — distinct
-	 * from AstAssignment, which assigns an entity property inside append/replace.
+	 * `name = expr` assigning to a routine parameter or scalar local, or
+	 * `name = retrieve (...)` rebinding a cursor local to a new query —
+	 * distinct from AstAssignment, which assigns an entity property inside
+	 * append/replace.
 	 */
 	class AstVariableAssignment extends Ast {
 

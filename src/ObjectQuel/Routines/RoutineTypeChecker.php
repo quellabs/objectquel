@@ -14,6 +14,7 @@
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstIf;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstIn;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstReplace;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRetrieve;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstReturn;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRoutineDefinition;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstTerm;
@@ -161,6 +162,11 @@
 		 * @throws SemanticException|EntityResolutionException
 		 */
 		private function checkAssignment(AstVariableAssignment $assignment): void {
+			// A cursor rebind has no scalar type to check against
+			if ($assignment->getValue() instanceof AstRetrieve) {
+				return;
+			}
+
 			$type = $this->fieldTypes->variableType($assignment->getName());
 			if ($type === null) {
 				throw new \LogicException("Routine variable '{$assignment->getName()}' has no declared type.");

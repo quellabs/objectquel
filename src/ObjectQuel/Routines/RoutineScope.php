@@ -97,6 +97,27 @@
 		}
 
 		/**
+		 * Rebinds an already-declared cursor to a new query, from this point in the current
+		 * block onward. Mints a fresh resolved name for it, since a cursor's underlying SQL
+		 * object is fixed to one query for its lifetime; an outer scope's binding reappears
+		 * once the current block ends, same as any other name shadowed in a nested block.
+		 * @param string $name Cursor name as written at the assignment
+		 * @param AstRetrieve $query The new query
+		 * @return string The resolved name to use from here on
+		 */
+		public function rebindCursor(string $name, AstRetrieve $query): string {
+			$resolved = $this->mintUnusedName($name);
+			$this->allResolvedNamesLower[strtolower($resolved)] = true;
+			$this->declareVariableName($resolved);
+
+			$declaration = new AstDeclare($name, 'cursor', $query);
+			$this->frames[count($this->frames) - 1]['cursors'][$name] = $resolved;
+			$this->cursors[$resolved] = $declaration;
+
+			return $resolved;
+		}
+
+		/**
 		 * Adds a `range of` alias. Ranges are always root-scoped and never reused, so their name never changes.
 		 * @param AstRange $range The declared range
 		 * @return void

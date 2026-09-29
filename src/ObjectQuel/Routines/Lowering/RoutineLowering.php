@@ -260,18 +260,32 @@
 		}
 
 		/**
-		 * Collects every cursor declaration in the routine, at any depth.
+		 * Collects every cursor declaration and cursor rebind (`name = retrieve (...)`) in the
+		 * routine, at any depth. Each is an independent SQL cursor object with its own query.
 		 * @param AstRoutineDefinition $routine The routine, as analyzed
-		 * @return AstDeclare[] Cursor declarations, in source order
+		 * @return array<int, array{name: string, query: AstRetrieve}> Resolved cursor name and query, in source order
 		 */
-		protected function cursorDeclarations(AstRoutineDefinition $routine): array {
-			$collector = new CollectNodes(AstDeclare::class);
+		protected function cursorBindings(AstRoutineDefinition $routine): array {
+			$collector = new CollectNodes([AstDeclare::class, AstVariableAssignment::class]);
 			$routine->accept($collector);
 
-			return array_values(array_filter(
-				$collector->getCollectedNodes(),
-				fn(AstDeclare $d) => $d->isCursor()
-			));
+			$bindings = [];
+
+			foreach ($collector->getCollectedNodes() as $node) {
+				if ($node instanceof AstDeclare && $node->isCursor()) {
+					$initializer = $node->getInitializer();
+
+					if (!$initializer instanceof AstRetrieve) {
+						throw new \LogicException("Cursor '{$node->getName()}' has no retrieve; RoutineAnalyzer should have rejected it.");
+					}
+
+					$bindings[] = ['name' => $node->getName(), 'query' => $initializer];
+				} elseif ($node instanceof AstVariableAssignment && $node->getValue() instanceof AstRetrieve) {
+					$bindings[] = ['name' => $node->getName(), 'query' => $node->getValue()];
+				}
+			}
+
+			return $bindings;
 		}
 
 		/**
@@ -343,6 +357,8 @@
 				// Ranges are compiled into the statements that read them
 				$statement instanceof AstRangeDeclaration => '',
 				$statement instanceof AstDeclare => $this->lowerDeclaration($statement, $depth),
+				// A cursor rebind has no runtime SQL of its own; foreach reads whichever cursor is current at each site
+				$statement instanceof AstVariableAssignment && $statement->getValue() instanceof AstRetrieve => '',
 				$statement instanceof AstVariableAssignment => $this->line($this->assignment($statement->getName(), $statement->getValue()), $depth),
 				$statement instanceof AstReturn => $this->lowerReturn($statement, $depth),
 				$statement instanceof AstIf => $this->lowerIf($statement, $depth),
@@ -390,21 +406,14 @@
 		}
 
 		/**
-		 * Prepares every cursor query up front, so unused cursors are checked too.
+		 * Prepares every cursor's query up front, so an unused cursor or rebind is checked too.
 		 * @param AstRoutineDefinition $routine The routine, as analyzed
 		 * @return void
 		 * @throws SemanticException|EntityResolutionException|TransformationException|QuelException
 		 */
 		private function prepareCursors(AstRoutineDefinition $routine): void {
-			foreach ($this->cursorDeclarations($routine) as $statement) {
-				$initializer = $statement->getInitializer();
-
-				if (!$initializer instanceof AstRetrieve) {
-					throw new \LogicException("Cursor '{$statement->getName()}' has no retrieve; RoutineAnalyzer should have rejected it.");
-				}
-
-				$name = $statement->getName();
-				$this->cursorQueries[$name] = $this->prepareCursorQuery($name, $initializer);
+			foreach ($this->cursorBindings($routine) as ['name' => $name, 'query' => $query]) {
+				$this->cursorQueries[$name] = $this->prepareCursorQuery($name, $query);
 				$this->statements->getFieldTypes()->recordCursor($name, $this->cursorQueries[$name]);
 			}
 		}
@@ -423,12 +432,12 @@
 
 		/**
 		 * Compiles the value returned by the routine.
-		 * @param AstReturn $return The return
+		 * @param AstInterface $value The returned value
 		 * @return string The returned value's SQL, as a datetime when a Unix timestamp is returned as one
 		 * @throws SemanticException|EntityResolutionException|QuelException
 		 */
-		protected function returnedValue(AstReturn $return): string {
-			return $this->statements->compileStoredValue($return->getValue(), $this->routine->getName(), $this->routine->getDeclaredReturnType());
+		protected function returnedValue(AstInterface $value): string {
+			return $this->statements->compileStoredValue($value, $this->routine->getName(), $this->routine->getDeclaredReturnType());
 		}
 
 		/**

@@ -255,7 +255,8 @@
 		}
 
 		/**
-		 * Parses `name = expr`.
+		 * Parses `name = expr` or `name = retrieve (...)`; whether `name` may take a
+		 * retrieve (a cursor) or not (everything else) is a semantic check, not enforced here.
 		 * @return AstVariableAssignment
 		 * @throws LexerException|ParserException
 		 */
@@ -263,7 +264,11 @@
 			$name = $this->lexer->match(Token::Identifier)->getStringValue();
 			$this->lexer->match(Token::Equals);
 
-			return new AstVariableAssignment($name, $this->expressionRule->parse());
+			$value = $this->lexer->lookahead() === Token::Retrieve
+				? $this->parseRetrieve()
+				: $this->expressionRule->parse();
+
+			return new AstVariableAssignment($name, $value);
 		}
 
 		/**

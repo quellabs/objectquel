@@ -157,11 +157,13 @@
 				$result .= $this->lines(['CLOSE ' . $this->cursorName($cursorName) . ';', 'DEALLOCATE ' . $this->cursorName($cursorName) . ';'], $depth);
 			}
 
-			if ($return->getValue() === null) {
+			$value = $return->getValue();
+
+			if ($value === null) {
 				return $result . $this->line('RETURN;', $depth);
 			}
 
-			return $result . $this->line('RETURN ' . $this->returnedValue($return) . ';', $depth);
+			return $result . $this->line('RETURN ' . $this->returnedValue($value) . ';', $depth);
 		}
 
 		/**

@@ -114,11 +114,13 @@
 		 * @throws SemanticException
 		 */
 		protected function lowerReturn(AstReturn $return, int $depth): string {
-			if ($return->getValue() === null) {
+			$value = $return->getValue();
+
+			if ($value === null) {
 				return $this->line('RETURN;', $depth);
 			}
 
-			return $this->line('RETURN ' . $this->returnedValue($return) . ';', $depth);
+			return $this->line('RETURN ' . $this->returnedValue($value) . ';', $depth);
 		}
 
 		/**
