@@ -308,6 +308,17 @@
 		}
 
 		/**
+		 * Lists every EQUEL-callable function and procedure in the connected schema.
+		 * @return array<int, array{name: string, isProcedure: bool, returnType: ?string}>
+		 * @throws \Quellabs\ObjectQuel\Exception\QuelException When the lookup fails or routines are unsupported
+		 * @see RoutineDefinitionInspector::listRoutines()
+		 */
+		public function listRoutines(): array {
+			$this->routineDefinitionInspectorCache ??= new RoutineDefinitionInspector($this);
+			return $this->routineDefinitionInspectorCache->listRoutines();
+		}
+
+		/**
 		 * Returns the schema that qualifies routine names, or null when unqualified names are used.
 		 * @return string|null
 		 * @throws \RuntimeException When the default schema can't be read

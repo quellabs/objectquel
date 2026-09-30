@@ -85,6 +85,82 @@
 		}
 
 		/**
+		 * Lists every function and procedure in the connected schema, with return types
+		 * normalized to ObjectQuel's abstract column types rather than engine-native ones.
+		 * A name can appear twice (once as a function, once as a procedure) since MySQL/MariaDB
+		 * give the two kinds separate namespaces; overloads of the same kind are merged the same
+		 * way getRoutineSignature() merges them.
+		 * @return array<int, array{name: string, isProcedure: bool, returnType: ?string}>
+		 * @throws QuelException When the lookup fails or the engine has no stored routines
+		 */
+		public function listRoutines(): array {
+			[$sql, $parameters] = $this->listQuery();
+			$result = $this->connection->execute($sql, $parameters);
+
+			if ($result === null) {
+				throw new QuelException("Failed to list routines: {$this->connection->getLastErrorMessage()}", 'routine_call_error');
+			}
+
+			$grouped = [];
+
+			foreach ($result->fetchAll('assoc') as $row) {
+				$isProcedure = (int)$row['is_procedure'] === 1;
+				$key = $row['name'] . '|' . (int)$isProcedure;
+
+				$grouped[$key]['name'] ??= (string)$row['name'];
+				$grouped[$key]['isProcedure'] ??= $isProcedure;
+				$grouped[$key]['returnTypes'][] = $isProcedure ? null : self::returnType(
+					$this->connection->getDatabaseType(),
+					(string)$row['data_type'],
+					$row['type_detail'] === null ? null : (string)$row['type_detail'],
+					$row['max_length'] === null ? null : (int)$row['max_length']
+				);
+			}
+
+			$routines = [];
+
+			foreach ($grouped as $group) {
+				$distinctTypes = array_unique($group['returnTypes']);
+				$routines[] = [
+					'name'        => $group['name'],
+					'isProcedure' => $group['isProcedure'],
+					'returnType'  => count($distinctTypes) === 1 ? reset($distinctTypes) : null,
+				];
+			}
+
+			usort($routines, static fn(array $a, array $b): int => $a['name'] <=> $b['name'] ?: $a['isProcedure'] <=> $b['isProcedure']);
+
+			return $routines;
+		}
+
+		/**
+		 * Builds the catalog query listing every routine's name, kind and return-type columns
+		 * for the connected schema. Mirrors signatureQuery() but without a name filter.
+		 * @return array{string, array<string, string>} SQL and its parameters
+		 * @throws QuelException When the engine has no stored routines
+		 */
+		private function listQuery(): array {
+			return match ($this->connection->getDatabaseType()) {
+				'pgsql' => [
+					"SELECT p.proname AS name, CASE WHEN p.prokind = 'p' THEN 1 ELSE 0 END AS is_procedure, format_type(p.prorettype, NULL) AS data_type, NULL AS type_detail, NULL AS max_length, NULL AS routine_comment FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace WHERE n.nspname = current_schema() ORDER BY p.proname",
+					[],
+				],
+
+				'sqlsrv' => [
+					"SELECT o.name AS name, CASE WHEN o.type IN ('P', 'PC') THEN 1 ELSE 0 END AS is_procedure, TYPE_NAME(p.system_type_id) AS data_type, NULL AS type_detail, p.max_length AS max_length, NULL AS routine_comment FROM sys.objects o JOIN sys.schemas s ON s.schema_id = o.schema_id LEFT JOIN sys.parameters p ON p.object_id = o.object_id AND p.parameter_id = 0 WHERE s.name = :schema AND o.type IN ('P', 'PC', 'FN', 'FS') ORDER BY o.name",
+					['schema' => (string)$this->connection->getRoutineSchema()],
+				],
+
+				'mysql', 'mariadb' => [
+					"SELECT ROUTINE_NAME AS name, CASE WHEN ROUTINE_TYPE = 'PROCEDURE' THEN 1 ELSE 0 END AS is_procedure, DATA_TYPE AS data_type, DTD_IDENTIFIER AS type_detail, CHARACTER_MAXIMUM_LENGTH AS max_length, ROUTINE_COMMENT AS routine_comment FROM information_schema.ROUTINES WHERE ROUTINE_SCHEMA = DATABASE() ORDER BY ROUTINE_NAME",
+					[],
+				],
+
+				default => throw new QuelException("Routines can't be listed on '{$this->connection->getDatabaseType()}'.", 'routine_call_error'),
+			};
+		}
+
+		/**
 		 * Builds the catalog query for a routine. Each row has `is_procedure` (1 or 0) and, for a function,
 		 * its return type as `data_type`, `type_detail` and `max_length`; no rows means no routine by that name.
 		 * @param string $name Routine name as written

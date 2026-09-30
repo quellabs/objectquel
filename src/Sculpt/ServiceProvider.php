@@ -51,6 +51,7 @@
 					\Quellabs\ObjectQuel\Sculpt\Commands\QuelIndexShowCommand::class,
 					\Quellabs\ObjectQuel\Sculpt\Commands\ClearCacheCommand::class,
 					\Quellabs\ObjectQuel\Sculpt\Commands\ListEntitiesCommand::class,
+					\Quellabs\ObjectQuel\Sculpt\Commands\ListFunctionsCommand::class,
 					\Quellabs\ObjectQuel\Sculpt\Commands\AnalyzeIndexesCommand::class,
 				]);
 			}
