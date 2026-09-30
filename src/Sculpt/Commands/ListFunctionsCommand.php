@@ -11,8 +11,8 @@
 	 * ListFunctionsCommand - CLI command for listing all EQUEL functions
 	 *
 	 * Reads the connected database's function catalog and displays every EQUEL function
-	 * with its return type: an abstract ObjectQuel column type, or "void" for a function
-	 * with no return value — EQUEL's own return type, exactly as written in
+	 * with its parameters and return type: an abstract ObjectQuel column type, or "void"
+	 * for a function with no return value — EQUEL's own return type, exactly as written in
 	 * `define function name(...) void { ... }`. EQUEL has only one kind of routine, a
 	 * function; the function/procedure split some engines use internally is not exposed
 	 * here.
@@ -56,8 +56,9 @@
 			return <<<HELP
 DESCRIPTION:
     Lists every EQUEL function in the connected database's default schema,
-    with its return type. The return type is either ObjectQuel's abstract
-    column type or `void`, mirroring EQUEL's own `define function name(...)
+    with its parameters and return type. Both are shown as ObjectQuel's
+    abstract column types, not the engine-native ones, and the return type
+    may be `void`, mirroring EQUEL's own `define function name(...)
     returnType { ... }` syntax. EQUEL only has functions — the
     function/procedure split some engines use internally is not exposed
     here.
@@ -99,11 +100,12 @@ HELP;
 				foreach ($functions as $function) {
 					$rows[] = [
 						$function['name'],
+						$this->formatParameters($function['parameters']),
 						$function['isProcedure'] ? 'void' : ($function['returnType'] ?? 'unknown'),
 					];
 				}
 
-				$this->output->table(['Name', 'Return Type'], $rows);
+				$this->output->table(['Name', 'Parameters', 'Return Type'], $rows);
 				$this->output->writeLn(count($rows) . " " . (count($rows) === 1 ? "function" : "functions") . " found.");
 				return 0;
 
@@ -111,5 +113,23 @@ HELP;
 				$this->output->error($e->getMessage());
 				return 1;
 			}
+		}
+
+		/**
+		 * Formats a function's parameter list as "type name, type name", matching EQUEL's own
+		 * `(type name, ...)` declaration order. A parameter whose type ObjectQuel doesn't
+		 * recognize shows as "unknown", the same fallback used for an unrecognized return type.
+		 * @param list<array{name: string, type: ?string}> $parameters
+		 * @return string Comma-joined "type name" pairs, or "-" when the function takes none
+		 */
+		private function formatParameters(array $parameters): string {
+			if (empty($parameters)) {
+				return '-';
+			}
+
+			return implode(', ', array_map(
+				static fn(array $parameter): string => ($parameter['type'] ?? 'unknown') . ' ' . $parameter['name'],
+				$parameters
+			));
 		}
 	}

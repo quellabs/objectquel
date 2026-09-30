@@ -309,7 +309,7 @@
 
 		/**
 		 * Lists every EQUEL-callable function and procedure in the connected schema.
-		 * @return array<int, array{name: string, isProcedure: bool, returnType: ?string}>
+		 * @return array<int, array{name: string, isProcedure: bool, returnType: ?string, parameters: list<array{name: string, type: ?string}>}>
 		 * @throws \Quellabs\ObjectQuel\Exception\QuelException When the lookup fails or routines are unsupported
 		 * @see RoutineDefinitionInspector::listRoutines()
 		 */

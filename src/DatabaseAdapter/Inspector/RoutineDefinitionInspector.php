@@ -85,12 +85,12 @@
 		}
 
 		/**
-		 * Lists every function and procedure in the connected schema, with return types
-		 * normalized to ObjectQuel's abstract column types rather than engine-native ones.
-		 * A name can appear twice (once as a function, once as a procedure) since MySQL/MariaDB
-		 * give the two kinds separate namespaces; overloads of the same kind are merged the same
-		 * way getRoutineSignature() merges them.
-		 * @return array<int, array{name: string, isProcedure: bool, returnType: ?string}>
+		 * Lists every function and procedure in the connected schema, with return types and
+		 * parameter types normalized to ObjectQuel's abstract column types rather than
+		 * engine-native ones. A name can appear twice (once as a function, once as a procedure)
+		 * since MySQL/MariaDB give the two kinds separate namespaces; overloads of the same kind
+		 * are merged the same way getRoutineSignature() merges them.
+		 * @return array<int, array{name: string, isProcedure: bool, returnType: ?string, parameters: list<array{name: string, type: ?string}>}>
 		 * @throws QuelException When the lookup fails or the engine has no stored routines
 		 */
 		public function listRoutines(): array {
@@ -117,20 +117,79 @@
 				);
 			}
 
+			$parametersByRoutine = $this->listParameters();
 			$routines = [];
 
-			foreach ($grouped as $group) {
+			foreach ($grouped as $key => $group) {
 				$distinctTypes = array_unique($group['returnTypes']);
 				$routines[] = [
 					'name'        => $group['name'],
 					'isProcedure' => $group['isProcedure'],
 					'returnType'  => count($distinctTypes) === 1 ? reset($distinctTypes) : null,
+					'parameters'  => $parametersByRoutine[$key] ?? [],
 				];
 			}
 
 			usort($routines, static fn(array $a, array $b): int => $a['name'] <=> $b['name'] ?: $a['isProcedure'] <=> $b['isProcedure']);
 
 			return $routines;
+		}
+
+		/**
+		 * Reads every routine's parameter list, keyed the same way listRoutines() groups
+		 * routines ("name|0" for a function, "name|1" for a procedure), each ordered by
+		 * declaration position. Parameter types go through the same native-to-abstract
+		 * mapping as return types.
+		 * @return array<string, list<array{name: string, type: ?string}>>
+		 * @throws QuelException When the lookup fails
+		 */
+		private function listParameters(): array {
+			[$sql, $parameters] = $this->parameterQuery();
+			$result = $this->connection->execute($sql, $parameters);
+
+			if ($result === null) {
+				throw new QuelException("Failed to list routine parameters: {$this->connection->getLastErrorMessage()}", 'routine_call_error');
+			}
+
+			$byRoutine = [];
+
+			$databaseType = $this->connection->getDatabaseType();
+
+			foreach ($result->fetchAll('assoc') as $row) {
+				$isProcedure = (int)$row['is_procedure'] === 1;
+				$key = $row['name'] . '|' . (int)$isProcedure;
+				$byRoutine[$key][] = [
+					'name' => self::stripParameterDecoration($databaseType, (string)$row['param_name']),
+					'type' => self::returnType(
+						$databaseType,
+						(string)$row['data_type'],
+						$row['type_detail'] === null ? null : (string)$row['type_detail'],
+						$row['max_length'] === null ? null : (int)$row['max_length']
+					),
+				];
+			}
+
+			return $byRoutine;
+		}
+
+		/**
+		 * Strips the dialect-specific decoration EQUEL's routine lowering adds to a parameter
+		 * name, so the listing shows the name exactly as the `define function` source wrote
+		 * it. MySQL/MariaDB prefix every local and parameter with `_v_` to keep it from
+		 * shadowing a same-named column (see RoutineReferenceSql::MYSQL_VARIABLE_PREFIX);
+		 * SQL Server requires the `@` sigil on every parameter, which the catalog then stores
+		 * verbatim. PostgreSQL keeps the name exactly as declared, aside from its own
+		 * unrelated case-folding of unquoted identifiers, which is left alone here.
+		 * @param string $databaseType Connected engine
+		 * @param string $name Catalog parameter name
+		 * @return string
+		 */
+		private static function stripParameterDecoration(string $databaseType, string $name): string {
+			return match ($databaseType) {
+				'mysql', 'mariadb' => str_starts_with($name, '_v_') ? substr($name, 3) : $name,
+				'sqlsrv' => ltrim($name, '@'),
+				default => $name,
+			};
 		}
 
 		/**
@@ -153,6 +212,39 @@
 
 				'mysql', 'mariadb' => [
 					"SELECT ROUTINE_NAME AS name, CASE WHEN ROUTINE_TYPE = 'PROCEDURE' THEN 1 ELSE 0 END AS is_procedure, DATA_TYPE AS data_type, DTD_IDENTIFIER AS type_detail, CHARACTER_MAXIMUM_LENGTH AS max_length, ROUTINE_COMMENT AS routine_comment FROM information_schema.ROUTINES WHERE ROUTINE_SCHEMA = DATABASE() ORDER BY ROUTINE_NAME",
+					[],
+				],
+
+				default => throw new QuelException("Routines can't be listed on '{$this->connection->getDatabaseType()}'.", 'routine_call_error'),
+			};
+		}
+
+		/**
+		 * Builds the catalog query listing every routine's parameters, ordered by declaration
+		 * position, for the connected schema. Only IN parameters exist here — EQUEL's own
+		 * `define function` syntax has no OUT/INOUT mode, so a routine it deployed never has
+		 * one; a routine created outside EQUEL with one is out of scope, same as an
+		 * unrecognized return type. MySQL/MariaDB's ordinal 0 (a function's own return slot)
+		 * and SQL Server's parameter_id 0 (likewise) are excluded, leaving only real parameters.
+		 * @return array{string, array<string, string>} SQL and its parameters
+		 * @throws QuelException When the engine has no stored routines
+		 */
+		private function parameterQuery(): array {
+			return match ($this->connection->getDatabaseType()) {
+				// proargtypes lists only IN parameter types, in order; proargnames is
+				// parallel to it as long as the routine has no OUT/INOUT parameter
+				'pgsql' => [
+					"SELECT p.proname AS name, CASE WHEN p.prokind = 'p' THEN 1 ELSE 0 END AS is_procedure, COALESCE(p.proargnames[t.ord], '') AS param_name, format_type(t.type_oid, NULL) AS data_type, NULL AS type_detail, NULL AS max_length FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace CROSS JOIN LATERAL unnest(p.proargtypes::oid[]) WITH ORDINALITY AS t(type_oid, ord) WHERE n.nspname = current_schema() ORDER BY p.proname, t.ord",
+					[],
+				],
+
+				'sqlsrv' => [
+					"SELECT o.name AS name, CASE WHEN o.type IN ('P', 'PC') THEN 1 ELSE 0 END AS is_procedure, p.name AS param_name, TYPE_NAME(p.system_type_id) AS data_type, NULL AS type_detail, p.max_length AS max_length FROM sys.objects o JOIN sys.schemas s ON s.schema_id = o.schema_id JOIN sys.parameters p ON p.object_id = o.object_id AND p.parameter_id > 0 WHERE s.name = :schema AND o.type IN ('P', 'PC', 'FN', 'FS') ORDER BY o.name, p.parameter_id",
+					['schema' => (string)$this->connection->getRoutineSchema()],
+				],
+
+				'mysql', 'mariadb' => [
+					"SELECT SPECIFIC_NAME AS name, CASE WHEN ROUTINE_TYPE = 'PROCEDURE' THEN 1 ELSE 0 END AS is_procedure, PARAMETER_NAME AS param_name, DATA_TYPE AS data_type, DTD_IDENTIFIER AS type_detail, CHARACTER_MAXIMUM_LENGTH AS max_length FROM information_schema.PARAMETERS WHERE SPECIFIC_SCHEMA = DATABASE() AND ORDINAL_POSITION > 0 ORDER BY SPECIFIC_NAME, ORDINAL_POSITION",
 					[],
 				],
 
