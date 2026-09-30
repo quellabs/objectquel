@@ -83,7 +83,7 @@
 			// Build each clause independently, then join non-empty parts with a single
 			// space so the output never contains runs of whitespace when optional clauses
 			// are absent. Clause order follows the SQL standard:
-			//   SELECT … FROM … JOIN … WHERE … GROUP BY … ORDER BY …
+			//   SELECT … FROM … JOIN … WHERE … GROUP BY … HAVING … ORDER BY …
 			$parts = array_filter([
 				"SELECT",
 				$this->getUnique($retrieve) . $this->getFieldNames($retrieve, $outerRangeName),
@@ -91,6 +91,7 @@
 				$this->getJoins($retrieve),
 				$this->getWhere($retrieve),
 				$this->getGroupBy($retrieve),
+				$this->getHaving($retrieve),
 				$this->getSort($retrieve),
 			], fn(string $p) => $p !== "");
 			
@@ -280,7 +281,24 @@
 			$retrieveEntitiesVisitor = new BuildSqlFromAst($this->entityStore, $this->parameters, "WHERE", $this->platform, $this->routineSchema);
 			return "WHERE " . $retrieveEntitiesVisitor->visitConditionAndReturnSQL($conditions);
 		}
-		
+
+		/**
+		 * Generate the HAVING part of the SQL query for the given retrieve operation.
+		 * Populated by WhereHavingFilterRewriter from a plain-aggregate WHERE condition.
+		 * @param AstRetrieve $retrieve The retrieve object from which conditions are extracted.
+		 * @return string The HAVING part of the SQL query. Returns an empty string if there are none.
+		 */
+		private function getHaving(AstRetrieve $retrieve): string {
+			$having = $retrieve->getHaving();
+
+			if ($having === null) {
+				return "";
+			}
+
+			$visitor = new BuildSqlFromAst($this->entityStore, $this->parameters, "HAVING", $this->platform, $this->routineSchema);
+			return "HAVING " . $visitor->visitConditionAndReturnSQL($having);
+		}
+
 		/**
 		 * Directly manipulate the values in IN() without extra queries
 		 *

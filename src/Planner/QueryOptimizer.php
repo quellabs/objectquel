@@ -34,6 +34,7 @@
 		private Optimizers\AggregateOptimizer $aggregateOptimizer;           // Optimizes aggregate functions (COUNT, SUM, etc.)
 		private Optimizers\WindowChainRewriter $windowChainRewriter;         // Extracts nested sequence functions into helper ranges
 		private Optimizers\WhereWindowFilterRewriter $whereWindowFilterRewriter; // Extracts a WHERE-filtered sequence function into a helper range
+		private Optimizers\WhereHavingFilterRewriter $whereHavingFilterRewriter; // Moves a plain-aggregate WHERE condition into an implicit HAVING clause
 		private Optimizers\ExistsOptimizer $existsOptimizer;                 // Converts EXISTS subqueries to more efficient forms
 		private Optimizers\JoinConditionFieldInjector $JoinConditionFieldInjector; // Optimizes value references and constants
 		private Optimizers\FoldingRuleOptimizer $constantFoldingOptimizer;          // Folds statically-resolvable nodes to boolean constants
@@ -56,6 +57,7 @@
 			$this->aggregateOptimizer = new Optimizers\AggregateOptimizer($this->entityStore, $platform);
 			$this->windowChainRewriter = new Optimizers\WindowChainRewriter($this->entityStore, $platform);
 			$this->whereWindowFilterRewriter = new Optimizers\WhereWindowFilterRewriter($this->entityStore, $platform);
+			$this->whereHavingFilterRewriter = new Optimizers\WhereHavingFilterRewriter();
 
 			// Initialize stateless optimizers that work on AST structure alone
 			$this->existsOptimizer = new Optimizers\ExistsOptimizer();
@@ -127,6 +129,11 @@
 			// ranges it already processed.
 			$this->windowChainRewriter->rewrite($ast, $log);
 			$this->rangePromotor->optimize($ast, $log);
+
+			// Move a plain-aggregate WHERE condition (e.g. `where sum(x) <= 100`)
+			// into an implicit HAVING clause before AggregateOptimizer runs, so it
+			// can steer that aggregate away from STRATEGY_WINDOW.
+			$this->whereHavingFilterRewriter->rewrite($ast, $log);
 
 			$this->aggregateOptimizer->optimize($ast, $log);
 			

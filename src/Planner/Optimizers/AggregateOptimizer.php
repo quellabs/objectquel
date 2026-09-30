@@ -90,8 +90,19 @@
 			// restructure the tree and invalidate a live traversal.
 			$aggregates = AstUtilities::collectAggregateNodes($root);
 
+			// True once the query has an implicit HAVING clause (see
+			// WhereHavingFilterRewriter) — disables STRATEGY_WINDOW query-wide, not
+			// just for the aggregate node(s) reachable from getHaving() directly.
+			// A HAVING-referenced aggregate alias (e.g. `total = sum(...)` filtered
+			// via `where total <= 100`) is macro-expanded into HAVING as a *clone* of
+			// the SELECT-list expression, not the same node — so gating only the
+			// clone would leave the original SELECT-list instance free to pick
+			// STRATEGY_WINDOW independently, producing invalid SQL that mixes an
+			// OVER(...) column with the GROUP BY that HAVING otherwise requires.
+			$hasHaving = $root->getHaving() !== null;
+
 			// Apply the strategies
-			$this->applyAggregateStrategies($root, $aggregates, $isAggregateOnly, $log);
+			$this->applyAggregateStrategies($root, $aggregates, $isAggregateOnly, $hasHaving, $log);
 		}
 		
 		/**
@@ -118,9 +129,10 @@
 		 * @param AstRetrieve $root
 		 * @param AstAggregate[] $aggregates Stable snapshot collected before any mutation
 		 * @param bool $isAggregateOnly Pre-computed query shape flag
+		 * @param bool $hasHaving True when the query has an implicit HAVING clause
 		 * @param PlanLogInterface $log
 		 */
-		private function applyAggregateStrategies(AstRetrieve $root, array $aggregates, bool $isAggregateOnly, PlanLogInterface $log): void {
+		private function applyAggregateStrategies(AstRetrieve $root, array $aggregates, bool $isAggregateOnly, bool $hasHaving, PlanLogInterface $log): void {
 			// Non-aggregate items are invariant per query — compute once outside the loop.
 			$nonAggItems = AstUtilities::collectNonAggregateSelectItems($root);
 
@@ -152,7 +164,7 @@
 			$effectiveAggregateOnly = $isAggregateOnly && !$forceWindow && $explicitGroupBy === null;
 
 			foreach ($aggregates as $agg) {
-				$strategy = $this->chooseStrategy($root, $agg, $effectiveAggregateOnly, $nonAggItems, $explicitGroupBy !== null);
+				$strategy = $this->chooseStrategy($root, $agg, $effectiveAggregateOnly, $nonAggItems, $explicitGroupBy !== null, $hasHaving);
 
 				if ($forceWindow && $strategy !== self::STRATEGY_WINDOW) {
 					throw new QuelException(
@@ -357,9 +369,10 @@
 		 * @param bool $isAggregateOnly Pre-computed query shape flag
 		 * @param AstAlias[] $nonAggItems Pre-computed non-aggregate SELECT items
 		 * @param bool $hasExplicitGroupBy True when some aggregate in the query specified an inline `by`
+		 * @param bool $hasHaving True when the query has an implicit HAVING clause
 		 * @return string One of self::STRATEGY_*
 		 */
-		private function chooseStrategy(AstRetrieve $root, AstAggregate $aggregate, bool $isAggregateOnly, array $nonAggItems, bool $hasExplicitGroupBy): string {
+		private function chooseStrategy(AstRetrieve $root, AstAggregate $aggregate, bool $isAggregateOnly, array $nonAggItems, bool $hasExplicitGroupBy, bool $hasHaving = false): string {
 			$aggRanges = RangeUtilities::collectRangesFromNode($aggregate);
 			$needsWindow = $this->requiresWindowFunction($aggregate);
 
@@ -417,7 +430,10 @@
 			}
 
 			// 6. Window function — avoids GROUP BY for single-table mixed queries.
-			if ($this->canUseWindowFunction($root, $aggregate)) {
+			//    Not valid query-wide once the query has a HAVING clause: HAVING
+			//    requires grouped rows, which STRATEGY_WINDOW specifically avoids
+			//    producing.
+			if (!$hasHaving && $this->canUseWindowFunction($root, $aggregate)) {
 				return self::STRATEGY_WINDOW;
 			}
 
