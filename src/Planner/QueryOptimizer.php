@@ -135,6 +135,9 @@
 			// can steer that aggregate away from STRATEGY_WINDOW.
 			$this->whereHavingFilterRewriter->rewrite($ast, $log);
 
+			// Chooses and applies a SQL strategy (DIRECT/SUBQUERY/WINDOW/MEMORY) per
+			// aggregate — must run after every rewrite above that adds, moves, or
+			// extracts an aggregate node, since it snapshots the final aggregate set.
 			$this->aggregateOptimizer->optimize($ast, $log);
 			
 			// Convert search(...) to like/fulltext node
