@@ -8,13 +8,14 @@
 	use Quellabs\Sculpt\Console\ConsoleOutput;
 
 	/**
-	 * ListFunctionsCommand - CLI command for listing all functions and procedures callable from EQUEL
+	 * ListFunctionsCommand - CLI command for listing all EQUEL functions
 	 *
 	 * Reads the connected database's function catalog and displays every EQUEL function
-	 * as EQUEL sees it: its kind (function or procedure, the same distinction EQUEL uses
-	 * to decide whether a call is an expression or a `call` statement) and, for
-	 * value-returning functions, the return type normalized to ObjectQuel's abstract
-	 * column types rather than the engine's native type names.
+	 * with its return type: an abstract ObjectQuel column type, or "void" for a function
+	 * with no return value — EQUEL's own return type, exactly as written in
+	 * `define function name(...) void { ... }`. EQUEL has only one kind of routine, a
+	 * function; the function/procedure split some engines use internally is not exposed
+	 * here.
 	 *
 	 * Supported dialects: MySQL, MariaDB, PostgreSQL, SQL Server. SQLite has no stored
 	 * functions and is reported as an error.
@@ -44,7 +45,7 @@
 		 * @return string
 		 */
 		public function getDescription(): string {
-			return "List all functions and procedures callable from EQUEL.";
+			return "List all EQUEL functions and their return types.";
 		}
 
 		/**
@@ -54,14 +55,16 @@
 		public function getHelp(): string {
 			return <<<HELP
 DESCRIPTION:
-    Lists every EQUEL function in the connected database's default schema:
-    functions (value-returning, called from an expression) and procedures
-    (void, called via a `call` statement). A function's return type is shown
-    as ObjectQuel's abstract column type, not the engine-native type name,
-    so the output reads the same regardless of dialect.
+    Lists every EQUEL function in the connected database's default schema,
+    with its return type. The return type is either ObjectQuel's abstract
+    column type or `void`, mirroring EQUEL's own `define function name(...)
+    returnType { ... }` syntax. EQUEL only has functions — the
+    function/procedure split some engines use internally is not exposed
+    here.
 
-    A name can appear twice if it exists as both a function and a procedure —
-    MySQL and MariaDB give the two kinds separate namespaces.
+    A name can appear twice if the database has it as both a value-returning
+    and a void function — MySQL and MariaDB give the two separate
+    namespaces.
 
 USAGE:
     php sculpt quel:list-functions
@@ -87,7 +90,7 @@ HELP;
 				$functions = $provider->getDatabaseAdapter()->listRoutines();
 
 				if (empty($functions)) {
-					$this->output->writeLn("No functions or procedures found.");
+					$this->output->writeLn("No functions found.");
 					return 0;
 				}
 
@@ -96,12 +99,11 @@ HELP;
 				foreach ($functions as $function) {
 					$rows[] = [
 						$function['name'],
-						$function['isProcedure'] ? 'procedure' : 'function',
-						$function['isProcedure'] ? '-' : ($function['returnType'] ?? 'unknown'),
+						$function['isProcedure'] ? 'void' : ($function['returnType'] ?? 'unknown'),
 					];
 				}
 
-				$this->output->table(['Name', 'Kind', 'Return Type'], $rows);
+				$this->output->table(['Name', 'Return Type'], $rows);
 				$this->output->writeLn(count($rows) . " " . (count($rows) === 1 ? "function" : "functions") . " found.");
 				return 0;
 
