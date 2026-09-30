@@ -10,14 +10,14 @@
 	/**
 	 * ListFunctionsCommand - CLI command for listing all functions and procedures callable from EQUEL
 	 *
-	 * Reads the connected database's routine catalog and displays every stored routine
+	 * Reads the connected database's function catalog and displays every EQUEL function
 	 * as EQUEL sees it: its kind (function or procedure, the same distinction EQUEL uses
-	 * to decide whether a call is an expression or a `call` statement) and, for functions,
-	 * the return type normalized to ObjectQuel's abstract column types rather than the
-	 * engine's native type names.
+	 * to decide whether a call is an expression or a `call` statement) and, for
+	 * value-returning functions, the return type normalized to ObjectQuel's abstract
+	 * column types rather than the engine's native type names.
 	 *
 	 * Supported dialects: MySQL, MariaDB, PostgreSQL, SQL Server. SQLite has no stored
-	 * routines and is reported as an error.
+	 * functions and is reported as an error.
 	 */
 	class ListFunctionsCommand extends MakeCommandBase {
 
@@ -54,11 +54,11 @@
 		public function getHelp(): string {
 			return <<<HELP
 DESCRIPTION:
-    Lists every stored routine in the connected database's default schema,
-    as EQUEL sees it: functions (value-returning, called from an expression)
-    and procedures (void, called via a `call` statement). A function's return
-    type is shown as ObjectQuel's abstract column type, not the engine-native
-    type name, so the output reads the same regardless of dialect.
+    Lists every EQUEL function in the connected database's default schema:
+    functions (value-returning, called from an expression) and procedures
+    (void, called via a `call` statement). A function's return type is shown
+    as ObjectQuel's abstract column type, not the engine-native type name,
+    so the output reads the same regardless of dialect.
 
     A name can appear twice if it exists as both a function and a procedure —
     MySQL and MariaDB give the two kinds separate namespaces.
@@ -71,12 +71,12 @@ ARGUMENTS:
 
 NOTES:
     - Supported on MySQL, MariaDB, PostgreSQL and SQL Server
-    - SQLite has no stored routines and is reported as an error
+    - SQLite has no stored functions and is reported as an error
 HELP;
 		}
 
 		/**
-		 * Execute the command to list all routines callable from EQUEL.
+		 * Execute the command to list all EQUEL functions.
 		 * @param ConfigurationManager $config The configuration manager instance
 		 * @return int Exit code: 0 on success, 1 on any error
 		 */
@@ -84,25 +84,25 @@ HELP;
 			try {
 				/** @var ServiceProvider $provider */
 				$provider = $this->provider;
-				$routines = $provider->getDatabaseAdapter()->listRoutines();
+				$functions = $provider->getDatabaseAdapter()->listRoutines();
 
-				if (empty($routines)) {
+				if (empty($functions)) {
 					$this->output->writeLn("No functions or procedures found.");
 					return 0;
 				}
 
 				$rows = [];
 
-				foreach ($routines as $routine) {
+				foreach ($functions as $function) {
 					$rows[] = [
-						$routine['name'],
-						$routine['isProcedure'] ? 'procedure' : 'function',
-						$routine['isProcedure'] ? '-' : ($routine['returnType'] ?? 'unknown'),
+						$function['name'],
+						$function['isProcedure'] ? 'procedure' : 'function',
+						$function['isProcedure'] ? '-' : ($function['returnType'] ?? 'unknown'),
 					];
 				}
 
 				$this->output->table(['Name', 'Kind', 'Return Type'], $rows);
-				$this->output->writeLn(count($rows) . " " . (count($rows) === 1 ? "routine" : "routines") . " found.");
+				$this->output->writeLn(count($rows) . " " . (count($rows) === 1 ? "function" : "functions") . " found.");
 				return 0;
 
 			} catch (\Exception $e) {
