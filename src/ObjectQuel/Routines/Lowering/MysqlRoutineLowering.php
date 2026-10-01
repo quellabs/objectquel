@@ -11,7 +11,6 @@
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstForeach;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstIf;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRangeDatabase;
-	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRangeDeclaration;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstReturn;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRoutineCall;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRoutineDefinition;
@@ -399,9 +398,7 @@
 		private function assertNoColumnShadowed(AstRoutineDefinition $routine, array $variables): void {
 			$names = array_flip(array_map('strtolower', $variables));
 
-			foreach ($routine->getBody() as $statement) {
-				$range = $statement instanceof AstRangeDeclaration ? $statement->getRange() : null;
-
+			foreach ($routine->getRanges() as $range) {
 				if (!$range instanceof AstRangeDatabase) {
 					continue;
 				}

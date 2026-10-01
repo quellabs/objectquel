@@ -6,8 +6,15 @@
 	use Quellabs\ObjectQuel\ObjectQuel\AstVisitorInterface;
 
 	/**
-	 * `define function name (params) returnType { ... }` — one node for both
-	 * value-returning and `void` routines; the distinction is semantic, not structural.
+	 * `[range of ...] define function name (params) returnType { ... }` —
+	 * one node for both value-returning and `void` routines; the
+	 * distinction is semantic, not structural.
+	 *
+	 * Ranges are declared ahead of `define`, like any other top-level
+	 * statement (see Parser::dispatchStatement()), not inside the body —
+	 * same reasoning as an import list sitting outside a function: a
+	 * routine's data sources are static and known before it runs, so they
+	 * read better predeclared than scattered through the body.
 	 *
 	 * May be preceded by compiler directives, e.g. `@ignoreSoftDelete true
 	 * define function ...`, same syntax as ahead of a top-level statement
@@ -21,6 +28,9 @@
 		/** @var array<string, mixed> Compiler directives parsed ahead of `define function`, e.g. @ignoreSoftDelete */
 		private array $directives;
 
+		/** @var AstRange[] Ranges declared ahead of `define function` */
+		private array $ranges;
+
 		private string $name;
 		private string $returnType;
 
@@ -32,17 +42,23 @@
 
 		/**
 		 * @param array<string, mixed> $directives Compiler directives, e.g. @ignoreSoftDelete
+		 * @param AstRange[] $ranges Ranges declared ahead of `define function`
 		 * @param string $name Routine name
 		 * @param AstRoutineParameter[] $parameters Parameters in declaration order
 		 * @param string $returnType A type name, or the literal "void"
 		 * @param AstInterface[] $body Top-level statements of the routine body
 		 */
-		public function __construct(array $directives, string $name, array $parameters, string $returnType, array $body) {
+		public function __construct(array $directives, array $ranges, string $name, array $parameters, string $returnType, array $body) {
 			$this->directives = $directives;
+			$this->ranges = $ranges;
 			$this->name = $name;
 			$this->parameters = $parameters;
 			$this->returnType = $returnType;
 			$this->body = $body;
+
+			foreach ($this->ranges as $range) {
+				$range->setParent($this);
+			}
 
 			foreach ($this->parameters as $parameter) {
 				$parameter->setParent($this);
@@ -54,12 +70,16 @@
 		}
 
 		/**
-		 * Visits this node, then its parameters, then its body statements.
+		 * Visits this node, then its ranges, then its parameters, then its body statements.
 		 * @param AstVisitorInterface $visitor
 		 * @return void
 		 */
 		public function accept(AstVisitorInterface $visitor): void {
 			parent::accept($visitor);
+
+			foreach ($this->ranges as $range) {
+				$range->accept($visitor);
+			}
 
 			foreach ($this->parameters as $parameter) {
 				$parameter->accept($visitor);
@@ -125,11 +145,18 @@
 		}
 
 		/**
+		 * @return AstRange[] Ranges declared ahead of `define function`
+		 */
+		public function getRanges(): array {
+			return $this->ranges;
+		}
+
+		/**
 		 * @return static
 		 */
 		public function deepClone(): static {
 			// @phpstan-ignore-next-line new.static
-			$clone = new static($this->directives, $this->name, $this->cloneArray($this->parameters), $this->returnType, $this->cloneArray($this->body));
+			$clone = new static($this->directives, $this->cloneArray($this->ranges), $this->name, $this->cloneArray($this->parameters), $this->returnType, $this->cloneArray($this->body));
 			$clone->setParent($this->getParent());
 			return $clone;
 		}

@@ -40,7 +40,7 @@
 		/**
          * Parser constructor.
          * @param Lexer $lexer
-         * @param EntityStore $entityStore Used to resolve `range of x is Name` against declared entities, here and in a routine's own body
+         * @param EntityStore $entityStore Used to resolve `range of x is Name` against declared entities
          */
         public function __construct(Lexer $lexer, EntityStore $entityStore) {
             $this->lexer = $lexer;
@@ -55,7 +55,7 @@
             $this->replaceRule = new Replace($lexer);
             $this->deleteRule = new Delete($lexer);
             $this->callRule = new Call($lexer);
-            $this->routineDefinitionRule = new RoutineDefinition($lexer, $entityStore);
+            $this->routineDefinitionRule = new RoutineDefinition($lexer);
         }
 		
 	    /**
@@ -99,10 +99,9 @@
 		    // range either, but tolerate and ignore one — ranges are parsed
 		    // once up front and shared across statements, and these forms
 		    // just don't use them (see CreateTableTest::
-		    // testIgnoresRangeDeclarationBeforeCreate()). define is the
-		    // one exception: it never went through this shared-range path
-		    // at all before being folded into Parser (see ProcedureParser's
-		    // old, stricter contract), so it still rejects one.
+		    // testIgnoresRangeDeclarationBeforeCreate()). define uses its
+		    // leading ranges itself, threading them to the routine's body
+		    // the same way retrieve/append/replace/delete do.
 		    $keyword = $token->getType() === Token::Identifier ? strtolower($token->getStringValue()) : null;
 
 		    switch ($keyword) {
@@ -131,13 +130,7 @@
 				    return $this->indexRule->parse();
 
 			    case 'define':
-					// Unlike other range-less statements, `define` never allowed a leading range
-					// and previously bypassed this shared-range path.
-				    if ($ranges !== []) {
-					    throw new ParserException("A leading range declaration isn't allowed before 'define'.");
-				    }
-
-				    return $this->routineDefinitionRule->parse($directives);
+				    return $this->routineDefinitionRule->parse($directives, $ranges);
 
 			    case 'replace':
 				    return $this->replaceRule->parse($ranges);

@@ -18,8 +18,8 @@
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstIdentifier;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstIf;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstParameter;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRange;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRangeJsonSource;
-	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRangeDeclaration;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstReplace;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRetrieve;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstReturn;
@@ -36,10 +36,10 @@
 
 	/**
 	 * Semantic analysis for a parsed routine: block-scoped locals/cursors with
-	 * declare-before-use, top-level-only `range of`, position-specific type
-	 * names, cursor/foreach rules and control-flow checks. Types routine
-	 * variable and cursor-field identifiers in place (see IdentifierType).
-	 * Dialect restrictions are checked by the compiler, not here.
+	 * declare-before-use, position-specific type names, cursor/foreach rules
+	 * and control-flow checks. Types routine variable and cursor-field
+	 * identifiers in place (see IdentifierType). Dialect restrictions are
+	 * checked by the compiler, not here.
 	 */
 	class RoutineAnalyzer {
 
@@ -94,44 +94,50 @@
 				$this->scope->declareScalar($parameter->getName());
 			}
 
-			$this->analyzeBlock($routine->getBody(), true);
+			$this->analyzeRanges($routine->getRanges());
+			$this->analyzeBlock($routine->getBody());
 
 			(new RoutineControlFlowValidator())->validate($routine);
 		}
 
 		/**
-		 * Analyzes a statement list in source order.
-		 * @param AstInterface[] $statements Statements of one block
-		 * @param bool $isTopLevel True for the routine body itself, the only place `range of` may be declared
+		 * Checks and declares the ranges declared ahead of `define function`.
+		 * @param AstRange[] $ranges Ranges in declaration order
 		 * @return void
 		 * @throws SemanticException|EntityResolutionException
 		 */
-		private function analyzeBlock(array $statements, bool $isTopLevel): void {
+		private function analyzeRanges(array $ranges): void {
+			foreach ($ranges as $range) {
+				if ($range instanceof AstRangeJsonSource) {
+					throw new SemanticException("JSON ranges aren't supported in routines; declare a plain entity range.");
+				}
+
+				// Declared first: a `via` condition refers to its own range
+				$this->scope->declareRange($range);
+				$range->getJoinProperty()?->accept($this->referenceResolver(true));
+			}
+		}
+
+		/**
+		 * Analyzes a statement list in source order.
+		 * @param AstInterface[] $statements Statements of one block
+		 * @return void
+		 * @throws SemanticException|EntityResolutionException
+		 */
+		private function analyzeBlock(array $statements): void {
 			foreach ($statements as $statement) {
-				$this->analyzeStatement($statement, $isTopLevel);
+				$this->analyzeStatement($statement);
 			}
 		}
 
 		/**
 		 * Dispatches one statement to its check.
 		 * @param AstInterface $statement The statement
-		 * @param bool $isTopLevel True when it sits directly in the routine body
 		 * @return void
 		 * @throws SemanticException|EntityResolutionException
 		 */
-		private function analyzeStatement(AstInterface $statement, bool $isTopLevel): void {
+		private function analyzeStatement(AstInterface $statement): void {
 				switch (true) {
-				case $statement instanceof AstRangeDeclaration:
-					$this->assertTopLevel($isTopLevel, "'range of {$statement->getRange()->getName()}'");
-					if ($statement->getRange() instanceof AstRangeJsonSource) {
-						throw new SemanticException("JSON ranges aren't supported in routines; declare a plain entity range.");
-					}
-
-					// Declared first: a `via` condition refers to its own range
-					$this->scope->declareRange($statement->getRange());
-					$statement->getRange()->getJoinProperty()?->accept($this->referenceResolver(true));
-					break;
-
 				case $statement instanceof AstDeclare:
 					$this->analyzeDeclaration($statement);
 					break;
@@ -159,17 +165,17 @@
 				case $statement instanceof AstIf:
 					$statement->getCondition()->accept($this->referenceResolver(false));
 					$this->scope->pushScope();
-					$this->analyzeBlock($statement->getThenBody(), false);
+					$this->analyzeBlock($statement->getThenBody());
 					$this->scope->popScope();
 					$this->scope->pushScope();
-					$this->analyzeBlock($statement->getElseBody() ?? [], false);
+					$this->analyzeBlock($statement->getElseBody() ?? []);
 					$this->scope->popScope();
 					break;
 
 				case $statement instanceof AstWhile:
 					$statement->getCondition()->accept($this->referenceResolver(false));
 					$this->scope->pushScope();
-					$this->analyzeBlock($statement->getBody(), false);
+					$this->analyzeBlock($statement->getBody());
 					$this->scope->popScope();
 					break;
 
@@ -179,7 +185,7 @@
 
 				case $statement instanceof AstAtomic:
 					$this->scope->pushScope();
-					$this->analyzeBlock($statement->getBody(), false);
+					$this->analyzeBlock($statement->getBody());
 					$this->scope->popScope();
 					break;
 
@@ -337,7 +343,7 @@
 			$this->scope->openLoop($resolvedCursorName);
 			$this->scope->pushScope();
 			$this->scope->bindRow($foreach->getRowName(), $resolvedCursorName);
-			$this->analyzeBlock($foreach->getBody(), false);
+			$this->analyzeBlock($foreach->getBody());
 			$this->scope->unbindRow();
 			$this->scope->popScope();
 			$this->scope->closeLoop();
@@ -429,19 +435,6 @@
 		}
 
 		/**
-		 * Rejects routine statements that are not allowed at top level.
-		 * @param bool $isTopLevel True when the statement sits directly in the routine body
-		 * @param string $what Description of the declaration, for the error message
-		 * @return void
-		 * @throws SemanticException When not at top level
-		 */
-		private function assertTopLevel(bool $isTopLevel, string $what): void {
-			if (!$isTopLevel) {
-				throw new SemanticException("{$what} must be at the top level of the routine body, not inside if/else, while, foreach or atomic.");
-			}
-		}
-
-		/**
 		 * Creates a resolver for routine range references.
 		 * @param bool $inQueryStatement True inside retrieve/append/replace/delete
 		 * @return ResolveRoutineReferences Visitor bound to the current scope
@@ -462,15 +455,18 @@
 		/**
 		 * Collects routine declarations to check for name conflicts.
 		 * @param AstRoutineDefinition $routine Parsed routine
-		 * @return string[] Every local and range name the body declares, at any depth
+		 * @return string[] Every local name the body declares, at any depth, plus every declared range name
 		 */
 		private function collectDeclaredNames(AstRoutineDefinition $routine): array {
-			$collector = new CollectNodes([AstDeclare::class, AstRangeDeclaration::class]);
+			$collector = new CollectNodes(AstDeclare::class);
 			$routine->accept($collector);
 
-			return array_map(
-				fn(AstDeclare|AstRangeDeclaration $node) => $node instanceof AstDeclare ? $node->getName() : $node->getRange()->getName(),
-				$collector->getCollectedNodes()
-			);
+			$names = array_map(fn(AstDeclare $node) => $node->getName(), $collector->getCollectedNodes());
+
+			foreach ($routine->getRanges() as $range) {
+				$names[] = $range->getName();
+			}
+
+			return $names;
 		}
 	}

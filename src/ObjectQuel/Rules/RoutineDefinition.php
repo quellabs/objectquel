@@ -2,7 +2,7 @@
 
 	namespace Quellabs\ObjectQuel\ObjectQuel\Rules;
 
-	use Quellabs\ObjectQuel\EntityStore;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRange;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRoutineDefinition;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRoutineParameter;
 	use Quellabs\ObjectQuel\ObjectQuel\Lexer;
@@ -13,30 +13,28 @@
 	/**
 	 * Parses `define function name (type name, ...) returnType { ... }`.
 	 * Type names are plain identifiers here; they are validated by value later.
-	 * Compiler directives ahead of `define` are parsed by the caller (see
-	 * Parser) and threaded through unmodified.
+	 * Compiler directives and ranges ahead of `define` are parsed by the
+	 * caller (see Parser) and threaded through unmodified.
 	 */
 	class RoutineDefinition {
 
 		private Lexer $lexer;
-		private EntityStore $entityStore;
 
 		/**
 		 * @param Lexer $lexer Lexer over the routine source
-		 * @param EntityStore $entityStore Resolves `range of x is Entity` declarations in the body
 		 */
-		public function __construct(Lexer $lexer, EntityStore $entityStore) {
+		public function __construct(Lexer $lexer) {
 			$this->lexer = $lexer;
-			$this->entityStore = $entityStore;
 		}
 
 		/**
 		 * Parses the signature and body, starting at `define`.
 		 * @param array<string, mixed> $directives Compiler directives parsed ahead of `define`, e.g. @ignoreSoftDelete
+		 * @param AstRange[] $ranges Ranges parsed ahead of `define`
 		 * @return AstRoutineDefinition
 		 * @throws LexerException|ParserException|\ReflectionException
 		 */
-		public function parse(array $directives = []): AstRoutineDefinition {
+		public function parse(array $directives = [], array $ranges = []): AstRoutineDefinition {
 			$this->lexer->matchKeyword('define');
 
 			if (!$this->lexer->peekKeyword('function')) {
@@ -53,9 +51,9 @@
 			}
 
 			$returnType = $this->lexer->match(Token::Identifier)->getStringValue();
-			$body = (new RoutineBlock($this->lexer, $this->entityStore))->parseBlock();
+			$body = (new RoutineBlock($this->lexer, $ranges))->parseBlock();
 
-			return new AstRoutineDefinition($directives, $name, $parameters, $returnType, $body);
+			return new AstRoutineDefinition($directives, $ranges, $name, $parameters, $returnType, $body);
 		}
 
 		/**

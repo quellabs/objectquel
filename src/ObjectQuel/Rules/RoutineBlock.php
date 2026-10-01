@@ -2,7 +2,6 @@
 
 	namespace Quellabs\ObjectQuel\ObjectQuel\Rules;
 
-	use Quellabs\ObjectQuel\EntityStore;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstAtomic;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRollback;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstBreak;
@@ -14,7 +13,6 @@
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstIf;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstNumber;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRange;
-	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRangeDeclaration;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstReturn;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstTerm;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstVariableAssignment;
@@ -26,9 +24,11 @@
 	use Quellabs\ObjectQuel\ObjectQuel\Token;
 
 	/**
-	 * Parses the `{ ... }` statement blocks of a routine body. Placement and
-	 * name rules (top-level-only declarations, declare-before-use, etc.) are
-	 * semantic checks, not enforced here.
+	 * Parses the `{ ... }` statement blocks of a routine body. Ranges are
+	 * declared ahead of `define function`, not here (see
+	 * AstRoutineDefinition) — `range of` inside the body is a syntax error.
+	 * Other name rules (declare-before-use, etc.) are semantic checks, not
+	 * enforced here.
 	 */
 	class RoutineBlock {
 
@@ -39,19 +39,18 @@
 		private const array COMPOUND_OPERATORS = [Token::Plus => '+', Token::Minus => '-', Token::Star => '*', Token::Slash => '/'];
 
 		private Lexer $lexer;
-		private Range $rangeRule;
 		private LogicalExpression $expressionRule;
 
-		/** @var AstRange[] Ranges declared so far, in source order; handed to embedded statements */
-		private array $ranges = [];
+		/** @var AstRange[] Ranges declared ahead of `define function`; handed to embedded statements */
+		private array $ranges;
 
 		/**
 		 * @param Lexer $lexer Lexer over the routine source
-		 * @param EntityStore $entityStore Resolves `range of x is Entity` declarations
+		 * @param AstRange[] $ranges Ranges declared ahead of `define function`
 		 */
-		public function __construct(Lexer $lexer, EntityStore $entityStore) {
+		public function __construct(Lexer $lexer, array $ranges) {
 			$this->lexer = $lexer;
-			$this->rangeRule = new Range($lexer, $entityStore);
+			$this->ranges = $ranges;
 			$this->expressionRule = new LogicalExpression($lexer);
 		}
 
@@ -87,13 +86,11 @@
 		private function parseStatement(): AstInterface {
 			switch ($this->lexer->lookahead()) {
 				case Token::Range:
-					$range = $this->rangeRule->parse();
-					$this->ranges[] = $range;
-					return new AstRangeDeclaration($range);
+					throw new ParserException("A range must be declared ahead of 'define function', not inside its body, on line {$this->lexer->getLineNumber()}");
 
 				case Token::Identifier:
 					return $this->parseIdentifierStatement();
-				
+
 				case Token::Plus:
 				case Token::Minus:
 					if ($this->lexer->peekIncrementOperator()) {
