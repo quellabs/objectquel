@@ -61,7 +61,7 @@
 		 * @throws LexerException|ParserException|\ReflectionException
 		 */
 		public function parse(array $ranges): AstAppend {
-			$this->lexer->match(Token::Append);
+			$this->lexer->matchKeyword('append');
 			$this->lexer->matchKeyword('to');
 
 			$targetName = $this->lexer->match(Token::Identifier)->getStringValue();
@@ -93,7 +93,7 @@
 
 			$columns = $this->parseColumnList($firstProperty);
 
-			if ($this->lexer->lookahead() !== Token::Retrieve) {
+			if (!$this->lexer->peekKeyword('retrieve')) {
 				throw new ParserException("Expected 'retrieve' after the column list in an insert-from-select append, on line {$this->lexer->getLineNumber()}");
 			}
 

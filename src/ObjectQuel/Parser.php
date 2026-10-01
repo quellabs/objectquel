@@ -21,7 +21,7 @@
     class Parser {
 
 		/** Words that start a top-level statement by text. A routine by such a name couldn't be called as a statement. */
-		public const array STATEMENT_KEYWORDS = ['create', 'alter', 'destroy', 'hide', 'show', 'index', 'replace', 'delete', 'define'];
+		public const array STATEMENT_KEYWORDS = ['create', 'alter', 'destroy', 'hide', 'show', 'index', 'replace', 'delete', 'define', 'retrieve', 'append'];
 
         protected Lexer $lexer;
         private EntityStore $entityStore;
@@ -74,14 +74,15 @@
 		    // Get the next token without changing the position in the lexer.
 		    $token = $this->lexer->peek();
 
-		    // create/destroy/hide/show/index/replace/delete/define have no
-		    // token type (see Lexer::peekKeyword()) so — unlike Retrieve/Append —
-		    // they're recognized by text. Any other `name(` is a routine call.
-		    // Only retrieve/append/replace/delete use a leading range; every
-		    // other kind rejects one instead of silently discarding it.
-		    if ($token->getType() === Token::Retrieve) {
+		    // None of these have a dedicated token type (see
+		    // Lexer::peekKeyword()); each is recognized by text, so a
+		    // column/entity/routine can still be named after one elsewhere.
+		    // Any other `name(` is a routine call. Only retrieve/append/
+		    // replace/delete use a leading range; every other kind rejects
+		    // one instead of silently discarding it.
+		    if ($this->lexer->peekKeyword('retrieve')) {
 			    $query = $this->retrieveRule->parse($directives, $ranges);
-		    } elseif ($token->getType() === Token::Append) {
+		    } elseif ($this->lexer->peekKeyword('append')) {
 			    $query = $this->appendRule->parse($ranges);
 		    } elseif ($this->lexer->peekKeyword('create')) {
 			    $this->rejectRanges($ranges, 'create');

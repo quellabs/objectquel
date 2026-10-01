@@ -59,7 +59,6 @@
 			];
 	        
 	        $this->keywords = [
-		        'retrieve'    => Token::Retrieve,
 		        'where'       => Token::Where,
 		        'and'         => Token::And,
 		        'or'          => Token::Or,
@@ -79,12 +78,12 @@
 		        'window_size' => Token::WindowSize,
 		        'json_source' => Token::JsonSource,
 		        'filter'      => Token::Filter,
-		        'append'      => Token::Append,
 		        // create, temporary, identity, primary, key, destroy, if,
-		        // exists, to, replace, delete, index, on, fulltext, and
-		        // unsigned are deliberately absent — each is a keyword only
-		        // at its own grammar position (see peekKeyword()), unlike
-		        // `where`/`retrieve`/`append` above.
+		        // exists, to, replace, delete, index, on, fulltext, retrieve,
+		        // append, and unsigned are deliberately absent — each is a
+		        // keyword only at its own grammar position (see
+		        // peekKeyword()), unlike `where` above, so each stays usable
+		        // as a column/entity name elsewhere.
 	        ];
 			
 			$this->single_tokens = [

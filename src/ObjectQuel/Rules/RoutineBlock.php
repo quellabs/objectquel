@@ -33,7 +33,7 @@
 	class RoutineBlock {
 
 		/** Words that start a procedural statement; recognized by text, like other contextual keywords. */
-		public const array STATEMENT_KEYWORDS = ['if', 'else', 'elseif', 'while', 'foreach', 'return', 'atomic', 'rollback', 'break', 'continue', 'replace', 'delete'];
+		public const array STATEMENT_KEYWORDS = ['if', 'else', 'elseif', 'while', 'foreach', 'return', 'atomic', 'rollback', 'break', 'continue', 'replace', 'delete', 'retrieve', 'append'];
 
 		/** Compound-assignment operator tokens (the `x` in `x=`) and the arithmetic operator each applies */
 		private const array COMPOUND_OPERATORS = [Token::Plus => '+', Token::Minus => '-', Token::Star => '*', Token::Slash => '/'];
@@ -90,12 +90,6 @@
 					$range = $this->rangeRule->parse();
 					$this->ranges[] = $range;
 					return new AstRangeDeclaration($range);
-
-				case Token::Retrieve:
-					return $this->parseRetrieve();
-
-				case Token::Append:
-					return (new Append($this->lexer))->parse($this->ranges);
 
 				case Token::Identifier:
 					return $this->parseIdentifierStatement();
@@ -166,6 +160,12 @@
 
 				case 'delete':
 					return $this->parseDelete();
+
+				case 'retrieve':
+					return $this->parseRetrieve();
+
+				case 'append':
+					return (new Append($this->lexer))->parse($this->ranges);
 
 				case 'else':
 				case 'elseif':
@@ -247,7 +247,7 @@
 				return new AstDeclare($name, $type, null);
 			}
 
-			$initializer = $this->lexer->lookahead() === Token::Retrieve
+			$initializer = $this->lexer->peekKeyword('retrieve')
 				? $this->parseRetrieve()
 				: $this->expressionRule->parse();
 
@@ -264,7 +264,7 @@
 			$name = $this->lexer->match(Token::Identifier)->getStringValue();
 			$this->lexer->match(Token::Equals);
 
-			$value = $this->lexer->lookahead() === Token::Retrieve
+			$value = $this->lexer->peekKeyword('retrieve')
 				? $this->parseRetrieve()
 				: $this->expressionRule->parse();
 
