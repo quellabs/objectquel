@@ -25,12 +25,10 @@
 	use Quellabs\ObjectQuel\Exception\TransformationException;
 	use Quellabs\ObjectQuel\OrmException;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRetrieve;
-	use Quellabs\ObjectQuel\ObjectQuel\Helpers\CompilerDirectiveParser;
 	use Quellabs\ObjectQuel\ObjectQuel\Lexer;
 	use Quellabs\ObjectQuel\ObjectQuel\LexerException;
 	use Quellabs\ObjectQuel\Exception\QuelException;
 	use Quellabs\ObjectQuel\ObjectQuel\Parser;
-	use Quellabs\ObjectQuel\ObjectQuel\Routines\ProcedureParser;
 	use Quellabs\ObjectQuel\ObjectQuel\ParserException;
 	use Quellabs\ObjectQuel\ObjectQuel\QuelResult;
 	use Quellabs\ObjectQuel\Execution\Executors\AlterTableExecutor;
@@ -195,7 +193,7 @@
 				$this->databaseExecutor->resetLastExecutedSql();
 				
 				// Parse the input query string into an Abstract Syntax Tree (AST)
-				$ast = $this->parse($query);
+				$ast = (new Parser(new Lexer($query), $this->entityManager->getEntityStore()))->parse();
 
 				$context = new ExecutionContext($normalizedParameters);
 
@@ -321,7 +319,7 @@
 				$normalizedParameters = $this->normalizeParams($parameters);
 				
 				// Parse and resolve identifiers
-				$ast = $this->parse($query);
+				$ast = (new Parser(new Lexer($query), $this->entityManager->getEntityStore()))->parse();
 				
 				// explainQuery() already rejects anything but a retrieve statement
 				// before ever calling explain() — this check is a defensive
@@ -375,7 +373,7 @@
 		 */
 		public function explainQuery(string $query, array $parameters = []): QueryPlan {
 			try {
-				$ast = $this->parse($query);
+				$ast = (new Parser(new Lexer($query), $this->entityManager->getEntityStore()))->parse();
 			} catch (ParserException|LexerException $e) {
 				throw new QuelException("Syntax error: " . $e->getMessage(), 'syntax_error', 0, $e);
 			}
@@ -385,49 +383,6 @@
 			}
 
 			return $this->explainRetrieveQuery($query, $parameters);
-		}
-		
-		/**
-		 * Parses a Quel query and returns its AST representation.
-		 * @param string $query The Quel query string to parse
-		 * @return AstStatement The parsed AST — retrieve, DDL, or write-verb
-		 * @throws LexerException
-		 * @throws ParserException
-		 * @throws QuelException|\ReflectionException If parsing, validation, or processing fails
-		 */
-		private function parse(string $query): AstStatement {
-			// Convert the raw query string into an Abstract Syntax Tree
-			// Create a lexer to break the query string into tokens (keywords, identifiers, operators, etc.)
-			$lexer = new Lexer($query);
-
-			// A routine definition has its own grammar and parser. It may be
-			// preceded by compiler directives (e.g. @ignoreSoftDelete true),
-			// same syntax as ahead of an ordinary statement — peek past them
-			// to detect 'define', restoring the lexer if this isn't a
-			// routine so Parser::parse() can consume the same directives itself.
-			$state = $lexer->saveState();
-			CompilerDirectiveParser::parse($lexer);
-			$isRoutine = $lexer->peekKeyword('define');
-			$lexer->restoreState($state);
-
-			if ($isRoutine) {
-				return (new ProcedureParser($lexer, $this->entityManager->getEntityStore()))->parse();
-			}
-
-			// Create a parser that takes the tokenized input and builds an Abstract Syntax Tree
-			$parser = new Parser($lexer, $this->entityManager->getEntityStore());
-			
-			// Execute the parsing process to generate the AST representation of the query
-			// This transforms the linear token sequence into a hierarchical tree structure
-			$ast = $parser->parse();
-			
-			// Ensure the parsed AST represents a statement type this executor knows how to run
-			if (!$ast instanceof AstStatement) {
-				throw new QuelException("Invalid query type: expected retrieve, create, alter, destroy, index, hide, show, routine call, or write-verb (append/replace/delete) operation");
-			}
-			
-			// The AST is now fully validated
-			return $ast;
 		}
 		
 		/**
