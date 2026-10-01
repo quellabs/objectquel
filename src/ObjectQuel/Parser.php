@@ -71,6 +71,23 @@
 		    $ranges = RangeListParser::parse($this->lexer, $this->entityStore);
 
 		    // Parse exactly one statement; QueryExecutor executes one AST at a time.
+		    $query = $this->dispatchStatement($directives, $ranges);
+
+		    if ($this->lexer->lookahead() !== Token::Eof) {
+			    throw new ParserException('Unexpected content after the statement; only one statement is allowed per query.');
+		    }
+
+		    return $query;
+	    }
+
+	    /**
+	     * Dispatches on the current token to the rule for the statement it starts.
+	     * @param array<string, mixed> $directives Compiler directives parsed ahead of the statement
+	     * @param AstRange[] $ranges Ranges parsed ahead of the statement
+	     * @return AstStatement
+	     * @throws LexerException|ParserException|\ReflectionException
+	     */
+	    private function dispatchStatement(array $directives, array $ranges): AstStatement {
 		    // Get the next token without changing the position in the lexer.
 		    $token = $this->lexer->peek();
 
@@ -84,75 +101,57 @@
 
 		    switch ($keyword) {
 			    case 'retrieve':
-				    $query = $this->retrieveRule->parse($directives, $ranges);
-				    break;
+				    return $this->retrieveRule->parse($directives, $ranges);
 
 			    case 'append':
-				    $query = $this->appendRule->parse($ranges);
-				    break;
+				    return $this->appendRule->parse($ranges);
 
 			    case 'create':
 				    $this->rejectRanges($ranges, 'create');
-				    $query = $this->createTableRule->parse();
-				    break;
+				    return $this->createTableRule->parse();
 
 			    case 'alter':
 				    $this->rejectRanges($ranges, 'alter');
-				    $query = $this->alterTableRule->parse();
-				    break;
+				    return $this->alterTableRule->parse();
 
 			    case 'destroy':
 				    $this->rejectRanges($ranges, 'destroy');
-				    $query = $this->destroyRule->parse();
-				    break;
+				    return $this->destroyRule->parse();
 
 			    case 'hide':
 				    $this->rejectRanges($ranges, 'hide');
-				    $query = $this->indexVisibilityRule->parseHide();
-				    break;
+				    return $this->indexVisibilityRule->parseHide();
 
 			    case 'show':
 				    $this->rejectRanges($ranges, 'show');
-				    $query = $this->indexVisibilityRule->parseShow();
-				    break;
+				    return $this->indexVisibilityRule->parseShow();
 
 			    case 'index':
 				    $this->rejectRanges($ranges, 'index');
-				    $query = $this->indexRule->parse();
-				    break;
+				    return $this->indexRule->parse();
 
 			    case 'define':
 				    $this->rejectRanges($ranges, 'define');
-				    $query = $this->routineDefinitionRule->parse($directives);
-				    break;
+				    return $this->routineDefinitionRule->parse($directives);
 
 			    case 'replace':
-				    $query = $this->replaceRule->parse($ranges);
-				    break;
+				    return $this->replaceRule->parse($ranges);
 
 			    case 'delete':
 				    // No lookahead needed — QUEL's drop verb is `destroy`, a
 				    // separate keyword; the literal word `delete` always
 				    // means this DML verb.
-				    $query = $this->deleteRule->parse($directives, $ranges);
-				    break;
+				    return $this->deleteRule->parse($directives, $ranges);
 
 			    default:
 				    if ($token->getType() === Token::Identifier && $this->lexer->peekNext() === Token::ParenthesesOpen) {
 					    $this->rejectRanges($ranges, 'a routine call');
-					    $query = $this->callRule->parse();
-					    break;
+					    return $this->callRule->parse();
 				    }
 
 				    $tokenName = Token::toString($token->getType()) ?: 'unknown';
 				    throw new ParserException("Unexpected token '{$tokenName}' on line {$this->lexer->getLineNumber()}");
 		    }
-
-		    if ($this->lexer->lookahead() !== Token::Eof) {
-			    throw new ParserException('Unexpected content after the statement; only one statement is allowed per query.');
-		    }
-
-		    return $query;
 	    }
 
 	    /**
