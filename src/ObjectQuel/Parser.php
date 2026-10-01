@@ -80,44 +80,72 @@
 		    // Any other `name(` is a routine call. Only retrieve/append/
 		    // replace/delete use a leading range; every other kind rejects
 		    // one instead of silently discarding it.
-		    if ($this->lexer->peekKeyword('retrieve')) {
-			    $query = $this->retrieveRule->parse($directives, $ranges);
-		    } elseif ($this->lexer->peekKeyword('append')) {
-			    $query = $this->appendRule->parse($ranges);
-		    } elseif ($this->lexer->peekKeyword('create')) {
-			    $this->rejectRanges($ranges, 'create');
-			    $query = $this->createTableRule->parse();
-		    } elseif ($this->lexer->peekKeyword('alter')) {
-			    $this->rejectRanges($ranges, 'alter');
-			    $query = $this->alterTableRule->parse();
-		    } elseif ($this->lexer->peekKeyword('destroy')) {
-			    $this->rejectRanges($ranges, 'destroy');
-			    $query = $this->destroyRule->parse();
-		    } elseif ($this->lexer->peekKeyword('hide')) {
-			    $this->rejectRanges($ranges, 'hide');
-			    $query = $this->indexVisibilityRule->parseHide();
-		    } elseif ($this->lexer->peekKeyword('show')) {
-			    $this->rejectRanges($ranges, 'show');
-			    $query = $this->indexVisibilityRule->parseShow();
-		    } elseif ($this->lexer->peekKeyword('index')) {
-			    $this->rejectRanges($ranges, 'index');
-			    $query = $this->indexRule->parse();
-		    } elseif ($this->lexer->peekKeyword('define')) {
-			    $this->rejectRanges($ranges, 'define');
-			    $query = $this->routineDefinitionRule->parse($directives);
-		    } elseif ($this->lexer->peekKeyword('replace')) {
-			    $query = $this->replaceRule->parse($ranges);
-		    } elseif ($this->lexer->peekKeyword('delete')) {
-			    // No lookahead needed — QUEL's drop verb is `destroy`, a
-			    // separate keyword; the literal word `delete` always
-			    // means this DML verb.
-			    $query = $this->deleteRule->parse($directives, $ranges);
-		    } elseif ($token->getType() === Token::Identifier && $this->lexer->peekNext() === Token::ParenthesesOpen) {
-			    $this->rejectRanges($ranges, 'a routine call');
-			    $query = $this->callRule->parse();
-		    } else {
-			    $tokenName = Token::toString($token->getType()) ?: 'unknown';
-			    throw new ParserException("Unexpected token '{$tokenName}' on line {$this->lexer->getLineNumber()}");
+		    $keyword = $token->getType() === Token::Identifier ? strtolower($token->getStringValue()) : null;
+
+		    switch ($keyword) {
+			    case 'retrieve':
+				    $query = $this->retrieveRule->parse($directives, $ranges);
+				    break;
+
+			    case 'append':
+				    $query = $this->appendRule->parse($ranges);
+				    break;
+
+			    case 'create':
+				    $this->rejectRanges($ranges, 'create');
+				    $query = $this->createTableRule->parse();
+				    break;
+
+			    case 'alter':
+				    $this->rejectRanges($ranges, 'alter');
+				    $query = $this->alterTableRule->parse();
+				    break;
+
+			    case 'destroy':
+				    $this->rejectRanges($ranges, 'destroy');
+				    $query = $this->destroyRule->parse();
+				    break;
+
+			    case 'hide':
+				    $this->rejectRanges($ranges, 'hide');
+				    $query = $this->indexVisibilityRule->parseHide();
+				    break;
+
+			    case 'show':
+				    $this->rejectRanges($ranges, 'show');
+				    $query = $this->indexVisibilityRule->parseShow();
+				    break;
+
+			    case 'index':
+				    $this->rejectRanges($ranges, 'index');
+				    $query = $this->indexRule->parse();
+				    break;
+
+			    case 'define':
+				    $this->rejectRanges($ranges, 'define');
+				    $query = $this->routineDefinitionRule->parse($directives);
+				    break;
+
+			    case 'replace':
+				    $query = $this->replaceRule->parse($ranges);
+				    break;
+
+			    case 'delete':
+				    // No lookahead needed — QUEL's drop verb is `destroy`, a
+				    // separate keyword; the literal word `delete` always
+				    // means this DML verb.
+				    $query = $this->deleteRule->parse($directives, $ranges);
+				    break;
+
+			    default:
+				    if ($token->getType() === Token::Identifier && $this->lexer->peekNext() === Token::ParenthesesOpen) {
+					    $this->rejectRanges($ranges, 'a routine call');
+					    $query = $this->callRule->parse();
+					    break;
+				    }
+
+				    $tokenName = Token::toString($token->getType()) ?: 'unknown';
+				    throw new ParserException("Unexpected token '{$tokenName}' on line {$this->lexer->getLineNumber()}");
 		    }
 
 		    if ($this->lexer->lookahead() !== Token::Eof) {
