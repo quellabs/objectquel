@@ -94,9 +94,15 @@
 		    // None of these have a dedicated token type (see
 		    // Lexer::peekKeyword()); each is recognized by text, so a
 		    // column/entity/routine can still be named after one elsewhere.
-		    // Any other `name(` is a routine call. Only retrieve/append/
-		    // replace/delete use a leading range; every other kind rejects
-		    // one instead of silently discarding it.
+		    // Any other `name(` is a routine call. create/alter/destroy/
+		    // hide/show/index and a bare call don't reference a leading
+		    // range either, but tolerate and ignore one — ranges are parsed
+		    // once up front and shared across statements, and these forms
+		    // just don't use them (see CreateTableTest::
+		    // testIgnoresRangeDeclarationBeforeCreate()). define is the
+		    // one exception: it never went through this shared-range path
+		    // at all before being folded into Parser (see ProcedureParser's
+		    // old, stricter contract), so it still rejects one.
 		    $keyword = $token->getType() === Token::Identifier ? strtolower($token->getStringValue()) : null;
 
 		    switch ($keyword) {
@@ -107,31 +113,33 @@
 				    return $this->appendRule->parse($ranges);
 
 			    case 'create':
-				    $this->rejectRanges($ranges, 'create');
 				    return $this->createTableRule->parse();
 
 			    case 'alter':
-				    $this->rejectRanges($ranges, 'alter');
 				    return $this->alterTableRule->parse();
 
 			    case 'destroy':
-				    $this->rejectRanges($ranges, 'destroy');
 				    return $this->destroyRule->parse();
 
 			    case 'hide':
-				    $this->rejectRanges($ranges, 'hide');
 				    return $this->indexVisibilityRule->parseHide();
 
 			    case 'show':
-				    $this->rejectRanges($ranges, 'show');
 				    return $this->indexVisibilityRule->parseShow();
 
 			    case 'index':
-				    $this->rejectRanges($ranges, 'index');
 				    return $this->indexRule->parse();
 
 			    case 'define':
-				    $this->rejectRanges($ranges, 'define');
+				    // Unlike every other range-less statement kind above,
+				    // `define` never tolerated a leading range — it never
+				    // went through this shared-range path before being
+				    // folded into Parser (see ProcedureParser's old,
+				    // stricter contract).
+				    if ($ranges !== []) {
+					    throw new ParserException("A leading range declaration isn't allowed before 'define'.");
+				    }
+
 				    return $this->routineDefinitionRule->parse($directives);
 
 			    case 'replace':
@@ -145,24 +153,11 @@
 
 			    default:
 				    if ($token->getType() === Token::Identifier && $this->lexer->peekNext() === Token::ParenthesesOpen) {
-					    $this->rejectRanges($ranges, 'a routine call');
 					    return $this->callRule->parse();
 				    }
 
 				    $tokenName = Token::toString($token->getType()) ?: 'unknown';
 				    throw new ParserException("Unexpected token '{$tokenName}' on line {$this->lexer->getLineNumber()}");
-		    }
-	    }
-
-	    /**
-	     * Rejects a leading range ahead of a statement kind that doesn't use one.
-	     * @param AstRange[] $ranges
-	     * @param string $statement Name used in the error message
-	     * @throws ParserException
-	     */
-	    private function rejectRanges(array $ranges, string $statement): void {
-		    if ($ranges !== []) {
-			    throw new ParserException("A leading range declaration isn't allowed before '{$statement}'.");
 		    }
 	    }
 
