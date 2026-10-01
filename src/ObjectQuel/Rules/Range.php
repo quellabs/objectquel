@@ -3,6 +3,7 @@
 	namespace Quellabs\ObjectQuel\ObjectQuel\Rules;
 	
 	use Quellabs\ObjectQuel\EntityStore;
+	use Quellabs\ObjectQuel\ObjectQuel\Helpers\RangeListParser;
 	use Quellabs\ObjectQuel\ObjectQuel\Lexer;
 	use Quellabs\ObjectQuel\ObjectQuel\Token;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRange;
@@ -82,23 +83,6 @@
 		}
 
 		/**
-		 * Parse ranges
-		 * @return AstRange[]
-		 * @throws LexerException|ParserException
-		 */
-		protected function parseRanges(): array {
-			$ranges = [];
-
-			$rangeRule = new Range($this->lexer, $this->entityStore);
-
-			while ($this->lexer->peek()->getType() == Token::Range) {
-				$ranges[] = $rangeRule->parse();
-			}
-
-			return $ranges;
-		}
-		
-		/**
 		 * Parses a database query expression wrapped in parentheses.
 		 * @param string $alias The alias to assign to the resulting range
 		 * @return AstRangeDatabaseSubquery The parsed database range with query attached
@@ -110,7 +94,7 @@
 			$this->lexer->match(Token::ParenthesesOpen);
 
 			// Parse range definitions that will be available to the query
-			$ranges = $this->parseRanges();
+			$ranges = RangeListParser::parse($this->lexer, $this->entityStore);
 
 			// Parse the actual retrieve query using the defined ranges
 			$query = new Retrieve($this->lexer, true);

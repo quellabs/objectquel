@@ -14,7 +14,7 @@
 	 * Parses `define function name (type name, ...) returnType { ... }`.
 	 * Type names are plain identifiers here; they are validated by value later.
 	 * Compiler directives ahead of `define` are parsed by the caller (see
-	 * ProcedureParser) and threaded through unmodified.
+	 * Parser) and threaded through unmodified.
 	 */
 	class RoutineDefinition {
 

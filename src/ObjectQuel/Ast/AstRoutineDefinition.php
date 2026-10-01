@@ -11,7 +11,7 @@
 	 *
 	 * May be preceded by compiler directives, e.g. `@ignoreSoftDelete true
 	 * define function ...`, same syntax as ahead of a top-level statement
-	 * (see CompilerDirectiveParser). The directive applies to the whole
+	 * (see Parser::parseDirectives()). The directive applies to the whole
 	 * routine body — every `delete`/`retrieve` inside it — rather than to
 	 * one statement, since the routine language has no per-statement
 	 * directive syntax of its own (see RoutineStatementCompiler).
@@ -87,7 +87,7 @@
 
 		/**
 		 * Returns a specific compiler directive value. Directive names are
-		 * case-insensitive — see CompilerDirectiveParser.
+		 * case-insensitive — see Parser::parseDirectives().
 		 * @param string $name The directive name
 		 * @return mixed The directive value or null if not found
 		 */

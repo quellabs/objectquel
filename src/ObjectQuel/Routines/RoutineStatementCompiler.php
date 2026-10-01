@@ -45,7 +45,7 @@
 	 *
 	 * @SoftDelete handling for the whole routine is controlled by the
 	 * routine's own `@ignoreSoftDelete true` directive (ahead of `define
-	 * function`, see AstRoutineDefinition/ProcedureParser): when set,
+	 * function`, see AstRoutineDefinition/Parser): when set,
 	 * `delete` always issues a real DELETE and an embedded `retrieve`/cursor
 	 * (including an insert-from-select source) sees soft-deleted rows too.
 	 * The routine language has no per-statement directive of its own, so
