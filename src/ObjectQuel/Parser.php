@@ -131,11 +131,8 @@
 				    return $this->indexRule->parse();
 
 			    case 'define':
-				    // Unlike every other range-less statement kind above,
-				    // `define` never tolerated a leading range — it never
-				    // went through this shared-range path before being
-				    // folded into Parser (see ProcedureParser's old,
-				    // stricter contract).
+					// Unlike other range-less statements, `define` never allowed a leading range
+					// and previously bypassed this shared-range path.
 				    if ($ranges !== []) {
 					    throw new ParserException("A leading range declaration isn't allowed before 'define'.");
 				    }
