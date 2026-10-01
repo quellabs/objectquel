@@ -168,9 +168,7 @@
 		private function matchDirectiveValue(string $directiveName): bool|int|float|string {
 			if ($this->lexer->optionalMatch(Token::Minus)) {
 				return -$this->lexer->match(Token::Number)->getNumericValue();
-			}
-			
-			if ($this->lexer->optionalMatch(Token::True)) {
+			} elseif ($this->lexer->optionalMatch(Token::True)) {
 				return true;
 			} elseif ($this->lexer->optionalMatch(Token::False)) {
 				return false;
