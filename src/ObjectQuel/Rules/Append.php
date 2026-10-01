@@ -93,10 +93,6 @@
 
 			$columns = $this->parseColumnList($firstProperty);
 
-			if (!$this->lexer->peekKeyword('retrieve')) {
-				throw new ParserException("Expected 'retrieve' after the column list in an insert-from-select append, on line {$this->lexer->getLineNumber()}");
-			}
-
 			// Exclude the append's own target — it isn't a row source, and left
 			// in would silently become an unjoined phantom cross join against
 			// whatever the target table currently holds.

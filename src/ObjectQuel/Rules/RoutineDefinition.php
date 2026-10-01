@@ -35,12 +35,8 @@
 		 * @throws LexerException|ParserException|\ReflectionException
 		 */
 		public function parse(array $directives = [], array $ranges = []): AstRoutineDefinition {
+			// Functions begin with 'define'
 			$this->lexer->matchKeyword('define');
-
-			if (!$this->lexer->peekKeyword('function')) {
-				throw new ParserException("Expected 'function' after 'define' on line {$this->lexer->getLineNumber()}");
-			}
-
 			$this->lexer->matchKeyword('function');
 
 			$name = $this->lexer->match(Token::Identifier)->getStringValue();
@@ -51,6 +47,9 @@
 			}
 
 			$returnType = $this->lexer->match(Token::Identifier)->getStringValue();
+
+			// $ranges is handed to the block unmodified; RoutineBlock does not
+			// parse ranges itself, it only resolves names against this set.
 			$body = (new RoutineBlock($this->lexer, $ranges))->parseBlock();
 
 			return new AstRoutineDefinition($directives, $ranges, $name, $parameters, $returnType, $body);
