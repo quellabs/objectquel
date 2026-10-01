@@ -106,6 +106,7 @@ HELP;
 				}
 
 				$this->output->table(['Name', 'Parameters', 'Return Type'], $rows);
+				$this->output->writeLn("");
 				$this->output->writeLn(count($rows) . " " . (count($rows) === 1 ? "function" : "functions") . " found.");
 				return 0;
 
