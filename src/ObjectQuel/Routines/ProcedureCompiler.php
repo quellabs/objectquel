@@ -12,6 +12,7 @@
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRoutineDefinition;
 	use Quellabs\ObjectQuel\ObjectQuel\Lexer;
 	use Quellabs\ObjectQuel\ObjectQuel\LexerException;
+	use Quellabs\ObjectQuel\ObjectQuel\Parser;
 	use Quellabs\ObjectQuel\ObjectQuel\ParserException;
 	use Quellabs\ObjectQuel\ObjectQuel\Routines\Lowering\MysqlRoutineLowering;
 	use Quellabs\ObjectQuel\ObjectQuel\Routines\Lowering\PostgresRoutineLowering;
@@ -54,14 +55,18 @@
 		 */
 		public function compile(string $source): array {
 			$entityStore = $this->entityManager->getEntityStore();
-			$routine = (new ProcedureParser(new Lexer($source), $entityStore))->parse();
+			$ast = (new Parser(new Lexer($source), $entityStore))->parse();
 
-			return $this->compileRoutine($routine);
+			if (!$ast instanceof AstRoutineDefinition) {
+				throw new ParserException("A routine source must contain exactly one 'define function'.");
+			}
+
+			return $this->compileRoutine($ast);
 		}
 
 		/**
 		 * Analyzes and lowers an already parsed routine.
-		 * @param AstRoutineDefinition $routine Routine from ProcedureParser
+		 * @param AstRoutineDefinition $routine Routine parsed from a `define function` source
 		 * @return list<string> Statements to run in order, the last one creating the routine
 		 * @throws SemanticException|EntityResolutionException|TransformationException|QuelException
 		 */

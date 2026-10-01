@@ -35,7 +35,10 @@
 		
 		/** @var AstInterface|null Filtering conditions (WHERE clause) */
 		protected ?AstInterface $conditions;
-		
+
+		/** @var AstInterface|null Aggregate filtering conditions (HAVING clause), populated by WhereHavingFilterRewriter */
+		protected ?AstInterface $having = null;
+
 		/**
 		 * Sorting specifications with AST nodes and direction
 		 * @var array<int, array{ast: AstInterface, direction?: string}>
@@ -121,7 +124,10 @@
 			
 			// Process conditions if they exist (WHERE clause)
 			$this->conditions?->accept($visitor);
-			
+
+			// Process aggregate filtering conditions if they exist (HAVING clause)
+			$this->having?->accept($visitor);
+
 			// Process sorting specifications (ORDER BY clause)
 			foreach ($this->sort as $s) {
 				$s['ast']->accept($visitor);
@@ -203,7 +209,24 @@
 			$conditions?->setParent($this);
 			$this->conditions = $conditions;
 		}
-		
+
+		/**
+		 * Returns the aggregate filtering conditions for this retrieve operation.
+		 * @return AstInterface|null The HAVING clause conditions or null if none
+		 */
+		public function getHaving(): ?AstInterface {
+			return $this->having;
+		}
+
+		/**
+		 * Sets the aggregate filtering conditions for this retrieve operation.
+		 * @param AstInterface|null $having The HAVING clause conditions, or null to remove them
+		 */
+		public function setHaving(?AstInterface $having): void {
+			$having?->setParent($this);
+			$this->having = $having;
+		}
+
 		/**
 		 * Returns all non-database ranges
 		 * @return AstRange[] Array of ranges that are not database tables
@@ -512,7 +535,14 @@
 					return "conditions";
 				}
 			}
-			
+
+			// Check if it's in the HAVING clause
+			if ($this->having !== null) {
+				if ($ast->isAncestorOf($this->having)) {
+					return "having";
+				}
+			}
+
 			// Check if it's in the ORDER BY clause
 			foreach ($this->sort as $value) {
 				if ($ast->isAncestorOf($value['ast'])) {
@@ -555,6 +585,9 @@
 			// Clone the conditions node if it exists
 			$clonedConditions = $this->conditions?->deepClone();
 
+			// Clone the having node if it exists
+			$clonedHaving = $this->having?->deepClone();
+
 			// Create new instance with cloned ranges
 			// @phpstan-ignore-next-line new.static
 			$clone = new static($this->directives, $clonedRanges, $this->unique);
@@ -562,6 +595,7 @@
 			// Set all the cloned properties
 			$clone->values = $clonedValues;
 			$clone->conditions = $clonedConditions;
+			$clone->having = $clonedHaving;
 			$clone->sort = $clonedSort;
 			$clone->group_by = $clonedGroupBy;
 
@@ -584,6 +618,7 @@
 			// $clonedValues — no separate setParent call needed here.
 
 			$clonedConditions?->setParent($clone);
+			$clonedHaving?->setParent($clone);
 
 			foreach ($clonedSort as $sortItem) {
 				$sortItem['ast']->setParent($clone);

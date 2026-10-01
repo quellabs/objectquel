@@ -20,7 +20,6 @@
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstDelete;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstForeach;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstIf;
-	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRangeDeclaration;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstReplace;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRetrieve;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstReturn;
@@ -354,8 +353,6 @@
 		 */
 		private function lowerStatement(AstInterface $statement, int $depth): string {
 			return match (true) {
-				// Ranges are compiled into the statements that read them
-				$statement instanceof AstRangeDeclaration => '',
 				$statement instanceof AstDeclare => $this->lowerDeclaration($statement, $depth),
 				// A cursor rebind has no runtime SQL of its own; foreach reads whichever cursor is current at each site
 				$statement instanceof AstVariableAssignment && $statement->getValue() instanceof AstRetrieve => '',
@@ -442,7 +439,7 @@
 
 		/**
 		 * Records the declared type of every parameter and scalar local, for statements that read them.
-		 * @param AstRoutineDefinition $routine The routine; `range of` declarations are top-level only
+		 * @param AstRoutineDefinition $routine The routine
 		 * @return void
 		 */
 		private function declareVariableTypes(AstRoutineDefinition $routine): void {
@@ -456,14 +453,6 @@
 				$fieldTypes->declareVariable($statement->getName(), $statement->getType());
 			}
 
-			$ranges = [];
-
-			foreach ($routine->getBody() as $statement) {
-				if ($statement instanceof AstRangeDeclaration) {
-					$ranges[] = $statement->getRange();
-				}
-			}
-
-			$fieldTypes->setDeclaredRanges($ranges);
+			$fieldTypes->setDeclaredRanges($routine->getRanges());
 		}
 	}

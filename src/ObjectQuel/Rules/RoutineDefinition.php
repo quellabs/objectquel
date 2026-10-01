@@ -2,7 +2,7 @@
 
 	namespace Quellabs\ObjectQuel\ObjectQuel\Rules;
 
-	use Quellabs\ObjectQuel\EntityStore;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRange;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRoutineDefinition;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRoutineParameter;
 	use Quellabs\ObjectQuel\ObjectQuel\Lexer;
@@ -13,49 +13,51 @@
 	/**
 	 * Parses `define function name (type name, ...) returnType { ... }`.
 	 * Type names are plain identifiers here; they are validated by value later.
-	 * Compiler directives ahead of `define` are parsed by the caller (see
-	 * ProcedureParser) and threaded through unmodified.
+	 * Compiler directives and ranges ahead of `define` are parsed by the
+	 * caller (see Parser) and threaded through unmodified.
 	 */
 	class RoutineDefinition {
 
 		private Lexer $lexer;
-		private EntityStore $entityStore;
 
 		/**
 		 * @param Lexer $lexer Lexer over the routine source
-		 * @param EntityStore $entityStore Resolves `range of x is Entity` declarations in the body
 		 */
-		public function __construct(Lexer $lexer, EntityStore $entityStore) {
+		public function __construct(Lexer $lexer) {
 			$this->lexer = $lexer;
-			$this->entityStore = $entityStore;
 		}
 
 		/**
 		 * Parses the signature and body, starting at `define`.
 		 * @param array<string, mixed> $directives Compiler directives parsed ahead of `define`, e.g. @ignoreSoftDelete
+		 * @param AstRange[] $ranges Ranges parsed ahead of `define`
 		 * @return AstRoutineDefinition
 		 * @throws LexerException|ParserException|\ReflectionException
 		 */
-		public function parse(array $directives = []): AstRoutineDefinition {
+		public function parse(array $directives = [], array $ranges = []): AstRoutineDefinition {
+			// Functions begin with 'define function'
 			$this->lexer->matchKeyword('define');
-
-			if (!$this->lexer->peekKeyword('function')) {
-				throw new ParserException("Expected 'function' after 'define' on line {$this->lexer->getLineNumber()}");
-			}
-
 			$this->lexer->matchKeyword('function');
 
+			// Fetch the function name
 			$name = $this->lexer->match(Token::Identifier)->getStringValue();
+			
+			// Fetch the parameters
 			$parameters = $this->parseParameters();
 
+			// Parse the return value
 			if ($this->lexer->lookahead() !== Token::Identifier) {
 				throw new ParserException("Expected a return type after the parameter list of '{$name}' on line {$this->lexer->getLineNumber()}");
 			}
 
 			$returnType = $this->lexer->match(Token::Identifier)->getStringValue();
-			$body = (new RoutineBlock($this->lexer, $this->entityStore))->parseBlock();
 
-			return new AstRoutineDefinition($directives, $name, $parameters, $returnType, $body);
+			// $ranges is handed to the block unmodified; RoutineBlock does not
+			// parse ranges itself, it only resolves names against this set.
+			$body = (new RoutineBlock($this->lexer, $ranges))->parseBlock();
+			
+			// Return the routine definition
+			return new AstRoutineDefinition($directives, $ranges, $name, $parameters, $returnType, $body);
 		}
 
 		/**

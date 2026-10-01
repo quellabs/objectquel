@@ -52,7 +52,7 @@
 		 * @throws LexerException|ParserException on parsing or lexical errors
 		 */
 		public function parse(array $directives, array $ranges): AstRetrieve {
-			$this->lexer->match(Token::Retrieve);
+			$this->lexer->matchKeyword('retrieve');
 
 			$retrieve = new AstRetrieve(
 				$directives,

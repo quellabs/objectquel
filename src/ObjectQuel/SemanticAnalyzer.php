@@ -10,7 +10,6 @@
 	use Quellabs\ObjectQuel\Capabilities\PlatformCapabilitiesInterface;
 	use Quellabs\ObjectQuel\DatabaseAdapter\Mapper\TypeMapper;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstCast;
-	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstAggregate;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstIdentifier;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRangeDatabase;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRangeDatabaseSubquery;
@@ -154,9 +153,6 @@
 			
 			// Step 6: Ensure expressions are not used inappropriately on entities
 			$this->processWithVisitor($ast, ValidateNoEntityExpressions::class);
-			
-			// Step 7: Validate SQL compliance rules (aggregates cannot be put in WHERE)
-			$this->validateNoAggregatesInWhereClause($ast);
 			
 			// Step 8: Validate that all identifiers in each search() call reference the same range
 			$this->validateSearchIdentifierRanges($ast);
@@ -649,39 +645,6 @@
 						// This helps developers identify which specific range/table has the invalid 'via' relation
 						throw new SemanticException(sprintf($e->getMessage(), $range->getName()));
 					}
-				}
-			}
-		}
-		
-		/**
-		 * Validates that no plain aggregate functions are present in WHERE clause
-		 * conditions. SQL standard prohibits aggregate functions (COUNT, SUM, AVG,
-		 * MIN, MAX) in WHERE clauses - they should only appear in SELECT, HAVING, or
-		 * ORDER BY clauses.
-		 *
-		 * Window-shaped aggregates (a sequence function, or a running aggregate using
-		 * an inline `sort by`/`by` - see AstUtilities::isWindowShaped()) are exempt:
-		 * Planner\Optimizers\WhereWindowFilterRewriter stages those into a helper
-		 * range before AggregateOptimizer runs, so referencing e.g. `rn <= 3` where
-		 * `rn = row_number(...)` is valid, unlike a plain `sum(...) <= 3`.
-		 * @param AstRetrieve $ast The AST to validate
-		 * @throws SemanticException If a non-window aggregate function is found in WHERE conditions
-		 */
-		private function validateNoAggregatesInWhereClause(AstRetrieve $ast): void {
-			// Early exit if there are no WHERE conditions to validate
-			if ($ast->getConditions() === null) {
-				return;
-			}
-
-			// Collect every aggregate node in the WHERE tree and reject the first
-			// one that isn't window-shaped - a plain sum()/count()/avg()/min()/max()
-			// has no HAVING equivalent in Quel today.
-			$visitor = new CollectNodes([AstAggregate::class]);
-			$ast->getConditions()->accept($visitor);
-
-			foreach ($visitor->getCollectedNodes() as $node) {
-				if (!AstUtilities::isWindowShaped($node)) {
-					throw new SemanticException("Aggregate function {$node->getType()} is not allowed in WHERE clause");
 				}
 			}
 		}
