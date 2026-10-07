@@ -13,6 +13,7 @@
 	use Quellabs\ObjectQuel\ObjectQuel\Rules\CreateTable;
 	use Quellabs\ObjectQuel\ObjectQuel\Rules\Delete;
 	use Quellabs\ObjectQuel\ObjectQuel\Rules\Destroy;
+	use Quellabs\ObjectQuel\ObjectQuel\Rules\EventAttachment;
 	use Quellabs\ObjectQuel\ObjectQuel\Rules\IndexVisibility;
 	use Quellabs\ObjectQuel\ObjectQuel\Rules\Replace;
 	use Quellabs\ObjectQuel\ObjectQuel\Rules\Retrieve;
@@ -21,7 +22,7 @@
 	class Parser {
 		
 		/** Words that start a top-level statement by text. A routine by such a name couldn't be called as a statement. */
-		public const array STATEMENT_KEYWORDS = ['create', 'alter', 'destroy', 'hide', 'show', 'index', 'replace', 'delete', 'define', 'retrieve', 'append'];
+		public const array STATEMENT_KEYWORDS = ['create', 'alter', 'destroy', 'hide', 'show', 'index', 'replace', 'delete', 'define', 'retrieve', 'append', 'after'];
 		
 		protected Lexer $lexer;
 		private EntityStore $entityStore;
@@ -36,6 +37,7 @@
 		private Delete $deleteRule;
 		private Call $callRule;
 		private RoutineDefinition $routineDefinitionRule;
+		private EventAttachment $eventAttachmentRule;
 		
 		/**
 		 * Parser constructor.
@@ -56,6 +58,7 @@
 			$this->deleteRule = new Delete($lexer);
 			$this->callRule = new Call($lexer);
 			$this->routineDefinitionRule = new RoutineDefinition($lexer);
+			$this->eventAttachmentRule = new EventAttachment($lexer);
 		}
 		
 		/**
@@ -109,8 +112,8 @@
 					return $this->alterTableRule->parse();
 				
 				case 'destroy':
-					return $this->destroyRule->parse();
-				
+					return $this->destroyRule->parse($ranges);
+
 				case 'hide':
 					return $this->indexVisibilityRule->parseHide();
 				
@@ -128,7 +131,10 @@
 				
 				case 'delete':
 					return $this->deleteRule->parse($directives, $ranges);
-				
+
+				case 'after':
+					return $this->eventAttachmentRule->parse($ranges);
+
 				default:
 					if ($token->getType() === Token::Identifier && $this->lexer->peekNext() === Token::ParenthesesOpen) {
 						return $this->callRule->parse();

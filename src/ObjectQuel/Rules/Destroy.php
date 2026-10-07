@@ -3,25 +3,32 @@
 	namespace Quellabs\ObjectQuel\ObjectQuel\Rules;
 
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstDestroy;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstDestroyEventAttachment;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstDestroyIndex;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstDestroyRoutine;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRange;
 	use Quellabs\ObjectQuel\ObjectQuel\Lexer;
 	use Quellabs\ObjectQuel\ObjectQuel\LexerException;
+	use Quellabs\ObjectQuel\ObjectQuel\ParserException;
 	use Quellabs\ObjectQuel\ObjectQuel\Token;
 
 	/**
-	 * Parser for `destroy` statements in the ObjectQuel language. Both forms
-	 * share the `destroy Name` prefix parsed here; what follows decides the
-	 * shape, not a keyword (see objectquel-destroy-index-plan.md):
+	 * Parser for `destroy` statements in the ObjectQuel language. Every form
+	 * shares the `destroy` keyword parsed here; what follows decides the
+	 * shape, not a dedicated keyword in most cases (see
+	 * objectquel-destroy-index-plan.md):
 	 *
-	 *   destroy [temporary] Name [if exists]        -> AstDestroy (table)
-	 *   destroy Name on Table [if exists]            -> AstDestroyIndex
-	 *   destroy function Name [if exists]            -> AstDestroyRoutine
+	 *   destroy [temporary] Name [if exists]              -> AstDestroy (table)
+	 *   destroy Name on Table [if exists]                  -> AstDestroyIndex
+	 *   destroy function Name [if exists]                  -> AstDestroyRoutine
+	 *   destroy event after ... call Name [if exists]      -> AstDestroyEventAttachment
 	 *
 	 * `temporary` only makes sense for the table form, so seeing it commits
 	 * to that form immediately; otherwise the token right after the name
 	 * (`on`, or not) decides. The index form's own trailing clause is
-	 * parsed by Rules\DestroyIndex.
+	 * parsed by Rules\DestroyIndex; the event form's `after ...` clause is
+	 * parsed by Rules\EventAttachment::parseEvent()/parseTargetRange(),
+	 * shared with the attachment statement itself.
 	 */
 	class Destroy {
 
@@ -40,11 +47,16 @@
 
 		/**
 		 * Parse a complete `destroy` statement.
-		 * @return AstDestroy|AstDestroyIndex|AstDestroyRoutine
-		 * @throws LexerException
+		 * @param AstRange[] $ranges Ranges already parsed ahead of this statement — only the event form needs them
+		 * @return AstDestroy|AstDestroyIndex|AstDestroyRoutine|AstDestroyEventAttachment
+		 * @throws LexerException|ParserException
 		 */
-		public function parse(): AstDestroy|AstDestroyIndex|AstDestroyRoutine {
+		public function parse(array $ranges = []): AstDestroy|AstDestroyIndex|AstDestroyRoutine|AstDestroyEventAttachment {
 			$this->lexer->matchKeyword('destroy');
+
+			if ($this->matchEventKeyword()) {
+				return $this->parseEventAttachment($ranges);
+			}
 
 			if ($this->matchRoutineKeyword()) {
 				$routineName = $this->lexer->match(Token::Identifier)->getStringValue();
@@ -87,6 +99,50 @@
 			}
 
 			return true;
+		}
+
+		/**
+		 * Consumes `event` only when it starts the attachment-removal form (`event` immediately
+		 * followed by `after`); a table, index, or routine named `event` keeps its meaning, same
+		 * disambiguation style as matchRoutineKeyword().
+		 * @return bool True when `event` was consumed
+		 * @throws LexerException
+		 */
+		private function matchEventKeyword(): bool {
+			if (!$this->lexer->peekKeyword('event')) {
+				return false;
+			}
+
+			$state = $this->lexer->saveState();
+			$this->lexer->matchKeyword('event');
+
+			if ($this->lexer->peekKeyword('after')) {
+				return true;
+			}
+
+			$this->lexer->restoreState($state);
+			return false;
+		}
+
+		/**
+		 * Parses the remainder of `destroy event after ... call Name [if exists]`, once `destroy
+		 * event` has already been consumed.
+		 * @param AstRange[] $ranges Ranges already parsed ahead of this statement
+		 * @return AstDestroyEventAttachment
+		 * @throws LexerException|ParserException
+		 */
+		private function parseEventAttachment(array $ranges): AstDestroyEventAttachment {
+			$attachmentRule = new EventAttachment($this->lexer);
+			$this->lexer->matchKeyword('after');
+			$event = $attachmentRule->parseEvent();
+			$range = $attachmentRule->parseTargetRange($ranges);
+
+			$this->lexer->matchKeyword('call');
+			$routineName = $this->lexer->match(Token::Identifier)->getStringValue();
+			$ifExists = $this->parseOptionalIfExists();
+			$this->consumeOptionalSemicolon();
+
+			return new AstDestroyEventAttachment($event, $range, $routineName, $ifExists);
 		}
 
 		/**
