@@ -30,17 +30,18 @@
 
 		/**
 		 * @param AstEventAttachment $attachment The attachment
+		 * @param string $alias The attachment's resolved alias
 		 * @return list<string> The CREATE TRIGGER statement
 		 * @throws SemanticException|EntityResolutionException
 		 */
-		public function render(AstEventAttachment $attachment): array {
+		public function render(AstEventAttachment $attachment, string $alias): array {
 			$event = $attachment->getEvent();
 
 			if ($event === AttachmentEvent::Replace) {
 				$this->assertUsableKey($attachment);
 			}
 
-			$triggerName = $this->quoter->quoteIdentifier($this->triggerName($attachment));
+			$triggerName = $this->quoter->quoteIdentifier($this->triggerName($attachment, $alias));
 			$table = $this->quotedTable($attachment);
 			$sqlEvent = $this->sqlEvent($event);
 			$body = $event === AttachmentEvent::Replace ? $this->updateBody($attachment) : $this->singleRowsetBody($attachment, $event);
@@ -50,13 +51,12 @@
 
 		/**
 		 * @param string $table Physical table the attachment is on
-		 * @param AttachmentEvent $event The attachment's event
-		 * @param string $routineName Called routine's name
+		 * @param string $alias The attachment's alias
 		 * @return list<string> The DROP TRIGGER statement
 		 */
-		public function renderDestroy(string $table, AttachmentEvent $event, string $routineName): array {
+		public function renderDestroy(string $table, string $alias): array {
 			$triggerName = $this->quoter->quoteRoutineName(
-				EventAttachmentNaming::triggerName($table, $event, $routineName),
+				EventAttachmentNaming::triggerName($table, $alias),
 				$this->routineSchema
 			);
 

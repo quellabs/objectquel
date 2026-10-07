@@ -28,6 +28,9 @@
 	 */
 	class EventAttachmentCompiler {
 
+		/** Attempts before giving up on finding a free generated alias; collision is astronomically unlikely with one */
+		private const int ALIAS_ATTEMPTS = 5;
+
 		/**
 		 * @param EntityManager $entityManager Entity metadata
 		 * @param PlatformCapabilitiesInterface $platform Target engine
@@ -61,7 +64,10 @@
 		}
 
 		/**
-		 * Analyzes, validates and lowers an already parsed attachment.
+		 * Analyzes, validates and lowers an already parsed attachment. Resolves the physical
+		 * alias (given with `as <alias>`, rejecting a duplicate on this table; generated and
+		 * collision-checked otherwise — see EventAttachmentNaming::randomAlias()) before
+		 * rendering, so the DDL is built with the final name in one pass.
 		 * @param AstEventAttachment $attachment Attachment parsed from an `after ... call ...` source
 		 * @return list<string> Statements to run in order
 		 * @throws SemanticException|EntityResolutionException|QuelException
@@ -71,20 +77,52 @@
 			(new EventAttachmentAnalyzer($entityStore))->analyze($attachment);
 			(new EventAttachmentValidator($this->connection, $entityStore))->validate($attachment);
 
-			return $this->lowering()->render($attachment);
+			$table = $entityStore->getMetadata($attachment->getRange()->getEntityName())->tableName;
+			$alias = $this->resolveAlias($table, $attachment->getAlias());
+
+			return $this->lowering()->render($attachment, $alias);
 		}
 
 		/**
-		 * Lowers the removal of one attachment. No analysis or validation is needed: a
-		 * `destroy event` names only the (table, event, routine) triple, with no call
-		 * arguments to check against the routine's metadata.
-		 * @param AstDestroyEventAttachment $statement Parsed `destroy event ...` statement
+		 * Lowers the removal of one attachment. No analysis or validation is needed: `destroy
+		 * trigger` names the attachment directly by (table, alias), with no call arguments to
+		 * check against the routine's metadata.
+		 * @param AstDestroyEventAttachment $statement Parsed `destroy trigger ...` statement
 		 * @return list<string> Statements to run in order
 		 * @throws EntityResolutionException|QuelException
 		 */
 		public function compileDestroy(AstDestroyEventAttachment $statement): array {
 			$table = $this->entityManager->getEntityStore()->getMetadata($statement->getRange()->getEntityName())->tableName;
-			return $this->lowering()->renderDestroy($table, $statement->getEvent(), $statement->getRoutineName());
+			return $this->lowering()->renderDestroy($table, $statement->getAlias());
+		}
+
+		/**
+		 * Resolves the alias an attachment is created under. Given explicitly, it must not
+		 * already name a live attachment on this table. Omitted, a random one is generated and
+		 * retried on the astronomically unlikely chance it collides with an existing name.
+		 * @param string $table Physical table the attachment is on
+		 * @param string|null $explicitAlias Alias given with `as <alias>`, or null
+		 * @return string The alias to build the physical name from
+		 * @throws QuelException When the given alias is already in use, or no free generated alias was found
+		 */
+		private function resolveAlias(string $table, ?string $explicitAlias): string {
+			if ($explicitAlias !== null) {
+				if ($this->connection->triggerExists($table, EventAttachmentNaming::triggerName($table, $explicitAlias))) {
+					throw new QuelException("Can't attach: '{$explicitAlias}' already exists on '{$table}'.", 'routine_definition_error');
+				}
+
+				return $explicitAlias;
+			}
+
+			for ($attempt = 0; $attempt < self::ALIAS_ATTEMPTS; $attempt++) {
+				$candidate = EventAttachmentNaming::randomAlias();
+
+				if (!$this->connection->triggerExists($table, EventAttachmentNaming::triggerName($table, $candidate))) {
+					return $candidate;
+				}
+			}
+
+			throw new QuelException("Can't attach to '{$table}': failed to generate a free alias after " . self::ALIAS_ATTEMPTS . ' attempts.', 'routine_definition_error');
 		}
 
 		/**

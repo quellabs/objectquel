@@ -52,6 +52,7 @@
 					\Quellabs\ObjectQuel\Sculpt\Commands\ClearCacheCommand::class,
 					\Quellabs\ObjectQuel\Sculpt\Commands\ListEntitiesCommand::class,
 					\Quellabs\ObjectQuel\Sculpt\Commands\ListFunctionsCommand::class,
+					\Quellabs\ObjectQuel\Sculpt\Commands\ListTriggersCommand::class,
 					\Quellabs\ObjectQuel\Sculpt\Commands\AnalyzeIndexesCommand::class,
 				]);
 			}

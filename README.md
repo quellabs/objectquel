@@ -80,11 +80,11 @@ $entityManager->executeQuery('
 ');
 $entityManager->executeQuery('
     range of u is App\Entity\User
-    after replace u call audit_user(old, new)
+    after replace u call audit_user(old, new) as audit_trigger
 ');
 ```
 
-Attach with `after append to|replace|delete <range> call <function>(...)`; detach with the symmetric `destroy event ... [if exists]`. `destroy function` refuses while an attachment still calls it, and `alter` refuses a column-shape or primary-key change on a table with a live attachment — detach first, then redefine and reattach as needed. See the [EQUEL guide](https://objectquel.com/docs?section=language-equel) for row-parameter typing, event mapping, and per-engine safety notes.
+Attach with `after append to|replace|delete <range> call <function>(...) [as <alias>]`; detach with `destroy trigger <range> <alias> [if exists]`. Omit the alias and one is generated — `quel:list-triggers` shows it, along with every other live attachment's table, event and routine. `destroy function` refuses while an attachment still calls it, and `alter` refuses a column-shape or primary-key change on a table with a live attachment — detach first, then redefine and reattach as needed. See the [EQUEL guide](https://objectquel.com/docs?section=language-equel) for row-parameter typing, event mapping, and per-engine safety notes.
 
 ## ORM and tooling
 

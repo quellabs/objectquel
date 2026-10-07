@@ -19,6 +19,7 @@
 	use Quellabs\ObjectQuel\DatabaseAdapter\Inspector\SqlServerSchemaIntrospector;
 	use Quellabs\ObjectQuel\DatabaseAdapter\Inspector\SqliteFulltextIndexInspector;
 	use Quellabs\ObjectQuel\DatabaseAdapter\Inspector\SqliteSchemaIntrospector;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AttachmentEvent;
 
 	/**
 	 * Database adapter that ties ObjectQuel and CakePHP Database together
@@ -42,6 +43,8 @@
 	 *
 	 * @phpstan-type RoutineParameter array{name: string, type: ?string}
 	 * @phpstan-type RoutineListEntry array{name: string, isProcedure: bool, returnType: string, parameters: list<RoutineParameter>}
+	 *
+	 * @phpstan-type AttachmentListEntry array{table: string, event: AttachmentEvent, routine: string, alias: string}
 	 */
 	class DatabaseAdapter {
 		
@@ -356,6 +359,17 @@
 		public function findAttachmentTriggersOnTable(string $table): array {
 			$this->routineDependencyInspectorCache ??= new RoutineDependencyInspector($this);
 			return $this->routineDependencyInspectorCache->findAttachmentTriggersOnTable($table);
+		}
+
+		/**
+		 * Lists every live attachment in the connected schema.
+		 * @return list<AttachmentListEntry>
+		 * @throws \Quellabs\ObjectQuel\Exception\QuelException When the lookup fails or triggers are unsupported
+		 * @see RoutineDependencyInspector::listAttachments()
+		 */
+		public function listAttachments(): array {
+			$this->routineDependencyInspectorCache ??= new RoutineDependencyInspector($this);
+			return $this->routineDependencyInspectorCache->listAttachments();
 		}
 
 		/**

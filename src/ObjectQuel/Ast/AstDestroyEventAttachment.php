@@ -5,27 +5,24 @@
 	use Quellabs\ObjectQuel\ObjectQuel\AstVisitorInterface;
 
 	/**
-	 * `destroy event after (append to|replace|delete) <range> call <routine> [if exists]` —
-	 * removes one attachment, identified by its (table, event, routine) triple, without
-	 * touching the routine itself. See objectquel-equel-triggers-design.md.
+	 * `destroy trigger <range> <alias> [if exists]` — removes one attachment, identified by
+	 * its (table, alias) pair, without touching the routine itself. See
+	 * objectquel-equel-triggers-design.md.
 	 */
 	class AstDestroyEventAttachment extends Ast implements AstStatement {
 
-		private AttachmentEvent $event;
 		private AstRangeDatabase $range;
-		private string $routineName;
+		private string $alias;
 		private bool $ifExists;
 
 		/**
-		 * @param AttachmentEvent $event Physical write event the attachment fires on
 		 * @param AstRangeDatabase $range Target range the attachment is on
-		 * @param string $routineName Called routine's name, as written
+		 * @param string $alias The attachment's alias, as written
 		 * @param bool $ifExists True when a missing attachment is ignored instead of an error
 		 */
-		public function __construct(AttachmentEvent $event, AstRangeDatabase $range, string $routineName, bool $ifExists = false) {
-			$this->event = $event;
+		public function __construct(AstRangeDatabase $range, string $alias, bool $ifExists = false) {
 			$this->range = $range;
-			$this->routineName = $routineName;
+			$this->alias = $alias;
 			$this->ifExists = $ifExists;
 		}
 
@@ -40,13 +37,6 @@
 		}
 
 		/**
-		 * @return AttachmentEvent
-		 */
-		public function getEvent(): AttachmentEvent {
-			return $this->event;
-		}
-
-		/**
 		 * @return AstRangeDatabase
 		 */
 		public function getRange(): AstRangeDatabase {
@@ -54,10 +44,10 @@
 		}
 
 		/**
-		 * @return string Called routine's name, as written
+		 * @return string The attachment's alias, as written
 		 */
-		public function getRoutineName(): string {
-			return $this->routineName;
+		public function getAlias(): string {
+			return $this->alias;
 		}
 
 		/**
@@ -72,7 +62,7 @@
 		 */
 		public function deepClone(): static {
 			// @phpstan-ignore-next-line new.static
-			$clone = new static($this->event, $this->range->deepClone(), $this->routineName, $this->ifExists);
+			$clone = new static($this->range->deepClone(), $this->alias, $this->ifExists);
 			$clone->setParent($this->getParent());
 			return $clone;
 		}

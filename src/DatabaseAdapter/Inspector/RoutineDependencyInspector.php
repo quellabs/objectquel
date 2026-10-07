@@ -4,15 +4,19 @@
 
 	use Quellabs\ObjectQuel\DatabaseAdapter\DatabaseAdapter;
 	use Quellabs\ObjectQuel\Exception\QuelException;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AttachmentEvent;
+	use Quellabs\ObjectQuel\ObjectQuel\Routines\EventAttachmentNaming;
 
 	/**
 	 * Scans live attachments (triggers, and PostgreSQL's generated helper functions) for a
 	 * call to a given routine, so `destroy function` can refuse while one still depends on it,
-	 * and for any attachment at all on a given table, so an `alter table` that would change a
-	 * mapped column can refuse while one still exists — see "Attachment dependency discovery"
-	 * in objectquel-equel-triggers-design.md. There is no separate attachment registry; the
-	 * live DDL is the only source of truth, so this is a DDL-time, rare-operation scan, not
+	 * for any attachment at all on a given table, so an `alter table` that would change a
+	 * mapped column can refuse while one still exists, and for every attachment in the schema,
+	 * for `quel:list-triggers` — see "Attachment dependency discovery" in
+	 * objectquel-equel-triggers-design.md. There is no separate attachment registry; the live
+	 * DDL is the only source of truth, so this is a DDL-time, rare-operation scan, not
 	 * something run per query.
+	 * @phpstan-import-type AttachmentListEntry from DatabaseAdapter
 	 */
 	class RoutineDependencyInspector {
 
@@ -67,6 +71,66 @@
 			}
 
 			return $attachments;
+		}
+
+		/**
+		 * Lists every live attachment in the connected schema — every trigger whose body (or,
+		 * on PostgreSQL, generated helper) calls a `trigger`-declared routine — for
+		 * `quel:list-triggers`.
+		 * @return list<AttachmentListEntry>
+		 * @throws QuelException When the lookup fails or triggers are unsupported
+		 */
+		public function listAttachments(): array {
+			$attachments = [];
+
+			foreach ($this->listTriggerBodies() as ['trigger_name' => $name, 'table' => $table, 'event' => $nativeEvent, 'body' => $body]) {
+				$routineName = $this->extractCalledRoutineName($body);
+				$event = self::normalizeEvent($nativeEvent);
+
+				if ($routineName === null || $event === null || !$this->isTriggerDeclaredRoutine($routineName)) {
+					continue;
+				}
+
+				$attachments[] = [
+					'table'   => $table,
+					'event'   => $event,
+					'routine' => $routineName,
+					'alias'   => self::aliasFromTriggerName($name, $table),
+				];
+			}
+
+			usort($attachments, static fn(array $a, array $b): int => $a['table'] <=> $b['table'] ?: $a['alias'] <=> $b['alias']);
+
+			return $attachments;
+		}
+
+		/**
+		 * Maps a native trigger event description back to EQUEL's own vocabulary.
+		 * @param string $native 'INSERT'/'UPDATE'/'DELETE', or an engine-specific variant of one
+		 * @return AttachmentEvent|null Null when it isn't one of the three physical write events
+		 */
+		private static function normalizeEvent(string $native): ?AttachmentEvent {
+			return match (true) {
+				str_contains($native, 'INSERT') => AttachmentEvent::Append,
+				str_contains($native, 'UPDATE') => AttachmentEvent::Replace,
+				str_contains($native, 'DELETE') => AttachmentEvent::Delete,
+				default => null,
+			};
+		}
+
+		/**
+		 * Recovers an attachment's alias from its physical trigger name by stripping the known
+		 * `eq_<table>_` prefix (see EventAttachmentNaming::triggerName()). Falls back to the
+		 * whole name on the (extremely unlikely) chance a very long table name alone already
+		 * exceeds the truncation length and the prefix isn't fully present — nothing to strip
+		 * in that case, so the raw name is shown as-is rather than guessed at.
+		 * @param string $triggerName Physical trigger name
+		 * @param string $table Physical table the trigger is on
+		 * @return string
+		 */
+		private static function aliasFromTriggerName(string $triggerName, string $table): string {
+			$prefix = EventAttachmentNaming::triggerNamePrefix($table);
+			return str_starts_with($triggerName, $prefix) ? substr($triggerName, strlen($prefix)) : $triggerName;
 		}
 
 		/**
@@ -138,12 +202,12 @@
 		}
 
 		/**
-		 * Lists every trigger's name and the body to search for a call: the trigger definition
-		 * itself for MySQL/MariaDB and SQL Server, or the generated helper function's source for
-		 * PostgreSQL (triggers there call the helper, not the routine directly — see
-		 * PostgresEventAttachmentLowering).
+		 * Lists every trigger's name, table, native event and the body to search for a call:
+		 * the trigger definition itself for MySQL/MariaDB and SQL Server, or the generated
+		 * helper function's source for PostgreSQL (triggers there call the helper, not the
+		 * routine directly — see PostgresEventAttachmentLowering).
 		 * @param string|null $table Restrict to triggers on this physical table, or null for every table
-		 * @return list<array{trigger_name: string, body: string}>
+		 * @return list<array{trigger_name: string, table: string, event: string, body: string}>
 		 * @throws QuelException When the lookup fails or triggers are unsupported
 		 */
 		private function listTriggerBodies(?string $table = null): array {
@@ -157,7 +221,12 @@
 			$rows = [];
 
 			foreach ($result->fetchAll('assoc') as $row) {
-				$rows[] = ['trigger_name' => (string)$row['trigger_name'], 'body' => (string)($row['body'] ?? '')];
+				$rows[] = [
+					'trigger_name' => (string)$row['trigger_name'],
+					'table'        => (string)($row['table_name'] ?? ''),
+					'event'        => (string)($row['event'] ?? ''),
+					'body'         => (string)($row['body'] ?? ''),
+				];
 			}
 
 			return $rows;
@@ -170,18 +239,21 @@
 		 */
 		private function listQuery(?string $table): array {
 			return match ($this->connection->getDatabaseType()) {
+				// tgtype's bit 0 (ROW/STATEMENT) and bit 1 (BEFORE/AFTER) are irrelevant here —
+				// EQUEL only ever creates AFTER ROW triggers — so checking the three event bits
+				// (4=INSERT, 8=DELETE, 16=UPDATE) is enough to recover the physical event.
 				'pgsql' => [
-					'SELECT t.tgname AS trigger_name, p.prosrc AS body FROM pg_trigger t JOIN pg_proc p ON p.oid = t.tgfoid JOIN pg_class c ON c.oid = t.tgrelid WHERE NOT t.tgisinternal' . ($table === null ? '' : ' AND c.relname = :table'),
+					"SELECT t.tgname AS trigger_name, c.relname AS table_name, CASE WHEN t.tgtype & 4 <> 0 THEN 'INSERT' WHEN t.tgtype & 8 <> 0 THEN 'DELETE' WHEN t.tgtype & 16 <> 0 THEN 'UPDATE' END AS event, p.prosrc AS body FROM pg_trigger t JOIN pg_proc p ON p.oid = t.tgfoid JOIN pg_class c ON c.oid = t.tgrelid WHERE NOT t.tgisinternal" . ($table === null ? '' : ' AND c.relname = :table'),
 					$table === null ? [] : ['table' => $table],
 				],
 
 				'sqlsrv' => [
-					'SELECT t.name AS trigger_name, sm.definition AS body FROM sys.triggers t JOIN sys.sql_modules sm ON sm.object_id = t.object_id JOIN sys.objects o ON o.object_id = t.parent_id' . ($table === null ? '' : ' WHERE o.name = :table'),
+					'SELECT t.name AS trigger_name, o.name AS table_name, te.type_desc AS event, sm.definition AS body FROM sys.triggers t JOIN sys.sql_modules sm ON sm.object_id = t.object_id JOIN sys.objects o ON o.object_id = t.parent_id JOIN sys.trigger_events te ON te.object_id = t.object_id' . ($table === null ? '' : ' WHERE o.name = :table'),
 					$table === null ? [] : ['table' => $table],
 				],
 
 				'mysql', 'mariadb' => [
-					'SELECT TRIGGER_NAME AS trigger_name, ACTION_STATEMENT AS body FROM information_schema.TRIGGERS WHERE TRIGGER_SCHEMA = DATABASE()' . ($table === null ? '' : ' AND EVENT_OBJECT_TABLE = :table'),
+					'SELECT TRIGGER_NAME AS trigger_name, EVENT_OBJECT_TABLE AS table_name, EVENT_MANIPULATION AS event, ACTION_STATEMENT AS body FROM information_schema.TRIGGERS WHERE TRIGGER_SCHEMA = DATABASE()' . ($table === null ? '' : ' AND EVENT_OBJECT_TABLE = :table'),
 					$table === null ? [] : ['table' => $table],
 				],
 

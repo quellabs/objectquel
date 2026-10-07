@@ -4,7 +4,6 @@
 
 	use Quellabs\ObjectQuel\Exception\EntityResolutionException;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstEventAttachment;
-	use Quellabs\ObjectQuel\ObjectQuel\Ast\AttachmentEvent;
 	use Quellabs\ObjectQuel\ObjectQuel\Routines\EventAttachmentNaming;
 
 	/**
@@ -23,11 +22,12 @@
 
 		/**
 		 * @param AstEventAttachment $attachment The attachment
+		 * @param string $alias The attachment's resolved alias
 		 * @return list<string> The CREATE TRIGGER statement
 		 * @throws EntityResolutionException
 		 */
-		public function render(AstEventAttachment $attachment): array {
-			$triggerName = $this->quoter->quoteIdentifier($this->triggerName($attachment));
+		public function render(AstEventAttachment $attachment, string $alias): array {
+			$triggerName = $this->quoter->quoteIdentifier($this->triggerName($attachment, $alias));
 			$table = $this->quotedTable($attachment);
 			$event = $this->sqlEvent($attachment->getEvent());
 			$routineCall = $this->quoter->quoteRoutineName($attachment->getCall()->getName(), null);
@@ -42,12 +42,11 @@
 
 		/**
 		 * @param string $table Physical table the attachment is on
-		 * @param AttachmentEvent $event The attachment's event
-		 * @param string $routineName Called routine's name
+		 * @param string $alias The attachment's alias
 		 * @return list<string> The DROP TRIGGER statement
 		 */
-		public function renderDestroy(string $table, AttachmentEvent $event, string $routineName): array {
-			$triggerName = $this->quoter->quoteIdentifier(EventAttachmentNaming::triggerName($table, $event, $routineName));
+		public function renderDestroy(string $table, string $alias): array {
+			$triggerName = $this->quoter->quoteIdentifier(EventAttachmentNaming::triggerName($table, $alias));
 			return ["DROP TRIGGER {$triggerName};"];
 		}
 	}

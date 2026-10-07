@@ -45,21 +45,21 @@
 		/**
 		 * Lowers the attachment to target-platform DDL.
 		 * @param AstEventAttachment $attachment Attachment that passed EventAttachmentAnalyzer and EventAttachmentValidator
+		 * @param string $alias The attachment's resolved alias (given with `as <alias>`, or generated)
 		 * @return list<string> Statements to run in order
 		 * @throws SemanticException|EntityResolutionException
 		 */
-		abstract public function render(AstEventAttachment $attachment): array;
+		abstract public function render(AstEventAttachment $attachment, string $alias): array;
 
 		/**
-		 * Lowers the removal of one attachment, identified by its (table, event, routine)
-		 * triple — symmetric with render(), but takes primitives since `destroy event` has no
-		 * call arguments to carry an AstEventAttachment's shape.
+		 * Lowers the removal of one attachment, identified by its (table, alias) pair —
+		 * symmetric with render(), but takes primitives since `destroy trigger` has no call
+		 * arguments to carry an AstEventAttachment's shape.
 		 * @param string $table Physical table the attachment is on
-		 * @param AttachmentEvent $event The attachment's event
-		 * @param string $routineName Called routine's name
+		 * @param string $alias The attachment's alias
 		 * @return list<string> Statements to run in order
 		 */
-		abstract public function renderDestroy(string $table, AttachmentEvent $event, string $routineName): array;
+		abstract public function renderDestroy(string $table, string $alias): array;
 
 		/**
 		 * Engine name, for error messages.
@@ -149,15 +149,12 @@
 
 		/**
 		 * @param AstEventAttachment $attachment The attachment
-		 * @return string Deterministic physical trigger name (see EventAttachmentNaming)
+		 * @param string $alias The attachment's resolved alias
+		 * @return string Physical trigger name (see EventAttachmentNaming)
 		 * @throws EntityResolutionException
 		 */
-		protected function triggerName(AstEventAttachment $attachment): string {
-			return EventAttachmentNaming::triggerName(
-				$this->physicalTable($attachment),
-				$attachment->getEvent(),
-				$attachment->getCall()->getName()
-			);
+		protected function triggerName(AstEventAttachment $attachment, string $alias): string {
+			return EventAttachmentNaming::triggerName($this->physicalTable($attachment), $alias);
 		}
 
 		/**

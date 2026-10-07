@@ -2,12 +2,13 @@
 
 	namespace Quellabs\ObjectQuel\ObjectQuel\Routines;
 
-	use Quellabs\ObjectQuel\ObjectQuel\Ast\AttachmentEvent;
-
 	/**
-	 * Deterministic physical names generated from an attachment's (table, event, routine)
-	 * identity — see "Attachment identity and removal" in objectquel-equel-triggers-design.md.
-	 * The generated name is an implementation detail, never EQUEL source syntax.
+	 * Physical names built from an attachment's (table, alias) identity — see "Attachment
+	 * identity and removal" in objectquel-equel-triggers-design.md. The alias, given with
+	 * `as <alias>` or generated when omitted (see randomAlias()), is the only thing that needs
+	 * to be unique per table; the attachment's event and called routine are not part of the
+	 * name, since the live trigger definition already carries the event, and the routine name
+	 * is recovered from the trigger body when needed (see RoutineDependencyInspector).
 	 */
 	class EventAttachmentNaming {
 
@@ -16,15 +17,40 @@
 
 		private const int HASH_LENGTH = 8;
 
+		/** Hex characters of entropy in a generated alias; 16 million possibilities is ample per table */
+		private const int RANDOM_ALIAS_BYTES = 4;
+
 		/**
 		 * Builds the physical trigger name for one attachment.
 		 * @param string $table Physical table the attachment is on
-		 * @param AttachmentEvent $event Physical write event
-		 * @param string $routineName Called routine's name
-		 * @return string Deterministic name, truncated with a stable hash suffix if too long
+		 * @param string $alias The attachment's alias, given or generated
+		 * @return string Name, truncated with a stable hash suffix if too long
 		 */
-		public static function triggerName(string $table, AttachmentEvent $event, string $routineName): string {
-			return self::truncate("eq_{$table}_{$event->value}_{$routineName}");
+		public static function triggerName(string $table, string $alias): string {
+			return self::truncate(self::triggerNamePrefix($table) . $alias);
+		}
+
+		/**
+		 * The untruncated prefix every trigger name starts with, before its alias. Used to
+		 * recover a trigger's alias from its own name (see
+		 * RoutineDependencyInspector::listAttachments()) — only reliable when the full
+		 * `eq_<table>_<alias>` identity didn't need truncate()'s hash shortening.
+		 * @param string $table Physical table the attachment is on
+		 * @return string
+		 */
+		public static function triggerNamePrefix(string $table): string {
+			return "eq_{$table}_";
+		}
+
+		/**
+		 * Generates an opaque alias for an attachment created without `as <alias>`. Random,
+		 * not derived from the attachment's identity, so detaching and reattaching the same
+		 * (table, event, routine) never reuses a stale name. Shown back by `quel:list-triggers`
+		 * for later reference in `destroy trigger`.
+		 * @return string Lowercase hex string
+		 */
+		public static function randomAlias(): string {
+			return bin2hex(random_bytes(self::RANDOM_ALIAS_BYTES));
 		}
 
 		/**

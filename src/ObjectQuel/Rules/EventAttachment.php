@@ -13,9 +13,10 @@
 	use Quellabs\ObjectQuel\ObjectQuel\Token;
 
 	/**
-	 * Parser for `after (append to|replace|delete) <range> call <routine>(args)` — see
-	 * objectquel-equel-triggers-design.md. The symmetric `destroy event ...` removal form
-	 * shares this class's parseEvent() and is otherwise parsed by Rules\Destroy.
+	 * Parser for `after (append to|replace|delete) <range> call <routine>(args) [as <alias>]`
+	 * — see objectquel-equel-triggers-design.md. `destroy trigger <range> <alias> [if exists]`
+	 * is the symmetric removal form, parsed entirely by Rules\Destroy — it names the attachment
+	 * directly by alias, so it has no need for this class's event/call parsing.
 	 */
 	class EventAttachment {
 
@@ -29,7 +30,7 @@
 		}
 
 		/**
-		 * Parses a complete `after ... call ...(...)` statement.
+		 * Parses a complete `after ... call ...(...) [as <alias>]` statement.
 		 * @param AstRange[] $ranges Ranges already parsed ahead of this statement
 		 * @return AstEventAttachment
 		 * @throws LexerException|ParserException|\ReflectionException
@@ -43,10 +44,26 @@
 			$this->lexer->matchKeyword('call');
 			$routineName = $this->lexer->match(Token::Identifier)->getStringValue();
 			$call = (new QueryFunction(new ArithmeticExpression($this->lexer)))->parseRoutineCall($routineName);
+			$alias = $this->parseOptionalAlias();
 
 			$this->consumeOptionalSemicolon();
 
-			return new AstEventAttachment($event, $range, $call);
+			return new AstEventAttachment($event, $range, $call, $alias);
+		}
+
+		/**
+		 * Parses an optional trailing `as <alias>` naming the attachment, for later reference in
+		 * `destroy trigger <range> <alias>`. Omitted, the attachment gets a generated alias at
+		 * compile time (see EventAttachmentNaming::randomAlias()).
+		 * @return string|null
+		 * @throws LexerException
+		 */
+		private function parseOptionalAlias(): ?string {
+			if (!$this->lexer->optionalMatchKeyword('as')) {
+				return null;
+			}
+
+			return $this->lexer->match(Token::Identifier)->getStringValue();
 		}
 
 		/**

@@ -23,12 +23,13 @@
 
 		/**
 		 * @param AstEventAttachment $attachment The attachment
+		 * @param string $alias The attachment's resolved alias
 		 * @return list<string> The helper `CREATE FUNCTION` and the `CREATE TRIGGER` that uses it
 		 * @throws EntityResolutionException
 		 */
-		public function render(AstEventAttachment $attachment): array {
+		public function render(AstEventAttachment $attachment, string $alias): array {
 			$helperName = $this->quoter->quoteRoutineName(
-				EventAttachmentNaming::helperFunctionName($this->triggerName($attachment)),
+				EventAttachmentNaming::helperFunctionName($this->triggerName($attachment, $alias)),
 				$this->routineSchema
 			);
 			$routineCall = $this->quoter->quoteRoutineName($attachment->getCall()->getName(), $this->routineSchema);
@@ -43,7 +44,7 @@
 			$tag = $this->dollarQuoteTag($body);
 			$helper = "CREATE FUNCTION {$helperName}()\nRETURNS trigger\nLANGUAGE plpgsql\nAS {$tag}\n{$body}\n{$tag};";
 
-			$triggerName = $this->quoter->quoteIdentifier($this->triggerName($attachment));
+			$triggerName = $this->quoter->quoteIdentifier($this->triggerName($attachment, $alias));
 			$table = $this->quotedTable($attachment);
 			$event = $this->sqlEvent($attachment->getEvent());
 			$trigger = "CREATE TRIGGER {$triggerName}\nAFTER {$event} ON {$table}\nFOR EACH ROW EXECUTE FUNCTION {$helperName}();";
@@ -53,14 +54,13 @@
 
 		/**
 		 * @param string $table Physical table the attachment is on
-		 * @param AttachmentEvent $event The attachment's event
-		 * @param string $routineName Called routine's name
+		 * @param string $alias The attachment's alias
 		 * @return list<string> DROP TRIGGER, then its helper's DROP FUNCTION (the design doc's
 		 *         removal order — never the other way, since the trigger still references the
 		 *         helper until it is itself gone)
 		 */
-		public function renderDestroy(string $table, AttachmentEvent $event, string $routineName): array {
-			$triggerName = EventAttachmentNaming::triggerName($table, $event, $routineName);
+		public function renderDestroy(string $table, string $alias): array {
+			$triggerName = EventAttachmentNaming::triggerName($table, $alias);
 			$helperName = $this->quoter->quoteIdentifier(EventAttachmentNaming::helperFunctionName($triggerName));
 			$quotedTrigger = $this->quoter->quoteIdentifier($triggerName);
 			$quotedTable = $this->quoter->quoteRoutineName($table, $this->routineSchema);

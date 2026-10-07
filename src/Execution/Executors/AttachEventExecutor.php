@@ -10,11 +10,12 @@
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstEventAttachment;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstStatement;
 	use Quellabs\ObjectQuel\ObjectQuel\Routines\EventAttachmentCompiler;
-	use Quellabs\ObjectQuel\ObjectQuel\Routines\EventAttachmentNaming;
 
 	/**
-	 * Executes `after ... call ...(...)`: validates, compiles and creates the attachment on
-	 * the connected engine.
+	 * Executes `after ... call ...(...) [as <alias>]`: validates, compiles and creates the
+	 * attachment on the connected engine. A conflicting alias is rejected inside the compiler,
+	 * which resolves it (given or generated) before rendering — see
+	 * EventAttachmentCompiler::resolveAlias().
 	 */
 	class AttachEventExecutor implements DdlStatementExecutorInterface {
 
@@ -35,22 +36,17 @@
 		}
 
 		/**
-		 * Rejects a conflicting existing attachment before compiling and creating the new one.
+		 * Compiles and creates the attachment.
 		 * @param AstStatement $statement
 		 * @param ExecutionContext $context
 		 * @return void
-		 * @throws QuelException When the attachment conflicts, doesn't validate, or the DDL fails
+		 * @throws QuelException When the attachment's alias conflicts, it doesn't validate, or the DDL fails
 		 */
 		public function execute(AstStatement $statement, ExecutionContext $context): void {
 			assert($statement instanceof AstEventAttachment);
 
 			$routineName = $statement->getCall()->getName();
 			$table = $this->entityManager->getEntityStore()->getMetadata($statement->getRange()->getEntityName())->tableName;
-			$triggerName = EventAttachmentNaming::triggerName($table, $statement->getEvent(), $routineName);
-
-			if ($this->connection->triggerExists($table, $triggerName)) {
-				throw new QuelException("Failed to attach '{$routineName}' to '{$table}': an attachment for this table, event and routine already exists.", 'routine_definition_error');
-			}
 
 			$compiler = new EventAttachmentCompiler($this->entityManager, $this->platform, $this->connection->getRoutineSchema(), $this->connection);
 			$ddl = $compiler->compileAttachment($statement);

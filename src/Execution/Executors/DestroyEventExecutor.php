@@ -13,7 +13,7 @@
 	use Quellabs\ObjectQuel\ObjectQuel\Routines\EventAttachmentNaming;
 
 	/**
-	 * Executes `destroy event after ... call <routine> [if exists]`: removes only this one
+	 * Executes `destroy trigger <range> <alias> [if exists]`: removes only this one
 	 * attachment, never the routine itself (see "Attachment identity and removal" in
 	 * objectquel-equel-triggers-design.md).
 	 */
@@ -45,21 +45,21 @@
 		public function execute(AstStatement $statement, ExecutionContext $context): void {
 			assert($statement instanceof AstDestroyEventAttachment);
 
-			$routineName = $statement->getRoutineName();
+			$alias = $statement->getAlias();
 			$table = $this->entityManager->getEntityStore()->getMetadata($statement->getRange()->getEntityName())->tableName;
-			$triggerName = EventAttachmentNaming::triggerName($table, $statement->getEvent(), $routineName);
+			$triggerName = EventAttachmentNaming::triggerName($table, $alias);
 
 			if (!$this->connection->triggerExists($table, $triggerName)) {
 				if ($statement->isIfExists()) {
 					return;
 				}
 
-				throw new QuelException("Failed to destroy the attachment of '{$routineName}' on '{$table}': it doesn't exist", 'routine_destruction_error');
+				throw new QuelException("Failed to destroy the attachment '{$alias}' on '{$table}': it doesn't exist", 'routine_destruction_error');
 			}
 
 			$compiler = new EventAttachmentCompiler($this->entityManager, $this->platform, $this->connection->getRoutineSchema(), $this->connection);
 			$ddl = $compiler->compileDestroy($statement);
 
-			$this->ddlRunner->runTransactionally($ddl, $this->platform, "Failed to destroy the attachment of '{$routineName}' on '{$table}'", 'routine_destruction_error');
+			$this->ddlRunner->runTransactionally($ddl, $this->platform, "Failed to destroy the attachment '{$alias}' on '{$table}'", 'routine_destruction_error');
 		}
 	}
