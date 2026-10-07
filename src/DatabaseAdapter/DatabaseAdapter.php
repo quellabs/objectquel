@@ -11,6 +11,7 @@
 	use Quellabs\ObjectQuel\DatabaseAdapter\Inspector\NullSchemaIntrospector;
 	use Quellabs\ObjectQuel\DatabaseAdapter\Inspector\PostgresSchemaIntrospector;
 	use Quellabs\ObjectQuel\DatabaseAdapter\Inspector\RoutineDefinitionInspector;
+	use Quellabs\ObjectQuel\DatabaseAdapter\Inspector\RoutineDependencyInspector;
 	use Quellabs\ObjectQuel\DatabaseAdapter\Inspector\RoutineSchemaIntrospector;
 	use Quellabs\ObjectQuel\DatabaseAdapter\Inspector\SchemaIntrospectorInterface;
 	use Quellabs\ObjectQuel\DatabaseAdapter\Inspector\SqlServerCompatibilityLevelInspector;
@@ -112,6 +113,9 @@
 
 		/** @var EventAttachmentInspector|null Lazily created inspector */
 		private ?EventAttachmentInspector $eventAttachmentInspectorCache = null;
+
+		/** @var RoutineDependencyInspector|null Lazily created inspector */
+		private ?RoutineDependencyInspector $routineDependencyInspectorCache = null;
 		
 		/**
 		 * Constructs a new database adapter instance
@@ -323,6 +327,19 @@
 		public function triggerExists(string $table, string $name): bool {
 			$this->eventAttachmentInspectorCache ??= new EventAttachmentInspector($this);
 			return $this->eventAttachmentInspectorCache->triggerExists($table, $name);
+		}
+
+		/**
+		 * Finds every trigger that depends on this routine, so `destroy function` can refuse
+		 * while one still calls it.
+		 * @param string $routineName Routine a `destroy function` would remove
+		 * @return list<string> Names of dependent triggers; empty when none depend on it
+		 * @throws \Quellabs\ObjectQuel\Exception\QuelException When the lookup fails or triggers are unsupported
+		 * @see RoutineDependencyInspector::findDependentTriggers()
+		 */
+		public function findDependentTriggers(string $routineName): array {
+			$this->routineDependencyInspectorCache ??= new RoutineDependencyInspector($this);
+			return $this->routineDependencyInspectorCache->findDependentTriggers($routineName);
 		}
 
 		/**
