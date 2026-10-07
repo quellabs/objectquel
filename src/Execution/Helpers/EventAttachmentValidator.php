@@ -88,8 +88,8 @@
 
 		/**
 		 * Walks the called routine's transitive call graph, rejecting a write to the triggering
-		 * table and an unsafe feature anywhere reachable. Cycle-safe: a name already walked on
-		 * this path is not walked again.
+		 * table anywhere reachable. Cycle-safe: a name already walked on this path is not walked
+		 * again.
 		 * @param string $routineName Routine being checked
 		 * @param array<string, mixed> $metadata Its metadata
 		 * @param string $triggeringTable Physical table the attachment is on
@@ -106,10 +106,6 @@
 
 			$visited[$key] = true;
 			$safety = $metadata['safety'] ?? [];
-
-			if (!empty($safety['features'])) {
-				throw new QuelException("Can't attach: '{$routineName}' uses '{$safety['features'][0]}', which isn't safe to run inside a trigger.", 'routine_call_error');
-			}
 
 			foreach ($safety['writes'] ?? [] as $table) {
 				if (strcasecmp($table, $triggeringTable) === 0) {

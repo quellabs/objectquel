@@ -99,15 +99,9 @@
 		 * Direct (non-transitive) safety facts about this routine's own body. The transitive
 		 * call graph is walked by the attachment/destroy checks that consume this, by reading
 		 * each reachable routine's own metadata in turn.
-		 *
-		 * `features` is always empty: EQUEL has no syntax for transaction control, client
-		 * result sets, or dynamic SQL, so an ObjectQuel-authored routine's body genuinely never
-		 * contains one — not merely unanalyzed. This field exists so metadata emitted here has
-		 * the same shape the doc specifies for a routine whose metadata is later inspected
-		 * without assuming it was always ObjectQuel-authored.
 		 * @param AstRoutineDefinition $routine The routine
 		 * @param EntityStore $entityStore Entity metadata
-		 * @return array{calls: list<string>, reads: list<string>, writes: list<string>, features: list<string>}
+		 * @return array{calls: list<string>, reads: list<string>, writes: list<string>}
 		 * @throws EntityResolutionException
 		 */
 		private static function safety(AstRoutineDefinition $routine, EntityStore $entityStore): array {
@@ -115,10 +109,9 @@
 			$reads = array_values(array_diff(self::declaredRangeTableNames($routine, $entityStore), $writes));
 
 			return [
-				'calls'    => self::calledRoutineNames($routine),
-				'reads'    => $reads,
-				'writes'   => $writes,
-				'features' => [],
+				'calls'  => self::calledRoutineNames($routine),
+				'reads'  => $reads,
+				'writes' => $writes,
 			];
 		}
 
