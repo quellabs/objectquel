@@ -129,7 +129,7 @@
 				$names = implode("', '", $attachments);
 				throw new QuelException(
 					"Can't alter '{$statement->getTableName()}': attachment trigger(s) '{$names}' depend on its mapped columns. " .
-					"Detach them first ('destroy event ...'), then redefine and reattach as needed.",
+					"Detach them first ('destroy trigger ...'), then redefine and reattach as needed.",
 					'table_alteration_error'
 				);
 			}

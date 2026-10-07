@@ -63,7 +63,7 @@
 
 			if ($dependents !== []) {
 				$triggers = implode("', '", $dependents);
-				throw new QuelException("Can't destroy routine '{$statement->getName()}': attachment trigger(s) '{$triggers}' still call it. Detach them first ('destroy event ...').", 'routine_destruction_error');
+				throw new QuelException("Can't destroy routine '{$statement->getName()}': attachment trigger(s) '{$triggers}' still call it. Detach them first ('destroy trigger ...').", 'routine_destruction_error');
 			}
 
 			$this->ddlRunner->run($statements, "Failed to destroy routine '{$statement->getName()}'", 'routine_destruction_error');
