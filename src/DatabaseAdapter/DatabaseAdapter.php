@@ -39,6 +39,9 @@
 	 * }
 	 *
 	 * @phpstan-type IndexUsageStats array{reads: int, writes: int}
+	 *
+	 * @phpstan-type RoutineParameter array{name: string, type: ?string}
+	 * @phpstan-type RoutineListEntry array{name: string, isProcedure: bool, returnType: string, parameters: list<RoutineParameter>}
 	 */
 	class DatabaseAdapter {
 		
@@ -368,7 +371,7 @@
 
 		/**
 		 * Lists every EQUEL-callable function and procedure in the connected schema.
-		 * @return array<int, array{name: string, isProcedure: bool, returnType: ?string, parameters: list<array{name: string, type: ?string}>}>
+		 * @return list<RoutineListEntry>
 		 * @throws \Quellabs\ObjectQuel\Exception\QuelException When the lookup fails or routines are unsupported
 		 * @see RoutineDefinitionInspector::listRoutines()
 		 */

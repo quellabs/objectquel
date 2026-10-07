@@ -2,6 +2,7 @@
 
 	namespace Quellabs\ObjectQuel\Sculpt\Commands;
 
+	use Quellabs\ObjectQuel\DatabaseAdapter\DatabaseAdapter;
 	use Quellabs\ObjectQuel\Sculpt\ServiceProvider;
 	use Quellabs\Sculpt\ConfigurationManager;
 	use Quellabs\Sculpt\Console\ConsoleInput;
@@ -21,6 +22,8 @@
 	 *
 	 * Supported dialects: MySQL, MariaDB, PostgreSQL, SQL Server. SQLite has no stored
 	 * functions and is reported as an error.
+	 *
+	 * @phpstan-import-type RoutineParameter from DatabaseAdapter
 	 */
 	class ListFunctionsCommand extends MakeCommandBase {
 
@@ -125,7 +128,7 @@ HELP;
 		 * Formats a function's parameter list as "type name, type name", matching EQUEL's own
 		 * `(type name, ...)` declaration order. A parameter whose type ObjectQuel doesn't
 		 * recognize shows as "unknown", the same fallback used for an unrecognized return type.
-		 * @param list<array{name: string, type: ?string}> $parameters
+		 * @param list<RoutineParameter> $parameters
 		 * @return string Comma-joined "type name" pairs, or "-" when the function takes none
 		 */
 		private function formatParameters(array $parameters): string {

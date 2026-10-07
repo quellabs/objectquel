@@ -9,6 +9,8 @@
 
 	/**
 	 * Reads routine kinds and return types from the connected database catalog.
+	 * @phpstan-import-type RoutineParameter from DatabaseAdapter
+	 * @phpstan-import-type RoutineListEntry from DatabaseAdapter
 	 */
 	class RoutineDefinitionInspector {
 
@@ -157,7 +159,7 @@
 		 * native catalog; parameter types are still normalized to ObjectQuel's abstract column
 		 * types from the native catalog. A name can appear twice (once as a function, once as a
 		 * procedure) since MySQL/MariaDB give the two kinds separate namespaces.
-		 * @return array<int, array{name: string, isProcedure: bool, returnType: string, parameters: list<array{name: string, type: ?string}>}>
+		 * @return list<RoutineListEntry>
 		 * @throws QuelException When the lookup fails or the engine has no stored routines
 		 */
 		public function listRoutines(): array {
@@ -205,7 +207,7 @@
 		 * routines ("name|0" for a function, "name|1" for a procedure), each ordered by
 		 * declaration position. Parameter types go through the same native-to-abstract
 		 * mapping as return types.
-		 * @return array<string, list<array{name: string, type: ?string}>>
+		 * @return array<string, list<RoutineParameter>>
 		 * @throws QuelException When the lookup fails
 		 */
 		private function listParameters(): array {
