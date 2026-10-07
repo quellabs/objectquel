@@ -31,6 +31,11 @@
 		/** Attempts before giving up on finding a free generated alias; collision is astronomically unlikely with one */
 		private const int ALIAS_ATTEMPTS = 5;
 
+		private readonly EntityManager $entityManager;
+		private readonly PlatformCapabilitiesInterface $platform;
+		private readonly ?string $routineSchema;
+		private readonly DatabaseAdapter $connection;
+
 		/**
 		 * @param EntityManager $entityManager Entity metadata
 		 * @param PlatformCapabilitiesInterface $platform Target engine
@@ -38,11 +43,15 @@
 		 * @param DatabaseAdapter $connection Connection the called routine's metadata is read from
 		 */
 		public function __construct(
-			private readonly EntityManager $entityManager,
-			private readonly PlatformCapabilitiesInterface $platform,
-			private readonly ?string $routineSchema,
-			private readonly DatabaseAdapter $connection,
+			EntityManager $entityManager,
+			PlatformCapabilitiesInterface $platform,
+			?string $routineSchema,
+			DatabaseAdapter $connection,
 		) {
+			$this->entityManager = $entityManager;
+			$this->platform = $platform;
+			$this->routineSchema = $routineSchema;
+			$this->connection = $connection;
 		}
 
 		/**

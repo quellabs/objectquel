@@ -17,14 +17,16 @@
 	 */
 	class EventAttachmentValidator {
 
+		private readonly DatabaseAdapter $connection;
+		private readonly EntityStore $entityStore;
+
 		/**
 		 * @param DatabaseAdapter $connection Connection whose routine catalog is read
 		 * @param EntityStore $entityStore Entity metadata, to resolve the attachment's target entity
 		 */
-		public function __construct(
-			private readonly DatabaseAdapter $connection,
-			private readonly EntityStore $entityStore,
-		) {
+		public function __construct(DatabaseAdapter $connection, EntityStore $entityStore) {
+			$this->connection = $connection;
+			$this->entityStore = $entityStore;
 		}
 
 		/**

@@ -20,10 +20,13 @@
 	 */
 	class RoutineDependencyInspector {
 
+		private readonly DatabaseAdapter $connection;
+
 		/**
 		 * @param DatabaseAdapter $connection Connection whose catalog is read
 		 */
-		public function __construct(private readonly DatabaseAdapter $connection) {
+		public function __construct(DatabaseAdapter $connection) {
+			$this->connection = $connection;
 		}
 
 		/**
