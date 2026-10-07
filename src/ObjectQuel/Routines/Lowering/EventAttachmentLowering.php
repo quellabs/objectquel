@@ -17,6 +17,7 @@
 	 * Lowers an attachment to one engine's CREATE TRIGGER (+ helper objects, where the engine
 	 * needs one) — see "Event lowering" in objectquel-equel-triggers-design.md. Subclasses
 	 * supply the engine's trigger syntax and how it receives OLD/NEW rows.
+	 * @phpstan-type ExpandedArgument array{row: 'old'|'new', property: string, column: string}
 	 */
 	abstract class EventAttachmentLowering {
 
@@ -78,7 +79,7 @@
 		 * selection, since the attachment has no argument list.
 		 * @param AstEventAttachment $attachment The attachment
 		 * @param int $parameterCount Number of entity-row parameters the called routine declares
-		 * @return list<array{row: 'old'|'new', property: string, column: string}>
+		 * @return list<ExpandedArgument>
 		 * @throws EntityResolutionException
 		 */
 		protected function expandArguments(AstEventAttachment $attachment, int $parameterCount): array {

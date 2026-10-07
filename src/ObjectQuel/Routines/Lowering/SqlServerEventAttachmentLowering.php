@@ -15,6 +15,7 @@
 	 * pairs `deleted` and `inserted` on the target's mapped primary key, after first rejecting
 	 * a statement that targets any key column and guarding the zero-row case; see "Event
 	 * lowering" in objectquel-equel-triggers-design.md.
+	 * @phpstan-import-type ExpandedArgument from EventAttachmentLowering
 	 */
 	class SqlServerEventAttachmentLowering extends EventAttachmentLowering {
 
@@ -137,8 +138,8 @@
 		/**
 		 * Builds the cursor's SELECT list, aliasing each expanded argument positionally so the
 		 * same column read as both old and new (e.g. `old.username, new.username`) never collides.
-		 * @param list<array{row: 'old'|'new', property: string, column: string}> $arguments Expanded arguments
-		 * @param callable(array{row: 'old'|'new', property: string, column: string}): string $aliasFor Rowset alias for one argument
+		 * @param list<ExpandedArgument> $arguments Expanded arguments
+		 * @param callable(ExpandedArgument): string $aliasFor Rowset alias for one argument
 		 * @return string
 		 */
 		private function selectList(array $arguments, callable $aliasFor): string {
@@ -155,7 +156,7 @@
 		 * Declares one local variable per expanded argument; EXEC takes only literals and
 		 * variables, so the cursor row is always fetched into locals first.
 		 * @param AstEventAttachment $attachment The attachment
-		 * @param list<array{row: 'old'|'new', property: string, column: string}> $arguments Expanded arguments
+		 * @param list<ExpandedArgument> $arguments Expanded arguments
 		 * @return string
 		 */
 		private function declarations(AstEventAttachment $attachment, array $arguments): string {
@@ -171,7 +172,7 @@
 		/**
 		 * Builds the OPEN/FETCH/WHILE/EXEC/CLOSE/DEALLOCATE loop, invoking the routine once per row.
 		 * @param AstEventAttachment $attachment The attachment
-		 * @param list<array{row: 'old'|'new', property: string, column: string}> $arguments Expanded arguments
+		 * @param list<ExpandedArgument> $arguments Expanded arguments
 		 * @return string
 		 */
 		private function fetchLoop(AstEventAttachment $attachment, array $arguments): string {
