@@ -47,6 +47,9 @@
 		/** @var array<string, array<string, TypeDefinition|null>> Type of each field, by cursor; null when unknown */
 		private array $cursorFields = [];
 
+		/** @var array<string, string> Entity class of each entity-row parameter, by parameter name */
+		private array $entityRowParameters = [];
+
 		/**
 		 * Initializes routine field type resolution with entity and column metadata.
 		 * @param EntityStore $entityStore Entity metadata
@@ -75,6 +78,18 @@
 		 */
 		public function variableType(string $name): ?string {
 			return $this->variables[$name]['type'] ?? null;
+		}
+
+		/**
+		 * Records an entity-row parameter, e.g. `UserEntity old` in a `trigger`-returning routine.
+		 * Its fields are typed from the entity's mapped columns (see routineReferenceDefinition()),
+		 * not from a declared routine type like a scalar parameter.
+		 * @param string $name Parameter name
+		 * @param string $entityClass Fully qualified entity class the parameter is typed with
+		 * @return void
+		 */
+		public function declareEntityRowParameter(string $name, string $entityClass): void {
+			$this->entityRowParameters[$name] = $entityClass;
 		}
 
 		/**
@@ -160,7 +175,8 @@
 		 * @throws EntityResolutionException
 		 */
 		public function inferReturnTypeOfIdentifier(AstIdentifier $identifier): ?string {
-			$root = $identifier->getType() === IdentifierType::CursorField ? $identifier->getParent() : $identifier;
+			$isFieldSegment = in_array($identifier->getType(), [IdentifierType::CursorField, IdentifierType::EntityRowField], true);
+			$root = $isFieldSegment ? $identifier->getParent() : $identifier;
 
 			if (!$root instanceof AstIdentifier || !$root->getType()->isRoutineReference()) {
 				return parent::inferReturnTypeOfIdentifier($identifier);
@@ -299,6 +315,11 @@
 
 			if ($identifier->getType() === IdentifierType::CursorRoot && $field !== null) {
 				return $this->cursorFields[$identifier->getName()][$field->getName()] ?? null;
+			}
+
+			if ($identifier->getType() === IdentifierType::EntityRowRoot && $field !== null) {
+				$entityClass = $this->entityRowParameters[$identifier->getName()] ?? null;
+				return $entityClass === null ? null : $this->columnType($entityClass, $field->getName());
 			}
 
 			return $this->variables[$identifier->getName()] ?? null;

@@ -25,18 +25,21 @@
 	 */
 	class ResolveRoutineReferences extends PropertyRangeFinder implements AstVisitorInterface {
 
+		private EntityStore $entityStore;
 		private RoutineScope $scope;
 
 		/** True inside retrieve/append/replace/delete, where ranges and unqualified properties resolve */
 		private bool $inQueryStatement;
 
 		/**
-		 * @param EntityStore $entityStore Used to detect a variable name that is also an unqualified property
+		 * @param EntityStore $entityStore Used to detect a variable name that is also an unqualified property,
+		 *        and to resolve entity-row parameter fields against mapped columns
 		 * @param RoutineScope $scope Names visible at the statement being visited
 		 * @param bool $inQueryStatement True for embedded query statements, false for procedural expressions
 		 */
 		public function __construct(EntityStore $entityStore, RoutineScope $scope, bool $inQueryStatement) {
 			parent::__construct($entityStore);
+			$this->entityStore = $entityStore;
 			$this->scope = $scope;
 			$this->inQueryStatement = $inQueryStatement;
 		}
@@ -69,6 +72,11 @@
 
 			if ($this->scope->isRowBinding($name)) {
 				$this->resolveRowField($node);
+				return;
+			}
+
+			if ($this->scope->isEntityRow($name)) {
+				$this->resolveEntityRowField($node);
 				return;
 			}
 
@@ -147,6 +155,38 @@
 			$node->setName($cursorName);
 			$node->setType(IdentifierType::CursorRoot);
 			$field->setType(IdentifierType::CursorField);
+		}
+
+		/**
+		 * Types `paramName.field`, reading a `trigger` routine's entity-row parameter against
+		 * mapped column metadata. Bare `paramName` with no field is always invalid: EQUEL has no
+		 * row-construction mechanism, so a whole row value is never a legal operand anywhere in
+		 * the routine body (see objectquel-equel-triggers-design.md).
+		 * @param AstIdentifier $node Root identifier naming an entity-row parameter
+		 * @return void
+		 * @throws SemanticException|EntityResolutionException
+		 */
+		private function resolveEntityRowField(AstIdentifier $node): void {
+			$paramName = $node->getName();
+			$field = $node->getNext();
+
+			if ($field === null) {
+				throw new SemanticException("'{$paramName}' is a row parameter and not a value. Read its fields as '{$paramName}.field'.");
+			}
+
+			if ($field->getNext() !== null) {
+				throw new SemanticException("'{$node->getCompleteName()}' is invalid: a row parameter field has no further fields.");
+			}
+
+			$entityClass = $this->scope->getEntityRowClass($paramName);
+			$columnName = $this->entityStore->getMetadata($entityClass)->getColumnName($field->getName());
+
+			if ($columnName === null) {
+				throw new SemanticException("'{$entityClass}' has no mapped column '{$field->getName()}' to read through '{$paramName}.{$field->getName()}'.");
+			}
+
+			$node->setType(IdentifierType::EntityRowRoot);
+			$field->setType(IdentifierType::EntityRowField);
 		}
 
 		/**

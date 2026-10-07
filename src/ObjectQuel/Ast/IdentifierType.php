@@ -47,13 +47,19 @@
 		/** Field segment of a `cursorName.field` read. */
 		case CursorField;
 
+		/** Entity-row parameter name in a `paramName.field` read (see `trigger`-returning routines). */
+		case EntityRowRoot;
+
+		/** Field segment of an entity-row parameter read. */
+		case EntityRowField;
+
 		/**
 		 * True for identifiers naming routine state rather than a range; the query pipeline leaves these alone.
 		 * @return bool
 		 */
 		public function isRoutineReference(): bool {
 			return match ($this) {
-				self::RoutineVariable, self::CursorRoot, self::CursorField => true,
+				self::RoutineVariable, self::CursorRoot, self::CursorField, self::EntityRowRoot, self::EntityRowField => true,
 				default => false,
 			};
 		}

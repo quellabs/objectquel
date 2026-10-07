@@ -138,6 +138,24 @@
 		}
 
 		/**
+		 * @return bool True when the declared return type is `trigger` — see Routines/RoutineAnalyzer
+		 */
+		public function isTrigger(): bool {
+			return strcasecmp($this->returnType, 'trigger') === 0;
+		}
+
+		/**
+		 * Both `void` and `trigger` routines return nothing to a caller; a
+		 * `trigger` routine additionally can't be called at all except
+		 * through an event attachment (see RoutineCallTyper), but that
+		 * restriction is enforced separately from "does it return a value."
+		 * @return bool True when the routine returns no value
+		 */
+		public function returnsNoValue(): bool {
+			return $this->isVoid() || $this->isTrigger();
+		}
+
+		/**
 		 * @return AstInterface[] Top-level statements of the routine body
 		 */
 		public function getBody(): array {

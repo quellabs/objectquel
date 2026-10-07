@@ -31,7 +31,7 @@
 		public function validate(AstRoutineDefinition $routine): void {
 			$this->checkBlock($routine->getBody(), false, false, false);
 
-			if (!$routine->isVoid() && !$this->alwaysReturns($routine->getBody())) {
+			if (!$routine->returnsNoValue() && !$this->alwaysReturns($routine->getBody())) {
 				throw new SemanticException("Not every path through '{$routine->getName()}' ends in a return, but it declares return type '{$routine->getDeclaredReturnType()}'.");
 			}
 		}

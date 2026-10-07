@@ -85,8 +85,8 @@
 			$this->routine = $routine;
 			$this->cursorQueries = [];
 			$this->openLoops = [];
-			if (!$routine->isVoid() && $this->contains($routine, [AstAtomic::class])) {
-				throw new SemanticException("'atomic' is only supported in void functions.");
+			if (!$routine->returnsNoValue() && $this->contains($routine, [AstAtomic::class])) {
+				throw new SemanticException("'atomic' is only supported in void or trigger functions.");
 			}
 
 			$this->validate($routine);
@@ -446,6 +446,13 @@
 			$fieldTypes = $this->statements->getFieldTypes();
 
 			foreach ($routine->getParameters() as $parameter) {
+				$entityClass = RoutineAnalyzer::resolveEntityType($this->entityStore, $parameter->getType());
+
+				if ($entityClass !== null) {
+					$fieldTypes->declareEntityRowParameter($parameter->getName(), $entityClass);
+					continue;
+				}
+
 				$fieldTypes->declareVariable($parameter->getName(), $parameter->getType());
 			}
 

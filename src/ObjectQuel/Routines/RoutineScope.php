@@ -37,6 +37,13 @@
 		/** @var array<string, AstRange> Range alias => range */
 		private array $ranges = [];
 
+		/**
+		 * @var array<string, string> Entity-row parameter name => fully qualified entity class. Flat and
+		 * root-scoped like $ranges: an entity-row binding only ever comes from a `trigger` routine's own
+		 * parameter list, never from a block-local declaration, so there is no shadowing dimension to it.
+		 */
+		private array $entityRows = [];
+
 		/** @var array<string, true> Every name the routine declares anywhere, for "used before declaration" errors */
 		private array $allDeclaredNames;
 
@@ -133,6 +140,43 @@
 
 			$this->ranges[$name] = $range;
 			$this->allResolvedNamesLower[strtolower($name)] = true;
+		}
+
+		/**
+		 * Adds an entity-row parameter, e.g. `UserEntity old` in a `trigger`-returning routine's parameter list.
+		 * @param string $name Parameter name as written
+		 * @param string $entityClass Fully qualified entity class the parameter is typed with
+		 * @return void
+		 * @throws SemanticException When the name is reserved or already declared
+		 */
+		public function declareEntityRow(string $name, string $entityClass): void {
+			$this->assertNotKeyword($name);
+
+			if ($this->isVisibleInChain($name)) {
+				throw new SemanticException("'{$name}' is already declared in this scope.");
+			}
+
+			$this->entityRows[$name] = $entityClass;
+			$this->allResolvedNamesLower[strtolower($name)] = true;
+			$this->declareVariableName($name);
+		}
+
+		/**
+		 * Reports whether a name is a declared entity-row parameter.
+		 * @param string $name Name to look up
+		 * @return bool True when $name is an entity-row parameter
+		 */
+		public function isEntityRow(string $name): bool {
+			return isset($this->entityRows[$name]);
+		}
+
+		/**
+		 * Returns the entity class an entity-row parameter is typed with.
+		 * @param string $name Entity-row parameter name, which must be declared (see isEntityRow())
+		 * @return string Fully qualified entity class
+		 */
+		public function getEntityRowClass(string $name): string {
+			return $this->entityRows[$name];
 		}
 
 		/**
@@ -301,7 +345,7 @@
 		private function resolveNewName(string $name): string {
 			$this->assertNotKeyword($name);
 
-			if (isset($this->ranges[$name]) || $this->isDeclaredInCurrentFrame($name)) {
+			if (isset($this->ranges[$name]) || isset($this->entityRows[$name]) || $this->isDeclaredInCurrentFrame($name)) {
 				throw new SemanticException("'{$name}' is already declared in this scope.");
 			}
 
@@ -349,7 +393,7 @@
 		 * @return bool
 		 */
 		private function isVisibleInChain(string $name): bool {
-			if (isset($this->ranges[$name])) {
+			if (isset($this->ranges[$name]) || isset($this->entityRows[$name])) {
 				return true;
 			}
 
