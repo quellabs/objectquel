@@ -34,13 +34,14 @@
 			$this->platform = $platform;
 			$this->ddlRunner = new DdlRunner($this->connection);
 		}
-
+		
 		/**
 		 * Drops the attachment; a missing one is an error unless `if exists` is given.
 		 * @param AstStatement $statement
 		 * @param ExecutionContext $context
 		 * @return void
 		 * @throws QuelException When the attachment is missing (without `if exists`) or the DROP fails
+		 * @throws \Throwable
 		 */
 		public function execute(AstStatement $statement, ExecutionContext $context): void {
 			assert($statement instanceof AstDestroyEventAttachment);
