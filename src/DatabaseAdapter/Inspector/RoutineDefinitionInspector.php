@@ -121,7 +121,13 @@
 				throw new QuelException("Can't attach to '{$name}': its metadata is from an unsupported ObjectQuel version.", 'routine_definition_error');
 			}
 
-			return $decoded;
+			$metadata = [];
+
+			foreach ($decoded as $field => $value) {
+				$metadata[(string)$field] = $value;
+			}
+
+			return $metadata;
 		}
 
 		/**
@@ -173,11 +179,12 @@
 
 				$isProcedure = (int)$row['is_procedure'] === 1;
 				$key = $row['name'] . '|' . (int)$isProcedure;
+				$returnType = $metadata['returnType'] ?? null;
 
 				$grouped[$key] = [
 					'name'        => (string)$row['name'],
 					'isProcedure' => $isProcedure,
-					'returnType'  => (string)($metadata['returnType'] ?? 'unknown'),
+					'returnType'  => is_string($returnType) ? $returnType : 'unknown',
 				];
 			}
 

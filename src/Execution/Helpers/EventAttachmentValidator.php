@@ -58,7 +58,7 @@
 		private function checkArguments(AstEventAttachment $attachment, array $metadata): void {
 			$routineName = $attachment->getCall()->getName();
 			$arguments = $attachment->getCall()->getArguments();
-			$parameters = $metadata['parameters'] ?? [];
+			$parameters = self::asArray($metadata['parameters'] ?? null);
 
 			if (count($arguments) !== count($parameters)) {
 				throw new QuelException("Can't attach '{$routineName}': it takes " . count($parameters) . ' parameter(s), but the attachment passes ' . count($arguments) . '.', 'routine_call_error');
@@ -68,7 +68,8 @@
 
 			foreach ($arguments as $index => $argument) {
 				$isWholeRow = $argument instanceof AstIdentifier && $argument->getNext() === null;
-				$parameterKind = $parameters[$index]['kind'] ?? null;
+				$parameter = self::asArray($parameters[$index] ?? null);
+				$parameterKind = self::asStringOrNull($parameter['kind'] ?? null);
 				$position = $index + 1;
 
 				if ($isWholeRow && $parameterKind !== 'entity') {
@@ -79,9 +80,10 @@
 					throw new QuelException("Can't attach '{$routineName}': parameter {$position} is a row parameter, but the attachment doesn't pass the whole row.", 'routine_call_error');
 				}
 
-				if ($isWholeRow && ($parameters[$index]['type'] ?? null) !== $targetEntityClass) {
-					$declaredType = $parameters[$index]['type'] ?? 'unknown';
-					throw new QuelException("Can't attach '{$routineName}': parameter {$position} is typed '{$declaredType}', but the attachment's target is '{$targetEntityClass}'.", 'routine_call_error');
+				$declaredType = self::asStringOrNull($parameter['type'] ?? null);
+
+				if ($isWholeRow && $declaredType !== $targetEntityClass) {
+					throw new QuelException("Can't attach '{$routineName}': parameter {$position} is typed '" . ($declaredType ?? 'unknown') . "', but the attachment's target is '{$targetEntityClass}'.", 'routine_call_error');
 				}
 			}
 		}
@@ -105,17 +107,51 @@
 			}
 
 			$visited[$key] = true;
-			$safety = $metadata['safety'] ?? [];
+			$safety = self::asArray($metadata['safety'] ?? null);
 
-			foreach ($safety['writes'] ?? [] as $table) {
+			foreach (self::asStringList($safety['writes'] ?? null) as $table) {
 				if (strcasecmp($table, $triggeringTable) === 0) {
 					throw new QuelException("Can't attach: '{$routineName}' writes '{$table}', the table the attachment fires on; a trigger can't write its own triggering table.", 'routine_call_error');
 				}
 			}
 
-			foreach ($safety['calls'] ?? [] as $calledName) {
+			foreach (self::asStringList($safety['calls'] ?? null) as $calledName) {
 				$calledMetadata = $this->connection->getRoutineMetadata($calledName);
 				$this->checkCallGraph($calledName, $calledMetadata, $triggeringTable, $visited);
 			}
+		}
+
+		/**
+		 * Narrows a decoded-JSON value to an array. The metadata document's own shape is
+		 * trusted (RoutineMetadata), but PHP's `array<string, mixed>` can't express that a
+		 * particular field is itself array-shaped, so a nested access always starts as `mixed`.
+		 * @param mixed $value
+		 * @return array<mixed, mixed>
+		 */
+		private static function asArray(mixed $value): array {
+			return is_array($value) ? $value : [];
+		}
+
+		/**
+		 * Narrows a decoded-JSON value to a list of strings, for a `safety.calls`/
+		 * `safety.writes` field. A non-string entry is dropped rather than tripping the walk.
+		 * @param mixed $value
+		 * @return list<string>
+		 */
+		private static function asStringList(mixed $value): array {
+			if (!is_array($value)) {
+				return [];
+			}
+
+			return array_values(array_filter($value, 'is_string'));
+		}
+
+		/**
+		 * Narrows a decoded-JSON value to a string, or null when it isn't one.
+		 * @param mixed $value
+		 * @return string|null
+		 */
+		private static function asStringOrNull(mixed $value): ?string {
+			return is_string($value) ? $value : null;
 		}
 	}
