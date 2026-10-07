@@ -6,6 +6,7 @@
 	use Cake\Database\Schema\Collection as SchemaCollection;
 	use Cake\Database\StatementInterface;
 	use Cake\Database\Connection;
+	use Quellabs\ObjectQuel\DatabaseAdapter\Inspector\EventAttachmentInspector;
 	use Quellabs\ObjectQuel\DatabaseAdapter\Inspector\MysqlSchemaIntrospector;
 	use Quellabs\ObjectQuel\DatabaseAdapter\Inspector\NullSchemaIntrospector;
 	use Quellabs\ObjectQuel\DatabaseAdapter\Inspector\PostgresSchemaIntrospector;
@@ -108,6 +109,9 @@
 
 		/** @var RoutineDefinitionInspector|null Lazily created inspector; routine metadata itself is not cached */
 		private ?RoutineDefinitionInspector $routineDefinitionInspectorCache = null;
+
+		/** @var EventAttachmentInspector|null Lazily created inspector */
+		private ?EventAttachmentInspector $eventAttachmentInspectorCache = null;
 		
 		/**
 		 * Constructs a new database adapter instance
@@ -306,6 +310,19 @@
 		public function getRoutineMetadata(string $name): array {
 			$this->routineDefinitionInspectorCache ??= new RoutineDefinitionInspector($this);
 			return $this->routineDefinitionInspectorCache->getRoutineMetadata($name);
+		}
+
+		/**
+		 * Checks whether a trigger by this name already exists on this table.
+		 * @param string $table Physical table the trigger would be on
+		 * @param string $name Generated trigger name
+		 * @return bool
+		 * @throws \Quellabs\ObjectQuel\Exception\QuelException When the lookup fails or triggers are unsupported
+		 * @see EventAttachmentInspector::triggerExists()
+		 */
+		public function triggerExists(string $table, string $name): bool {
+			$this->eventAttachmentInspectorCache ??= new EventAttachmentInspector($this);
+			return $this->eventAttachmentInspectorCache->triggerExists($table, $name);
 		}
 
 		/**

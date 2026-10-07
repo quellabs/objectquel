@@ -9,13 +9,19 @@
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstIdentifier;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AttachmentEvent;
 	use Quellabs\ObjectQuel\ObjectQuel\AstInterface;
-	use Quellabs\ObjectQuel\ObjectQuel\Visitors\CollectNodes;
 
 	/**
 	 * Database-independent checks on an `after ... call ...(...)` attachment: `old`/`new`
 	 * availability for the event, and the shape of each call argument. Matching the called
 	 * routine's deployed signature and safety graph needs its live metadata and is checked
 	 * separately, at attachment time (see objectquel-equel-triggers-design.md).
+	 *
+	 * Each argument must be exactly `old`, `new`, `old.field` or `new.field` — the only
+	 * argument shapes any of the design doc's examples show. A generated CREATE TRIGGER is
+	 * static DDL compiled once, so a `:bound` parameter from the attach statement's own
+	 * execution context could never be re-evaluated per firing, and a literal constant or
+	 * arithmetic expression has no example motivating the extra DDL-rendering work; both are
+	 * rejected here rather than half-supported.
 	 */
 	class EventAttachmentAnalyzer {
 
@@ -41,7 +47,8 @@
 		}
 
 		/**
-		 * Checks every root identifier an argument expression reads.
+		 * Checks one call argument. See the class docblock for why only a direct `old`/`new`
+		 * row or field reference is accepted.
 		 * @param AstInterface $argument One call argument
 		 * @param AttachmentEvent $event The attachment's event
 		 * @param string $entityName Target range's entity, for `old.field`/`new.field`
@@ -49,23 +56,18 @@
 		 * @throws SemanticException|EntityResolutionException
 		 */
 		private function analyzeArgument(AstInterface $argument, AttachmentEvent $event, string $entityName): void {
-			$collector = new CollectNodes(AstIdentifier::class);
-			$argument->accept($collector);
-
-			foreach ($collector->getCollectedNodes() as $identifier) {
-				// Only root identifiers are checked directly; a field segment is checked
-				// through its root (see checkRowReference()).
-				if (!$identifier->getParent() instanceof AstIdentifier) {
-					$this->checkRowReference($identifier, $event, $entityName);
-				}
+			if (!$argument instanceof AstIdentifier) {
+				throw new SemanticException("Attachment call arguments must be 'old', 'new', 'old.field' or 'new.field'; other expressions aren't supported.");
 			}
+
+			$this->checkRowReference($argument, $event, $entityName);
 		}
 
 		/**
-		 * Checks one root identifier: it must be `old` or `new`, available for this event, with
-		 * at most one field segment naming a mapped column — there is no other scope here, so
-		 * any other bare name is undefined and any deeper chain has nothing to resolve against.
-		 * @param AstIdentifier $identifier Root identifier
+		 * Checks one argument identifier: it must be `old` or `new`, available for this event,
+		 * with at most one field segment naming a mapped column — there is no other scope here,
+		 * so any other bare name is undefined and any deeper chain has nothing to resolve against.
+		 * @param AstIdentifier $identifier The argument
 		 * @param AttachmentEvent $event The attachment's event
 		 * @param string $entityName Target range's entity
 		 * @return void
