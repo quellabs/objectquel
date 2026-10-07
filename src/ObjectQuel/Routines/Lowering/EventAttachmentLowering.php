@@ -8,7 +8,6 @@
 	use Quellabs\ObjectQuel\Exception\SemanticException;
 	use Quellabs\ObjectQuel\Metadata\EntityMetadataRecord;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstEventAttachment;
-	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstIdentifier;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AttachmentEvent;
 	use Quellabs\ObjectQuel\ObjectQuel\Helpers\SqlDialect\DDLTypeMapper;
 	use Quellabs\ObjectQuel\ObjectQuel\Helpers\SqlDialect\SqlIdentifierQuoter;
@@ -44,7 +43,7 @@
 
 		/**
 		 * Lowers the attachment to target-platform DDL.
-		 * @param AstEventAttachment $attachment Attachment that passed EventAttachmentAnalyzer and EventAttachmentValidator
+		 * @param AstEventAttachment $attachment Attachment that passed EventAttachmentValidator
 		 * @param string $alias The attachment's resolved alias (given with `as <alias>`, or generated)
 		 * @return list<string> Statements to run in order
 		 * @throws SemanticException|EntityResolutionException
@@ -68,10 +67,11 @@
 		abstract protected function engineName(): string;
 
 		/**
-		 * Expands each call argument into the mapped column(s) it reads: a whole-row argument
-		 * expands to every mapped column, in the entity's column-declaration order, matching
-		 * the routine's own flattened parameter order (RoutineLowering::flattenedParameters());
-		 * a field argument expands to that one column.
+		 * Expands the event's row bindings into the mapped columns the routine's entity-row
+		 * parameters receive, in the fixed order AttachmentEvent::rowRoles() declares — matching
+		 * the routine's own flattened parameter order (RoutineLowering::flattenedParameters()).
+		 * Each row binding expands to every mapped column, in the entity's column-declaration
+		 * order; there is no per-field selection, since the attachment has no argument list.
 		 * @param AstEventAttachment $attachment The attachment
 		 * @return list<array{row: 'old'|'new', property: string, column: string}>
 		 * @throws EntityResolutionException
@@ -80,21 +80,10 @@
 			$metadata = $this->targetMetadata($attachment);
 			$expanded = [];
 
-			foreach ($attachment->getCall()->getArguments() as $argument) {
-				/** @var AstIdentifier $argument validated by EventAttachmentAnalyzer */
-				$row = strtolower($argument->getName()) === 'old' ? 'old' : 'new';
-				$field = $argument->getNext();
-
-				if ($field === null) {
-					foreach ($metadata->columnMap as $property => $column) {
-						$expanded[] = ['row' => $row, 'property' => $property, 'column' => $column];
-					}
-
-					continue;
+			foreach ($attachment->getEvent()->rowRoles() as $row) {
+				foreach ($metadata->columnMap as $property => $column) {
+					$expanded[] = ['row' => $row, 'property' => $property, 'column' => $column];
 				}
-
-				$property = $field->getName();
-				$expanded[] = ['row' => $row, 'property' => $property, 'column' => $metadata->getColumnNameOrFail($property)];
 			}
 
 			return $expanded;

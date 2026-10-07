@@ -173,7 +173,7 @@
 		 */
 		private function fetchLoop(AstEventAttachment $attachment, array $arguments): string {
 			$locals = implode(', ', array_map(fn(int $i) => "@_a{$i}", array_keys($arguments)));
-			$routineCall = $this->quoter->quoteRoutineName($attachment->getCall()->getName(), $this->routineSchema);
+			$routineCall = $this->quoter->quoteRoutineName($attachment->getRoutineName(), $this->routineSchema);
 			$cursor = self::CURSOR_NAME;
 
 			return "\tOPEN {$cursor};\n"

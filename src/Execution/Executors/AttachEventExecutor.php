@@ -12,7 +12,7 @@
 	use Quellabs\ObjectQuel\ObjectQuel\Routines\EventAttachmentCompiler;
 
 	/**
-	 * Executes `after ... call ...(...) [as <alias>]`: validates, compiles and creates the
+	 * Executes `after ... call ... [as <alias>]`: validates, compiles and creates the
 	 * attachment on the connected engine. A conflicting alias is rejected inside the compiler,
 	 * which resolves it (given or generated) before rendering — see
 	 * EventAttachmentCompiler::resolveAlias().
@@ -45,7 +45,7 @@
 		public function execute(AstStatement $statement, ExecutionContext $context): void {
 			assert($statement instanceof AstEventAttachment);
 
-			$routineName = $statement->getCall()->getName();
+			$routineName = $statement->getRoutineName();
 			$table = $this->entityManager->getEntityStore()->getMetadata($statement->getRange()->getEntityName())->tableName;
 
 			$compiler = new EventAttachmentCompiler($this->entityManager, $this->platform, $this->connection->getRoutineSchema(), $this->connection);

@@ -30,7 +30,7 @@
 			$triggerName = $this->quoter->quoteIdentifier($this->triggerName($attachment, $alias));
 			$table = $this->quotedTable($attachment);
 			$event = $this->sqlEvent($attachment->getEvent());
-			$routineCall = $this->quoter->quoteRoutineName($attachment->getCall()->getName(), null);
+			$routineCall = $this->quoter->quoteRoutineName($attachment->getRoutineName(), null);
 
 			$arguments = implode(', ', array_map(
 				fn(array $arg) => strtoupper($arg['row']) . '.' . $this->quoter->quoteIdentifier($arg['column']),

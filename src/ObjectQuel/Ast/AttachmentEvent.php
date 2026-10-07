@@ -29,6 +29,20 @@
 		}
 
 		/**
+		 * The row bindings this event supplies, in the fixed order a trigger routine's
+		 * entity-row parameters must be declared in: the pre-write row before the post-write
+		 * row, when both are available.
+		 * @return list<'old'|'new'>
+		 */
+		public function rowRoles(): array {
+			return match ($this) {
+				self::Append => ['new'],
+				self::Replace => ['old', 'new'],
+				self::Delete => ['old'],
+			};
+		}
+
+		/**
 		 * The keyword as written in `after <event> ...`, for error messages.
 		 * @return string
 		 */

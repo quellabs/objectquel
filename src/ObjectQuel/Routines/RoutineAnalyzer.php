@@ -89,6 +89,7 @@
 			}
 
 			$hasEntityRowParameter = false;
+			$hasScalarParameter = false;
 
 			foreach ($routine->getParameters() as $parameter) {
 				$entityClass = self::resolveEntityType($this->entityStore, $parameter->getType());
@@ -103,11 +104,16 @@
 					throw new SemanticException("Unknown type '{$parameter->getType()}' for parameter '{$parameter->getName()}'. Parameters take column types or a declared entity name; 'void' and 'cursor' aren't allowed.");
 				}
 
+				$hasScalarParameter = true;
 				$this->scope->declareScalar($parameter->getName());
 			}
 
 			if ($routine->isTrigger() && !$hasEntityRowParameter) {
 				throw new SemanticException("'{$routine->getName()}' declares return type 'trigger' but has no entity-row parameter; a trigger routine needs at least one, e.g. '(UserEntity old)'.");
+			}
+
+			if ($routine->isTrigger() && $hasScalarParameter) {
+				throw new SemanticException("'{$routine->getName()}' declares return type 'trigger' but has a scalar parameter; a trigger routine's parameters must all be entity-row parameters, since an attachment supplies none itself.");
 			}
 
 			if ($hasEntityRowParameter && !$routine->isTrigger()) {

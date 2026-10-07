@@ -46,7 +46,7 @@
 		}
 
 		/**
-		 * Parses, analyzes, validates and lowers one attachment.
+		 * Parses, validates and lowers one attachment.
 		 * @param string $source Attachment source containing one `after ... call ...` statement
 		 * @return list<string> Statements to run in order
 		 * @throws LexerException|ParserException|\ReflectionException
@@ -64,8 +64,8 @@
 		}
 
 		/**
-		 * Analyzes, validates and lowers an already parsed attachment. Resolves the physical
-		 * alias (given with `as <alias>`, rejecting a duplicate on this table; generated and
+		 * Validates and lowers an already parsed attachment. Resolves the physical alias
+		 * (given with `as <alias>`, rejecting a duplicate on this table; generated and
 		 * collision-checked otherwise — see EventAttachmentNaming::randomAlias()) before
 		 * rendering, so the DDL is built with the final name in one pass.
 		 * @param AstEventAttachment $attachment Attachment parsed from an `after ... call ...` source
@@ -74,7 +74,6 @@
 		 */
 		public function compileAttachment(AstEventAttachment $attachment): array {
 			$entityStore = $this->entityManager->getEntityStore();
-			(new EventAttachmentAnalyzer($entityStore))->analyze($attachment);
 			(new EventAttachmentValidator($this->connection, $entityStore))->validate($attachment);
 
 			$table = $entityStore->getMetadata($attachment->getRange()->getEntityName())->tableName;

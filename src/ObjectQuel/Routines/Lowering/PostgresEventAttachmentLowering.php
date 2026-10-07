@@ -32,7 +32,7 @@
 				EventAttachmentNaming::helperFunctionName($this->triggerName($attachment, $alias)),
 				$this->routineSchema
 			);
-			$routineCall = $this->quoter->quoteRoutineName($attachment->getCall()->getName(), $this->routineSchema);
+			$routineCall = $this->quoter->quoteRoutineName($attachment->getRoutineName(), $this->routineSchema);
 
 			$arguments = implode(', ', array_map(
 				fn(array $arg) => strtoupper($arg['row']) . '.' . $this->quoter->quoteIdentifier($arg['column']),

@@ -7,13 +7,13 @@
 	use Quellabs\ObjectQuel\Exception\EntityResolutionException;
 	use Quellabs\ObjectQuel\Exception\QuelException;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstEventAttachment;
-	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstIdentifier;
 
 	/**
 	 * Validates an attachment against the called routine's live metadata: its deployed
-	 * `trigger` return type, row/scalar parameter shape, and the transitive safety graph of
-	 * everything it calls — the checks EventAttachmentAnalyzer can't do without the database.
-	 * See "Routine metadata and attachment dependencies" in objectquel-equel-triggers-design.md.
+	 * `trigger` return type, entity-row parameter count/type against the event's own row
+	 * count, and the transitive safety graph of everything it calls. This needs a live
+	 * connection, so it runs at attachment time rather than at parse time. See "Routine
+	 * metadata and attachment dependencies" in objectquel-equel-triggers-design.md.
 	 */
 	class EventAttachmentValidator {
 
@@ -34,55 +34,51 @@
 		 * @throws QuelException|EntityResolutionException
 		 */
 		public function validate(AstEventAttachment $attachment): void {
-			$routineName = $attachment->getCall()->getName();
+			$routineName = $attachment->getRoutineName();
 			$metadata = $this->connection->getRoutineMetadata($routineName);
 
 			if (($metadata['returnType'] ?? null) !== 'trigger') {
 				throw new QuelException("Can't attach '{$routineName}': it isn't declared 'trigger'.", 'routine_call_error');
 			}
 
-			$this->checkArguments($attachment, $metadata);
+			$this->checkParameters($attachment, $metadata);
 
 			$triggeringTable = $this->entityStore->getMetadata($attachment->getRange()->getEntityName())->tableName;
 			$this->checkCallGraph($routineName, $metadata, $triggeringTable, []);
 		}
 
 		/**
-		 * Matches each call argument, by position, against the routine's declared parameter kind,
-		 * and a whole-row argument's entity against the attachment's target entity.
+		 * Matches the routine's declared entity-row parameters, by position, against the event's
+		 * own row count and the attachment's target entity. The attachment has no argument list
+		 * of its own — the event determines how many rows are available and in what order (see
+		 * AttachmentEvent::rowRoles()), and the routine's parameter list must match exactly.
 		 * @param AstEventAttachment $attachment The attachment
 		 * @param array<string, mixed> $metadata The called routine's metadata
 		 * @return void
 		 * @throws QuelException|EntityResolutionException
 		 */
-		private function checkArguments(AstEventAttachment $attachment, array $metadata): void {
-			$routineName = $attachment->getCall()->getName();
-			$arguments = $attachment->getCall()->getArguments();
+		private function checkParameters(AstEventAttachment $attachment, array $metadata): void {
+			$routineName = $attachment->getRoutineName();
+			$rowCount = count($attachment->getEvent()->rowRoles());
 			$parameters = self::asArray($metadata['parameters'] ?? null);
 
-			if (count($arguments) !== count($parameters)) {
-				throw new QuelException("Can't attach '{$routineName}': it takes " . count($parameters) . ' parameter(s), but the attachment passes ' . count($arguments) . '.', 'routine_call_error');
+			if (count($parameters) !== $rowCount) {
+				throw new QuelException("Can't attach '{$routineName}': it declares " . count($parameters) . " entity-row parameter(s), but '{$attachment->getEvent()->keyword()}' supplies {$rowCount}.", 'routine_call_error');
 			}
 
 			$targetEntityClass = $this->entityStore->getMetadata($attachment->getRange()->getEntityName())->className;
 
-			foreach ($arguments as $index => $argument) {
-				$isWholeRow = $argument instanceof AstIdentifier && $argument->getNext() === null;
-				$parameter = self::asArray($parameters[$index] ?? null);
-				$parameterKind = self::asStringOrNull($parameter['kind'] ?? null);
+			foreach ($parameters as $index => $parameter) {
+				$parameter = self::asArray($parameter);
 				$position = $index + 1;
 
-				if ($isWholeRow && $parameterKind !== 'entity') {
-					throw new QuelException("Can't attach '{$routineName}': parameter {$position} isn't a row parameter, but the attachment passes the whole row.", 'routine_call_error');
-				}
-
-				if (!$isWholeRow && $parameterKind === 'entity') {
-					throw new QuelException("Can't attach '{$routineName}': parameter {$position} is a row parameter, but the attachment doesn't pass the whole row.", 'routine_call_error');
+				if (self::asStringOrNull($parameter['kind'] ?? null) !== 'entity') {
+					throw new QuelException("Can't attach '{$routineName}': parameter {$position} isn't an entity-row parameter.", 'routine_call_error');
 				}
 
 				$declaredType = self::asStringOrNull($parameter['type'] ?? null);
 
-				if ($isWholeRow && $declaredType !== $targetEntityClass) {
+				if ($declaredType !== $targetEntityClass) {
 					throw new QuelException("Can't attach '{$routineName}': parameter {$position} is typed '" . ($declaredType ?? 'unknown') . "', but the attachment's target is '{$targetEntityClass}'.", 'routine_call_error');
 				}
 			}
