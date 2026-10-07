@@ -23,7 +23,7 @@
 	 * engine's CREATE FUNCTION/PROCEDURE statement. The target need not be the
 	 * connected engine; routines compile ahead of time.
 	 */
-	class ProcedureCompiler {
+	class RoutineCompiler {
 
 		private EntityManager $entityManager;
 		private PlatformCapabilitiesInterface $platform;

@@ -12,7 +12,7 @@
 	use Quellabs\ObjectQuel\Execution\Helpers\RoutineCallTyper;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRoutineDefinition;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstStatement;
-	use Quellabs\ObjectQuel\ObjectQuel\Routines\ProcedureCompiler;
+	use Quellabs\ObjectQuel\ObjectQuel\Routines\RoutineCompiler;
 
 	/**
 	 * Executes `define function ...`: compiles the routine for the connected engine and
@@ -22,7 +22,7 @@
 
 		private EntityManager $entityManager;
 		private PlatformCapabilitiesInterface $platform;
-		private ?ProcedureCompiler $compiler = null;
+		private ?RoutineCompiler $compiler = null;
 		private DdlRunner $ddlRunner;
 
 		/**
@@ -37,11 +37,11 @@
 
 		/**
 		 * Returns the routine compiler. Built on first use, so SQL Server reads the routine schema only when a statement needs compiling.
-		 * @return ProcedureCompiler
+		 * @return RoutineCompiler
 		 */
-		private function compiler(): ProcedureCompiler {
+		private function compiler(): RoutineCompiler {
 			$connection = $this->entityManager->getConnection();
-			return $this->compiler ??= new ProcedureCompiler($this->entityManager, $this->platform, $connection->getRoutineSchema(), new RoutineCallTyper($connection));
+			return $this->compiler ??= new RoutineCompiler($this->entityManager, $this->platform, $connection->getRoutineSchema(), new RoutineCallTyper($connection));
 		}
 
 		/**

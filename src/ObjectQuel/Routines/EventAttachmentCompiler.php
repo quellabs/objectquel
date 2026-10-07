@@ -22,7 +22,7 @@
 
 	/**
 	 * Compiles EQUEL attachment source (`after ... call ...`) to the target engine's trigger
-	 * DDL. Unlike ProcedureCompiler, this always needs a live connection: an attachment's whole
+	 * DDL. Unlike RoutineCompiler, this always needs a live connection: an attachment's whole
 	 * purpose is to validate against an already-deployed routine's metadata (see
 	 * EventAttachmentValidator), so there is no offline compilation mode.
 	 */
