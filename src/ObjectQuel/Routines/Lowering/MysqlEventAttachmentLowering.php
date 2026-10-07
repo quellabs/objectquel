@@ -23,10 +23,11 @@
 		/**
 		 * @param AstEventAttachment $attachment The attachment
 		 * @param string $alias The attachment's resolved alias
+		 * @param int $parameterCount Number of entity-row parameters the called routine declares
 		 * @return list<string> The CREATE TRIGGER statement
 		 * @throws EntityResolutionException
 		 */
-		public function render(AstEventAttachment $attachment, string $alias): array {
+		public function render(AstEventAttachment $attachment, string $alias, int $parameterCount): array {
 			$triggerName = $this->quoter->quoteIdentifier($this->triggerName($attachment, $alias));
 			$table = $this->quotedTable($attachment);
 			$event = $this->sqlEvent($attachment->getEvent());
@@ -34,7 +35,7 @@
 
 			$arguments = implode(', ', array_map(
 				fn(array $arg) => strtoupper($arg['row']) . '.' . $this->quoter->quoteIdentifier($arg['column']),
-				$this->expandArguments($attachment)
+				$this->expandArguments($attachment, $parameterCount)
 			));
 
 			return ["CREATE TRIGGER {$triggerName}\nAFTER {$event} ON {$table}\nFOR EACH ROW\nCALL {$routineCall}({$arguments});"];

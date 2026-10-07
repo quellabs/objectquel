@@ -24,10 +24,11 @@
 		/**
 		 * @param AstEventAttachment $attachment The attachment
 		 * @param string $alias The attachment's resolved alias
+		 * @param int $parameterCount Number of entity-row parameters the called routine declares
 		 * @return list<string> The helper `CREATE FUNCTION` and the `CREATE TRIGGER` that uses it
 		 * @throws EntityResolutionException
 		 */
-		public function render(AstEventAttachment $attachment, string $alias): array {
+		public function render(AstEventAttachment $attachment, string $alias, int $parameterCount): array {
 			$helperName = $this->quoter->quoteRoutineName(
 				EventAttachmentNaming::helperFunctionName($this->triggerName($attachment, $alias)),
 				$this->routineSchema
@@ -36,7 +37,7 @@
 
 			$arguments = implode(', ', array_map(
 				fn(array $arg) => strtoupper($arg['row']) . '.' . $this->quoter->quoteIdentifier($arg['column']),
-				$this->expandArguments($attachment)
+				$this->expandArguments($attachment, $parameterCount)
 			));
 
 			$returns = $attachment->getEvent() === AttachmentEvent::Delete ? 'OLD' : 'NEW';

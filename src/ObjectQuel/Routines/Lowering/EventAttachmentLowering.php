@@ -45,10 +45,11 @@
 		 * Lowers the attachment to target-platform DDL.
 		 * @param AstEventAttachment $attachment Attachment that passed EventAttachmentValidator
 		 * @param string $alias The attachment's resolved alias (given with `as <alias>`, or generated)
+		 * @param int $parameterCount Number of entity-row parameters the called routine declares
 		 * @return list<string> Statements to run in order
 		 * @throws SemanticException|EntityResolutionException
 		 */
-		abstract public function render(AstEventAttachment $attachment, string $alias): array;
+		abstract public function render(AstEventAttachment $attachment, string $alias, int $parameterCount): array;
 
 		/**
 		 * Lowers the removal of one attachment, identified by its (table, alias) pair —
@@ -70,17 +71,22 @@
 		 * Expands the event's row bindings into the mapped columns the routine's entity-row
 		 * parameters receive, in the fixed order AttachmentEvent::rowRoles() declares — matching
 		 * the routine's own flattened parameter order (RoutineLowering::flattenedParameters()).
-		 * Each row binding expands to every mapped column, in the entity's column-declaration
-		 * order; there is no per-field selection, since the attachment has no argument list.
+		 * A routine declaring fewer entity-row parameters than the event supplies rows binds to
+		 * the leading rows only (e.g. one parameter on `replace` binds `old`, never `new`); the
+		 * trailing, undeclared rows are left out of the call entirely. Each bound row expands to
+		 * every mapped column, in the entity's column-declaration order; there is no per-field
+		 * selection, since the attachment has no argument list.
 		 * @param AstEventAttachment $attachment The attachment
+		 * @param int $parameterCount Number of entity-row parameters the called routine declares
 		 * @return list<array{row: 'old'|'new', property: string, column: string}>
 		 * @throws EntityResolutionException
 		 */
-		protected function expandArguments(AstEventAttachment $attachment): array {
+		protected function expandArguments(AstEventAttachment $attachment, int $parameterCount): array {
 			$metadata = $this->targetMetadata($attachment);
+			$rows = array_slice($attachment->getEvent()->rowRoles(), 0, $parameterCount);
 			$expanded = [];
 
-			foreach ($attachment->getEvent()->rowRoles() as $row) {
+			foreach ($rows as $row) {
 				foreach ($metadata->columnMap as $property => $column) {
 					$expanded[] = ['row' => $row, 'property' => $property, 'column' => $column];
 				}

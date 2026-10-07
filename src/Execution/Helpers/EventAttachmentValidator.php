@@ -30,10 +30,10 @@
 		/**
 		 * Validates the attachment, rejecting before any DDL is emitted.
 		 * @param AstEventAttachment $attachment Parsed, analyzer-checked attachment
-		 * @return void
+		 * @return int Number of entity-row parameters the routine declares
 		 * @throws QuelException|EntityResolutionException
 		 */
-		public function validate(AstEventAttachment $attachment): void {
+		public function validate(AstEventAttachment $attachment): int {
 			$routineName = $attachment->getRoutineName();
 			$metadata = $this->connection->getRoutineMetadata($routineName);
 
@@ -41,29 +41,32 @@
 				throw new QuelException("Can't attach '{$routineName}': it isn't declared 'trigger'.", 'routine_call_error');
 			}
 
-			$this->checkParameters($attachment, $metadata);
+			$parameterCount = $this->checkParameters($attachment, $metadata);
 
 			$triggeringTable = $this->entityStore->getMetadata($attachment->getRange()->getEntityName())->tableName;
 			$this->checkCallGraph($routineName, $metadata, $triggeringTable, []);
+
+			return $parameterCount;
 		}
 
 		/**
 		 * Matches the routine's declared entity-row parameters, by position, against the event's
 		 * own row count and the attachment's target entity. The attachment has no argument list
 		 * of its own — the event determines how many rows are available and in what order (see
-		 * AttachmentEvent::rowRoles()), and the routine's parameter list must match exactly.
+		 * AttachmentEvent::rowRoles()). The routine may declare fewer parameters than the event
+		 * supplies rows (binding to the leading rows, in order) but never more.
 		 * @param AstEventAttachment $attachment The attachment
 		 * @param array<string, mixed> $metadata The called routine's metadata
-		 * @return void
+		 * @return int Number of entity-row parameters the routine declares
 		 * @throws QuelException|EntityResolutionException
 		 */
-		private function checkParameters(AstEventAttachment $attachment, array $metadata): void {
+		private function checkParameters(AstEventAttachment $attachment, array $metadata): int {
 			$routineName = $attachment->getRoutineName();
 			$rowCount = count($attachment->getEvent()->rowRoles());
 			$parameters = self::asArray($metadata['parameters'] ?? null);
 
-			if (count($parameters) !== $rowCount) {
-				throw new QuelException("Can't attach '{$routineName}': it declares " . count($parameters) . " entity-row parameter(s), but '{$attachment->getEvent()->keyword()}' supplies {$rowCount}.", 'routine_call_error');
+			if (count($parameters) > $rowCount) {
+				throw new QuelException("Can't attach '{$routineName}': it declares " . count($parameters) . " entity-row parameter(s), but '{$attachment->getEvent()->keyword()}' only supplies {$rowCount}.", 'routine_call_error');
 			}
 
 			$targetEntityClass = $this->entityStore->getMetadata($attachment->getRange()->getEntityName())->className;
@@ -82,6 +85,8 @@
 					throw new QuelException("Can't attach '{$routineName}': parameter {$position} is typed '" . ($declaredType ?? 'unknown') . "', but the attachment's target is '{$targetEntityClass}'.", 'routine_call_error');
 				}
 			}
+
+			return count($parameters);
 		}
 
 		/**

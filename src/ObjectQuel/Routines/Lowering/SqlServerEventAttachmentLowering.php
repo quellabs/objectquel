@@ -31,10 +31,11 @@
 		/**
 		 * @param AstEventAttachment $attachment The attachment
 		 * @param string $alias The attachment's resolved alias
+		 * @param int $parameterCount Number of entity-row parameters the called routine declares
 		 * @return list<string> The CREATE TRIGGER statement
 		 * @throws SemanticException|EntityResolutionException
 		 */
-		public function render(AstEventAttachment $attachment, string $alias): array {
+		public function render(AstEventAttachment $attachment, string $alias, int $parameterCount): array {
 			$event = $attachment->getEvent();
 
 			if ($event === AttachmentEvent::Replace) {
@@ -44,7 +45,7 @@
 			$triggerName = $this->quoter->quoteIdentifier($this->triggerName($attachment, $alias));
 			$table = $this->quotedTable($attachment);
 			$sqlEvent = $this->sqlEvent($event);
-			$body = $event === AttachmentEvent::Replace ? $this->updateBody($attachment) : $this->singleRowsetBody($attachment, $event);
+			$body = $event === AttachmentEvent::Replace ? $this->updateBody($attachment, $parameterCount) : $this->singleRowsetBody($attachment, $event, $parameterCount);
 
 			return ["CREATE TRIGGER {$triggerName}\nON {$table}\nAFTER {$sqlEvent}\nAS\nBEGIN\n\tSET NOCOUNT ON;\n\n{$body}\nEND;"];
 		}
@@ -80,13 +81,14 @@
 		 * Builds the body for INSERT/DELETE: a single rowset, no pairing, no key required.
 		 * @param AstEventAttachment $attachment The attachment
 		 * @param AttachmentEvent $event Append or Delete
+		 * @param int $parameterCount Number of entity-row parameters the called routine declares
 		 * @return string
 		 * @throws EntityResolutionException
 		 */
-		private function singleRowsetBody(AstEventAttachment $attachment, AttachmentEvent $event): string {
+		private function singleRowsetBody(AstEventAttachment $attachment, AttachmentEvent $event, int $parameterCount): string {
 			$alias = $event === AttachmentEvent::Append ? 'i' : 'd';
 			$rowset = $event === AttachmentEvent::Append ? 'inserted' : 'deleted';
-			$arguments = $this->expandArguments($attachment);
+			$arguments = $this->expandArguments($attachment, $parameterCount);
 			$select = $this->selectList($arguments, fn(array $arg) => $alias);
 
 			$cursor = "DECLARE " . self::CURSOR_NAME . " CURSOR LOCAL FORWARD_ONLY STATIC READ_ONLY FOR\n"
@@ -101,10 +103,11 @@
 		 * Builds the body for UPDATE: a zero-row guard, the key-change guard, then `deleted`
 		 * paired with `inserted` on every mapped key column.
 		 * @param AstEventAttachment $attachment The attachment
+		 * @param int $parameterCount Number of entity-row parameters the called routine declares
 		 * @return string
 		 * @throws EntityResolutionException
 		 */
-		private function updateBody(AstEventAttachment $attachment): string {
+		private function updateBody(AstEventAttachment $attachment, int $parameterCount): string {
 			$metadata = $this->targetMetadata($attachment);
 			$keyChecks = implode(' OR ', array_map(
 				fn(string $column) => 'UPDATE(' . $this->quoter->quoteIdentifier($column) . ')',
@@ -120,7 +123,7 @@
 				. "\t\tRAISERROR('A key column of %s is targeted by this UPDATE; the attached trigger can''t pair changed rows when a key column is written, even to the same value.', 16, 1, '{$this->physicalTable($attachment)}');\n"
 				. "\t\tRETURN;\n\tEND;\n";
 
-			$arguments = $this->expandArguments($attachment);
+			$arguments = $this->expandArguments($attachment, $parameterCount);
 			$select = $this->selectList($arguments, fn(array $arg) => $arg['row'] === 'old' ? 'd' : 'i');
 
 			$cursor = "DECLARE " . self::CURSOR_NAME . " CURSOR LOCAL FORWARD_ONLY STATIC READ_ONLY FOR\n"

@@ -74,12 +74,12 @@
 		 */
 		public function compileAttachment(AstEventAttachment $attachment): array {
 			$entityStore = $this->entityManager->getEntityStore();
-			(new EventAttachmentValidator($this->connection, $entityStore))->validate($attachment);
+			$parameterCount = (new EventAttachmentValidator($this->connection, $entityStore))->validate($attachment);
 
 			$table = $entityStore->getMetadata($attachment->getRange()->getEntityName())->tableName;
 			$alias = $this->resolveAlias($table, $attachment->getAlias());
 
-			return $this->lowering()->render($attachment, $alias);
+			return $this->lowering()->render($attachment, $alias, $parameterCount);
 		}
 
 		/**
