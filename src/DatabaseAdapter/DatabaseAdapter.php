@@ -343,6 +343,19 @@
 		}
 
 		/**
+		 * Finds every attachment trigger on a table, so `alter table` can refuse to change a
+		 * mapped column while one still depends on it.
+		 * @param string $table Physical table being altered
+		 * @return list<string> Names of attachment triggers found on it; empty when none exist
+		 * @throws \Quellabs\ObjectQuel\Exception\QuelException When the lookup fails or triggers are unsupported
+		 * @see RoutineDependencyInspector::findAttachmentTriggersOnTable()
+		 */
+		public function findAttachmentTriggersOnTable(string $table): array {
+			$this->routineDependencyInspectorCache ??= new RoutineDependencyInspector($this);
+			return $this->routineDependencyInspectorCache->findAttachmentTriggersOnTable($table);
+		}
+
+		/**
 		 * Checks whether a function or procedure has this name, without resolving its call signature.
 		 * @param string $name Routine name as written
 		 * @return bool True when either routine kind exists

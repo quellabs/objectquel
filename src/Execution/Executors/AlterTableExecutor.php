@@ -7,9 +7,12 @@
 	use Quellabs\ObjectQuel\Exception\QuelException;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstAlterAddForeignKey;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstAlterAddIndex;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstAlterDropColumn;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstAlterDropIndex;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstAlterDropPrimaryKey;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstAlterOperation;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstAlterRenameColumn;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstAlterRetypeColumn;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstAlterSetPrimaryKey;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstAlterTable;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstCreateIndex;
@@ -93,12 +96,64 @@
 		public function execute(AstStatement $statement, ExecutionContext $context): void {
 			assert($statement instanceof AstAlterTable);
 
+			$this->assertNoLiveAttachment($statement);
+
 			$this->ddlRunner->runTransactionally(
 				$this->compileSql($statement),
 				$this->platform,
 				"Failed to alter table '{$statement->getTableName()}'",
 				'table_alteration_error'
 			);
+		}
+
+		/**
+		 * Refuses a column-shape change (drop/rename/retype, or a primary-key change — SQL
+		 * Server's UPDATE attachments pair deleted/inserted on the mapped key) while a live
+		 * attachment still exists on the table: it depends on the table's current columns, and
+		 * ObjectQuel never silently rebuilds an attachment behind a schema change (see
+		 * "Attachment dependency discovery" in objectquel-equel-triggers-design.md). Adding a
+		 * column, or an index/foreign-key sub-operation, doesn't affect an existing attachment's
+		 * generated DDL or its routine's already-deployed signature, so neither is checked here.
+		 * @param AstAlterTable $statement The statement about to run
+		 * @return void
+		 * @throws QuelException When a live attachment blocks a signature-relevant sub-operation
+		 */
+		private function assertNoLiveAttachment(AstAlterTable $statement): void {
+			if (!$this->containsSignatureRelevantOperation($statement->getOperations())) {
+				return;
+			}
+
+			$attachments = $this->connection->findAttachmentTriggersOnTable($statement->getTableName());
+
+			if ($attachments !== []) {
+				$names = implode("', '", $attachments);
+				throw new QuelException(
+					"Can't alter '{$statement->getTableName()}': attachment trigger(s) '{$names}' depend on its mapped columns. " .
+					"Detach them first ('destroy event ...'), then redefine and reattach as needed.",
+					'table_alteration_error'
+				);
+			}
+		}
+
+		/**
+		 * @param AstAlterOperation[] $operations
+		 * @return bool True when any sub-operation can change an existing attachment's generated
+		 *         column references or its routine's already-deployed native signature
+		 */
+		private function containsSignatureRelevantOperation(array $operations): bool {
+			foreach ($operations as $operation) {
+				if (
+					$operation instanceof AstAlterDropColumn ||
+					$operation instanceof AstAlterRenameColumn ||
+					$operation instanceof AstAlterRetypeColumn ||
+					$operation instanceof AstAlterSetPrimaryKey ||
+					$operation instanceof AstAlterDropPrimaryKey
+				) {
+					return true;
+				}
+			}
+
+			return false;
 		}
 
 		/**
