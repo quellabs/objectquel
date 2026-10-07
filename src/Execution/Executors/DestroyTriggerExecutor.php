@@ -17,7 +17,7 @@
 	 * attachment, never the routine itself (see "Attachment identity and removal" in
 	 * objectquel-equel-triggers-design.md).
 	 */
-	class DestroyEventExecutor implements DdlStatementExecutorInterface {
+	class DestroyTriggerExecutor implements DdlStatementExecutorInterface {
 
 		private EntityManager $entityManager;
 		private DatabaseAdapter $connection;
