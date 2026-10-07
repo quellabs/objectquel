@@ -69,6 +69,23 @@ $result = $entityManager->executeQuery('double_value(:value)', ['value' => 21]);
 
 EQUEL supports MySQL/MariaDB, PostgreSQL, and SQL Server. A definition fails if its name already exists; use `destroy function` before redefining it. See the [EQUEL guide](https://objectquel.com/docs?section=language-equel) for function bodies, calls, and engine notes.
 
+A function declared `trigger`, taking a mapped entity as a row parameter, attaches to a table's writes instead of being called directly:
+
+```php
+$entityManager->executeQuery('
+    range of u is App\Entity\User
+    define function audit_user (App\Entity\User old, App\Entity\User new) trigger {
+        append to a (userId = new.id, previousName = old.username, currentName = new.username)
+    }
+');
+$entityManager->executeQuery('
+    range of u is App\Entity\User
+    after replace u call audit_user(old, new)
+');
+```
+
+Attach with `after append to|replace|delete <range> call <function>(...)`; detach with the symmetric `destroy event ... [if exists]`. `destroy function` refuses while an attachment still calls it, and `alter` refuses a column-shape or primary-key change on a table with a live attachment — detach first, then redefine and reattach as needed. See the [EQUEL guide](https://objectquel.com/docs?section=language-equel) for row-parameter typing, event mapping, and per-engine safety notes.
+
 ## ORM and tooling
 
 ObjectQuel includes entity and relationship mapping, a Unit of Work, lazy loading, optimistic locking, lifecycle events, repositories, and migrations. Its Sculpt CLI can generate entities from scratch or existing tables and create or run migrations:
