@@ -297,6 +297,18 @@
 		}
 
 		/**
+		 * Reads a routine's full JSON metadata, for attachment validation.
+		 * @param string $name Routine name as written
+		 * @return array<string, mixed> Decoded metadata
+		 * @throws \Quellabs\ObjectQuel\Exception\QuelException When missing, ambiguous, unmanaged, or the lookup fails
+		 * @see RoutineDefinitionInspector::getRoutineMetadata()
+		 */
+		public function getRoutineMetadata(string $name): array {
+			$this->routineDefinitionInspectorCache ??= new RoutineDefinitionInspector($this);
+			return $this->routineDefinitionInspectorCache->getRoutineMetadata($name);
+		}
+
+		/**
 		 * Checks whether a function or procedure has this name, without resolving its call signature.
 		 * @param string $name Routine name as written
 		 * @return bool True when either routine kind exists

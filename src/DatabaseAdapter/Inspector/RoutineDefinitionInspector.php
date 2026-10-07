@@ -78,6 +78,53 @@
 		}
 
 		/**
+		 * Reads a routine's full versioned JSON metadata (RoutineMetadata), for attachment
+		 * validation: matching the called routine's row-parameter types and walking its safety
+		 * graph needs the whole document, not just the isTrigger/needsTransaction flags
+		 * getRoutineSignature() exposes.
+		 * @param string $name Routine name as written
+		 * @return array<string, mixed> Decoded metadata
+		 * @throws QuelException When the routine is missing/ambiguous, its metadata is missing,
+		 *         unreadable, malformed, or from an unsupported version, or the lookup fails
+		 */
+		public function getRoutineMetadata(string $name): array {
+			[$sql, $parameters] = $this->signatureQuery($name);
+			$result = $this->connection->execute($sql, $parameters);
+
+			if ($result === null) {
+				throw new QuelException("Failed to look up routine '{$name}': {$this->connection->getLastErrorMessage()}", 'routine_call_error');
+			}
+
+			$rows = $result->fetchAll('assoc');
+
+			if ($rows === []) {
+				throw new QuelException("Can't attach to '{$name}': no routine by that name exists.", 'routine_call_error');
+			}
+
+			if (count($rows) > 1) {
+				throw new QuelException("Can't attach to '{$name}': both a void and a value-returning function have that name.", 'routine_call_error');
+			}
+
+			$comment = $rows[0]['routine_comment'] ?? null;
+
+			if ($comment === null || $comment === '') {
+				throw new QuelException("Can't attach to '{$name}': it has no ObjectQuel metadata. Redefine it with the current ObjectQuel version.", 'routine_definition_error');
+			}
+
+			$decoded = json_decode($comment, true);
+
+			if (!is_array($decoded) || !isset($decoded['objectQuel'])) {
+				throw new QuelException("Can't attach to '{$name}': its metadata is missing or unreadable.", 'routine_definition_error');
+			}
+
+			if ($decoded['objectQuel'] !== 1) {
+				throw new QuelException("Can't attach to '{$name}': its metadata is from an unsupported ObjectQuel version.", 'routine_definition_error');
+			}
+
+			return $decoded;
+		}
+
+		/**
 		 * Checks whether any function or procedure has this name.
 		 * @param string $name Routine name as written
 		 * @return bool True when at least one routine exists
