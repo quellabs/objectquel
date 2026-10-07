@@ -10,12 +10,14 @@
 	/**
 	 * ListFunctionsCommand - CLI command for listing all EQUEL functions
 	 *
-	 * Reads the connected database's function catalog and displays every EQUEL function
-	 * with its parameters and return type: an abstract ObjectQuel column type, or "void"
-	 * for a function with no return value — EQUEL's own return type, exactly as written in
-	 * `define function name(...) void { ... }`. EQUEL has only one kind of routine, a
-	 * function; the function/procedure split some engines use internally is not exposed
-	 * here.
+	 * Reads the connected database's function catalog and displays every routine carrying
+	 * ObjectQuel's own JSON metadata (RoutineMetadata) — i.e. one `define function` deployed.
+	 * A routine without that metadata was created outside ObjectQuel, or predates the
+	 * metadata, and isn't shown: its EQUEL-level return type and parameter shape can't be
+	 * recovered from the native catalog alone. The return type shown is the metadata's own:
+	 * `void`, `trigger`, or the declared scalar type, exactly as written in
+	 * `define function name(...) returnType { ... }`. The function/procedure split some
+	 * engines use internally is not exposed here.
 	 *
 	 * Supported dialects: MySQL, MariaDB, PostgreSQL, SQL Server. SQLite has no stored
 	 * functions and is reported as an error.
@@ -55,11 +57,14 @@
 		public function getHelp(): string {
 			return <<<HELP
 DESCRIPTION:
-    Lists every EQUEL function in the connected database's default schema,
-    with its parameters and return type. Both are shown as ObjectQuel's
-    abstract column types, not the engine-native ones, and the return type
-    may be `void`, mirroring EQUEL's own `define function name(...)
-    returnType { ... }` syntax. EQUEL only has functions — the
+    Lists every function in the connected database's default schema that
+    carries ObjectQuel's own metadata, i.e. was deployed by `define
+    function`. A function or procedure created outside ObjectQuel, or
+    deployed before this metadata existed, is not listed.
+
+    Return type is shown exactly as EQUEL declared it — `void`, `trigger`,
+    or an abstract ObjectQuel column type. Parameter types are shown as
+    abstract column types too. EQUEL only has functions — the
     function/procedure split some engines use internally is not exposed
     here.
 
@@ -101,7 +106,7 @@ HELP;
 					$rows[] = [
 						$function['name'],
 						$this->formatParameters($function['parameters']),
-						$function['isProcedure'] ? 'void' : ($function['returnType'] ?? 'unknown'),
+						$function['returnType'],
 					];
 				}
 
