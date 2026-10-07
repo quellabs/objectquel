@@ -47,15 +47,11 @@
 			$tag = $this->dollarQuoteTag($block);
 			$create = $this->header($routine) . "\nLANGUAGE plpgsql\nAS {$tag}\n{$block}\n{$tag};";
 
-			// Metadata is only emitted on the PROCEDURE path (void or trigger routines); see RoutineMetadata.
-			if (!$routine->returnsNoValue()) {
-				return [$create];
-			}
-
-			// COMMENT ON PROCEDURE needs the argument types to disambiguate an overload, same as the CREATE signature
+			// COMMENT ON [FUNCTION|PROCEDURE] needs the argument types to disambiguate an overload, same as the CREATE signature
 			$argTypes = implode(', ', array_column($this->flattenedParameters($routine), 'sqlType'));
 			$signature = $this->quoter->quoteRoutineName($routine->getName(), $this->routineSchema) . "({$argTypes})";
-			$comment = "COMMENT ON PROCEDURE {$signature} IS " . $this->quoter->quoteStringLiteral($this->metadataJson) . ';';
+			$kind = $routine->returnsNoValue() ? 'PROCEDURE' : 'FUNCTION';
+			$comment = "COMMENT ON {$kind} {$signature} IS " . $this->quoter->quoteStringLiteral($this->metadataJson) . ';';
 
 			return [$create, $comment];
 		}

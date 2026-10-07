@@ -61,7 +61,7 @@
 		/** Routine being lowered */
 		protected AstRoutineDefinition $routine;
 
-		/** JSON metadata for the routine being lowered (see RoutineMetadata); emitted only on the PROCEDURE path */
+		/** JSON metadata for the routine being lowered (see RoutineMetadata); emitted for every routine, function or procedure */
 		protected string $metadataJson;
 
 		/**

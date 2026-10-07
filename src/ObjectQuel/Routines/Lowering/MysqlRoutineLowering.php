@@ -159,13 +159,13 @@
 
 			// Advisory on MySQL, but binary logging rejects a function without READS SQL DATA (or NO SQL/DETERMINISTIC)
 			$dataAccess = $this->writesTables($routine) ? 'MODIFIES SQL DATA' : 'READS SQL DATA';
+			$comment = "\nCOMMENT " . $this->quoter->quoteStringLiteral($this->metadataJson);
 
 			if ($routine->returnsNoValue()) {
-				$comment = "\nCOMMENT " . $this->quoter->quoteStringLiteral($this->metadataJson);
 				return "CREATE PROCEDURE {$signature}\n{$dataAccess}{$comment}";
 			}
 
-			return "CREATE FUNCTION {$signature}\nRETURNS " . $this->sqlType($routine->getDeclaredReturnType()) . "\n{$dataAccess}";
+			return "CREATE FUNCTION {$signature}\nRETURNS " . $this->sqlType($routine->getDeclaredReturnType()) . "\n{$dataAccess}{$comment}";
 		}
 
 		/**

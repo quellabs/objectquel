@@ -114,11 +114,6 @@
 
 			$create = $this->header($routine, $parameters) . "\nAS\nBEGIN\n{$declarations}{$body}END;";
 
-			// Metadata is only emitted on the PROCEDURE path (void or trigger routines); see RoutineMetadata.
-			if (!$routine->returnsNoValue()) {
-				return [$create];
-			}
-
 			return [$create, $this->metadataPropertyStatement($routine)];
 		}
 
@@ -132,11 +127,12 @@
 			$schema = $this->routineSchema ?? 'dbo';
 			$name = $this->quoter->escapeStringLiteral($routine->getName());
 			$metadata = $this->quoter->escapeStringLiteral($this->metadataJson);
+			$level1Type = $routine->returnsNoValue() ? 'PROCEDURE' : 'FUNCTION';
 
 			return "EXEC sys.sp_addextendedproperty "
 				. "@name = N'ObjectQuel_Metadata', @value = N'{$metadata}', "
 				. "@level0type = N'SCHEMA', @level0name = N'{$schema}', "
-				. "@level1type = N'PROCEDURE', @level1name = N'{$name}';";
+				. "@level1type = N'{$level1Type}', @level1name = N'{$name}';";
 		}
 
 		/**
