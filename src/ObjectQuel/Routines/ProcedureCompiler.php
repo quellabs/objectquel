@@ -49,7 +49,7 @@
 		/**
 		 * Parses, analyzes and lowers one routine.
 		 * @param string $source Routine source containing one `define function`
-		 * @return list<string> Statements to run in order, the last one creating the routine
+		 * @return list<string> Statements to run in order; the first creates the routine, any later ones attach its metadata
 		 * @throws LexerException|ParserException|\ReflectionException
 		 * @throws SemanticException|EntityResolutionException|TransformationException|QuelException
 		 */
@@ -67,7 +67,7 @@
 		/**
 		 * Analyzes and lowers an already parsed routine.
 		 * @param AstRoutineDefinition $routine Routine parsed from a `define function` source
-		 * @return list<string> Statements to run in order, the last one creating the routine
+		 * @return list<string> Statements to run in order; the first creates the routine, any later ones attach its metadata
 		 * @throws SemanticException|EntityResolutionException|TransformationException|QuelException
 		 */
 		public function compileRoutine(AstRoutineDefinition $routine): array {
@@ -79,7 +79,7 @@
 		/**
 		 * Compiles an analyzed routine into ordered database statements.
 		 * @param AstRoutineDefinition $routine Routine that passed RoutineAnalyzer
-		 * @return list<string> Statements to run in order, the last one creating the routine
+		 * @return list<string> Statements to run in order; the first creates the routine, any later ones attach its metadata
 		 * @throws SemanticException|EntityResolutionException|TransformationException|QuelException
 		 */
 		public function lower(AstRoutineDefinition $routine): array {

@@ -57,16 +57,17 @@
 		}
 
 		/**
-		 * Builds SQL declarations for routine parameters.
+		 * Builds SQL declarations for routine parameters, flattening an entity-row parameter
+		 * into one declaration per mapped column.
 		 * @param AstRoutineDefinition $routine The routine
 		 * @return array<string, string> SQL type of every parameter, by variable name as written in SQL
-		 * @throws QuelException
+		 * @throws QuelException|EntityResolutionException
 		 */
 		protected function parameterVariables(AstRoutineDefinition $routine): array {
 			$variables = [];
 
-			foreach ($routine->getParameters() as $parameter) {
-				$variables[$this->variableName($parameter->getName())] = $this->sqlType($parameter->getType());
+			foreach ($this->flattenedParameters($routine) as ['name' => $name, 'sqlType' => $sqlType]) {
+				$variables[$this->variableName($name)] = $sqlType;
 			}
 
 			return $variables;

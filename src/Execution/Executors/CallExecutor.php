@@ -58,6 +58,11 @@
 			$name = $statement->getCall()->getName();
 			$parameters = $context->getParameters();
 			$signature = $this->connection->getRoutineSignature($name);
+
+			if ($signature->isTrigger) {
+				throw new QuelException("'{$name}' is declared 'trigger', which can only be invoked through an event attachment, not called directly.", 'routine_call_error');
+			}
+
 			$evaluatedArguments = null;
 
 			// The EXEC then binds only the evaluated values, not the parameters the arguments read

@@ -46,6 +46,19 @@
 		}
 
 		/**
+		 * Builds the bare composite name for an entity-row parameter field, e.g. `old.username`
+		 * -> `old_username`. This is also the flattened native parameter's own name (see
+		 * RoutineLowering::flattenedParameters()), so a read and the parameter it reads from
+		 * always agree without a separate lookup.
+		 * @param string $paramName Entity-row parameter name from the source
+		 * @param string $field Mapped property name
+		 * @return string Bare variable name, decorated per dialect by variable()
+		 */
+		public static function entityRowFieldVariable(string $paramName, string $field): string {
+			return "{$paramName}_{$field}";
+		}
+
+		/**
 		 * Builds the SQL variable name for a routine variable.
 		 * @param string $name Local or parameter name from the source
 		 * @param SqlIdentifierQuoter $quoter Quoter for the target engine
@@ -63,7 +76,7 @@
 		}
 
 		/**
-		 * Renders a RoutineVariable or CursorRoot identifier as a SQL expression.
+		 * Renders a RoutineVariable, CursorRoot or EntityRowRoot identifier as a SQL expression.
 		 * @param AstIdentifier $identifier Root identifier typed as a routine reference
 		 * @param SqlIdentifierQuoter $quoter Quoter for the target engine
 		 * @param string $databaseType Target engine, as reported by PlatformCapabilitiesInterface::getDatabaseType()
@@ -83,6 +96,10 @@
 				}
 
 				return self::cursorFieldVariable($identifier->getName(), $field->getName(), $databaseType);
+			}
+
+			if ($identifier->getType() === IdentifierType::EntityRowRoot && $field !== null) {
+				return self::variable(self::entityRowFieldVariable($identifier->getName(), $field->getName()), $quoter, $databaseType);
 			}
 
 			if ($identifier->getType() !== IdentifierType::RoutineVariable) {

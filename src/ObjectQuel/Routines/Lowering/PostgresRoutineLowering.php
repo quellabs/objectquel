@@ -45,8 +45,19 @@
 			$declareSection = $declarations === '' ? '' : "DECLARE\n{$declarations}";
 			$block = "<<" . RoutineReferenceSql::POSTGRES_BLOCK_LABEL . ">>\n{$declareSection}BEGIN\n{$body}END;";
 			$tag = $this->dollarQuoteTag($block);
+			$create = $this->header($routine) . "\nLANGUAGE plpgsql\nAS {$tag}\n{$block}\n{$tag};";
 
-			return [$this->header($routine) . "\nLANGUAGE plpgsql\nAS {$tag}\n{$block}\n{$tag};"];
+			// Metadata is only emitted on the PROCEDURE path (void or trigger routines); see RoutineMetadata.
+			if (!$routine->returnsNoValue()) {
+				return [$create];
+			}
+
+			// COMMENT ON PROCEDURE needs the argument types to disambiguate an overload, same as the CREATE signature
+			$argTypes = implode(', ', array_column($this->flattenedParameters($routine), 'sqlType'));
+			$signature = $this->quoter->quoteRoutineName($routine->getName(), $this->routineSchema) . "({$argTypes})";
+			$comment = "COMMENT ON PROCEDURE {$signature} IS " . $this->quoter->quoteStringLiteral($this->metadataJson) . ';';
+
+			return [$create, $comment];
 		}
 
 		/**
@@ -57,13 +68,13 @@
 		private function header(AstRoutineDefinition $routine): string {
 			$parameters = [];
 
-			foreach ($routine->getParameters() as $parameter) {
-				$parameters[] = $this->quoter->quoteIdentifier($parameter->getName()) . ' ' . $this->sqlType($parameter->getType());
+			foreach ($this->flattenedParameters($routine) as ['name' => $name, 'sqlType' => $sqlType]) {
+				$parameters[] = $this->quoter->quoteIdentifier($name) . ' ' . $sqlType;
 			}
 
 			$signature = $this->quoter->quoteRoutineName($routine->getName(), $this->routineSchema) . '(' . implode(', ', $parameters) . ')';
 
-			if ($routine->isVoid()) {
+			if ($routine->returnsNoValue()) {
 				return "CREATE PROCEDURE {$signature}";
 			}
 
@@ -79,9 +90,11 @@
 		private function declarations(AstRoutineDefinition $routine): string {
 			$lines = [];
 
-			// Copies shadow the parameters so every variable is qualified with the same label
-			foreach ($routine->getParameters() as $index => $parameter) {
-				$lines[] = $this->quoter->quoteIdentifier($parameter->getName()) . ' ' . $this->sqlType($parameter->getType()) . ' := $' . ($index + 1) . ';';
+			// Copies shadow the parameters so every variable is qualified with the same label.
+			// An entity-row parameter is already flattened to one native positional parameter
+			// per mapped column, so its copies are indexed the same way as any other.
+			foreach ($this->flattenedParameters($routine) as $index => ['name' => $name, 'sqlType' => $sqlType]) {
+				$lines[] = $this->quoter->quoteIdentifier($name) . ' ' . $sqlType . ' := $' . ($index + 1) . ';';
 			}
 
 			foreach ($this->scalarDeclarations($routine) as $statement) {

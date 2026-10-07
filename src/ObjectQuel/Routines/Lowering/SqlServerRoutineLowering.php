@@ -67,16 +67,16 @@
 			parent::validate($routine);
 			$this->usesNoopVariable = false;
 			$this->argumentVariables = [];
-			$this->isFunction = !$routine->isVoid();
+			$this->isFunction = !$routine->returnsNoValue();
 			$this->discardCursorCount = 0;
 			$this->atomicBlockCount = 0;
 			$this->atomicVariables = [];
 
-			if (!$routine->isVoid() && $this->writesTables($routine)) {
+			if (!$routine->returnsNoValue() && $this->writesTables($routine)) {
 				throw new SemanticException("'{$routine->getName()}' returns a value, so SQL Server creates it as a FUNCTION, which can't write tables. Make it void to write.");
 			}
 
-			if (!$routine->isVoid() && $this->contains($routine, [AstCall::class])) {
+			if (!$routine->returnsNoValue() && $this->contains($routine, [AstCall::class])) {
 				throw new SemanticException("'{$routine->getName()}' returns a value, so SQL Server creates it as a FUNCTION, which can't run a procedure. Make it void to call a procedure as a statement.");
 			}
 		}
@@ -91,7 +91,7 @@
 			$statements = $routine->getBody();
 
 			// SQL Server requires a function body to end in RETURN, even when every path already returns
-			if (!$routine->isVoid() && !end($statements) instanceof AstReturn) {
+			if (!$routine->returnsNoValue() && !end($statements) instanceof AstReturn) {
 				$body .= $this->line('RETURN NULL;', 1);
 			}
 
@@ -112,7 +112,31 @@
 				$declarations .= $this->line("DECLARE {$name} {$type};", 1);
 			}
 
-			return [$this->header($routine, $parameters) . "\nAS\nBEGIN\n{$declarations}{$body}END;"];
+			$create = $this->header($routine, $parameters) . "\nAS\nBEGIN\n{$declarations}{$body}END;";
+
+			// Metadata is only emitted on the PROCEDURE path (void or trigger routines); see RoutineMetadata.
+			if (!$routine->returnsNoValue()) {
+				return [$create];
+			}
+
+			return [$create, $this->metadataPropertyStatement($routine)];
+		}
+
+		/**
+		 * Attaches the routine's JSON metadata as a named extended property, read back through
+		 * sys.extended_properties (see RoutineDefinitionInspector).
+		 * @param AstRoutineDefinition $routine The routine
+		 * @return string `sys.sp_addextendedproperty` call
+		 */
+		private function metadataPropertyStatement(AstRoutineDefinition $routine): string {
+			$schema = $this->routineSchema ?? 'dbo';
+			$name = $this->quoter->escapeStringLiteral($routine->getName());
+			$metadata = $this->quoter->escapeStringLiteral($this->metadataJson);
+
+			return "EXEC sys.sp_addextendedproperty "
+				. "@name = N'ObjectQuel_Metadata', @value = N'{$metadata}', "
+				. "@level0type = N'SCHEMA', @level0name = N'{$schema}', "
+				. "@level1type = N'PROCEDURE', @level1name = N'{$name}';";
 		}
 
 		/**
@@ -125,7 +149,7 @@
 			$list = implode(', ', array_map(fn(string $name, string $type) => "{$name} {$type}", array_keys($parameters), $parameters));
 			$name = $this->quoter->quoteRoutineName($routine->getName(), $this->routineSchema);
 
-			if ($routine->isVoid()) {
+			if ($routine->returnsNoValue()) {
 				return "CREATE PROCEDURE {$name}" . ($list === '' ? '' : " {$list}");
 			}
 

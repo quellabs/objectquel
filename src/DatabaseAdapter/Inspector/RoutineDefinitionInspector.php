@@ -37,11 +37,22 @@
 			$kinds = [];
 			$returnTypes = [];
 			$needsTransaction = false;
+			$isTrigger = false;
+			$databaseType = $this->connection->getDatabaseType();
 
 			foreach ($result->fetchAll('assoc') as $row) {
 				$isProcedure = (int)$row['is_procedure'] === 1;
 				$kinds[(int)$isProcedure] = true;
-				$needsTransaction = $needsTransaction || ($row['routine_comment'] ?? null) === 'ObjectQuel:atomic-block';
+				$comment = $row['routine_comment'] ?? null;
+
+				// The savepoint-based caller transaction is a MySQL/MariaDB-only mechanism (see
+				// MysqlRoutineLowering); Postgres/SQL Server handle 'atomic' entirely inside the
+				// routine body, so an 'atomic' metadata flag there implies no caller obligation.
+				if (in_array($databaseType, ['mysql', 'mariadb'], true)) {
+					$needsTransaction = $needsTransaction || self::isAtomic($comment);
+				}
+
+				$isTrigger = $isTrigger || self::isTriggerMetadata($comment);
 
 				if (!$isProcedure) {
 					$returnTypes[] = self::returnType(
@@ -63,7 +74,7 @@
 
 			// PostgreSQL overloads that return different types leave the type unknown
 			$distinctTypes = array_unique($returnTypes);
-			return new RoutineSignature(isset($kinds[1]), count($distinctTypes) === 1 ? $distinctTypes[0] : null, $needsTransaction);
+			return new RoutineSignature(isset($kinds[1]), count($distinctTypes) === 1 ? $distinctTypes[0] : null, $needsTransaction, $isTrigger);
 		}
 
 		/**
@@ -261,15 +272,17 @@
 		 */
 		private function signatureQuery(string $name): array {
 			return match ($this->connection->getDatabaseType()) {
-				// Routine return types carry no type modifier, so format_type() gets none
+				// Routine return types carry no type modifier, so format_type() gets none.
+				// obj_description() reads the ObjectQuel metadata written by COMMENT ON PROCEDURE (RoutineMetadata).
 				'pgsql' => [
-					"SELECT DISTINCT CASE WHEN prokind = 'p' THEN 1 ELSE 0 END AS is_procedure, format_type(prorettype, NULL) AS data_type, NULL AS type_detail, NULL AS max_length, NULL AS routine_comment FROM pg_proc WHERE proname = :name AND pg_function_is_visible(oid)",
+					"SELECT DISTINCT CASE WHEN prokind = 'p' THEN 1 ELSE 0 END AS is_procedure, format_type(prorettype, NULL) AS data_type, NULL AS type_detail, NULL AS max_length, obj_description(oid, 'pg_proc') AS routine_comment FROM pg_proc WHERE proname = :name AND pg_function_is_visible(oid)",
 					['name' => $name],
 				],
 
-				// Procedures and scalar functions, native or CLR; a scalar function's return value is parameter 0
+				// Procedures and scalar functions, native or CLR; a scalar function's return value is parameter 0.
+				// The extended property reads the ObjectQuel metadata written by sp_addextendedproperty (RoutineMetadata).
 				'sqlsrv' => [
-					"SELECT CASE WHEN o.type IN ('P', 'PC') THEN 1 ELSE 0 END AS is_procedure, TYPE_NAME(p.system_type_id) AS data_type, NULL AS type_detail, p.max_length AS max_length, NULL AS routine_comment FROM sys.objects o LEFT JOIN sys.parameters p ON p.object_id = o.object_id AND p.parameter_id = 0 WHERE o.object_id = OBJECT_ID(:name) AND o.type IN ('P', 'PC', 'FN', 'FS')",
+					"SELECT CASE WHEN o.type IN ('P', 'PC') THEN 1 ELSE 0 END AS is_procedure, TYPE_NAME(p.system_type_id) AS data_type, NULL AS type_detail, p.max_length AS max_length, CAST(ep.value AS NVARCHAR(MAX)) AS routine_comment FROM sys.objects o LEFT JOIN sys.parameters p ON p.object_id = o.object_id AND p.parameter_id = 0 LEFT JOIN sys.extended_properties ep ON ep.major_id = o.object_id AND ep.minor_id = 0 AND ep.name = N'ObjectQuel_Metadata' WHERE o.object_id = OBJECT_ID(:name) AND o.type IN ('P', 'PC', 'FN', 'FS')",
 					['name' => $this->sqlServerRoutineName($name)],
 				],
 
@@ -344,5 +357,46 @@
 
 			// An enum's PHP class isn't in the catalog, so its value stays a string
 			return $type === 'enum' ? 'string' : $type;
+		}
+
+		/**
+		 * Reads whether a routine's comment marks it as containing an `atomic` block, requiring
+		 * the caller to wrap its call in a transaction (MySQL/MariaDB only — see
+		 * MysqlRoutineLowering). Recognizes the current versioned JSON metadata (RoutineMetadata)
+		 * and falls back to the legacy `ObjectQuel:atomic-block` sentinel for a routine deployed
+		 * before that metadata existed.
+		 * @param string|null $comment MySQL/MariaDB ROUTINE_COMMENT
+		 * @return bool
+		 */
+		private static function isAtomic(?string $comment): bool {
+			if ($comment === null || $comment === '') {
+				return false;
+			}
+
+			$decoded = json_decode($comment, true);
+
+			if (is_array($decoded) && isset($decoded['objectQuel'])) {
+				return (bool)($decoded['atomic'] ?? false);
+			}
+
+			return $comment === 'ObjectQuel:atomic-block';
+		}
+
+		/**
+		 * Reads whether a routine's comment/extended property marks it as `trigger`-declared
+		 * (RoutineMetadata), on any of the three engines. There is no legacy sentinel for this:
+		 * `trigger` did not exist before this metadata did, so a routine without recognizable
+		 * ObjectQuel metadata is never one.
+		 * @param string|null $comment Routine comment (MySQL/MariaDB) or extended property value (Postgres/SQL Server)
+		 * @return bool
+		 */
+		private static function isTriggerMetadata(?string $comment): bool {
+			if ($comment === null || $comment === '') {
+				return false;
+			}
+
+			$decoded = json_decode($comment, true);
+
+			return is_array($decoded) && isset($decoded['objectQuel']) && ($decoded['returnType'] ?? null) === 'trigger';
 		}
 	}

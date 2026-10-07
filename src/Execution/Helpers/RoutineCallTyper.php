@@ -38,12 +38,19 @@
 			$signatures = [];
 
 			foreach ($collector->getCollectedNodes() as $call) {
-				if ($skipStatementCalls && $call->getParent() instanceof AstCall) {
-					continue;
-				}
-
 				$name = $call->getName();
 				$signatures[$name] ??= $this->connection->getRoutineSignature($name);
+				$isStatementCall = $skipStatementCalls && $call->getParent() instanceof AstCall;
+
+				// Unlike an ordinary procedure, a trigger-declared routine has no call path at
+				// all outside an event attachment — not even as a standalone statement call.
+				if ($signatures[$name]->isTrigger) {
+					throw new QuelException("'{$name}' is declared 'trigger', which can only be invoked through an event attachment, not called directly.", 'routine_call_error');
+				}
+
+				if ($isStatementCall) {
+					continue;
+				}
 
 				if ($signatures[$name]->isProcedure) {
 					throw new QuelException("'{$name}' is a procedure, which returns no value; only a function can be called inside a query.", 'routine_call_error');

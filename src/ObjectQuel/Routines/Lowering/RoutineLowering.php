@@ -30,6 +30,7 @@
 	use Quellabs\ObjectQuel\ObjectQuel\Visitors\CollectNodes;
 	use Quellabs\ObjectQuel\ObjectQuel\Routines\RoutineAnalyzer;
 	use Quellabs\ObjectQuel\ObjectQuel\Helpers\SqlDialect\RoutineReferenceSql;
+	use Quellabs\ObjectQuel\ObjectQuel\Routines\RoutineMetadata;
 	use Quellabs\ObjectQuel\ObjectQuel\Routines\RoutineStatementCompiler;
 	use Quellabs\ObjectQuel\ObjectQuel\Routines\RoutineTypeChecker;
 
@@ -60,6 +61,9 @@
 		/** Routine being lowered */
 		protected AstRoutineDefinition $routine;
 
+		/** JSON metadata for the routine being lowered (see RoutineMetadata); emitted only on the PROCEDURE path */
+		protected string $metadataJson;
+
 		/**
 		 * Initializes shared SQL lowering with the target platform and routine scope.
 		 * @param EntityStore $entityStore Entity metadata
@@ -77,7 +81,7 @@
 		/**
 		 * Lowers an analyzed routine to target-platform SQL.
 		 * @param AstRoutineDefinition $routine Routine that passed RoutineAnalyzer
-		 * @return list<string> Statements to run in order, the last one creating the routine
+		 * @return list<string> Statements to run in order; the first creates the routine, any later ones attach its metadata
 		 * @throws SemanticException When the routine uses something the engine can't express
 		 * @throws EntityResolutionException|TransformationException|QuelException
 		 */
@@ -85,6 +89,8 @@
 			$this->routine = $routine;
 			$this->cursorQueries = [];
 			$this->openLoops = [];
+			$this->metadataJson = RoutineMetadata::build($routine, $this->entityStore);
+
 			if (!$routine->returnsNoValue() && $this->contains($routine, [AstAtomic::class])) {
 				throw new SemanticException("'atomic' is only supported in void or trigger functions.");
 			}
@@ -435,6 +441,58 @@
 		 */
 		protected function returnedValue(AstInterface $value): string {
 			return $this->statements->compileStoredValue($value, $this->routine->getName(), $this->routine->getDeclaredReturnType());
+		}
+
+		/**
+		 * Expands the routine's parameter list, replacing each entity-row parameter with one
+		 * entry per mapped column, in the entity's column-declaration order. No engine here has
+		 * a native row/record parameter type, so this is the portable lowering for an entity-row
+		 * parameter: every mapped column becomes its own native scalar parameter, in the same
+		 * order at every call site (see objectquel-equel-triggers-design.md). The source body
+		 * still reads it as `paramName.field`; RoutineReferenceSql renders that to the same bare
+		 * name this produces.
+		 * @param AstRoutineDefinition $routine The routine
+		 * @return list<array{name: string, sqlType: string}> Bare variable name and SQL type, in order
+		 * @throws EntityResolutionException
+		 */
+		protected function flattenedParameters(AstRoutineDefinition $routine): array {
+			$flattened = [];
+
+			foreach ($routine->getParameters() as $parameter) {
+				$entityClass = RoutineAnalyzer::resolveEntityType($this->entityStore, $parameter->getType());
+
+				if ($entityClass === null) {
+					$flattened[] = ['name' => $parameter->getName(), 'sqlType' => $this->sqlType($parameter->getType())];
+					continue;
+				}
+
+				$metadata = $this->entityStore->getMetadata($entityClass);
+
+				foreach (array_keys($metadata->columnMap) as $property) {
+					$flattened[] = [
+						'name'    => RoutineReferenceSql::entityRowFieldVariable($parameter->getName(), $property),
+						'sqlType' => $this->entityRowFieldSqlType($entityClass, $property),
+					];
+				}
+			}
+
+			return $flattened;
+		}
+
+		/**
+		 * Maps an entity-row parameter field to its native SQL type, from the entity's mapped column.
+		 * @param string $entityClass Fully qualified entity class
+		 * @param string $property Mapped property name
+		 * @return string SQL type on the target engine
+		 */
+		protected function entityRowFieldSqlType(string $entityClass, string $property): string {
+			$definition = $this->statements->getFieldTypes()->columnType($entityClass, $property);
+
+			if ($definition === null) {
+				throw new \LogicException("'{$entityClass}.{$property}' has no mapped column type; RoutineAnalyzer should have rejected it.");
+			}
+
+			return $this->typeMapper->getTempTableColumnType($definition);
 		}
 
 		/**
