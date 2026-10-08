@@ -6,11 +6,11 @@
 	use Quellabs\ObjectQuel\Exception\QuelException;
 
 	/**
-	 * Reads attachment (trigger) existence from the connected database catalog — creating an
-	 * attachment must not silently replace a conflicting existing object (see "Attachment
+	 * Reads binding (trigger) existence from the connected database catalog — creating a
+	 * binding must not silently replace a conflicting existing object (see "Binding
 	 * identity and removal" in objectquel-equel-triggers-design.md).
 	 */
-	class EventAttachmentInspector {
+	class EventBindingInspector {
 
 		private readonly DatabaseAdapter $connection;
 
@@ -24,7 +24,7 @@
 		/**
 		 * Checks whether a trigger by this name already exists on this table.
 		 * @param string $table Physical table the trigger would be on
-		 * @param string $name Generated trigger name (see EventAttachmentNaming)
+		 * @param string $name Generated trigger name (see EventBindingNaming)
 		 * @return bool
 		 * @throws QuelException When the lookup fails or triggers are unsupported
 		 */

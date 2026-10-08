@@ -3,12 +3,12 @@
 	namespace Quellabs\ObjectQuel\ObjectQuel\Ast;
 
 	/**
-	 * The physical write event an `after ... call ...` attachment fires on
+	 * The physical write event an `after ... call ...` binding fires on
 	 * (objectquel-equel-triggers-design.md). `Append`/`Replace`/`Delete` map to
 	 * physical INSERT/UPDATE/DELETE, independent of the EQUEL statement that
 	 * caused the write — a soft delete fires `Replace`, for instance.
 	 */
-	enum AttachmentEvent: string {
+	enum BindingEvent: string {
 
 		case Append = 'append';
 		case Replace = 'replace';

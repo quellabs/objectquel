@@ -42,10 +42,10 @@
 				$signatures[$name] ??= $this->connection->getRoutineSignature($name);
 				$isStatementCall = $skipStatementCalls && $call->getParent() instanceof AstCall;
 
-				// Unlike an ordinary procedure, a trigger-declared routine has no call path at
-				// all outside an event attachment — not even as a standalone statement call.
+				// Unlike an ordinary procedure, a tfunction has no call path at all outside
+				// an event binding — not even as a standalone statement call.
 				if ($signatures[$name]->isTrigger) {
-					throw new QuelException("'{$name}' is declared 'trigger', which can only be invoked through an event attachment, not called directly.", 'routine_call_error');
+					throw new QuelException("'{$name}' is declared with 'tfunction', which can only be invoked through an event binding, not called directly.", 'routine_call_error');
 				}
 
 				if ($isStatementCall) {

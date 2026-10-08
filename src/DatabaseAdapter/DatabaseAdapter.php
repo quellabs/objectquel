@@ -6,7 +6,7 @@
 	use Cake\Database\Schema\Collection as SchemaCollection;
 	use Cake\Database\StatementInterface;
 	use Cake\Database\Connection;
-	use Quellabs\ObjectQuel\DatabaseAdapter\Inspector\EventAttachmentInspector;
+	use Quellabs\ObjectQuel\DatabaseAdapter\Inspector\EventBindingInspector;
 	use Quellabs\ObjectQuel\DatabaseAdapter\Inspector\MysqlSchemaIntrospector;
 	use Quellabs\ObjectQuel\DatabaseAdapter\Inspector\NullSchemaIntrospector;
 	use Quellabs\ObjectQuel\DatabaseAdapter\Inspector\PostgresSchemaIntrospector;
@@ -19,7 +19,7 @@
 	use Quellabs\ObjectQuel\DatabaseAdapter\Inspector\SqlServerSchemaIntrospector;
 	use Quellabs\ObjectQuel\DatabaseAdapter\Inspector\SqliteFulltextIndexInspector;
 	use Quellabs\ObjectQuel\DatabaseAdapter\Inspector\SqliteSchemaIntrospector;
-	use Quellabs\ObjectQuel\ObjectQuel\Ast\AttachmentEvent;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\BindingEvent;
 
 	/**
 	 * Database adapter that ties ObjectQuel and CakePHP Database together
@@ -44,7 +44,7 @@
 	 * @phpstan-type RoutineParameter array{name: string, type: ?string}
 	 * @phpstan-type RoutineListEntry array{name: string, isProcedure: bool, returnType: string, parameters: list<RoutineParameter>}
 	 *
-	 * @phpstan-type AttachmentListEntry array{table: string, event: AttachmentEvent, routine: string, alias: string}
+	 * @phpstan-type BindingListEntry array{table: string, event: BindingEvent, routine: string, alias: string}
 	 */
 	class DatabaseAdapter {
 		
@@ -117,8 +117,8 @@
 		/** @var RoutineDefinitionInspector|null Lazily created inspector; routine metadata itself is not cached */
 		private ?RoutineDefinitionInspector $routineDefinitionInspectorCache = null;
 
-		/** @var EventAttachmentInspector|null Lazily created inspector */
-		private ?EventAttachmentInspector $eventAttachmentInspectorCache = null;
+		/** @var EventBindingInspector|null Lazily created inspector */
+		private ?EventBindingInspector $eventBindingInspectorCache = null;
 
 		/** @var RoutineDependencyInspector|null Lazily created inspector */
 		private ?RoutineDependencyInspector $routineDependencyInspectorCache = null;
@@ -311,7 +311,7 @@
 		}
 
 		/**
-		 * Reads a routine's full JSON metadata, for attachment validation.
+		 * Reads a routine's full JSON metadata, for binding validation.
 		 * @param string $name Routine name as written
 		 * @return array<string, mixed> Decoded metadata
 		 * @throws \Quellabs\ObjectQuel\Exception\QuelException When missing, ambiguous, unmanaged, or the lookup fails
@@ -328,11 +328,11 @@
 		 * @param string $name Generated trigger name
 		 * @return bool
 		 * @throws \Quellabs\ObjectQuel\Exception\QuelException When the lookup fails or triggers are unsupported
-		 * @see EventAttachmentInspector::triggerExists()
+		 * @see EventBindingInspector::triggerExists()
 		 */
 		public function triggerExists(string $table, string $name): bool {
-			$this->eventAttachmentInspectorCache ??= new EventAttachmentInspector($this);
-			return $this->eventAttachmentInspectorCache->triggerExists($table, $name);
+			$this->eventBindingInspectorCache ??= new EventBindingInspector($this);
+			return $this->eventBindingInspectorCache->triggerExists($table, $name);
 		}
 
 		/**
@@ -349,27 +349,27 @@
 		}
 
 		/**
-		 * Finds every attachment trigger on a table, so `alter table` can refuse to change a
+		 * Finds every binding trigger on a table, so `alter table` can refuse to change a
 		 * mapped column while one still depends on it.
 		 * @param string $table Physical table being altered
-		 * @return list<string> Names of attachment triggers found on it; empty when none exist
+		 * @return list<string> Names of binding triggers found on it; empty when none exist
 		 * @throws \Quellabs\ObjectQuel\Exception\QuelException When the lookup fails or triggers are unsupported
-		 * @see RoutineDependencyInspector::findAttachmentTriggersOnTable()
+		 * @see RoutineDependencyInspector::findBindingTriggersOnTable()
 		 */
-		public function findAttachmentTriggersOnTable(string $table): array {
+		public function findBindingTriggersOnTable(string $table): array {
 			$this->routineDependencyInspectorCache ??= new RoutineDependencyInspector($this);
-			return $this->routineDependencyInspectorCache->findAttachmentTriggersOnTable($table);
+			return $this->routineDependencyInspectorCache->findBindingTriggersOnTable($table);
 		}
 
 		/**
-		 * Lists every live attachment in the connected schema.
-		 * @return list<AttachmentListEntry>
+		 * Lists every live binding in the connected schema.
+		 * @return list<BindingListEntry>
 		 * @throws \Quellabs\ObjectQuel\Exception\QuelException When the lookup fails or triggers are unsupported
-		 * @see RoutineDependencyInspector::listAttachments()
+		 * @see RoutineDependencyInspector::listBindings()
 		 */
-		public function listAttachments(): array {
+		public function listBindings(): array {
 			$this->routineDependencyInspectorCache ??= new RoutineDependencyInspector($this);
-			return $this->routineDependencyInspectorCache->listAttachments();
+			return $this->routineDependencyInspectorCache->listBindings();
 		}
 
 		/**

@@ -3,7 +3,7 @@
 	namespace Quellabs\ObjectQuel\ObjectQuel\Rules;
 
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstDestroy;
-	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstDestroyEventAttachment;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstDestroyEventBinding;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstDestroyIndex;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstDestroyRoutine;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRange;
@@ -22,15 +22,15 @@
 	 *   destroy [temporary] Name [if exists]              -> AstDestroy (table)
 	 *   destroy Name on Table [if exists]                  -> AstDestroyIndex
 	 *   destroy function Name [if exists]                  -> AstDestroyRoutine
-	 *   destroy trigger Range Alias [if exists]             -> AstDestroyEventAttachment
+	 *   destroy trigger Range Alias [if exists]             -> AstDestroyEventBinding
 	 *
 	 * `temporary` only makes sense for the table form, so seeing it commits
 	 * to that form immediately; otherwise the token right after the name
 	 * (`on`, or not) decides. The index form's own trailing clause is
-	 * parsed by Rules\DestroyIndex; the trigger form names the attachment
-	 * directly by (range, alias) — see "Attachment identity and removal" in
+	 * parsed by Rules\DestroyIndex; the trigger form names the binding
+	 * directly by (range, alias) — see "Binding identity and removal" in
 	 * objectquel-equel-triggers-design.md — so it shares nothing with
-	 * Rules\EventAttachment beyond the alias concept.
+	 * Rules\EventBinding beyond the alias concept.
 	 */
 	class Destroy {
 
@@ -50,10 +50,10 @@
 		/**
 		 * Parse a complete `destroy` statement.
 		 * @param AstRange[] $ranges Ranges already parsed ahead of this statement — only the event form needs them
-		 * @return AstDestroy|AstDestroyIndex|AstDestroyRoutine|AstDestroyEventAttachment
+		 * @return AstDestroy|AstDestroyIndex|AstDestroyRoutine|AstDestroyEventBinding
 		 * @throws LexerException|ParserException
 		 */
-		public function parse(array $ranges = []): AstDestroy|AstDestroyIndex|AstDestroyRoutine|AstDestroyEventAttachment {
+		public function parse(array $ranges = []): AstDestroy|AstDestroyIndex|AstDestroyRoutine|AstDestroyEventBinding {
 			$this->lexer->matchKeyword('destroy');
 
 			if ($this->matchTriggerKeyword()) {
@@ -104,7 +104,7 @@
 		}
 
 		/**
-		 * Consumes `trigger` only when it starts the attachment-removal form (`trigger`
+		 * Consumes `trigger` only when it starts the binding-removal form (`trigger`
 		 * immediately followed by its range name, never by `if` or `on`); a table or index
 		 * named `trigger` keeps its meaning, same disambiguation style as matchRoutineKeyword().
 		 * @return bool True when `trigger` was consumed
@@ -128,20 +128,20 @@
 
 		/**
 		 * Parses the remainder of `destroy trigger Range Alias [if exists]`, once `destroy
-		 * trigger` has already been consumed. Unlike the attach statement, this names the
-		 * attachment directly by (range, alias) — no event, call or routine to parse.
+		 * trigger` has already been consumed. Unlike the bind statement, this names the
+		 * binding directly by (range, alias) — no event, call or routine to parse.
 		 * @param AstRange[] $ranges Ranges already parsed ahead of this statement
-		 * @return AstDestroyEventAttachment
+		 * @return AstDestroyEventBinding
 		 * @throws LexerException|ParserException
 		 */
-		private function parseTriggerDestroy(array $ranges): AstDestroyEventAttachment {
+		private function parseTriggerDestroy(array $ranges): AstDestroyEventBinding {
 			$targetName = $this->lexer->match(Token::Identifier)->getStringValue();
 			$range = TargetRangeResolver::resolve($targetName, $ranges, 'destroy trigger');
 			$alias = $this->lexer->match(Token::Identifier)->getStringValue();
 			$ifExists = $this->parseOptionalIfExists();
 			$this->consumeOptionalSemicolon();
 
-			return new AstDestroyEventAttachment($range, $alias, $ifExists);
+			return new AstDestroyEventBinding($range, $alias, $ifExists);
 		}
 
 		/**

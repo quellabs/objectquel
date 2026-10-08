@@ -116,7 +116,7 @@
 			}
 
 			if ($routine->isTrigger() && $hasScalarParameter) {
-				throw new SemanticException("'{$routine->getName()}' is a tfunction but has a scalar parameter; a trigger routine's parameters must all be entity-row parameters, since an attachment supplies none itself.");
+				throw new SemanticException("'{$routine->getName()}' is a tfunction but has a scalar parameter; a trigger routine's parameters must all be entity-row parameters, since a binding supplies none itself.");
 			}
 
 			if ($hasEntityRowParameter && !$routine->isTrigger()) {

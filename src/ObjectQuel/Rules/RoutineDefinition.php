@@ -13,7 +13,7 @@
 	/**
 	 * Parses `define function name (type name, ...) returnType { ... }` or
 	 * `define tfunction name (type name, ...) { ... }`. A tfunction has no
-	 * return-type slot: it can only ever be attached as a trigger, never
+	 * return-type slot: it can only ever be bound as a trigger, never
 	 * called for a value, so there's nothing to declare.
 	 * Type names are plain identifiers here; they are validated by value later.
 	 * Compiler directives and ranges ahead of `define` are parsed by the

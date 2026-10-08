@@ -143,7 +143,7 @@
 		}
 
 		/**
-		 * Adds an entity-row parameter, e.g. `UserEntity old` in a `trigger`-returning routine's parameter list.
+		 * Adds an entity-row parameter, e.g. `UserEntity old` in a tfunction's parameter list.
 		 * @param string $name Parameter name as written
 		 * @param string $entityClass Fully qualified entity class the parameter is typed with
 		 * @return void

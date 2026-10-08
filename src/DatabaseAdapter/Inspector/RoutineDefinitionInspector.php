@@ -80,7 +80,7 @@
 		}
 
 		/**
-		 * Reads a routine's full versioned JSON metadata (RoutineMetadata), for attachment
+		 * Reads a routine's full versioned JSON metadata (RoutineMetadata), for binding
 		 * validation: matching the called routine's row-parameter types and walking its safety
 		 * graph needs the whole document, not just the isTrigger/needsTransaction flags
 		 * getRoutineSignature() exposes.
@@ -100,27 +100,27 @@
 			$rows = $result->fetchAll('assoc');
 
 			if ($rows === []) {
-				throw new QuelException("Can't attach to '{$name}': no routine by that name exists.", 'routine_call_error');
+				throw new QuelException("Can't bind to '{$name}': no routine by that name exists.", 'routine_call_error');
 			}
 
 			if (count($rows) > 1) {
-				throw new QuelException("Can't attach to '{$name}': both a void and a value-returning function have that name.", 'routine_call_error');
+				throw new QuelException("Can't bind to '{$name}': both a void and a value-returning function have that name.", 'routine_call_error');
 			}
 
 			$comment = $rows[0]['routine_comment'] ?? null;
 
 			if ($comment === null || $comment === '') {
-				throw new QuelException("Can't attach to '{$name}': it has no ObjectQuel metadata. Redefine it with the current ObjectQuel version.", 'routine_definition_error');
+				throw new QuelException("Can't bind to '{$name}': it has no ObjectQuel metadata. Redefine it with the current ObjectQuel version.", 'routine_definition_error');
 			}
 
 			$decoded = json_decode($comment, true);
 
 			if (!is_array($decoded) || !isset($decoded['objectQuel'])) {
-				throw new QuelException("Can't attach to '{$name}': its metadata is missing or unreadable.", 'routine_definition_error');
+				throw new QuelException("Can't bind to '{$name}': its metadata is missing or unreadable.", 'routine_definition_error');
 			}
 
 			if ($decoded['objectQuel'] !== 1) {
-				throw new QuelException("Can't attach to '{$name}': its metadata is from an unsupported ObjectQuel version.", 'routine_definition_error');
+				throw new QuelException("Can't bind to '{$name}': its metadata is from an unsupported ObjectQuel version.", 'routine_definition_error');
 			}
 
 			$metadata = [];
@@ -155,8 +155,8 @@
 		 * carrying recognizable, current-version metadata (RoutineMetadata). A routine without
 		 * it — created outside ObjectQuel, or deployed before metadata existed — is not listed,
 		 * since its EQUEL-level return type and row-parameter shape can't be recovered. Return
-		 * type comes from the metadata itself (`void`, `trigger`, or a scalar type), not the
-		 * native catalog; parameter types are still normalized to ObjectQuel's abstract column
+		 * type comes from the metadata itself (`void`, `trigger` for an `isTrigger` routine, or a
+		 * scalar type), not the native catalog; parameter types are still normalized to ObjectQuel's abstract column
 		 * types from the native catalog. A name can appear twice (once as a function, once as a
 		 * procedure) since MySQL/MariaDB give the two kinds separate namespaces.
 		 * @return list<RoutineListEntry>
@@ -182,11 +182,12 @@
 				$isProcedure = (int)$row['is_procedure'] === 1;
 				$key = $row['name'] . '|' . (int)$isProcedure;
 				$returnType = $metadata['returnType'] ?? null;
+				$displayReturnType = (bool)($metadata['isTrigger'] ?? false) ? 'trigger' : $returnType;
 
 				$grouped[$key] = [
 					'name'        => (string)$row['name'],
 					'isProcedure' => $isProcedure,
-					'returnType'  => is_string($returnType) ? $returnType : 'unknown',
+					'returnType'  => is_string($displayReturnType) ? $displayReturnType : 'unknown',
 				];
 			}
 
@@ -442,10 +443,10 @@
 		}
 
 		/**
-		 * Reads whether a routine's comment/extended property marks it as `trigger`-declared
-		 * (RoutineMetadata), on any of the three engines. There is no legacy sentinel for this:
-		 * `trigger` did not exist before this metadata did, so a routine without recognizable
-		 * ObjectQuel metadata is never one.
+		 * Reads whether a routine's comment/extended property marks it as declared with
+		 * `tfunction` (RoutineMetadata), on any of the three engines. There is no legacy
+		 * sentinel for this: `tfunction` did not exist before this metadata did, so a routine
+		 * without recognizable ObjectQuel metadata is never one.
 		 * @param string|null $comment Routine comment (MySQL/MariaDB) or extended property value (Postgres/SQL Server)
 		 * @return bool
 		 */
@@ -456,7 +457,7 @@
 
 			$decoded = json_decode($comment, true);
 
-			return is_array($decoded) && isset($decoded['objectQuel']) && ($decoded['returnType'] ?? null) === 'trigger';
+			return is_array($decoded) && isset($decoded['objectQuel']) && (bool)($decoded['isTrigger'] ?? false);
 		}
 
 		/**

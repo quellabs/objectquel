@@ -2,10 +2,10 @@
 
 	namespace Quellabs\ObjectQuel\ObjectQuel\Rules;
 
-	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstEventAttachment;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstEventBinding;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRange;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRangeDatabase;
-	use Quellabs\ObjectQuel\ObjectQuel\Ast\AttachmentEvent;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\BindingEvent;
 	use Quellabs\ObjectQuel\ObjectQuel\Helpers\TargetRangeResolver;
 	use Quellabs\ObjectQuel\ObjectQuel\Lexer;
 	use Quellabs\ObjectQuel\ObjectQuel\LexerException;
@@ -15,12 +15,12 @@
 	/**
 	 * Parser for `after (append to|replace|delete) <range> call <routine> [as <alias>]` — see
 	 * objectquel-equel-triggers-design.md. The routine is named only; its own entity-row
-	 * parameters receive the event's rows by declaration order (AttachmentEvent::rowRoles()),
+	 * parameters receive the event's rows by declaration order (BindingEvent::rowRoles()),
 	 * so there is no argument list to parse here. `destroy trigger <range> <alias> [if exists]`
-	 * is the symmetric removal form, parsed entirely by Rules\Destroy — it names the attachment
+	 * is the symmetric removal form, parsed entirely by Rules\Destroy — it names the binding
 	 * directly by alias, so it has no need for this class's event parsing.
 	 */
-	class EventAttachment {
+	class EventBinding {
 
 		private Lexer $lexer;
 
@@ -34,10 +34,10 @@
 		/**
 		 * Parses a complete `after ... call ... [as <alias>]` statement.
 		 * @param AstRange[] $ranges Ranges already parsed ahead of this statement
-		 * @return AstEventAttachment
+		 * @return AstEventBinding
 		 * @throws LexerException|ParserException
 		 */
-		public function parse(array $ranges): AstEventAttachment {
+		public function parse(array $ranges): AstEventBinding {
 			$this->lexer->matchKeyword('after');
 
 			$event = $this->parseEvent();
@@ -49,13 +49,13 @@
 
 			$this->consumeOptionalSemicolon();
 
-			return new AstEventAttachment($event, $range, $routineName, $alias);
+			return new AstEventBinding($event, $range, $routineName, $alias);
 		}
 
 		/**
-		 * Parses an optional trailing `as <alias>` naming the attachment, for later reference in
-		 * `destroy trigger <range> <alias>`. Omitted, the attachment gets a generated alias at
-		 * compile time (see EventAttachmentNaming::randomAlias()).
+		 * Parses an optional trailing `as <alias>` naming the binding, for later reference in
+		 * `destroy trigger <range> <alias>`. Omitted, the binding gets a generated alias at
+		 * compile time (see EventBindingNaming::randomAlias()).
 		 * @return string|null
 		 * @throws LexerException
 		 */
@@ -69,21 +69,21 @@
 
 		/**
 		 * Parses the event keyword: `append to`, `replace` or `delete`.
-		 * @return AttachmentEvent
+		 * @return BindingEvent
 		 * @throws LexerException|ParserException
 		 */
-		public function parseEvent(): AttachmentEvent {
+		public function parseEvent(): BindingEvent {
 			if ($this->lexer->optionalMatchKeyword('append')) {
 				$this->lexer->matchKeyword('to');
-				return AttachmentEvent::Append;
+				return BindingEvent::Append;
 			}
 
 			if ($this->lexer->optionalMatchKeyword('replace')) {
-				return AttachmentEvent::Replace;
+				return BindingEvent::Replace;
 			}
 
 			if ($this->lexer->optionalMatchKeyword('delete')) {
-				return AttachmentEvent::Delete;
+				return BindingEvent::Delete;
 			}
 
 			throw new ParserException("Expected 'append to', 'replace' or 'delete' after 'after' on line {$this->lexer->getLineNumber()}");

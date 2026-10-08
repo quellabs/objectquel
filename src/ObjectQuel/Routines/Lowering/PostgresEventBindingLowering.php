@@ -3,16 +3,16 @@
 	namespace Quellabs\ObjectQuel\ObjectQuel\Routines\Lowering;
 
 	use Quellabs\ObjectQuel\Exception\EntityResolutionException;
-	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstEventAttachment;
-	use Quellabs\ObjectQuel\ObjectQuel\Ast\AttachmentEvent;
-	use Quellabs\ObjectQuel\ObjectQuel\Routines\EventAttachmentNaming;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstEventBinding;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\BindingEvent;
+	use Quellabs\ObjectQuel\ObjectQuel\Routines\EventBindingNaming;
 
 	/**
-	 * Lowers an attachment to a PostgreSQL trigger. PostgreSQL triggers can't call a routine
+	 * Lowers a binding to a PostgreSQL trigger. PostgreSQL triggers can't call a routine
 	 * directly, so a small, deterministically named `RETURNS trigger` helper function is
-	 * generated to do it — owned by this attachment, never meant to be called by EQUEL users.
+	 * generated to do it — owned by this binding, never meant to be called by EQUEL users.
 	 */
-	class PostgresEventAttachmentLowering extends EventAttachmentLowering {
+	class PostgresEventBindingLowering extends EventBindingLowering {
 
 		/**
 		 * @return string
@@ -22,47 +22,47 @@
 		}
 
 		/**
-		 * @param AstEventAttachment $attachment The attachment
-		 * @param string $alias The attachment's resolved alias
+		 * @param AstEventBinding $binding The binding
+		 * @param string $alias The binding's resolved alias
 		 * @param int $parameterCount Number of entity-row parameters the called routine declares
 		 * @return list<string> The helper `CREATE FUNCTION` and the `CREATE TRIGGER` that uses it
 		 * @throws EntityResolutionException
 		 */
-		public function render(AstEventAttachment $attachment, string $alias, int $parameterCount): array {
+		public function render(AstEventBinding $binding, string $alias, int $parameterCount): array {
 			$helperName = $this->quoter->quoteRoutineName(
-				EventAttachmentNaming::helperFunctionName($this->triggerName($attachment, $alias)),
+				EventBindingNaming::helperFunctionName($this->triggerName($binding, $alias)),
 				$this->routineSchema
 			);
-			$routineCall = $this->quoter->quoteRoutineName($attachment->getRoutineName(), $this->routineSchema);
+			$routineCall = $this->quoter->quoteRoutineName($binding->getRoutineName(), $this->routineSchema);
 
 			$arguments = implode(', ', array_map(
 				fn(array $arg) => strtoupper($arg['row']) . '.' . $this->quoter->quoteIdentifier($arg['column']),
-				$this->expandArguments($attachment, $parameterCount)
+				$this->expandArguments($binding, $parameterCount)
 			));
 
-			$returns = $attachment->getEvent() === AttachmentEvent::Delete ? 'OLD' : 'NEW';
+			$returns = $binding->getEvent() === BindingEvent::Delete ? 'OLD' : 'NEW';
 			$body = "BEGIN\n\tCALL {$routineCall}({$arguments});\n\tRETURN {$returns};\nEND;";
 			$tag = $this->dollarQuoteTag($body);
 			$helper = "CREATE FUNCTION {$helperName}()\nRETURNS trigger\nLANGUAGE plpgsql\nAS {$tag}\n{$body}\n{$tag};";
 
-			$triggerName = $this->quoter->quoteIdentifier($this->triggerName($attachment, $alias));
-			$table = $this->quotedTable($attachment);
-			$event = $this->sqlEvent($attachment->getEvent());
+			$triggerName = $this->quoter->quoteIdentifier($this->triggerName($binding, $alias));
+			$table = $this->quotedTable($binding);
+			$event = $this->sqlEvent($binding->getEvent());
 			$trigger = "CREATE TRIGGER {$triggerName}\nAFTER {$event} ON {$table}\nFOR EACH ROW EXECUTE FUNCTION {$helperName}();";
 
 			return [$helper, $trigger];
 		}
 
 		/**
-		 * @param string $table Physical table the attachment is on
-		 * @param string $alias The attachment's alias
+		 * @param string $table Physical table the binding is on
+		 * @param string $alias The binding's alias
 		 * @return list<string> DROP TRIGGER, then its helper's DROP FUNCTION (the design doc's
 		 *         removal order — never the other way, since the trigger still references the
 		 *         helper until it is itself gone)
 		 */
 		public function renderDestroy(string $table, string $alias): array {
-			$triggerName = EventAttachmentNaming::triggerName($table, $alias);
-			$helperName = $this->quoter->quoteIdentifier(EventAttachmentNaming::helperFunctionName($triggerName));
+			$triggerName = EventBindingNaming::triggerName($table, $alias);
+			$helperName = $this->quoter->quoteIdentifier(EventBindingNaming::helperFunctionName($triggerName));
 			$quotedTrigger = $this->quoter->quoteIdentifier($triggerName);
 			$quotedTable = $this->quoter->quoteRoutineName($table, $this->routineSchema);
 

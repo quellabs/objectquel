@@ -8,7 +8,7 @@
 	/**
 	 * `[range of ...] define function name (params) returnType { ... }`, or
 	 * `[range of ...] define tfunction name (params) { ... }` for a routine
-	 * that can only be attached as a trigger — one node for both, since the
+	 * that can only be bound as a trigger — one node for both, since the
 	 * distinction (and a tfunction's missing return-type slot) is semantic,
 	 * not structural.
 	 *
@@ -152,7 +152,7 @@
 		/**
 		 * Both `void` and `trigger` routines return nothing to a caller; a
 		 * `trigger` routine additionally can't be called at all except
-		 * through an event attachment (see RoutineCallTyper), but that
+		 * through an event binding (see RoutineCallTyper), but that
 		 * restriction is enforced separately from "does it return a value."
 		 * @return bool True when the routine returns no value
 		 */

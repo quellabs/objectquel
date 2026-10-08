@@ -3,14 +3,14 @@
 	namespace Quellabs\ObjectQuel\ObjectQuel\Routines;
 
 	/**
-	 * Physical names built from an attachment's (table, alias) identity — see "Attachment
+	 * Physical names built from a binding's (table, alias) identity — see "Binding
 	 * identity and removal" in objectquel-equel-triggers-design.md. The alias, given with
 	 * `as <alias>` or generated when omitted (see randomAlias()), is the only thing that needs
-	 * to be unique per table; the attachment's event and called routine are not part of the
+	 * to be unique per table; the binding's event and called routine are not part of the
 	 * name, since the live trigger definition already carries the event, and the routine name
 	 * is recovered from the trigger body when needed (see RoutineDependencyInspector).
 	 */
-	class EventAttachmentNaming {
+	class EventBindingNaming {
 
 		/** Conservative across all three engines: MySQL/MariaDB allow 64, PostgreSQL 63, SQL Server 128 */
 		private const int MAX_LENGTH = 60;
@@ -21,9 +21,9 @@
 		private const int RANDOM_ALIAS_BYTES = 4;
 
 		/**
-		 * Builds the physical trigger name for one attachment.
-		 * @param string $table Physical table the attachment is on
-		 * @param string $alias The attachment's alias, given or generated
+		 * Builds the physical trigger name for one binding.
+		 * @param string $table Physical table the binding is on
+		 * @param string $alias The binding's alias, given or generated
 		 * @return string Name, truncated with a stable hash suffix if too long
 		 */
 		public static function triggerName(string $table, string $alias): string {
@@ -33,9 +33,9 @@
 		/**
 		 * The untruncated prefix every trigger name starts with, before its alias. Used to
 		 * recover a trigger's alias from its own name (see
-		 * RoutineDependencyInspector::listAttachments()) — only reliable when the full
+		 * RoutineDependencyInspector::listBindings()) — only reliable when the full
 		 * `eq_<table>_<alias>` identity didn't need truncate()'s hash shortening.
-		 * @param string $table Physical table the attachment is on
+		 * @param string $table Physical table the binding is on
 		 * @return string
 		 */
 		public static function triggerNamePrefix(string $table): string {
@@ -43,8 +43,8 @@
 		}
 
 		/**
-		 * Generates an opaque alias for an attachment created without `as <alias>`. Random,
-		 * not derived from the attachment's identity, so detaching and reattaching the same
+		 * Generates an opaque alias for a binding created without `as <alias>`. Random,
+		 * not derived from the binding's identity, so unbinding and rebinding the same
 		 * (table, event, routine) never reuses a stale name. Shown back by `quel:list-triggers`
 		 * for later reference in `destroy trigger`.
 		 * @return string Lowercase hex string
@@ -55,8 +55,8 @@
 
 		/**
 		 * Builds the name of the generated PostgreSQL helper function a trigger calls
-		 * (PostgreSQL triggers can't call a routine directly — see PostgresEventAttachmentLowering).
-		 * @param string $triggerName This attachment's trigger name
+		 * (PostgreSQL triggers can't call a routine directly — see PostgresEventBindingLowering).
+		 * @param string $triggerName This binding's trigger name
 		 * @return string
 		 */
 		public static function helperFunctionName(string $triggerName): string {

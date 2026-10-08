@@ -60,7 +60,7 @@
 			$signature = $this->connection->getRoutineSignature($name);
 
 			if ($signature->isTrigger) {
-				throw new QuelException("'{$name}' is declared 'trigger', which can only be invoked through an event attachment, not called directly.", 'routine_call_error');
+				throw new QuelException("'{$name}' is declared with 'tfunction', which can only be invoked through an event binding, not called directly.", 'routine_call_error');
 			}
 
 			$evaluatedArguments = null;

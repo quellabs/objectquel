@@ -5,26 +5,26 @@
 	use Quellabs\ObjectQuel\ObjectQuel\AstVisitorInterface;
 
 	/**
-	 * `after (append to|replace|delete) <range> call <routine> [as <alias>]` — attaches a
-	 * database change event to an already-defined `trigger`-returning routine. The routine's
+	 * `after (append to|replace|delete) <range> call <routine> [as <alias>]` — binds a
+	 * database change event to an already-defined `tfunction` routine. The routine's
 	 * own entity-row parameters receive the event's rows by declaration order (see
-	 * AttachmentEvent::rowRoles()); the attachment carries no argument list of its own.
+	 * BindingEvent::rowRoles()); the binding carries no argument list of its own.
 	 * Contains no procedural body of its own; see objectquel-equel-triggers-design.md.
 	 */
-	class AstEventAttachment extends Ast implements AstStatement {
+	class AstEventBinding extends Ast implements AstStatement {
 
-		private AttachmentEvent $event;
+		private BindingEvent $event;
 		private AstRangeDatabase $range;
 		private string $routineName;
 		private ?string $alias;
 
 		/**
-		 * @param AttachmentEvent $event Physical write event the attachment fires on
-		 * @param AstRangeDatabase $range Target range; its physical table is what the attachment fires on
-		 * @param string $routineName Name of the called `trigger`-returning routine
+		 * @param BindingEvent $event Physical write event the binding fires on
+		 * @param AstRangeDatabase $range Target range; its physical table is what the binding fires on
+		 * @param string $routineName Name of the called tfunction
 		 * @param string|null $alias Name given with `as <alias>`, or null to generate one at compile time
 		 */
-		public function __construct(AttachmentEvent $event, AstRangeDatabase $range, string $routineName, ?string $alias = null) {
+		public function __construct(BindingEvent $event, AstRangeDatabase $range, string $routineName, ?string $alias = null) {
 			$this->event = $event;
 			$this->range = $range;
 			$this->routineName = $routineName;
@@ -42,9 +42,9 @@
 		}
 
 		/**
-		 * @return AttachmentEvent
+		 * @return BindingEvent
 		 */
-		public function getEvent(): AttachmentEvent {
+		public function getEvent(): BindingEvent {
 			return $this->event;
 		}
 
@@ -56,7 +56,7 @@
 		}
 
 		/**
-		 * @return string Name of the called `trigger`-returning routine
+		 * @return string Name of the called tfunction
 		 */
 		public function getRoutineName(): string {
 			return $this->routineName;

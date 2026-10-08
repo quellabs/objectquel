@@ -8,15 +8,15 @@
 	use Quellabs\Sculpt\Console\ConsoleOutput;
 
 	/**
-	 * ListTriggersCommand - CLI command for listing all EQUEL trigger attachments
+	 * ListTriggersCommand - CLI command for listing all EQUEL trigger bindings
 	 *
-	 * Reads the connected database's trigger catalog and displays every live attachment —
+	 * Reads the connected database's trigger catalog and displays every live binding —
 	 * one created by `after (append to|replace|delete) <range> call <routine>(args)`. An
 	 * ordinary trigger, created outside ObjectQuel, is not shown: it isn't calling a
-	 * `trigger`-declared routine, so it isn't one of ours to begin with.
+	 * tfunction, so it isn't one of ours to begin with.
 	 *
-	 * Each attachment's alias is shown as-is — either the name given with `as <alias>`, or an
-	 * opaque generated one, when the attachment was created without naming it. Either way,
+	 * Each binding's alias is shown as-is — either the name given with `as <alias>`, or an
+	 * opaque generated one, when the binding was created without naming it. Either way,
 	 * `destroy trigger <range> <alias>` takes it straight from this listing.
 	 *
 	 * Supported dialects: MySQL, MariaDB, PostgreSQL, SQL Server. SQLite has no triggers and
@@ -47,7 +47,7 @@
 		 * @return string
 		 */
 		public function getDescription(): string {
-			return "List all EQUEL trigger attachments and their aliases.";
+			return "List all EQUEL trigger bindings and their aliases.";
 		}
 
 		/**
@@ -57,15 +57,15 @@
 		public function getHelp(): string {
 			return <<<HELP
 DESCRIPTION:
-    Lists every trigger attachment in the connected database's default
+    Lists every trigger binding in the connected database's default
     schema — one created by `after ... call ...`. A trigger created
     outside ObjectQuel is not listed, since it isn't calling a
-    `trigger`-declared routine.
+    tfunction.
 
     The Alias column is what `destroy trigger <range> <alias>` takes: the
-    name given with `as <alias>` when the attachment was created, or an
+    name given with `as <alias>` when the binding was created, or an
     opaque generated one otherwise. This is the only place a generated
-    alias is shown — it isn't returned by the attach statement itself.
+    alias is shown — it isn't returned by the bind statement itself.
 
 USAGE:
     php sculpt quel:list-triggers
@@ -80,7 +80,7 @@ HELP;
 		}
 
 		/**
-		 * Execute the command to list all EQUEL trigger attachments.
+		 * Execute the command to list all EQUEL trigger bindings.
 		 * @param ConfigurationManager $config The configuration manager instance
 		 * @return int Exit code: 0 on success, 1 on any error
 		 */
@@ -88,27 +88,27 @@ HELP;
 			try {
 				/** @var ServiceProvider $provider */
 				$provider = $this->provider;
-				$attachments = $provider->getDatabaseAdapter()->listAttachments();
+				$bindings = $provider->getDatabaseAdapter()->listBindings();
 
-				if (empty($attachments)) {
-					$this->output->writeLn("No trigger attachments found.");
+				if (empty($bindings)) {
+					$this->output->writeLn("No trigger bindings found.");
 					return 0;
 				}
 
 				$rows = [];
 
-				foreach ($attachments as $attachment) {
+				foreach ($bindings as $binding) {
 					$rows[] = [
-						$attachment['table'],
-						$attachment['event']->keyword(),
-						$attachment['routine'],
-						$attachment['alias'],
+						$binding['table'],
+						$binding['event']->keyword(),
+						$binding['routine'],
+						$binding['alias'],
 					];
 				}
 
 				$this->output->table(['Table', 'Event', 'Routine', 'Alias'], $rows);
 				$this->output->writeLn("");
-				$this->output->writeLn(count($rows) . " " . (count($rows) === 1 ? "attachment" : "attachments") . " found.");
+				$this->output->writeLn(count($rows) . " " . (count($rows) === 1 ? "binding" : "bindings") . " found.");
 				return 0;
 
 			} catch (\Exception $e) {

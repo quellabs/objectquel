@@ -7,19 +7,19 @@
 	use Quellabs\ObjectQuel\Exception\EntityResolutionException;
 	use Quellabs\ObjectQuel\Exception\SemanticException;
 	use Quellabs\ObjectQuel\Metadata\EntityMetadataRecord;
-	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstEventAttachment;
-	use Quellabs\ObjectQuel\ObjectQuel\Ast\AttachmentEvent;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstEventBinding;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\BindingEvent;
 	use Quellabs\ObjectQuel\ObjectQuel\Helpers\SqlDialect\DDLTypeMapper;
 	use Quellabs\ObjectQuel\ObjectQuel\Helpers\SqlDialect\SqlIdentifierQuoter;
-	use Quellabs\ObjectQuel\ObjectQuel\Routines\EventAttachmentNaming;
+	use Quellabs\ObjectQuel\ObjectQuel\Routines\EventBindingNaming;
 
 	/**
-	 * Lowers an attachment to one engine's CREATE TRIGGER (+ helper objects, where the engine
+	 * Lowers a binding to one engine's CREATE TRIGGER (+ helper objects, where the engine
 	 * needs one) — see "Event lowering" in objectquel-equel-triggers-design.md. Subclasses
 	 * supply the engine's trigger syntax and how it receives OLD/NEW rows.
 	 * @phpstan-type ExpandedArgument array{row: 'old'|'new', property: string, column: string}
 	 */
-	abstract class EventAttachmentLowering {
+	abstract class EventBindingLowering {
 
 		protected EntityStore $entityStore;
 		protected PlatformCapabilitiesInterface $platform;
@@ -43,21 +43,21 @@
 		}
 
 		/**
-		 * Lowers the attachment to target-platform DDL.
-		 * @param AstEventAttachment $attachment Attachment that passed EventAttachmentValidator
-		 * @param string $alias The attachment's resolved alias (given with `as <alias>`, or generated)
+		 * Lowers the binding to target-platform DDL.
+		 * @param AstEventBinding $binding Binding that passed EventBindingValidator
+		 * @param string $alias The binding's resolved alias (given with `as <alias>`, or generated)
 		 * @param int $parameterCount Number of entity-row parameters the called routine declares
 		 * @return list<string> Statements to run in order
 		 * @throws SemanticException|EntityResolutionException
 		 */
-		abstract public function render(AstEventAttachment $attachment, string $alias, int $parameterCount): array;
+		abstract public function render(AstEventBinding $binding, string $alias, int $parameterCount): array;
 
 		/**
-		 * Lowers the removal of one attachment, identified by its (table, alias) pair —
+		 * Lowers the removal of one binding, identified by its (table, alias) pair —
 		 * symmetric with render(), but takes primitives since `destroy trigger` has no call
-		 * arguments to carry an AstEventAttachment's shape.
-		 * @param string $table Physical table the attachment is on
-		 * @param string $alias The attachment's alias
+		 * arguments to carry an AstEventBinding's shape.
+		 * @param string $table Physical table the binding is on
+		 * @param string $alias The binding's alias
 		 * @return list<string> Statements to run in order
 		 */
 		abstract public function renderDestroy(string $table, string $alias): array;
@@ -70,21 +70,21 @@
 
 		/**
 		 * Expands the event's row bindings into the mapped columns the routine's entity-row
-		 * parameters receive, in the fixed order AttachmentEvent::rowRoles() declares — matching
+		 * parameters receive, in the fixed order BindingEvent::rowRoles() declares — matching
 		 * the routine's own flattened parameter order (RoutineLowering::flattenedParameters()).
 		 * A routine declaring fewer entity-row parameters than the event supplies rows binds to
 		 * the leading rows only (e.g. one parameter on `replace` binds `old`, never `new`); the
 		 * trailing, undeclared rows are left out of the call entirely. Each bound row expands to
 		 * every mapped column, in the entity's column-declaration order; there is no per-field
-		 * selection, since the attachment has no argument list.
-		 * @param AstEventAttachment $attachment The attachment
+		 * selection, since the binding has no argument list.
+		 * @param AstEventBinding $binding The binding
 		 * @param int $parameterCount Number of entity-row parameters the called routine declares
 		 * @return list<ExpandedArgument>
 		 * @throws EntityResolutionException
 		 */
-		protected function expandArguments(AstEventAttachment $attachment, int $parameterCount): array {
-			$metadata = $this->targetMetadata($attachment);
-			$rows = array_slice($attachment->getEvent()->rowRoles(), 0, $parameterCount);
+		protected function expandArguments(AstEventBinding $binding, int $parameterCount): array {
+			$metadata = $this->targetMetadata($binding);
+			$rows = array_slice($binding->getEvent()->rowRoles(), 0, $parameterCount);
 			$expanded = [];
 
 			foreach ($rows as $row) {
@@ -98,12 +98,12 @@
 
 		/**
 		 * Maps a mapped property to its native SQL type.
-		 * @param AstEventAttachment $attachment The attachment, for its target entity
+		 * @param AstEventBinding $binding The binding, for its target entity
 		 * @param string $property Mapped property name
 		 * @return string SQL type on the target engine
 		 */
-		protected function columnSqlType(AstEventAttachment $attachment, string $property): string {
-			$metadata = $this->targetMetadata($attachment);
+		protected function columnSqlType(AstEventBinding $binding, string $property): string {
+			$metadata = $this->targetMetadata($binding);
 			$column = $metadata->columnDefinitions[$metadata->getColumnNameOrFail($property)];
 
 			return $this->typeMapper->getTempTableColumnType([
@@ -117,52 +117,52 @@
 		}
 
 		/**
-		 * @param AstEventAttachment $attachment The attachment
+		 * @param AstEventBinding $binding The binding
 		 * @return EntityMetadataRecord Target entity's metadata
 		 * @throws EntityResolutionException
 		 */
-		protected function targetMetadata(AstEventAttachment $attachment): EntityMetadataRecord {
-			return $this->entityStore->getMetadata($attachment->getRange()->getEntityName());
+		protected function targetMetadata(AstEventBinding $binding): EntityMetadataRecord {
+			return $this->entityStore->getMetadata($binding->getRange()->getEntityName());
 		}
 
 		/**
-		 * @param AstEventAttachment $attachment The attachment
-		 * @return string Physical table the attachment is on
+		 * @param AstEventBinding $binding The binding
+		 * @return string Physical table the binding is on
 		 * @throws EntityResolutionException
 		 */
-		protected function physicalTable(AstEventAttachment $attachment): string {
-			return $this->targetMetadata($attachment)->tableName;
+		protected function physicalTable(AstEventBinding $binding): string {
+			return $this->targetMetadata($binding)->tableName;
 		}
 
 		/**
-		 * @param AstEventAttachment $attachment The attachment
+		 * @param AstEventBinding $binding The binding
 		 * @return string Quoted, schema-qualified table name
 		 * @throws EntityResolutionException
 		 */
-		protected function quotedTable(AstEventAttachment $attachment): string {
-			return $this->quoter->quoteRoutineName($this->physicalTable($attachment), $this->routineSchema);
+		protected function quotedTable(AstEventBinding $binding): string {
+			return $this->quoter->quoteRoutineName($this->physicalTable($binding), $this->routineSchema);
 		}
 
 		/**
-		 * @param AstEventAttachment $attachment The attachment
-		 * @param string $alias The attachment's resolved alias
-		 * @return string Physical trigger name (see EventAttachmentNaming)
+		 * @param AstEventBinding $binding The binding
+		 * @param string $alias The binding's resolved alias
+		 * @return string Physical trigger name (see EventBindingNaming)
 		 * @throws EntityResolutionException
 		 */
-		protected function triggerName(AstEventAttachment $attachment, string $alias): string {
-			return EventAttachmentNaming::triggerName($this->physicalTable($attachment), $alias);
+		protected function triggerName(AstEventBinding $binding, string $alias): string {
+			return EventBindingNaming::triggerName($this->physicalTable($binding), $alias);
 		}
 
 		/**
-		 * Maps the attachment's event to the engine's trigger-event keyword.
-		 * @param AttachmentEvent $event The event
+		 * Maps the binding's event to the engine's trigger-event keyword.
+		 * @param BindingEvent $event The event
 		 * @return string 'INSERT', 'UPDATE' or 'DELETE'
 		 */
-		protected function sqlEvent(AttachmentEvent $event): string {
+		protected function sqlEvent(BindingEvent $event): string {
 			return match ($event) {
-				AttachmentEvent::Append => 'INSERT',
-				AttachmentEvent::Replace => 'UPDATE',
-				AttachmentEvent::Delete => 'DELETE',
+				BindingEvent::Append => 'INSERT',
+				BindingEvent::Replace => 'UPDATE',
+				BindingEvent::Delete => 'DELETE',
 			};
 		}
 	}

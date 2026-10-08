@@ -4,19 +4,19 @@
 
 	use Quellabs\ObjectQuel\DatabaseAdapter\DatabaseAdapter;
 	use Quellabs\ObjectQuel\Exception\QuelException;
-	use Quellabs\ObjectQuel\ObjectQuel\Ast\AttachmentEvent;
-	use Quellabs\ObjectQuel\ObjectQuel\Routines\EventAttachmentNaming;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\BindingEvent;
+	use Quellabs\ObjectQuel\ObjectQuel\Routines\EventBindingNaming;
 
 	/**
-	 * Scans live attachments (triggers, and PostgreSQL's generated helper functions) for a
+	 * Scans live bindings (triggers, and PostgreSQL's generated helper functions) for a
 	 * call to a given routine, so `destroy function` can refuse while one still depends on it,
-	 * for any attachment at all on a given table, so an `alter table` that would change a
-	 * mapped column can refuse while one still exists, and for every attachment in the schema,
-	 * for `quel:list-triggers` — see "Attachment dependency discovery" in
-	 * objectquel-equel-triggers-design.md. There is no separate attachment registry; the live
+	 * for any binding at all on a given table, so an `alter table` that would change a
+	 * mapped column can refuse while one still exists, and for every binding in the schema,
+	 * for `quel:list-triggers` — see "Binding dependency discovery" in
+	 * objectquel-equel-triggers-design.md. There is no separate binding registry; the live
 	 * DDL is the only source of truth, so this is a DDL-time, rare-operation scan, not
 	 * something run per query.
-	 * @phpstan-import-type AttachmentListEntry from DatabaseAdapter
+	 * @phpstan-import-type BindingListEntry from DatabaseAdapter
 	 */
 	class RoutineDependencyInspector {
 
@@ -51,40 +51,40 @@
 		}
 
 		/**
-		 * Finds every attachment trigger on a table, regardless of which routine it calls — so
+		 * Finds every binding trigger on a table, regardless of which routine it calls — so
 		 * an `alter table` changing a mapped column (drop/rename/retype, or a primary-key
-		 * change SQL Server's row-pairing relies on) can refuse while any attachment still
+		 * change SQL Server's row-pairing relies on) can refuse while any binding still
 		 * depends on the table's current column shape. A trigger only counts when the routine
-		 * it calls can actually be read back with `trigger`-declared ObjectQuel metadata —
-		 * otherwise it's either not ours, or not an attachment at all (e.g. a user trigger that
+		 * it calls can actually be read back with `isTrigger` ObjectQuel metadata —
+		 * otherwise it's either not ours, or not a binding at all (e.g. a user trigger that
 		 * happens to also call some unrelated procedure), and alter table has no reason to care.
 		 * @param string $table Physical table being altered
-		 * @return list<string> Names of attachment triggers found on it; empty when none exist
+		 * @return list<string> Names of binding triggers found on it; empty when none exist
 		 * @throws QuelException When the lookup fails or triggers are unsupported
 		 */
-		public function findAttachmentTriggersOnTable(string $table): array {
-			$attachments = [];
+		public function findBindingTriggersOnTable(string $table): array {
+			$bindings = [];
 
 			foreach ($this->listTriggerBodies($table) as ['trigger_name' => $name, 'body' => $body]) {
 				$routineName = $this->extractCalledRoutineName($body);
 
 				if ($routineName !== null && $this->isTriggerDeclaredRoutine($routineName)) {
-					$attachments[] = $name;
+					$bindings[] = $name;
 				}
 			}
 
-			return $attachments;
+			return $bindings;
 		}
 
 		/**
-		 * Lists every live attachment in the connected schema — every trigger whose body (or,
-		 * on PostgreSQL, generated helper) calls a `trigger`-declared routine — for
+		 * Lists every live binding in the connected schema — every trigger whose body (or,
+		 * on PostgreSQL, generated helper) calls a tfunction — for
 		 * `quel:list-triggers`.
-		 * @return list<AttachmentListEntry>
+		 * @return list<BindingListEntry>
 		 * @throws QuelException When the lookup fails or triggers are unsupported
 		 */
-		public function listAttachments(): array {
-			$attachments = [];
+		public function listBindings(): array {
+			$bindings = [];
 
 			foreach ($this->listTriggerBodies() as ['trigger_name' => $name, 'table' => $table, 'event' => $nativeEvent, 'body' => $body]) {
 				$routineName = $this->extractCalledRoutineName($body);
@@ -94,7 +94,7 @@
 					continue;
 				}
 
-				$attachments[] = [
+				$bindings[] = [
 					'table'   => $table,
 					'event'   => $event,
 					'routine' => $routineName,
@@ -102,28 +102,28 @@
 				];
 			}
 
-			usort($attachments, static fn(array $a, array $b): int => $a['table'] <=> $b['table'] ?: $a['alias'] <=> $b['alias']);
+			usort($bindings, static fn(array $a, array $b): int => $a['table'] <=> $b['table'] ?: $a['alias'] <=> $b['alias']);
 
-			return $attachments;
+			return $bindings;
 		}
 
 		/**
 		 * Maps a native trigger event description back to EQUEL's own vocabulary.
 		 * @param string $native 'INSERT'/'UPDATE'/'DELETE', or an engine-specific variant of one
-		 * @return AttachmentEvent|null Null when it isn't one of the three physical write events
+		 * @return BindingEvent|null Null when it isn't one of the three physical write events
 		 */
-		private static function normalizeEvent(string $native): ?AttachmentEvent {
+		private static function normalizeEvent(string $native): ?BindingEvent {
 			return match (true) {
-				str_contains($native, 'INSERT') => AttachmentEvent::Append,
-				str_contains($native, 'UPDATE') => AttachmentEvent::Replace,
-				str_contains($native, 'DELETE') => AttachmentEvent::Delete,
+				str_contains($native, 'INSERT') => BindingEvent::Append,
+				str_contains($native, 'UPDATE') => BindingEvent::Replace,
+				str_contains($native, 'DELETE') => BindingEvent::Delete,
 				default => null,
 			};
 		}
 
 		/**
-		 * Recovers an attachment's alias from its physical trigger name by stripping the known
-		 * `eq_<table>_` prefix (see EventAttachmentNaming::triggerName()). Falls back to the
+		 * Recovers a binding's alias from its physical trigger name by stripping the known
+		 * `eq_<table>_` prefix (see EventBindingNaming::triggerName()). Falls back to the
 		 * whole name on the (extremely unlikely) chance a very long table name alone already
 		 * exceeds the truncation length and the prefix isn't fully present — nothing to strip
 		 * in that case, so the raw name is shown as-is rather than guessed at.
@@ -132,19 +132,19 @@
 		 * @return string
 		 */
 		private static function aliasFromTriggerName(string $triggerName, string $table): string {
-			$prefix = EventAttachmentNaming::triggerNamePrefix($table);
+			$prefix = EventBindingNaming::triggerNamePrefix($table);
 			return str_starts_with($triggerName, $prefix) ? substr($triggerName, strlen($prefix)) : $triggerName;
 		}
 
 		/**
 		 * @param string $routineName Routine name recovered from a trigger body
-		 * @return bool True when it exists and its metadata reports returnType 'trigger'
+		 * @return bool True when it exists and its metadata reports isTrigger
 		 */
 		private function isTriggerDeclaredRoutine(string $routineName): bool {
 			try {
-				return ($this->connection->getRoutineMetadata($routineName)['returnType'] ?? null) === 'trigger';
+				return (bool)($this->connection->getRoutineMetadata($routineName)['isTrigger'] ?? false);
 			} catch (QuelException) {
-				// Missing, ambiguous, or without recognizable ObjectQuel metadata — not an attachment of ours.
+				// Missing, ambiguous, or without recognizable ObjectQuel metadata — not a binding of ours.
 				return false;
 			}
 		}
@@ -208,7 +208,7 @@
 		 * Lists every trigger's name, table, native event and the body to search for a call:
 		 * the trigger definition itself for MySQL/MariaDB and SQL Server, or the generated
 		 * helper function's source for PostgreSQL (triggers there call the helper, not the
-		 * routine directly — see PostgresEventAttachmentLowering).
+		 * routine directly — see PostgresEventBindingLowering).
 		 * @param string|null $table Restrict to triggers on this physical table, or null for every table
 		 * @return list<array{trigger_name: string, table: string, event: string, body: string}>
 		 * @throws QuelException When the lookup fails or triggers are unsupported

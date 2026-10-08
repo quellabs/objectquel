@@ -81,7 +81,7 @@
 		}
 
 		/**
-		 * Records an entity-row parameter, e.g. `UserEntity old` in a `trigger`-returning routine.
+		 * Records an entity-row parameter, e.g. `UserEntity old` in a tfunction.
 		 * Its fields are typed from the entity's mapped columns (see routineReferenceDefinition()),
 		 * not from a declared routine type like a scalar parameter.
 		 * @param string $name Parameter name

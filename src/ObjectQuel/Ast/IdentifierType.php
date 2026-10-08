@@ -47,7 +47,7 @@
 		/** Field segment of a `cursorName.field` read. */
 		case CursorField;
 
-		/** Entity-row parameter name in a `paramName.field` read (see `trigger`-returning routines). */
+		/** Entity-row parameter name in a `paramName.field` read (see tfunctions). */
 		case EntityRowRoot;
 
 		/** Field segment of an entity-row parameter read. */

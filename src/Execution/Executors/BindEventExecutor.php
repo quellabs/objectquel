@@ -7,17 +7,17 @@
 	use Quellabs\ObjectQuel\EntityManager;
 	use Quellabs\ObjectQuel\Exception\QuelException;
 	use Quellabs\ObjectQuel\Execution\ExecutionContext;
-	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstEventAttachment;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstEventBinding;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstStatement;
-	use Quellabs\ObjectQuel\ObjectQuel\Routines\EventAttachmentCompiler;
+	use Quellabs\ObjectQuel\ObjectQuel\Routines\EventBindingCompiler;
 
 	/**
 	 * Executes `after ... call ... [as <alias>]`: validates, compiles and creates the
-	 * attachment on the connected engine. A conflicting alias is rejected inside the compiler,
+	 * binding on the connected engine. A conflicting alias is rejected inside the compiler,
 	 * which resolves it (given or generated) before rendering — see
-	 * EventAttachmentCompiler::resolveAlias().
+	 * EventBindingCompiler::resolveAlias().
 	 */
-	class AttachEventExecutor implements DdlStatementExecutorInterface {
+	class BindEventExecutor implements DdlStatementExecutorInterface {
 
 		private EntityManager $entityManager;
 		private DatabaseAdapter $connection;
@@ -36,21 +36,21 @@
 		}
 
 		/**
-		 * Compiles and creates the attachment.
+		 * Compiles and creates the binding.
 		 * @param AstStatement $statement
 		 * @param ExecutionContext $context
 		 * @return void
-		 * @throws QuelException When the attachment's alias conflicts, it doesn't validate, or the DDL fails
+		 * @throws QuelException When the binding's alias conflicts, it doesn't validate, or the DDL fails
 		 */
 		public function execute(AstStatement $statement, ExecutionContext $context): void {
-			assert($statement instanceof AstEventAttachment);
+			assert($statement instanceof AstEventBinding);
 
 			$routineName = $statement->getRoutineName();
 			$table = $this->entityManager->getEntityStore()->getMetadata($statement->getRange()->getEntityName())->tableName;
 
-			$compiler = new EventAttachmentCompiler($this->entityManager, $this->platform, $this->connection->getRoutineSchema(), $this->connection);
-			$ddl = $compiler->compileAttachment($statement);
+			$compiler = new EventBindingCompiler($this->entityManager, $this->platform, $this->connection->getRoutineSchema(), $this->connection);
+			$ddl = $compiler->compileBinding($statement);
 
-			$this->ddlRunner->runTransactionally($ddl, $this->platform, "Failed to attach '{$routineName}' to '{$table}'", 'routine_definition_error');
+			$this->ddlRunner->runTransactionally($ddl, $this->platform, "Failed to bind '{$routineName}' to '{$table}'", 'routine_definition_error');
 		}
 	}

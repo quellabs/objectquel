@@ -16,7 +16,7 @@
 	/**
 	 * Builds the versioned JSON metadata a deployed routine carries, so its source-level
 	 * row-parameter typing and direct safety facts survive separate catalog queries — see
-	 * "Routine metadata and attachment dependencies" in objectquel-equel-triggers-design.md.
+	 * "Routine metadata and binding dependencies" in objectquel-equel-triggers-design.md.
 	 * Read back per dialect by RoutineDefinitionInspector.
 	 */
 	class RoutineMetadata {
@@ -34,6 +34,7 @@
 		public static function build(AstRoutineDefinition $routine, EntityStore $entityStore): string {
 			$data = [
 				'objectQuel' => self::VERSION,
+				'isTrigger'  => $routine->isTrigger(),
 				'returnType' => self::returnType($routine),
 				'atomic'     => self::containsAtomic($routine),
 				'parameters' => self::parameters($routine, $entityStore),
@@ -50,14 +51,12 @@
 		}
 
 		/**
+		 * A tfunction's declared return type is already 'void' (RoutineDefinition); whether it's
+		 * a trigger is carried separately by the `isTrigger` key.
 		 * @param AstRoutineDefinition $routine The routine
-		 * @return string 'trigger', 'void', or the normalized scalar return type
+		 * @return string 'void', or the normalized scalar return type
 		 */
 		private static function returnType(AstRoutineDefinition $routine): string {
-			if ($routine->isTrigger()) {
-				return 'trigger';
-			}
-
 			if ($routine->isVoid()) {
 				return 'void';
 			}
@@ -97,7 +96,7 @@
 
 		/**
 		 * Direct (non-transitive) safety facts about this routine's own body. The transitive
-		 * call graph is walked by the attachment/destroy checks that consume this, by reading
+		 * call graph is walked by the binding/destroy checks that consume this, by reading
 		 * each reachable routine's own metadata in turn.
 		 * @param AstRoutineDefinition $routine The routine
 		 * @param EntityStore $entityStore Entity metadata

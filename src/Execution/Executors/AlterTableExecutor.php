@@ -96,7 +96,7 @@
 		public function execute(AstStatement $statement, ExecutionContext $context): void {
 			assert($statement instanceof AstAlterTable);
 
-			$this->assertNoLiveAttachment($statement);
+			$this->assertNoLiveBinding($statement);
 
 			$this->ddlRunner->runTransactionally(
 				$this->compileSql($statement),
@@ -108,28 +108,28 @@
 
 		/**
 		 * Refuses a column-shape change (drop/rename/retype, or a primary-key change — SQL
-		 * Server's UPDATE attachments pair deleted/inserted on the mapped key) while a live
-		 * attachment still exists on the table: it depends on the table's current columns, and
-		 * ObjectQuel never silently rebuilds an attachment behind a schema change (see
-		 * "Attachment dependency discovery" in objectquel-equel-triggers-design.md). Adding a
-		 * column, or an index/foreign-key sub-operation, doesn't affect an existing attachment's
+		 * Server's UPDATE bindings pair deleted/inserted on the mapped key) while a live
+		 * binding still exists on the table: it depends on the table's current columns, and
+		 * ObjectQuel never silently rebuilds a binding behind a schema change (see
+		 * "Binding dependency discovery" in objectquel-equel-triggers-design.md). Adding a
+		 * column, or an index/foreign-key sub-operation, doesn't affect an existing binding's
 		 * generated DDL or its routine's already-deployed signature, so neither is checked here.
 		 * @param AstAlterTable $statement The statement about to run
 		 * @return void
-		 * @throws QuelException When a live attachment blocks a signature-relevant sub-operation
+		 * @throws QuelException When a live binding blocks a signature-relevant sub-operation
 		 */
-		private function assertNoLiveAttachment(AstAlterTable $statement): void {
+		private function assertNoLiveBinding(AstAlterTable $statement): void {
 			if (!$this->containsSignatureRelevantOperation($statement->getOperations())) {
 				return;
 			}
 
-			$attachments = $this->connection->findAttachmentTriggersOnTable($statement->getTableName());
+			$bindings = $this->connection->findBindingTriggersOnTable($statement->getTableName());
 
-			if ($attachments !== []) {
-				$names = implode("', '", $attachments);
+			if ($bindings !== []) {
+				$names = implode("', '", $bindings);
 				throw new QuelException(
-					"Can't alter '{$statement->getTableName()}': attachment trigger(s) '{$names}' depend on its mapped columns. " .
-					"Detach them first ('destroy trigger ...'), then redefine and reattach as needed.",
+					"Can't alter '{$statement->getTableName()}': binding trigger(s) '{$names}' depend on its mapped columns. " .
+					"Unbind them first ('destroy trigger ...'), then redefine and rebind as needed.",
 					'table_alteration_error'
 				);
 			}
@@ -137,7 +137,7 @@
 
 		/**
 		 * @param AstAlterOperation[] $operations
-		 * @return bool True when any sub-operation can change an existing attachment's generated
+		 * @return bool True when any sub-operation can change an existing binding's generated
 		 *         column references or its routine's already-deployed native signature
 		 */
 		private function containsSignatureRelevantOperation(array $operations): bool {

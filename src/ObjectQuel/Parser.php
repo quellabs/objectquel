@@ -13,7 +13,7 @@
 	use Quellabs\ObjectQuel\ObjectQuel\Rules\CreateTable;
 	use Quellabs\ObjectQuel\ObjectQuel\Rules\Delete;
 	use Quellabs\ObjectQuel\ObjectQuel\Rules\Destroy;
-	use Quellabs\ObjectQuel\ObjectQuel\Rules\EventAttachment;
+	use Quellabs\ObjectQuel\ObjectQuel\Rules\EventBinding;
 	use Quellabs\ObjectQuel\ObjectQuel\Rules\IndexVisibility;
 	use Quellabs\ObjectQuel\ObjectQuel\Rules\Replace;
 	use Quellabs\ObjectQuel\ObjectQuel\Rules\Retrieve;
@@ -37,7 +37,7 @@
 		private Delete $deleteRule;
 		private Call $callRule;
 		private RoutineDefinition $routineDefinitionRule;
-		private EventAttachment $eventAttachmentRule;
+		private EventBinding $eventBindingRule;
 		
 		/**
 		 * Parser constructor.
@@ -58,7 +58,7 @@
 			$this->deleteRule = new Delete($lexer);
 			$this->callRule = new Call($lexer);
 			$this->routineDefinitionRule = new RoutineDefinition($lexer);
-			$this->eventAttachmentRule = new EventAttachment($lexer);
+			$this->eventBindingRule = new EventBinding($lexer);
 		}
 		
 		/**
@@ -133,7 +133,7 @@
 					return $this->deleteRule->parse($directives, $ranges);
 
 				case 'after':
-					return $this->eventAttachmentRule->parse($ranges);
+					return $this->eventBindingRule->parse($ranges);
 
 				default:
 					if ($token->getType() === Token::Identifier && $this->lexer->peekNext() === Token::ParenthesesOpen) {

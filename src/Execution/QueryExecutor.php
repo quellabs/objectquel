@@ -9,10 +9,10 @@
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstCreateTable;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstDelete;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstDestroy;
-	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstDestroyEventAttachment;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstDestroyEventBinding;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstDestroyIndex;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstDestroyRoutine;
-	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstEventAttachment;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstEventBinding;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstHideIndex;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstReplace;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRoutineDefinition;
@@ -35,7 +35,7 @@
 	use Quellabs\ObjectQuel\ObjectQuel\QuelResult;
 	use Quellabs\ObjectQuel\Execution\Executors\AlterTableExecutor;
 	use Quellabs\ObjectQuel\Execution\Executors\AppendExecutor;
-	use Quellabs\ObjectQuel\Execution\Executors\AttachEventExecutor;
+	use Quellabs\ObjectQuel\Execution\Executors\BindEventExecutor;
 	use Quellabs\ObjectQuel\Execution\Executors\DestroyTriggerExecutor;
 	use Quellabs\ObjectQuel\Execution\Executors\CallExecutor;
 	use Quellabs\ObjectQuel\Execution\Executors\CreateIndexExecutor;
@@ -88,7 +88,7 @@
 		private DestroyIndexExecutor $destroyIndexExecutor;
 		private DefineRoutineExecutor $defineRoutineExecutor;
 		private DestroyRoutineExecutor $destroyRoutineExecutor;
-		private AttachEventExecutor $attachEventExecutor;
+		private BindEventExecutor $bindEventExecutor;
 		private DestroyTriggerExecutor $destroyTriggerExecutor;
 		private HideIndexExecutor $hideIndexExecutor;
 		private ShowIndexExecutor $showIndexExecutor;
@@ -129,7 +129,7 @@
 			$this->destroyIndexExecutor = new DestroyIndexExecutor($this->connection, $this->capabilities);
 			$this->defineRoutineExecutor = new DefineRoutineExecutor($entityManager, $this->capabilities);
 			$this->destroyRoutineExecutor = new DestroyRoutineExecutor($this->connection, $this->capabilities);
-			$this->attachEventExecutor = new AttachEventExecutor($entityManager, $this->capabilities);
+			$this->bindEventExecutor = new BindEventExecutor($entityManager, $this->capabilities);
 			$this->destroyTriggerExecutor = new DestroyTriggerExecutor($entityManager, $this->capabilities);
 			$this->hideIndexExecutor = new HideIndexExecutor($this->connection, $this->capabilities);
 			$this->showIndexExecutor = new ShowIndexExecutor($this->connection, $this->capabilities);
@@ -217,8 +217,8 @@
 					$ast instanceof AstShowIndex ||
 					$ast instanceof AstRoutineDefinition ||
 					$ast instanceof AstDestroyRoutine ||
-					$ast instanceof AstEventAttachment ||
-					$ast instanceof AstDestroyEventAttachment
+					$ast instanceof AstEventBinding ||
+					$ast instanceof AstDestroyEventBinding
 				) {
 					match (true) {
 						$ast instanceof AstCreateTable => $this->createTableExecutor->execute($ast, $context),
@@ -229,8 +229,8 @@
 						$ast instanceof AstShowIndex => $this->showIndexExecutor->execute($ast, $context),
 						$ast instanceof AstRoutineDefinition => $this->defineRoutineExecutor->execute($ast, $context),
 						$ast instanceof AstDestroyRoutine => $this->destroyRoutineExecutor->execute($ast, $context),
-						$ast instanceof AstEventAttachment => $this->attachEventExecutor->execute($ast, $context),
-						$ast instanceof AstDestroyEventAttachment => $this->destroyTriggerExecutor->execute($ast, $context),
+						$ast instanceof AstEventBinding => $this->bindEventExecutor->execute($ast, $context),
+						$ast instanceof AstDestroyEventBinding => $this->destroyTriggerExecutor->execute($ast, $context),
 						default => $this->createIndexExecutor->execute($ast, $context),
 					};
 

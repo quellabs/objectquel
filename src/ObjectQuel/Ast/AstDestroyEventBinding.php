@@ -5,20 +5,20 @@
 	use Quellabs\ObjectQuel\ObjectQuel\AstVisitorInterface;
 
 	/**
-	 * `destroy trigger <range> <alias> [if exists]` — removes one attachment, identified by
+	 * `destroy trigger <range> <alias> [if exists]` — removes one binding, identified by
 	 * its (table, alias) pair, without touching the routine itself. See
 	 * objectquel-equel-triggers-design.md.
 	 */
-	class AstDestroyEventAttachment extends Ast implements AstStatement {
+	class AstDestroyEventBinding extends Ast implements AstStatement {
 
 		private AstRangeDatabase $range;
 		private string $alias;
 		private bool $ifExists;
 
 		/**
-		 * @param AstRangeDatabase $range Target range the attachment is on
-		 * @param string $alias The attachment's alias, as written
-		 * @param bool $ifExists True when a missing attachment is ignored instead of an error
+		 * @param AstRangeDatabase $range Target range the binding is on
+		 * @param string $alias The binding's alias, as written
+		 * @param bool $ifExists True when a missing binding is ignored instead of an error
 		 */
 		public function __construct(AstRangeDatabase $range, string $alias, bool $ifExists = false) {
 			$this->range = $range;
@@ -44,14 +44,14 @@
 		}
 
 		/**
-		 * @return string The attachment's alias, as written
+		 * @return string The binding's alias, as written
 		 */
 		public function getAlias(): string {
 			return $this->alias;
 		}
 
 		/**
-		 * @return bool True when a missing attachment is ignored instead of an error
+		 * @return bool True when a missing binding is ignored instead of an error
 		 */
 		public function isIfExists(): bool {
 			return $this->ifExists;

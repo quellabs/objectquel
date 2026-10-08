@@ -6,23 +6,23 @@
 	use Quellabs\ObjectQuel\EntityStore;
 	use Quellabs\ObjectQuel\Exception\EntityResolutionException;
 	use Quellabs\ObjectQuel\Exception\QuelException;
-	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstEventAttachment;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstEventBinding;
 
 	/**
-	 * Validates an attachment against the called routine's live metadata: its deployed
-	 * `trigger` return type, entity-row parameter count/type against the event's own row
-	 * count, and the transitive safety graph of everything it calls. This needs a live
-	 * connection, so it runs at attachment time rather than at parse time. See "Routine
-	 * metadata and attachment dependencies" in objectquel-equel-triggers-design.md.
+	 * Validates a binding against the called routine's live metadata: its `isTrigger`
+	 * flag, entity-row parameter count/type against the event's own row count, and the
+	 * transitive safety graph of everything it calls. This needs a live connection, so it
+	 * runs at binding time rather than at parse time. See "Routine metadata and binding
+	 * dependencies" in objectquel-equel-triggers-design.md.
 	 */
-	class EventAttachmentValidator {
+	class EventBindingValidator {
 
 		private readonly DatabaseAdapter $connection;
 		private readonly EntityStore $entityStore;
 
 		/**
 		 * @param DatabaseAdapter $connection Connection whose routine catalog is read
-		 * @param EntityStore $entityStore Entity metadata, to resolve the attachment's target entity
+		 * @param EntityStore $entityStore Entity metadata, to resolve the binding's target entity
 		 */
 		public function __construct(DatabaseAdapter $connection, EntityStore $entityStore) {
 			$this->connection = $connection;
@@ -30,22 +30,22 @@
 		}
 
 		/**
-		 * Validates the attachment, rejecting before any DDL is emitted.
-		 * @param AstEventAttachment $attachment Parsed, analyzer-checked attachment
+		 * Validates the binding, rejecting before any DDL is emitted.
+		 * @param AstEventBinding $binding Parsed, analyzer-checked binding
 		 * @return int Number of entity-row parameters the routine declares
 		 * @throws QuelException|EntityResolutionException
 		 */
-		public function validate(AstEventAttachment $attachment): int {
-			$routineName = $attachment->getRoutineName();
+		public function validate(AstEventBinding $binding): int {
+			$routineName = $binding->getRoutineName();
 			$metadata = $this->connection->getRoutineMetadata($routineName);
 
-			if (($metadata['returnType'] ?? null) !== 'trigger') {
-				throw new QuelException("Can't attach '{$routineName}': it isn't declared 'trigger'.", 'routine_call_error');
+			if (!($metadata['isTrigger'] ?? false)) {
+				throw new QuelException("Can't bind '{$routineName}': it isn't declared with 'tfunction'.", 'routine_call_error');
 			}
 
-			$parameterCount = $this->checkParameters($attachment, $metadata);
+			$parameterCount = $this->checkParameters($binding, $metadata);
 
-			$triggeringTable = $this->entityStore->getMetadata($attachment->getRange()->getEntityName())->tableName;
+			$triggeringTable = $this->entityStore->getMetadata($binding->getRange()->getEntityName())->tableName;
 			$this->checkCallGraph($routineName, $metadata, $triggeringTable, []);
 
 			return $parameterCount;
@@ -53,38 +53,38 @@
 
 		/**
 		 * Matches the routine's declared entity-row parameters, by position, against the event's
-		 * own row count and the attachment's target entity. The attachment has no argument list
+		 * own row count and the binding's target entity. The binding has no argument list
 		 * of its own — the event determines how many rows are available and in what order (see
-		 * AttachmentEvent::rowRoles()). The routine may declare fewer parameters than the event
+		 * BindingEvent::rowRoles()). The routine may declare fewer parameters than the event
 		 * supplies rows (binding to the leading rows, in order) but never more.
-		 * @param AstEventAttachment $attachment The attachment
+		 * @param AstEventBinding $binding The binding
 		 * @param array<string, mixed> $metadata The called routine's metadata
 		 * @return int Number of entity-row parameters the routine declares
 		 * @throws QuelException|EntityResolutionException
 		 */
-		private function checkParameters(AstEventAttachment $attachment, array $metadata): int {
-			$routineName = $attachment->getRoutineName();
-			$rowCount = count($attachment->getEvent()->rowRoles());
+		private function checkParameters(AstEventBinding $binding, array $metadata): int {
+			$routineName = $binding->getRoutineName();
+			$rowCount = count($binding->getEvent()->rowRoles());
 			$parameters = self::asArray($metadata['parameters'] ?? null);
 
 			if (count($parameters) > $rowCount) {
-				throw new QuelException("Can't attach '{$routineName}': it declares " . count($parameters) . " entity-row parameter(s), but '{$attachment->getEvent()->keyword()}' only supplies {$rowCount}.", 'routine_call_error');
+				throw new QuelException("Can't bind '{$routineName}': it declares " . count($parameters) . " entity-row parameter(s), but '{$binding->getEvent()->keyword()}' only supplies {$rowCount}.", 'routine_call_error');
 			}
 
-			$targetEntityClass = $this->entityStore->getMetadata($attachment->getRange()->getEntityName())->className;
+			$targetEntityClass = $this->entityStore->getMetadata($binding->getRange()->getEntityName())->className;
 
 			foreach ($parameters as $index => $parameter) {
 				$parameter = self::asArray($parameter);
 				$position = $index + 1;
 
 				if (self::asStringOrNull($parameter['kind'] ?? null) !== 'entity') {
-					throw new QuelException("Can't attach '{$routineName}': parameter {$position} isn't an entity-row parameter.", 'routine_call_error');
+					throw new QuelException("Can't bind '{$routineName}': parameter {$position} isn't an entity-row parameter.", 'routine_call_error');
 				}
 
 				$declaredType = self::asStringOrNull($parameter['type'] ?? null);
 
 				if ($declaredType !== $targetEntityClass) {
-					throw new QuelException("Can't attach '{$routineName}': parameter {$position} is typed '" . ($declaredType ?? 'unknown') . "', but the attachment's target is '{$targetEntityClass}'.", 'routine_call_error');
+					throw new QuelException("Can't bind '{$routineName}': parameter {$position} is typed '" . ($declaredType ?? 'unknown') . "', but the binding's target is '{$targetEntityClass}'.", 'routine_call_error');
 				}
 			}
 
@@ -97,7 +97,7 @@
 		 * again.
 		 * @param string $routineName Routine being checked
 		 * @param array<string, mixed> $metadata Its metadata
-		 * @param string $triggeringTable Physical table the attachment is on
+		 * @param string $triggeringTable Physical table the binding is on
 		 * @param array<string, true> $visited Lowercased routine names already walked on this path
 		 * @return void
 		 * @throws QuelException
@@ -114,7 +114,7 @@
 
 			foreach (self::asStringList($safety['writes'] ?? null) as $table) {
 				if (strcasecmp($table, $triggeringTable) === 0) {
-					throw new QuelException("Can't attach: '{$routineName}' writes '{$table}', the table the attachment fires on; a trigger can't write its own triggering table.", 'routine_call_error');
+					throw new QuelException("Can't bind: '{$routineName}' writes '{$table}', the table the binding fires on; a trigger can't write its own triggering table.", 'routine_call_error');
 				}
 			}
 
