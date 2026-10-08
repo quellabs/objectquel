@@ -2,6 +2,8 @@
 
 	namespace Quellabs\ObjectQuel\ObjectQuel\Routines;
 
+	use Quellabs\ObjectQuel\Exception\QuelException;
+
 	/**
 	 * Physical names built from a binding's (table, alias) identity — see "Binding
 	 * identity and removal" in objectquel-equel-triggers-design.md. The alias, given with
@@ -15,7 +17,9 @@
 		/** Conservative across all three engines: MySQL/MariaDB allow 64, PostgreSQL 63, SQL Server 128 */
 		private const int MAX_LENGTH = 60;
 
-		private const int HASH_LENGTH = 8;
+		private const int TABLE_HASH_LENGTH = 12;
+		private const int HELPER_HASH_LENGTH = 8;
+		public const int MAX_ALIAS_LENGTH = self::MAX_LENGTH - 3 - self::TABLE_HASH_LENGTH - 1;
 
 		/** Hex characters of entropy in a generated alias; 16 million possibilities is ample per table */
 		private const int RANDOM_ALIAS_BYTES = 4;
@@ -24,22 +28,25 @@
 		 * Builds the physical trigger name for one binding.
 		 * @param string $table Physical table the binding is on
 		 * @param string $alias The binding's alias, given or generated
-		 * @return string Name, truncated with a stable hash suffix if too long
+		 * @return string Name containing the complete alias
+		 * @throws QuelException When the alias exceeds the available identifier length
 		 */
 		public static function triggerName(string $table, string $alias): string {
-			return self::truncate(self::triggerNamePrefix($table) . $alias);
+			if (strlen($alias) > self::MAX_ALIAS_LENGTH) {
+				throw new QuelException("Binding alias '{$alias}' exceeds the " . self::MAX_ALIAS_LENGTH . '-character limit.', 'routine_definition_error');
+			}
+
+			return self::triggerNamePrefix($table) . $alias;
 		}
 
 		/**
-		 * The untruncated prefix every trigger name starts with, before its alias. Used to
-		 * recover a trigger's alias from its own name (see
-		 * RoutineDependencyInspector::listBindings()) — only reliable when the full
-		 * `eq_<table>_<alias>` identity didn't need truncate()'s hash shortening.
+		 * A fixed-length table hash leaves room for the complete alias, even when the
+		 * physical table name is long. The inspector removes this prefix to recover it.
 		 * @param string $table Physical table the binding is on
 		 * @return string
 		 */
 		public static function triggerNamePrefix(string $table): string {
-			return "eq_{$table}_";
+			return 'eq_' . substr(hash('sha256', $table), 0, self::TABLE_HASH_LENGTH) . '_';
 		}
 
 		/**
@@ -74,8 +81,8 @@
 				return $identity;
 			}
 
-			$hash = substr(hash('sha256', $identity), 0, self::HASH_LENGTH);
-			$prefixLength = self::MAX_LENGTH - self::HASH_LENGTH - 1;
+			$hash = substr(hash('sha256', $identity), 0, self::HELPER_HASH_LENGTH);
+			$prefixLength = self::MAX_LENGTH - self::HELPER_HASH_LENGTH - 1;
 
 			return substr($identity, 0, $prefixLength) . '_' . $hash;
 		}

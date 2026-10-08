@@ -122,11 +122,8 @@
 		}
 
 		/**
-		 * Recovers a binding's alias from its physical trigger name by stripping the known
-		 * `eq_<table>_` prefix (see EventBindingNaming::triggerName()). Falls back to the
-		 * whole name on the (extremely unlikely) chance a very long table name alone already
-		 * exceeds the truncation length and the prefix isn't fully present — nothing to strip
-		 * in that case, so the raw name is shown as-is rather than guessed at.
+		 * Recovers the complete alias by removing the fixed table-hash prefix.
+		 * Unrecognized trigger names are shown whole rather than guessed at.
 		 * @param string $triggerName Physical trigger name
 		 * @param string $table Physical table the trigger is on
 		 * @return string
