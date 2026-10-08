@@ -12,14 +12,18 @@
 	 * @phpstan-import-type RoutineParameter from DatabaseAdapter
 	 * @phpstan-import-type RoutineListEntry from DatabaseAdapter
 	 */
-	class RoutineDefinitionInspector {
+	readonly class RoutineDefinitionInspector {
+
+		/** @var DatabaseAdapter Database connection */
+		private DatabaseAdapter $connection;
 
 		/**
 		 * Creates an inspector for the connected database.
 		 * @param DatabaseAdapter $connection Connection whose routine catalog is read
 		 * @return void
 		 */
-		public function __construct(private readonly DatabaseAdapter $connection) {
+		public function __construct(DatabaseAdapter $connection) {
+			$this->connection = $connection;
 		}
 
 		/**
@@ -99,6 +103,7 @@
 
 			$rows = $result->fetchAll('assoc');
 
+			// Binding validation needs one unambiguous routine, not merely a matching name.
 			if ($rows === []) {
 				throw new QuelException("Can't bind to '{$name}': no routine by that name exists.", 'routine_call_error');
 			}
@@ -107,22 +112,26 @@
 				throw new QuelException("Can't bind to '{$name}': both a void and a value-returning function have that name.", 'routine_call_error');
 			}
 
+			// Row-parameter types and the safety graph exist only in ObjectQuel's metadata.
 			$comment = $rows[0]['routine_comment'] ?? null;
 
 			if ($comment === null || $comment === '') {
 				throw new QuelException("Can't bind to '{$name}': it has no ObjectQuel metadata. Redefine it with the current ObjectQuel version.", 'routine_definition_error');
 			}
 
+			// Decode the JSON
 			$decoded = json_decode($comment, true);
 
 			if (!is_array($decoded) || !isset($decoded['objectQuel'])) {
 				throw new QuelException("Can't bind to '{$name}': its metadata is missing or unreadable.", 'routine_definition_error');
 			}
 
+			// The validator can only interpret the metadata format it was built for.
 			if ($decoded['objectQuel'] !== 1) {
 				throw new QuelException("Can't bind to '{$name}': its metadata is from an unsupported ObjectQuel version.", 'routine_definition_error');
 			}
 
+			// Fetch the metadata
 			$metadata = [];
 
 			foreach ($decoded as $field => $value) {
@@ -335,7 +344,7 @@
 				// Routine return types carry no type modifier, so format_type() gets none.
 				// obj_description() reads the ObjectQuel metadata written by COMMENT ON PROCEDURE (RoutineMetadata).
 				'pgsql' => [
-					"SELECT DISTINCT CASE WHEN prokind = 'p' THEN 1 ELSE 0 END AS is_procedure, format_type(prorettype, NULL) AS data_type, NULL AS type_detail, NULL AS max_length, obj_description(oid, 'pg_proc') AS routine_comment FROM pg_proc WHERE proname = :name AND pg_function_is_visible(oid)",
+					"SELECT DISTINCT CASE WHEN p.prokind = 'p' THEN 1 ELSE 0 END AS is_procedure, format_type(p.prorettype, NULL) AS data_type, NULL AS type_detail, NULL AS max_length, obj_description(p.oid, 'pg_proc') AS routine_comment FROM pg_proc p JOIN pg_namespace s ON s.oid = p.pronamespace WHERE p.proname = :name AND s.nspname = current_schema()",
 					['name' => $name],
 				],
 
@@ -365,7 +374,7 @@
 		private function existenceQuery(string $name): array {
 			return match ($this->connection->getDatabaseType()) {
 				'pgsql' => [
-					'SELECT COUNT(*) AS routine_count FROM pg_proc WHERE proname = :name AND pg_function_is_visible(oid)',
+					'SELECT COUNT(*) AS routine_count FROM pg_proc p JOIN pg_namespace s ON s.oid = p.pronamespace WHERE p.proname = :name AND s.nspname = current_schema()',
 					['name' => $name],
 				],
 

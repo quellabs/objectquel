@@ -36,13 +36,13 @@
 		/**
 		 * Reads column definitions for a table via INFORMATION_SCHEMA.COLUMNS,
 		 * joined with COLUMNPROPERTY(..., 'IsIdentity') for identity — the
-		 * same expression Phinx's own SQL Server adapter used. Assumes the
-		 * default 'dbo' schema, matching every other sqlsrv code path in this
-		 * codebase (see DatabaseAdapter::getSqlServerExtendedProperty()).
+		 * same expression Phinx's own SQL Server adapter used. Reads the
+		 * connection's default schema, which qualifies ObjectQuel's table names.
 		 * @param string $tableName
 		 * @return array<string, ColumnDefinition>
 		 */
 		public function getColumns(string $tableName): array {
+			$schemaName = (string)$this->adapter->getRoutineSchema();
 			$statement = $this->adapter->execute("
 				SELECT
 					c.COLUMN_NAME AS column_name,
@@ -52,19 +52,20 @@
 					c.NUMERIC_SCALE AS numeric_scale,
 					c.COLUMN_DEFAULT AS column_default,
 					c.IS_NULLABLE AS is_nullable,
-					COLUMNPROPERTY(OBJECT_ID(c.TABLE_NAME), c.COLUMN_NAME, 'IsIdentity') AS is_identity
+					COLUMNPROPERTY(OBJECT_ID(QUOTENAME(c.TABLE_SCHEMA) + '.' + QUOTENAME(c.TABLE_NAME)), c.COLUMN_NAME, 'IsIdentity') AS is_identity
 				FROM INFORMATION_SCHEMA.COLUMNS c
-				WHERE c.TABLE_NAME = :tableName
+				WHERE c.TABLE_SCHEMA = :schema AND c.TABLE_NAME = :tableName
 				ORDER BY c.ORDINAL_POSITION
 			", [
-				'tableName' => $tableName
+				'tableName' => $tableName,
+				'schema' => $schemaName
 			]);
 
 			if ($statement === null) {
 				return [];
 			}
 
-			$primaryKey = $this->adapter->getPrimaryKeyColumns($tableName);
+			$primaryKey = $this->adapter->getPrimaryKeyColumns($schemaName . '.' . $tableName);
 			$result = [];
 
 			/** @var array{column_name: string, data_type: string, character_maximum_length: string|null, numeric_precision: string|null, numeric_scale: string|null, column_default: string|null, is_nullable: string, is_identity: string|int} $row */
@@ -125,11 +126,13 @@
 				JOIN sys.columns pc ON pc.object_id = fkc.parent_object_id AND pc.column_id = fkc.parent_column_id
 				JOIN sys.columns rc ON rc.object_id = fkc.referenced_object_id AND rc.column_id = fkc.referenced_column_id
 				JOIN sys.tables t ON t.object_id = fk.parent_object_id
+				JOIN sys.schemas s ON s.schema_id = t.schema_id
 				JOIN sys.tables rt ON rt.object_id = fk.referenced_object_id
-				WHERE t.name = :tableName
+				WHERE s.name = :schema AND t.name = :tableName
 				ORDER BY fk.name, fkc.constraint_column_id
 			", [
-				'tableName' => $tableName
+				'tableName' => $tableName,
+				'schema' => (string)$this->adapter->getRoutineSchema()
 			]);
 
 			if ($statement === null) {

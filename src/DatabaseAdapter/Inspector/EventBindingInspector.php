@@ -49,13 +49,13 @@
 		private function existenceQuery(string $table, string $name): array {
 			return match ($this->connection->getDatabaseType()) {
 				'pgsql' => [
-					'SELECT COUNT(*) AS n FROM pg_trigger t JOIN pg_class c ON c.oid = t.tgrelid WHERE t.tgname = :name AND c.relname = :table AND NOT t.tgisinternal',
-					['name' => $name, 'table' => $table],
+					'SELECT COUNT(*) AS n FROM pg_trigger t JOIN pg_class c ON c.oid = t.tgrelid JOIN pg_namespace s ON s.oid = c.relnamespace WHERE t.tgname = :name AND c.relname = :table AND s.nspname = :schema AND NOT t.tgisinternal',
+					['name' => $name, 'table' => $table, 'schema' => (string)$this->connection->getRoutineSchema()],
 				],
 
 				'sqlsrv' => [
-					'SELECT COUNT(*) AS n FROM sys.triggers t JOIN sys.objects o ON o.object_id = t.parent_id WHERE t.name = :name AND o.name = :table',
-					['name' => $name, 'table' => $table],
+					'SELECT COUNT(*) AS n FROM sys.triggers t JOIN sys.objects o ON o.object_id = t.parent_id JOIN sys.schemas s ON s.schema_id = o.schema_id WHERE t.name = :name AND o.name = :table AND s.name = :schema',
+					['name' => $name, 'table' => $table, 'schema' => (string)$this->connection->getRoutineSchema()],
 				],
 
 				'mysql', 'mariadb' => [

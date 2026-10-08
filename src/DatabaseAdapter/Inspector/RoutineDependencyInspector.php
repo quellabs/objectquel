@@ -88,9 +88,18 @@
 
 			foreach ($this->listTriggerBodies() as ['trigger_name' => $name, 'table' => $table, 'event' => $nativeEvent, 'body' => $body]) {
 				$routineName = $this->extractCalledRoutineName($body);
+
+				if ($routineName === null) {
+					continue;
+				}
+
 				$event = self::normalizeEvent($nativeEvent);
 
-				if ($routineName === null || $event === null || !$this->isTriggerDeclaredRoutine($routineName)) {
+				if ($event === null) {
+					continue;
+				}
+
+				if (!$this->isTriggerDeclaredRoutine($routineName)) {
 					continue;
 				}
 
@@ -102,7 +111,15 @@
 				];
 			}
 
-			usort($bindings, static fn(array $a, array $b): int => $a['table'] <=> $b['table'] ?: $a['alias'] <=> $b['alias']);
+			usort($bindings, static function (array $a, array $b): int {
+				$tableOrder = $a['table'] <=> $b['table'];
+
+				if ($tableOrder !== 0) {
+					return $tableOrder;
+				}
+
+				return $a['alias'] <=> $b['alias'];
+			});
 
 			return $bindings;
 		}
@@ -238,26 +255,36 @@
 		 * @throws QuelException When the engine has no triggers
 		 */
 		private function listQuery(?string $table): array {
-			return match ($this->connection->getDatabaseType()) {
-				// tgtype's bit 0 (ROW/STATEMENT) and bit 1 (BEFORE/AFTER) are irrelevant here —
-				// EQUEL only ever creates AFTER ROW triggers — so checking the three event bits
-				// (4=INSERT, 8=DELETE, 16=UPDATE) is enough to recover the physical event.
-				'pgsql' => [
-					"SELECT t.tgname AS trigger_name, c.relname AS table_name, CASE WHEN t.tgtype & 4 <> 0 THEN 'INSERT' WHEN t.tgtype & 8 <> 0 THEN 'DELETE' WHEN t.tgtype & 16 <> 0 THEN 'UPDATE' END AS event, p.prosrc AS body FROM pg_trigger t JOIN pg_proc p ON p.oid = t.tgfoid JOIN pg_class c ON c.oid = t.tgrelid WHERE NOT t.tgisinternal" . ($table === null ? '' : ' AND c.relname = :table'),
-					$table === null ? [] : ['table' => $table],
-				],
+			switch ($this->connection->getDatabaseType()) {
+				case 'pgsql':
+					// EQUEL only creates AFTER ROW triggers, so these event bits identify the write event.
+					$sql = "SELECT t.tgname AS trigger_name, c.relname AS table_name, CASE WHEN t.tgtype & 4 <> 0 THEN 'INSERT' WHEN t.tgtype & 8 <> 0 THEN 'DELETE' WHEN t.tgtype & 16 <> 0 THEN 'UPDATE' END AS event, p.prosrc AS body FROM pg_trigger t JOIN pg_proc p ON p.oid = t.tgfoid JOIN pg_class c ON c.oid = t.tgrelid JOIN pg_namespace s ON s.oid = c.relnamespace WHERE s.nspname = :schema AND NOT t.tgisinternal";
+					$parameters = ['schema' => (string)$this->connection->getRoutineSchema()];
+					$tableColumn = 'c.relname';
+					break;
 
-				'sqlsrv' => [
-					'SELECT t.name AS trigger_name, o.name AS table_name, te.type_desc AS event, sm.definition AS body FROM sys.triggers t JOIN sys.sql_modules sm ON sm.object_id = t.object_id JOIN sys.objects o ON o.object_id = t.parent_id JOIN sys.trigger_events te ON te.object_id = t.object_id' . ($table === null ? '' : ' WHERE o.name = :table'),
-					$table === null ? [] : ['table' => $table],
-				],
+				case 'sqlsrv':
+					$sql = 'SELECT t.name AS trigger_name, o.name AS table_name, te.type_desc AS event, sm.definition AS body FROM sys.triggers t JOIN sys.sql_modules sm ON sm.object_id = t.object_id JOIN sys.objects o ON o.object_id = t.parent_id JOIN sys.schemas s ON s.schema_id = o.schema_id JOIN sys.trigger_events te ON te.object_id = t.object_id WHERE s.name = :schema';
+					$parameters = ['schema' => (string)$this->connection->getRoutineSchema()];
+					$tableColumn = 'o.name';
+					break;
 
-				'mysql', 'mariadb' => [
-					'SELECT TRIGGER_NAME AS trigger_name, EVENT_OBJECT_TABLE AS table_name, EVENT_MANIPULATION AS event, ACTION_STATEMENT AS body FROM information_schema.TRIGGERS WHERE TRIGGER_SCHEMA = DATABASE()' . ($table === null ? '' : ' AND EVENT_OBJECT_TABLE = :table'),
-					$table === null ? [] : ['table' => $table],
-				],
+				case 'mysql':
+				case 'mariadb':
+					$sql = 'SELECT TRIGGER_NAME AS trigger_name, EVENT_OBJECT_TABLE AS table_name, EVENT_MANIPULATION AS event, ACTION_STATEMENT AS body FROM information_schema.TRIGGERS WHERE TRIGGER_SCHEMA = DATABASE()';
+					$parameters = [];
+					$tableColumn = 'EVENT_OBJECT_TABLE';
+					break;
 
-				default => throw new QuelException("Triggers can't be scanned on '{$this->connection->getDatabaseType()}'.", 'routine_destruction_error'),
-			};
+				default:
+					throw new QuelException("Triggers can't be scanned on '{$this->connection->getDatabaseType()}'.", 'routine_destruction_error');
+			}
+
+			if ($table !== null) {
+				$sql .= " AND {$tableColumn} = :table";
+				$parameters['table'] = $table;
+			}
+
+			return [$sql, $parameters];
 		}
 	}

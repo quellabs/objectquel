@@ -62,7 +62,7 @@
 		 */
 		public function renderDestroy(string $table, string $alias): array {
 			$triggerName = EventBindingNaming::triggerName($table, $alias);
-			$helperName = $this->quoter->quoteIdentifier(EventBindingNaming::helperFunctionName($triggerName));
+			$helperName = $this->quoter->quoteRoutineName(EventBindingNaming::helperFunctionName($triggerName), $this->routineSchema);
 			$quotedTrigger = $this->quoter->quoteIdentifier($triggerName);
 			$quotedTable = $this->quoter->quoteRoutineName($table, $this->routineSchema);
 
