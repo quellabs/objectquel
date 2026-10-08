@@ -6,9 +6,11 @@
 	use Quellabs\ObjectQuel\ObjectQuel\AstVisitorInterface;
 
 	/**
-	 * `[range of ...] define function name (params) returnType { ... }` —
-	 * one node for both value-returning and `void` routines; the
-	 * distinction is semantic, not structural.
+	 * `[range of ...] define function name (params) returnType { ... }`, or
+	 * `[range of ...] define tfunction name (params) { ... }` for a routine
+	 * that can only be attached as a trigger — one node for both, since the
+	 * distinction (and a tfunction's missing return-type slot) is semantic,
+	 * not structural.
 	 *
 	 * Ranges are declared ahead of `define`, like any other top-level
 	 * statement (see Parser::dispatchStatement()), not inside the body —
@@ -33,6 +35,7 @@
 
 		private string $name;
 		private string $returnType;
+		private bool $isTrigger;
 
 		/** @var AstRoutineParameter[] */
 		private array $parameters;
@@ -45,15 +48,17 @@
 		 * @param AstRange[] $ranges Ranges declared ahead of `define function`
 		 * @param string $name Routine name
 		 * @param AstRoutineParameter[] $parameters Parameters in declaration order
-		 * @param string $returnType A type name, or the literal "void"
+		 * @param string $returnType A type name, or the literal "void"; always "void" for a tfunction, which declares none
+		 * @param bool $isTrigger True when parsed from `define tfunction`
 		 * @param AstInterface[] $body Top-level statements of the routine body
 		 */
-		public function __construct(array $directives, array $ranges, string $name, array $parameters, string $returnType, array $body) {
+		public function __construct(array $directives, array $ranges, string $name, array $parameters, string $returnType, bool $isTrigger, array $body) {
 			$this->directives = $directives;
 			$this->ranges = $ranges;
 			$this->name = $name;
 			$this->parameters = $parameters;
 			$this->returnType = $returnType;
+			$this->isTrigger = $isTrigger;
 			$this->body = $body;
 
 			foreach ($this->ranges as $range) {
@@ -138,10 +143,10 @@
 		}
 
 		/**
-		 * @return bool True when the declared return type is `trigger` — see Routines/RoutineAnalyzer
+		 * @return bool True when this was parsed from `define tfunction` — see Routines/RoutineAnalyzer
 		 */
 		public function isTrigger(): bool {
-			return strcasecmp($this->returnType, 'trigger') === 0;
+			return $this->isTrigger;
 		}
 
 		/**
@@ -174,7 +179,7 @@
 		 */
 		public function deepClone(): static {
 			// @phpstan-ignore-next-line new.static
-			$clone = new static($this->directives, $this->cloneArray($this->ranges), $this->name, $this->cloneArray($this->parameters), $this->returnType, $this->cloneArray($this->body));
+			$clone = new static($this->directives, $this->cloneArray($this->ranges), $this->name, $this->cloneArray($this->parameters), $this->returnType, $this->isTrigger, $this->cloneArray($this->body));
 			$clone->setParent($this->getParent());
 			return $clone;
 		}

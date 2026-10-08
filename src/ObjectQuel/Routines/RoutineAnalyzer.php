@@ -82,10 +82,13 @@
 				throw new SemanticException("Routines take values through their parameters; ':{$placeholders->getCollectedNodes()[0]->getName()}' placeholders aren't allowed.");
 			}
 
-			$returnType = self::normalizeType($routine->getDeclaredReturnType());
+			// A tfunction declares no return type at all; nothing to validate here
+			if (!$routine->isTrigger()) {
+				$returnType = self::normalizeType($routine->getDeclaredReturnType());
 
-			if ($returnType !== 'void' && $returnType !== 'trigger' && !TypeMapper::isValidColumnType($returnType)) {
-				throw new SemanticException("Unknown return type '{$routine->getDeclaredReturnType()}' for routine '{$routine->getName()}'.");
+				if ($returnType !== 'void' && !TypeMapper::isValidColumnType($returnType)) {
+					throw new SemanticException("Unknown return type '{$routine->getDeclaredReturnType()}' for routine '{$routine->getName()}'.");
+				}
 			}
 
 			$hasEntityRowParameter = false;
@@ -109,15 +112,15 @@
 			}
 
 			if ($routine->isTrigger() && !$hasEntityRowParameter) {
-				throw new SemanticException("'{$routine->getName()}' declares return type 'trigger' but has no entity-row parameter; a trigger routine needs at least one, e.g. '(UserEntity old)'.");
+				throw new SemanticException("'{$routine->getName()}' is a tfunction but has no entity-row parameter; a trigger routine needs at least one, e.g. '(UserEntity old)'.");
 			}
 
 			if ($routine->isTrigger() && $hasScalarParameter) {
-				throw new SemanticException("'{$routine->getName()}' declares return type 'trigger' but has a scalar parameter; a trigger routine's parameters must all be entity-row parameters, since an attachment supplies none itself.");
+				throw new SemanticException("'{$routine->getName()}' is a tfunction but has a scalar parameter; a trigger routine's parameters must all be entity-row parameters, since an attachment supplies none itself.");
 			}
 
 			if ($hasEntityRowParameter && !$routine->isTrigger()) {
-				throw new SemanticException("'{$routine->getName()}' has an entity-row parameter, so it must declare return type 'trigger', not '{$routine->getDeclaredReturnType()}'.");
+				throw new SemanticException("'{$routine->getName()}' has an entity-row parameter, so it must be defined with 'define tfunction', not 'define function'.");
 			}
 
 			$this->analyzeRanges($routine->getRanges());
@@ -175,6 +178,10 @@
 				case $statement instanceof AstReturn:
 					if ($this->returnsNoValue) {
 						if ($statement->getValue() !== null) {
+							if ($this->routine->isTrigger()) {
+								throw new SemanticException("'{$this->routine->getName()}' is a tfunction and can't return a value.");
+							}
+
 							throw new SemanticException("'{$this->routine->getName()}' declares return type '{$this->routine->getDeclaredReturnType()}' and can't return a value.");
 						}
 

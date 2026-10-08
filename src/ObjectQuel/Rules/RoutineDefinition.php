@@ -11,7 +11,10 @@
 	use Quellabs\ObjectQuel\ObjectQuel\Token;
 
 	/**
-	 * Parses `define function name (type name, ...) returnType { ... }`.
+	 * Parses `define function name (type name, ...) returnType { ... }` or
+	 * `define tfunction name (type name, ...) { ... }`. A tfunction has no
+	 * return-type slot: it can only ever be attached as a trigger, never
+	 * called for a value, so there's nothing to declare.
 	 * Type names are plain identifiers here; they are validated by value later.
 	 * Compiler directives and ranges ahead of `define` are parsed by the
 	 * caller (see Parser) and threaded through unmodified.
@@ -35,29 +38,40 @@
 		 * @throws LexerException|ParserException|\ReflectionException
 		 */
 		public function parse(array $directives = [], array $ranges = []): AstRoutineDefinition {
-			// Functions begin with 'define function'
+			// Functions begin with 'define function'; trigger functions with 'define tfunction'
 			$this->lexer->matchKeyword('define');
-			$this->lexer->matchKeyword('function');
+
+			$isTrigger = $this->lexer->peekKeyword('tfunction');
+
+			if ($isTrigger) {
+				$this->lexer->matchKeyword('tfunction');
+			} else {
+				$this->lexer->matchKeyword('function');
+			}
 
 			// Fetch the function name
 			$name = $this->lexer->match(Token::Identifier)->getStringValue();
-			
+
 			// Fetch the parameters
 			$parameters = $this->parseParameters();
 
-			// Parse the return value
-			if ($this->lexer->lookahead() !== Token::Identifier) {
-				throw new ParserException("Expected a return type after the parameter list of '{$name}' on line {$this->lexer->getLineNumber()}");
-			}
+			// A tfunction has no return-type slot; a function always declares one
+			if ($isTrigger) {
+				$returnType = 'void';
+			} else {
+				if ($this->lexer->lookahead() !== Token::Identifier) {
+					throw new ParserException("Expected a return type after the parameter list of '{$name}' on line {$this->lexer->getLineNumber()}");
+				}
 
-			$returnType = $this->lexer->match(Token::Identifier)->getStringValue();
+				$returnType = $this->lexer->match(Token::Identifier)->getStringValue();
+			}
 
 			// $ranges is handed to the block unmodified; RoutineBlock does not
 			// parse ranges itself, it only resolves names against this set.
 			$body = (new RoutineBlock($this->lexer, $ranges))->parseBlock();
-			
+
 			// Return the routine definition
-			return new AstRoutineDefinition($directives, $ranges, $name, $parameters, $returnType, $body);
+			return new AstRoutineDefinition($directives, $ranges, $name, $parameters, $returnType, $isTrigger, $body);
 		}
 
 		/**
