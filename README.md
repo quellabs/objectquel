@@ -80,11 +80,11 @@ $entityManager->executeQuery('
 ');
 $entityManager->executeQuery('
     range of u is App\Entity\User
-    after replace u call audit_user(old, new) as audit_trigger
+    after replace u call audit_user as audit_trigger
 ');
 ```
 
-Bind with `after append to|replace|delete <range> call <function>(...) [as <alias>]`; unbind with `destroy trigger <range> <alias> [if exists]`. Omit the alias and one is generated — `quel:list-triggers` shows it, along with every other live binding's table, event and routine. `destroy function` refuses while a binding still calls it, and `alter` refuses a column-shape or primary-key change on a table with a live binding — unbind first, then redefine and rebind as needed. See the [EQUEL guide](https://objectquel.com/docs?section=language-equel) for row-parameter typing, event mapping, and per-engine safety notes.
+Bind with `after append to|replace|delete <range> call <function> [as <alias>]`; unbind with `destroy trigger <range> <alias> [if exists]`. The routine is named only — its own entity-row parameters receive the event's rows by declaration order, so `replace` binds `old` and `new` in that order and `append to`/`delete` bind the single row they supply. Omit the alias and one is generated — `quel:list-triggers` shows it, along with every other live binding's table, event and routine. `destroy function` refuses while a binding still calls it, and `alter` refuses a column-shape or primary-key change on a table with a live binding — unbind first, then redefine and rebind as needed. See the [EQUEL guide](https://objectquel.com/docs?section=language-equel) for row-parameter typing, event mapping, and per-engine safety notes.
 
 ## ORM and tooling
 
