@@ -86,6 +86,14 @@
 				throw new \LogicException("No valid anchor range found for query optimization.");
 			}
 			
+			// A range without a join condition is already a FROM range; promoting a joined
+			// one instead would only turn its JOIN into a CROSS JOIN plus a WHERE condition
+			$unjoined = array_values(array_filter($candidates, fn(AnchorCandidate $c) => $c->getRange()->getJoinProperty() === null));
+			
+			if (!empty($unjoined)) {
+				$candidates = $unjoined;
+			}
+			
 			// Select highest priority candidate (best optimization potential)
 			usort($candidates, function(AnchorCandidate $a, AnchorCandidate $b): int {
 				return $b->getPriorityScore() <=> $a->getPriorityScore();

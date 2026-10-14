@@ -222,28 +222,32 @@
 		/**
 		 * Removes unused LEFT JOIN ranges from the query AST to optimize the query.
 		 * Keeps the main range, required joins, and any ranges actually referenced
-		 * in SELECT, WHERE, or ORDER BY clauses.
+		 * in SELECT, WHERE, or ORDER BY clauses or by another kept range's join condition.
+		 * Repeats until stable, since removing a range can leave its via parent unused.
 		 * @param AstRetrieve $ast The query AST to optimize
 		 * @param bool $traverseSubqueries
 		 * @return void Modifies the AST in place
 		 */
 		public function removeUnusedLeftJoinRanges(AstRetrieve $ast, bool $traverseSubqueries = true, PlanLogInterface $log = new NullPlanLog()): void {
-			$result = [];
-			$mainRange = $ast->getMainDatabaseRange();
-			$usedRangeNames = $this->collectUsedRangeNames($ast, $traverseSubqueries);
-			
-			foreach ($ast->getRanges() as $range) {
-				if ($range === $mainRange || $range->isRequired() || isset($usedRangeNames[$range->getName()])) {
-					$result[] = $range;
-				} else {
-					$log->note('optimizer', 'join', 'UNUSED_JOIN_REMOVED',
-						"Range '{$range->getName()}' is not referenced in SELECT, WHERE, or ORDER BY; removed",
-						$range->getName()
-					);
+			do {
+				$result = [];
+				$mainRange = $ast->getMainDatabaseRange();
+				$usedRangeNames = $this->collectUsedRangeNames($ast, $traverseSubqueries);
+				
+				foreach ($ast->getRanges() as $range) {
+					if ($range === $mainRange || $range->isRequired() || isset($usedRangeNames[$range->getName()])) {
+						$result[] = $range;
+					} else {
+						$log->note('optimizer', 'join', 'UNUSED_JOIN_REMOVED',
+							"Range '{$range->getName()}' is not referenced in SELECT, WHERE, or ORDER BY; removed",
+							$range->getName()
+						);
+					}
 				}
-			}
-			
-			$ast->setRanges($result);
+				
+				$removedAny = count($result) < count($ast->getRanges());
+				$ast->setRanges($result);
+			} while ($removedAny);
 		}
 		
 		/**
@@ -287,18 +291,26 @@
 		}
 		
 		/**
-		 * Collects ranges used in join conditions (via clauses)
+		 * Collects ranges used in other ranges' join conditions (via clauses).
+		 * A range's own join condition does not count as a use of that range.
 		 * @param AstRetrieve $ast
 		 * @return array<int, AstRange>
 		 */
 		private function getRangesUsedInJoinConditions(AstRetrieve $ast): array {
-			$visitor = new CollectRanges(false);
+			$result = [];
 			
 			foreach ($ast->getRanges() as $range) {
+				$visitor = new CollectRanges(false);
 				$range->getJoinProperty()?->accept($visitor);
+				
+				foreach ($visitor->getCollectedNodes() as $usedRange) {
+					if ($usedRange->getName() !== $range->getName()) {
+						$result[] = $usedRange;
+					}
+				}
 			}
 			
-			return $visitor->getCollectedNodes();
+			return $result;
 		}
 		
 		/**

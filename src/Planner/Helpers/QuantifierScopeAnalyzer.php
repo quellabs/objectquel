@@ -57,6 +57,74 @@
 		}
 		
 		/**
+		 * Returns the ranges the retrieve keeps regardless of its any(...) expressions: those referenced
+		 * outside every any(...), its main range and INNER-joined ranges, plus their via chains.
+		 * @param AstRetrieve $ast
+		 * @return array<string, AstRange> Keyed by range name
+		 */
+		public function collectOuterRanges(AstRetrieve $ast): array {
+			$this->rangesByName = [];
+			$pending = [];
+			
+			foreach ($ast->getRanges() as $range) {
+				$this->rangesByName[$range->getName()] = $range;
+				
+				if ($range === $ast->getMainDatabaseRange() || ($range->getJoinProperty() !== null && $range->isRequired())) {
+					$pending[] = $range;
+				}
+			}
+			
+			foreach ($this->collectIdentifiersOutsideQuantifiers($ast) as $identifier) {
+				$range = $this->rangesByName[$this->rangeNameOf($identifier)] ?? null;
+				
+				if ($range !== null) {
+					$pending[] = $range;
+				}
+			}
+			
+			$outerRanges = [];
+			
+			while (!empty($pending)) {
+				$range = array_pop($pending);
+				
+				if (isset($outerRanges[$range->getName()])) {
+					continue;
+				}
+				
+				$outerRanges[$range->getName()] = $range;
+				array_push($pending, ...$this->getViaParents($range));
+			}
+			
+			return $outerRanges;
+		}
+		
+		/**
+		 * Returns the identifiers the retrieve references outside every any(...).
+		 * @param AstRetrieve $ast
+		 * @return AstIdentifier[]
+		 */
+		private function collectIdentifiersOutsideQuantifiers(AstRetrieve $ast): array {
+			$expressions = array_merge(
+				$ast->getValues(),
+				array_map(fn(array $sortItem) => $sortItem['ast'], $ast->getSort()),
+				$ast->getGroupBy(),
+				array_filter([$ast->getHaving(), $ast->getConditions()])
+			);
+			
+			$identifiers = [];
+			
+			foreach ($expressions as $expression) {
+				foreach (AstUtilities::collectIdentifiersFromAst($expression) as $identifier) {
+					if (!$identifier->parentIsOneOf([AstAny::class])) {
+						$identifiers[] = $identifier;
+					}
+				}
+			}
+			
+			return $identifiers;
+		}
+		
+		/**
 		 * Rejects nested any(...) in the projection, sort, group by and having clauses.
 		 * @param AstRetrieve $ast
 		 * @return void

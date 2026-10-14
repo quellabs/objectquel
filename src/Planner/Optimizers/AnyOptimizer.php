@@ -179,15 +179,22 @@
 			$node = $scope->getQuantifier() ?? throw new \LogicException('Root scope has no quantifier.');
 			
 			// Clone in declaration order so a via range follows the range it joins to
-			$ranges = [];
+			$ownedRanges = [];
+			$correlationRanges = [];
 			
 			foreach ($ast->getRanges() as $range) {
 				if (isset($scope->getBoundRanges()[$range->getName()])) {
-					$ranges[] = $range->deepClone();
+					$ownedRanges[$range->getName()] = $range->deepClone();
+				} else {
+					$correlationRanges[$range->getName()] = $range;
 				}
 			}
 			
-			$correlationPredicates = $this->detachAnchorJoin($scope, $ranges);
+			// The range not joined to another owned range becomes the FROM range; its join condition moves to WHERE
+			$joinProcessor = new JoinPredicateProcessor($ownedRanges, $correlationRanges);
+			$correlationPredicates = $joinProcessor->gatherPromotedPredicates(array_values($ownedRanges));
+			$ranges = $joinProcessor->buildUpdatedRanges(array_values($ownedRanges));
+			$this->assertSingleAnchor($scope, $ranges);
 			
 			$conditions = AstUtilities::combinePredicatesWithAnd(array_values(array_filter([
 				$node->getConditions(),
@@ -226,60 +233,68 @@
 		}
 		
 		/**
-		 * Makes the scope's one range not joined to another of its ranges the subquery's FROM range.
-		 * Its join condition only references enclosing scopes, so it becomes a WHERE correlation.
-		 * Other ranges keep their join condition, and with it their INNER/LEFT semantics.
+		 * Ensures exactly one of the quantifier's ranges is left without a join condition to select FROM.
 		 * @param QuantifierScope $scope The quantifier's scope.
-		 * @param AstRange[] $ranges The quantifier's cloned ranges.
-		 * @return AstInterface[] The detached join condition, if any
+		 * @param AstRange[] $ranges The quantifier's ranges, after join conditions were split.
+		 * @return void
 		 * @throws SemanticException When the ranges do not form a single via chain
 		 */
-		private function detachAnchorJoin(QuantifierScope $scope, array $ranges): array {
-			$rangeNames = array_map(fn(AstRange $range) => $range->getName(), $ranges);
-			$anchors = [];
+		private function assertSingleAnchor(QuantifierScope $scope, array $ranges): void {
+			$anchorNames = [];
 			
 			foreach ($ranges as $range) {
-				$otherRangeNames = array_diff($rangeNames, [$range->getName()]);
-				
-				if (!$this->referencesAnyRange($range->getJoinProperty(), $otherRangeNames)) {
-					$anchors[] = $range;
+				if ($range->getJoinProperty() === null) {
+					$anchorNames[] = $range->getName();
 				}
 			}
 			
 			// SemanticAnalyzer rejects circular via chains, so there is always at least one
-			if (empty($anchors)) {
+			if (empty($anchorNames)) {
 				throw new \LogicException("No range of {$scope->describe()} can be its FROM range.");
 			}
 			
-			if (count($anchors) > 1) {
-				$names = implode("', '", array_map(fn(AstRange $range) => $range->getName(), $anchors));
+			if (count($anchorNames) > 1) {
+				$names = implode("', '", $anchorNames);
 				
 				throw new SemanticException(
 					"Cannot build {$scope->describe()}: its ranges must be connected to each other by via, " .
 					"but '{$names}' are not. Connect them with via, or move each into its own any(...)."
 				);
 			}
-			
-			$joinProperty = $anchors[0]->getJoinProperty();
-			$anchors[0]->setJoinProperty(null);
-			
-			return $joinProperty === null ? [] : [$joinProperty];
 		}
 		
 		/**
-		 * Returns true if the expression references one of the named ranges.
-		 * @param AstInterface|null $expression
-		 * @param string[] $rangeNames
-		 * @return bool
+		 * Adds the ranges on the live ranges' via chains, up to the first range the outer query keeps.
+		 * @param AstRange[] $ranges Cloned query ranges
+		 * @param array<string, AstRange> $liveRanges Live ranges keyed by name
+		 * @param array<string, AstRange> $outerRanges Ranges the outer query keeps, keyed by name
+		 * @return array<string, AstRange> Live ranges including the via-chain ranges
 		 */
-		private function referencesAnyRange(?AstInterface $expression, array $rangeNames): bool {
-			foreach (AstUtilities::collectIdentifiersFromAst($expression) as $identifier) {
-				if (in_array($identifier->getRange()?->getName(), $rangeNames, true)) {
-					return true;
+		private function addViaChainRanges(array $ranges, array $liveRanges, array $outerRanges): array {
+			$rangesByName = [];
+			
+			foreach ($ranges as $range) {
+				$rangesByName[$range->getName()] = $range;
+			}
+			
+			$pending = array_values($liveRanges);
+			
+			while (!empty($pending)) {
+				$range = array_pop($pending);
+				
+				foreach (AstUtilities::collectIdentifiersFromAst($range->getJoinProperty()) as $identifier) {
+					$name = $identifier->getRange()?->getName();
+					
+					if ($name === null || isset($liveRanges[$name]) || isset($outerRanges[$name]) || !isset($rangesByName[$name])) {
+						continue;
+					}
+					
+					$liveRanges[$name] = $rangesByName[$name];
+					$pending[] = $rangesByName[$name];
 				}
 			}
 			
-			return false;
+			return $liveRanges;
 		}
 		
 		/**
@@ -347,7 +362,8 @@
 			// Steps 2: Build optimized subquery using clean pipeline
 			// This encapsulates all the complex logic for range partitioning,
 			// JOIN predicate processing, and anchor configuration
-			$optimizedSubquery = $this->buildOptimizedSubquery($ranges, $node, $analysis);
+			$outerRanges = $this->scopeAnalyzer->collectOuterRanges($ast);
+			$optimizedSubquery = $this->buildOptimizedSubquery($ranges, $node, $analysis, $outerRanges);
 			
 			// Step 3: Apply the optimization to the original AST
 			$this->applyOptimization($ast, $node, $subQueryType, $optimizedSubquery);
@@ -366,10 +382,11 @@
 		 * @param array<int, AstRange> $ranges Cloned query ranges to work with
 		 * @param AstAny $node The ANY node being optimized
 		 * @param QueryAnalysisResult $analysis Structured usage analysis
+		 * @param array<string, AstRange> $outerRanges Ranges the outer query keeps, keyed by name
 		 * @return array{0: array<int, AstRange>, 1: AstInterface|null}
 		 * @throws QuelException
 		 */
-		private function buildOptimizedSubquery(array $ranges, AstAny $node, QueryAnalysisResult $analysis): array {
+		private function buildOptimizedSubquery(array $ranges, AstAny $node, QueryAnalysisResult $analysis, array $outerRanges): array {
 			// Step 2: Compute JOIN cross-references
 			// This creates a map of which JOIN conditions reference which ranges,
 			// which is essential for understanding correlation dependencies
@@ -387,6 +404,11 @@
 			if (empty($liveRanges) && !empty($ranges)) {
 				$liveRanges = RangePartitioner::selectFallbackLiveRanges($ranges, $node);
 			}
+			
+			// Step 4b: Include the via chains up to the first range the outer query keeps,
+			// which the subquery then references as a correlation
+			$liveRanges = $this->addViaChainRanges($ranges, $liveRanges, $outerRanges);
+			$correlationOnlyRanges = array_diff_key($correlationOnlyRanges, $liveRanges);
 			
 			// Step 5: Process JOIN predicates - now using object-oriented approach
 			// This is where we split JOIN conditions: parts referencing only live ranges
@@ -406,6 +428,7 @@
 			// Step 7: Keep only live ranges
 			// Remove correlation-only ranges since their conditions are now in WHERE
 			$keptRanges = RangePartitioner::filterToLiveRangesOnly($updatedRanges, $liveRanges);
+			$this->collapseSourceRangesToInner($node, $keptRanges);
 			
 			// Step 8: Configure anchor
 			// Ensure exactly one range has joinProperty == null (the subquery root)
