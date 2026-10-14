@@ -25,6 +25,7 @@
 	use Quellabs\ObjectQuel\ObjectQuel\Visitors\CoerceDateTimeParameters;
 	use Quellabs\ObjectQuel\ObjectQuel\Visitors\NormalizeDateTime;
 	use Quellabs\ObjectQuel\ObjectQuel\Visitors\ValidateNoTemporalScalarMix;
+	use Quellabs\ObjectQuel\ObjectQuel\Visitors\ValidateNoNestedAny;
 	use Quellabs\ObjectQuel\Persistence\VersionValueHandler;
 	use Quellabs\ObjectQuel\Serialization\Serializers\SQLSerializer;
 
@@ -113,6 +114,7 @@
 			// Datetime comparisons work in Unix timestamps, as in retrieve
 			$conditions->accept(new NormalizeDateTime($this->entityStore));
 			$conditions->accept(new ValidateNoTemporalScalarMix($this->entityStore));
+			$conditions->accept(new ValidateNoNestedAny("a replace statement's where clause"));
 
 			$normalizer = new WriteVerbParameterNormalizer($metadata, $this->serializer, $parameters);
 			$normalizer->normalizeAssignments($statement->getAssignments());

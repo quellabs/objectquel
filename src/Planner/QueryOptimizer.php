@@ -100,6 +100,10 @@
 			$this->rangePromotor->optimize($ast, $log);
 			$this->rangeOptimizer->optimize($ast, $log);
 			
+			// Move where-clause any(...) ranges into their EXISTS subqueries before join-type
+			// inference below, so references inside a quantifier never change the root's joins
+			$this->anyOptimizer->optimizeWhereQuantifiers($ast);
+			
 			// Phase 2: Remove left joins that are not referenced in the query
 			$this->rangeOptimizer->removeUnusedLeftJoinRanges($ast, true, $log);
 			$this->rangeOptimizer->removeUnusedTemporaryRanges($ast, $log);

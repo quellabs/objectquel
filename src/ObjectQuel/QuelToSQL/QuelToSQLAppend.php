@@ -33,6 +33,7 @@
 	use Quellabs\ObjectQuel\ObjectQuel\Visitors\ResolvePropertyType;
 	use Quellabs\ObjectQuel\ObjectQuel\Visitors\ResolveRootIdentifierType;
 	use Quellabs\ObjectQuel\ObjectQuel\Visitors\ValidateNoTemporalScalarMix;
+	use Quellabs\ObjectQuel\ObjectQuel\Visitors\ValidateNoNestedAny;
 	use Quellabs\ObjectQuel\Persistence\VersionValueHandler;
 	use Quellabs\ObjectQuel\Planner\QueryOptimizer;
 
@@ -473,6 +474,7 @@
 
 			(new QueryNormalizer($this->entityStore))->transform($source, $ignoreSoftDelete);
 			$source->accept(new CoerceDateTimeParameters($parameters));
+			$source->getConditions()?->accept(new ValidateNoNestedAny("an append statement's where clause"));
 			(new SemanticAnalyzer($this->entityStore, $this->platform))->validate($source);
 			(new QueryOptimizer($this->entityManager, $this->platform))->transform($source, $parameters);
 		}
