@@ -238,8 +238,8 @@
 				throw new \LogicException('Encountered an AstIdentifier without an entity name during non-nullable field analysis. This indicates a malformed AST.');
 			}
 			
-			// Pull the column definition map from metadata, e.g.:
-			//   ['id' => ['nullable' => false, ...], 'name' => ['nullable' => true, ...], ...]
+			// Column definitions are keyed by column name, e.g.:
+			//   ['id' => ['nullable' => false, ...], 'product_id' => ['nullable' => true, ...], ...]
 			$metadata = $this->entityStore->getMetadata($entityName);
 			$columnMap = $metadata->columnDefinitions;
 			
@@ -252,15 +252,16 @@
 				return false;
 			}
 			
-			$field = $next->getName();
+			// The identifier names a property; map it to its column
+			$column = $metadata->getColumnName($next->getName());
 			
-			// If the field is unknown, assume nullable (return false for "non-nullable").
-			if (!isset($columnMap[$field])) {
+			// If the property has no column, assume nullable (return false for "non-nullable").
+			if ($column === null || !isset($columnMap[$column])) {
 				return false;
 			}
 			
 			// Default nullable=true if the key is absent; invert to signal non-nullable use.
-			$nullable = (bool)($columnMap[$field]['nullable'] ?? true);
+			$nullable = (bool)($columnMap[$column]['nullable'] ?? true);
 			
 			// Return value
 			return !$nullable;

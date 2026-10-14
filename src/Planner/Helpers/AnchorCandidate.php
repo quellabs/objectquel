@@ -23,9 +23,6 @@
 		/** @var int Higher scores indicate better anchor candidates for optimization */
 		private int $priorityScore;
 		
-		/** @var string The execution strategy to use if this candidate is selected (e.g., 'index_scan', 'table_scan', 'join') */
-		private string $strategy;
-		
 		/** @var bool Whether this candidate can actually be used as an anchor given current constraints */
 		private bool $viable;
 		
@@ -34,18 +31,15 @@
 		 * @param int $index Position identifier for this candidate
 		 * @param AstRange $range AST range this candidate represents
 		 * @param int $priorityScore Optimization score (higher = better candidate)
-		 * @param string $strategy Execution strategy name
 		 * @param bool $viable Whether this candidate is usable given current constraints
 		 */
 		public function __construct(
 			int      $index,
 			AstRange $range,
 			int      $priorityScore,
-			string   $strategy,
 			bool     $viable
 		) {
 			$this->viable = $viable;
-			$this->strategy = $strategy;
 			$this->priorityScore = $priorityScore;
 			$this->range = $range;
 			$this->index = $index;
@@ -73,14 +67,6 @@
 		 */
 		public function getPriorityScore(): int {
 			return $this->priorityScore;
-		}
-		
-		/**
-		 * Gets the execution strategy name for this candidate.
-		 * @return string Strategy identifier (e.g., 'index_scan', 'hash_join')
-		 */
-		public function getStrategy(): string {
-			return $this->strategy;
 		}
 		
 		/**

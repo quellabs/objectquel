@@ -391,9 +391,10 @@
 			// Step 5: Process JOIN predicates - now using object-oriented approach
 			// This is where we split JOIN conditions: parts referencing only live ranges
 			// stay in JOINs, parts referencing correlation-only ranges move to WHERE
+			// Gather before buildUpdatedRanges(), which strips the promoted parts from the ranges
 			$joinProcessor = new JoinPredicateProcessor($liveRanges, $correlationOnlyRanges);
-			$updatedRanges = $joinProcessor->buildUpdatedRanges($ranges);
 			$promotedPredicates = $joinProcessor->gatherPromotedPredicates($ranges);
+			$updatedRanges = $joinProcessor->buildUpdatedRanges($ranges);
 			
 			// Step 6: Build final WHERE clause
 			// Combine the original ANY conditions with any predicates promoted from JOINs

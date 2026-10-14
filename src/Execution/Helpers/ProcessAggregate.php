@@ -726,7 +726,7 @@
 		 * Constructs the FROM clause with appropriate JOIN syntax for multiple ranges.
 		 *
 		 * Builds complex FROM clauses by:
-		 * 1. Identifying the main table (range without join property)
+		 * 1. Identifying the main tables (ranges without join property); extra ones are CROSS JOINed
 		 * 2. Adding INNER/LEFT JOINs for related ranges based on their join properties
 		 * 3. Using entity-to-table mappings from EntityStore
 		 * 4. Applying proper table aliases
@@ -739,31 +739,36 @@
 		 * @throws \InvalidArgumentException|EntityResolutionException When no main range is found
 		 */
 		private function buildFromClauseForRanges(array $ranges): string {
-			$mainRange = null;
+			$mainRanges = [];
 			$joinRanges = [];
 			
-			// Separate main range (no join property) from ranges that need joins
+			// Separate main ranges (no join property) from ranges that need joins
 			foreach ($ranges as $range) {
 				if (!$range instanceof AstRangeDatabase) {
 					continue;
 				}
 
 				if ($range->getJoinProperty() === null) {
-					$mainRange = $range;
+					$mainRanges[] = $range;
 				} else {
 					$joinRanges[] = $range;
 				}
 			}
 
-			if ($mainRange === null) {
+			if (empty($mainRanges)) {
 				throw new \InvalidArgumentException("No main range found - at least one range must not have a join property");
 			}
 
-			// Start with the main table and its alias.
-			$tableName = EntityRangeTableNameResolver::resolve($mainRange, $this->entityStore);
+			// Start with the first main table; further main tables are cross joined before
+			// any JOIN, so every ON condition can reference them
+			$sqlParts = [];
 
-			// Convert to SQL
-			$sql = $this->identifierQuoter->quoteIdentifier($tableName) . ' ' . $this->identifierQuoter->quoteIdentifier($mainRange->getName());
+			foreach ($mainRanges as $mainRange) {
+				$tableName = EntityRangeTableNameResolver::resolve($mainRange, $this->entityStore);
+				$sqlParts[] = $this->identifierQuoter->quoteIdentifier($tableName) . ' ' . $this->identifierQuoter->quoteIdentifier($mainRange->getName());
+			}
+
+			$sql = implode(' CROSS JOIN ', $sqlParts);
 
 			// Add JOIN clauses for each related range
 			foreach ($joinRanges as $range) {

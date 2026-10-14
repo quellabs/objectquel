@@ -3,7 +3,6 @@
 	namespace Quellabs\ObjectQuel\Planner\Helpers;
 	
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRange;
-	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRangeDatabase;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRetrieve;
 	use Quellabs\ObjectQuel\ObjectQuel\AstInterface;
 	
@@ -14,12 +13,8 @@
 	 * exactly one anchor (a FROM table with no JOIN conditions). This class:
 	 *
 	 * 1. Identifies the optimal table to serve as the query anchor
-	 * 2. Converts other table references to JOINs against that anchor
-	 * 3. Safely converts LEFT JOINs to INNER JOINs when possible for better performance
-	 *
-	 * Example transformation:
-	 * BEFORE: SELECT * FROM users u, orders o WHERE u.id = o.user_id
-	 * AFTER:  SELECT * FROM users u INNER JOIN orders o ON u.id = o.user_id
+	 * 2. Moves that table's own join condition into the WHERE clause
+	 * Other tables keep their join conditions and INNER/LEFT join type.
 	 */
 	class AnchorResolver {
 		
@@ -27,7 +22,7 @@
 		private const int PRIORITY_EXPRESSION_REFERENCED = 1000;  // Table used in SELECT expressions
 		private const int PRIORITY_INNER_JOIN = 100;              // INNER JOIN (guaranteed rows)
 		private const int PRIORITY_ORIGINAL_ANCHOR = 200;         // Stability bonus for keeping current anchor
-		private const int PRIORITY_COLLAPSIBLE_BONUS = 10;        // Can optimize JOIN conditions
+		private const int PRIORITY_COLLAPSIBLE_BONUS = 10;        // Its LEFT JOIN could safely be INNER
 		
 		/**
 		 * Main entry point: Ensures exactly one anchor exists and optimizes the query structure.
@@ -36,7 +31,7 @@
 		 * 1. Validates input ranges exist
 		 * 2. Checks if optimization is needed (no existing anchor)
 		 * 3. Selects the optimal anchor table based on usage patterns
-		 * 4. Applies the optimization strategy to restructure the query
+		 * 4. Moves the anchor's join condition into the WHERE clause
 		 *
 		 * @param AstRange[] $ranges All table references in the query
 		 * @param AstInterface|null &$whereClause WHERE clause (modified to include moved JOIN conditions)
@@ -56,8 +51,8 @@
 			// Find the best table to serve as the primary anchor
 			$anchorCandidate = self::selectBestAnchor($ranges, $analysis);
 			
-			// Apply the selected optimization strategy
-			return self::applyAnchorOptimization($ranges, $anchorCandidate, $whereClause);
+			// Make it the FROM range
+			return self::promoteToAnchor($ranges, $anchorCandidate, $whereClause);
 		}
 		
 		/**
@@ -106,23 +101,22 @@
 		 * Analyzes a table's characteristics to determine:
 		 * - Viability: Can it technically serve as an anchor?
 		 * - Priority: How beneficial would it be as an anchor?
-		 * - Strategy: What optimization approach should be used?
 		 *
 		 * Key factors:
 		 * - Expression usage: Tables in SELECT get highest priority
 		 * - JOIN type: INNER JOINs preferred over LEFT JOINs
-		 * - Optimization potential: Can JOIN conditions be collapsed?
+		 * - Collapse safety: Could its LEFT JOIN safely be INNER?
 		 *
 		 * @param AstRange $range Table reference to evaluate
 		 * @param int $index Position in ranges array (for tracking)
 		 * @param QueryAnalysisResult $analysis Pre-computed usage patterns
-		 * @return AnchorCandidate Evaluation result with priority and strategy
+		 * @return AnchorCandidate Evaluation result with priority and viability
 		 */
 		private static function evaluateAsAnchor(AstRange $range, int $index, QueryAnalysisResult $analysis): AnchorCandidate {
 			// Tables with JOIN conditions that are not required (LEFT JOINs)
 			// cannot be anchors - this would change query semantics
 			if ($range->getJoinProperty() !== null && !$range->isRequired()) {
-				return new AnchorCandidate($index, $range, 0, 'left_join_not_viable', false);
+				return new AnchorCandidate($index, $range, 0, false);
 			}
 			
 			// Analyze table characteristics
@@ -156,166 +150,39 @@
 				$priority += self::PRIORITY_COLLAPSIBLE_BONUS;
 			}
 			
-			// Determine the optimization strategy based on characteristics
-			$strategy = self::determineOptimizationStrategy(
-				$isReferencedInExpressions,
-				$canOptimizeJoinConditions
-			);
-			
 			// Create candidate with all evaluation data
 			return new AnchorCandidate(
 				$index,
 				$range,
 				$priority,
-				$strategy,
 				true  // viable if INNER or original anchor
 			);
 		}
 		
 		/**
-		 * Determine how to optimize this anchor choice.
+		 * Make the selected range the FROM range by moving its join condition into WHERE.
 		 *
-		 * Selects optimization strategy based on table characteristics:
-		 *
-		 * Expression-referenced tables (highest priority):
-		 * - These must return rows, making them ideal anchors
-		 * - Can usually be optimized safely
-		 *
-		 * INNER JOINs:
-		 * - Guaranteed to return rows
-		 * - Safe to optimize if analysis permits
-		 *
-		 * LEFT JOINs:
-		 * - Can be converted to INNER if safe (performance boost)
-		 * - Must preserve NULL semantics if conversion unsafe
-		 *
-		 * @param bool $isExpressionReferenced Table used in SELECT expressions
-		 * @param bool $canOptimizeJoins Safe to collapse JOIN conditions
-		 * @return string Strategy identifier for optimization phase
-		 */
-		private static function determineOptimizationStrategy(
-			bool $isExpressionReferenced,
-			bool $canOptimizeJoins
-		): string {
-			if ($isExpressionReferenced) {
-				// Expression-referenced tables get priority treatment
-				return $canOptimizeJoins ? 'expression_with_optimization' : 'expression_preserve';
-			} else {
-				// Non-expression tables: attempt optimization if safe
-				return $canOptimizeJoins ? 'inner_with_optimization' : 'inner_preserve';
-			}
-		}
-		
-		/**
-		 * Apply the selected anchor optimization to the query.
-		 *
-		 * Executes the optimization strategy determined during evaluation:
-		 *
-		 * Optimization strategies:
-		 * - WITH_OPTIMIZATION: Move JOIN conditions to WHERE clause for better performance
-		 * - PRESERVE: Keep existing structure, just designate anchor
-		 * - OPTIMIZE_TO_INNER: Convert LEFT JOIN to INNER JOIN where safe
+		 * Other ranges keep their join conditions: moving a LEFT JOIN's condition into
+		 * WHERE would drop its NULL-extended rows. Moving the anchor's own condition is
+		 * safe because the anchor is only selected when it is INNER-joined or has none.
 		 *
 		 * @param AstRange[] $ranges Original table references
-		 * @param AnchorCandidate $anchor Selected anchor with strategy
-		 * @param AstInterface|null &$whereClause WHERE clause to modify
-		 * @return AstRange[] Optimized ranges array
-		 */
-		private static function applyAnchorOptimization(
-			array           $ranges,
-			AnchorCandidate $anchor,
-			?AstInterface   &$whereClause
-		): array {
-			$strategy = $anchor->getStrategy();
-			
-			// Ensure all ranges are AstRangeDatabase instances
-			// This is required because we need setJoinProperty() which only exists on AstRangeDatabase
-			assert(array_reduce($ranges, fn($carry, $range) => $carry && $range instanceof AstRangeDatabase, true),
-				'All ranges must be AstRangeDatabase instances for anchor optimization');
-			
-			// Check if strategy involves JOIN condition movement/optimization
-			if (str_contains($strategy, 'optimization') || str_contains($strategy, 'optimize')) {
-				// Complex optimization: restructure query with condition movement
-				/** @var AstRangeDatabase[] $ranges */
-				return self::convertToAnchorWithOptimization($ranges, $anchor, $whereClause);
-			} else {
-				// Simple optimization: preserve structure, designate anchor only
-				/** @var AstRangeDatabase[] $ranges */
-				return self::promoteToAnchorWithoutChanges($ranges, $anchor);
-			}
-		}
-		
-		/**
-		 * Convert selected table to anchor and move JOIN conditions to WHERE clause.
-		 *
-		 * This is the most aggressive optimization that:
-		 * 1. Promotes the selected table to anchor status (removes JOIN condition)
-		 * 2. Moves all JOIN conditions to WHERE clause
-		 * 3. Allows database optimizer to choose optimal JOIN order
-		 * 4. Often results in better query performance
-		 *
-		 * Example transformation:
-		 * FROM users u LEFT JOIN orders o ON u.id = o.user_id
-		 * ->
-		 * FROM users u, orders o WHERE u.id = o.user_id
-		 *
-		 * @param AstRangeDatabase[] $ranges Original table references
 		 * @param AnchorCandidate $anchor Selected anchor candidate
 		 * @param AstInterface|null &$whereClause WHERE clause to extend
-		 * @return AstRangeDatabase[] Array containing all tables with optimized structure
+		 * @return AstRange[] Ranges with the anchor's join condition removed
 		 */
-		private static function convertToAnchorWithOptimization(
+		private static function promoteToAnchor(
 			array           $ranges,
 			AnchorCandidate $anchor,
 			?AstInterface   &$whereClause
 		): array {
 			$anchorRange = $ranges[$anchor->getIndex()];
 			
-			// Move the anchor's JOIN condition to WHERE clause
-			// This converts "FROM ... JOIN anchor ON condition" to "FROM anchor WHERE condition"
 			if ($anchorRange->getJoinProperty() !== null) {
 				$whereClause = self::addToWhereClause($whereClause, $anchorRange->getJoinProperty());
-				$anchorRange->setJoinProperty(null); // Remove JOIN condition
+				$anchorRange->setJoinProperty(null);
 			}
 			
-			// Move all other tables' JOIN conditions to WHERE clause
-			// This creates cross-product with WHERE filtering (often more efficient)
-			foreach ($ranges as $index => $range) {
-				if ($index !== $anchor->getIndex() && $range->getJoinProperty() !== null) {
-					$whereClause = self::addToWhereClause($whereClause, $range->getJoinProperty());
-				}
-			}
-			
-			// Return all ranges - other tables become implicit cross-product
-			// Database will optimize JOIN order based on WHERE conditions
-			return $ranges;
-		}
-		
-		/**
-		 * Simply promote the selected table to anchor without structural changes.
-		 *
-		 * This conservative optimization:
-		 * 1. Designates the selected table as the anchor
-		 * 2. Preserves all existing JOIN conditions and structure
-		 * 3. Used when aggressive optimization might change query semantics
-		 *
-		 * Suitable for:
-		 * - Complex JOIN conditions that shouldn't be moved
-		 * - Queries where LEFT JOIN NULL semantics must be preserved
-		 * - Cases where structural changes might affect result correctness
-		 *
-		 * @param AstRangeDatabase[] $ranges Original table references
-		 * @param AnchorCandidate $anchor Selected anchor candidate
-		 * @return AstRangeDatabase[] Original ranges with anchor designation
-		 */
-		private static function promoteToAnchorWithoutChanges(array $ranges, AnchorCandidate $anchor): array {
-			// Get anchor
-			$anchorRange = $ranges[$anchor->getIndex()];
-			
-			// Remove JOIN condition from the selected anchor to make it the FROM table
-			$anchorRange->setJoinProperty(null);
-			
-			// Return ranges
 			return $ranges;
 		}
 		
