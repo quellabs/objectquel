@@ -234,8 +234,13 @@
 		}
 
 		/**
-		 * Returns true if the expression is a bare identifier referencing its
-		 * range's declared primary key column (e.g. `o.id`, not `o.id.something`).
+		 * Returns true if the expression is a bare identifier referencing any one
+		 * of its range's declared primary key columns (e.g. `o.id`, not
+		 * `o.id.something`) — for a composite key, any single component counts,
+		 * not only the first: each one is individually unique-per-row only in
+		 * combination with the others, but a bare reference to any of them is
+		 * still "the row's own identity" for the caller's purposes (see
+		 * excludePrimaryKeyItems()).
 		 * @param EntityStore $entityStore
 		 * @param AstInterface $expression
 		 * @return bool
@@ -258,9 +263,7 @@
 				return false;
 			}
 
-			$primaryKey = $entityStore->getMetadata($entityName)->getPrimaryKey();
-
-			return $primaryKey !== null && $leaf->getName() === $primaryKey;
+			return in_array($leaf->getName(), $entityStore->getMetadata($entityName)->identifierKeys, true);
 		}
 
 		/**

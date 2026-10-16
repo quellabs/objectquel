@@ -7,6 +7,7 @@
 	use Quellabs\ObjectQuel\EntityStore;
 	use Quellabs\ObjectQuel\Exception\QuelException;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstAlias;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstBinaryOperator;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstExpression;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstIdentifier;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRange;
@@ -49,10 +50,10 @@
 		/**
 		 * Guards the single-range shape this extraction requires, then clones the
 		 * range and starts the helper query's own AstRetrieve, pre-populated with
-		 * the row-identity column the outer query will join back on.
+		 * every row-identity column the outer query will join back on.
 		 * @param AstRetrieve $root
 		 * @param string $opLabel Describes the operation being attempted, for error messages
-		 * @return array{0: AstRetrieve, 1: AstRange, 2: AstRange, 3: string} [$innerRetrieve, $clonedRange, $originalRange, $primaryKey]
+		 * @return array{0: AstRetrieve, 1: AstRange, 2: AstRange, 3: non-empty-list<string>} [$innerRetrieve, $clonedRange, $originalRange, $primaryKeys]
 		 * @throws QuelException
 		 */
 		protected function beginHelperRange(AstRetrieve $root, string $opLabel): array {
@@ -65,9 +66,9 @@
 			/** @var AstRangeDatabase $originalRange */
 			$originalRange = $queryRanges[0];
 			$entityName = $originalRange->getEntityName();
-			$primaryKey = $entityName !== null ? $this->entityStore->getMetadata($entityName)->getPrimaryKey() : null;
+			$primaryKeys = $entityName !== null ? $this->entityStore->getMetadata($entityName)->identifierKeys : [];
 
-			if ($primaryKey === null) {
+			if ($primaryKeys === []) {
 				throw new QuelException("Cannot extract {$opLabel}: range '{$originalRange->getName()}' has no declared primary key.");
 			}
 
@@ -76,13 +77,28 @@
 			$clonedRange = $originalRange->deepClone();
 			$innerRetrieve = new AstRetrieve([], [$clonedRange], false);
 
-			// Row-identity column, selected so the outer query can join back to it.
-			$innerRetrieve->addValue(new AstAlias(
-				'_pk',
-				$this->buildPropertyIdentifier($clonedRange, $primaryKey)
-			));
+			// Row-identity columns, one per key component, selected so the outer
+			// query can join back on every one of them, not just the first.
+			foreach ($primaryKeys as $index => $primaryKey) {
+				$innerRetrieve->addValue(new AstAlias(
+					self::pkAlias($index),
+					$this->buildPropertyIdentifier($clonedRange, $primaryKey)
+				));
+			}
 
-			return [$innerRetrieve, $clonedRange, $originalRange, $primaryKey];
+			return [$innerRetrieve, $clonedRange, $originalRange, $primaryKeys];
+		}
+
+		/**
+		 * The helper range's alias for the identifier component at $index, e.g.
+		 * '_pk0' for the first (and, for a single-column key, only) component.
+		 * Shared between beginHelperRange() (which selects it) and
+		 * finishHelperRange() (which joins back on it).
+		 * @param int $index
+		 * @return string
+		 */
+		private static function pkAlias(int $index): string {
+			return '_pk' . $index;
 		}
 
 		/**
@@ -134,16 +150,17 @@
 		}
 
 		/**
-		 * Joins the helper range back to the original range on primary key, binds
-		 * every pending identifier that referenced the not-yet-constructed helper
-		 * range to it, appends it to $root's ranges, and marks it as a hoister
-		 * helper so later passes (e.g. AggregateOptimizer::excludeHelperRanges())
-		 * skip it when counting "real" ranges.
+		 * Joins the helper range back to the original range on every primary key
+		 * component (ANDed together), binds every pending identifier that
+		 * referenced the not-yet-constructed helper range to it, appends it to
+		 * $root's ranges, and marks it as a hoister helper so later passes (e.g.
+		 * AggregateOptimizer::excludeHelperRanges()) skip it when counting "real"
+		 * ranges.
 		 * @param AstRetrieve $root
 		 * @param AstRetrieve $innerRetrieve
 		 * @param AstRange $originalRange
 		 * @param AstRange $clonedRange Unused by this base implementation; kept for subclasses that need it
-		 * @param string $primaryKey
+		 * @param non-empty-list<string> $primaryKeys
 		 * @param string $helperRangeName
 		 * @param AstIdentifier[] $pendingHelperIdentifiers Identifiers referencing the helper range by name only
 		 * @return void
@@ -153,18 +170,31 @@
 			AstRetrieve $innerRetrieve,
 			AstRange $originalRange,
 			AstRange $clonedRange,
-			string $primaryKey,
+			array $primaryKeys,
 			string $helperRangeName,
 			array $pendingHelperIdentifiers
 		): void {
-			$helperPkReference = $this->buildPropertyIdentifier(null, '_pk', $helperRangeName);
+			$helperPkReference = $this->buildPropertyIdentifier(null, self::pkAlias(0), $helperRangeName);
 			$pendingHelperIdentifiers[] = $helperPkReference;
 
 			$joinCondition = new AstExpression(
 				$helperPkReference,
-				$this->buildPropertyIdentifier($originalRange, $primaryKey),
+				$this->buildPropertyIdentifier($originalRange, $primaryKeys[0]),
 				'='
 			);
+
+			for ($i = 1, $count = count($primaryKeys); $i < $count; $i++) {
+				$helperPkReference = $this->buildPropertyIdentifier(null, self::pkAlias($i), $helperRangeName);
+				$pendingHelperIdentifiers[] = $helperPkReference;
+
+				$equality = new AstExpression(
+					$helperPkReference,
+					$this->buildPropertyIdentifier($originalRange, $primaryKeys[$i]),
+					'='
+				);
+
+				$joinCondition = new AstBinaryOperator($joinCondition, $equality, 'AND');
+			}
 
 			$helperRange = new AstRangeDatabaseSubquery($helperRangeName, $innerRetrieve, $joinCondition, required: true);
 
