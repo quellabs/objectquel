@@ -97,15 +97,17 @@
 		 * Filtering rules applied (all must pass):
 		 *  - Fetch mode must not be LAZY.
 		 *  - The relation's target entity must normalize to $entityType.
-		 *  - If $requireNoInversedBy is true, getInversedBy() must return null
-		 *    (used for OneToOne owned-side filtering).
+		 *
+		 * Every entry in $relations is already owning-side by construction: non-owning
+		 * OneToOne declarations are stored as InverseOf annotations, never as OneToOne
+		 * (see EntityMetadataRecord::getOneToOneDependencies()), so no further
+		 * ownership filtering is needed here.
 		 *
 		 * @param string $entityType The main entity type being loaded.
 		 * @param string $dependentEntityType The entity type on the dependent side.
 		 * @param iterable<string, ManyToOne|OneToOne> $relations Keyed by property name, values are relation metadata.
 		 * @param array<string, string> $ranges Accumulator array (modified in place).
 		 * @param int $rangeCounter Alias counter (modified in place).
-		 * @param bool $requireNoInversedBy When true, relations with a non-null inversedBy are skipped.
 		 * @return void
 		 * @throws EntityResolutionException
 		 */
@@ -114,8 +116,7 @@
 			string $dependentEntityType,
 			iterable $relations,
 			array &$ranges,
-			int &$rangeCounter,
-			bool $requireNoInversedBy = false
+			int &$rangeCounter
 		): void {
 			foreach ($relations as $property => $relation) {
 				// LAZY relations are intentionally excluded: they are resolved at
@@ -130,14 +131,7 @@
 				if ($this->entityStore->normalizeEntityClass($relation->getTargetEntity()) !== $entityType) {
 					continue;
 				}
-				
-				// For OneToOne relations we only want the *owning* side — the entity that
-				// holds the foreign-key column. The inverse side (annotated with inversedBy)
-				// does not own the column and must not generate a redundant range.
-				if ($requireNoInversedBy && $relation->getReferencedColumn() !== null) {
-					continue;
-				}
-				
+
 				// The JOIN must connect the dependent range back to 'main'. Emitting
 				// "via {alias}.{property}" is self-referential: the via property's parent is the
 				// dependent range itself, so the rewrite collapses both sides of the join onto it
@@ -302,19 +296,18 @@
 			foreach ($this->entityStore->getDependentEntities($entityType) as $dependentEntityType) {
 				$metadata = $this->entityStore->getMetadata($dependentEntityType);
 				
-				// OneToOne: pass requireNoInversedBy=true so only the owning side
-				// (the entity that actually holds the FK column) generates a range.
+				// OneToOne: every entry is already owning-side (see addRanges() docblock),
+				// so it generates a range without further filtering.
 				$this->addRanges(
 					$entityType,
 					$dependentEntityType,
 					$metadata->getOneToOneDependencies(),
 					$ranges,
-					$rangeCounter,
-					requireNoInversedBy: true
+					$rangeCounter
 				);
-				
-				// ManyToOne: no inversedBy restriction needed — every ManyToOne that
-				// points at $entityType owns its own FK column by definition.
+
+				// ManyToOne: every ManyToOne that points at $entityType owns its own
+				// FK column by definition.
 				$this->addRanges(
 					$entityType,
 					$dependentEntityType,

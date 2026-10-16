@@ -81,8 +81,8 @@
 		
 		/**
 		 * Retrieves the 'referencedColumn' parameter, if present.
-		 * @return string|null The property in the target entity that refers to the current
-		 *                     entity, or null if it is not set.
+		 * @return string|null The target entity's scalar @Column-backed property that the
+		 *                     local FK column points to, or null to fall back to the target's primary key.
 		 */
 		public function getReferencedColumn(): ?string {
 			return $this->referencedColumn;

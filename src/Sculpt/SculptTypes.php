@@ -82,7 +82,8 @@
 	 *     relation?: string|null,
 	 *     referencedColumn?: string|null,
 	 *     localColumn?: string|null,
-	 *     collection?: bool
+	 *     collection?: bool,
+	 *     inverseProperty?: string|null
 	 * }
 	 *
 	 * @phpstan-type PropertyDefinition BaseProperty|EnumProperty|RelationProperty

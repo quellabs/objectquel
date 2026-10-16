@@ -120,17 +120,24 @@
 				// Get the target entity's resource type name
 				$relationshipEntityName = $this->entityStore->normalizeEntityClass($targetEntity);
 				
-				// Resolve the FK property name: InverseOf uses via(), OneToOne uses inversedBy()
+				// InverseOf: the FK lives on the target entity (relation()) and is matched
+				// against this entity's own identifier.
+				// Owning OneToOne: the FK lives on this entity (localColumn), so the lookup
+				// must match the target's referenced column (or its PK) against the FK's
+				// value on this entity, not against this entity's own identifier.
 				if ($relationship instanceof InverseOf) {
 					$fkProperty = $relationship->getRelation();
+					$fkValue = $identifierValue;
 				} else {
-					$fkProperty = $relationship->getReferencedColumn();
+					$localColumn = $relationship->getLocalColumn() ?? "{$property}Id";
+					$fkProperty = $relationship->getReferencedColumn() ?? $this->entityStore->getMetadata($targetEntity)->getPrimaryKey();
+					$fkValue = $this->propertyHandler->get($entity, $localColumn);
 				}
-				
+
 				// Query for all related entities using the FK property
 				$relationshipEntities = $this->entityManager->findBy(
 					$targetEntity,
-					[$fkProperty => $identifierValue]
+					[$fkProperty => $fkValue]
 				);
 				
 				// Skip empty relationships to keep response clean

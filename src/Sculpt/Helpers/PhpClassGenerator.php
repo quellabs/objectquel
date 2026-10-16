@@ -454,21 +454,24 @@
 		 */
 		private function buildRelationshipSetterBody(array $property): string {
 			$propertyName = $property['name'];
-			
+
 			// Identity check short-circuits the setter when the value hasn't actually changed,
 			// which prevents infinite loops in bidirectional sync chains
 			$body = "\t// Prevent redundant updates\n";
 			$body .= "\tif (\$this->{$propertyName} === \${$propertyName}) {\n";
 			$body .= "\t\treturn \$this;\n";
 			$body .= "\t}\n";
-			
-			if ($property['relationshipType'] !== 'ManyToOne' || empty($property['referencedColumn'])) {
+
+			// Sync only applies when this owning side was created with a matching @InverseOf
+			// collection on the target entity (inverseProperty). Without one, there is no
+			// known collection to keep in sync, so the setter just assigns the relation.
+			if ($property['relationshipType'] !== 'ManyToOne' || empty($property['inverseProperty'])) {
 				$body .= "\n\t// Set new property\n";
 				$body .= "\t\$this->{$propertyName} = \${$propertyName};";
 				return $body;
 			}
-			
-			$singularName = StringInflector::singularize($property['referencedColumn']);
+
+			$singularName = StringInflector::singularize($property['inverseProperty']);
 			$removerMethod = 'remove' . ucfirst($singularName);
 			$adderMethod = 'add' . ucfirst($singularName);
 			

@@ -225,9 +225,10 @@ HELP;
 		 * @param OrmRelationshipType $relationshipType ORM relationship type
 		 * @param string $targetEntity Name of the related entity (without "Entity" suffix)
 		 * @param string|null $relation Property name on the owning side that points to this entity (inverse side only)
-		 * @param string|null $referencedColumn Property name on the inverse side (owning side only)
+		 * @param string|null $referencedColumn Target entity's scalar column the FK points to (owning side only); null defaults to the target's primary key
 		 * @param string|null $relationColumn FK column name on this entity's table, or null for inverse sides
 		 * @param bool $nullable Whether the relationship allows null
+		 * @param string|null $inverseProperty Name of the matching @InverseOf property on the target entity, when one was created alongside this owning side; null otherwise
 		 * @return RelationProperty
 		 */
 		private function buildRelationshipProperty(
@@ -238,7 +239,8 @@ HELP;
 			?string $relation,
 			?string $referencedColumn,
 			?string $relationColumn,
-			bool $nullable
+			bool $nullable,
+			?string $inverseProperty = null
 		): array {
 			return [
 				"name"             => $propertyName,
@@ -251,6 +253,7 @@ HELP;
 				"nullable"         => $nullable,
 				"readonly"         => false,
 				"collection"       => $phpType === 'CollectionInterface',
+				"inverseProperty"  => $inverseProperty,
 			];
 		}
 		
@@ -747,10 +750,11 @@ HELP;
 					$mappingConfig['relation'],
 					$mappingConfig['referencedColumn'],
 					$relationColumn,
-					$nullable
+					$nullable,
+					($mappingConfig['createInTarget'] ?? false) ? $mappingConfig['targetPropertyName'] : null
 				)
 			];
-			
+
 			// Add the FK column alongside the relationship property for owning sides
 			if ($isOwningSide && $relationColumn !== null) {
 				$fkInfo = $this->determineForeignKeyType($targetInfo['targetEntity'], $targetInfo['referencedField']);
