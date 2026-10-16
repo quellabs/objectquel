@@ -79,7 +79,11 @@
 		 * @param string|null $softDeleteColumn Database column name of the soft-delete field, or null
 		 * @param string|null $softDeleteColumnType Column type of the soft-delete field ('datetime', 'boolean', etc.), or null
 		 * @param array<string, ForeignKey> $foreignKeys Database column name => ForeignKey annotation
+		 *        (property-level, single-column declarations only — see $classForeignKeys for
+		 *        class-level, possibly multi-column ones)
 		 * @param array<string, ForeignKeyAction> $foreignKeyActions Database column name => ForeignKeyAction annotation
+		 * @param list<ForeignKeyDeclaration> $classForeignKeys Class-level @Orm\ForeignKey declarations,
+		 *        in declaration order, each already matched to its @Orm\ForeignKeyAction (if any)
 		 * @param bool $isEntityBridge True when the class carries the class-level @Orm\EntityBridge marker
 		 */
 		public function __construct(
@@ -104,6 +108,7 @@
 			public ?string $softDeleteColumnType = null,
 			public array $foreignKeys = [],
 			public array $foreignKeyActions = [],
+			public array $classForeignKeys = [],
 			public bool $isEntityBridge = false,
 		) {
 		}

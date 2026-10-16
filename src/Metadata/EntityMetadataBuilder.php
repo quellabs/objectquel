@@ -118,6 +118,7 @@
 				$inverseOfRelations = $this->extractRelations($annotations, InverseOf::class);
 				$foreignKeys = $this->extractForeignKeys($className, $annotations, $columnData->columnMap, $manyToOneRelations, $oneToOneRelations);
 				$foreignKeyActions = $this->extractForeignKeyActions($className, $annotations, $columnData->columnMap, $manyToOneRelations, $oneToOneRelations, $foreignKeys);
+				$classForeignKeys = $this->extractClassLevelForeignKeys($className, $columnData->columnMap);
 
 				// Validate that every localColumn declared on a ManyToOne or OneToOne
 				// has a corresponding @Orm\Column property on this entity. Catching this
@@ -155,6 +156,7 @@
 					softDeleteColumnType: $columnData->softDeleteColumnType,
 					foreignKeys: $foreignKeys,
 					foreignKeyActions: $foreignKeyActions,
+					classForeignKeys: $classForeignKeys,
 					isEntityBridge: $isEntityBridge,
 				);
 			} catch (\RuntimeException $e) {
@@ -382,6 +384,23 @@
 						);
 					}
 
+					// At property level, 'columns' restates the single-column case: its one
+					// entry's key must be this same property — anything else would silently
+					// declare the constraint on a column other than the one it's attached to.
+					if ($annotation->hasColumns()) {
+						$columnsKeys = array_keys($annotation->getColumns());
+
+						if ($columnsKeys !== [$property]) {
+							throw new \RuntimeException(
+								"Property '{$property}' on '{$className}' carries an '@Orm\\ForeignKey' " .
+								"annotation whose 'columns' key(s) (" . implode(', ', $columnsKeys) . ") " .
+								"don't match it. A property-level '@Orm\\ForeignKey' must declare exactly " .
+								"one 'columns' entry, keyed by '{$property}' itself — declare the constraint " .
+								"at class level for more than one column."
+							);
+						}
+					}
+
 					// Normalize the target entity name the same way ManyToOne::targetEntity is,
 					// so callers always receive a fully qualified class name.
 					$annotation->setTarget($this->entityStore->normalizeEntityClass($annotation->getTarget()));
@@ -432,6 +451,18 @@
 						continue;
 					}
 
+					// 'localColumns' only makes sense at class level, to pick one of
+					// several class-level ForeignKey declarations by column list — a
+					// property-level action is already matched by colocation.
+					if ($annotation->hasLocalColumns()) {
+						throw new \RuntimeException(
+							"Property '{$property}' on '{$className}' carries an '@Orm\\ForeignKeyAction' " .
+							"annotation with 'localColumns', which is only meaningful at class level. " .
+							"A property-level '@Orm\\ForeignKeyAction' is already matched to the " .
+							"'@Orm\\ForeignKey' on the same property — remove 'localColumns'."
+						);
+					}
+
 					$columnName = $columnMap[$property] ?? null;
 
 					if ($columnName === null || !isset($foreignKeys[$columnName])) {
@@ -452,6 +483,144 @@
 			}
 
 			return $foreignKeyActions;
+		}
+
+		/**
+		 * Extract class-level @Orm\ForeignKey declarations (constraints spanning
+		 * one or more columns, declared via the 'columns' map rather than on a
+		 * single property) and match each to its @Orm\ForeignKeyAction, if any,
+		 * by comparing the action's ordered 'localColumns' property list against
+		 * the ForeignKey's 'columns' keys, in order.
+		 *
+		 * Unlike property level, a class-level @Orm\ForeignKey has no "the
+		 * declaring property" to default a bare referencedColumn to, so
+		 * 'columns' is mandatory here; a class-level @Orm\ForeignKeyAction has
+		 * no colocated property to match by, so 'localColumns' is mandatory
+		 * there.
+		 * @param class-string $className
+		 * @param array<string, string> $columnMap Property name => column name
+		 * @return list<ForeignKeyDeclaration>
+		 * @throws \RuntimeException On an invalid or unmatched declaration
+		 * @throws EntityResolutionException
+		 */
+		private function extractClassLevelForeignKeys(string $className, array $columnMap): array {
+			// Unlike extractIndexes(), a malformed declaration here isn't
+			// swallowed into an empty result — build()'s own catch-all already
+			// turns any exception into a RuntimeException with context, and a
+			// broken foreign key should fail loudly, not silently register
+			// as "no constraint declared".
+			$classAnnotations = $this->annotationReader->getClassAnnotations($className);
+
+			/** @var list<ForeignKey> $classLevelForeignKeys */
+			$classLevelForeignKeys = $classAnnotations->filter(
+				static fn($annotation) => $annotation instanceof ForeignKey
+			)->toArray();
+
+			/** @var list<ForeignKeyAction> $classLevelActions */
+			$classLevelActions = $classAnnotations->filter(
+				static fn($annotation) => $annotation instanceof ForeignKeyAction
+			)->toArray();
+
+			if ($classLevelForeignKeys === [] && $classLevelActions === []) {
+				return [];
+			}
+
+			// Resolve every class-level ForeignKey's local property keys to columns
+			// up front, keyed by the ordered property-key list (as a string) so a
+			// matching ForeignKeyAction — and a duplicate-declaration check — can
+			// look them up the same way.
+			$declarationsByKey = [];
+
+			foreach ($classLevelForeignKeys as $annotation) {
+				if (!$annotation->hasColumns()) {
+					throw new \RuntimeException(
+						"'{$className}' declares a class-level '@Orm\\ForeignKey' with no 'columns' map. " .
+						"A class-level '@Orm\\ForeignKey' has no single declaring property to default a " .
+						"'referencedColumn' to — declare 'columns' explicitly, or move the annotation to " .
+						"the scalar property it belongs to."
+					);
+				}
+
+				$localProperties = [];
+				$localColumns = [];
+				$targetProperties = [];
+
+				foreach ($annotation->getColumns() as $localProperty => $targetProperty) {
+					$localColumn = $columnMap[$localProperty] ?? null;
+
+					if ($localColumn === null) {
+						throw new \RuntimeException(
+							"'{$className}' declares a class-level '@Orm\\ForeignKey' naming local property " .
+							"'{$localProperty}', which is not declared with '@Orm\\Column' on this entity."
+						);
+					}
+
+					$localProperties[] = $localProperty;
+					$localColumns[] = $localColumn;
+					$targetProperties[] = $targetProperty;
+				}
+
+				$key = implode("\0", $localProperties);
+
+				if (isset($declarationsByKey[$key])) {
+					throw new \RuntimeException(
+						"'{$className}' declares more than one class-level '@Orm\\ForeignKey' for the same " .
+						"column(s) (" . implode(', ', $localColumns) . ")."
+					);
+				}
+
+				$declarationsByKey[$key] = [
+					'localProperties' => $localProperties,
+					'localColumns' => $localColumns,
+					'targetEntity' => $this->entityStore->normalizeEntityClass($annotation->getTarget()),
+					'targetProperties' => $targetProperties,
+					'action' => null,
+				];
+			}
+
+			foreach ($classLevelActions as $annotation) {
+				if (!$annotation->hasLocalColumns()) {
+					throw new \RuntimeException(
+						"'{$className}' declares a class-level '@Orm\\ForeignKeyAction' with no 'localColumns' " .
+						"list. A class-level '@Orm\\ForeignKeyAction' has no colocated property to match by " .
+						"— declare 'localColumns', naming the same properties as the '@Orm\\ForeignKey' it configures."
+					);
+				}
+
+				$key = implode("\0", $annotation->getLocalColumns());
+
+				if (!isset($declarationsByKey[$key])) {
+					throw new \RuntimeException(
+						"'{$className}' declares a class-level '@Orm\\ForeignKeyAction' with 'localColumns' " .
+						"(" . implode(', ', $annotation->getLocalColumns()) . ") that match no class-level " .
+						"'@Orm\\ForeignKey'. ForeignKeyAction only configures an existing foreign key's ON " .
+						"DELETE/ON UPDATE behavior — declare '@Orm\\ForeignKey' with the same 'columns' keys first."
+					);
+				}
+
+				if ($declarationsByKey[$key]['action'] !== null) {
+					throw new \RuntimeException(
+						"'{$className}' declares more than one class-level '@Orm\\ForeignKeyAction' for the " .
+						"same 'localColumns' (" . implode(', ', $annotation->getLocalColumns()) . ")."
+					);
+				}
+
+				$declarationsByKey[$key]['action'] = $annotation;
+			}
+
+			$result = [];
+
+			foreach ($declarationsByKey as $declaration) {
+				$result[] = ForeignKeyDeclaration::fromAnnotations(
+					localProperties: $declaration['localProperties'],
+					localColumns: $declaration['localColumns'],
+					targetEntity: $declaration['targetEntity'],
+					targetProperties: $declaration['targetProperties'],
+					action: $declaration['action'],
+				);
+			}
+
+			return $result;
 		}
 
 		/**

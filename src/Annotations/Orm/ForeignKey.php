@@ -6,20 +6,36 @@
 
 	/**
 	 * @Annotation
-	 * Declares a real database-level foreign key constraint for a column.
+	 * Declares a real database-level foreign key constraint.
 	 *
-	 * Legal only on a plain @Orm\Column-backed scalar property — never on a
-	 * ManyToOne/OneToOne relation property. A relation's local column is
-	 * already required to have its own @Orm\Column-backed scalar property
-	 * (see EntityMetadataBuilder::validateRelationColumns()), so that scalar
-	 * property is where @Orm\ForeignKey belongs even for a column that also
-	 * backs an object relation.
+	 * At property level, legal only on a plain @Orm\Column-backed scalar
+	 * property — never on a ManyToOne/OneToOne relation property. A relation's
+	 * local column is already required to have its own @Orm\Column-backed
+	 * scalar property (see EntityMetadataBuilder::validateRelationColumns()),
+	 * so that scalar property is where @Orm\ForeignKey belongs even for a
+	 * column that also backs an object relation.
 	 *
-	 * Purely structural — target and referencedColumn only. The constraint's ON DELETE/ON
-	 * UPDATE behavior is a separate concern, declared via @Orm\ForeignKeyAction on the same
-	 * property when a non-default action is needed.
+	 * Also legal at class level, for a constraint spanning more than one
+	 * column (see EntityMetadataBuilder's class-level extraction).
 	 *
-	 * Example: @Orm\ForeignKey(target=UserEntity::class, referencedColumn="id")
+	 * Purely structural — target plus either referencedColumn or columns. The
+	 * constraint's ON DELETE/ON UPDATE behavior is a separate concern,
+	 * declared via @Orm\ForeignKeyAction (same property, or same class with a
+	 * matching localColumns list) when a non-default action is needed.
+	 *
+	 * Two column shapes, mutually exclusive:
+	 * - referencedColumn (legacy, property level only): the target property
+	 *   this (implicit, single) local column points to, or null to default
+	 *   to the target's primary key.
+	 * - columns (a local-property => target-property map): at property
+	 *   level, exactly one entry whose key equals the declaring property's
+	 *   own name — the same single-column case, restated in this shape. At
+	 *   class level, one entry per participating column, in constraint order.
+	 *
+	 * Examples:
+	 *   @Orm\ForeignKey(target=UserEntity::class, referencedColumn="id")
+	 *   @Orm\ForeignKey(target=UserEntity::class, columns={"userId"="id"})
+	 *   @Orm\ForeignKey(target=OrderEntity::class, columns={"orderTenantId"="tenantId", "orderNumber"="number"})
 	 */
 	class ForeignKey implements AnnotationInterface {
 
@@ -32,6 +48,9 @@
 		private string $target;
 		private ?string $referencedColumn;
 
+		/** @var array<string, string> Local property => target property, in declaration order; empty when using the legacy referencedColumn form */
+		private array $columns;
+
 		/**
 		 * ForeignKey constructor.
 		 * @param array<string, mixed> $parameters Array of parameters from the annotation
@@ -40,6 +59,7 @@
 		public function __construct(array $parameters) {
 			$target = $parameters['target'] ?? null;
 			$referencedColumn = $parameters['referencedColumn'] ?? null;
+			$columns = $parameters['columns'] ?? null;
 
 			if (!is_string($target) || $target === '') {
 				throw new \InvalidArgumentException("ForeignKey: 'target' must be a non-empty string");
@@ -49,9 +69,41 @@
 				throw new \InvalidArgumentException("ForeignKey: 'referencedColumn' must be a string or null");
 			}
 
+			if ($columns !== null && $referencedColumn !== null) {
+				throw new \InvalidArgumentException("ForeignKey: 'columns' cannot be combined with 'referencedColumn' on the same declaration");
+			}
+
+			$normalizedColumns = [];
+
+			if ($columns !== null) {
+				if (!is_array($columns) || $columns === []) {
+					throw new \InvalidArgumentException("ForeignKey: 'columns' must be a non-empty map of local property to target property");
+				}
+
+				$seenTargets = [];
+
+				foreach ($columns as $localProperty => $targetProperty) {
+					if (!is_string($localProperty) || $localProperty === '') {
+						throw new \InvalidArgumentException("ForeignKey: 'columns' keys must be non-empty local property names");
+					}
+
+					if (!is_string($targetProperty) || $targetProperty === '') {
+						throw new \InvalidArgumentException("ForeignKey: 'columns' values must be non-empty target property names");
+					}
+
+					if (isset($seenTargets[$targetProperty])) {
+						throw new \InvalidArgumentException("ForeignKey: 'columns' target property '{$targetProperty}' is declared more than once");
+					}
+
+					$seenTargets[$targetProperty] = true;
+					$normalizedColumns[$localProperty] = $targetProperty;
+				}
+			}
+
 			$this->parameters = $parameters;
 			$this->target = $target;
 			$this->referencedColumn = $referencedColumn;
+			$this->columns = $normalizedColumns;
 		}
 
 		/**
@@ -87,6 +139,35 @@
 		 *                     or null when it should default to the target's primary key.
 		 */
 		public function getReferencedColumn(): ?string {
-			return $this->referencedColumn;
+			if ($this->referencedColumn !== null) {
+				return $this->referencedColumn;
+			}
+
+			// 'columns' restates the single-column case in the new shape — fall
+			// back to its one entry so single-column callers never need to care
+			// which form was used to declare it. A genuinely composite (>1 entry)
+			// declaration has no single "the" referenced column; such callers
+			// must use getColumns() instead.
+			return count($this->columns) === 1 ? reset($this->columns) : null;
+		}
+
+		/**
+		 * Retrieves the 'columns' parameter: local property name => target
+		 * property name, in declaration order. Empty when this ForeignKey uses
+		 * the legacy singular 'referencedColumn' form instead.
+		 * @return array<string, string>
+		 */
+		public function getColumns(): array {
+			return $this->columns;
+		}
+
+		/**
+		 * True when this ForeignKey was declared with the 'columns' map, false
+		 * for the legacy singular 'referencedColumn' form (or no column
+		 * information at all, defaulting to the target's primary key).
+		 * @return bool
+		 */
+		public function hasColumns(): bool {
+			return $this->columns !== [];
 		}
 	}
