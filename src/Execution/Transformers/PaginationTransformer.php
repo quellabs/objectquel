@@ -206,6 +206,9 @@
 				$ast->setValues([new AstAlias("pk", $astIdentifier)]);
 				$ast->setUnique(false);
 				if ($offset !== null) {
+					if ($this->primaryKeyInfo === null) {
+						throw new \LogicException('Pagination primary key information is missing.');
+					}
 					$ast->setRanges([$this->primaryKeyInfo->range]);
 				}
 				if ($ast->getDirective('InValuesAreFinal') !== true) {
