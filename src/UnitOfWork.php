@@ -203,17 +203,33 @@
 		public function findEntity(string $entityType, array $primaryKeys): ?object {
 			// Normalize the entity name for dealing with proxies
 			$normalizedEntityName = $this->getEntityStore()->normalizeEntityClass($entityType);
-			
+
 			// Check if the class exists in the entity store and return null if it doesn't
 			if (empty($this->entitiesByClass[$normalizedEntityName])) {
 				return null;
 			}
-			
-			// Convert the primary keys to a string
-			$primaryKeyString = $this->serializePrimaryKeys($primaryKeys);
-			
+
+			// Fetch the entity's metadata
+			$metadata = $this->getEntityStore()->getMetadata($normalizedEntityName);
+
+			// The index only ever stores complete identities (see indexEntityByIdentity()),
+			// so a key that doesn't name every identifier property exactly once, or carries
+			// a null component, can never match an indexed entry — some existing callers
+			// (e.g. RelationshipLoader's single-column lazy lookup against a composite-PK
+			// target) still pass such a partial key, and must keep getting "not found" here
+			// rather than an exception; a complete-key validation error belongs to the
+			// caller building that key, not to this lookup.
+			if (
+				in_array(null, $primaryKeys, true) ||
+				array_diff($metadata->identifierKeys, array_keys($primaryKeys)) !== [] ||
+				array_diff(array_keys($primaryKeys), $metadata->identifierKeys) !== []
+			) {
+				return null;
+			}
+
 			// Look up the object hash via the index, then return the entity
-			$hash = $this->indexByClass[$normalizedEntityName][$primaryKeyString] ?? null;
+			$key = $metadata->resolveIdentityKey($primaryKeys);
+			$hash = $this->indexByClass[$normalizedEntityName][$key] ?? null;
 			return $hash !== null ? ($this->entitiesByClass[$normalizedEntityName][$hash] ?? null) : null;
 		}
 
@@ -255,21 +271,12 @@
 			// This hash serves as a consistent reference to this specific object instance
 			$hash = spl_object_hash($entity);
 			
-			// Get the primary key values for this entity
-			// These are used to uniquely identify the entity in the database
-			$primaryKeys = $this->getIdentifiers($entity);
-			
-			// Convert the primary keys to a string representation for indexing
-			// This allows for composite keys to be used as array indexes
-			$primaryKeysString = $this->serializePrimaryKeys($primaryKeys);
-			
-			// Store the hash in the index for quick lookup by primary key
-			// This mapping enables finding entities by their database identifiers
-			$this->indexByClass[$class][$primaryKeysString] = $hash;
-			
 			// Add the actual entity object to the identity map
 			// This creates a two-way reference system: hash→entity and primaryKey→hash
 			$this->entitiesByClass[$class][$hash] = $entity;
+
+			// Index by primary key, if every component is already populated
+			$this->indexEntityByIdentity($class, $entity, $hash);
 			
 			// Create a snapshot of the entity's current state by serializing it
 			// This baseline is used later to detect changes when flush() is called
@@ -308,25 +315,16 @@
 			// This provides a consistent way to reference this specific object in memory
 			$hash = spl_object_hash($entity);
 			
-			// Extract primary key values from the entity
-			// For new entities, these might be null or empty until after database insertion
-			$primaryKeys = $this->getIdentifiers($entity);
-			
-			// Convert primary keys to a string format for use as array index
-			// For new entities without generated IDs, this might be an empty string
-			$primaryKeysString = $this->serializePrimaryKeys($primaryKeys);
-			
 			// Add the entity object to the identity map using its hash as the key
 			// This registers the entity for tracking in the current unit of work
 			$this->entitiesByClass[$class][$hash] = $entity;
-			
-			// Only index by primary key if the entity already has primary key values
-			// This handles both cases: entities with manually set IDs and those awaiting generated IDs
-			if (!empty($primaryKeysString)) {
-				// Store a reference to the entity by its primary key for quick lookups
-				$this->indexByClass[$class][$primaryKeysString] = $hash;
-			}
-			
+
+			// Index by primary key only once every component is populated — a new
+			// entity with an unassigned (e.g. not-yet-generated) component stays
+			// reachable only by object hash until indexEntityByIdentity() is called
+			// again with a complete key, in resetAfterCommit() after insert.
+			$this->indexEntityByIdentity($class, $entity, $hash);
+
 			// Return true to indicate successful registration of the new entity
 			return true;
 		}
@@ -729,16 +727,49 @@
 		}
 		
 		/**
-		 * Convert primary keys to a string
-		 * @param array<string, mixed> $primaryKeys
-		 * @return string
+		 * Indexes $entity by its primary key, if and only if every identifier
+		 * component already has a value. An entity with any unset composite
+		 * component (e.g. awaiting a database-generated id) stays reachable only
+		 * by object hash until this is called again with a complete key — see
+		 * resetAfterCommit(), which does so once insert has populated it.
+		 *
+		 * Detects two distinct managed objects claiming the same complete
+		 * identity and fails explicitly rather than silently overwriting the
+		 * existing index entry, which would make the first object unreachable
+		 * by primary key while still being tracked.
+		 * @param string $class Normalized entity class name
+		 * @param object $entity
+		 * @param string $hash spl_object_hash($entity)
+		 * @throws EntityResolutionException
 		 */
-		private function serializePrimaryKeys(array $primaryKeys): string {
-			// Ensure consistent order
-			ksort($primaryKeys);
-			
-			// Use http_build_query for performance and simplicity
-			return str_replace(['&', '='], [';', ':'], http_build_query($primaryKeys));
+		private function indexEntityByIdentity(string $class, object $entity, string $hash): void {
+			$primaryKeys = $this->getIdentifiers($entity);
+
+			if (in_array(null, $primaryKeys, true)) {
+				return;
+			}
+
+			$metadata = $this->getEntityStore()->getMetadata($class);
+			$key = $metadata->resolveIdentityKey($primaryKeys);
+			$existingHash = $this->indexByClass[$class][$key] ?? null;
+
+			if (
+				$existingHash !== null &&
+				$existingHash !== $hash &&
+				isset($this->entitiesByClass[$class][$existingHash])
+			) {
+				$description = implode(', ', array_map(
+					static fn($property, $value) => $property . '=' . (is_scalar($value) ? (string) $value : get_debug_type($value)),
+					array_keys($primaryKeys),
+					$primaryKeys
+				));
+
+				throw new EntityResolutionException(
+					"Two distinct managed '{$class}' instances share the same identity ({$description})."
+				);
+			}
+
+			$this->indexByClass[$class][$key] = $hash;
 		}
 		
 		/**
@@ -985,10 +1016,10 @@
 				// Get the normalized class name of the entity
 				$class = $this->getEntityStore()->normalizeEntityClass($entity);
 				
-				// Add primary key to index cache for easy lookup
-				$primaryKeys = $this->getIdentifiers($entity);
-				$primaryKeysString = $this->serializePrimaryKeys($primaryKeys);
-				$this->indexByClass[$class][$primaryKeysString] = $hash;
+				// Add primary key to index cache for easy lookup — reindexes a new
+				// entity whose components (e.g. a database-generated id) only became
+				// available once the insert completed.
+				$this->indexEntityByIdentity($class, $entity, $hash);
 				
 				// Store the original data of the entity for later comparison
 				// This helps track changes in the entity over time
