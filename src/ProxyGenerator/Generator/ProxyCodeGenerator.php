@@ -240,7 +240,15 @@ PHP
 		 */
 		private function makeProxyMethods(string $entity): string {
 			$metadata = $this->entityStore->getMetadata($entity);
-			$identifierKeysGetterMethod = 'get' . ucfirst($metadata->identifierKeys[0]);
+
+			// Every identifier property's getter — not just the first — must be callable on
+			// an uninitialized proxy without triggering a load: findOrCreateProxy() seeds all
+			// of them from the foreign key, and code reading the entity's identity (e.g.
+			// UnitOfWork::getIdentifiers()) must see those seeded values directly.
+			$identifierKeysGetterMethods = array_map(
+				static fn(string $property) => 'get' . ucfirst($property),
+				$metadata->identifierKeys
+			);
 			
 			['declaration' => $ctorDeclaration, 'passthrough' => $ctorPassthrough] =
 				$this->buildParentConstructorArgs($entity);
@@ -326,8 +334,8 @@ PHP
 PHP;
 			
 			foreach ($this->reflectionHandler->getMethods($entity) as $method) {
-				// Skip the constructor and the primary-key getter (called before initialization)
-				if (in_array($method, ['__construct', $identifierKeysGetterMethod], true)) {
+				// Skip the constructor and every identifier getter (called before initialization)
+				if ($method === '__construct' || in_array($method, $identifierKeysGetterMethods, true)) {
 					continue;
 				}
 				

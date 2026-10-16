@@ -703,6 +703,13 @@
 					);
 				}
 
+				if ($pairs === []) {
+					// Unreachable: AnnotationColumnArrays::validate() already rejects an empty
+					// 'localColumns'/'referencedColumns' pair, so hasCompositeColumns() being
+					// true guarantees at least one entry to iterate above.
+					throw new \LogicException("{$relationLabel} '{$property}' on '{$className}' resolved to zero column pairs.");
+				}
+
 				return new RelationColumnMapping($pairs);
 			}
 

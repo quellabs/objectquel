@@ -12,7 +12,7 @@
 	readonly class RelationColumnMapping {
 
 		/**
-		 * @param list<RelationColumnPair> $pairs Ordered, non-empty
+		 * @param non-empty-list<RelationColumnPair> $pairs Ordered
 		 */
 		public function __construct(public array $pairs) {
 			if ($pairs === []) {
