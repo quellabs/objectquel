@@ -55,19 +55,30 @@
 			$window = $ast->getWindow();
 			$windowSize = $ast->getWindowSize();
 
-			if ($window !== null && $windowSize !== null && !$ast->getSortInApplicationLogic()) {
-				try {
-					$this->primaryKeyInfo = PrimaryKeyInfo::fromRetrieve($ast, $this->entityStore);
-					$this->parameterSequence = 0;
-					$this->processPagination($ast, $parameters, (int)$window, (int)$windowSize);
-					if (!$ast->isUnique() && $ast->getDirective('InValuesAreFinal') !== true) {
-						$sort = $ast->getSort();
-						$sort[] = ['ast' => $this->createPrimaryKeyIdentifier(), 'order' => 'asc'];
-						$ast->setSort($sort);
-					}
-				} finally {
-					$this->primaryKeyInfo = null;
+			// Only database-sorted WINDOW queries need a primary-key page pass.
+			if ($window === null || $windowSize === null || $ast->getSortInApplicationLogic()) {
+				return;
+			}
+
+			try {
+				// Resolve the root key used by both the key query and the final page filter.
+				$this->primaryKeyInfo = PrimaryKeyInfo::fromRetrieve($ast, $this->entityStore);
+				$this->parameterSequence = 0;
+
+				// Select parent keys before loading their complete joined rows.
+				$this->processPagination($ast, $parameters, (int)$window, (int)$windowSize);
+
+				if ($ast->isUnique() || $ast->getDirective('InValuesAreFinal') === true) {
+					return;
 				}
+
+				// Break sort ties by primary key in the final non-unique query.
+				$sort = $ast->getSort();
+				$sort[] = ['ast' => $this->createPrimaryKeyIdentifier(), 'order' => 'asc'];
+				$ast->setSort($sort);
+			} finally {
+				// Release the key metadata even if the key query fails.
+				$this->primaryKeyInfo = null;
 			}
 		}
 		
@@ -78,6 +89,7 @@
 		 * @param int $window
 		 * @param int $windowSize
 		 * @return void
+		 * @throws QuelException
 		 */
 		private function processPagination(
 			AstRetrieve $ast,
@@ -324,9 +336,10 @@
 			
 			if ($ast->getConditions() === null) {
 				$ast->setConditions($astIn);
-			} else {
-				$ast->setConditions(new AstBinaryOperator($ast->getConditions(), $astIn, "AND"));
+				return;
 			}
+
+			$ast->setConditions(new AstBinaryOperator($ast->getConditions(), $astIn, "AND"));
 		}
 		
 		/**
@@ -339,8 +352,9 @@
 			
 			if ($ast->getConditions() === null) {
 				$ast->setConditions($condition);
-			} else {
-				$ast->setConditions(new AstBinaryOperator($ast->getConditions(), $condition, "AND"));
+				return;
 			}
+
+			$ast->setConditions(new AstBinaryOperator($ast->getConditions(), $condition, "AND"));
 		}
 	}
