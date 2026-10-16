@@ -15,10 +15,15 @@
 	use Quellabs\ObjectQuel\Metadata\EntityMetadataRecord;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstAppend;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstAssignment;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstBool;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstNull;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstNumber;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstParameter;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRangeJsonSource;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRoutineCall;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstStatement;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstString;
+	use Quellabs\ObjectQuel\ObjectQuel\AstInterface;
 	use Quellabs\ObjectQuel\ObjectQuel\Visitors\CollectNodes;
 	use Quellabs\ObjectQuel\ObjectQuel\QuelToSQL\CompiledAppendSql;
 	use Quellabs\ObjectQuel\ObjectQuel\Helpers\WriteVerbParameterNormalizer;
@@ -531,20 +536,27 @@
 		}
 		
 		/**
-		 * For the literal-values form, generates a value for the target
-		 * entity's primary key on every row that doesn't already supply one —
-		 * unless the strategy is 'identity', which the database handles on
-		 * its own. Uses the same PrimaryKeyFactory/generator classes
-		 * persist() uses, applied to a constructor-bypassed blank instance of
-		 * the target entity (the generators only use it to look up the
-		 * entity's own metadata; nothing here is persisted).
+		 * For the literal-values form, generates a value for every one of the
+		 * target entity's primary key components that the caller didn't
+		 * already supply — unless a component's strategy is 'identity'. For a
+		 * single-column key, 'identity' means a database auto-increment/serial
+		 * column, so there's nothing to generate. For a composite key,
+		 * EntityMetadataBuilder never allows an explicit 'identity' strategy,
+		 * so an 'identity'-reading (i.e. unannotated) component there means the
+		 * application must supply it directly — an unsupplied one is rejected
+		 * before any SQL runs rather than silently inserting an incomplete row.
+		 * Each component is checked and generated independently, using the
+		 * same PrimaryKeyFactory/generator classes persist() uses, applied to
+		 * a constructor-bypassed blank instance of the target entity (the
+		 * generators only use it to look up the entity's own metadata; nothing
+		 * here is persisted).
 		 * @param AstAppend $statement
 		 * @param EntityMetadataRecord $metadata
 		 * @param array<string, mixed> $parameters
 		 * @return PreparedAppend
 		 * @throws \ReflectionException
-		 * @throws \Quellabs\ObjectQuel\OrmException If the strategy has no matching generator (see PrimaryKeyFactory::generate())
-		 * @throws QuelException If a multi-row append needs the 'sequence' strategy, which can't safely generate more than one row's value up front
+		 * @throws \Quellabs\ObjectQuel\OrmException If a component's strategy has no matching generator (see PrimaryKeyFactory::generate())
+		 * @throws QuelException If a multi-row append needs the 'sequence' strategy for some component, which can't safely generate more than one row's value up front, or a composite key component has neither a supplied value nor a generation strategy
 		 */
 		private function fillGeneratedPrimaryKeys(AstAppend $statement, EntityMetadataRecord $metadata, array &$parameters): PreparedAppend {
 			// Insert-from-select has no literal rows to generate PKs into —
@@ -556,30 +568,67 @@
 			}
 
 			// No declared primary key on this entity — nothing to generate.
-			$primaryKey = $metadata->getPrimaryKey();
+			$primaryKeys = $metadata->identifierKeys;
 
-			if ($primaryKey === null) {
+			if ($primaryKeys === []) {
 				return new PreparedAppend($statement, $metadata, null);
 			}
 
+			$isComposite = count($primaryKeys) > 1;
+
 			// Only the first row is checked: append's rows all share the same
-			// column shape (see AstAppend), so if row 0 supplies the PK, every
-			// row does.
+			// column shape (see AstAppend), so if row 0 supplies a component,
+			// every row does.
 			$rows = $statement->getRowsOrFail();
 			$suppliedProperties = array_map(fn(AstAssignment $assignment) => $assignment->getProperty(), $rows[0]);
 
-			// Caller already supplied a value for every row — respect it rather
-			// than overwriting with a generated one.
-			if (in_array($primaryKey, $suppliedProperties, true)) {
-				return new PreparedAppend($statement, $metadata, null);
+			// Decide, independently per component, whether it needs generating.
+			// Caller-supplied components are left untouched; everything else is
+			// checked against its own @Orm\PrimaryKeyStrategy.
+			$strategiesToGenerate = [];
+
+			foreach ($primaryKeys as $primaryKey) {
+				if (in_array($primaryKey, $suppliedProperties, true)) {
+					continue;
+				}
+
+				$strategy = $metadata->getPrimaryKeyStrategy($primaryKey);
+
+				if ($strategy === 'identity') {
+					if ($isComposite) {
+						throw new QuelException(
+							"Cannot append to '{$metadata->tableName}': primary key component '{$primaryKey}' has no @Orm\\PrimaryKeyStrategy and no supplied value. A composite primary key is never database-generated — either supply '{$primaryKey}' directly or declare an explicit generation strategy for it.",
+							'append_missing_primary_key_component'
+						);
+					}
+
+					// Single-column key: the database's own auto-increment/serial
+					// assigns it on insert — nothing to add to the SQL or $parameters.
+					continue;
+				}
+
+				// A 'sequence' strategy reads MAX(col)+1 from the table —
+				// re-querying it per row would return the same "next" value for
+				// every row, since none of them are actually inserted yet.
+				// Inferring later rows' values by offsetting the first row's (as
+				// an earlier version of this method did) risks silently
+				// colliding with a concurrent insert into the same table
+				// between this read and this batch's INSERT. Rather than
+				// generate a value that isn't backed by an actual read, refuse
+				// outright — the caller can append one row at a time, or use a
+				// collision-safe strategy ('uuid'/'identity'), for multi-row
+				// inserts.
+				if ($strategy === 'sequence' && count($rows) > 1) {
+					throw new QuelException(
+						"Cannot append multiple rows to '{$metadata->tableName}' using the 'sequence' primary key strategy for '{$primaryKey}': only the first row's value can be read safely before any row is inserted. Append one row at a time, or use a collision-safe strategy ('uuid'/'identity'), for multi-row inserts.",
+						'append_sequence_multi_row_unsupported'
+					);
+				}
+
+				$strategiesToGenerate[$primaryKey] = $strategy;
 			}
 
-			// 'identity' means an auto-increment/serial column — the database
-			// assigns it on insert, so there's nothing to generate here (and
-			// nothing to add to the SQL or $parameters).
-			$strategy = $metadata->getPrimaryKeyStrategy($primaryKey);
-
-			if ($strategy === 'identity') {
+			if ($strategiesToGenerate === []) {
 				return new PreparedAppend($statement, $metadata, null);
 			}
 
@@ -588,45 +637,93 @@
 			// 'sequence' MAX(col)+1 lookup) — they never touch instance state a
 			// real constructor would set up, and nothing here is persisted.
 			$blankEntity = (new \ReflectionClass($metadata->className))->newInstanceWithoutConstructor();
-			// A 'sequence' strategy reads MAX(col)+1 from the table — re-querying
-			// it per row would return the same "next" value for every row, since
-			// none of them are actually inserted yet. Inferring later rows'
-			// values by offsetting the first row's (as an earlier version of
-			// this method did) risks silently colliding with a concurrent
-			// insert into the same table between this read and this batch's
-			// INSERT. Rather than generate a value that isn't backed by an
-			// actual read, refuse outright — the caller can append one row at
-			// a time, or use a collision-safe strategy ('uuid'/'identity'),
-			// for multi-row inserts.
-			if ($strategy === 'sequence' && count($rows) > 1) {
-				throw new QuelException(
-					"Cannot append multiple rows to '{$metadata->tableName}' using the 'sequence' primary key strategy: only the first row's value can be read safely before any row is inserted. Append one row at a time, or use a collision-safe strategy ('uuid'/'identity'), for multi-row inserts.",
-					'append_sequence_multi_row_unsupported'
-				);
-			}
-
 			$factory = new PrimaryKeyFactory();
 
 			$newRows = [];
-			$firstGeneratedValue = null;
+			$firstRowGeneratedValues = [];
 
 			foreach ($rows as $index => $row) {
-				$value = $factory->generate($this->entityManager, $blankEntity, $strategy);
+				foreach ($strategiesToGenerate as $primaryKey => $strategy) {
+					$value = $factory->generate($this->entityManager, $blankEntity, $strategy);
 
-				if ($index === 0) {
-					$firstGeneratedValue = $value;
+					if ($index === 0) {
+						$firstRowGeneratedValues[$primaryKey] = $value;
+					}
+
+					$paramName = "__append_generated_pk_{$index}_{$primaryKey}";
+					$parameters[$paramName] = $value;
+					$row[] = new AstAssignment($primaryKey, new AstParameter($paramName));
 				}
 
-				$paramName = "__append_generated_pk_{$index}";
-				$parameters[$paramName] = $value;
-				$row[] = new AstAssignment($primaryKey, new AstParameter($paramName));
 				$newRows[] = $row;
 			}
 
 			// Matches executeDirectInsert()'s single-row-only rule for reporting
 			// a generated ID — ambiguous which row's value to report otherwise.
-			$generatedId = count($rows) === 1 ? $firstGeneratedValue : null;
+			$generatedId = null;
+
+			if (count($rows) === 1) {
+				$generatedId = $isComposite
+					? $this->buildCompositeGeneratedId($primaryKeys, $rows[0], $firstRowGeneratedValues, $parameters)
+					: $firstRowGeneratedValues[$primaryKeys[0]] ?? null;
+			}
 
 			return new PreparedAppend(AstAppend::forValues($statement->getRange(), $newRows), $metadata, $generatedId);
+		}
+
+		/**
+		 * Builds the complete property-keyed primary key map for a single-row
+		 * composite append: every key component's final value, whether
+		 * generated above or supplied directly by the caller in $originalRow.
+		 * A supplied component whose value isn't a bound parameter or a plain
+		 * literal (e.g. a routine call the database computes) can't be
+		 * resolved here, so it's reported as null rather than failing an
+		 * otherwise-successful insert.
+		 * @param non-empty-list<string> $primaryKeys
+		 * @param AstAssignment[] $originalRow Row 0's assignments before this method's generated ones were appended
+		 * @param array<string, mixed> $generatedValues Property name => value, for components generated above
+		 * @param array<string, mixed> $parameters
+		 * @return array<string, mixed>
+		 */
+		private function buildCompositeGeneratedId(array $primaryKeys, array $originalRow, array $generatedValues, array $parameters): array {
+			$id = [];
+
+			foreach ($primaryKeys as $primaryKey) {
+				if (array_key_exists($primaryKey, $generatedValues)) {
+					$id[$primaryKey] = $generatedValues[$primaryKey];
+					continue;
+				}
+
+				$id[$primaryKey] = null;
+
+				foreach ($originalRow as $assignment) {
+					if ($assignment->getProperty() === $primaryKey) {
+						$id[$primaryKey] = $this->resolveSuppliedPrimaryKeyValue($assignment->getValue(), $parameters);
+						break;
+					}
+				}
+			}
+
+			return $id;
+		}
+
+		/**
+		 * Resolves the PHP value a caller-supplied primary key component's
+		 * assignment will insert as: a bound parameter's current value, or a
+		 * literal node's own value. Any other expression (e.g. a routine call,
+		 * computed by the database) can't be resolved client-side and reads
+		 * as null.
+		 * @param AstInterface $value
+		 * @param array<string, mixed> $parameters
+		 * @return mixed
+		 */
+		private function resolveSuppliedPrimaryKeyValue(AstInterface $value, array $parameters): mixed {
+			return match (true) {
+				$value instanceof AstParameter => $parameters[$value->getName()] ?? null,
+				$value instanceof AstNumber => $value->getReturnType() === 'float' ? (float)$value->getValue() : (int)$value->getValue(),
+				$value instanceof AstString, $value instanceof AstBool => $value->getValue(),
+				$value instanceof AstNull => null,
+				default => null,
+			};
 		}
 	}

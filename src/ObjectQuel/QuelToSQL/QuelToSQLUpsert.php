@@ -246,10 +246,11 @@
 		/**
 		 * Default (no explicit `or replace (...)` list) SET clause for the
 		 * fallback UPDATE: every appended column except the target's own primary
-		 * key, set to the exact value compiled for the INSERT — the plain-UPDATE
-		 * equivalent of the atomic path's EXCLUDED/VALUES()/source.* reference
-		 * (see buildReferencedSetClause()), which has no meaning outside an
-		 * INSERT statement. Always a bare column name: unlike buildSetClause()'s
+		 * key (every component of it, for a composite key), set to the exact
+		 * value compiled for the INSERT — the plain-UPDATE equivalent of the
+		 * atomic path's EXCLUDED/VALUES()/source.* reference (see
+		 * buildReferencedSetClause()), which has no meaning outside an INSERT
+		 * statement. Always a bare column name: unlike buildSetClause()'s
 		 * explicit-list case, this never needs QuelToSQLReplace's per-dialect
 		 * alias-qualification (see that class's docblock) — a bare SET target is
 		 * valid on every dialect.
@@ -261,13 +262,13 @@
 		 * @throws SemanticException When excluding the primary key leaves nothing to update
 		 */
 		private function buildDefaultFallbackSetClause(EntityMetadataRecord $metadata, array $properties, array $columnNames, array $compiledRow): array {
-			$primaryKeyColumn = $this->resolvePrimaryKeyColumn($metadata);
+			$primaryKeyColumns = $this->resolvePrimaryKeyColumns($metadata);
 			$setClauseParts = [];
 
 			foreach ($properties as $i => $property) {
 				$column = $columnNames[$i];
 
-				if ($column === $primaryKeyColumn) {
+				if (in_array($column, $primaryKeyColumns, true)) {
 					continue;
 				}
 
@@ -277,7 +278,7 @@
 			if ($setClauseParts === []) {
 				throw new SemanticException(
 					"append ... or replace's default on-conflict update has nothing to set on '{$metadata->className}': " .
-					"every appended column is the primary key, which is always excluded from the default update — write " .
+					"every appended column is part of the primary key, which is always excluded from the default update — write " .
 					"an explicit 'or replace (...)' assignment list instead"
 				);
 			}
@@ -391,11 +392,11 @@
 		 * explicit assignment list. Every appended column is included
 		 * unconditionally, conflict columns too (re-setting a column to its
 		 * own value is a harmless no-op) — except the target entity's own
-		 * primary key, which is always excluded: for a generated
-		 * (non-identity) primary-key strategy, `$reference.col` is a value
-		 * freshly generated for a row that, on conflict, was never actually
-		 * inserted, so writing it onto the existing row would silently
-		 * reassign that row's identity.
+		 * primary key (every component of it, for a composite key), which is
+		 * always excluded: for a generated (non-identity) primary-key
+		 * strategy, `$reference.col` is a value freshly generated for a row
+		 * that, on conflict, was never actually inserted, so writing it onto
+		 * the existing row would silently reassign that row's identity.
 		 * @param string[] $columnNames
 		 * @param string $reference Either a pseudo-table name to qualify
 		 *        each column with (`EXCLUDED`, or a USING source alias for
@@ -405,16 +406,16 @@
 		 * @param EntityMetadataRecord $metadata
 		 * @param string $targetLabel Entity class name — for the error message below
 		 * @return string[]
-		 * @throws SemanticException When excluding the primary key leaves nothing to update — every appended column was the primary key itself
+		 * @throws SemanticException When excluding the primary key leaves nothing to update — every appended column was part of the primary key itself
 		 */
 		private function buildReferencedSetClause(array $columnNames, string $reference, bool $asFunction, EntityMetadataRecord $metadata, string $targetLabel): array {
-			$primaryKeyColumn = $this->resolvePrimaryKeyColumn($metadata);
-			$updatableColumns = array_values(array_filter($columnNames, fn(string $column) => $column !== $primaryKeyColumn));
+			$primaryKeyColumns = $this->resolvePrimaryKeyColumns($metadata);
+			$updatableColumns = array_values(array_filter($columnNames, fn(string $column) => !in_array($column, $primaryKeyColumns, true)));
 
-			if ($updatableColumns === [] && $primaryKeyColumn !== null) {
+			if ($updatableColumns === [] && $primaryKeyColumns !== []) {
 				throw new SemanticException(
 					"append ... or replace's default on-conflict update has nothing to set on '{$targetLabel}': " .
-					"every appended column is the primary key ('{$primaryKeyColumn}'), which is always excluded from " .
+					"every appended column is part of the primary key (" . implode(', ', $primaryKeyColumns) . "), which is always excluded from " .
 					"the default update — write an explicit 'or replace (...)' assignment list instead"
 				);
 			}
@@ -434,17 +435,17 @@
 		}
 
 		/**
-		 * Resolves the target entity's primary-key column name, or null when
-		 * it has no declared primary key.
+		 * Resolves the target entity's primary-key column names — every
+		 * component, for a composite key — or an empty array when it has no
+		 * declared primary key.
 		 * @param EntityMetadataRecord $metadata
-		 * @return string|null
+		 * @return string[]
 		 */
-		private function resolvePrimaryKeyColumn(EntityMetadataRecord $metadata): ?string {
-			if ($metadata->getPrimaryKey() === null) {
-				return null;
-			}
-
-			return $metadata->getColumnNameOrFail($metadata->getPrimaryKey());
+		private function resolvePrimaryKeyColumns(EntityMetadataRecord $metadata): array {
+			return array_map(
+				fn(string $property) => $metadata->getColumnNameOrFail($property),
+				$metadata->identifierKeys
+			);
 		}
 
 		/**

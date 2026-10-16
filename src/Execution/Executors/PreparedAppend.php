@@ -8,8 +8,10 @@
 	/**
 	 * Typed carrier for AppendExecutor::prepare()/fillGeneratedPrimaryKeys()'s
 	 * result: the (possibly rewritten) statement, its entity metadata, and
-	 * the primary key generated for a single-row literal-values append
-	 * (null otherwise).
+	 * the primary key generated for a single-row literal-values append (null
+	 * otherwise) — a scalar for a single-column key, or a property-keyed
+	 * array of every key component's value (generated or caller-supplied)
+	 * for a composite key.
 	 */
 	final class PreparedAppend {
 
@@ -46,7 +48,9 @@
 		}
 
 		/**
-		 * Returns the generated primary key, or null when none was generated.
+		 * Returns the generated primary key, or null when none was generated —
+		 * a scalar for a single-column key, or a property-keyed array for a
+		 * composite key (see this class's docblock).
 		 * @return mixed
 		 */
 		public function getGeneratedId(): mixed {
