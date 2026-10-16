@@ -53,26 +53,63 @@
 		 * @throws EntityResolutionException
 		 */
 		protected function getIdentifierValues(object $entity): array {
+			return array_map(static fn(array $pair) => (string)$pair[1], $this->getIdentifierPairs($entity));
+		}
+
+		/**
+		 * Collect all identifier (property name, value) pairs for the given entity, in
+		 * metadata order, with each value kept as the entity's own int or string type
+		 * (never stringified) — the shape buildResourceId() needs so a composite id's
+		 * encoded JSON keeps numeric and string components distinct.
+		 * @param object $entity The entity to extract identifiers from
+		 * @return array<int, array{0: string, 1: int|string}> Ordered [propertyName, value] pairs
+		 * @throws EntityResolutionException
+		 */
+		protected function getIdentifierPairs(object $entity): array {
 			// Fetch metadata
 			$metadata = $this->entityStore->getMetadata($entity);
-			
+
 			// Get all identifier property names from entity metadata
 			// Use property handler to safely extract values (handles private/protected properties)
 			$result = [];
-			
+
 			foreach ($metadata->identifierKeys as $key) {
 				$value = $this->propertyHandler->get($entity, $key);
-				
+
 				if (!is_scalar($value) && !($value instanceof \Stringable)) {
 					throw new \UnexpectedValueException(
 						sprintf('Identifier "%s" on %s must be scalar or Stringable, got %s', $key, get_class($entity), get_debug_type($value))
 					);
 				}
-				
-				$result[] = (string)$value;
+
+				$result[] = [$key, is_int($value) ? $value : (string)$value];
 			}
-			
+
 			return $result;
+		}
+
+		/**
+		 * Builds this entity's JSON:API resource id. A single-key entity keeps its
+		 * existing plain-value format unchanged. A composite key is instead encoded as
+		 * 'c1.' followed by the unpadded base64url of a UTF-8 JSON array of its ordered
+		 * [propertyName, value] pairs — numeric and string components stay distinct
+		 * because they're JSON-typed, not stringified. This replaces the previous
+		 * underscore-joined format, which could not reconstruct component boundaries
+		 * (a value containing '_' was indistinguishable from two components) and
+		 * collapsed every component to a string.
+		 * @param object $entity
+		 * @return string
+		 * @throws EntityResolutionException
+		 */
+		protected function buildResourceId(object $entity): string {
+			$pairs = $this->getIdentifierPairs($entity);
+
+			if (count($pairs) === 1) {
+				return (string)$pairs[0][1];
+			}
+
+			$json = json_encode($pairs, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR);
+			return 'c1.' . rtrim(strtr(base64_encode($json), '+/', '-_'), '=');
 		}
 		
 		/**
@@ -83,85 +120,101 @@
 		 * and one-to-one relationships.
 		 *
 		 * @param object $entity The entity whose relationships are to be serialized
-		 * @param mixed $identifierValue The primary identifier value for relationship queries
 		 * @return array<string, array{
 		 *      data: array<int, array{type: string, id: string}>,
 		 *      links: array<string, string>
 		 *  }>
 		 * @throws QuelException|EntityResolutionException
 		 */
-		public function serializeRelationships(object $entity, mixed $identifierValue): array {
+		public function serializeRelationships(object $entity): array {
 			// Fetch metadata
 			$metadata = $this->entityStore->getMetadata($entity);
-			
+
 			// Get all relationship mappings from entity metadata
 			// Merge InverseOf and owning-side OneToOne dependencies
 			$relationships = array_merge(
 				$metadata->getInverseOfDependencies(),
 				$metadata->getOneToOneDependencies()
 			);
-			
+
 			$result = [];
 			$entityName = $this->entityStore->normalizeEntityClass(get_class($entity));
-			
-			// Create composite ID string for URL generation
-			$entityId = implode("_", array_map('strval', $this->getIdentifierValues($entity)));
-			
+			$entityId = $this->buildResourceId($entity);
+
 			// Process each relationship mapping
 			foreach ($relationships as $property => $relationship) {
 				// Fetch the target entity
 				$targetEntity = $relationship->getTargetEntity();
-				
+
 				// Validate the class exists
 				if (!class_exists($targetEntity)) {
 					throw new \RuntimeException("Relationship target '{$targetEntity}' is not a loadable class");
 				}
-				
+
 				// Get the target entity's resource type name
 				$relationshipEntityName = $this->entityStore->normalizeEntityClass($targetEntity);
-				
-				// InverseOf: the FK lives on the target entity (relation()) and is matched
-				// against this entity's own identifier.
-				// Owning OneToOne: the FK lives on this entity (localColumn), so the lookup
-				// must match the target's referenced column (or its PK) against the FK's
-				// value on this entity, not against this entity's own identifier.
+
+				// InverseOf: the FK lives on the target entity, so the resolved mapping is
+				// looked up on the target's owning-side relation (relation()); each pair's
+				// local property (on the target) is matched against this entity's own value
+				// for that pair's target property — every component, not just the first.
+				// Owning OneToOne: the FK lives on this entity, so the resolved mapping is
+				// looked up here directly; each pair's target property (on the target entity)
+				// is matched against this entity's own value for that pair's local property.
 				if ($relationship instanceof InverseOf) {
-					$fkProperty = $relationship->getRelation();
-					$fkValue = $identifierValue;
+					$targetMetadata = $this->entityStore->getMetadata($targetEntity);
+					$mapping = $targetMetadata->getRelationColumnMapping($relationship->getRelation());
+
+					if ($mapping === null) {
+						throw new \RuntimeException(
+							"InverseOf relation '{$property}' on '{$entityName}' has no resolved column mapping on '{$targetEntity}'."
+						);
+					}
+
+					$criteria = [];
+
+					foreach ($mapping->pairs as $pair) {
+						$criteria[$pair->localProperty] = $this->propertyHandler->get($entity, $pair->targetProperty);
+					}
 				} else {
-					$localColumn = $relationship->getLocalColumn() ?? "{$property}Id";
-					$fkProperty = $relationship->getReferencedColumn() ?? $this->entityStore->getMetadata($targetEntity)->getPrimaryKey();
-					$fkValue = $this->propertyHandler->get($entity, $localColumn);
+					$mapping = $metadata->getRelationColumnMapping($property);
+
+					if ($mapping === null) {
+						throw new \RuntimeException("OneToOne relation '{$property}' on '{$entityName}' has no resolved column mapping.");
+					}
+
+					$criteria = [];
+
+					foreach ($mapping->pairs as $pair) {
+						$criteria[$pair->targetProperty] = $this->propertyHandler->get($entity, $pair->localProperty);
+					}
 				}
 
-				// Query for all related entities using the FK property
-				$relationshipEntities = $this->entityManager->findBy(
-					$targetEntity,
-					[$fkProperty => $fkValue]
-				);
-				
+				// Query for all related entities using the resolved criteria
+				$relationshipEntities = $this->entityManager->findBy($targetEntity, $criteria);
+
 				// Skip empty relationships to keep response clean
 				if (empty($relationshipEntities)) {
 					continue;
 				}
-				
+
 				$relationshipEntries = [];
-				
+
 				// Build resource identifier objects for each related entity
 				foreach ($relationshipEntities as $relationshipEntity) {
 					$relationshipEntries[] = [
 						'type' => $relationshipEntityName,
-						'id'   => implode("_", array_map('strval', $this->getIdentifierValues($relationshipEntity)))
+						'id'   => $this->buildResourceId($relationshipEntity)
 					];
 				}
-				
+
 				// Build complete relationship object with data and links
 				$result[$property] = [
 					'data'  => $relationshipEntries,  // Resource identifier objects
 					'links' => $this->urlBuilder->buildRelationshipUrls($entityName, $entityId, $property)
 				];
 			}
-			
+
 			return $result;
 		}
 		
@@ -202,13 +255,11 @@
 			if (empty($metadata->identifierKeys)) {
 				throw new \InvalidArgumentException("Entity " . get_class($entity) . " must have at least one identifier");
 			}
-			
-			// Get primary identifier value for relationship queries
-			$identifierValue = $this->propertyHandler->get($entity, $metadata->identifierKeys[0]);
-			
-			// Create composite ID string for resource identification
-			$entityId = implode("_", array_map('strval', $this->getIdentifierValues($entity)));
-			
+
+			// Resource identifier: the plain identifier value for a single-key entity,
+			// or the encoded composite id for a composite key — see buildResourceId().
+			$entityId = $this->buildResourceId($entity);
+
 			// Build the core resource object
 			$result = [
 				'type'       => $entityName,                 // JSON:API resource type
@@ -218,9 +269,9 @@
 					'self' => $this->urlBuilder->buildResourceUrl($entityName, $entityId)
 				]
 			];
-			
+
 			// Add relationships if any exist
-			$relationships = $this->serializeRelationships($entity, $identifierValue);
+			$relationships = $this->serializeRelationships($entity);
 			if (!empty($relationships)) {
 				$result['relationships'] = $relationships;
 			}

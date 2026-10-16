@@ -29,6 +29,7 @@
 	use Quellabs\ObjectQuel\DatabaseAdapter\DatabaseAdapter;
 	use Quellabs\ObjectQuel\Exception\EntityResolutionException;
 	use Quellabs\ObjectQuel\Metadata\EntityMetadataRecord;
+	use Quellabs\ObjectQuel\Metadata\RelationColumnMapping;
 	use Quellabs\ObjectQuel\Persistence\DeletePersister;
 	use Quellabs\ObjectQuel\Persistence\DeleteType;
 	use Quellabs\ObjectQuel\Persistence\InsertPersister;
@@ -636,49 +637,57 @@
 					continue;
 				}
 
-				$relationColumn = $annotation->getLocalColumn() ?? "{$property}Id";
 				$cascadeInfo = $this->getCascadeInfo($dependentEntityClass, $property);
 
 				if (!$cascadeInfo || !$this->shouldCascadeRemove($cascadeInfo)) {
 					continue;
 				}
 
-				$this->cascadeRestoreDependentObjects($dependentEntityClass, $relationColumn, $entity, $metadata, $visited);
+				$mapping = $metadata->getRelationColumnMapping($property);
+
+				if ($mapping === null) {
+					throw new \LogicException("No resolved column mapping for relation '{$property}' on '{$dependentEntityClass}'.");
+				}
+
+				$this->cascadeRestoreDependentObjects($dependentEntityClass, $mapping, $entity, $metadata, $visited);
 			}
 		}
 
 		/**
 		 * Finds every dependent row referencing $parentEntity and restores the ones currently soft-deleted.
 		 * @param class-string $dependentEntityClass
-		 * @param string $relationColumn
+		 * @param RelationColumnMapping $mapping
 		 * @param object $parentEntity
 		 * @param EntityMetadataRecord $dependentMetadata
 		 * @param array<string, true> $visited
 		 * @return void
 		 * @throws EntityResolutionException|QuelException
 		 */
-		private function cascadeRestoreDependentObjects(string $dependentEntityClass, string $relationColumn, object $parentEntity, EntityMetadataRecord $dependentMetadata, array $visited): void {
+		private function cascadeRestoreDependentObjects(string $dependentEntityClass, RelationColumnMapping $mapping, object $parentEntity, EntityMetadataRecord $dependentMetadata, array $visited): void {
 			// Unrecognised column type — skip rather than break an unrelated restore().
 			if (!in_array($dependentMetadata->softDeleteColumnType, ['datetime', 'boolean'], true)) {
 				return;
 			}
 
-			$parentPrimaryKeys = $this->getIdentifiers($parentEntity);
+			// Build one criterion per relation pair, keyed by the dependent entity's own
+			// local (FK) property name. A parent whose identity isn't fully known (never
+			// persisted, or only partially resolved) has no rows in the database that could
+			// reference it — querying with an incomplete criteria set would risk matching
+			// unrelated rows, so this never issues a query in that case.
+			$criteria = [];
 
-			if (count($parentPrimaryKeys) !== 1) {
-				return;
-			}
+			foreach ($mapping->pairs as $pair) {
+				$value = $this->propertyHandler->get($parentEntity, $pair->targetProperty);
 
-			$parentId = $parentPrimaryKeys[array_key_first($parentPrimaryKeys)];
+				if ($value === null) {
+					return;
+				}
 
-			if ($parentId === null) {
-				return;
+				$criteria[$pair->localProperty] = $value;
 			}
 
 			// ignoreSoftDelete: the rows being looked for are the ones marked deleted.
-			$dependentObjects = $this->entityManager->findBy($dependentEntityClass, [
-				$relationColumn => $parentId
-			], null, ignoreSoftDelete: true);
+			$dependentObjects = $this->entityManager->findBy($dependentEntityClass, $criteria, null, ignoreSoftDelete: true);
 
 			$softDeleteProperty = $dependentMetadata->softDeleteProperty ?? throw new \LogicException('cascadeRestoreDependentObjects called on entity without @SoftDelete');
 			$activeValue = $this->softDeleteActiveValue($dependentMetadata);
@@ -1213,33 +1222,37 @@
 				if ($this->entityStore->normalizeEntityClass($annotation->getTargetEntity()) !== $normalizedClass) {
 					continue;
 				}
-				
-				// Fetch relation column
-				$relationColumn = $annotation->getLocalColumn() ?? "{$property}Id";
-				
+
 				// Get cascade configuration information for this relationship
 				// This tells us how changes to the parent should propagate to dependents
 				$cascadeInfo = $this->getCascadeInfo($dependentEntityClass, $property);
-				
+
 				// Skip if no cascade configuration exists or if cascade remove isn't enabled
 				// Not all relationships should trigger cascading deletions
 				if (!$cascadeInfo || !$this->shouldCascadeRemove($cascadeInfo)) {
 					continue;
 				}
-				
+
+				// Resolved column pairs for this relation — one pair for a singular FK,
+				// one pair per array position for a composite one.
+				$mapping = $metadata->getRelationColumnMapping($property);
+
+				if ($mapping === null) {
+					throw new \LogicException("No resolved column mapping for relation '{$property}' on '{$dependentEntityClass}'.");
+				}
+
 				// If we reach here, this relationship should trigger cascading deletion
 				// Find and mark for deletion all dependent objects that reference this parent
-				// The relationship column is used to identify which dependent objects reference this parent
 				$this->cascadeDeleteDependentObjects(
 					$dependentEntityClass,             // The class of dependent objects to search for
 					$property,                         // The object-reference property, e.g. "customer"
-					$relationColumn,                   // The scalar FK column that references the parent
+					$mapping,                           // Resolved local/target column pairs for this relation
 					$entity,                            // The parent entity being deleted
 					$parentEffectiveHardDelete
 				);
 			}
 		}
-		
+
 		/**
 		 * Get cascade configuration for a property
 		 * @param string $entityClass Entity class name
@@ -1296,13 +1309,13 @@
 		 * Find and schedule deletion of dependent objects
 		 * @param class-string $dependentEntityClass Class name of dependent entity
 		 * @param string $relationProperty Object-reference property holding the parent, e.g. "customer"
-		 * @param string $relationColumn Scalar FK column property, e.g. "customerId"
+		 * @param RelationColumnMapping $mapping Resolved local/target column pairs for this relation
 		 * @param object $parentEntity The parent entity object
 		 * @param bool $parentEffectiveHardDelete Whether the parent is actually being removed, or merely soft-deleted
 		 * @return void
 		 * @throws EntityResolutionException|Exception\QuelException
 		 */
-		private function cascadeDeleteDependentObjects(string $dependentEntityClass, string $relationProperty, string $relationColumn, object $parentEntity, bool $parentEffectiveHardDelete): void {
+		private function cascadeDeleteDependentObjects(string $dependentEntityClass, string $relationProperty, RelationColumnMapping $mapping, object $parentEntity, bool $parentEffectiveHardDelete): void {
 			// Schedule any managed, not-yet-persisted dependents first. These
 			// can never be found by the DB-driven lookup below — they don't
 			// exist in the database yet — but without this they'd still get
@@ -1318,33 +1331,31 @@
 				return;
 			}
 
-			// Extract the primary key identifiers from the parent entity
-			// This returns an array of primary key field names and their values
-			$parentPrimaryKeys = $this->getIdentifiers($parentEntity);
+			// Build one criterion per relation pair, keyed by the dependent entity's own
+			// local (FK) property name, reading each value straight off the parent object
+			// rather than through getIdentifiers() — covers a singular relation targeting
+			// a non-PK property too, not just the parent's own primary key.
+			//
+			// A parent that was never persisted, or whose identity is only partially
+			// resolved, has no complete row in the database that could match — querying
+			// with an incomplete criteria set would risk matching unrelated rows whose FK
+			// columns happen to be genuinely NULL rather than rows that actually reference
+			// this parent, so this never issues a query in that case.
+			$criteria = [];
 
-			// Composite primary keys are not supported for cascade delete lookup;
-			// the dependent objects query expects a single scalar foreign key value.
-			if (count($parentPrimaryKeys) !== 1) {
-				return;
-			}
+			foreach ($mapping->pairs as $pair) {
+				$value = $this->propertyHandler->get($parentEntity, $pair->targetProperty);
 
-			// Get the first (and only) primary key value
-			$parentId = $parentPrimaryKeys[array_key_first($parentPrimaryKeys)];
+				if ($value === null) {
+					return;
+				}
 
-			// A parent that was never persisted has no id and therefore no rows
-			// in the database to cascade to. Querying with a null id would risk
-			// matching unrelated rows whose FK column happens to be genuinely
-			// NULL rather than rows that actually reference this parent.
-			if ($parentId === null) {
-				return;
+				$criteria[$pair->localProperty] = $value;
 			}
 
 			// Query the entity manager to find all dependent objects
 			// that have a foreign key relationship to the parent entity
-			// Uses the specified column name to match against the parent's ID
-			$dependentObjects = $this->entityManager->findBy($dependentEntityClass, [
-				$relationColumn => $parentId
-			]);
+			$dependentObjects = $this->entityManager->findBy($dependentEntityClass, $criteria);
 
 			// Iterate through each found dependent object and mark it for deletion
 			// This doesn't immediately delete the objects, but schedules them for deletion
