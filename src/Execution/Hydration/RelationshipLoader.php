@@ -182,9 +182,25 @@
 
 			// normalizeEntityClass ensures we have the fully-qualified class name.
 			$targetEntityName = $this->entityStore->normalizeEntityClass($dependency->getTargetEntity());
+			$targetMetadata = $this->entityStore->getMetadata($targetEntityName);
 
-			// Create the proxy, seeded with every identifier component at once
-			$proxy = $this->findOrCreateProxy($targetEntityName, $foreignKey);
+			// The fast, PK-based proxy only works when the foreign key's target properties
+			// are exactly the target's full primary key: it seeds the proxy's PK and later
+			// calls find() by that same key, relying on EntityHydrator to populate this exact
+			// instance in place once it's re-discovered in the UnitOfWork by that PK. When the
+			// relation references a different (non-PK) property instead, that key is not a
+			// valid PK lookup at all, so a separate path resolves it correctly instead.
+			$targetProperties = $mapping->targetProperties();
+			sort($targetProperties);
+			$targetIdentifierKeys = $targetMetadata->identifierKeys;
+			sort($targetIdentifierKeys);
+
+			if ($targetProperties === $targetIdentifierKeys) {
+				// Create the proxy, seeded with every identifier component at once
+				$proxy = $this->findOrCreateProxy($targetEntityName, $foreignKey);
+			} else {
+				$proxy = $this->createNonPrimaryKeyProxy($entity, $property, $targetEntityName, $foreignKey);
+			}
 
 			// Set the proxy on the original entity
 			$this->propertyHandler->set($entity, $property, $proxy);
@@ -309,6 +325,69 @@
 		}
 
 		/**
+		 * Builds a lazy proxy for an owning relation whose resolved target properties are not
+		 * exactly the target's full primary key (e.g. a singular relation whose referencedColumn
+		 * names a non-PK property). Such a proxy cannot be pre-registered under the identity-map
+		 * key find() would use (the UnitOfWork only indexes entities by their real primary key),
+		 * so it is resolved by findOneBy() on the full foreign key instead, and the result is
+		 * copied into this exact proxy instance — mirroring the InverseOf scalar lazy-load
+		 * pattern in loadInverseScalarLazy(), which faces the same constraint.
+		 * @param object $entity The entity on which the proxy will be set
+		 * @param string $property The property on $entity that will hold the proxy
+		 * @param class-string $targetEntityName
+		 * @param array<string, int|string> $foreignKey Target property name => value, every component
+		 * @return object
+		 */
+		private function createNonPrimaryKeyProxy(object $entity, string $property, string $targetEntityName, array $foreignKey): object {
+			$generator = $this->entityStore->getProxyGenerator();
+			$proxyClassName = $generator->getProxyClass($targetEntityName);
+
+			if (!class_exists($proxyClassName, false)) {
+				require_once $generator->getProxyFilePath($targetEntityName);
+			}
+
+			// Capture references for the initializer closure
+			$entityManager = $this->entityManager;
+			$propertyHandler = $this->propertyHandler;
+			$unitOfWork = $this->unitOfWork;
+
+			return new $proxyClassName(
+				$this->entityManager,
+				function (ProxyInterface $proxy) use (
+					$entityManager,
+					$unitOfWork,
+					$propertyHandler,
+					$entity,
+					$property,
+					$targetEntityName,
+					$foreignKey
+				): void {
+					// doInitialize() invokes this on every accessor call, so bail out once the
+					// proxy has already been resolved to avoid re-running the findOneBy query.
+					if ($proxy->isInitialized()) {
+						return;
+					}
+
+					// findOneBy returns a fully hydrated entity registered in the UnitOfWork.
+					$result = $entityManager->findOneBy($targetEntityName, $foreignKey);
+
+					// Copy scalar fields to the proxy so generated accessors return resolved data.
+					// Mark initialized first to prevent deserialize() from triggering recursive
+					// initialization through the proxy's generated setters.
+					if ($result !== null) {
+						$proxy->setInitialized();
+						$serializer = $unitOfWork->getSerializer();
+						$serializer->deserialize($proxy, $serializer->serialize($result));
+					}
+
+					// Point the parent at the fully hydrated managed entity so subsequent reads
+					// (including its own relations) resolve through it rather than the proxy.
+					$propertyHandler->set($entity, $property, $result);
+				}
+			);
+		}
+
+		/**
 		 * Checks if a specific entity type was requested via a specific join property.
 		 * @param string $currentEntity
 		 * @param string $targetEntity The entity class name
@@ -398,8 +477,11 @@
 
 					// Copy the resolved entity's scalar columns into the proxy itself. Generated
 					// accessors read the proxy's own fields via parent::, so the access that triggered
-					// initialization must see real data rather than an empty proxy.
+					// initialization must see real data rather than an empty proxy. Marked initialized
+					// first to prevent deserialize() from triggering recursive initialization through
+					// the proxy's generated setters.
 					if ($result !== null) {
+						$proxy->setInitialized();
 						$serializer = $unitOfWork->getSerializer();
 						$serializer->deserialize($proxy, $serializer->serialize($result));
 					}
@@ -545,12 +627,7 @@
 		 * @throws QuelException
 		 * @throws \LogicException When the property is not a CollectionInterface
 		 */
-		private function loadInverseCollectionLazy(
-			object $entity,
-			string $entityClass,
-			string $property,
-			InverseOf $dependency
-		): void {
+		private function loadInverseCollectionLazy(object $entity, string $entityClass, string $property, InverseOf $dependency): void {
 			// Fetch the property
 			$propertyValue = $this->propertyHandler->get($entity, $property);
 			
@@ -605,7 +682,7 @@
 		 *
 		 * Membership uses the same predicate the linear scan did — instanceof the target,
 		 * candidateMapsToParent(), and a strict comparison of the candidate's FK value against the
-		 * parent key — so behaviour and result-set ordering are preserved.
+		 * parent key — so behavior and result-set ordering are preserved.
 		 * @param object $entity The parent entity
 		 * @param string $entityClass The resolved class name of the parent entity
 		 * @param InverseOf $dependency The relation annotation
@@ -700,7 +777,7 @@
 		/**
 		 * Returns the ManyToOne or owning-side OneToOne annotation for a given property
 		 * on an entity, or null if no such relation exists.
-		 * Centralises the repeated pattern of checking both relation types.
+		 * Centralizes the repeated pattern of checking both relation types.
 		 * @param EntityMetadataRecord $metadata
 		 * @param string $property
 		 * @return ManyToOne|OneToOne|null
@@ -834,5 +911,4 @@
 			
 			return $result;
 		}
-		
 	}
