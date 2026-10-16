@@ -1037,14 +1037,28 @@
 		/**
 		 * This function retrieves the parent entity and the corresponding ManyToOne annotation
 		 * for the given entity. If the parent entity doesn't exist, null is returned.
+		 *
+		 * Reads every pair of the relation's resolved column mapping directly off the parent
+		 * object — not just the first component, and not only the parent's own identifier
+		 * properties, since a singular relation may target a non-PK property. A component
+		 * whose value isn't available at all (e.g. a new, uncascaded parent that was never
+		 * persisted) is not an error — every pair is still emitted, with a null value, exactly
+		 * as before: the caller writes it onto the child's FK column(s), which is a no-op when
+		 * they were already null and otherwise clears a stale prior value. Only a *partial*
+		 * resolution — some of a composite relation's pairs available and others not — is
+		 * reported, since silently writing part of a composite FK while leaving the rest at
+		 * whatever it was before would leave the row in an inconsistent state no legitimate
+		 * caller intends.
 		 * @param object $entity The entity for which to retrieve the parent entity and annotation.
 		 * @return array<int, array{entity: object, property: string, value: mixed}> An associative array with 'entity' and 'annotation' as keys, or null if not found.
 		 * @throws EntityResolutionException
+		 * @throws OrmException When only some of a composite relation's pairs have a resolvable parent value
 		 */
 		private function extractParentPrimaryKeyData(object $entity): array {
 			// Retrieve metadata for entity
 			$metadata = $this->getEntityStore()->getMetadata($entity);
-			
+			$entityClass = $metadata->className;
+
 			// Loop through each set of annotations for each property of the entity.
 			// Each property might have multiple annotations defining its behavior
 			$result = [];
@@ -1061,42 +1075,56 @@
 					if (!($annotation instanceof ManyToOne) && !($annotation instanceof OneToOne)) {
 						continue; // Skip this annotation if it's not a relationship to a parent
 					}
-					
+
 					// Use the property_handler to retrieve the value of the related parent entity.
 					// This is the actual object reference to the parent entity
 					$parentEntity = $this->propertyHandler->get($entity, $property);
-					
-					// If the parent entity exists, add it to the result with its relationship details.
-					if (!empty($parentEntity) && is_object($parentEntity)) {
-						// Get the relation column name, or fall back to a convention
-						$relationColumn = $annotation->getLocalColumn() ?? "{$property}Id";
-						
-						// Get the parent entity's primary key value(s)
-						$parentPrimaryKeys = $this->getIdentifiers($parentEntity);
 
-						// Only handle simple primary keys, skip composite ones
-						if (count($parentPrimaryKeys) !== 1) {
-							continue;
+					// If the parent entity exists, add every one of its mapped column pairs.
+					if (!empty($parentEntity) && is_object($parentEntity)) {
+						$mapping = $metadata->getRelationColumnMapping($property);
+
+						if ($mapping === null) {
+							throw new \LogicException("No resolved column mapping for relation '{$property}' on '{$entityClass}'.");
 						}
-						
-						// Fetch the first primary key
-						$primaryKey = array_key_first($parentPrimaryKeys);
-						$primaryKeyValue = $parentPrimaryKeys[$primaryKey];
-						
-						// Add it to the result
-						$result[] = [
-							'entity'   => $parentEntity, // The parent entity itself
-							'property' => $relationColumn, // The name of the property that defines the relationship
-							'value'    => $primaryKeyValue // The primary key value of the parent entity
-						];
+
+						// Read the parent's referenced property directly for every pair — covers
+						// both a composite PK and a singular relation targeting a non-PK property,
+						// neither of which getIdentifiers() (PK-only) would resolve.
+						$values = [];
+
+						foreach ($mapping->pairs as $pair) {
+							$values[] = $this->propertyHandler->get($parentEntity, $pair->targetProperty);
+						}
+
+						$resolvedCount = count(array_filter($values, static fn($value) => $value !== null));
+
+						if ($resolvedCount > 0 && $resolvedCount < count($values)) {
+							throw new OrmException(
+								"Cannot synchronize relation '{$property}' on '{$entityClass}': parent " .
+								get_class($parentEntity) . " has only some of its referenced key components " .
+								"available (" . implode(', ', $mapping->targetProperties()) . "). Ensure the " .
+								"parent is fully persisted — every key component assigned or generated — " .
+								"before this entity is flushed."
+							);
+						}
+
+						foreach ($mapping->pairs as $index => $pair) {
+							// Add it to the result
+							$result[] = [
+								'entity'   => $parentEntity, // The parent entity itself
+								'property' => $pair->localProperty, // The local FK property that defines the relationship
+								'value'    => $values[$index] // The parent's referenced property value
+							];
+						}
 					}
-					
+
 					// We don't need to read more annotations for this property.
 					// Move on to the next property.
 					continue 2; // Skip to the next property in the outer loop
 				}
 			}
-			
+
 			// Return the found parent entities as an array.
 			// This will be used to ensure proper order of operations during persistence
 			return $result;
