@@ -63,7 +63,7 @@
 		 * @param array<string, Column> $columnAnnotations Property name => its @Orm\Column
 		 *        annotation, for every property that carries one — see
 		 *        getColumnAnnotation(), the accessor this backs.
-		 * @param array<string> $identifierKeys Property names that serve as primary keys
+		 * @param list<string> $identifierKeys Property names that serve as primary keys
 		 * @param array<string> $identifierColumns Column names that serve as primary keys
 		 * @param array<string, array{name: string, column: Column, version: Version}> $versionColumns Properties with version tracking
 		 * @param array<string, ManyToOne> $manyToOneRelations Property => ManyToOne annotation mapping

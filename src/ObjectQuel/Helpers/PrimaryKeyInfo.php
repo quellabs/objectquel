@@ -12,22 +12,32 @@
 
 		public AstRange $range;
 		public string $entityName;
-		public string $primaryKey;
-		
+
+		/** @var non-empty-list<string> Every identifier property name, in metadata order */
+		public array $primaryKeys;
+
 		/**
 		 * PrimaryKeyInfo constructor
 		 * @param AstRange $range
 		 * @param string $entityName
-		 * @param string $primaryKey
+		 * @param non-empty-list<string> $primaryKeys Every identifier property name, in metadata order
 		 */
-		public function __construct(AstRange $range, string $entityName, string $primaryKey) {
+		public function __construct(AstRange $range, string $entityName, array $primaryKeys) {
 			$this->range = $range;
 			$this->entityName = $entityName;
-			$this->primaryKey = $primaryKey;
+			$this->primaryKeys = $primaryKeys;
 		}
-		
+
 		/**
-		 * Retrieves the primary key of the main range from an AstRetrieve object.
+		 * True when the entity has more than one identifier property.
+		 * @return bool
+		 */
+		public function isComposite(): bool {
+			return count($this->primaryKeys) > 1;
+		}
+
+		/**
+		 * Retrieves every identifier property of the main range from an AstRetrieve object.
 		 * @param AstRetrieve $astRetrieve A reference to the AstRetrieve object representing the query
 		 * @param EntityStore $entityStore
 		 * @return PrimaryKeyInfo
@@ -39,25 +49,25 @@
 				if (!$range instanceof AstRangeDatabase) {
 					continue;
 				}
-				
+
 				// Continue if the range contains a join property
 				if ($range->getJoinProperty() !== null) {
 					continue;
 				}
-				
-				// Get the associated primary key if the range doesn't have a join property
+
+				// Get the associated primary key(s) if the range doesn't have a join property
 				$entityName = $range->getEntityName();
-				$primaryKey = $entityStore->getMetadata($entityName)->getPrimaryKey();
-				
+				$primaryKeys = $entityStore->getMetadata($entityName)->identifierKeys;
+
 				// Continue if there is no primary key
-				if ($primaryKey === null) {
+				if ($primaryKeys === []) {
 					continue;
 				}
-				
-				// Return the range name, entity name, and the primary key of the entity
-				return new PrimaryKeyInfo($range, $entityName, $primaryKey);
+
+				// Return the range name, entity name, and every identifier property of the entity
+				return new PrimaryKeyInfo($range, $entityName, $primaryKeys);
 			}
-			
+
 			// Return null if no range without a join property is found
 			// This should never happen in practice, as such a query cannot be created
 			throw new \LogicException("Malformed query: no primary range found in query");
