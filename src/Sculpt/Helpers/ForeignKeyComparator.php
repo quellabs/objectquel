@@ -127,6 +127,11 @@
 
 		/**
 		 * Compares two foreign key configurations to check if they differ.
+		 * $columns/$referencedColumns are positionally paired on both sides
+		 * (declaration order for an entity, ordinal position for an
+		 * introspected constraint) — compared as ordered lists, never
+		 * independently sorted, so two constraints with the same column
+		 * sets but swapped pairings are correctly detected as different.
 		 * @param ForeignKeyDefinition $dbConfig Database foreign key configuration
 		 * @param ForeignKeyDefinition $entityConfig Entity foreign key configuration
 		 * @return bool True if configurations differ, false otherwise
@@ -144,20 +149,10 @@
 				return true;
 			}
 
-			$dbColumns = $dbConfig->columns;
-			$entityColumns = $entityConfig->columns;
-			sort($dbColumns);
-			sort($entityColumns);
-
-			if ($dbColumns !== $entityColumns) {
+			if ($dbConfig->columns !== $entityConfig->columns) {
 				return true;
 			}
 
-			$dbReferencedColumns = $dbConfig->referencedColumns;
-			$entityReferencedColumns = $entityConfig->referencedColumns;
-			sort($dbReferencedColumns);
-			sort($entityReferencedColumns);
-
-			return $dbReferencedColumns !== $entityReferencedColumns;
+			return $dbConfig->referencedColumns !== $entityConfig->referencedColumns;
 		}
 	}

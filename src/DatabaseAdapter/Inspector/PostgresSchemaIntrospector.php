@@ -102,34 +102,36 @@
 		}
 
 		/**
-		 * Reads foreign keys for a table via information_schema.
-		 *
-		 * information_schema has no ordinal linking a composite constraint's local
-		 * columns to its referenced columns, so joining produces every possible
-		 * pairing, not just the real ones. Since @Orm\ForeignKey only ever declares
-		 * single-column constraints, a constraint resolving to more than one local
-		 * column is a real composite FK and is simply not reported, rather than
-		 * risk a wrongly-paired column set.
+		 * Reads foreign keys for a table via pg_constraint's own conkey/confkey
+		 * attribute-number arrays, unnested together with WITH ORDINALITY so
+		 * each result row is one correctly paired (local, referenced) column
+		 * position. information_schema's key_column_usage/constraint_column_usage
+		 * join has no such ordinal link between the two sides and produces
+		 * every possible column combination for a composite constraint instead.
 		 * @param string $tableName
 		 * @return array<string, ForeignKeyDefinition> Constraint name => definition
 		 */
 		public function getForeignKeys(string $tableName): array {
 			$statement = $this->adapter->execute("
 				SELECT
-					tc.constraint_name AS constraint_name,
-					kcu.column_name AS column_name,
-					ccu.table_name AS referenced_table,
-					ccu.column_name AS referenced_column,
+					con.conname AS constraint_name,
+					att_local.attname AS column_name,
+					confrel.relname AS referenced_table,
+					att_ref.attname AS referenced_column,
 					rc.delete_rule AS delete_rule,
 					rc.update_rule AS update_rule
-				FROM information_schema.table_constraints tc
-				JOIN information_schema.key_column_usage kcu ON kcu.constraint_name = tc.constraint_name AND kcu.constraint_schema = tc.constraint_schema
-				JOIN information_schema.referential_constraints rc ON rc.constraint_name = tc.constraint_name AND rc.constraint_schema = tc.constraint_schema
-				JOIN information_schema.constraint_column_usage ccu ON ccu.constraint_name = rc.unique_constraint_name AND ccu.constraint_schema = rc.unique_constraint_schema
-				WHERE tc.constraint_type = 'FOREIGN KEY' AND
-				      tc.table_schema = current_schema() AND
-				      tc.table_name = :tableName
-				ORDER BY tc.constraint_name, kcu.ordinal_position
+				FROM pg_constraint con
+				JOIN pg_class rel ON rel.oid = con.conrelid
+				JOIN pg_namespace nsp ON nsp.oid = rel.relnamespace
+				JOIN pg_class confrel ON confrel.oid = con.confrelid
+				JOIN information_schema.referential_constraints rc ON rc.constraint_name = con.conname AND rc.constraint_schema = nsp.nspname
+				CROSS JOIN LATERAL unnest(con.conkey, con.confkey) WITH ORDINALITY AS pair(local_attnum, ref_attnum, ord)
+				JOIN pg_attribute att_local ON att_local.attrelid = con.conrelid AND att_local.attnum = pair.local_attnum
+				JOIN pg_attribute att_ref ON att_ref.attrelid = con.confrelid AND att_ref.attnum = pair.ref_attnum
+				WHERE con.contype = 'f' AND
+				      nsp.nspname = current_schema() AND
+				      rel.relname = :tableName
+				ORDER BY con.conname, pair.ord
 			", [
 				'tableName' => $tableName
 			]);
@@ -148,16 +150,10 @@
 			$result = [];
 
 			foreach ($byName as $name => $rows) {
-				$localColumns = array_values(array_unique(array_column($rows, 'column_name')));
-
-				if (count($localColumns) !== 1) {
-					continue;
-				}
-
 				$result[$name] = new ForeignKeyDefinition(
-					columns: $localColumns,
+					columns: array_column($rows, 'column_name'),
 					referencedTable: $rows[0]['referenced_table'],
-					referencedColumns: [$rows[0]['referenced_column']],
+					referencedColumns: array_column($rows, 'referenced_column'),
 					onDelete: $rows[0]['delete_rule'],
 					onUpdate: $rows[0]['update_rule'],
 				);
