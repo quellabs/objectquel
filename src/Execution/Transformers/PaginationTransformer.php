@@ -214,7 +214,7 @@
 
 			return true;
 		}
-
+		
 		/**
 		 * Fetches a bounded root-key page when safe, otherwise all sorted joined keys.
 		 * The fallback is deduplicated afterward so joined-column sorting works.
@@ -223,6 +223,8 @@
 		 * @param int|null $offset SQL row offset when the key query has one row per parent
 		 * @param int $windowSize Requested parent count
 		 * @return list<int|string>
+		 * @throws EntityResolutionException
+		 * @throws QuelException
 		 */
 		private function fetchPrimaryKeysForPagination(AstRetrieve $ast, array $parameters, ?int $offset, int $windowSize): array {
 			// Store original state
@@ -264,12 +266,7 @@
 
 				// Execute the query and return the first column
 				$result = $this->connection->execute($sql, $parameters);
-
-				if ($result === null) {
-					return [];
-				}
-
-				return array_column($result->fetchAll(), 0);
+				return $result !== null ? array_column($result->fetchAll(), 0) : [];
 			} finally {
 				// Always restore original state
 				$ast->setValues($originalValues);
