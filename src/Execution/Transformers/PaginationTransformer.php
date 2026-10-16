@@ -301,13 +301,18 @@
 		private function convertToSQL(AstRetrieve $retrieve, array $parameters): string {
 			// Convert all keys to strings
 			$stringKeyedParameters = [];
-			
 			foreach ($parameters as $key => $value) {
 				$stringKeyedParameters[(string)$key] = $value;
 			}
 			
 			// Transform the Quel query to SQL
-			$quelToSQL = new QuelToSQLRetrieve($this->entityStore, $stringKeyedParameters, $this->platform, $this->connection->getRoutineSchema());
+			$quelToSQL = new QuelToSQLRetrieve(
+				$this->entityStore,
+				$stringKeyedParameters,
+				$this->platform,
+				$this->connection->getRoutineSchema()
+			);
+			
 			return $quelToSQL->convertToSQL($retrieve);
 		}
 		
@@ -378,9 +383,8 @@
 			
 			if ($ast->getConditions() === null) {
 				$ast->setConditions($condition);
-				return;
+			} else {
+				$ast->setConditions(new AstBinaryOperator($ast->getConditions(), $condition, "AND"));
 			}
-
-			$ast->setConditions(new AstBinaryOperator($ast->getConditions(), $condition, "AND"));
 		}
 	}
