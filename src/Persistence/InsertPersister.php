@@ -132,7 +132,7 @@
 					}
 
 					// Generate the identity value
-					$value = $this->primaryKeyFactory->generate($this->entityManager, $entity, $strategy);
+					$value = $this->primaryKeyFactory->generate($this->entityManager, $entity, $primaryKey, $strategy);
 
 					// Set the value on the entity
 					$this->propertyHandler->set($entity, $primaryKey, $value);

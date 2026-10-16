@@ -21,11 +21,12 @@
 		 * IdentityGenerator's legitimate null.
 		 * @param EntityManager $em    The entity manager instance for database operations
 		 * @param object $entity       The entity object requiring a primary key
+		 * @param string $property     The primary key property being generated — passed through to the generator, which needs it to tell an entity's identifier columns apart
 		 * @param string $type         The type of primary key generator to use (e.g., 'uuid', 'sequence', 'identity')
 		 * @return mixed               The generated primary key value, or null only for the 'identity' strategy
 		 * @throws OrmException If $type has no matching generator class, or that class doesn't implement PrimaryKeyGeneratorInterface
 		 */
-		public function generate(EntityManager $em, object $entity, string $type): mixed {
+		public function generate(EntityManager $em, object $entity, string $property, string $type): mixed {
 			// Construct the fully qualified class name for the requested generator
 			// by converting the first letter of type to uppercase and appending "Generator"
 			$className = "\\Quellabs\\ObjectQuel\\PrimaryKeys\\Generators\\" . ucfirst($type) . "Generator";
@@ -44,8 +45,8 @@
 			$generator = new $className();
 
 			// Generate the primary key value
-			// Pass the entity manager and entity to the generator for context-aware key generation
-			$value = $generator->generate($em, $entity);
+			// Pass the entity manager, entity, and target property to the generator for context-aware key generation
+			$value = $generator->generate($em, $entity, $property);
 
 			// Only IdentityGenerator is allowed to return null (the database
 			// assigns identity columns itself) — a null from any other

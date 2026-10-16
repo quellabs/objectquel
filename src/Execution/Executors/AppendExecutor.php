@@ -611,7 +611,7 @@
 			$firstGeneratedValue = null;
 
 			foreach ($rows as $index => $row) {
-				$value = $factory->generate($this->entityManager, $blankEntity, $strategy);
+				$value = $factory->generate($this->entityManager, $blankEntity, $primaryKey, $strategy);
 
 				if ($index === 0) {
 					$firstGeneratedValue = $value;

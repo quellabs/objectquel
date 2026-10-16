@@ -13,6 +13,7 @@
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstIdentifier;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstIn;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstNumber;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstParameter;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRetrieve;
 	use Quellabs\ObjectQuel\ObjectQuel\Helpers\PrimaryKeyInfo;
 	use Quellabs\ObjectQuel\ObjectQuel\QuelToSQL\QuelToSQLRetrieve;
@@ -25,7 +26,10 @@
 		private DatabaseAdapter $connection;
 		private PlatformCapabilitiesInterface $platform;
 		private ?PrimaryKeyInfo $primaryKeyInfo = null;
-		
+
+		/** Monotonic counter for this transform() call's generated bound-parameter names. */
+		private int $parameterSequence = 0;
+
 		/**
 		 * QueryBuilder constructor
 		 * @param EntityManager $entityManager
@@ -40,19 +44,21 @@
 		/**
 		 * Apply pagination logic using the provided parameters
 		 * This may involve primary key fetching, result counting, and query modification
-		 * Parameters are needed for pagination to work with bound values in conditions
+		 * Parameters are needed for pagination to work with bound values in conditions; new
+		 * bound values generated for the page filter are added back into $parameters.
 		 * @param AstRetrieve $ast
-		 * @param array<int|string, mixed> $parameters
+		 * @param array<string, mixed> $parameters
 		 * @return void
 		 * @throws QuelException|EntityResolutionException
 		 */
-		public function transform(AstRetrieve $ast, array $parameters): void {
+		public function transform(AstRetrieve $ast, array &$parameters): void {
 			$window = $ast->getWindow();
 			$windowSize = $ast->getWindowSize();
-			
+
 			if ($window !== null && $windowSize !== null && !$ast->getSortInApplicationLogic()) {
 				try {
 					$this->primaryKeyInfo = PrimaryKeyInfo::fromRetrieve($ast, $this->entityStore);
+					$this->parameterSequence = 0;
 					$this->processPagination($ast, $parameters, (int)$window, (int)$windowSize);
 				} finally {
 					$this->primaryKeyInfo = null;
@@ -65,14 +71,14 @@
 		/**
 		 * Processes pagination for the query.
 		 * @param AstRetrieve $ast
-		 * @param array<int|string, mixed> $parameters
+		 * @param array<string, mixed> $parameters
 		 * @param int $window
 		 * @param int $windowSize
 		 * @return void
 		 * @throws QuelException
 		 * @throws EntityResolutionException
 		 */
-		private function processPagination(AstRetrieve $ast, array $parameters, int $window, int $windowSize): void {
+		private function processPagination(AstRetrieve $ast, array &$parameters, int $window, int $windowSize): void {
 			// Look for the 'InValuesAreFinal' directive which indicates that any IN conditions
 			// in the query are already finalized and don't need additional validation/processing
 			// This is an optimization flag that can skip the validation phase of pagination
@@ -93,14 +99,14 @@
 		/**
 		 * Processes pagination by directly manipulating existing IN() values.
 		 * @param AstRetrieve $ast
-		 * @param array<int|string, mixed> $parameters
+		 * @param array<string, mixed> $parameters
 		 * @param int $window
 		 * @param int $windowSize
 		 * @return void
 		 */
 		private function processPaginationSkippingValidation(
 			AstRetrieve $ast,
-			array $parameters,
+			array &$parameters,
 			int $window,
 			int $windowSize
 		): void {
@@ -129,21 +135,31 @@
 		/**
 		 * Processes pagination by fetching all primary keys first.
 		 * @param AstRetrieve $ast
-		 * @param array<int|string, mixed> $parameters
+		 * @param array<string, mixed> $parameters
 		 * @param int $window
 		 * @param int $windowSize
 		 * @return void
 		 */
 		private function processPaginationWithValidation(
 			AstRetrieve $ast,
-			array $parameters,
+			array &$parameters,
 			int $window,
 			int $windowSize
 		): void {
+			// Without any sort at all, row order (and therefore which rows land on which
+			// page) is undefined and can shift between two fetches of the "same" page —
+			// impose one over the primary key so paging is deterministic.
+			$this->ensureDeterministicSort($ast);
+
 			// First pass: Execute a lightweight query to fetch only the primary keys
 			// This avoids loading full records when we only need to determine pagination boundaries
 			$primaryKeys = $this->fetchAllPrimaryKeysForPagination($ast, $parameters);
-			
+
+			// A one-to-many eager join can fan the same row (and therefore the same
+			// primary key) out across several result rows — keep each key's first
+			// occurrence so the page subset below isn't skewed by duplicates.
+			$primaryKeys = array_values(array_unique($primaryKeys));
+
 			// Early exit if no records match the query conditions
 			if (empty($primaryKeys)) {
 				return;
@@ -165,41 +181,55 @@
 			// Modify the original query to include an IN condition that limits results
 			// to only the primary keys we determined should be on this page
 			// This ensures the final query returns exactly the records we want, in the right order
-			$this->addInConditionForPagination($ast, $filteredKeys);
+			$this->addInConditionForPagination($ast, $parameters, $filteredKeys);
 		}
-		
+
+		/**
+		 * Imposes a deterministic ORDER BY over the primary key when the query declares
+		 * no sort of its own.
+		 * @param AstRetrieve $ast
+		 * @return void
+		 */
+		private function ensureDeterministicSort(AstRetrieve $ast): void {
+			if ($ast->getSort() !== []) {
+				return;
+			}
+
+			$ast->setSort([['ast' => $this->createPrimaryKeyIdentifier(), 'order' => 'asc']]);
+		}
+
 		/**
 		 * Fetches all primary keys for pagination by temporarily modifying the query.
+		 * Never forces SELECT DISTINCT: combined with an ORDER BY on anything other than
+		 * the primary key, DISTINCT is invalid or silently reorders rows on some engines.
+		 * Deduplication happens afterward in PHP (see processPaginationWithValidation()).
 		 * @param AstRetrieve $ast
-		 * @param array<int|string, mixed> $parameters
+		 * @param array<string, mixed> $parameters
 		 * @return list<int|string>
 		 */
 		private function fetchAllPrimaryKeysForPagination(AstRetrieve $ast, array $parameters): array {
 			// Store original state
 			$originalValues = $ast->getValues();
-			$originalUnique = $ast->getUnique();
-			
+
 			try {
 				// Modify query to get only primary keys
-				$ast->setUnique(true);
 				$astIdentifier = $this->createPrimaryKeyIdentifier();
 				$ast->setValues([new AstAlias("pk", $astIdentifier)]);
-				
+
 				// Execute modified query
 				$sql = $this->convertToSQL($ast, $parameters);
-				
+
 				// Execute the query and return the first column
 				$result = $this->connection->execute($sql, $parameters);
-				
+
 				if ($result === null) {
 					return [];
 				}
-				
+
 				return array_column($result->fetchAll(), 0);
 			} finally {
 				// Always restore original state
 				$ast->setValues($originalValues);
-				$ast->setUnique($originalUnique);
 			}
 		}
 		
@@ -217,7 +247,7 @@
 		/**
 		 * Convert AstRetrieve node to SQL
 		 * @param AstRetrieve $retrieve The AST to convert
-		 * @param array<int|string, mixed> $parameters Query parameters (passed by reference)
+		 * @param array<string, mixed> $parameters Query parameters (passed by reference)
 		 * @return string The generated SQL query
 		 * @throws EntityResolutionException
 		 * @throws QuelException
@@ -247,21 +277,35 @@
 		}
 		
 		/**
-		 * Adds IN condition for pagination filtering.
+		 * Returns the next unique bound-parameter name for this transform() call.
+		 * @return string
+		 */
+		private function nextParameterName(): string {
+			return '__pagination_pk_' . $this->parameterSequence++;
+		}
+
+		/**
+		 * Adds IN condition for pagination filtering. Binds each page value as a named
+		 * parameter instead of embedding it as a literal AstNumber node — a non-numeric
+		 * primary key (e.g. a string key) is no longer silently miscompiled as a number.
 		 * @param AstRetrieve $ast
+		 * @param array<string, mixed> $parameters
 		 * @param list<int|string> $filteredKeys
 		 * @return void
 		 */
-		private function addInConditionForPagination(AstRetrieve $ast, array $filteredKeys): void {
+		private function addInConditionForPagination(AstRetrieve $ast, array &$parameters, array $filteredKeys): void {
 			// Create the primary key identifier
 			$astIdentifier = $this->createPrimaryKeyIdentifier();
-			
-			// Transform filtered keys to AstNumbers
-			$astValues = array_map(
-				fn($item) => new AstNumber((string)$item),
-				$filteredKeys
-			);
-			
+
+			// Bind each page value as a named parameter rather than guessing its AST literal type
+			$astValues = [];
+
+			foreach ($filteredKeys as $item) {
+				$paramName = $this->nextParameterName();
+				$parameters[$paramName] = $item;
+				$astValues[] = new AstParameter($paramName);
+			}
+
 			// Check if AstIn already exists and replace its parameters
 			try {
 				$visitor = new DetectPrimaryKeyInClause($astIdentifier);
