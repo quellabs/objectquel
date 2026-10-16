@@ -14,11 +14,11 @@
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstIn;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstNumber;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstParameter;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRangeDatabase;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRetrieve;
 	use Quellabs\ObjectQuel\ObjectQuel\Helpers\PrimaryKeyInfo;
 	use Quellabs\ObjectQuel\ObjectQuel\QuelToSQL\QuelToSQLRetrieve;
-	use Quellabs\ObjectQuel\Execution\Visitors\DetectPrimaryKeyInClause;
-	use Quellabs\ObjectQuel\Execution\Visitors\DetectPrimaryKeyInClauseException;
+	use Quellabs\ObjectQuel\Planner\Helpers\RangeUtilities;
 	
 	class PaginationTransformer {
 		
@@ -60,109 +60,56 @@
 					$this->primaryKeyInfo = PrimaryKeyInfo::fromRetrieve($ast, $this->entityStore);
 					$this->parameterSequence = 0;
 					$this->processPagination($ast, $parameters, (int)$window, (int)$windowSize);
+					if (!$ast->isUnique() && $ast->getDirective('InValuesAreFinal') !== true) {
+						$sort = $ast->getSort();
+						$sort[] = ['ast' => $this->createPrimaryKeyIdentifier(), 'order' => 'asc'];
+						$ast->setSort($sort);
+					}
 				} finally {
 					$this->primaryKeyInfo = null;
 				}
 			}
 		}
 		
-		// ========== PAGINATION METHODS ==========
-		
 		/**
-		 * Processes pagination for the query.
-		 * @param AstRetrieve $ast
-		 * @param array<string, mixed> $parameters
-		 * @param int $window
-		 * @param int $windowSize
-		 * @return void
-		 * @throws QuelException
-		 * @throws EntityResolutionException
-		 */
-		private function processPagination(AstRetrieve $ast, array &$parameters, int $window, int $windowSize): void {
-			// Look for the 'InValuesAreFinal' directive which indicates that any IN conditions
-			// in the query are already finalized and don't need additional validation/processing
-			// This is an optimization flag that can skip the validation phase of pagination
-			$skipValidation = $ast->getDirective('InValuesAreFinal') === true;
-			
-			// Choose the appropriate pagination strategy based on the directive
-			if ($skipValidation) {
-				// Fast path: Skip the validation step and process pagination directly
-				// Used when we know the IN conditions are already properly constructed
-				$this->processPaginationSkippingValidation($ast, $parameters, $window, $windowSize);
-			} else {
-				// Standard path: Use the full validation approach which fetches all primary keys first
-				// This is the safer, more comprehensive method for most queries
-				$this->processPaginationWithValidation($ast, $parameters, $window, $windowSize);
-			}
-		}
-		
-		/**
-		 * Processes pagination by directly manipulating existing IN() values.
+		 * Pages primary keys before fetching the complete matching joined rows.
 		 * @param AstRetrieve $ast
 		 * @param array<string, mixed> $parameters
 		 * @param int $window
 		 * @param int $windowSize
 		 * @return void
 		 */
-		private function processPaginationSkippingValidation(
+		private function processPagination(
 			AstRetrieve $ast,
 			array &$parameters,
 			int $window,
 			int $windowSize
 		): void {
-			try {
-				// Fetch IN() statement
-				$astIdentifier = $this->createPrimaryKeyIdentifier();
-				$visitor = new DetectPrimaryKeyInClause($astIdentifier);
-				$ast->getConditions()?->accept($visitor);
-				
-				// If no exception, fall back to validation method
-				$this->processPaginationWithValidation($ast, $parameters, $window, $windowSize);
-				
-			} catch (DetectPrimaryKeyInClauseException $exception) {
-				$astObject = $exception->getAstObject();
-				
-				$filteredParams = array_slice(
-					$astObject->getParameters(),
-					$window * $windowSize,
-					$windowSize
-				);
-				
-				$astObject->setParameters($filteredParams);
+			if ($window > intdiv(PHP_INT_MAX, $windowSize)) {
+				throw new QuelException('The window page and size produce an offset that is too large.');
 			}
-		}
-		
-		/**
-		 * Processes pagination by fetching all primary keys first.
-		 * @param AstRetrieve $ast
-		 * @param array<string, mixed> $parameters
-		 * @param int $window
-		 * @param int $windowSize
-		 * @return void
-		 */
-		private function processPaginationWithValidation(
-			AstRetrieve $ast,
-			array &$parameters,
-			int $window,
-			int $windowSize
-		): void {
-			// First pass: Execute a lightweight query to fetch only the primary keys
-			// This avoids loading full records when we only need to determine pagination boundaries
-			$primaryKeys = $this->fetchAllPrimaryKeysForPagination($ast, $parameters);
 
-			// A one-to-many eager join can fan the same row (and therefore the same
-			// primary key) out across several result rows — keep each key's first
-			// occurrence so the page subset below isn't skewed by duplicates.
-			$primaryKeys = array_values(array_unique($primaryKeys));
+			$useSqlPage = $this->canPageKeysInSql($ast);
+			$primaryKeys = $this->fetchPrimaryKeysForPagination(
+				$ast,
+				$parameters,
+				$useSqlPage ? $window * $windowSize : null,
+				$windowSize
+			);
+
+			// The fallback key query can repeat a parent for every joined child.
+			if (!$useSqlPage) {
+				$primaryKeys = array_values(array_unique($primaryKeys));
+			}
 
 			// Early exit if no records match the query conditions
 			if (empty($primaryKeys)) {
+				$this->addImpossibleCondition($ast);
 				return;
 			}
 			
-			// Apply pagination logic to get only the subset of primary keys for the requested page
-			// Uses the window (offset) and window size (limit) from the AST
-			$filteredKeys = $this->getPageSubset($primaryKeys, $window, $windowSize);
+			// The SQL key query is already paged; slice only the fallback results.
+			$filteredKeys = $useSqlPage ? $primaryKeys : $this->getPageSubset($primaryKeys, $window, $windowSize);
 			
 			// Handle edge case where pagination parameters result in no valid results
 			// (e.g., requesting page 100 when there are only 50 total pages)
@@ -180,25 +127,100 @@
 		}
 
 		/**
-		 * Fetches all primary keys for pagination by temporarily modifying the query.
-		 * Never forces SELECT DISTINCT: combined with an ORDER BY on anything other than
-		 * the primary key, DISTINCT is invalid or silently reorders rows on some engines.
-		 * Deduplication happens afterward in PHP (see processPaginationWithValidation()).
+		 * Checks whether the key query can have exactly one row per root entity.
+		 * @param AstRetrieve $ast Query after normalization and optimization
+		 * @return bool
+		 */
+		private function canPageKeysInSql(AstRetrieve $ast): bool {
+			if (!$this->platform->supportsOffsetPagination() ||
+				$ast->getDirective('InValuesAreFinal') === true ||
+				$ast->getHaving() !== null ||
+				$ast->getGroupBy() !== []) {
+				return false;
+			}
+
+			$root = $this->primaryKeyInfo?->range;
+			if (!$root instanceof AstRangeDatabase || get_class($root) !== AstRangeDatabase::class) {
+				return false;
+			}
+
+			foreach ($ast->getRanges() as $range) {
+				if ($range === $root) {
+					continue;
+				}
+				if (get_class($range) !== AstRangeDatabase::class ||
+					$range->getJoinProperty() === null ||
+					$range->isRequired()) {
+					return false;
+				}
+			}
+
+			foreach ($ast->getValues() as $value) {
+				if (!$value->getExpression() instanceof AstIdentifier) {
+					return false;
+				}
+			}
+
+			if ($ast->getConditions() !== null) {
+				foreach (RangeUtilities::collectRangesFromNode($ast->getConditions()) as $range) {
+					if ($range->getName() !== $root->getName()) {
+						return false;
+					}
+				}
+			}
+
+			$metadata = $this->entityStore->getMetadata($this->primaryKeyInfo->entityName);
+			foreach ($ast->getSort() as $sortItem) {
+				$identifier = $sortItem['ast'];
+				if (!$identifier instanceof AstIdentifier ||
+					$identifier->getRange()?->getName() !== $root->getName() ||
+					$identifier->getNext() === null ||
+					$identifier->getNext()->getNext() !== null ||
+					$metadata->getColumnName($identifier->getNext()->getName()) === null) {
+					return false;
+				}
+			}
+
+			return true;
+		}
+
+		/**
+		 * Fetches a bounded root-key page when safe, otherwise all sorted joined keys.
+		 * The fallback is deduplicated afterward so joined-column sorting works.
 		 * @param AstRetrieve $ast
 		 * @param array<string, mixed> $parameters
+		 * @param int|null $offset SQL row offset when the key query has one row per parent
+		 * @param int $windowSize Requested parent count
 		 * @return list<int|string>
 		 */
-		private function fetchAllPrimaryKeysForPagination(AstRetrieve $ast, array $parameters): array {
+		private function fetchPrimaryKeysForPagination(AstRetrieve $ast, array $parameters, ?int $offset, int $windowSize): array {
 			// Store original state
 			$originalValues = $ast->getValues();
+			$originalUnique = $ast->isUnique();
+			$originalSort = $ast->getSort();
+			$originalRanges = $ast->getRanges();
 
 			try {
 				// Modify query to get only primary keys
 				$astIdentifier = $this->createPrimaryKeyIdentifier();
 				$ast->setValues([new AstAlias("pk", $astIdentifier)]);
+				$ast->setUnique(false);
+				if ($offset !== null) {
+					$ast->setRanges([$this->primaryKeyInfo->range]);
+				}
+				if ($ast->getDirective('InValuesAreFinal') !== true) {
+					$sort = $originalSort;
+					$sort[] = ['ast' => $this->createPrimaryKeyIdentifier(), 'order' => 'asc'];
+					$ast->setSort($sort);
+				}
 
 				// Execute modified query
 				$sql = $this->convertToSQL($ast, $parameters);
+				if ($offset !== null) {
+					$sql .= $this->platform->getDatabaseType() === 'sqlsrv'
+						? " OFFSET {$offset} ROWS FETCH NEXT {$windowSize} ROWS ONLY"
+						: " LIMIT {$windowSize} OFFSET {$offset}";
+				}
 
 				// Execute the query and return the first column
 				$result = $this->connection->execute($sql, $parameters);
@@ -211,6 +233,9 @@
 			} finally {
 				// Always restore original state
 				$ast->setValues($originalValues);
+				$ast->setUnique($originalUnique);
+				$ast->setSort($originalSort);
+				$ast->setRanges($originalRanges);
 			}
 		}
 		
@@ -258,11 +283,15 @@
 		}
 		
 		/**
-		 * Returns the next unique bound-parameter name for this transform() call.
+		 * Returns a bound-parameter name unused by the caller.
+		 * @param array<string, mixed> $parameters Existing bound parameters
 		 * @return string
 		 */
-		private function nextParameterName(): string {
-			return '__pagination_pk_' . $this->parameterSequence++;
+		private function nextParameterName(array $parameters): string {
+			do {
+				$name = '__pagination_pk_' . $this->parameterSequence++;
+			} while (array_key_exists($name, $parameters));
+			return $name;
 		}
 
 		/**
@@ -282,21 +311,12 @@
 			$astValues = [];
 
 			foreach ($filteredKeys as $item) {
-				$paramName = $this->nextParameterName();
+				$paramName = $this->nextParameterName($parameters);
 				$parameters[$paramName] = $item;
 				$astValues[] = new AstParameter($paramName);
 			}
 
-			// Check if AstIn already exists and replace its parameters
-			try {
-				$visitor = new DetectPrimaryKeyInClause($astIdentifier);
-				$ast->getConditions()?->accept($visitor);
-			} catch (DetectPrimaryKeyInClauseException $exception) {
-				$exception->getAstObject()->setParameters($astValues);
-				return;
-			}
-			
-			// Create new AstIn condition
+			// Keep the original predicate intact, including any OR branch containing an IN.
 			$astIn = new AstIn($astIdentifier, $astValues);
 			
 			if ($ast->getConditions() === null) {
