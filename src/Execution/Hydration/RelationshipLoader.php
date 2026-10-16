@@ -199,7 +199,7 @@
 			// resolveTargetProperty returns null only when the target entity has no
 			// primary key — a configuration error that should have been caught earlier.
 			$relationPropertyName = $this->resolveTargetProperty($dependency);
-			
+
 			// Error when entity has no primary key
 			if ($relationPropertyName === null) {
 				throw new \LogicException(
@@ -207,14 +207,25 @@
 					"has no primary key. Ensure the entity is correctly annotated."
 				);
 			}
-			
-			// Create the proxy
-			$proxy = $this->findOrCreateProxy($targetEntityName, $relationPropertyName, $relationColumnValue);
-			
+
+			// The fast, PK-based proxy only works when $relationPropertyName actually is the
+			// target's primary key: it seeds the proxy's PK and later calls find() by that
+			// same value, relying on EntityHydrator to populate this exact instance in place
+			// once it's re-discovered in the UnitOfWork by that PK. When referencedColumn names
+			// a different (non-PK) property, that value is not a valid PK lookup at all, so a
+			// separate path resolves it correctly instead.
+			$targetMetadata = $this->entityStore->getMetadata($targetEntityName);
+
+			if ($relationPropertyName === $targetMetadata->getPrimaryKey()) {
+				$proxy = $this->findOrCreateProxy($targetEntityName, $relationPropertyName, $relationColumnValue);
+			} else {
+				$proxy = $this->createNonPrimaryKeyProxy($entity, $property, $targetEntityName, $relationPropertyName, $relationColumnValue);
+			}
+
 			// Set the proxy on the original entity
 			$this->propertyHandler->set($entity, $property, $proxy);
 		}
-		
+
 		/**
 		 * Returns an existing entity from the UnitOfWork, or instantiates and persists a new proxy.
 		 * @param class-string $targetEntityName
@@ -232,39 +243,115 @@
 			$existing = $this->unitOfWork->findEntity($targetEntityName, [
 				$relationPropertyName => $relationColumnValue
 			]);
-			
+
 			// If the entity already is in UnitOfWork, return it
 			if ($existing !== null) {
 				return $existing;
 			}
-			
+
 			// Create a new proxy if no existing entity was found
 			$generator = $this->entityStore->getProxyGenerator();
 			$proxyClassName = $generator->getProxyClass($targetEntityName);
-			
+
 			// Load the proxy class file if it doesn't exist
 			if (!class_exists($proxyClassName, false)) {
 				require_once $generator->getProxyFilePath($targetEntityName);
 			}
-			
+
 			// Build the PK-based initializer: seeds this proxy's PK then lets find() hydrate it
 			$entityManager = $this->entityManager;
 			$initializer = function () use ($entityManager, $targetEntityName, $relationColumnValue): void {
 				$entityManager->find($targetEntityName, $relationColumnValue);
 			};
-			
+
 			// Instantiate the proxy with the explicit initializer
 			$proxy = new $proxyClassName($this->entityManager, $initializer);
-			
+
 			// Set the primary key on the proxy using the target entity's primary key property name
 			$metadata = $this->entityStore->getMetadata($targetEntityName);
 			$this->propertyHandler->set($proxy, $metadata->identifierKeys[0], $relationColumnValue);
-			
+
 			// Put the proxy under ownership
 			$this->entityManager->persist($proxy);
-			
+
 			// Return the proxy
 			return $proxy;
+		}
+
+		/**
+		 * Builds a lazy proxy for an owning relation whose referencedColumn names a non-PK
+		 * property on the target entity. Such a proxy cannot be pre-registered under the
+		 * identity-map key find() would use (the UnitOfWork only indexes entities by their
+		 * real primary key), so it is resolved by findOneBy() on $relationPropertyName instead,
+		 * and the result is copied into this exact proxy instance — mirroring the InverseOf
+		 * scalar lazy-load pattern in loadInverseScalarLazy(), which faces the same constraint.
+		 * @param object $entity The entity on which the proxy will be set
+		 * @param string $property The property on $entity that will hold the proxy
+		 * @param class-string $targetEntityName
+		 * @param string $relationPropertyName The (non-PK) property on the target to match
+		 * @param int|string $relationColumnValue The value to match it against
+		 * @return object
+		 */
+		private function createNonPrimaryKeyProxy(
+			object $entity,
+			string $property,
+			string $targetEntityName,
+			string $relationPropertyName,
+			int|string $relationColumnValue
+		): object {
+			$generator = $this->entityStore->getProxyGenerator();
+			$proxyClassName = $generator->getProxyClass($targetEntityName);
+
+			if (!class_exists($proxyClassName, false)) {
+				require_once $generator->getProxyFilePath($targetEntityName);
+			}
+
+			// Capture references for the initializer closure
+			$entityManager = $this->entityManager;
+			$propertyHandler = $this->propertyHandler;
+			$unitOfWork = $this->unitOfWork;
+
+			return new $proxyClassName(
+				$this->entityManager,
+				function (ProxyInterface $proxy) use (
+					$entityManager,
+					$unitOfWork,
+					$propertyHandler,
+					$entity,
+					$property,
+					$targetEntityName,
+					$relationPropertyName,
+					$relationColumnValue
+				): void {
+					// doInitialize() invokes this on every accessor call, so bail out once the
+					// proxy has already been resolved to avoid re-running the findOneBy query.
+					if ($proxy->isInitialized()) {
+						return;
+					}
+
+					// findOneBy returns a fully hydrated entity registered in the UnitOfWork.
+					$result = $entityManager->findOneBy($targetEntityName, [$relationPropertyName => $relationColumnValue]);
+
+					// Copy the resolved entity's scalar columns into the proxy itself. Generated
+					// accessors read the proxy's own fields via parent::, so the access that
+					// triggered initialization must see real data rather than an empty proxy.
+					//
+					// Marked initialized *before* deserializing: deserialize() calls the target
+					// entity's own setters when they exist, and the proxy's generated setters
+					// check isInitialized() exactly like its getters do — populating this proxy
+					// while it still reports uninitialized would re-enter this same closure via
+					// doInitialize() on the first such setter call, looping forever.
+					if ($result !== null) {
+						$proxy->setInitialized();
+						$serializer = $unitOfWork->getSerializer();
+						$serializer->deserialize($proxy, $serializer->serialize($result));
+					}
+
+					// Point the parent at the fully hydrated managed entity so subsequent reads
+					// (including its own relations) resolve through it rather than the proxy.
+					$propertyHandler->set($entity, $property, $result);
+				}
+			);
 		}
 		
 		/**
@@ -366,21 +453,28 @@
 					
 					// findOneBy returns a fully hydrated entity registered in the UnitOfWork.
 					$result = $entityManager->findOneBy($targetEntity, [$relation => $parentKeyValue]);
-					
+
 					// Copy the resolved entity's scalar columns into the proxy itself. Generated
 					// accessors read the proxy's own fields via parent::, so the access that triggered
 					// initialization must see real data rather than an empty proxy.
+					//
+					// Marked initialized *before* deserializing: deserialize() calls the target
+					// entity's own setters when they exist, and the proxy's generated setters check
+					// isInitialized() exactly like its getters do — populating this proxy while it
+					// still reports uninitialized would re-enter this same closure via doInitialize()
+					// on the first such setter call, looping forever.
 					if ($result !== null) {
+						$proxy->setInitialized();
 						$serializer = $unitOfWork->getSerializer();
 						$serializer->deserialize($proxy, $serializer->serialize($result));
 					}
-					
+
 					// Point the parent at the fully hydrated managed entity so subsequent reads
 					// (including its own relations) resolve through it rather than the proxy.
 					$propertyHandler->set($entity, $property, $result);
 				}
 			);
-			
+
 			// Set proxy on the entity
 			$this->propertyHandler->set($entity, $property, $proxy);
 		}
