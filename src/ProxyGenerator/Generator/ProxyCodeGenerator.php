@@ -244,7 +244,8 @@ PHP
 			// Every identifier property's getter — not just the first — must be callable on
 			// an uninitialized proxy without triggering a load: findOrCreateProxy() seeds all
 			// of them from the foreign key, and code reading the entity's identity (e.g.
-			// UnitOfWork::getIdentifiers()) must see those seeded values directly.
+			// UnitOfWork::getIdentifiers()) must see those seeded values directly. An entity
+			// without a primary key yields an empty list here, so none are skipped below.
 			$identifierKeysGetterMethods = array_map(
 				static fn(string $property) => 'get' . ucfirst($property),
 				$metadata->identifierKeys

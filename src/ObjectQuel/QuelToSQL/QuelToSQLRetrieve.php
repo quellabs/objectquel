@@ -316,12 +316,9 @@
 		private function getSortUsingIn(AstRetrieve $retrieve): string {
 			// Check and retrieve the primary key information
 			$primaryKeyInfo = PrimaryKeyInfo::fromRetrieve($retrieve, $this->entityStore);
-			
-			// Create an AstIdentifier for searching for an IN() in the query
-			$astIdentifier = new AstIdentifier($primaryKeyInfo->entityName);
-			
+
 			try {
-				$visitor = new DetectPrimaryKeyInClause($astIdentifier);
+				$visitor = new DetectPrimaryKeyInClause($primaryKeyInfo->range, $primaryKeyInfo->primaryKeys[0]);
 				$retrieve->getConditions()?->accept($visitor);
 				return $this->getSortDefault($retrieve);
 			} catch (DetectPrimaryKeyInClauseException $exception) {
