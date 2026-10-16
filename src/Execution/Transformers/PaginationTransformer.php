@@ -153,11 +153,6 @@
 			int $window,
 			int $windowSize
 		): void {
-			// Without any sort at all, row order (and therefore which rows land on which
-			// page) is undefined and can shift between two fetches of the "same" page —
-			// impose one over the full primary key tuple so paging is deterministic.
-			$this->ensureDeterministicSort($ast, $primaryKeyInfo);
-
 			// First pass: Execute a lightweight query to fetch only the primary keys
 			// This avoids loading full records when we only need to determine pagination boundaries
 			$primaryKeyTuples = $this->fetchAllPrimaryKeysForPagination($ast, $parameters, $primaryKeyInfo);
@@ -182,31 +177,10 @@
 			}
 
 			// Modify the original query to include a filter that limits results to only the
-			// primary key tuples determined to belong on this page. The query's own ORDER BY
-			// (left untouched above) reproduces the exact order already established by the
-			// first pass, so the final result set comes back in that same order.
+			// primary key tuples determined to belong on this page. The query's own ORDER BY,
+			// if any (left untouched above), reproduces the exact order already established
+			// by the first pass, so the final result set comes back in that same order.
 			$this->addFilterForPagination($ast, $parameters, $primaryKeyInfo, $pageTuples);
-		}
-
-		/**
-		 * Imposes a deterministic ORDER BY over the full primary key tuple when the query
-		 * declares no sort of its own.
-		 * @param AstRetrieve $ast
-		 * @param PrimaryKeyInfo $primaryKeyInfo
-		 * @return void
-		 */
-		private function ensureDeterministicSort(AstRetrieve $ast, PrimaryKeyInfo $primaryKeyInfo): void {
-			if ($ast->getSort() !== []) {
-				return;
-			}
-
-			$sort = [];
-
-			foreach ($this->createPrimaryKeyIdentifiers($primaryKeyInfo) as $identifier) {
-				$sort[] = ['ast' => $identifier, 'order' => 'asc'];
-			}
-
-			$ast->setSort($sort);
 		}
 
 		/**
