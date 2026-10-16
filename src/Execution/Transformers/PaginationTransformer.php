@@ -20,6 +20,9 @@
 	use Quellabs\ObjectQuel\ObjectQuel\QuelToSQL\QuelToSQLRetrieve;
 	use Quellabs\ObjectQuel\Planner\Helpers\RangeUtilities;
 	
+	/**
+	 * Selects a page of root entities before loading their complete joined rows.
+	 */
 	class PaginationTransformer {
 		
 		private EntityStore $entityStore;
@@ -89,18 +92,16 @@
 		 * @param int $window
 		 * @param int $windowSize
 		 * @return void
-		 * @throws QuelException
+		 * @throws QuelException|EntityResolutionException
 		 */
-		private function processPagination(
-			AstRetrieve $ast,
-			array &$parameters,
-			int $window,
-			int $windowSize
-		): void {
+		private function processPagination(AstRetrieve $ast, array &$parameters, int $window, int $windowSize): void {
+			// Validate window size
 			if ($window > intdiv(PHP_INT_MAX, $windowSize)) {
 				throw new QuelException('The window page and size produce an offset that is too large.');
 			}
 
+			// SQL can page keys only when the key query has one row per parent.
+			// Otherwise, fetch all matching keys for PHP deduplication and slicing.
 			$useSqlPage = $this->canPageKeysInSql($ast);
 			$primaryKeys = $this->fetchPrimaryKeysForPagination(
 				$ast,
@@ -142,8 +143,10 @@
 		 * Checks whether the key query can have exactly one row per root entity.
 		 * @param AstRetrieve $ast Query after normalization and optimization
 		 * @return bool
+		 * @throws EntityResolutionException
 		 */
 		private function canPageKeysInSql(AstRetrieve $ast): bool {
+			// Offset paging cannot preserve custom IN-list order or grouped results.
 			if (!$this->platform->supportsOffsetPagination() ||
 				$ast->getDirective('InValuesAreFinal') === true ||
 				$ast->getHaving() !== null ||
@@ -151,15 +154,26 @@
 				return false;
 			}
 
-			$root = $this->primaryKeyInfo?->range;
-			if (!$root instanceof AstRangeDatabase || get_class($root) !== AstRangeDatabase::class) {
+			// The key pass needs primary-key metadata for the root entity.
+			$primaryKeyInfo = $this->primaryKeyInfo;
+			
+			if ($primaryKeyInfo === null) {
 				return false;
 			}
 
+			// Replacing the range list is safe only for a plain database root.
+			$root = $primaryKeyInfo->range;
+			
+			if ($root::class !== AstRangeDatabase::class) {
+				return false;
+			}
+
+			// Required or custom joins can change which parents appear in the page.
 			foreach ($ast->getRanges() as $range) {
 				if ($range === $root) {
 					continue;
 				}
+
 				if (get_class($range) !== AstRangeDatabase::class ||
 					$range->getJoinProperty() === null ||
 					$range->isRequired()) {
@@ -167,12 +181,14 @@
 				}
 			}
 
+			// Computed values may depend on joins removed from the key pass.
 			foreach ($ast->getValues() as $value) {
 				if (!$value->getExpression() instanceof AstIdentifier) {
 					return false;
 				}
 			}
 
+			// A predicate on a joined range changes which parent keys match.
 			if ($ast->getConditions() !== null) {
 				foreach (RangeUtilities::collectRangesFromNode($ast->getConditions()) as $range) {
 					if ($range->getName() !== $root->getName()) {
@@ -181,9 +197,12 @@
 				}
 			}
 
-			$metadata = $this->entityStore->getMetadata($this->primaryKeyInfo->entityName);
+			// Only mapped root columns retain their order without the joins.
+			$metadata = $this->entityStore->getMetadata($primaryKeyInfo->entityName);
+
 			foreach ($ast->getSort() as $sortItem) {
 				$identifier = $sortItem['ast'];
+
 				if (!$identifier instanceof AstIdentifier ||
 					$identifier->getRange()?->getName() !== $root->getName() ||
 					$identifier->getNext() === null ||
@@ -217,12 +236,15 @@
 				$astIdentifier = $this->createPrimaryKeyIdentifier();
 				$ast->setValues([new AstAlias("pk", $astIdentifier)]);
 				$ast->setUnique(false);
+
 				if ($offset !== null) {
 					if ($this->primaryKeyInfo === null) {
 						throw new \LogicException('Pagination primary key information is missing.');
 					}
+
 					$ast->setRanges([$this->primaryKeyInfo->range]);
 				}
+
 				if ($ast->getDirective('InValuesAreFinal') !== true) {
 					$sort = $originalSort;
 					$sort[] = ['ast' => $this->createPrimaryKeyIdentifier(), 'order' => 'asc'];
@@ -231,10 +253,13 @@
 
 				// Execute modified query
 				$sql = $this->convertToSQL($ast, $parameters);
+
 				if ($offset !== null) {
-					$sql .= $this->platform->getDatabaseType() === 'sqlsrv'
-						? " OFFSET {$offset} ROWS FETCH NEXT {$windowSize} ROWS ONLY"
-						: " LIMIT {$windowSize} OFFSET {$offset}";
+					if ($this->platform->getDatabaseType() === 'sqlsrv') {
+						$sql .= " OFFSET {$offset} ROWS FETCH NEXT {$windowSize} ROWS ONLY";
+					} else {
+						$sql .= " LIMIT {$windowSize} OFFSET {$offset}";
+					}
 				}
 
 				// Execute the query and return the first column
@@ -276,6 +301,7 @@
 		private function convertToSQL(AstRetrieve $retrieve, array $parameters): string {
 			// Convert all keys to strings
 			$stringKeyedParameters = [];
+			
 			foreach ($parameters as $key => $value) {
 				$stringKeyedParameters[(string)$key] = $value;
 			}
@@ -306,6 +332,7 @@
 			do {
 				$name = '__pagination_pk_' . $this->parameterSequence++;
 			} while (array_key_exists($name, $parameters));
+			
 			return $name;
 		}
 
@@ -336,10 +363,9 @@
 			
 			if ($ast->getConditions() === null) {
 				$ast->setConditions($astIn);
-				return;
+			} else {
+				$ast->setConditions(new AstBinaryOperator($ast->getConditions(), $astIn, "AND"));
 			}
-
-			$ast->setConditions(new AstBinaryOperator($ast->getConditions(), $astIn, "AND"));
 		}
 		
 		/**
