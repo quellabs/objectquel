@@ -23,11 +23,11 @@
 	 * Execution\Executors\CreateTableExecutor, not a second implementation
 	 * of index lifecycle (see objectquel-index-clause-design.md).
 	 *
-	 * Embedded `foreign key (col) references Table (col) ...` entries are
-	 * carried separately too, as AstCreateTableForeignKey descriptors in
-	 * declaration order — compiled directly by QuelToSQLCreate as trailing
-	 * table constraints, not sugar over a separate statement (see
-	 * objectquel-foreign-key-design.md, decision 2).
+	 * Embedded `foreign key (col {, col}) references Table (col {, col})
+	 * ...` entries are carried separately too, as AstCreateTableForeignKey
+	 * descriptors in declaration order — compiled directly by
+	 * QuelToSQLCreate as trailing table constraints, not sugar over a
+	 * separate statement.
 	 */
 	class AstCreateTable extends Ast implements AstStatement {
 

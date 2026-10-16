@@ -438,54 +438,52 @@
 		}
 
 		/**
-		 * `add foreign key (col) references Table (col) [on delete action]
-		 * [on update action]` — one native `ALTER TABLE ... ADD CONSTRAINT
-		 * ... FOREIGN KEY ...` statement, same as three of the four
-		 * supported dialects natively support (see
-		 * objectquel-foreign-key-design.md, "Dialect reality"). The
+		 * `add foreign key (col {, col}) references Table (col {, col})
+		 * [on delete action] [on update action]` — one native `ALTER
+		 * TABLE ... ADD CONSTRAINT ... FOREIGN KEY ...` statement, same as
+		 * three of the four supported dialects natively support. The
 		 * constraint name is always the derived one — never
-		 * author-supplied (see objectquel-foreign-key-design.md, decision 1).
+		 * author-supplied.
 		 * @param string $tableName
 		 * @param AstAlterAddForeignKey $operation
 		 * @return string
-		 * @throws \LogicException If the referenced column was never resolved
+		 * @throws \LogicException If the referenced columns were never resolved
 		 * @throws QuelException If foreign-key changes aren't supported on the connected engine
 		 */
 		private function compileAddForeignKey(string $tableName, AstAlterAddForeignKey $operation): string {
 			$this->assertForeignKeyChangesSupported($tableName);
 
-			$referencedColumn = $operation->getReferencedColumn();
+			$referencedColumns = $operation->getReferencedColumns();
 
-			if ($referencedColumn === null) {
+			if ($referencedColumns === null) {
 				throw new \LogicException(
-					"Cannot compile foreign key on '{$tableName}.{$operation->getColumn()}': the referenced column " .
-					"was never resolved — callers must resolve a column-less 'references Table' via " .
+					"Cannot compile foreign key on '{$tableName}.(" . implode(', ', $operation->getColumns()) . ")': " .
+					"the referenced columns were never resolved — callers must resolve a column-less 'references Table' via " .
 					"ForeignKeyReferenceResolver before compiling"
 				);
 			}
 
-			$name = ForeignKeyConstraintNamer::nameOrThrow($tableName, $operation->getColumn());
+			$name = ForeignKeyConstraintNamer::nameForColumnsOrThrow($tableName, $operation->getColumns());
 			$dialect = $this->platform->getDatabaseType();
 
 			return sprintf(
 				'ALTER TABLE %s ADD CONSTRAINT %s FOREIGN KEY (%s) REFERENCES %s (%s) ON DELETE %s ON UPDATE %s',
 				$this->quotedTable($tableName),
 				$this->identifierQuoter->quoteIdentifier($name),
-				$this->identifierQuoter->quoteIdentifier($operation->getColumn()),
+				$this->identifierQuoter->quoteIdentifierList($operation->getColumns()),
 				$this->identifierQuoter->quoteIdentifier($operation->getReferencedTable()),
-				$this->identifierQuoter->quoteIdentifier($referencedColumn),
+				$this->identifierQuoter->quoteIdentifierList($referencedColumns),
 				ForeignKeyActionNormalizer::forDialect($operation->getOnDelete(), $dialect),
 				ForeignKeyActionNormalizer::forDialect($operation->getOnUpdate(), $dialect)
 			);
 		}
 
 		/**
-		 * `drop foreign key (col)` — targets by column, per
-		 * objectquel-foreign-key-design.md, decision 1, resolving to the
-		 * same derived name `add foreign key` would have used for that
-		 * column. MySQL/MariaDB use the dedicated `DROP FOREIGN KEY`
-		 * clause; pgsql/sqlsrv use the general-purpose `DROP CONSTRAINT`
-		 * (both name their FK as an ordinary named constraint).
+		 * `drop foreign key (col {, col})` — targets by column list,
+		 * resolving to the same derived name `add foreign key` would have
+		 * used for those columns. MySQL/MariaDB use the dedicated `DROP
+		 * FOREIGN KEY` clause; pgsql/sqlsrv use the general-purpose `DROP
+		 * CONSTRAINT` (both name their FK as an ordinary named constraint).
 		 * @param string $tableName
 		 * @param AstAlterDropForeignKey $operation
 		 * @return string
@@ -495,7 +493,7 @@
 			$this->assertForeignKeyChangesSupported($tableName);
 
 			$quotedName = $this->identifierQuoter->quoteIdentifier(
-				ForeignKeyConstraintNamer::nameOrThrow($tableName, $operation->getColumn())
+				ForeignKeyConstraintNamer::nameForColumnsOrThrow($tableName, $operation->getColumns())
 			);
 
 			if ($this->usesNativeDropClause()) {
@@ -531,9 +529,8 @@
 
 		/**
 		 * SQLite's ALTER TABLE cannot add or drop a foreign key at all —
-		 * FK constraints there can only be declared inline in CREATE TABLE
-		 * (see objectquel-foreign-key-design.md, "Dialect reality"). Same
-		 * 'alter_unsupported' treatment retype/primary-key changes get.
+		 * FK constraints there can only be declared inline in CREATE TABLE.
+		 * Same 'alter_unsupported' treatment retype/primary-key changes get.
 		 * @param string $tableName
 		 * @return void
 		 * @throws QuelException
@@ -543,7 +540,7 @@
 				throw new QuelException(
 					"Cannot change foreign keys on '{$tableName}': SQLite has no ALTER TABLE support for " .
 					"adding or dropping foreign keys — they can only be declared inline in CREATE TABLE, " .
-					"which 'alter' does not attempt (see objectquel-foreign-key-design.md, 'Dialect reality')",
+					"which 'alter' does not attempt",
 					'alter_unsupported'
 				);
 			}

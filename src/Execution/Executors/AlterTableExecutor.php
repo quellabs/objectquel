@@ -229,9 +229,13 @@
 			$resolved = [];
 
 			foreach ($operations as $operation) {
-				if ($operation instanceof AstAlterAddForeignKey && $operation->getReferencedColumn() === null) {
-					$referencedColumn = ForeignKeyReferenceResolver::resolveReferencedColumn($this->connection, $operation->getReferencedTable());
-					$operation = $operation->withReferencedColumn($referencedColumn);
+				if ($operation instanceof AstAlterAddForeignKey && $operation->getReferencedColumns() === null) {
+					$referencedColumns = ForeignKeyReferenceResolver::resolveReferencedColumns(
+						$this->connection,
+						$operation->getReferencedTable(),
+						count($operation->getColumns())
+					);
+					$operation = $operation->withReferencedColumns($referencedColumns);
 				}
 
 				$resolved[] = $operation;

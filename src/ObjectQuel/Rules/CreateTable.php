@@ -31,12 +31,13 @@
 	 * `create` column list is additive by construction. See
 	 * objectquel-index-clause-design.md.
 	 *
-	 * The column list may also contain `foreign key (col) references Table
-	 * (col) [on delete action] [on update action]` entries (any number, in
+	 * The column list may also contain `foreign key (col {, col})
+	 * references Table [(col {, col})] [on delete action] [on update
+	 * action]` entries (any number, in
 	 * any position) — compiled directly by QuelToSQLCreate as trailing
 	 * table constraints, same grammar as alter's `add foreign key`
 	 * sub-operation, minus the `add` keyword, for the same reason indexes
-	 * omit it here. See objectquel-foreign-key-design.md.
+	 * omit it here.
 	 */
 	class CreateTable {
 
@@ -153,52 +154,56 @@
 		}
 
 		/**
-		 * `foreign key (col) references Table (col) [on delete action] [on
-		 * update action]` — same grammar as alter's `add foreign key`,
-		 * minus the `add` keyword.
+		 * `foreign key (col {, col}) references Table (col {, col}) [on
+		 * delete action] [on update action]` — same grammar as alter's `add
+		 * foreign key`, minus the `add` keyword.
 		 * @throws LexerException|ParserException
 		 */
 		private function parseForeignKeyEntry(): AstCreateTableForeignKey {
 			$foreignKey = ForeignKeyClause::parse($this->lexer);
 
 			return new AstCreateTableForeignKey(
-				$foreignKey['column'],
+				$foreignKey['columns'],
 				$foreignKey['referencedTable'],
-				$foreignKey['referencedColumn'],
+				$foreignKey['referencedColumns'],
 				$foreignKey['onDelete'],
 				$foreignKey['onUpdate']
 			);
 		}
 
 		/**
-		 * Cross-references embedded foreign key entries' local column
+		 * Cross-references embedded foreign key entries' local columns
 		 * against the table's declared columns — the same self-consistency
 		 * check validateIndexEntries() already does, extended to foreign
 		 * keys since the full column set is known within this one
 		 * statement (unlike alter's `add foreign key`, which has no such
 		 * declared-columns list to check against). Also rejects two entries
-		 * on the same local column, same as validateIndexEntries() rejects
-		 * a repeated index name — the derived constraint name is table+
-		 * column only, so two such entries would otherwise collide at DDL
-		 * time instead of failing at parse time.
+		 * declaring the exact same ordered column list, same as
+		 * validateIndexEntries() rejects a repeated index name — the derived
+		 * constraint name is table+columns only, so two such entries would
+		 * otherwise collide at DDL time instead of failing at parse time.
 		 * @param string $tableName Used only to produce readable error messages
 		 * @param array<string, bool> $seenNames Declared column names, keyed for lookup
 		 * @param AstCreateTableForeignKey[] $foreignKeys
 		 * @throws ParserException
 		 */
 		private function validateForeignKeyEntries(string $tableName, array $seenNames, array $foreignKeys): void {
-			$seenForeignKeyColumns = [];
+			$seenForeignKeyColumnSets = [];
 
 			foreach ($foreignKeys as $foreignKey) {
-				if (!isset($seenNames[$foreignKey->getColumn()])) {
-					throw new ParserException("Table '{$tableName}' declares a foreign key on unknown column '{$foreignKey->getColumn()}'");
+				foreach ($foreignKey->getColumns() as $column) {
+					if (!isset($seenNames[$column])) {
+						throw new ParserException("Table '{$tableName}' declares a foreign key on unknown column '{$column}'");
+					}
 				}
 
-				if (isset($seenForeignKeyColumns[$foreignKey->getColumn()])) {
-					throw new ParserException("Table '{$tableName}' declares more than one foreign key on column '{$foreignKey->getColumn()}'");
+				$columnSetKey = implode("\0", $foreignKey->getColumns());
+
+				if (isset($seenForeignKeyColumnSets[$columnSetKey])) {
+					throw new ParserException("Table '{$tableName}' declares more than one foreign key on columns (" . implode(', ', $foreignKey->getColumns()) . ")");
 				}
 
-				$seenForeignKeyColumns[$foreignKey->getColumn()] = true;
+				$seenForeignKeyColumnSets[$columnSetKey] = true;
 			}
 		}
 

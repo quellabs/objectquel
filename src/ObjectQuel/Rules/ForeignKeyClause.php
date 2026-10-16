@@ -8,28 +8,25 @@
 	use Quellabs\ObjectQuel\ObjectQuel\Token;
 
 	/**
-	 * Parser for the `foreign key (col) references Table (col) [on delete
-	 * action] [on update action]` clause — shared grammar between `create`'s
-	 * column list (Rules\CreateTable) and `alter`'s `add foreign key`
-	 * sub-operation (Rules\AlterTable), rather than duplicating the parse
-	 * routine in both places (mirrors Rules\PrimaryKeyClause; see
-	 * objectquel-foreign-key-design.md, "Implementation surface").
+	 * Parser for the `foreign key (col {, col}) references Table [(col
+	 * {, col})] [on delete action] [on update action]` clause — shared
+	 * grammar between `create`'s column list (Rules\CreateTable) and
+	 * `alter`'s `add foreign key`/`drop foreign key` sub-operations
+	 * (Rules\AlterTable), rather than duplicating the parse routine in
+	 * both places (mirrors Rules\PrimaryKeyClause).
 	 *
-	 * Single column each side, never a list — Postgres can't safely pair a
-	 * composite FK's columns back from information_schema, and
-	 * @Orm\ForeignKey never declares more than one column anyway (see
-	 * objectquel-foreign-key-design.md, decision 3).
+	 * The local and referenced column lists are ordered and positionally
+	 * paired; when both are given they must be the same length.
 	 *
 	 * `on delete`/`on update` may appear in either order (or be omitted
 	 * entirely), each defaulting to RESTRICT/NO ACTION respectively —
 	 * the same defaults @Orm\ForeignKeyAction falls back to when absent.
 	 * No name is parsed here at all: the constraint name is always derived
-	 * by the caller, never author-supplied (see
-	 * objectquel-foreign-key-design.md, decision 1).
+	 * by the caller, never author-supplied.
 	 *
 	 * `references Table` may omit the column list, mirroring
-	 * @Orm\ForeignKey's optional referencedColumn — this returns `null`
-	 * for it then, and the caller (AlterTableExecutor/CreateTableExecutor)
+	 * @Orm\ForeignKey's optional referencedColumn/columns — this returns
+	 * `null` for it then, and the caller (AlterTableExecutor/CreateTableExecutor)
 	 * resolves it to the target's primary key via schema introspection.
 	 */
 	class ForeignKeyClause {
@@ -38,22 +35,29 @@
 		private const array VALID_ACTIONS = ['RESTRICT', 'CASCADE', 'SET NULL', 'NO ACTION'];
 
 		/**
-		 * Parses a `foreign key (col) references Table [(col)] [on delete
-		 * action] [on update action]` clause, assuming `foreign` is the
-		 * current lookahead token.
-		 * @return array{column: string, referencedTable: string, referencedColumn: ?string, onDelete: string, onUpdate: string}
+		 * Parses a `foreign key (col {, col}) references Table [(col {,
+		 * col})] [on delete action] [on update action]` clause, assuming
+		 * `foreign` is the current lookahead token.
+		 * @return array{columns: list<string>, referencedTable: string, referencedColumns: ?list<string>, onDelete: string, onUpdate: string}
 		 * @throws LexerException|ParserException
 		 */
 		public static function parse(Lexer $lexer): array {
 			$lexer->matchKeyword('foreign');
 			$lexer->matchKeyword('key');
-			$column = self::parseSingleColumn($lexer);
+			$columns = self::parseColumnList($lexer);
 
 			$lexer->matchKeyword('references');
 			$referencedTable = $lexer->match(Token::Identifier)->getStringValue();
-			$referencedColumn = $lexer->peek()->getType() === Token::ParenthesesOpen
-				? self::parseSingleColumn($lexer)
+			$referencedColumns = $lexer->peek()->getType() === Token::ParenthesesOpen
+				? self::parseColumnList($lexer)
 				: null;
+
+			if ($referencedColumns !== null && count($referencedColumns) !== count($columns)) {
+				throw new ParserException(
+					"Foreign key declares " . count($columns) . " local column(s) but " . count($referencedColumns) .
+					" referenced column(s) — the two lists must be the same length, on line {$lexer->getLineNumber()}"
+				);
+			}
 
 			$onDelete = 'RESTRICT';
 			$onUpdate = 'NO ACTION';
@@ -69,26 +73,42 @@
 			}
 
 			return [
-				'column'           => $column,
-				'referencedTable'  => $referencedTable,
-				'referencedColumn' => $referencedColumn,
-				'onDelete'         => $onDelete,
-				'onUpdate'         => $onUpdate,
+				'columns'           => $columns,
+				'referencedTable'   => $referencedTable,
+				'referencedColumns' => $referencedColumns,
+				'onDelete'          => $onDelete,
+				'onUpdate'          => $onUpdate,
 			];
 		}
 
 		/**
-		 * A single parenthesized column name — `(col)`, never a list (see
-		 * class docblock). Matching `)` right after the one identifier
-		 * naturally rejects a comma-separated list with the same
-		 * "Unexpected token" error every other unsupported construct gets.
-		 * @throws LexerException
+		 * A parenthesized, comma-separated column name list — `(col {,
+		 * col})`, rejecting a column repeated within it. Shared by the
+		 * local column list, the optional referenced column list, and
+		 * `drop foreign key`'s column list (Rules\AlterTable).
+		 * @return list<string>
+		 * @throws LexerException|ParserException
 		 */
-		private static function parseSingleColumn(Lexer $lexer): string {
+		public static function parseColumnList(Lexer $lexer): array {
 			$lexer->match(Token::ParenthesesOpen);
-			$column = $lexer->match(Token::Identifier)->getStringValue();
+
+			$columns = [];
+			$seenColumns = [];
+
+			do {
+				$column = $lexer->match(Token::Identifier)->getStringValue();
+
+				if (isset($seenColumns[$column])) {
+					throw new ParserException("Duplicate column '{$column}' in foreign key column list, on line {$lexer->getLineNumber()}");
+				}
+
+				$seenColumns[$column] = true;
+				$columns[] = $column;
+			} while ($lexer->optionalMatch(Token::Comma));
+
 			$lexer->match(Token::ParenthesesClose);
-			return $column;
+
+			return $columns;
 		}
 
 		/**

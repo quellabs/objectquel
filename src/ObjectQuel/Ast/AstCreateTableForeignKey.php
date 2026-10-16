@@ -5,35 +5,38 @@
 	use Quellabs\ObjectQuel\ObjectQuel\AstVisitorInterface;
 
 	/**
-	 * A `foreign key (col) references Table (col) [on delete action] [on
-	 * update action]` entry embedded in a `create Name (...)` statement's
-	 * column list — single column each side (see
-	 * objectquel-foreign-key-design.md, decision 3), compiled directly by
+	 * A `foreign key (col {, col}) references Table (col {, col}) [on
+	 * delete action] [on update action]` entry embedded in a `create Name
+	 * (...)` statement's column list — compiled directly by
 	 * QuelToSQLCreate as a trailing table constraint, unlike index entries
 	 * (AstCreateTableIndex), which are sugar assembled into a separate
 	 * AstCreateIndex statement. There's no equivalent lifecycle to delegate
-	 * to here — see objectquel-foreign-key-design.md, decision 2.
+	 * to here.
+	 *
+	 * $columns and $referencedColumns are ordered, positionally paired
+	 * lists of equal length once $referencedColumns is resolved.
 	 *
 	 * No name field: the constraint name is always derived
-	 * (`fk_{table}_{column}`), never author-supplied — see
-	 * objectquel-foreign-key-design.md, decision 1.
+	 * (ForeignKeyConstraintNamer), never author-supplied.
 	 *
 	 * $onDelete/$onUpdate are always resolved to one of RESTRICT/CASCADE/
 	 * SET NULL/NO ACTION by the parser (Rules\ForeignKeyClause), defaulting
 	 * to RESTRICT/NO ACTION when omitted — same defaults
 	 * @Orm\ForeignKeyAction falls back to when absent.
 	 *
-	 * $referencedColumn is null when `references Table` omitted its column
-	 * list; CreateTableExecutor resolves it via withReferencedColumn()
-	 * before compiling.
+	 * $referencedColumns is null when `references Table` omitted its
+	 * column list; CreateTableExecutor resolves it via
+	 * withReferencedColumns() before compiling.
 	 */
 	class AstCreateTableForeignKey extends Ast {
 
-		private string $column;
+		/** @var list<string> */
+		private array $columns;
 
 		private string $referencedTable;
 
-		private ?string $referencedColumn;
+		/** @var ?list<string> */
+		private ?array $referencedColumns;
 
 		private string $onDelete;
 
@@ -41,17 +44,17 @@
 
 		/**
 		 * Initializes this AST node.
-		 * @param string $column
+		 * @param list<string> $columns
 		 * @param string $referencedTable
-		 * @param ?string $referencedColumn
+		 * @param ?list<string> $referencedColumns
 		 * @param string $onDelete
 		 * @param string $onUpdate
 		 * @return void
 		 */
-		public function __construct(string $column, string $referencedTable, ?string $referencedColumn, string $onDelete, string $onUpdate) {
-			$this->column = $column;
+		public function __construct(array $columns, string $referencedTable, ?array $referencedColumns, string $onDelete, string $onUpdate) {
+			$this->columns = $columns;
 			$this->referencedTable = $referencedTable;
-			$this->referencedColumn = $referencedColumn;
+			$this->referencedColumns = $referencedColumns;
 			$this->onDelete = $onDelete;
 			$this->onUpdate = $onUpdate;
 		}
@@ -66,11 +69,11 @@
 		}
 
 		/**
-		 * Returns the column.
-		 * @return string
+		 * Returns the ordered local columns.
+		 * @return list<string>
 		 */
-		public function getColumn(): string {
-			return $this->column;
+		public function getColumns(): array {
+			return $this->columns;
 		}
 
 		/**
@@ -82,11 +85,11 @@
 		}
 
 		/**
-		 * Returns the referenced column.
-		 * @return ?string
+		 * Returns the ordered referenced columns, positionally paired with getColumns().
+		 * @return ?list<string>
 		 */
-		public function getReferencedColumn(): ?string {
-			return $this->referencedColumn;
+		public function getReferencedColumns(): ?array {
+			return $this->referencedColumns;
 		}
 
 		/**
@@ -105,9 +108,12 @@
 			return $this->onUpdate;
 		}
 
-		/** Returns a clone with $referencedColumn resolved. */
-		public function withReferencedColumn(string $referencedColumn): self {
-			$clone = new self($this->column, $this->referencedTable, $referencedColumn, $this->onDelete, $this->onUpdate);
+		/**
+		 * Returns a clone with $referencedColumns resolved.
+		 * @param list<string> $referencedColumns
+		 */
+		public function withReferencedColumns(array $referencedColumns): self {
+			$clone = new self($this->columns, $this->referencedTable, $referencedColumns, $this->onDelete, $this->onUpdate);
 			$clone->setParent($this->getParent());
 			return $clone;
 		}
@@ -118,7 +124,7 @@
 		 */
 		public function deepClone(): static {
 			// @phpstan-ignore-next-line new.static
-			$clone = new static($this->column, $this->referencedTable, $this->referencedColumn, $this->onDelete, $this->onUpdate);
+			$clone = new static($this->columns, $this->referencedTable, $this->referencedColumns, $this->onDelete, $this->onUpdate);
 			$clone->setParent($this->getParent());
 			return $clone;
 		}
