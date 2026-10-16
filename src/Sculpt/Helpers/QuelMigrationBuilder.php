@@ -73,6 +73,9 @@
 		/** @var SqlIdentifierQuoter */
 		private SqlIdentifierQuoter $identifierQuoter;
 
+		/** @var ForeignKeyDependencyFinder Finds a dependent constraint on the other side of a primary-key change */
+		private ForeignKeyDependencyFinder $foreignKeyDependencyFinder;
+
 		/**
 		 * @param DatabaseAdapter $adapter Active database connection
 		 * @param string $migrationsPath Directory that will receive the generated file
@@ -83,6 +86,7 @@
 			$this->migrationsPath = $migrationsPath;
 			$this->platform = $platform;
 			$this->identifierQuoter = new SqlIdentifierQuoter($platform);
+			$this->foreignKeyDependencyFinder = new ForeignKeyDependencyFinder($adapter);
 		}
 
 		// -------------------------------------------------------------------------
@@ -192,7 +196,7 @@
 				}
 
 				if ($changingTables !== []) {
-					foreach ($this->findDependentForeignKeys($changingTables) as $ownerTable => $constraints) {
+					foreach ($this->foreignKeyDependencyFinder->findReferencing($changingTables) as $ownerTable => $constraints) {
 						$up[] = $this->queryStatement($this->buildAlterForeignKeysStatement($ownerTable, $this->buildDropForeignKeyOps($constraints)));
 						$downPostRestoreForeignKeys[] = $this->queryStatement($this->buildAlterForeignKeysStatement($ownerTable, $this->buildAddForeignKeyOps($constraints)));
 
@@ -691,31 +695,6 @@ PHP;
 		// -------------------------------------------------------------------------
 		// Foreign-key statement builders
 		// -------------------------------------------------------------------------
-
-		/**
-		 * Finds every live foreign key constraint — on any table — whose
-		 * referenced table is one of $changingTables, including a table
-		 * referencing itself. Used by buildMigrationContent() to clear a
-		 * constraint out of the way before changing the primary key it
-		 * depends on, since every engine that enforces named foreign keys
-		 * rejects that change outright otherwise.
-		 * @param list<string> $changingTables Tables whose primary key this migration changes
-		 * @return array<string, array<string, ForeignKeyConfig>> Owner table => constraint name => live definition
-		 */
-		private function findDependentForeignKeys(array $changingTables): array {
-			$changingTableSet = array_flip($changingTables);
-			$result = [];
-
-			foreach ($this->connection->getTables() as $ownerTable) {
-				foreach ($this->connection->getForeignKeys($ownerTable) as $name => $definition) {
-					if (isset($changingTableSet[$definition->referencedTable])) {
-						$result[$ownerTable][$name] = $definition;
-					}
-				}
-			}
-
-			return $result;
-		}
 
 		/**
 		 * @param string $tableName
