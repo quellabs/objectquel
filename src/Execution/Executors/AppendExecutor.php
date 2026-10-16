@@ -644,7 +644,7 @@
 
 			foreach ($rows as $index => $row) {
 				foreach ($strategiesToGenerate as $primaryKey => $strategy) {
-					$value = $factory->generate($this->entityManager, $blankEntity, $strategy);
+					$value = $factory->generate($this->entityManager, $blankEntity, $primaryKey, $strategy);
 
 					if ($index === 0) {
 						$firstRowGeneratedValues[$primaryKey] = $value;

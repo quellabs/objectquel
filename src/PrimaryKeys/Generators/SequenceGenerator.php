@@ -16,24 +16,22 @@
 		 * Generate a new primary key for the given entity
 		 * @param EntityManager $em The EntityManager instance
 		 * @param object $entity The entity object for which to generate a primary key
+		 * @param string $property The primary key property to generate a value for — a composite key's components each get their own MAX(col)+1 read
 		 * @return mixed The generated primary key value
 		 * @throws QuelException|EntityResolutionException
 		 */
-		public function generate(EntityManager $em, object $entity): mixed {
+		public function generate(EntityManager $em, object $entity, string $property): mixed {
 			// Get the database connection from the EntityManager
 			$connection = $em->getConnection();
-			
+
 			// Get the table name associated with the entity
 			$metadata = $em->getEntityStore()->getMetadata($entity);
-			
-			// Get the identifier keys (primary key fields) of the entity
-			$identifierKeys = $metadata->identifierKeys;
-			
+
 			// Get the column mapping for the entity
 			$columnMap = $metadata->columnMap;
-			
-			// Get the actual database column name for the primary key
-			$primaryKey = $columnMap[$identifierKeys[0]];
+
+			// Get the actual database column name for the target primary key property
+			$primaryKey = $columnMap[$property];
 
 			// Quote identifiers for the connected engine — both are plain real
 			// column/table names, so DatabaseAdapter::escapeIdentifier() (the same

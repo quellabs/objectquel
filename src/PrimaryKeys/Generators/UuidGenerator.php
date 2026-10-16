@@ -15,10 +15,11 @@
 		 * Generate a UUID v7 primary key
 		 * @param EntityManager $em The EntityManager instance (unused)
 		 * @param object $entity The entity object (unused)
+		 * @param string $property The primary key property being generated (unused — stateless)
 		 * @return string A UUID v7 string (e.g., "018f6e3a-7b2c-7000-8000-5e1234567890")
 		 * @throws \Exception
 		 */
-		public function generate(EntityManager $em, object $entity): string {
+		public function generate(EntityManager $em, object $entity, string $property): string {
 			return Tools::createUUIDv7();
 		}
 		

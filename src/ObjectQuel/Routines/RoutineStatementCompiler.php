@@ -407,7 +407,12 @@
 		}
 
 		/**
-		 * Rejects a literal-values append whose primary key `append` would generate in PHP.
+		 * Rejects a literal-values append that leaves any primary key component
+		 * unsupplied unless it's a single-column database identity. Every
+		 * component is checked independently: a composite key has no database
+		 * generation at all, so an unannotated (identity-reading) component
+		 * there must be assigned explicitly, exactly like a component carrying
+		 * an actual PHP-side strategy ('uuid', 'sequence', ...).
 		 * @param AstAppend $statement Literal-values append
 		 * @param string $entityName Target entity
 		 * @return void
@@ -415,20 +420,38 @@
 		 */
 		private function assertKeyNeedsNoPhp(AstAppend $statement, string $entityName): void {
 			$metadata = $this->entityStore->getMetadata($entityName);
-			$primaryKey = $metadata->getPrimaryKey();
+			$primaryKeys = $metadata->identifierKeys;
 
-			if ($primaryKey === null || $metadata->getPrimaryKeyStrategy($primaryKey) === 'identity') {
+			if ($primaryKeys === []) {
 				return;
 			}
 
-			// Rows share one column shape, so the first row decides
-			foreach ($statement->getRowsOrFail()[0] as $assignment) {
-				if ($assignment->getProperty() === $primaryKey) {
-					return;
-				}
-			}
+			$isComposite = count($primaryKeys) > 1;
 
-			throw new SemanticException("'append to {$statement->getRange()->getName()}' leaves primary key '{$primaryKey}' to its '{$metadata->getPrimaryKeyStrategy($primaryKey)}' strategy, which runs in PHP. Assign '{$primaryKey}' explicitly inside a routine.");
+			// Rows share one column shape, so the first row decides.
+			$suppliedProperties = array_map(
+				fn($assignment) => $assignment->getProperty(),
+				$statement->getRowsOrFail()[0]
+			);
+
+			foreach ($primaryKeys as $primaryKey) {
+				if (in_array($primaryKey, $suppliedProperties, true)) {
+					continue;
+				}
+
+				$strategy = $metadata->getPrimaryKeyStrategy($primaryKey);
+
+				// Single-column 'identity' is a database auto-increment — nothing to supply.
+				if ($strategy === 'identity' && !$isComposite) {
+					continue;
+				}
+
+				if ($isComposite && $strategy === 'identity') {
+					throw new SemanticException("'append to {$statement->getRange()->getName()}' leaves composite primary key component '{$primaryKey}' unsupplied; it has no @Orm\\PrimaryKeyStrategy, so it must be assigned explicitly inside a routine.");
+				}
+
+				throw new SemanticException("'append to {$statement->getRange()->getName()}' leaves primary key '{$primaryKey}' to its '{$strategy}' strategy, which runs in PHP. Assign '{$primaryKey}' explicitly inside a routine.");
+			}
 		}
 
 		/**
