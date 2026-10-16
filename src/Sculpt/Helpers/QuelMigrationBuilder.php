@@ -624,19 +624,22 @@ PHP;
 		}
 
 		/**
-		 * Render a `foreign key (col) references Table (col) on delete X
-		 * on update Y` clause, shared by `create`'s embedded entries and
-		 * `alter`'s `add foreign key` op (see buildAddForeignKeyOps()).
+		 * Render a `foreign key (col {, col}) references Table (col {,
+		 * col}) on delete X on update Y` clause, shared by `create`'s
+		 * embedded entries and `alter`'s `add foreign key` op (see
+		 * buildAddForeignKeyOps()). $config->columns/referencedColumns are
+		 * already positionally paired, so they're rendered in order,
+		 * however many there are.
 		 * @param ForeignKeyDefinition $config
 		 * @return string
 		 */
 		private function renderForeignKeyClause(ForeignKeyDefinition $config): string {
-			$column = $config->columns[0];
-			$referencedColumn = $config->referencedColumns[0];
+			$columns = implode(', ', $config->columns);
+			$referencedColumns = implode(', ', $config->referencedColumns);
 			$onDelete = strtolower($config->onDelete);
 			$onUpdate = strtolower($config->onUpdate);
 
-			return "foreign key ({$column}) references {$config->referencedTable} ({$referencedColumn}) on delete {$onDelete} on update {$onUpdate}";
+			return "foreign key ({$columns}) references {$config->referencedTable} ({$referencedColumns}) on delete {$onDelete} on update {$onUpdate}";
 		}
 
 		/**
@@ -655,7 +658,8 @@ PHP;
 			$ops = [];
 
 			foreach ($foreignKeys as $config) {
-				$ops[] = "drop foreign key ({$config->columns[0]})";
+				$columns = implode(', ', $config->columns);
+				$ops[] = "drop foreign key ({$columns})";
 			}
 
 			return $ops;
