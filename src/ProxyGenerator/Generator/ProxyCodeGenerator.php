@@ -240,7 +240,8 @@ PHP
 		 */
 		private function makeProxyMethods(string $entity): string {
 			$metadata = $this->entityStore->getMetadata($entity);
-			$identifierKeysGetterMethod = 'get' . ucfirst($metadata->identifierKeys[0]);
+			$primaryKey = $metadata->getPrimaryKey();
+			$identifierKeysGetterMethod = $primaryKey !== null ? 'get' . ucfirst($primaryKey) : null;
 			
 			['declaration' => $ctorDeclaration, 'passthrough' => $ctorPassthrough] =
 				$this->buildParentConstructorArgs($entity);
