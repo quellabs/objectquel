@@ -146,11 +146,6 @@
 			int $window,
 			int $windowSize
 		): void {
-			// Without any sort at all, row order (and therefore which rows land on which
-			// page) is undefined and can shift between two fetches of the "same" page —
-			// impose one over the primary key so paging is deterministic.
-			$this->ensureDeterministicSort($ast);
-
 			// First pass: Execute a lightweight query to fetch only the primary keys
 			// This avoids loading full records when we only need to determine pagination boundaries
 			$primaryKeys = $this->fetchAllPrimaryKeysForPagination($ast, $parameters);
@@ -182,20 +177,6 @@
 			// to only the primary keys we determined should be on this page
 			// This ensures the final query returns exactly the records we want, in the right order
 			$this->addInConditionForPagination($ast, $parameters, $filteredKeys);
-		}
-
-		/**
-		 * Imposes a deterministic ORDER BY over the primary key when the query declares
-		 * no sort of its own.
-		 * @param AstRetrieve $ast
-		 * @return void
-		 */
-		private function ensureDeterministicSort(AstRetrieve $ast): void {
-			if ($ast->getSort() !== []) {
-				return;
-			}
-
-			$ast->setSort([['ast' => $this->createPrimaryKeyIdentifier(), 'order' => 'asc']]);
 		}
 
 		/**
