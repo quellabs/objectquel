@@ -35,6 +35,7 @@
 	use Quellabs\ObjectQuel\Annotations\Orm\UniqueIndex;
 	use Quellabs\ObjectQuel\Annotations\Orm\Version;
 	use Quellabs\ObjectQuel\DatabaseAdapter\ColumnDefinition;
+	use Quellabs\ObjectQuel\DatabaseAdapter\Mapper\TypeMapper;
 	use Quellabs\ObjectQuel\Exception\EntityResolutionException;
 	
 	/**
@@ -68,6 +69,9 @@
 		 * @param array<string, ManyToOne> $manyToOneRelations Property => ManyToOne annotation mapping
 		 * @param array<string, InverseOf> $inverseOfRelations Property => InverseOf annotation mapping
 		 * @param array<string, OneToOne> $oneToOneRelations Property => OneToOne annotation mapping
+		 * @param array<string, RelationColumnMapping> $relationColumnMappings Property => resolved
+		 *        column pairs for every owning ManyToOne/OneToOne relation on this entity,
+		 *        normalizing both the singular and plural annotation forms into one shape
 		 * @param array<Index|UniqueIndex|FullTextIndex> $indexes Index annotations from class level
 		 * @param string|null $autoIncrementColumn Property name of auto-increment primary key (if any)
 		 * @param array<string, ColumnDefinitionRecord> $columnDefinitions
@@ -91,6 +95,7 @@
 			public array $manyToOneRelations,
 			public array $inverseOfRelations,
 			public array $oneToOneRelations,
+			public array $relationColumnMappings,
 			public array $indexes,
 			public ?string $autoIncrementColumn,
 			public array $columnDefinitions,
@@ -112,6 +117,157 @@
 			return $this->identifierKeys[0] ?? null;
 		}
 		
+		/**
+		 * Validates a primary-key lookup value and returns it as an associative map,
+		 * keyed by property name in identifierKeys order. A scalar is accepted only
+		 * when the entity has exactly one identifier property. An array must name
+		 * every identifier property exactly once — no unknown names, no missing
+		 * components, no nulls, and no non-scalar values (array order in the input
+		 * does not matter; the result is always re-ordered to identifierKeys order).
+		 * @param int|string|array<string, mixed> $key
+		 * @return array<string, int|string> Property name => value, in identifierKeys order
+		 * @throws \InvalidArgumentException When the key is incomplete, unknown, or malformed
+		 */
+		public function normalizeIdentifier(int|string|array $key): array {
+			if ($this->identifierKeys === []) {
+				throw new \InvalidArgumentException("Entity '{$this->className}' has no primary key defined.");
+			}
+
+			if (!is_array($key)) {
+				if (count($this->identifierKeys) !== 1) {
+					throw new \InvalidArgumentException(
+						"Entity '{$this->className}' has a composite primary key (" . implode(', ', $this->identifierKeys) .
+						"); a scalar identifier is not valid. Pass an associative array keyed by property name."
+					);
+				}
+
+				$key = [$this->identifierKeys[0] => $key];
+			}
+
+			$unknown = array_diff(array_keys($key), $this->identifierKeys);
+
+			if ($unknown !== []) {
+				throw new \InvalidArgumentException(
+					"Identifier for '{$this->className}' contains unknown propert" . (count($unknown) === 1 ? 'y' : 'ies') .
+					" (" . implode(', ', $unknown) . "). Expected: " . implode(', ', $this->identifierKeys) . "."
+				);
+			}
+
+			$missing = array_diff($this->identifierKeys, array_keys($key));
+
+			if ($missing !== []) {
+				throw new \InvalidArgumentException(
+					"Identifier for '{$this->className}' is missing propert" . (count($missing) === 1 ? 'y' : 'ies') .
+					" (" . implode(', ', $missing) . "). A primary-key lookup must name every identifier property exactly once."
+				);
+			}
+
+			$result = [];
+
+			foreach ($this->identifierKeys as $property) {
+				$value = $key[$property];
+
+				if (!is_int($value) && !is_string($value)) {
+					throw new \InvalidArgumentException(
+						"Identifier property '{$property}' on '{$this->className}' must be an int or string, got " .
+						get_debug_type($value) . "."
+					);
+				}
+
+				$result[$property] = $value;
+			}
+
+			return $result;
+		}
+
+		/**
+		 * Casts each value of an already-normalized identifier map to the PHP type
+		 * implied by its column's mapped type, so values denoting the same identity
+		 * in different PHP representations — e.g. int(0) and "0" for an integer
+		 * column — collapse to one canonical value before being used as (or encoded
+		 * into) an identity-map key. A column type outside int/string (the public
+		 * lookup contract) is passed through unchanged.
+		 * @param array<string, int|string> $normalizedKey Result of normalizeIdentifier()
+		 * @return array<string, int|string>
+		 * @throws \InvalidArgumentException When an integer-column value isn't a valid integer representation
+		 */
+		public function canonicalizeIdentifier(array $normalizedKey): array {
+			$result = [];
+
+			foreach ($this->identifierKeys as $property) {
+				$value = $normalizedKey[$property];
+				$column = $this->getColumnAnnotation($property);
+				$phpType = $column !== null ? TypeMapper::phinxTypeToPhpType(TypeMapper::normalizeType($column->getType())) : null;
+
+				$result[$property] = match ($phpType) {
+					'int' => $this->canonicalizeIntegerIdentifier($property, $value),
+					'string' => (string) $value,
+					default => $value,
+				};
+			}
+
+			return $result;
+		}
+
+		/**
+		 * @param string $property
+		 * @param int|string $value
+		 * @return int
+		 * @throws \InvalidArgumentException
+		 */
+		private function canonicalizeIntegerIdentifier(string $property, int|string $value): int {
+			if (is_int($value)) {
+				return $value;
+			}
+
+			if (!preg_match('/^-?\d+$/', $value)) {
+				throw new \InvalidArgumentException(
+					"Identifier property '{$property}' on '{$this->className}' is an integer column; " .
+					"'{$value}' is not a valid integer representation."
+				);
+			}
+
+			return (int) $value;
+		}
+
+		/**
+		 * Encodes an already-normalized, type-canonicalized identifier map into one
+		 * collision-safe string, for use as a Unit of Work / identity-map index key.
+		 * Each component is written as a length-prefixed property name, a one-letter
+		 * type tag ('i' for int, 's' for string), and a length-prefixed value — a
+		 * netstring-style format where every segment announces its own length, so
+		 * concatenating several can never be parsed back ambiguously regardless of
+		 * what characters the names or values themselves contain. This replaces
+		 * delimiter-based joining (e.g. http_build_query()), which can collide when a
+		 * value itself contains the delimiter or coerces '0'/''/numeric strings.
+		 * @param array<string, int|string> $canonicalKey Result of canonicalizeIdentifier()
+		 * @return string
+		 */
+		public function encodeIdentity(array $canonicalKey): string {
+			$segments = [];
+
+			foreach ($this->identifierKeys as $property) {
+				$value = $canonicalKey[$property];
+				$typeTag = is_int($value) ? 'i' : 's';
+				$valueStr = (string) $value;
+				$segments[] = strlen($property) . ':' . $property . $typeTag . strlen($valueStr) . ':' . $valueStr;
+			}
+
+			return implode('|', $segments);
+		}
+
+		/**
+		 * Validates, canonicalizes, and encodes a primary-key lookup value in one
+		 * call — the combination every caller needing a Unit of Work / identity-map
+		 * key actually wants.
+		 * @param int|string|array<string, mixed> $key
+		 * @return string
+		 * @throws \InvalidArgumentException When the key is incomplete, unknown, or malformed
+		 */
+		public function resolveIdentityKey(int|string|array $key): string {
+			return $this->encodeIdentity($this->canonicalizeIdentifier($this->normalizeIdentifier($key)));
+		}
+
 		/**
 		 * Check if this entity has an auto-increment primary key.
 		 * An auto-increment key is one that is automatically generated by the database.
@@ -157,6 +313,19 @@
 			return $this->inverseOfRelations;
 		}
 		
+		/**
+		 * Retrieve the resolved column-pair mapping for an owning relation property,
+		 * normalizing both the singular (localColumn/referencedColumn) and plural
+		 * (localColumns/referencedColumns) annotation forms into the same ordered
+		 * pair list. This is the only column-mapping input relation code should
+		 * consume for $property.
+		 * @param string $property The ManyToOne/OneToOne relation property name
+		 * @return RelationColumnMapping|null Null when $property carries no owning relation
+		 */
+		public function getRelationColumnMapping(string $property): ?RelationColumnMapping {
+			return $this->relationColumnMappings[$property] ?? null;
+		}
+
 		/**
 		 * Retrieve the OneToOne dependencies for this entity.
 		 * All stored OneToOne relations are owning-side by definition — non-owning

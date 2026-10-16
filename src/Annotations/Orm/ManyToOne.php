@@ -17,8 +17,12 @@
 		private string $targetEntity;
 		private ?string $referencedColumn;
 		private ?string $localColumn;
+		/** @var list<string> */
+		private array $localColumns;
+		/** @var list<string> */
+		private array $referencedColumns;
 		private string $fetch;
-		
+
 		/**
 		 * Constructor to initialize the parameters.
 		 * @param array<string, mixed> $parameters Array with parameters that describe the relationship.
@@ -28,28 +32,34 @@
 			$targetEntity = $parameters['targetEntity'] ?? null;
 			$referencedColumn = $parameters['referencedColumn'] ?? null;
 			$localColumn = $parameters['localColumn'] ?? null;
+			$localColumns = $parameters['localColumns'] ?? null;
+			$referencedColumns = $parameters['referencedColumns'] ?? null;
 			$fetch = $parameters['fetch'] ?? 'EAGER';
-			
+
 			if (!is_string($targetEntity)) {
 				throw new \InvalidArgumentException("ManyToOne: 'targetEntity' must be a string");
 			}
-			
+
 			if ($referencedColumn !== null && !is_string($referencedColumn)) {
 				throw new \InvalidArgumentException("ManyToOne: 'referencedColumn' must be a string or null");
 			}
-			
+
 			if ($localColumn !== null && !is_string($localColumn)) {
 				throw new \InvalidArgumentException("ManyToOne: 'localColumn' must be a string or null");
 			}
-			
+
+			AnnotationColumnArrays::validate('ManyToOne', $localColumns, $referencedColumns, $localColumn, $referencedColumn);
+
 			if (!is_string($fetch)) {
 				throw new \InvalidArgumentException("ManyToOne: 'fetch' must be a string");
 			}
-			
+
 			$this->parameters = $parameters;
 			$this->targetEntity = $targetEntity;
 			$this->referencedColumn = $referencedColumn;
 			$this->localColumn = $localColumn;
+			$this->localColumns = AnnotationColumnArrays::normalizeList($localColumns);
+			$this->referencedColumns = AnnotationColumnArrays::normalizeList($referencedColumns);
 			$this->fetch = strtoupper($fetch);
 		}
 		
@@ -96,7 +106,35 @@
 		public function getLocalColumn(): ?string {
 			return $this->localColumn;
 		}
-		
+
+		/**
+		 * Ordered list of local property names for a composite (multi-column) relation,
+		 * paired by index with getReferencedColumns(). Empty when the relation uses the
+		 * singular localColumn/referencedColumn form instead.
+		 * @return list<string>
+		 */
+		public function getLocalColumns(): array {
+			return $this->localColumns;
+		}
+
+		/**
+		 * Ordered list of target property names for a composite (multi-column) relation,
+		 * paired by index with getLocalColumns().
+		 * @return list<string>
+		 */
+		public function getReferencedColumns(): array {
+			return $this->referencedColumns;
+		}
+
+		/**
+		 * True when this relation was declared with the plural localColumns/referencedColumns
+		 * form (a multi-column relation), false for the singular single-column form.
+		 * @return bool
+		 */
+		public function hasCompositeColumns(): bool {
+			return $this->localColumns !== [];
+		}
+
 		/**
 		 * Returns fetch method (default EAGER)
 		 * @return string

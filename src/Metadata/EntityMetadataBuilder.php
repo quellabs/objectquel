@@ -108,7 +108,7 @@
 				// Derive all column-related metadata in a single pass over $annotations.
 				// Splitting this into five separate loops would re-iterate the same data
 				// for each concern; one pass is both faster and easier to follow.
-				$columnData = $this->extractColumnData($annotations);
+				$columnData = $this->extractColumnData($className, $annotations);
 				
 				// Extract the relations and indexes
 				$indexes = $this->extractIndexes($className);
@@ -127,6 +127,11 @@
 				$this->validateInverseOfPropertyTypes($className, $inverseOfRelations);
 				$this->validateCascadeRequiresRelation($className, $annotations, $manyToOneRelations, $oneToOneRelations, $inverseOfRelations);
 
+				// Resolve every owning relation's column pairs (one pair for a singular
+				// declaration, one pair per array position for a plural/composite one)
+				// into the single shape all downstream relation code consumes.
+				$relationColumnMappings = $this->buildRelationColumnMappings($className, $annotations, $manyToOneRelations, $oneToOneRelations, $columnData);
+
 				// Return  a new EntityMetadataRecord containing all relation data
 				return new EntityMetadataRecord(
 					className: $className,
@@ -141,6 +146,7 @@
 					manyToOneRelations: $manyToOneRelations,
 					inverseOfRelations: $inverseOfRelations,
 					oneToOneRelations: $oneToOneRelations,
+					relationColumnMappings: $relationColumnMappings,
 					indexes: $indexes,
 					autoIncrementColumn: $columnData->autoIncrementColumn,
 					columnDefinitions: $columnDefinitions,
@@ -160,20 +166,22 @@
 		
 		/**
 		 * Single pass over property annotations to extract all column-related metadata.
+		 * @param class-string $className
 		 * @param array<string, AnnotationCollection> $annotations
 		 * @return ColumnData
+		 * @throws \RuntimeException When a composite primary key declares an explicit 'identity' strategy
 		 */
-		private function extractColumnData(array $annotations): ColumnData {
+		private function extractColumnData(string $className, array $annotations): ColumnData {
 			$columnMap = [];
 			$columnAnnotations = [];
 			$identifierKeys = [];
 			$identifierColumns = [];
+			$identifierStrategies = [];
 			$versionColumns = [];
-			$autoIncrementColumn = null;
 			$softDeleteProperty = null;
 			$softDeleteColumn = null;
 			$softDeleteColumnType = null;
-			
+
 			foreach ($annotations as $property => $annotationCollection) {
 				// Collect the four annotation types we care about for this property.
 				// Using nulls means we can cheaply test presence below without array_filter.
@@ -181,7 +189,7 @@
 				$version = null;
 				$strategy = null;
 				$softDelete = null;
-				
+
 				foreach ($annotationCollection as $annotation) {
 					if ($annotation instanceof Column) {
 						$column = $annotation;
@@ -193,7 +201,7 @@
 						$softDelete = $annotation;
 					}
 				}
-				
+
 				// Properties without @Column have no database representation — skip them
 				if ($column === null) {
 					continue;
@@ -203,26 +211,13 @@
 				$columnName = $column->getName();
 				$columnMap[$property] = $columnName;
 				$columnAnnotations[$property] = $column;
-				
+
 				if ($column->isPrimaryKey()) {
 					$identifierKeys[] = $property;   // PHP property name of the PK
 					$identifierColumns[] = $columnName; // Database column name of the PK
-					
-					// Only the first PK encountered is ever considered for
-					// auto-increment — a composite PK (more than one identifier
-					// column) can't be auto-increment, so every PK after the
-					// first is skipped outright, not just ones that already
-					// set $autoIncrementColumn.
-					if (count($identifierKeys) === 1) {
-						// Auto-increment when: strategy is explicitly 'identity', OR
-						// no strategy annotation is present at all (implicit default)
-						$isIdentity = $strategy === null || $strategy->getValue() === 'identity';
-						if ($isIdentity) {
-							$autoIncrementColumn = $property;
-						}
-					}
+					$identifierStrategies[$property] = $strategy;
 				}
-				
+
 				// Version columns require both @Column and @Version to be present.
 				// @Version alone (without a backing column) is invalid and ignored.
 				if ($version !== null) {
@@ -232,7 +227,7 @@
 						'version' => $version,
 					];
 				}
-				
+
 				// @SoftDelete requires both @Column and @SoftDelete to be present on the
 				// same property. Only the first occurrence is recorded; multiple @SoftDelete
 				// annotations on a single entity are not supported.
@@ -242,7 +237,12 @@
 					$softDeleteColumnType = $column->getType();
 				}
 			}
-			
+
+			// Deferred until every PK component is known — a per-property decision would
+			// wrongly treat the first component of a yet-undiscovered composite key as an
+			// auto-increment column.
+			$autoIncrementColumn = $this->resolveAutoIncrementColumn($className, $identifierKeys, $identifierStrategies);
+
 			return new ColumnData(
 				columnMap: $columnMap,
 				columnAnnotations: $columnAnnotations,
@@ -254,6 +254,44 @@
 				softDeleteColumn: $softDeleteColumn,
 				softDeleteColumnType: $softDeleteColumnType,
 			);
+		}
+
+		/**
+		 * Decides the entity's auto-increment column once every primary-key property
+		 * is known. A single-column key defaults to identity generation unless an
+		 * explicit non-identity strategy is declared. A composite key is never
+		 * auto-increment: an omitted strategy on any of its components means assigned
+		 * (the application provides the value), and an explicit 'identity' strategy on
+		 * any component is rejected outright rather than silently generating only part
+		 * of the key.
+		 * @param class-string $className
+		 * @param list<string> $identifierKeys
+		 * @param array<string, PrimaryKeyStrategy|null> $identifierStrategies Property name => its @PrimaryKeyStrategy, or null
+		 * @return string|null
+		 * @throws \RuntimeException When a composite primary key declares an explicit 'identity' strategy
+		 */
+		private function resolveAutoIncrementColumn(string $className, array $identifierKeys, array $identifierStrategies): ?string {
+			if (count($identifierKeys) !== 1) {
+				foreach ($identifierKeys as $property) {
+					$strategy = $identifierStrategies[$property];
+
+					if ($strategy !== null && $strategy->getValue() === 'identity') {
+						throw new \RuntimeException(
+							"Property '{$property}' on '{$className}' is part of a composite primary key and declares " .
+							"an explicit '@Orm\\PrimaryKeyStrategy(strategy=\"identity\")'. A composite primary key cannot " .
+							"use database identity generation; omit the strategy to leave this component assigned by the " .
+							"application, or use an explicit non-identity generator for it."
+						);
+					}
+				}
+
+				return null;
+			}
+
+			$property = $identifierKeys[0];
+			$strategy = $identifierStrategies[$property];
+			$isIdentity = $strategy === null || $strategy->getValue() === 'identity';
+			return $isIdentity ? $property : null;
 		}
 		
 		/**
@@ -534,8 +572,15 @@
 			array $oneToOneRelations
 		): void {
 			$relations = array_merge($manyToOneRelations, $oneToOneRelations);
-			
+
 			foreach ($relations as $property => $relation) {
+				// A composite (plural localColumns/referencedColumns) relation has no
+				// single default convention to fall back to — it's validated together
+				// with target primary-key coverage in resolveRelationColumnMapping() instead.
+				if ($relation->hasCompositeColumns()) {
+					continue;
+				}
+
 				// Use the explicit localColumn if declared, otherwise fall back to the
 				// convention used at runtime in RelationshipLoader ($property . 'Id')
 				$localColumn = $relation->getLocalColumn() ?? $property . 'Id';
@@ -556,6 +601,200 @@
 			}
 		}
 		
+		/**
+		 * Builds the resolved column-pair mapping for every owning ManyToOne/OneToOne
+		 * relation on this entity, keyed by property name.
+		 * @param class-string $className
+		 * @param array<string, AnnotationCollection> $annotations
+		 * @param array<string, ManyToOne> $manyToOneRelations
+		 * @param array<string, OneToOne> $oneToOneRelations
+		 * @param ColumnData $columnData
+		 * @return array<string, RelationColumnMapping>
+		 * @throws \RuntimeException
+		 */
+		private function buildRelationColumnMappings(
+			string $className,
+			array $annotations,
+			array $manyToOneRelations,
+			array $oneToOneRelations,
+			ColumnData $columnData
+		): array {
+			$mappings = [];
+
+			foreach ($manyToOneRelations + $oneToOneRelations as $property => $relation) {
+				$mappings[$property] = $this->resolveRelationColumnMapping($className, $property, $relation, $annotations, $columnData);
+			}
+
+			return $mappings;
+		}
+
+		/**
+		 * Normalizes one owning relation's singular or plural column declaration into
+		 * an ordered RelationColumnMapping. This is the only place that reads
+		 * localColumn/referencedColumn or localColumns/referencedColumns off the
+		 * annotation directly — everything downstream consumes the resolved result.
+		 * @param class-string $className
+		 * @param string $property
+		 * @param ManyToOne|OneToOne $relation
+		 * @param array<string, AnnotationCollection> $annotations
+		 * @param ColumnData $columnData
+		 * @return RelationColumnMapping
+		 * @throws \RuntimeException When the declaration is incomplete, ambiguous, or doesn't match the target
+		 */
+		private function resolveRelationColumnMapping(
+			string $className,
+			string $property,
+			ManyToOne|OneToOne $relation,
+			array $annotations,
+			ColumnData $columnData
+		): RelationColumnMapping {
+			$relationLabel = $relation instanceof ManyToOne ? 'ManyToOne' : 'OneToOne';
+			$targetClassName = $relation->getTargetEntity();
+			$targetInfo = $this->resolveTargetColumnInfo($targetClassName, $className, $columnData);
+
+			if ($relation->hasCompositeColumns()) {
+				$localProps = $relation->getLocalColumns();
+				$targetProps = $relation->getReferencedColumns();
+
+				if (count(array_unique($localProps)) !== count($localProps)) {
+					throw new \RuntimeException(
+						"{$relationLabel} '{$property}' on '{$className}' declares duplicate entries in 'localColumns'."
+					);
+				}
+
+				if (count(array_unique($targetProps)) !== count($targetProps)) {
+					throw new \RuntimeException(
+						"{$relationLabel} '{$property}' on '{$className}' declares duplicate entries in 'referencedColumns'."
+					);
+				}
+
+				foreach ($localProps as $localProp) {
+					if (!$this->hasColumnProperty($annotations, $localProp)) {
+						throw new \RuntimeException(
+							"{$relationLabel} '{$property}' on '{$className}' declares localColumns entry '{$localProp}' " .
+							"but no property with '@Orm\\Column' named '{$localProp}' exists on the entity."
+						);
+					}
+				}
+
+				$targetPkSet = $targetProps;
+				sort($targetPkSet);
+				$expectedPkSet = $targetInfo['identifierKeys'];
+				sort($expectedPkSet);
+
+				if ($targetPkSet !== $expectedPkSet) {
+					throw new \RuntimeException(
+						"{$relationLabel} '{$property}' on '{$className}' declares 'referencedColumns' (" .
+						implode(', ', $targetProps) . ") that do not exactly match the complete primary key of " .
+						"'{$targetClassName}' (" . implode(', ', $targetInfo['identifierKeys']) . "). The plural " .
+						"relation form references the target's full composite primary key only."
+					);
+				}
+
+				$pairs = [];
+
+				foreach ($localProps as $index => $localProp) {
+					$targetProp = $targetProps[$index];
+					$pairs[] = new RelationColumnPair(
+						localProperty: $localProp,
+						localColumn: $columnData->columnMap[$localProp],
+						targetProperty: $targetProp,
+						targetColumn: $targetInfo['columnMap'][$targetProp],
+					);
+				}
+
+				return new RelationColumnMapping($pairs);
+			}
+
+			// Singular form. validateRelationColumns() already checked that the local
+			// column exists; here we resolve and validate the target side.
+			$localProp = $relation->getLocalColumn() ?? ($property . 'Id');
+			$targetProp = $relation->getReferencedColumn();
+
+			if ($targetProp === null) {
+				if (count($targetInfo['identifierKeys']) !== 1) {
+					throw new \RuntimeException(
+						"{$relationLabel} '{$property}' on '{$className}' omits 'referencedColumn' but " .
+						"'{$targetClassName}' has a composite primary key (" . implode(', ', $targetInfo['identifierKeys']) .
+						"). Declare 'localColumns'/'referencedColumns' to reference a composite primary key explicitly."
+					);
+				}
+
+				$targetProp = $targetInfo['identifierKeys'][0];
+			} elseif (!in_array($targetProp, $targetInfo['columnProperties'], true)) {
+				throw new \RuntimeException(
+					"{$relationLabel} '{$property}' on '{$className}' declares referencedColumn='{$targetProp}' but no " .
+					"property with '@Orm\\Column' named '{$targetProp}' exists on '{$targetClassName}'."
+				);
+			}
+
+			return new RelationColumnMapping([
+				new RelationColumnPair(
+					localProperty: $localProp,
+					localColumn: $columnData->columnMap[$localProp],
+					targetProperty: $targetProp,
+					targetColumn: $targetInfo['columnMap'][$targetProp],
+				),
+			]);
+		}
+
+		/**
+		 * Resolves the target entity's @Column-backed property names, identifier
+		 * property names, and property-to-column map, without building its full
+		 * metadata. Building full metadata here would recurse into the target's own
+		 * relations and could cycle forever on a self-reference or a mutual pair of
+		 * owning relations; a plain annotation scan has no such recursion. A
+		 * self-reference reuses the current entity's own already-built ColumnData
+		 * instead of re-scanning it.
+		 * @param string $targetClassName
+		 * @param class-string $currentClassName
+		 * @param ColumnData $currentColumnData
+		 * @return array{columnProperties: array<int, string>, identifierKeys: array<int, string>, columnMap: array<string, string>}
+		 * @throws \RuntimeException When $targetClassName does not resolve to an existing class
+		 */
+		private function resolveTargetColumnInfo(string $targetClassName, string $currentClassName, ColumnData $currentColumnData): array {
+			if ($targetClassName === $currentClassName) {
+				return [
+					'columnProperties' => array_keys($currentColumnData->columnMap),
+					'identifierKeys'   => $currentColumnData->identifierKeys,
+					'columnMap'        => $currentColumnData->columnMap,
+				];
+			}
+
+			if (!class_exists($targetClassName)) {
+				throw new \RuntimeException(
+					"Relation on '{$currentClassName}' targets '{$targetClassName}', which is not a loadable class."
+				);
+			}
+
+			$columnProperties = [];
+			$identifierKeys = [];
+			$columnMap = [];
+
+			foreach ($this->reflectionHandler->getProperties($targetClassName) as $property) {
+				$column = $this->annotationReader
+					->getPropertyAnnotations($targetClassName, $property, Column::class)
+					->getFirst(Column::class);
+
+				if (!$column instanceof Column) {
+					continue;
+				}
+
+				$columnProperties[] = $property;
+				$columnMap[$property] = $column->getName();
+
+				if ($column->isPrimaryKey()) {
+					$identifierKeys[] = $property;
+				}
+			}
+
+			return [
+				'columnProperties' => $columnProperties,
+				'identifierKeys'   => $identifierKeys,
+				'columnMap'        => $columnMap,
+			];
+		}
+
 		/**
 		 * Returns true if a property named $propertyName exists in the annotation map
 		 * and carries an @Orm\Column annotation.
