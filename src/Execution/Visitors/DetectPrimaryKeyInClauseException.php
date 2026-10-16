@@ -23,7 +23,7 @@
 		 * @param int $code The error code for the exception (0 by default).
 		 * @param \Throwable|null $previous Any previous exception that caused this exception.
 		 */
-		public function __construct(AstIn $astObject, $message = "", $code = 0, \Throwable $previous = null) {
+		public function __construct(AstIn $astObject, $message = "", $code = 0, ?\Throwable $previous = null) {
 			// Call the parent Exception constructor to properly initialize the exception
 			parent::__construct($message, $code, $previous);
 			

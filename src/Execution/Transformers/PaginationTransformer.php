@@ -8,6 +8,8 @@
 	use Quellabs\ObjectQuel\EntityStore;
 	use Quellabs\ObjectQuel\Exception\EntityResolutionException;
 	use Quellabs\ObjectQuel\Exception\QuelException;
+	use Quellabs\ObjectQuel\Execution\Visitors\DetectPrimaryKeyInClause;
+	use Quellabs\ObjectQuel\Execution\Visitors\DetectPrimaryKeyInClauseException;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstAlias;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstBinaryOperator;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstIdentifier;
@@ -100,6 +102,13 @@
 				throw new QuelException('The window page and size produce an offset that is too large.');
 			}
 
+			// @InValuesAreFinal declares an existing primary-key IN(...) list as the
+			// already-validated, final candidate set: page it directly, with no key
+			// query at all, instead of re-deriving it from the database.
+			if ($ast->getDirective('InValuesAreFinal') === true && $this->sliceExistingPrimaryKeyIn($ast, $window, $windowSize)) {
+				return;
+			}
+
 			// SQL can page keys only when the key query has one row per parent.
 			// Otherwise, fetch all matching keys for PHP deduplication and slicing.
 			$useSqlPage = $this->canPageKeysInSql($ast);
@@ -137,6 +146,37 @@
 			// to only the primary keys we determined should be on this page
 			// This ensures the final query returns exactly the records we want, in the right order
 			$this->addInConditionForPagination($ast, $parameters, $filteredKeys);
+		}
+
+		/**
+		 * Pages an existing primary-key IN(...) clause in place, without querying the
+		 * database for the candidate key set. Only applies when the IN clause is on the
+		 * root entity's primary key; any other shape falls back to the key query.
+		 * @param AstRetrieve $ast
+		 * @param int $window
+		 * @param int $windowSize
+		 * @return bool True if a matching IN clause was found and paged
+		 */
+		private function sliceExistingPrimaryKeyIn(AstRetrieve $ast, int $window, int $windowSize): bool {
+			assert($this->primaryKeyInfo !== null);
+
+			$visitor = new DetectPrimaryKeyInClause($this->primaryKeyInfo->range, $this->primaryKeyInfo->primaryKey);
+
+			try {
+				$ast->getConditions()?->accept($visitor);
+				return false;
+			} catch (DetectPrimaryKeyInClauseException $exception) {
+				$astIn = $exception->getAstObject();
+				$filteredParams = array_slice($astIn->getParameters(), $window * $windowSize, $windowSize);
+
+				if (empty($filteredParams)) {
+					$this->addImpossibleCondition($ast);
+				} else {
+					$astIn->setParameters($filteredParams);
+				}
+
+				return true;
+			}
 		}
 
 		/**
