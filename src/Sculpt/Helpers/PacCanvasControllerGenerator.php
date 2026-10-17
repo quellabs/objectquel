@@ -34,7 +34,8 @@
     use Symfony\Component\HttpFoundation\Request;
     use Quellabs\Canvas\Annotations\Route;
     use Quellabs\Canvas\Controllers\JsonApiController;
-    
+    use Quellabs\Canvas\Controllers\WriteOperation;
+
     class %s extends JsonApiController {
     
         /**
@@ -119,12 +120,12 @@
 		}
 
 		/**
-		 * Build the getWritableFields() stub, deliberately returning an empty
-		 * array: which attributes a resource should accept from clients is a
-		 * business decision the generator cannot make, so nothing is writable
-		 * until the developer deliberately lists some. The non-identifier
-		 * properties are listed in a comment purely as a starting point for that
-		 * decision, not applied automatically.
+		 * Build the isAttributeWritable() stub. A property with a setter is
+		 * writable by default — this override is a discoverable reminder to
+		 * review that, not a required gate: deny specific fields here if they're
+		 * server-owned (role, status, ownership, timestamps) despite having a
+		 * setter for the ORM's own use. The non-identifier properties are listed
+		 * in a comment purely as a starting point for that review.
 		 * @param string $baseName Entity base name, used only in the docblock
 		 * @return string The stub method declaration, indented to match the template
 		 */
@@ -134,15 +135,17 @@
 			$candidateList = empty($candidates) ? '(none found)' : implode(', ', $candidates);
 
 			return sprintf('/**
-         * Attributes a client may set when creating or updating a %s.
-         * Nothing is writable until you list it here — available non-identifier
+         * Decide whether a specific attribute may be written to a %s. A
+         * property with a setter is writable by default — deny the ones that
+         * shouldn\'t be client-writable despite having one. Non-identifier
          * properties: %s
-         * Override getWritableFieldsForCreate()/getWritableFieldsForUpdate()
-         * instead if create and update need to accept different fields.
-         * @return list<string>
+         * @param object $entity The entity being created or updated
+         * @param string $key The attribute name (already confirmed to have a setter)
+         * @param WriteOperation $operation Whether this is a create or an update
+         * @return bool
          */
-        protected function getWritableFields(): array {
-            return [];
+        protected function isAttributeWritable(object $entity, string $key, WriteOperation $operation): bool {
+            return true;
         }
     ', $baseName, $candidateList);
 		}
