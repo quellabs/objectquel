@@ -38,6 +38,7 @@
 	 * Lowers an analyzed routine to one engine's CREATE FUNCTION/PROCEDURE statements.
 	 * Walks the body and compiles embedded statements; subclasses supply the engine's
 	 * control flow, variables and cursor loops.
+	 * @phpstan-type LoopFrame array{cursorName: ?string, label: string, breakTarget: bool, continueTarget: bool}
 	 */
 	abstract class RoutineLowering {
 
@@ -55,8 +56,9 @@
 		/** @var array<string, AstRetrieve> Prepared query of each cursor, in declaration order */
 		protected array $cursorQueries;
 
-		/** @var string[] Cursors of the loops enclosing the statement being lowered, outermost first */
-		protected array $openLoops;
+		/** @var list<LoopFrame> Enclosing loops, outermost first */
+		protected array $loopStack;
+		protected int $loopCount;
 
 		/** Routine being lowered */
 		protected AstRoutineDefinition $routine;
@@ -88,7 +90,8 @@
 		public function lower(AstRoutineDefinition $routine): array {
 			$this->routine = $routine;
 			$this->cursorQueries = [];
-			$this->openLoops = [];
+			$this->loopStack = [];
+			$this->loopCount = 0;
 			$this->metadataJson = RoutineMetadata::build($routine, $this->entityStore);
 
 			if (!$routine->returnsNoValue() && $this->contains($routine, [AstAtomic::class])) {
@@ -179,15 +182,19 @@
 
 		/**
 		 * Compiles a break statement for the target engine.
-		 * @return string The statement that leaves the innermost loop, for `break`
+		 * @param int $levels Number of loops to leave
+		 * @param int $depth Indentation depth
+		 * @return string Lowered jump and cursor cleanup
 		 */
-		abstract protected function breakStatement(): string;
+		abstract protected function breakStatement(int $levels, int $depth): string;
 
 		/**
 		 * Compiles a continue statement for the target engine.
-		 * @return string The statement that starts the innermost loop's next iteration, for `continue`
+		 * @param int $levels Number of loops to target
+		 * @param int $depth Indentation depth
+		 * @return string Lowered jump and cursor cleanup
 		 */
-		abstract protected function continueStatement(): string;
+		abstract protected function continueStatement(int $levels, int $depth): string;
 
 		/**
 		 * Runs a retrieve and discards its rows.
@@ -201,7 +208,6 @@
 		 * Engine-specific checks before lowering starts.
 		 * @param AstRoutineDefinition $routine The routine
 		 * @return void
-		 * @throws SemanticException
 		 */
 		protected function validate(AstRoutineDefinition $routine): void {
 		}
@@ -235,18 +241,76 @@
 		}
 
 		/**
-		 * Lowers a loop body with its cursor recorded as open.
-		 * @param AstForeach $foreach The loop
-		 * @param int $depth Indentation depth of the body
-		 * @return string
-		 * @throws SemanticException|EntityResolutionException|TransformationException|QuelException
+		 * Records an enclosing loop and returns its unique label.
+		 * @param string|null $cursorName Cursor name for foreach, or null for while
+		 * @return string Label for this loop
 		 */
-		protected function lowerLoopBody(AstForeach $foreach, int $depth): string {
-			$this->openLoops[] = $foreach->getCursorName();
-			$body = $this->lowerBlock($foreach->getBody(), $depth);
-			array_pop($this->openLoops);
+		protected function pushLoop(?string $cursorName): string {
+			$label = '_loop' . (++$this->loopCount);
+			$this->loopStack[] = ['cursorName' => $cursorName, 'label' => $label, 'breakTarget' => false, 'continueTarget' => false];
+			return $label;
+		}
 
-			return $body;
+		/**
+		 * Removes the current loop after lowering its body.
+		 * @return LoopFrame Completed loop frame
+		 */
+		protected function popLoop(): array {
+			$frame = array_pop($this->loopStack);
+			if ($frame === null) {
+				throw new \LogicException('No loop to finish.');
+			}
+			return $frame;
+		}
+
+		/**
+		 * Marks and returns the enclosing loop targeted by a jump.
+		 * @param int $levels Level of the jump
+		 * @param bool $break True for break, false for continue
+		 * @return LoopFrame Target frame
+		 */
+		protected function targetLoop(int $levels, bool $break): array {
+			$index = count($this->loopStack) - $levels;
+			
+			if ($levels < 1 || !isset($this->loopStack[$index])) {
+				throw new \LogicException('Loop jump was not validated before lowering.');
+			}
+			
+			$this->loopStack[$index][$break ? 'breakTarget' : 'continueTarget'] = true;
+			return $this->loopStack[$index];
+		}
+
+		/**
+		 * Reads a loop jump level after semantic validation.
+		 * @param AstBreak|AstContinue $statement Loop jump
+		 * @return int Validated level
+		 */
+		private function jumpLevels(AstBreak|AstContinue $statement): int {
+			$levels = $statement->getLevels();
+			
+			if (!is_int($levels) || $levels < 1) {
+				throw new \LogicException('Loop jump level was not validated before lowering.');
+			}
+			
+			return $levels;
+		}
+
+		/**
+		 * Returns cursors in loops skipped before reaching a jump target, innermost first.
+		 * @param int $levels Level of the jump
+		 * @return list<string> Cursor names to close
+		 */
+		protected function skippedCursors(int $levels): array {
+			$skipped = array_slice($this->loopStack, count($this->loopStack) - $levels + 1);
+			return array_values(array_filter(array_column(array_reverse($skipped), 'cursorName'), fn(?string $name) => $name !== null));
+		}
+
+		/**
+		 * Returns cursors in all enclosing loops, outermost first.
+		 * @return list<string> Open cursor names
+		 */
+		protected function openLoopCursors(): array {
+			return array_values(array_filter(array_column($this->loopStack, 'cursorName'), fn(?string $name) => $name !== null));
 		}
 
 		/**
@@ -369,8 +433,8 @@
 				$statement instanceof AstForeach => $this->lowerForeach($statement, $depth),
 				$statement instanceof AstAtomic => $this->lowerAtomic($statement, $depth),
 				$statement instanceof AstRollback => $this->line($this->rollbackStatement(), $depth),
-				$statement instanceof AstBreak => $this->line($this->breakStatement(), $depth),
-				$statement instanceof AstContinue => $this->line($this->continueStatement(), $depth),
+				$statement instanceof AstBreak => $this->breakStatement($this->jumpLevels($statement), $depth),
+				$statement instanceof AstContinue => $this->continueStatement($this->jumpLevels($statement), $depth),
 				$statement instanceof AstRetrieve => $this->line($this->discardRetrieve($statement), $depth),
 				$statement instanceof AstAppend => $this->line($this->statements->compileAppend($statement) . ';', $depth),
 				$statement instanceof AstReplace => $this->line($this->statements->compileReplace($statement) . ';', $depth),
@@ -478,12 +542,13 @@
 
 			return $flattened;
 		}
-
+		
 		/**
 		 * Maps an entity-row parameter field to its native SQL type, from the entity's mapped column.
 		 * @param string $entityClass Fully qualified entity class
 		 * @param string $property Mapped property name
 		 * @return string SQL type on the target engine
+		 * @throws EntityResolutionException
 		 */
 		protected function entityRowFieldSqlType(string $entityClass, string $property): string {
 			$definition = $this->statements->getFieldTypes()->columnType($entityClass, $property);
@@ -494,11 +559,12 @@
 
 			return $this->typeMapper->getTempTableColumnType($definition);
 		}
-
+		
 		/**
 		 * Records the declared type of every parameter and scalar local, for statements that read them.
 		 * @param AstRoutineDefinition $routine The routine
 		 * @return void
+		 * @throws EntityResolutionException
 		 */
 		private function declareVariableTypes(AstRoutineDefinition $routine): void {
 			$fieldTypes = $this->statements->getFieldTypes();

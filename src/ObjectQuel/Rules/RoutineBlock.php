@@ -146,11 +146,11 @@
 
 				case 'break':
 					$this->lexer->matchKeyword('break');
-					return new AstBreak();
+					return new AstBreak($this->parseLoopLevel());
 
 				case 'continue':
 					$this->lexer->matchKeyword('continue');
-					return new AstContinue();
+					return new AstContinue($this->parseLoopLevel());
 
 				case 'replace':
 					return $this->parseReplace();
@@ -176,6 +176,19 @@
 				Token::ParenthesesOpen => (new Call($this->lexer))->parse(),
 				default => throw new ParserException("Expected a declaration, assignment, call, or statement keyword on line {$this->lexer->getLineNumber()}"),
 			};
+		}
+
+		/**
+		 * Reads an optional numeric level after a loop jump.
+		 * @return int|float Requested level, or 1 when omitted
+		 * @throws LexerException
+		 */
+		private function parseLoopLevel(): int|float {
+			if (!in_array($this->lexer->lookahead(), [Token::Minus, Token::Number], true)) {
+				return 1;
+			}
+
+			return SignedNumber::parse($this->lexer);
 		}
 
 		/**
