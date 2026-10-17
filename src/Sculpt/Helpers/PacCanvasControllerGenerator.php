@@ -22,8 +22,8 @@
 			$routePath = StringInflector::pluralize(strtolower($baseName));
 			$currentDateTime = date('Y-m-d H:i:s');
 			$qualifiedClassName = $this->entityStore->normalizeEntityClass($this->entityName);
-			
-			return sprintf('<?php
+
+			$code = sprintf('<?php
 
     // Auto-generated WakePAC controller for %s
     // Generated on %s
@@ -52,7 +52,8 @@
         protected function getResourceType(): string {
             return \'%s\';
         }
-    
+
+        __WRITABLE_FIELDS_PLACEHOLDER__
         /**
          * Get a single %s resource by ID
          * @param int $id The resource ID
@@ -109,5 +110,47 @@
 				$baseName,
 				$routePath
 			);
+
+			return str_replace(
+				'__WRITABLE_FIELDS_PLACEHOLDER__',
+				$this->buildWritableFieldsStub($baseName),
+				$code
+			);
+		}
+
+		/**
+		 * Build the getWritableFieldsForCreate()/getWritableFieldsForUpdate() stub
+		 * methods, deliberately returning empty arrays: which attributes a resource
+		 * should accept from clients is a business decision the generator cannot
+		 * make, so nothing is writable until the developer deliberately lists some.
+		 * The non-identifier properties are listed in a comment purely as a
+		 * starting point for that decision, not applied automatically.
+		 * @param string $baseName Entity base name, used only in the docblocks
+		 * @return string The two stub method declarations, indented to match the template
+		 */
+		private function buildWritableFieldsStub(string $baseName): string {
+			$entityData = $this->prepareEntityData();
+			$candidates = array_values(array_diff(array_keys($entityData['columns']), $entityData['identifiers']));
+			$candidateList = empty($candidates) ? '(none found)' : implode(', ', $candidates);
+
+			return sprintf('/**
+         * Attributes a client may set when creating a %s via POST.
+         * Nothing is writable until you list it here — available non-identifier
+         * properties: %s
+         * @return list<string>
+         */
+        protected function getWritableFieldsForCreate(): array {
+            return [];
+        }
+
+        /**
+         * Attributes a client may set when updating a %s via PUT/PATCH.
+         * Checked independently from getWritableFieldsForCreate().
+         * @return list<string>
+         */
+        protected function getWritableFieldsForUpdate(): array {
+            return [];
+        }
+    ', $baseName, $candidateList, $baseName);
 		}
 	}
