@@ -13,9 +13,11 @@
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRangeDatabase;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstReturn;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRoutineCall;
+	use Quellabs\ObjectQuel\Exception\TransformationException;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRoutineDefinition;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstWhile;
 	use Quellabs\ObjectQuel\ObjectQuel\Visitors\CollectNodes;
+	use Quellabs\ObjectQuel\Exception\EntityResolutionException;
 	use Quellabs\ObjectQuel\ObjectQuel\Routines\RoutineStatementCompiler;
 
 	/**
@@ -35,11 +37,6 @@
 		private const string DISCARD_VARIABLE = '_discard';
 		private const string ATOMIC_LABEL = '_equel_atomic';
 		private const string ROUTINE_LABEL = '_equel_routine';
-
-		private int $loopCount;
-
-		/** @var string[] Labels of the loops enclosing the statement being lowered, outermost first */
-		private array $loopLabels;
 
 		/** Collation of string variables and return values, or null for the database default */
 		private ?string $collation;
@@ -77,8 +74,6 @@
 		 */
 		protected function validate(AstRoutineDefinition $routine): void {
 			parent::validate($routine);
-			$this->loopCount = 0;
-			$this->loopLabels = [];
 
 			if (!$routine->returnsNoValue()) {
 				$this->assertNotRecursive($routine);
@@ -106,12 +101,18 @@
 		 * Renders the routine definition as SQL.
 		 * @param AstRoutineDefinition $routine The routine, with cursors prepared
 		 * @return list<string> The CREATE statement
+		 * @throws QuelException
+		 * @throws SemanticException
+		 * @throws EntityResolutionException
+		 * @throws TransformationException
 		 */
 		protected function render(AstRoutineDefinition $routine): array {
+			// Lowering discovers cursor queries and scratch variables needed in the declarations.
 			$body = $this->lowerBlock($routine->getBody(), 1);
 			$parameters = $this->parameterVariables($routine);
 			$variables = $this->localVariables($routine) + $this->fieldVariableTypes();
 
+			// All cursor fetches share one NOT FOUND handler and its state variable.
 			if (!empty($this->cursorQueries)) {
 				$variables[self::DONE_VARIABLE] = 'BOOLEAN';
 			}
@@ -120,6 +121,7 @@
 				$variables[self::DISCARD_VARIABLE] = 'INT';
 			}
 
+			// MySQL resolves a colliding name to a variable before a table column.
 			$this->assertNoColumnShadowed($routine, array_merge(array_keys($parameters), array_keys($variables)));
 
 			$declarations = [];
@@ -199,18 +201,20 @@
 			$characterSet = explode('_', $this->collation, 2)[0];
 			return "{$sqlType} CHARACTER SET {$characterSet} COLLATE {$this->collation}";
 		}
-
+		
 		/**
 		 * Compiles a routine variable assignment.
 		 * @param string $name Variable name
 		 * @param AstInterface $value Value expression
 		 * @return string `SET _v_name = value;`
+		 * @throws EntityResolutionException
+		 * @throws QuelException
 		 * @throws SemanticException
 		 */
 		protected function assignment(string $name, AstInterface $value): string {
 			return 'SET ' . $this->variableName($name) . ' = ' . $this->assignedValue($name, $value) . ';';
 		}
-
+		
 		/**
 		 * Open cursors close at the end of the block they're declared in, so neither form needs a CLOSE.
 		 * MySQL procedures don't allow RETURN at all, so a bare `return` (void routines only) instead
@@ -218,6 +222,8 @@
 		 * @param AstReturn $return The return
 		 * @param int $depth Indentation depth
 		 * @return string
+		 * @throws EntityResolutionException
+		 * @throws QuelException
 		 * @throws SemanticException
 		 */
 		protected function lowerReturn(AstReturn $return, int $depth): string {
@@ -229,12 +235,16 @@
 
 			return $this->line('RETURN ' . $this->returnedValue($value) . ';', $depth);
 		}
-
+		
 		/**
 		 * Compiles a conditional routine statement.
 		 * @param AstIf $if The if statement
 		 * @param int $depth Indentation depth
 		 * @return string
+		 * @throws EntityResolutionException
+		 * @throws QuelException
+		 * @throws SemanticException
+		 * @throws TransformationException
 		 */
 		protected function lowerIf(AstIf $if, int $depth): string {
 			$result = $this->line('IF ' . $this->statements->compileCondition($if->getCondition()) . ' THEN', $depth)
@@ -246,34 +256,41 @@
 
 			return $result . $this->line('END IF;', $depth);
 		}
-
+		
 		/**
-		 * Labelled, since LEAVE and ITERATE name their loop.
+		 * Labeled, since LEAVE and ITERATE name their loop.
 		 * @param AstWhile $while The loop
 		 * @param int $depth Indentation depth
 		 * @return string
+		 * @throws EntityResolutionException
+		 * @throws QuelException
+		 * @throws SemanticException
+		 * @throws TransformationException
 		 */
 		protected function lowerWhile(AstWhile $while, int $depth): string {
-			$label = $this->nextLoopLabel();
-			$this->loopLabels[] = $label;
+			$label = $this->pushLoop(null);
 			$body = $this->statementList($this->lowerBlock($while->getBody(), $depth + 1), $depth + 1);
-			array_pop($this->loopLabels);
+			$this->popLoop();
 
 			return $this->line("{$label}: WHILE " . $this->statements->compileCondition($while->getCondition()) . ' DO', $depth)
 				. $body
 				. $this->line("END WHILE {$label};", $depth);
 		}
-
+		
 		/**
 		 * Compiles a cursor iteration loop.
 		 * @param AstForeach $foreach The loop
 		 * @param int $depth Indentation depth
 		 * @return string
+		 * @throws EntityResolutionException
+		 * @throws QuelException
+		 * @throws SemanticException
+		 * @throws TransformationException
 		 */
 		protected function lowerForeach(AstForeach $foreach, int $depth): string {
 			$cursorName = $foreach->getCursorName();
 			$cursor = $this->cursorName($cursorName);
-			$label = $this->nextLoopLabel();
+			$label = $this->pushLoop($cursorName);
 
 			// Reset before each FETCH: an inner loop, or anything else raising NOT FOUND, may have set it
 			$fetch = $this->lines([
@@ -282,33 +299,29 @@
 				'IF ' . self::DONE_VARIABLE . " THEN LEAVE {$label}; END IF;",
 			], $depth + 1);
 
-			$this->loopLabels[] = $label;
-			$body = $this->lowerLoopBody($foreach, $depth + 1);
-			array_pop($this->loopLabels);
+			$body = $this->lowerBlock($foreach->getBody(), $depth + 1);
+			$this->popLoop();
 
 			return $this->lines(["OPEN {$cursor};", "{$label}: LOOP"], $depth)
 				. $fetch
 				. $body
 				. $this->lines(["END LOOP {$label};", "CLOSE {$cursor};"], $depth);
 		}
-
-		/**
-		 * Labels are numbered: MySQL limits them to 16 characters.
-		 * @return string A label no other loop in the routine uses
-		 */
-		private function nextLoopLabel(): string {
-			return '_loop' . (++$this->loopCount);
-		}
-
+		
 		/**
 		 * Uses a savepoint inside a caller transaction; the preflight release rejects an autocommit call before body writes.
 		 * @param AstAtomic $atomic The atomic block
 		 * @param int $depth Indentation depth
 		 * @return string
+		 * @throws EntityResolutionException
+		 * @throws QuelException
+		 * @throws SemanticException
+		 * @throws TransformationException
 		 */
 		protected function lowerAtomicBlock(AstAtomic $atomic, int $depth): string {
 			$savepoint = $this->atomicSavepoint();
 			$guard = $this->atomicGuard();
+			
 			return $this->line("IF COALESCE({$guard}, 0) <> 0 THEN SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Recursive atomic block is not supported'; END IF;", $depth)
 				. $this->line("SAVEPOINT {$savepoint};", $depth)
 				. $this->line("RELEASE SAVEPOINT {$savepoint};", $depth)
@@ -355,18 +368,36 @@
 
 		/**
 		 * A foreach's CLOSE follows its loop, so leaving it closes the cursor too.
-		 * @return string
+		 * @param int $levels Number of loops to leave
+		 * @param int $depth Indentation depth
+		 * @return string Jump and skipped cursor cleanup
 		 */
-		protected function breakStatement(): string {
-			return 'LEAVE ' . end($this->loopLabels) . ';';
+		protected function breakStatement(int $levels, int $depth): string {
+			$target = $this->targetLoop($levels, true);
+
+			$result = '';
+			foreach ($this->skippedCursors($levels) as $cursorName) {
+				$result .= $this->line('CLOSE ' . $this->cursorName($cursorName) . ';', $depth);
+			}
+			
+			return $result . $this->line('LEAVE ' . $target['label'] . ';', $depth);
 		}
 
 		/**
 		 * A foreach's ITERATE re-runs the `_done` reset and FETCH at the top of the loop.
-		 * @return string
+		 * @param int $levels Number of loops to target
+		 * @param int $depth Indentation depth
+		 * @return string Jump and skipped cursor cleanup
 		 */
-		protected function continueStatement(): string {
-			return 'ITERATE ' . end($this->loopLabels) . ';';
+		protected function continueStatement(int $levels, int $depth): string {
+			$target = $this->targetLoop($levels, false);
+
+			$result = '';
+			foreach ($this->skippedCursors($levels) as $cursorName) {
+				$result .= $this->line('CLOSE ' . $this->cursorName($cursorName) . ';', $depth);
+			}
+
+			return $result . $this->line('ITERATE ' . $target['label'] . ';', $depth);
 		}
 
 		/**
@@ -393,7 +424,7 @@
 		 * @param AstRoutineDefinition $routine The routine
 		 * @param string[] $variables Every variable name as written in SQL
 		 * @return void
-		 * @throws SemanticException
+		 * @throws SemanticException|EntityResolutionException
 		 */
 		private function assertNoColumnShadowed(AstRoutineDefinition $routine, array $variables): void {
 			$names = array_flip(array_map('strtolower', $variables));

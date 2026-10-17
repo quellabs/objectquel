@@ -229,7 +229,7 @@
 			
 			// Parse the required window number (which window/page to retrieve)
 			// This represents the page number or window index in the result set
-			$page = $this->parseSignedNumber();
+			$page = SignedNumber::parse($this->lexer);
 			
 			// Parse the window size specification (how many records per window)
 			$windowSize = $this->parseWindowSize();
@@ -250,27 +250,16 @@
 		private function parseWindowSize(): int|float {
 			// Short notation: WINDOW 1, 10
 			if ($this->lexer->optionalMatch(Token::Comma)) {
-				return $this->parseSignedNumber();
+				return SignedNumber::parse($this->lexer);
 			}
 			
 			// Explicit notation: WINDOW 1 USING WINDOW_SIZE 10
 			if ($this->lexer->optionalMatch(Token::Using)) {
 				$this->lexer->match(Token::WindowSize);
-				return $this->parseSignedNumber();
+				return SignedNumber::parse($this->lexer);
 			}
 			
 			return self::DEFAULT_WINDOW_SIZE;
-		}
-
-		/**
-		 * Parses a numeric window value, leaving range validation to the semantic analyzer.
-		 * @return int|float
-		 * @throws LexerException
-		 */
-		private function parseSignedNumber(): int|float {
-			$negative = $this->lexer->optionalMatch(Token::Minus) !== null;
-			$value = $this->lexer->match(Token::Number)->getNumericValue();
-			return $negative ? -$value : $value;
 		}
 
 		/**

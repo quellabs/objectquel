@@ -2,6 +2,7 @@
 
 	namespace Quellabs\ObjectQuel\ObjectQuel\Routines\Lowering;
 
+	use Quellabs\ObjectQuel\Exception\QuelException;
 	use Quellabs\ObjectQuel\Exception\SemanticException;
 	use Quellabs\ObjectQuel\ObjectQuel\AstInterface;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstAtomic;
@@ -9,8 +10,10 @@
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstIf;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRetrieve;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstReturn;
+	use Quellabs\ObjectQuel\Exception\TransformationException;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRoutineDefinition;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstWhile;
+	use Quellabs\ObjectQuel\Exception\EntityResolutionException;
 	use Quellabs\ObjectQuel\ObjectQuel\Helpers\SqlDialect\RoutineReferenceSql;
 
 	/**
@@ -149,44 +152,65 @@
 
 			return $result . $this->line('END IF;', $depth);
 		}
-
+		
 		/**
 		 * Compiles a while loop for the target database engine.
 		 * @param AstWhile $while The loop
 		 * @param int $depth Indentation depth
 		 * @return string
+		 * @throws SemanticException
+		 * @throws EntityResolutionException
+		 * @throws QuelException
+		 * @throws TransformationException
 		 */
 		protected function lowerWhile(AstWhile $while, int $depth): string {
-			return $this->line('WHILE ' . $this->statements->compileCondition($while->getCondition()) . ' LOOP', $depth)
-				. $this->lowerBlock($while->getBody(), $depth + 1)
+			$label = $this->pushLoop(null);
+			$body = $this->lowerBlock($while->getBody(), $depth + 1);
+			$frame = $this->popLoop();
+			
+			return ($frame['breakTarget'] || $frame['continueTarget'] ? $this->line("<<{$label}>>", $depth) : '')
+				. $this->line('WHILE ' . $this->statements->compileCondition($while->getCondition()) . ' LOOP', $depth)
+				. $body
 				. $this->line('END LOOP;', $depth);
 		}
-
+		
 		/**
 		 * `FOR row IN query LOOP`, PL/pgSQL's own cursor loop.
 		 * @param AstForeach $foreach The loop
 		 * @param int $depth Indentation depth
 		 * @return string
+		 * @throws EntityResolutionException
+		 * @throws QuelException
+		 * @throws SemanticException
+		 * @throws TransformationException
 		 */
 		protected function lowerForeach(AstForeach $foreach, int $depth): string {
 			$cursorName = $foreach->getCursorName();
 			$row = $this->quoter->quoteIdentifier(RoutineReferenceSql::cursorRowVariable($cursorName));
-			$body = $this->lowerLoopBody($foreach, $depth + 1);
+			
+			$label = $this->pushLoop($cursorName);
+			$body = $this->lowerBlock($foreach->getBody(), $depth + 1);
+			$frame = $this->popLoop();
 
-			return $this->line("FOR {$row} IN " . $this->statements->retrieveSql($this->cursorQueries[$cursorName]) . ' LOOP', $depth)
+			return ($frame['breakTarget'] || $frame['continueTarget'] ? $this->line("<<{$label}>>", $depth) : '')
+				. $this->line("FOR {$row} IN " . $this->statements->retrieveSql($this->cursorQueries[$cursorName]) . ' LOOP', $depth)
 				. $body
 				. $this->line('END LOOP;', $depth);
 		}
-
+		
 		/**
 		 * Compiles an atomic block in the routine.
 		 * @param AstAtomic $atomic The atomic block
 		 * @param int $depth Indentation depth
 		 * @return string
+		 * @throws EntityResolutionException
+		 * @throws QuelException
 		 * @throws SemanticException When an embedded statement can't be compiled
+		 * @throws TransformationException
 		 */
 		protected function lowerAtomic(AstAtomic $atomic, int $depth): string {
 			$body = $this->lowerBlock($atomic->getBody(), $depth + 1);
+			
 			return $this->line('BEGIN', $depth)
 				. ($body === '' ? $this->line('NULL;', $depth + 1) : $body)
 				. $this->line('EXCEPTION WHEN SQLSTATE \'PZ001\' THEN', $depth)
@@ -204,24 +228,40 @@
 
 		/**
 		 * An unlabelled EXIT leaves the innermost loop, never the `_routine` block.
-		 * @return string
+		 * @param int $levels Number of loops to leave
+		 * @param int $depth Indentation depth
+		 * @return string Jump statement
 		 */
-		protected function breakStatement(): string {
-			return 'EXIT;';
+		protected function breakStatement(int $levels, int $depth): string {
+			if ($levels === 1) {
+				return $this->line('EXIT;', $depth);
+			}
+
+			return $this->line('EXIT ' . $this->targetLoop($levels, true)['label'] . ';', $depth);
 		}
 
 		/**
 		 * Compiles a continue statement for the target engine.
-		 * @return string
+		 * @param int $levels Number of loops to target
+		 * @param int $depth Indentation depth
+		 * @return string Jump statement
 		 */
-		protected function continueStatement(): string {
-			return 'CONTINUE;';
-		}
+		protected function continueStatement(int $levels, int $depth): string {
+			if ($levels === 1) {
+				return $this->line('CONTINUE;', $depth);
+			}
 
+			return $this->line('CONTINUE ' . $this->targetLoop($levels, false)['label'] . ';', $depth);
+		}
+		
 		/**
 		 * PERFORM runs a query and discards its rows.
 		 * @param AstRetrieve $retrieve The retrieve
 		 * @return string
+		 * @throws EntityResolutionException
+		 * @throws QuelException
+		 * @throws SemanticException
+		 * @throws TransformationException
 		 */
 		protected function discardRetrieve(AstRetrieve $retrieve): string {
 			$sql = $this->statements->retrieveSql($this->statements->prepareRetrieve($retrieve));
