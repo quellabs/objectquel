@@ -18,6 +18,7 @@
 	use Quellabs\ObjectQuel\ObjectQuel\Rules\Replace;
 	use Quellabs\ObjectQuel\ObjectQuel\Rules\Retrieve;
 	use Quellabs\ObjectQuel\ObjectQuel\Rules\RoutineDefinition;
+	use Quellabs\ObjectQuel\ObjectQuel\Rules\SignedNumber;
 	
 	class Parser {
 		
@@ -167,19 +168,21 @@
 		}
 		
 		/**
+		 * Parse a compiler directive's value
 		 * @param string $directiveName Used only for the error message
 		 * @return bool|int|float|string
 		 * @throws LexerException|ParserException
 		 */
 		private function matchDirectiveValue(string $directiveName): bool|int|float|string {
-			if ($this->lexer->optionalMatch(Token::Minus)) {
-				return -$this->lexer->match(Token::Number)->getNumericValue();
+			if (
+				$this->lexer->lookahead() === Token::Minus ||
+				$this->lexer->lookahead() === Token::Number
+			) {
+				return SignedNumber::parse($this->lexer);
 			} elseif ($this->lexer->optionalMatch(Token::True)) {
 				return true;
 			} elseif ($this->lexer->optionalMatch(Token::False)) {
 				return false;
-			} elseif (($token = $this->lexer->optionalMatch(Token::Number)) !== null) {
-				return $token->getNumericValue();
 			} elseif (($token = $this->lexer->optionalMatch(Token::Identifier)) !== null) {
 				return $token->getStringValue();
 			} else {
