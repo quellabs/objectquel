@@ -119,14 +119,14 @@
 		}
 
 		/**
-		 * Build the getWritableFieldsForCreate()/getWritableFieldsForUpdate() stub
-		 * methods, deliberately returning empty arrays: which attributes a resource
-		 * should accept from clients is a business decision the generator cannot
-		 * make, so nothing is writable until the developer deliberately lists some.
-		 * The non-identifier properties are listed in a comment purely as a
-		 * starting point for that decision, not applied automatically.
-		 * @param string $baseName Entity base name, used only in the docblocks
-		 * @return string The two stub method declarations, indented to match the template
+		 * Build the getWritableFields() stub, deliberately returning an empty
+		 * array: which attributes a resource should accept from clients is a
+		 * business decision the generator cannot make, so nothing is writable
+		 * until the developer deliberately lists some. The non-identifier
+		 * properties are listed in a comment purely as a starting point for that
+		 * decision, not applied automatically.
+		 * @param string $baseName Entity base name, used only in the docblock
+		 * @return string The stub method declaration, indented to match the template
 		 */
 		private function buildWritableFieldsStub(string $baseName): string {
 			$entityData = $this->prepareEntityData();
@@ -134,23 +134,16 @@
 			$candidateList = empty($candidates) ? '(none found)' : implode(', ', $candidates);
 
 			return sprintf('/**
-         * Attributes a client may set when creating a %s via POST.
+         * Attributes a client may set when creating or updating a %s.
          * Nothing is writable until you list it here — available non-identifier
          * properties: %s
+         * Override getWritableFieldsForCreate()/getWritableFieldsForUpdate()
+         * instead if create and update need to accept different fields.
          * @return list<string>
          */
-        protected function getWritableFieldsForCreate(): array {
+        protected function getWritableFields(): array {
             return [];
         }
-
-        /**
-         * Attributes a client may set when updating a %s via PUT/PATCH.
-         * Checked independently from getWritableFieldsForCreate().
-         * @return list<string>
-         */
-        protected function getWritableFieldsForUpdate(): array {
-            return [];
-        }
-    ', $baseName, $candidateList, $baseName);
+    ', $baseName, $candidateList);
 		}
 	}
