@@ -78,7 +78,26 @@
 		public static function isBinaryOrOperator(AstInterface $node): bool {
 			return $node instanceof AstBinaryOperator && strtoupper($node->getOperator()) === 'OR';
 		}
-		
+
+		/**
+		 * Returns true if any ancestor of $node is an OR operator. A node reachable
+		 * only through an OR doesn't dominate its enclosing condition's truth value —
+		 * the other OR branch can still make the whole condition true independent of
+		 * this node — so it cannot be used to infer anything unconditional (e.g. "this
+		 * row must have a match") about the query as a whole.
+		 * @param AstInterface $node
+		 * @return bool
+		 */
+		public static function isNestedInsideOr(AstInterface $node): bool {
+			for ($current = $node->getParent(); $current !== null; $current = $current->getParent()) {
+				if (self::isBinaryOrOperator($current)) {
+					return true;
+				}
+			}
+
+			return false;
+		}
+
 		/**
 		 * Collect all identifiers in an AST subtree.
 		 * We use this to find which ranges are referenced by expressions.

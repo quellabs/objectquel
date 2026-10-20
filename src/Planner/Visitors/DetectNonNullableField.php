@@ -6,13 +6,13 @@
 	use Quellabs\ObjectQuel\EntityStore;
 	use Quellabs\ObjectQuel\Exception\EntityResolutionException;
 	use Quellabs\ObjectQuel\Metadata\EntityMetadataRecord;
-	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstBinaryOperator;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstIdentifier;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstIfNull;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRangeDatabaseSubquery;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRetrieve;
 	use Quellabs\ObjectQuel\ObjectQuel\AstInterface;
 	use Quellabs\ObjectQuel\ObjectQuel\AstVisitorInterface;
+	use Quellabs\ObjectQuel\Planner\Helpers\AstUtilities;
 	
 	/**
 	 * Visitor that checks if a range references any non-nullable fields in the AST.
@@ -88,7 +88,7 @@
 			// exist either: the WHERE clause can still be satisfied by the other
 			// OR branch while this range has no match at all, so promoting on this
 			// reference alone would drop rows an unmatched LEFT JOIN should keep.
-			if ($this->isNestedInsideOr($node)) {
+			if (AstUtilities::isNestedInsideOr($node)) {
 				return;
 			}
 
@@ -115,22 +115,6 @@
 		private function isNestedInsideIfNull(AstInterface $node): bool {
 			for ($current = $node->getParent(); $current !== null; $current = $current->getParent()) {
 				if ($current instanceof AstIfNull) {
-					return true;
-				}
-			}
-
-			return false;
-		}
-
-		/**
-		 * Returns true if any ancestor of $node is an OR operator — see this
-		 * class's visitNode() for why that disqualifies the reference.
-		 * @param AstInterface $node
-		 * @return bool
-		 */
-		private function isNestedInsideOr(AstInterface $node): bool {
-			for ($current = $node->getParent(); $current !== null; $current = $current->getParent()) {
-				if ($current instanceof AstBinaryOperator && strtoupper($current->getOperator()) === 'OR') {
 					return true;
 				}
 			}
