@@ -171,8 +171,9 @@
 		 * yields one pair; a composite relation's `a.x = b.y AND a.z = b.w` (built
 		 * by RewriteViaRelationToJoinCondition, or written directly) yields one
 		 * pair per AND branch, recursively. Returns null for anything else — OR,
-		 * non-identifier operands, or a non-binary node — since those join shapes
-		 * cannot be matched against relation annotations.
+		 * non-identifier operands, a non-`=` comparison (even as one AND branch),
+		 * or a non-binary node — since those join shapes cannot be matched against
+		 * relation annotations, or must not be promoted to an inner join.
 		 * @param AstInterface|null $node
 		 * @return list<array{0: AstIdentifier, 1: AstIdentifier}>|null
 		 */
@@ -190,6 +191,7 @@
 
 			if (
 				$node instanceof AstExpression &&
+				$node->getOperator() === '=' &&
 				$node->getLeft() instanceof AstIdentifier &&
 				$node->getRight() instanceof AstIdentifier
 			) {

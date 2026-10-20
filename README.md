@@ -136,6 +136,18 @@ class OrderLine { /* ... */ }
 
 The legacy property-level `referencedColumn` attribute (without `columns`) continues to work unchanged as single-column syntax, and must not be combined with `columns` on the same declaration.
 
+`create`/`alter` DDL declares the same constraint directly, without an entity, using `foreign key (col {, col}) references Table [(col {, col})] [on delete action] [on update action]`. The local and referenced column lists pair positionally — component *i* of one with component *i* of the other — and must be the same length when both are given:
+
+```
+create order_lines (
+    order_tenant_id = integer,
+    order_number = string(20),
+    foreign key (order_tenant_id, order_number) references orders (tenant_id, number) on delete cascade
+)
+```
+
+Omitting the referenced column list — `references orders`, with no parentheses — resolves it to the target table's complete primary key, in that key's own column order.
+
 A composite primary key is always assigned (or filled by an explicit application-side generator per component); an omitted `@Orm\PrimaryKeyStrategy` on a composite key means assigned, and an explicit database `identity` strategy on a composite key is rejected with a metadata error.
 
 Query syntax for a composite foreign key join is unchanged — `via` traverses the relation using all of its column pairs:
