@@ -70,7 +70,12 @@
 			
 			// Create a new plan to populate
 			$plan = new ExecutionPlan();
-			
+
+			// Record the complete, unsplit WHERE condition so PlanExecutor can
+			// re-apply it to the joined result once every stage has run — see
+			// ExecutionPlan::$originalConditions.
+			$plan->setOriginalConditions($query->getConditions());
+
 			// Shortcut: no ranges means the projection contains only constant expressions
 			// (literals, parameters, arithmetic). There is no data source to query, so
 			// emit a single ConstantStage and return immediately. PlanExecutor will evaluate

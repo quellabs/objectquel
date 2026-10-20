@@ -9,6 +9,7 @@
 	use Quellabs\ObjectQuel\Execution\Executors\ConstantRetrieveExecutor;
 	use Quellabs\ObjectQuel\Execution\Executors\RetrieveExecutor;
 	use Quellabs\ObjectQuel\Execution\Executors\JsonRetrieveExecutor;
+	use Quellabs\ObjectQuel\Execution\Helpers\ConditionEvaluator;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRangeJsonSource;
 	use Quellabs\ObjectQuel\ObjectQuel\AstInterface;
 	use Quellabs\ObjectQuel\Exception\QuelException;
@@ -134,7 +135,15 @@
 				}
 				
 				// Combine all intermediate results into a single final result
-				return $this->combineResults($plan, $intermediateResults);
+				$combinedResult = $this->combineResults($plan, $intermediateResults);
+
+				// Per-stage conditions (ConditionFilter) are only a safe
+				// over-approximation once ranges are split across stages — e.g. a
+				// database range OR-ed with a JSON-source range — so re-apply the
+				// complete, unsplit WHERE condition now that every range's columns
+				// are present on the joined row, narrowing the possibly-over-fetched
+				// result back down to exactly the correct rows.
+				return $this->applyOriginalConditions($plan, $combinedResult, $stagesInOrder[0]->getStaticParams());
 			} finally {
 				// Always clean up temp tables, whether execution succeeded or failed.
 				$this->tempTableExecutor->cleanup();
@@ -259,12 +268,43 @@
 			try {
 				// Create the join strategy on-demand for the specific join type
 				$strategy = $this->createJoinStrategy($joinType);
-				
+
 				// Execute the join using the selected strategy
 				return $strategy->join($leftResult, $rightResult, $joinConditions);
 			} catch (QuelException $e) {
 				// Wrap any join errors with additional context
 				throw new QuelException("Join failed ({$joinType}): {$e->getMessage()}", 'join_error', 0, $e);
+			}
+		}
+
+		/**
+		 * Re-applies the plan's complete, unsplit WHERE condition to the joined
+		 * result of every stage. Each stage's own condition (built by
+		 * ConditionFilter) is only a safe over-approximation once ranges are
+		 * split across stages — see ExecutionPlan::$originalConditions — so this
+		 * is what narrows the combined result back down to exactly the rows the
+		 * original query asked for, independent of how aggressively any single
+		 * stage could push its share of the condition down.
+		 * @param ExecutionPlan $plan
+		 * @param list<array<string, mixed>> $combinedResult
+		 * @param array<string, mixed> $staticParams
+		 * @return list<array<string, mixed>>
+		 * @throws QuelException
+		 */
+		private function applyOriginalConditions(ExecutionPlan $plan, array $combinedResult, array $staticParams): array {
+			$conditions = $plan->getOriginalConditions();
+
+			if ($conditions === null) {
+				return $combinedResult;
+			}
+
+			try {
+				return array_values(array_filter(
+					$combinedResult,
+					fn(array $row): bool => (bool)ConditionEvaluator::evaluate($conditions, $combinedResult, $row, $staticParams)
+				));
+			} catch (\Exception $e) {
+				throw new QuelException("Failed to re-apply the combined WHERE condition: {$e->getMessage()}", 'condition_evaluation_error', 0, $e);
 			}
 		}
 	}

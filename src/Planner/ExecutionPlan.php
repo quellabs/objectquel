@@ -1,8 +1,9 @@
 <?php
 	
 	namespace Quellabs\ObjectQuel\Planner;
-	
+
 	use Quellabs\ObjectQuel\Exception\QuelException;
+	use Quellabs\ObjectQuel\ObjectQuel\AstInterface;
 	
 	/**
 	 * ExecutionPlan class manages the execution of query stages within the EntityManager system.
@@ -40,7 +41,38 @@
 		 * @var array<string, string[]>
 		 */
 		private array $dependencies = [];
-		
+
+		/**
+		 * The original query's complete, unsplit WHERE condition — stored so
+		 * PlanExecutor can re-apply it to the joined result of every stage.
+		 * Per-stage conditions (ConditionFilter) are only a safe
+		 * over-approximation when ranges are split across stages (e.g. a
+		 * database range and a JSON-source range combined with OR): each stage
+		 * may fetch more rows than strictly necessary, and this final,
+		 * unmodified condition is what narrows the combined result back down
+		 * to exactly the correct rows.
+		 * @var AstInterface|null
+		 */
+		private ?AstInterface $originalConditions = null;
+
+		/**
+		 * Stores the original, unsplit WHERE condition for this plan's query.
+		 * @param AstInterface|null $conditions
+		 * @return void
+		 */
+		public function setOriginalConditions(?AstInterface $conditions): void {
+			$this->originalConditions = $conditions;
+		}
+
+		/**
+		 * Returns the original, unsplit WHERE condition for this plan's query,
+		 * or null if the query had none.
+		 * @return AstInterface|null
+		 */
+		public function getOriginalConditions(): ?AstInterface {
+			return $this->originalConditions;
+		}
+
 		/**
 		 * Returns the name of the main output stage.
 		 * When there's only one stage, it returns that stage's name.
