@@ -1,7 +1,7 @@
 <?php
-	
+
 	namespace Quellabs\ObjectQuel\Planner\Optimizers;
-	
+
 	use Quellabs\ObjectQuel\Annotations\Orm\ManyToOne;
 	use Quellabs\ObjectQuel\Annotations\Orm\OneToOne;
 	use Quellabs\ObjectQuel\Annotations\Orm\RequiredRelation;
@@ -9,6 +9,7 @@
 	use Quellabs\ObjectQuel\EntityStore;
 	use Quellabs\ObjectQuel\Exception\EntityResolutionException;
 	use Quellabs\ObjectQuel\Exception\TransformationException;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstBinaryOperator;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstExpression;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstIdentifier;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRange;
@@ -16,13 +17,13 @@
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRangeDatabaseMaterialized;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRangeDatabaseTempTable;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRetrieve;
-	use Quellabs\ObjectQuel\ObjectQuel\Ast\NodeBinary;
+	use Quellabs\ObjectQuel\ObjectQuel\AstInterface;
+	use Quellabs\ObjectQuel\Metadata\RelationColumnMapping;
 	use Quellabs\ObjectQuel\Planner\Visitors\CollectRanges;
 	use Quellabs\ObjectQuel\Planner\Visitors\DetectNonNullableField;
-	use Quellabs\ObjectQuel\Planner\Helpers\BinaryOperationHelper;
 	use Quellabs\ObjectQuel\Planner\QueryPlan\PlanLogInterface;
 	use Quellabs\ObjectQuel\Planner\QueryPlan\NullPlanLog;
-	
+
 	/**
 	 * Handles range-specific optimizations including required annotations
 	 * and unused LEFT JOIN removal.
@@ -37,10 +38,10 @@
 	 * - Annotation-based optimization ensures semantic correctness
 	 */
 	class RangeOptimizer {
-		
+
 		/** @var EntityStore Provides access to entity metadata and annotations */
 		private EntityStore $entityStore;
-		
+
 		/**
 		 * Initialize optimizer with required dependencies
 		 * @param EntityManager $entityManager Provides access to entity metadata store
@@ -48,7 +49,7 @@
 		public function __construct(EntityManager $entityManager) {
 			$this->entityStore = $entityManager->getEntityStore();
 		}
-		
+
 		/**
 		 * Main optimization entry point - applies all range optimizations
 		 *
@@ -68,12 +69,12 @@
 			// First, mark single ranges as required (trivial case)
 			// This is a quick win: single table queries can't use LEFT JOINs anyway
 			$this->setOnlyRangeToRequired($ast, $log);
-			
+
 			// Then check for annotation-based requirements
 			// This uses ORM metadata to determine semantic requirements
 			$this->setRangesRequiredThroughAnnotations($ast, $log);
 		}
-		
+
 		/**
 		 * Sets the single range as required when exactly one range exists.
 		 *
@@ -86,7 +87,7 @@
 		 */
 		private function setOnlyRangeToRequired(AstRetrieve $ast, PlanLogInterface $log): void {
 			$ranges = $ast->getRanges();
-			
+
 			// Simple case: if there's only one table, it must be required
 			// (A query must return results from at least one table)
 			if (count($ranges) === 1) {
@@ -94,7 +95,7 @@
 				$ranges[0]->setRequired();
 			}
 		}
-		
+
 		/**
 		 * Sets ranges as required based on RequiredRelation annotations.
 		 *
@@ -118,59 +119,90 @@
 			// Get the main table (the one without a JOIN condition)
 			// This is our starting point - the FROM table in SQL terms
 			$mainRange = $ast->getMainDatabaseRange();
-			
+
 			// No main range found - malformed query or subquery scenario
 			if ($mainRange === null) {
 				return;
 			}
-			
+
 			// Check each joined range for required annotations
 			foreach ($ast->getRanges() as $range) {
 				// Only include database ranges
 				if (!$range instanceof AstRangeDatabase) {
 					continue;
 				}
-				
-				// Skip ranges that don't have proper binary join conditions
-				// (e.g., CROSS JOINs, subqueries, etc.)
-				if (!$this->shouldSetRangeRequired($range)) {
+
+				// Flatten the join condition into its equality pairs. A plain
+				// single-column join yields one pair; a composite relation's
+				// AND-of-equalities (built by RewriteViaRelationToJoinCondition, or
+				// written directly) yields one pair per AND branch. Anything else
+				// (CROSS JOINs, OR, non-identifier operands) yields null and is skipped.
+				$pairs = $this->extractEqualityPairs($range->getJoinProperty());
+
+				if ($pairs === null || $pairs === []) {
 					continue;
 				}
-				
-				// Extract the join condition components
-				// JOIN conditions are typically: main_table.foreign_key = joined_table.primary_key
-				$joinProperty = $range->getJoinProperty();
-				
-				// shouldSetRangeRequired() guarantees $joinProperty is a non-null AstExpression,
-				// but PHPStan cannot track that invariant across method boundaries.
-				if (!$joinProperty instanceof NodeBinary) {
-					continue;
+
+				// Normalize each pair so its first element belongs to $range's own
+				// entity. A pair whose identifiers don't include $range's entity means
+				// this join condition isn't actually about $range; skip the whole range.
+				$ownPairs = [];
+				$allPairsMatchRange = true;
+
+				foreach ($pairs as [$left, $right]) {
+					if ($left->getEntityName() === $range->getEntityName()) {
+						$ownPairs[] = [$left, $right];
+					} elseif ($right->getEntityName() === $range->getEntityName()) {
+						$ownPairs[] = [$right, $left];
+					} else {
+						$allPairsMatchRange = false;
+						break;
+					}
 				}
-				
-				$left = BinaryOperationHelper::getBinaryLeft($joinProperty);
-				$right = BinaryOperationHelper::getBinaryRight($joinProperty);
-				
-				// shouldSetRangeRequired() already verified both sides are AstIdentifier instances,
-				// but PHPStan cannot track this guarantee across method boundaries.
-				// Re-check here to maintain type safety without relying on assert.
-				if (!$left instanceof AstIdentifier || !$right instanceof AstIdentifier) {
-					continue;
-				}
-				
-				// Normalize join direction: ensure range entity is on the left side
-				// This simplifies the annotation checking logic below
-				if ($right->getEntityName() === $range->getEntityName()) {
-					[$left, $right] = [$right, $left];
-				}
-				
-				// Verify this range is actually part of the join condition
-				// Safety check to ensure we're analyzing the correct relationship
-				if ($left->getEntityName() === $range->getEntityName()) {
-					$this->checkAndSetRangeRequired($mainRange, $range, $left, $right, $log);
+
+				if ($allPairsMatchRange) {
+					$this->checkAndSetRangeRequired($mainRange, $range, $ownPairs, $log);
 				}
 			}
 		}
-		
+
+		/**
+		 * Flattens a join condition into its equality pairs. A plain `a.x = b.y`
+		 * yields one pair; a composite relation's `a.x = b.y AND a.z = b.w` (built
+		 * by RewriteViaRelationToJoinCondition, or written directly) yields one
+		 * pair per AND branch, recursively. Returns null for anything else — OR,
+		 * non-identifier operands, or a non-binary node — since those join shapes
+		 * cannot be matched against relation annotations.
+		 * @param AstInterface|null $node
+		 * @return list<array{0: AstIdentifier, 1: AstIdentifier}>|null
+		 */
+		private function extractEqualityPairs(?AstInterface $node): ?array {
+			if ($node instanceof AstBinaryOperator && strtoupper($node->getOperator()) === 'AND') {
+				$left = $this->extractEqualityPairs($node->getLeft());
+				$right = $this->extractEqualityPairs($node->getRight());
+
+				if ($left === null || $right === null) {
+					return null;
+				}
+
+				return [...$left, ...$right];
+			}
+
+			if (
+				$node instanceof AstExpression &&
+				$node->getLeft() instanceof AstIdentifier &&
+				$node->getRight() instanceof AstIdentifier
+			) {
+				/** @var AstIdentifier $left */
+				$left = $node->getLeft();
+				/** @var AstIdentifier $right */
+				$right = $node->getRight();
+				return [[$left, $right]];
+			}
+
+			return null;
+		}
+
 		/**
 		 * Collects all ranges (table references) that are actually used in the query
 		 * by traversing the AST nodes for SELECT values, ORDER BY clauses, and WHERE conditions
@@ -181,24 +213,24 @@
 		private function getUsedRanges(AstRetrieve $ast, bool $traverseSubqueries = true): array {
 			// Initialize visitor pattern to collect range references
 			$visitor = new CollectRanges($traverseSubqueries);
-			
+
 			// Traverse all SELECT clause values to find referenced ranges
 			foreach ($ast->getValues() as $value) {
 				$value->accept($visitor);
 			}
-			
+
 			// Traverse all ORDER BY clause expressions to find referenced ranges
 			foreach ($ast->getSort() as $value) {
 				$value['ast']->accept($visitor);
 			}
-			
+
 			// Traverse WHERE clause conditions to find referenced ranges
 			$ast->getConditions()?->accept($visitor);
-			
+
 			// Return collected range references
 			return $visitor->getCollectedNodes();
 		}
-		
+
 		/**
 		 * Builds an indexed set of range names that are considered "in use" for pruning decisions.
 		 *
@@ -215,10 +247,10 @@
 				$this->getUsedRanges($ast, $traverseSubqueries),
 				$this->getRangesUsedInJoinConditions($ast)
 			);
-			
+
 			return array_fill_keys(array_map(fn($r) => $r->getName(), $allUsedRanges), true);
 		}
-		
+
 		/**
 		 * Removes unused LEFT JOIN ranges from the query AST to optimize the query.
 		 * Keeps the main range, required joins, and any ranges actually referenced
@@ -233,7 +265,7 @@
 				$result = [];
 				$mainRange = $ast->getMainDatabaseRange();
 				$usedRangeNames = $this->collectUsedRangeNames($ast, $traverseSubqueries);
-				
+
 				foreach ($ast->getRanges() as $range) {
 					if ($range === $mainRange || $range->isRequired() || isset($usedRangeNames[$range->getName()])) {
 						$result[] = $range;
@@ -244,12 +276,12 @@
 						);
 					}
 				}
-				
+
 				$removedAny = count($result) < count($ast->getRanges());
 				$ast->setRanges($result);
 			} while ($removedAny);
 		}
-		
+
 		/**
 		 * Removes unused temporary ranges from the query.
 		 *
@@ -267,29 +299,29 @@
 		public function removeUnusedTemporaryRanges(AstRetrieve $ast, PlanLogInterface $log = new NullPlanLog()): void {
 			$usedRangeNames = $this->collectUsedRangeNames($ast, false);
 			$result = [];
-			
+
 			foreach ($ast->getRanges() as $range) {
 				// Keep non-temporary ranges unconditionally
 				if (!($range instanceof AstRangeDatabaseTempTable) && !($range instanceof AstRangeDatabaseMaterialized)) {
 					$result[] = $range;
 					continue;
 				}
-				
+
 				// For temporary ranges, keep only those actually referenced
 				if (isset($usedRangeNames[$range->getName()])) {
 					$result[] = $range;
 					continue;
 				}
-				
+
 				$log->note('optimizer', 'range', 'UNUSED_TEMP_REMOVED',
 					"Range '{$range->getName()}' is not referenced in SELECT, WHERE, or ORDER BY; removed",
 					$range->getName()
 				);
 			}
-			
+
 			$ast->setRanges($result);
 		}
-		
+
 		/**
 		 * Collects ranges used in other ranges' join conditions (via clauses).
 		 * A range's own join condition does not count as a use of that range.
@@ -298,50 +330,21 @@
 		 */
 		private function getRangesUsedInJoinConditions(AstRetrieve $ast): array {
 			$result = [];
-			
+
 			foreach ($ast->getRanges() as $range) {
 				$visitor = new CollectRanges(false);
 				$range->getJoinProperty()?->accept($visitor);
-				
+
 				foreach ($visitor->getCollectedNodes() as $usedRange) {
 					if ($usedRange->getName() !== $range->getName()) {
 						$result[] = $usedRange;
 					}
 				}
 			}
-			
+
 			return $result;
 		}
-		
-		/**
-		 * Determines if a range should be checked for required relation annotations.
-		 *
-		 * This method filters ranges to only those that can benefit from annotation analysis.
-		 *
-		 * Criteria for Analysis:
-		 * - Range must have a join property (it's actually joined to something)
-		 * - Join property must be a binary expression (e.g., "a.id = b.foreign_id")
-		 * - Both sides of the expression must be identifiers (table.column references)
-		 *
-		 * Why These Criteria?
-		 * - Only binary equi-joins can be optimized with annotation data
-		 * - Complex expressions or functions in JOIN conditions are hard to analyze
-		 * - Non-identifier expressions (literals, functions) don't map to entity relationships
-		 *
-		 * @param AstRange $range The range to check
-		 * @return bool True if the range should be checked for requirements
-		 */
-		private function shouldSetRangeRequired(AstRange $range): bool {
-			// Fetch join property
-			$joinProperty = $range->getJoinProperty();
-			
-			// Check for the standard equi-join pattern: table1.column = table2.column
-			return
-				$joinProperty instanceof AstExpression &&
-				$joinProperty->getLeft() instanceof AstIdentifier &&
-				$joinProperty->getRight() instanceof AstIdentifier;
-		}
-		
+
 		/**
 		 * Checks annotations and sets range as required if a matching RequiredRelation is found.
 		 *
@@ -349,9 +352,9 @@
 		 *
 		 * Process Flow:
 		 * 1. Determine the direction of the relationship (which table owns the foreign key)
-		 * 2. Extract property names from both sides of the JOIN condition
+		 * 2. Extract the ordered property-name pairs from the (possibly composite) JOIN condition
 		 * 3. Look up entity annotations for the owning entity (or analyze temporary range structure)
-		 * 4. Search for RequiredRelation annotations that match this relationship
+		 * 4. Search for RequiredRelation annotations whose resolved column mapping matches every pair
 		 * 5. If found, mark the range as required (converting LEFT JOIN to INNER JOIN)
 		 *
 		 * Relationship Direction Examples:
@@ -360,72 +363,75 @@
 		 *
 		 * Annotation Matching:
 		 * - Target entity must match the joined table
-		 * - Relation column must match the foreign key field
+		 * - The resolved relation's local/target property pairs must match every join pair, as a set
 		 * - Inverse property must match the back-reference field
 		 *
 		 * Temporary Range Handling:
-		 * - For subqueries, uses nullability analysis instead of annotations
+		 * - For subqueries, uses nullability analysis instead of annotations, based on the first pair
 		 * - Traces through the subquery structure to find source field nullability
 		 * - Converts LEFT JOIN to INNER JOIN if the joined field is non-nullable
 		 *
 		 * @param AstRangeDatabase $mainRange The main table range
 		 * @param AstRangeDatabase $range The range being checked for requirement
-		 * @param AstIdentifier $left Left side of the join condition
-		 * @param AstIdentifier $right Right side of the join condition
+		 * @param list<array{0: AstIdentifier, 1: AstIdentifier}> $pairs Join equality pairs, each
+		 *        normalized so element 0 belongs to $range's own entity and element 1 to the other side
 		 * @throws TransformationException
 		 * @throws EntityResolutionException
 		 */
 		private function checkAndSetRangeRequired(
 			AstRangeDatabase $mainRange,
 			AstRangeDatabase $range,
-			AstIdentifier    $left,
-			AstIdentifier    $right,
+			array            $pairs,
 			PlanLogInterface $log
 		): void {
-			// Determine relationship direction by checking which side references the main range
-			// This tells us which entity "owns" the relationship (has the foreign key)
-			$isMainRange = $right->getRange() === $mainRange;
-			
-			// Extract property and entity names based on join direction
-			// These will be used to match against annotation metadata
-			$ownEntityName = $isMainRange ? $right->getEntityName() : $left->getEntityName();
-			$ownPropertyName = $isMainRange ? $right->getName() : $left->getName();
-			$relatedPropertyName = $isMainRange ? $left->getName() : $right->getName();
-			$relatedEntityName = $isMainRange ? $left->getEntityName() : $right->getEntityName();
-			
-			// Handle temporary ranges (subqueries) with nullability analysis
-			// Temporary tables have no entity metadata or annotations.
+			[$ownIdentifier, $relatedIdentifier] = $pairs[0];
+
+			$ownEntityName = $ownIdentifier->getEntityName();
+			$relatedEntityName = $relatedIdentifier->getEntityName();
+
+			// Handle temporary ranges (subqueries) with nullability analysis, using only the
+			// first pair — temporary ranges have no entity metadata or composite-key concept.
 			// Also bail out if $relatedEntityName is null, since hasMatchingRequiredRelationAnnotation()
 			// requires a non-null string and getEntityName() can return null.
 			if (empty($ownEntityName) || $relatedEntityName === null) {
-				$this->checkTemporaryRangeRequired($range, $isMainRange, $left, $right, $log);
+				$isMainRange = $relatedIdentifier->getRange() === $mainRange;
+				$this->checkTemporaryRangeRequired($range, $isMainRange, $ownIdentifier, $relatedIdentifier, $log);
 				return;
 			}
-			
-			// Check 1: annotation on the owning entity (holds the FK / relationColumn)
-			if ($this->hasMatchingRequiredRelationAnnotation($ownEntityName, $relatedEntityName, $ownPropertyName, $relatedPropertyName)) {
+
+			// getPropertyName() resolves the chain's last segment (e.g. 'tenantId' in
+			// 'o.tenantId'); getName() on the root identifier would return only the
+			// range alias ('o'), which never matches an annotation's property name.
+			$ownPropertyNames = array_map(static fn(array $pair) => $pair[0]->getPropertyName(), $pairs);
+			$relatedPropertyNames = array_map(static fn(array $pair) => $pair[1]->getPropertyName(), $pairs);
+			$ownPropertyList = implode(', ', $ownPropertyNames);
+
+			// Check 1: annotation on the owning entity (holds the FK / relationColumn(s))
+			if ($this->hasMatchingRequiredRelationAnnotation($ownEntityName, $relatedEntityName, $ownPropertyNames, $relatedPropertyNames)) {
 				// Set range required
 				$range->setRequired();
-				
+
 				// Add note to log
 				$log->note('optimizer', 'join', 'ANNOTATION_INNER',
-					"Range '{$range->getName()}' has @RequiredRelation on '{$ownPropertyName}'; forced INNER JOIN",
+					"Range '{$range->getName()}' has @RequiredRelation on '{$ownPropertyList}'; forced INNER JOIN",
 					$range->getName()
 				);
-				
+
 				return;
 			}
-			
+
 			// Check 2: annotation on the related entity (declared from the inverse side).
 			// When the annotation is placed on the joined entity rather than the main entity,
-			// the roles of ownPropertyName and relatedPropertyName are swapped.
-			if ($this->hasMatchingRequiredRelationAnnotation($relatedEntityName, $ownEntityName, $relatedPropertyName, $ownPropertyName)) {
+			// the roles of the own/related property lists are swapped.
+			$relatedPropertyList = implode(', ', $relatedPropertyNames);
+
+			if ($this->hasMatchingRequiredRelationAnnotation($relatedEntityName, $ownEntityName, $relatedPropertyNames, $ownPropertyNames)) {
 				// Set range required
 				$range->setRequired();
-				
+
 				// Add note to log
 				$log->note('optimizer', 'join', 'ANNOTATION_INNER',
-					"Range '{$range->getName()}' has @RequiredRelation on '{$relatedPropertyName}' (inverse side); forced INNER JOIN",
+					"Range '{$range->getName()}' has @RequiredRelation on '{$relatedPropertyList}' (inverse side); forced INNER JOIN",
 					$range->getName()
 				);
 			} else {
@@ -435,7 +441,7 @@
 				);
 			}
 		}
-		
+
 		/**
 		 * Checks if a temporary range (subquery) join should be marked as required.
 		 *
@@ -461,7 +467,7 @@
 		): void {
 			// Identify which side contains the temporary range
 			$joinedRange = $isMainRange ? $right->getRange() : $left->getRange();
-			
+
 			// Only process if it's a materialized or temp table range
 			if (
 				!$joinedRange instanceof AstRangeDatabaseTempTable &&
@@ -469,23 +475,23 @@
 			) {
 				return;
 			}
-			
+
 			// Use visitor to check field nullability
 			$visitor = new DetectNonNullableField(
 				$joinedRange->getName(),
 				$this->entityStore,
 				$joinedRange->getQuery(),
 			);
-			
+
 			// The visitor will analyze if this field reference is non-nullable
 			$testIdentifier = $isMainRange ? $right : $left;
 			$testIdentifier->accept($visitor);
-			
+
 			// Non-nullable field in join condition = safe to convert to INNER JOIN
 			if ($visitor->isNonNullable()) {
 				// Set required
 				$range->setRequired();
-				
+
 				// Add note to the log
 				$log->note('optimizer', 'join', 'TEMP_RANGE_INNER',
 					"Range '{$range->getName()}' joins on a non-nullable field; LEFT JOIN promoted to INNER JOIN",
@@ -493,68 +499,95 @@
 				);
 			}
 		}
-		
+
 		/**
 		 * Searches an entity's annotations for a RequiredRelation that matches the
 		 * described join relationship. Checks for the presence of @RequiredRelation
 		 * on a property and then verifies the accompanying @ManyToOne or @OneToOne
-		 * annotation matches the expected entity, FK column, and inverse property.
+		 * annotation's fully resolved column-pair mapping matches every join pair.
 		 *
 		 * @param string $entityName Entity whose annotations are searched
 		 * @param string $relatedEntityName Entity on the other side of the join
-		 * @param string $ownPropertyName FK property on $entityName
-		 * @param string $relatedPropertyName Back-reference property on $relatedEntityName
+		 * @param list<string> $ownPropertyNames FK properties on $entityName, paired by index with $relatedPropertyNames
+		 * @param list<string> $relatedPropertyNames Target properties on $relatedEntityName
 		 * @return bool
 		 * @throws EntityResolutionException
 		 */
 		private function hasMatchingRequiredRelationAnnotation(
 			string $entityName,
 			string $relatedEntityName,
-			string $ownPropertyName,
-			string $relatedPropertyName
+			array  $ownPropertyNames,
+			array  $relatedPropertyNames
 		): bool {
 			// Load all annotations for the entity, grouped by property
 			$metadata = $this->entityStore->getMetadata($entityName);
-			
-			foreach ($metadata->getAnnotations() as $annotations) {
+
+			foreach ($metadata->getAnnotations() as $propertyName => $annotations) {
 				// Both flags must be set on the same property for a match:
 				// @RequiredRelation marks the relation as non-nullable, and the
-				// relation annotation itself must confirm the correct join columns
+				// relation's resolved column mapping must confirm the correct join pairs.
+				// Checked after every annotation (not only non-RequiredRelation ones), since
+				// @RequiredRelation may be the last annotation declared on the property.
 				$hasRequiredRelation = false;
 				$hasMatchingRelation = false;
-				
+
 				foreach ($annotations as $annotation) {
-					// Track whether this property carries @RequiredRelation
 					if ($annotation instanceof RequiredRelation) {
 						$hasRequiredRelation = true;
-						continue;
-					}
-					
-					// Only ManyToOne and OneToOne annotations own a FK column —
-					// check that this annotation points to the right entity and column
-					if (
+					} elseif (
+						// Only ManyToOne and OneToOne annotations own a FK column — check that this
+						// annotation points to the right entity, then compare its fully resolved
+						// column-pair mapping against the join's pairs (works identically for a
+						// single-column or composite relation, in either annotation form)
 						($annotation instanceof ManyToOne || $annotation instanceof OneToOne) &&
-						$annotation->getTargetEntity() === $relatedEntityName &&
-						$annotation->getLocalColumn() === $ownPropertyName
+						$annotation->getTargetEntity() === $relatedEntityName
 					) {
-						// resolveTargetProperty handles both ManyToOne (inversedBy or PK fallback)
-						// and OneToOne (inversedBy or PK fallback) transparently.
-						$annotationMetadata = $this->entityStore->getMetadata($annotation->getTargetEntity());
-						$resolvedInversedBy = $annotation->getReferencedColumn() ?? $annotationMetadata->getPrimaryKey();
-						
-						// Confirm the back-reference property matches what the join expects
-						if ($resolvedInversedBy === $relatedPropertyName) {
+						$mapping = $metadata->getRelationColumnMapping($propertyName);
+
+						if ($mapping !== null && $this->mappingMatchesJoinPairs($mapping, $ownPropertyNames, $relatedPropertyNames)) {
 							$hasMatchingRelation = true;
 						}
 					}
-					
+
 					// Short-circuit as soon as both flags are confirmed on the same property
 					if ($hasRequiredRelation && $hasMatchingRelation) {
 						return true;
 					}
 				}
 			}
-			
+
 			return false;
+		}
+
+		/**
+		 * True when a relation's resolved column-pair mapping matches the join's
+		 * extracted (own, related) property-name pairs exactly, as a set — order
+		 * independent, since a hand-written `via` condition need not list a
+		 * composite relation's pairs in metadata order.
+		 * @param RelationColumnMapping $mapping
+		 * @param list<string> $ownPropertyNames
+		 * @param list<string> $relatedPropertyNames Paired by index with $ownPropertyNames
+		 * @return bool
+		 */
+		private function mappingMatchesJoinPairs(RelationColumnMapping $mapping, array $ownPropertyNames, array $relatedPropertyNames): bool {
+			if (count($mapping->pairs) !== count($ownPropertyNames)) {
+				return false;
+			}
+
+			$expectedPairs = array_map(
+				static fn($pair) => $pair->localProperty . "\0" . $pair->targetProperty,
+				$mapping->pairs
+			);
+
+			$actualPairs = array_map(
+				static fn($ownProperty, $relatedProperty) => $ownProperty . "\0" . $relatedProperty,
+				$ownPropertyNames,
+				$relatedPropertyNames
+			);
+
+			sort($expectedPairs);
+			sort($actualPairs);
+
+			return $expectedPairs === $actualPairs;
 		}
 	}

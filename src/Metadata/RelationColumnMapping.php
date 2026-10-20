@@ -11,13 +11,18 @@
 	 */
 	readonly class RelationColumnMapping {
 
+		/** @var non-empty-list<RelationColumnPair> Ordered */
+		public array $pairs;
+
 		/**
 		 * @param non-empty-list<RelationColumnPair> $pairs Ordered
 		 */
-		public function __construct(public array $pairs) {
+		public function __construct(array $pairs) {
 			if ($pairs === []) {
 				throw new \InvalidArgumentException('RelationColumnMapping requires at least one column pair.');
 			}
+
+			$this->pairs = $pairs;
 		}
 
 		/**

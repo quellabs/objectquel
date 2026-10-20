@@ -4,6 +4,7 @@
 	
 	use Quellabs\ObjectQuel\EntityStore;
 	use Quellabs\ObjectQuel\Exception\EntityResolutionException;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstIdentifier;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRange;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRangeDatabase;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRetrieve;
@@ -34,6 +35,25 @@
 		 */
 		public function isComposite(): bool {
 			return count($this->primaryKeys) > 1;
+		}
+
+		/**
+		 * Builds a fresh `range.property` identifier for every identifier property,
+		 * in metadata order — the AST shape callers need to project, sort, or filter
+		 * on the complete key tuple. Each call returns new nodes (with their own
+		 * cloned range) so callers can attach them to an AST without aliasing.
+		 * @return list<AstIdentifier>
+		 */
+		public function createIdentifiers(): array {
+			return array_map(
+				function (string $property): AstIdentifier {
+					$identifier = new AstIdentifier($this->entityName);
+					$identifier->setRange(clone $this->range);
+					$identifier->setNext(new AstIdentifier($property));
+					return $identifier;
+				},
+				$this->primaryKeys
+			);
 		}
 
 		/**

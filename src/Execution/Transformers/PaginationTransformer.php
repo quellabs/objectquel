@@ -453,15 +453,7 @@
 		 * @return list<AstIdentifier>
 		 */
 		private function createPrimaryKeyIdentifiers(PrimaryKeyInfo $primaryKeyInfo): array {
-			return array_map(
-				static function (string $property) use ($primaryKeyInfo): AstIdentifier {
-					$astIdentifier = new AstIdentifier($primaryKeyInfo->entityName);
-					$astIdentifier->setRange(clone $primaryKeyInfo->range);
-					$astIdentifier->setNext(new AstIdentifier($property));
-					return $astIdentifier;
-				},
-				$primaryKeyInfo->primaryKeys
-			);
+			return $primaryKeyInfo->createIdentifiers();
 		}
 
 		/**

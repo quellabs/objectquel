@@ -9,6 +9,11 @@
 	 */
 	readonly class RelationColumnPair {
 
+		public string $localProperty;
+		public string $localColumn;
+		public string $targetProperty;
+		public string $targetColumn;
+
 		/**
 		 * @param string $localProperty Property name on the owning entity
 		 * @param string $localColumn Database column backing $localProperty
@@ -16,10 +21,14 @@
 		 * @param string $targetColumn Database column backing $targetProperty
 		 */
 		public function __construct(
-			public string $localProperty,
-			public string $localColumn,
-			public string $targetProperty,
-			public string $targetColumn,
+			string $localProperty,
+			string $localColumn,
+			string $targetProperty,
+			string $targetColumn,
 		) {
+			$this->localProperty = $localProperty;
+			$this->localColumn = $localColumn;
+			$this->targetProperty = $targetProperty;
+			$this->targetColumn = $targetColumn;
 		}
 	}

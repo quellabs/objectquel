@@ -22,6 +22,24 @@
 	 */
 	readonly class ForeignKeyDeclaration {
 
+		/** @var non-empty-list<string> Local property names, in constraint order */
+		public array $localProperties;
+
+		/** @var non-empty-list<string> Local database column names, same order as $localProperties */
+		public array $localColumns;
+
+		/** @var class-string Fully qualified target entity class name */
+		public string $targetEntity;
+
+		/** @var non-empty-list<string> Target entity property names, same order as $localProperties */
+		public array $targetProperties;
+
+		/** @var string ON DELETE rule, e.g. 'CASCADE', 'RESTRICT', 'NO ACTION' */
+		public string $onDelete;
+
+		/** @var string ON UPDATE rule, e.g. 'CASCADE', 'RESTRICT', 'NO ACTION' */
+		public string $onUpdate;
+
 		/**
 		 * @param non-empty-list<string> $localProperties Local property names, in constraint order
 		 * @param non-empty-list<string> $localColumns Local database column names, same order as $localProperties
@@ -31,12 +49,12 @@
 		 * @param string $onUpdate ON UPDATE rule, e.g. 'CASCADE', 'RESTRICT', 'NO ACTION'
 		 */
 		public function __construct(
-			public array $localProperties,
-			public array $localColumns,
-			public string $targetEntity,
-			public array $targetProperties,
-			public string $onDelete,
-			public string $onUpdate,
+			array $localProperties,
+			array $localColumns,
+			string $targetEntity,
+			array $targetProperties,
+			string $onDelete,
+			string $onUpdate,
 		) {
 			if ($localProperties === [] || $localColumns === [] || $targetProperties === []) {
 				throw new \InvalidArgumentException('ForeignKeyDeclaration requires at least one column pair.');
@@ -45,6 +63,13 @@
 			if (count($localProperties) !== count($localColumns) || count($localProperties) !== count($targetProperties)) {
 				throw new \InvalidArgumentException('ForeignKeyDeclaration requires localProperties, localColumns, and targetProperties to have the same length.');
 			}
+
+			$this->localProperties = $localProperties;
+			$this->localColumns = $localColumns;
+			$this->targetEntity = $targetEntity;
+			$this->targetProperties = $targetProperties;
+			$this->onDelete = $onDelete;
+			$this->onUpdate = $onUpdate;
 		}
 
 		/**

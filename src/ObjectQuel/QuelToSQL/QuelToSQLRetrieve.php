@@ -317,6 +317,26 @@
 			// Check and retrieve the primary key information
 			$primaryKeyInfo = PrimaryKeyInfo::fromRetrieve($retrieve, $this->entityStore);
 
+			// A composite key can never be expressed as a single-column IN() literal
+			// list, so a match against just its first component would only ever
+			// reflect that one component, never a complete row identity (two rows
+			// sharing the first component but differing in the rest would be
+			// treated as the same ordered position). Composite keys therefore
+			// always take the validated full-tuple path: the query's own sort
+			// order, if any, with the complete PK tuple appended as a deterministic
+			// tie-breaker, the same ordering PaginationTransformer's own
+			// key-selection pass establishes, so the key query and the final
+			// filtered query agree.
+			if ($primaryKeyInfo->isComposite()) {
+				$sort = $retrieve->getSort();
+
+				foreach ($primaryKeyInfo->createIdentifiers() as $identifier) {
+					$sort[] = ['ast' => $identifier, 'order' => 'asc'];
+				}
+
+				return $this->compileSort($sort);
+			}
+
 			try {
 				$visitor = new DetectPrimaryKeyInClause($primaryKeyInfo->range, $primaryKeyInfo->primaryKeys[0]);
 				$retrieve->getConditions()?->accept($visitor);
@@ -388,35 +408,45 @@
 		 * @return string
 		 */
 		private function getSortDefault(AstRetrieve $retrieve): string {
-			// Get the conditions of the retrieve operation.
-			$sort = $retrieve->getSort();
-			
+			return $this->compileSort($retrieve->getSort());
+		}
+
+		/**
+		 * Compiles a sort entry list (the same shape AstRetrieve::getSort() returns:
+		 * each entry an ['ast' => AstInterface, 'order' => string] pair) into an
+		 * ORDER BY clause. Shared by getSortDefault() and getSortUsingIn()'s
+		 * composite-key path, which appends extra tie-breaker entries beyond the
+		 * query's own sort.
+		 * @param array<int, array{ast: AstInterface, order?: string}> $sort
+		 * @return string
+		 */
+		private function compileSort(array $sort): string {
 			// Check if there are conditions. If not, return an empty string.
 			if (empty($sort)) {
 				return "";
 			}
-			
+
 			// Convert the sort elements to SQL
 			$sqlSort = [];
-			
+
 			foreach ($sort as $s) {
 				// Create a new instance of QuelToSQLConvertToString to convert the conditions to a SQL string.
 				// This object will process the Quel conditions and convert them into a format that SQL understands.
 				$retrieveEntitiesVisitor = new BuildSqlFromAst($this->entityStore, $this->parameters, "SORT", $this->platform, $this->routineSchema);
-				
+
 				// Guide the QUEL through to get a SQL query back
 				$s['ast']->accept($retrieveEntitiesVisitor);
-				
+
 				// Save the query result
 				$order = $s['order'] ?? '';
-				
+
 				if ($order !== '') {
 					$sqlSort[] = $retrieveEntitiesVisitor->getResult() . " " . $order;
 				} else {
 					$sqlSort[] = $retrieveEntitiesVisitor->getResult();
 				}
 			}
-			
+
 			// Combine sort expressions into the ORDER BY clause.
 			return "ORDER BY " . implode(",", $sqlSort);
 		}

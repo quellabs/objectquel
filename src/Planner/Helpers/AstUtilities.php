@@ -219,35 +219,75 @@
 		}
 
 		/**
-		 * Filters out non-aggregate SELECT items that are bare references to their range's
-		 * primary key, since displaying the row's own id would otherwise put every row in
-		 * its own single-row partition.
+		 * Filters out non-aggregate SELECT items that together name a range's
+		 * *complete* primary key, since displaying the row's full own identity
+		 * would otherwise put every row in its own single-row partition. For a
+		 * composite key, only the full set counts as "the row's own identity" —
+		 * a query naming just one component (e.g. selecting a composite key's
+		 * first component alongside a window function) is instead using that
+		 * component as a deliberate partitioning key, and must keep it eligible
+		 * for partition inference rather than have it silently dropped as if it
+		 * alone identified the row.
 		 * @param EntityStore $entityStore
 		 * @param AstAlias[] $nonAggItems
 		 * @return AstAlias[]
 		 */
 		public static function excludePrimaryKeyItems(EntityStore $entityStore, array $nonAggItems): array {
+			// Tally, per range, which of its declared primary-key components appear
+			// bare in $nonAggItems — keyed by range name (unique within a query, so
+			// two ranges over the same entity, e.g. a self-join, are tallied
+			// independently). Range name is used rather than object identity since
+			// separate SELECT items are not guaranteed to carry the exact same
+			// range instance for what is logically the same range.
+			$componentsByRange = [];
+
+			foreach ($nonAggItems as $item) {
+				$component = self::resolvePrimaryKeyComponent($entityStore, $item->getExpression());
+
+				if ($component === null) {
+					continue;
+				}
+
+				$rangeName = $component['range']->getName();
+				$componentsByRange[$rangeName]['entityName'] = $component['entityName'];
+				$componentsByRange[$rangeName]['properties'][$component['property']] = true;
+			}
+
+			// Only a range whose SELECT items name every one of its identifier
+			// properties counts as showing the row's complete identity.
+			$completeIdentityRangeNames = [];
+
+			foreach ($componentsByRange as $rangeName => $info) {
+				$allKeys = $entityStore->getMetadata($info['entityName'])->identifierKeys;
+
+				if (count($info['properties']) === count($allKeys) && array_diff($allKeys, array_keys($info['properties'])) === []) {
+					$completeIdentityRangeNames[$rangeName] = true;
+				}
+			}
+
 			return array_values(array_filter(
 				$nonAggItems,
-				fn(AstAlias $item): bool => !self::isPrimaryKeyIdentifier($entityStore, $item->getExpression())
+				function (AstAlias $item) use ($entityStore, $completeIdentityRangeNames): bool {
+					$component = self::resolvePrimaryKeyComponent($entityStore, $item->getExpression());
+					return $component === null || !isset($completeIdentityRangeNames[$component['range']->getName()]);
+				}
 			));
 		}
 
 		/**
-		 * Returns true if the expression is a bare identifier referencing any one
-		 * of its range's declared primary key columns (e.g. `o.id`, not
-		 * `o.id.something`) — for a composite key, any single component counts,
-		 * not only the first: each one is individually unique-per-row only in
-		 * combination with the others, but a bare reference to any of them is
-		 * still "the row's own identity" for the caller's purposes (see
-		 * excludePrimaryKeyItems()).
+		 * Returns the range, entity name, and property name when the expression is
+		 * a bare identifier referencing one of its range's declared primary key
+		 * properties (e.g. `o.id`, not `o.id.something`); null otherwise. A single
+		 * component on its own is not judged here — see excludePrimaryKeyItems(),
+		 * which decides identity based on the complete set of components named
+		 * for a given range.
 		 * @param EntityStore $entityStore
 		 * @param AstInterface $expression
-		 * @return bool
+		 * @return array{range: \Quellabs\ObjectQuel\ObjectQuel\Ast\AstRange, entityName: string, property: string}|null
 		 */
-		public static function isPrimaryKeyIdentifier(EntityStore $entityStore, AstInterface $expression): bool {
+		private static function resolvePrimaryKeyComponent(EntityStore $entityStore, AstInterface $expression): ?array {
 			if (!$expression instanceof AstIdentifier) {
-				return false;
+				return null;
 			}
 
 			// Walk to the chain's leaf (e.g. `o.id`'s "id" part) before comparing names.
@@ -259,11 +299,20 @@
 
 			$entityName = $leaf->getEntityName();
 
-			if ($entityName === null) {
-				return false;
+			// getRange() is only ever set on the chain's base identifier (e.g. 'o'
+			// in 'o.tenantId'), not the leaf — getSourceRange() resolves that base
+			// identifier internally, the same way getEntityName() above does.
+			$range = $leaf->getSourceRange();
+
+			if ($entityName === null || $range === null) {
+				return null;
 			}
 
-			return in_array($leaf->getName(), $entityStore->getMetadata($entityName)->identifierKeys, true);
+			if (!in_array($leaf->getName(), $entityStore->getMetadata($entityName)->identifierKeys, true)) {
+				return null;
+			}
+
+			return ['range' => $range, 'entityName' => $entityName, 'property' => $leaf->getName()];
 		}
 
 		/**
