@@ -6,6 +6,7 @@
 	use Quellabs\ObjectQuel\EntityStore;
 	use Quellabs\ObjectQuel\Exception\EntityResolutionException;
 	use Quellabs\ObjectQuel\Metadata\EntityMetadataRecord;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstBinaryOperator;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstIdentifier;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstIfNull;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRangeDatabaseSubquery;
@@ -83,6 +84,14 @@
 				return;
 			}
 
+			// A reference reachable only through an OR doesn't prove the row must
+			// exist either: the WHERE clause can still be satisfied by the other
+			// OR branch while this range has no match at all, so promoting on this
+			// reference alone would drop rows an unmatched LEFT JOIN should keep.
+			if ($this->isNestedInsideOr($node)) {
+				return;
+			}
+
 			// Check the correct part of the query
 			if ($this->subquery !== null) {
 				$this->checkSubqueryField($next->getName());
@@ -112,7 +121,23 @@
 
 			return false;
 		}
-		
+
+		/**
+		 * Returns true if any ancestor of $node is an OR operator — see this
+		 * class's visitNode() for why that disqualifies the reference.
+		 * @param AstInterface $node
+		 * @return bool
+		 */
+		private function isNestedInsideOr(AstInterface $node): bool {
+			for ($current = $node->getParent(); $current !== null; $current = $current->getParent()) {
+				if ($current instanceof AstBinaryOperator && strtoupper($current->getOperator()) === 'OR') {
+					return true;
+				}
+			}
+
+			return false;
+		}
+
 		/**
 		 * Resolves nullability for a direct entity range field.
 		 * @param string|null $entityName
