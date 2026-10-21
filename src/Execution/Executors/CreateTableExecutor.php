@@ -171,9 +171,13 @@
 			$resolvedForeignKeys = [];
 
 			foreach ($foreignKeys as $foreignKey) {
-				if ($foreignKey->getReferencedColumn() === null) {
-					$referencedColumn = ForeignKeyReferenceResolver::resolveReferencedColumn($this->connection, $foreignKey->getReferencedTable());
-					$foreignKey = $foreignKey->withReferencedColumn($referencedColumn);
+				if ($foreignKey->getReferencedColumns() === null) {
+					$referencedColumns = ForeignKeyReferenceResolver::resolveReferencedColumns(
+						$this->connection,
+						$foreignKey->getReferencedTable(),
+						count($foreignKey->getColumns())
+					);
+					$foreignKey = $foreignKey->withReferencedColumns($referencedColumns);
 				}
 
 				$resolvedForeignKeys[] = $foreignKey;

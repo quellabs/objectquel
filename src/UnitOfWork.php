@@ -29,6 +29,7 @@
 	use Quellabs\ObjectQuel\DatabaseAdapter\DatabaseAdapter;
 	use Quellabs\ObjectQuel\Exception\EntityResolutionException;
 	use Quellabs\ObjectQuel\Metadata\EntityMetadataRecord;
+	use Quellabs\ObjectQuel\Metadata\RelationColumnMapping;
 	use Quellabs\ObjectQuel\Persistence\DeletePersister;
 	use Quellabs\ObjectQuel\Persistence\DeleteType;
 	use Quellabs\ObjectQuel\Persistence\InsertPersister;
@@ -203,17 +204,33 @@
 		public function findEntity(string $entityType, array $primaryKeys): ?object {
 			// Normalize the entity name for dealing with proxies
 			$normalizedEntityName = $this->getEntityStore()->normalizeEntityClass($entityType);
-			
+
 			// Check if the class exists in the entity store and return null if it doesn't
 			if (empty($this->entitiesByClass[$normalizedEntityName])) {
 				return null;
 			}
-			
-			// Convert the primary keys to a string
-			$primaryKeyString = $this->serializePrimaryKeys($primaryKeys);
-			
+
+			// Fetch the entity's metadata
+			$metadata = $this->getEntityStore()->getMetadata($normalizedEntityName);
+
+			// The index only ever stores complete identities (see indexEntityByIdentity()),
+			// so a key that doesn't name every identifier property exactly once, or carries
+			// a null component, can never match an indexed entry — some existing callers
+			// (e.g. RelationshipLoader's single-column lazy lookup against a composite-PK
+			// target) still pass such a partial key, and must keep getting "not found" here
+			// rather than an exception; a complete-key validation error belongs to the
+			// caller building that key, not to this lookup.
+			if (
+				in_array(null, $primaryKeys, true) ||
+				array_diff($metadata->identifierKeys, array_keys($primaryKeys)) !== [] ||
+				array_diff(array_keys($primaryKeys), $metadata->identifierKeys) !== []
+			) {
+				return null;
+			}
+
 			// Look up the object hash via the index, then return the entity
-			$hash = $this->indexByClass[$normalizedEntityName][$primaryKeyString] ?? null;
+			$key = $metadata->resolveIdentityKey($primaryKeys);
+			$hash = $this->indexByClass[$normalizedEntityName][$key] ?? null;
 			return $hash !== null ? ($this->entitiesByClass[$normalizedEntityName][$hash] ?? null) : null;
 		}
 
@@ -255,21 +272,12 @@
 			// This hash serves as a consistent reference to this specific object instance
 			$hash = spl_object_hash($entity);
 			
-			// Get the primary key values for this entity
-			// These are used to uniquely identify the entity in the database
-			$primaryKeys = $this->getIdentifiers($entity);
-			
-			// Convert the primary keys to a string representation for indexing
-			// This allows for composite keys to be used as array indexes
-			$primaryKeysString = $this->serializePrimaryKeys($primaryKeys);
-			
-			// Store the hash in the index for quick lookup by primary key
-			// This mapping enables finding entities by their database identifiers
-			$this->indexByClass[$class][$primaryKeysString] = $hash;
-			
 			// Add the actual entity object to the identity map
 			// This creates a two-way reference system: hash→entity and primaryKey→hash
 			$this->entitiesByClass[$class][$hash] = $entity;
+
+			// Index by primary key, if every component is already populated
+			$this->indexEntityByIdentity($class, $entity, $hash);
 			
 			// Create a snapshot of the entity's current state by serializing it
 			// This baseline is used later to detect changes when flush() is called
@@ -308,25 +316,16 @@
 			// This provides a consistent way to reference this specific object in memory
 			$hash = spl_object_hash($entity);
 			
-			// Extract primary key values from the entity
-			// For new entities, these might be null or empty until after database insertion
-			$primaryKeys = $this->getIdentifiers($entity);
-			
-			// Convert primary keys to a string format for use as array index
-			// For new entities without generated IDs, this might be an empty string
-			$primaryKeysString = $this->serializePrimaryKeys($primaryKeys);
-			
 			// Add the entity object to the identity map using its hash as the key
 			// This registers the entity for tracking in the current unit of work
 			$this->entitiesByClass[$class][$hash] = $entity;
-			
-			// Only index by primary key if the entity already has primary key values
-			// This handles both cases: entities with manually set IDs and those awaiting generated IDs
-			if (!empty($primaryKeysString)) {
-				// Store a reference to the entity by its primary key for quick lookups
-				$this->indexByClass[$class][$primaryKeysString] = $hash;
-			}
-			
+
+			// Index by primary key only once every component is populated — a new
+			// entity with an unassigned (e.g. not-yet-generated) component stays
+			// reachable only by object hash until indexEntityByIdentity() is called
+			// again with a complete key, in resetAfterCommit() after insert.
+			$this->indexEntityByIdentity($class, $entity, $hash);
+
 			// Return true to indicate successful registration of the new entity
 			return true;
 		}
@@ -638,49 +637,57 @@
 					continue;
 				}
 
-				$relationColumn = $annotation->getLocalColumn() ?? "{$property}Id";
 				$cascadeInfo = $this->getCascadeInfo($dependentEntityClass, $property);
 
 				if (!$cascadeInfo || !$this->shouldCascadeRemove($cascadeInfo)) {
 					continue;
 				}
 
-				$this->cascadeRestoreDependentObjects($dependentEntityClass, $relationColumn, $entity, $metadata, $visited);
+				$mapping = $metadata->getRelationColumnMapping($property);
+
+				if ($mapping === null) {
+					throw new \LogicException("No resolved column mapping for relation '{$property}' on '{$dependentEntityClass}'.");
+				}
+
+				$this->cascadeRestoreDependentObjects($dependentEntityClass, $mapping, $entity, $metadata, $visited);
 			}
 		}
 
 		/**
 		 * Finds every dependent row referencing $parentEntity and restores the ones currently soft-deleted.
 		 * @param class-string $dependentEntityClass
-		 * @param string $relationColumn
+		 * @param RelationColumnMapping $mapping
 		 * @param object $parentEntity
 		 * @param EntityMetadataRecord $dependentMetadata
 		 * @param array<string, true> $visited
 		 * @return void
 		 * @throws EntityResolutionException|QuelException
 		 */
-		private function cascadeRestoreDependentObjects(string $dependentEntityClass, string $relationColumn, object $parentEntity, EntityMetadataRecord $dependentMetadata, array $visited): void {
+		private function cascadeRestoreDependentObjects(string $dependentEntityClass, RelationColumnMapping $mapping, object $parentEntity, EntityMetadataRecord $dependentMetadata, array $visited): void {
 			// Unrecognised column type — skip rather than break an unrelated restore().
 			if (!in_array($dependentMetadata->softDeleteColumnType, ['datetime', 'boolean'], true)) {
 				return;
 			}
 
-			$parentPrimaryKeys = $this->getIdentifiers($parentEntity);
+			// Build one criterion per relation pair, keyed by the dependent entity's own
+			// local (FK) property name. A parent whose identity isn't fully known (never
+			// persisted, or only partially resolved) has no rows in the database that could
+			// reference it — querying with an incomplete criteria set would risk matching
+			// unrelated rows, so this never issues a query in that case.
+			$criteria = [];
 
-			if (count($parentPrimaryKeys) !== 1) {
-				return;
-			}
+			foreach ($mapping->pairs as $pair) {
+				$value = $this->propertyHandler->get($parentEntity, $pair->targetProperty);
 
-			$parentId = $parentPrimaryKeys[array_key_first($parentPrimaryKeys)];
+				if ($value === null) {
+					return;
+				}
 
-			if ($parentId === null) {
-				return;
+				$criteria[$pair->localProperty] = $value;
 			}
 
 			// ignoreSoftDelete: the rows being looked for are the ones marked deleted.
-			$dependentObjects = $this->entityManager->findBy($dependentEntityClass, [
-				$relationColumn => $parentId
-			], null, ignoreSoftDelete: true);
+			$dependentObjects = $this->entityManager->findBy($dependentEntityClass, $criteria, null, ignoreSoftDelete: true);
 
 			$softDeleteProperty = $dependentMetadata->softDeleteProperty ?? throw new \LogicException('cascadeRestoreDependentObjects called on entity without @SoftDelete');
 			$activeValue = $this->softDeleteActiveValue($dependentMetadata);
@@ -729,16 +736,49 @@
 		}
 		
 		/**
-		 * Convert primary keys to a string
-		 * @param array<string, mixed> $primaryKeys
-		 * @return string
+		 * Indexes $entity by its primary key, if and only if every identifier
+		 * component already has a value. An entity with any unset composite
+		 * component (e.g. awaiting a database-generated id) stays reachable only
+		 * by object hash until this is called again with a complete key — see
+		 * resetAfterCommit(), which does so once insert has populated it.
+		 *
+		 * Detects two distinct managed objects claiming the same complete
+		 * identity and fails explicitly rather than silently overwriting the
+		 * existing index entry, which would make the first object unreachable
+		 * by primary key while still being tracked.
+		 * @param string $class Normalized entity class name
+		 * @param object $entity
+		 * @param string $hash spl_object_hash($entity)
+		 * @throws EntityResolutionException
 		 */
-		private function serializePrimaryKeys(array $primaryKeys): string {
-			// Ensure consistent order
-			ksort($primaryKeys);
-			
-			// Use http_build_query for performance and simplicity
-			return str_replace(['&', '='], [';', ':'], http_build_query($primaryKeys));
+		private function indexEntityByIdentity(string $class, object $entity, string $hash): void {
+			$primaryKeys = $this->getIdentifiers($entity);
+
+			if (in_array(null, $primaryKeys, true)) {
+				return;
+			}
+
+			$metadata = $this->getEntityStore()->getMetadata($class);
+			$key = $metadata->resolveIdentityKey($primaryKeys);
+			$existingHash = $this->indexByClass[$class][$key] ?? null;
+
+			if (
+				$existingHash !== null &&
+				$existingHash !== $hash &&
+				isset($this->entitiesByClass[$class][$existingHash])
+			) {
+				$description = implode(', ', array_map(
+					static fn($property, $value) => $property . '=' . (is_scalar($value) ? (string) $value : get_debug_type($value)),
+					array_keys($primaryKeys),
+					$primaryKeys
+				));
+
+				throw new EntityResolutionException(
+					"Two distinct managed '{$class}' instances share the same identity ({$description})."
+				);
+			}
+
+			$this->indexByClass[$class][$key] = $hash;
 		}
 		
 		/**
@@ -985,10 +1025,10 @@
 				// Get the normalized class name of the entity
 				$class = $this->getEntityStore()->normalizeEntityClass($entity);
 				
-				// Add primary key to index cache for easy lookup
-				$primaryKeys = $this->getIdentifiers($entity);
-				$primaryKeysString = $this->serializePrimaryKeys($primaryKeys);
-				$this->indexByClass[$class][$primaryKeysString] = $hash;
+				// Add primary key to index cache for easy lookup — reindexes a new
+				// entity whose components (e.g. a database-generated id) only became
+				// available once the insert completed.
+				$this->indexEntityByIdentity($class, $entity, $hash);
 				
 				// Store the original data of the entity for later comparison
 				// This helps track changes in the entity over time
@@ -1006,14 +1046,28 @@
 		/**
 		 * This function retrieves the parent entity and the corresponding ManyToOne annotation
 		 * for the given entity. If the parent entity doesn't exist, null is returned.
+		 *
+		 * Reads every pair of the relation's resolved column mapping directly off the parent
+		 * object — not just the first component, and not only the parent's own identifier
+		 * properties, since a singular relation may target a non-PK property. A component
+		 * whose value isn't available at all (e.g. a new, uncascaded parent that was never
+		 * persisted) is not an error — every pair is still emitted, with a null value, exactly
+		 * as before: the caller writes it onto the child's FK column(s), which is a no-op when
+		 * they were already null and otherwise clears a stale prior value. Only a *partial*
+		 * resolution — some of a composite relation's pairs available and others not — is
+		 * reported, since silently writing part of a composite FK while leaving the rest at
+		 * whatever it was before would leave the row in an inconsistent state no legitimate
+		 * caller intends.
 		 * @param object $entity The entity for which to retrieve the parent entity and annotation.
 		 * @return array<int, array{entity: object, property: string, value: mixed}> An associative array with 'entity' and 'annotation' as keys, or null if not found.
 		 * @throws EntityResolutionException
+		 * @throws OrmException When only some of a composite relation's pairs have a resolvable parent value
 		 */
 		private function extractParentPrimaryKeyData(object $entity): array {
 			// Retrieve metadata for entity
 			$metadata = $this->getEntityStore()->getMetadata($entity);
-			
+			$entityClass = $metadata->className;
+
 			// Loop through each set of annotations for each property of the entity.
 			// Each property might have multiple annotations defining its behavior
 			$result = [];
@@ -1030,42 +1084,56 @@
 					if (!($annotation instanceof ManyToOne) && !($annotation instanceof OneToOne)) {
 						continue; // Skip this annotation if it's not a relationship to a parent
 					}
-					
+
 					// Use the property_handler to retrieve the value of the related parent entity.
 					// This is the actual object reference to the parent entity
 					$parentEntity = $this->propertyHandler->get($entity, $property);
-					
-					// If the parent entity exists, add it to the result with its relationship details.
-					if (!empty($parentEntity) && is_object($parentEntity)) {
-						// Get the relation column name, or fall back to a convention
-						$relationColumn = $annotation->getLocalColumn() ?? "{$property}Id";
-						
-						// Get the parent entity's primary key value(s)
-						$parentPrimaryKeys = $this->getIdentifiers($parentEntity);
 
-						// Only handle simple primary keys, skip composite ones
-						if (count($parentPrimaryKeys) !== 1) {
-							continue;
+					// If the parent entity exists, add every one of its mapped column pairs.
+					if (!empty($parentEntity) && is_object($parentEntity)) {
+						$mapping = $metadata->getRelationColumnMapping($property);
+
+						if ($mapping === null) {
+							throw new \LogicException("No resolved column mapping for relation '{$property}' on '{$entityClass}'.");
 						}
-						
-						// Fetch the first primary key
-						$primaryKey = array_key_first($parentPrimaryKeys);
-						$primaryKeyValue = $parentPrimaryKeys[$primaryKey];
-						
-						// Add it to the result
-						$result[] = [
-							'entity'   => $parentEntity, // The parent entity itself
-							'property' => $relationColumn, // The name of the property that defines the relationship
-							'value'    => $primaryKeyValue // The primary key value of the parent entity
-						];
+
+						// Read the parent's referenced property directly for every pair — covers
+						// both a composite PK and a singular relation targeting a non-PK property,
+						// neither of which getIdentifiers() (PK-only) would resolve.
+						$values = [];
+
+						foreach ($mapping->pairs as $pair) {
+							$values[] = $this->propertyHandler->get($parentEntity, $pair->targetProperty);
+						}
+
+						$resolvedCount = count(array_filter($values, static fn($value) => $value !== null));
+
+						if ($resolvedCount > 0 && $resolvedCount < count($values)) {
+							throw new OrmException(
+								"Cannot synchronize relation '{$property}' on '{$entityClass}': parent " .
+								get_class($parentEntity) . " has only some of its referenced key components " .
+								"available (" . implode(', ', $mapping->targetProperties()) . "). Ensure the " .
+								"parent is fully persisted — every key component assigned or generated — " .
+								"before this entity is flushed."
+							);
+						}
+
+						foreach ($mapping->pairs as $index => $pair) {
+							// Add it to the result
+							$result[] = [
+								'entity'   => $parentEntity, // The parent entity itself
+								'property' => $pair->localProperty, // The local FK property that defines the relationship
+								'value'    => $values[$index] // The parent's referenced property value
+							];
+						}
 					}
-					
+
 					// We don't need to read more annotations for this property.
 					// Move on to the next property.
 					continue 2; // Skip to the next property in the outer loop
 				}
 			}
-			
+
 			// Return the found parent entities as an array.
 			// This will be used to ensure proper order of operations during persistence
 			return $result;
@@ -1154,33 +1222,37 @@
 				if ($this->entityStore->normalizeEntityClass($annotation->getTargetEntity()) !== $normalizedClass) {
 					continue;
 				}
-				
-				// Fetch relation column
-				$relationColumn = $annotation->getLocalColumn() ?? "{$property}Id";
-				
+
 				// Get cascade configuration information for this relationship
 				// This tells us how changes to the parent should propagate to dependents
 				$cascadeInfo = $this->getCascadeInfo($dependentEntityClass, $property);
-				
+
 				// Skip if no cascade configuration exists or if cascade remove isn't enabled
 				// Not all relationships should trigger cascading deletions
 				if (!$cascadeInfo || !$this->shouldCascadeRemove($cascadeInfo)) {
 					continue;
 				}
-				
+
+				// Resolved column pairs for this relation — one pair for a singular FK,
+				// one pair per array position for a composite one.
+				$mapping = $metadata->getRelationColumnMapping($property);
+
+				if ($mapping === null) {
+					throw new \LogicException("No resolved column mapping for relation '{$property}' on '{$dependentEntityClass}'.");
+				}
+
 				// If we reach here, this relationship should trigger cascading deletion
 				// Find and mark for deletion all dependent objects that reference this parent
-				// The relationship column is used to identify which dependent objects reference this parent
 				$this->cascadeDeleteDependentObjects(
 					$dependentEntityClass,             // The class of dependent objects to search for
 					$property,                         // The object-reference property, e.g. "customer"
-					$relationColumn,                   // The scalar FK column that references the parent
+					$mapping,                           // Resolved local/target column pairs for this relation
 					$entity,                            // The parent entity being deleted
 					$parentEffectiveHardDelete
 				);
 			}
 		}
-		
+
 		/**
 		 * Get cascade configuration for a property
 		 * @param string $entityClass Entity class name
@@ -1237,13 +1309,13 @@
 		 * Find and schedule deletion of dependent objects
 		 * @param class-string $dependentEntityClass Class name of dependent entity
 		 * @param string $relationProperty Object-reference property holding the parent, e.g. "customer"
-		 * @param string $relationColumn Scalar FK column property, e.g. "customerId"
+		 * @param RelationColumnMapping $mapping Resolved local/target column pairs for this relation
 		 * @param object $parentEntity The parent entity object
 		 * @param bool $parentEffectiveHardDelete Whether the parent is actually being removed, or merely soft-deleted
 		 * @return void
 		 * @throws EntityResolutionException|Exception\QuelException
 		 */
-		private function cascadeDeleteDependentObjects(string $dependentEntityClass, string $relationProperty, string $relationColumn, object $parentEntity, bool $parentEffectiveHardDelete): void {
+		private function cascadeDeleteDependentObjects(string $dependentEntityClass, string $relationProperty, RelationColumnMapping $mapping, object $parentEntity, bool $parentEffectiveHardDelete): void {
 			// Schedule any managed, not-yet-persisted dependents first. These
 			// can never be found by the DB-driven lookup below — they don't
 			// exist in the database yet — but without this they'd still get
@@ -1259,33 +1331,31 @@
 				return;
 			}
 
-			// Extract the primary key identifiers from the parent entity
-			// This returns an array of primary key field names and their values
-			$parentPrimaryKeys = $this->getIdentifiers($parentEntity);
+			// Build one criterion per relation pair, keyed by the dependent entity's own
+			// local (FK) property name, reading each value straight off the parent object
+			// rather than through getIdentifiers() — covers a singular relation targeting
+			// a non-PK property too, not just the parent's own primary key.
+			//
+			// A parent that was never persisted, or whose identity is only partially
+			// resolved, has no complete row in the database that could match — querying
+			// with an incomplete criteria set would risk matching unrelated rows whose FK
+			// columns happen to be genuinely NULL rather than rows that actually reference
+			// this parent, so this never issues a query in that case.
+			$criteria = [];
 
-			// Composite primary keys are not supported for cascade delete lookup;
-			// the dependent objects query expects a single scalar foreign key value.
-			if (count($parentPrimaryKeys) !== 1) {
-				return;
-			}
+			foreach ($mapping->pairs as $pair) {
+				$value = $this->propertyHandler->get($parentEntity, $pair->targetProperty);
 
-			// Get the first (and only) primary key value
-			$parentId = $parentPrimaryKeys[array_key_first($parentPrimaryKeys)];
+				if ($value === null) {
+					return;
+				}
 
-			// A parent that was never persisted has no id and therefore no rows
-			// in the database to cascade to. Querying with a null id would risk
-			// matching unrelated rows whose FK column happens to be genuinely
-			// NULL rather than rows that actually reference this parent.
-			if ($parentId === null) {
-				return;
+				$criteria[$pair->localProperty] = $value;
 			}
 
 			// Query the entity manager to find all dependent objects
 			// that have a foreign key relationship to the parent entity
-			// Uses the specified column name to match against the parent's ID
-			$dependentObjects = $this->entityManager->findBy($dependentEntityClass, [
-				$relationColumn => $parentId
-			]);
+			$dependentObjects = $this->entityManager->findBy($dependentEntityClass, $criteria);
 
 			// Iterate through each found dependent object and mark it for deletion
 			// This doesn't immediately delete the objects, but schedules them for deletion

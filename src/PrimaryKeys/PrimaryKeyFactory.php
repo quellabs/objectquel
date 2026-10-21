@@ -21,7 +21,7 @@
 		 * IdentityGenerator's legitimate null.
 		 * @param EntityManager $em    The entity manager instance for database operations
 		 * @param object $entity       The entity object requiring a primary key
-		 * @param string $property     The primary key property being generated — passed through to the generator, which needs it to tell an entity's identifier columns apart
+		 * @param string $property     The primary key property being generated — passed through to the generator, which needs it to tell a composite key's components apart
 		 * @param string $type         The type of primary key generator to use (e.g., 'uuid', 'sequence', 'identity')
 		 * @return mixed               The generated primary key value, or null only for the 'identity' strategy
 		 * @throws OrmException If $type has no matching generator class, or that class doesn't implement PrimaryKeyGeneratorInterface

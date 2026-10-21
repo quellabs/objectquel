@@ -68,7 +68,7 @@
 				);
 			}
 
-			[$innerRetrieve, $clonedRange, $originalRange, $primaryKey] = $this->beginHelperRange(
+			[$innerRetrieve, $clonedRange, $originalRange, $primaryKeys] = $this->beginHelperRange(
 				$root,
 				'a sequence-function filter in WHERE'
 			);
@@ -120,7 +120,7 @@
 				AstNodeReplacer::replaceChild($parent, $innerNode, $replacement);
 			}
 
-			$this->finishHelperRange($root, $innerRetrieve, $originalRange, $clonedRange, $primaryKey, $helperRangeName, $pendingHelperIdentifiers);
+			$this->finishHelperRange($root, $innerRetrieve, $originalRange, $clonedRange, $primaryKeys, $helperRangeName, $pendingHelperIdentifiers);
 
 			$log->note(
 				'optimizer', 'aggregate', 'WHERE_WINDOW_FILTER',

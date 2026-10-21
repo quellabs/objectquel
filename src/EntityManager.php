@@ -330,18 +330,22 @@
 		
 		/**
 		 * Searches for a single entity based on the given entity type and primary key.
+		 * A composite primary key takes an associative array keyed by property name
+		 * instead of a scalar.
 		 * @template T of object
 		 * @param class-string<T> $entityType The fully qualified class name of the entity
-		 * @param int|string $primaryKey The primary key of the entity
+		 * @param int|string|array<string, int|string> $primaryKey The primary key of the entity
 		 * @return T|null The found entity or null if not found
 		 * @throws EntityResolutionException If the entity cannot be instantiated or hydrated.
+		 * @throws \InvalidArgumentException If $primaryKey is incomplete, unknown, or malformed
 		 * @throws QuelException If the underlying query fails.
 		 */
-		public function find(string $entityType, int|string $primaryKey): ?object {
-			// Normalize the primary key
-			$firstKey = $this->entityStore->getMetadata($entityType)->getPrimaryKey();
-			$primaryKeys = $firstKey ? [$firstKey => $primaryKey] : [];
-			
+		public function find(string $entityType, int|string|array $primaryKey): ?object {
+			// Validate and normalize the lookup key into a complete, ordered map —
+			// an unknown/missing/null component, or a scalar against a composite
+			// key, fails here rather than silently querying with a partial key.
+			$primaryKeys = $this->entityStore->getMetadata($entityType)->normalizeIdentifier($primaryKey);
+
 			// Return early if the entity is already tracked and fully initialized
 			$existingEntity = $this->unitOfWork->findEntity($entityType, $primaryKeys);
 			
@@ -384,13 +388,14 @@
 		 *
 		 * @template T of object
 		 * @param class-string<T> $entityType The fully qualified class name of the entity to retrieve.
-		 * @param int|string $primaryKey The primary key value to look up.
+		 * @param int|string|array<string, int|string> $primaryKey The primary key value to look up.
 		 * @return T The resolved entity instance.
 		 * @throws EntityNotFoundException    If no entity with the given primary key exists.
 		 * @throws EntityResolutionException  If the entity cannot be instantiated or hydrated.
+		 * @throws \InvalidArgumentException  If $primaryKey is incomplete, unknown, or malformed
 		 * @throws QuelException              If the underlying query fails.
 		 */
-		public function findOrFail(string $entityType, int|string $primaryKey): object {
+		public function findOrFail(string $entityType, int|string|array $primaryKey): object {
 			$result = $this->find($entityType, $primaryKey);
 			
 			if ($result === null) {

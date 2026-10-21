@@ -58,9 +58,9 @@
 			$this->windowChainRewriter = new Optimizers\WindowChainRewriter($this->entityStore, $platform);
 			$this->whereWindowFilterRewriter = new Optimizers\WhereWindowFilterRewriter($this->entityStore, $platform);
 			$this->whereHavingFilterRewriter = new Optimizers\WhereHavingFilterRewriter();
+			$this->existsOptimizer = new Optimizers\ExistsOptimizer($this->entityStore);
 
 			// Initialize stateless optimizers that work on AST structure alone
-			$this->existsOptimizer = new Optimizers\ExistsOptimizer();
 			$this->JoinConditionFieldInjector = new Optimizers\JoinConditionFieldInjector();
 			$this->booleanConstantOptimizer = new Optimizers\BooleanConstantOptimizer();
 			$this->searchResolver = new SearchStrategyResolver($entityManager->getEntityStore());

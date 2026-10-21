@@ -62,25 +62,27 @@
 		}
 		
 		/**
-		 * Find a single entity by its primary key/identifier
-		 * @param int|string $primaryKey The primary key of the entity
+		 * Find a single entity by its primary key/identifier. A composite primary
+		 * key takes an associative array keyed by property name instead of a scalar.
+		 * @param int|string|array<string, int|string> $primaryKey The primary key of the entity
 		 * @return TEntity|null The found entity or null if not found
 		 * @throws QuelException If a database error occurs during the operation
 		 * @throws EntityResolutionException
 		 */
-		public function find(int|string $primaryKey): ?object {
+		public function find(int|string|array $primaryKey): ?object {
 			return $this->em()->find($this->entityClass, $primaryKey);
 		}
-		
+
 		/**
-		 * Find a single entity by its primary key/identifier
-		 * @param int|string $primaryKey The primary key of the entity
+		 * Find a single entity by its primary key/identifier. A composite primary
+		 * key takes an associative array keyed by property name instead of a scalar.
+		 * @param int|string|array<string, int|string> $primaryKey The primary key of the entity
 		 * @return TEntity The found entity or null if not found
 		 * @throws QuelException If a database error occurs during the operation
 		 * @throws EntityResolutionException
 		 * @throws EntityNotFoundException
 		 */
-		public function findOrFail(int|string $primaryKey): object {
+		public function findOrFail(int|string|array $primaryKey): object {
 			return $this->em()->findOrFail($this->entityClass, $primaryKey);
 		}
 		

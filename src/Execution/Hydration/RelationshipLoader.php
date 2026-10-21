@@ -13,6 +13,7 @@
 	use Quellabs\ObjectQuel\Exception\HydrationException;
 	use Quellabs\ObjectQuel\Collections\EntityCollection;
 	use Quellabs\ObjectQuel\Metadata\EntityMetadataRecord;
+	use Quellabs\ObjectQuel\Metadata\RelationColumnMapping;
 	use Quellabs\ObjectQuel\ProxyGenerator\ProxyInterface;
 	use Quellabs\ObjectQuel\Collections\CollectionInterface;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRangeDatabase;
@@ -117,46 +118,37 @@
 		private function processEntityDependency(object $entity, string $property, ManyToOne|OneToOne $dependency): void {
 			// Get the current value of the property.
 			$currentRelation = $this->propertyHandler->get($entity, $property);
-			
+
 			// Check if the current relation is already set and if it's not an uninitialized proxy.
 			if ($currentRelation !== null &&
 				(!($currentRelation instanceof ProxyInterface) || $currentRelation->isInitialized())) {
 				return;
 			}
-			
-			// Determine the column and value for the relation based on the dependency.
-			$relationColumn = $dependency->getLocalColumn() ?? "{$property}Id";
-			$relationColumnValue = $this->propertyHandler->get($entity, $relationColumn);
-			
-			// A null relation column value means there is no relation to resolve.
-			if ($relationColumnValue === null) {
+
+			$entityClass = $this->entityStore->normalizeEntityClass($entity);
+			$mapping = $this->resolveOwningRelationMapping($entityClass, $property);
+
+			// Reads every local FK component at once: all null means no relation to resolve
+			// (returns null here), a partly null composite FK fails clearly in readForeignKey().
+			$foreignKey = $this->readForeignKey($entity, $entityClass, $property, $mapping);
+
+			if ($foreignKey === null) {
 				return;
 			}
-			
-			// Determine the name and property of the target entity based on the dependency.
-			$targetEntityName = $dependency->getTargetEntity();
-			$inversedPropertyName = $this->resolveTargetProperty($dependency);
-			
-			if ($inversedPropertyName === null) {
-				throw new \LogicException(
-					"Cannot resolve target property for '{$property}': target entity '{$targetEntityName}' " .
-					"has no primary key. Ensure the entity is correctly annotated."
-				);
-			}
-			
+
 			// Add the namespace to the target entity name and find the related entity.
-			$targetEntity = $this->entityStore->normalizeEntityClass($targetEntityName);
-			
-			// Check the UnitOfWork if it has the entity
-			$relationEntity = $this->unitOfWork->findEntity($targetEntity, [$inversedPropertyName => $relationColumnValue]);
-			
+			$targetEntity = $this->entityStore->normalizeEntityClass($dependency->getTargetEntity());
+
+			// Check the UnitOfWork if it has the entity, keyed by every component at once
+			$relationEntity = $this->unitOfWork->findEntity($targetEntity, $foreignKey);
+
 			// If a related entity is found, update the property of the current entity.
 			if ($relationEntity !== null) {
 				// Update the property with the found entity
 				// If a setter method exists, execute it.
 				// Otherwise set the property directly.
 				$setterMethod = 'set' . ucfirst($property);
-				
+
 				if (method_exists($entity, $setterMethod)) {
 					$entity->{$setterMethod}($relationEntity);
 				} else {
@@ -164,7 +156,7 @@
 				}
 			}
 		}
-		
+
 		/**
 		 * Creates a proxy object for a given dependency and sets it on the entity.
 		 * This method handles lazy loading of relationships by creating proxy instances
@@ -176,69 +168,125 @@
 		 * @throws HydrationException
 		 */
 		private function createAndSetProxy(object $entity, string $property, ManyToOne|OneToOne $dependency): void {
-			// Determine the relation column (the column containing the foreign key)
-			$relationColumn = $dependency->getLocalColumn() ?? "{$property}Id";
-			
-			// Get the primary key value. If it's empty, clear the relationship
-			$relationColumnValue = $this->propertyHandler->get($entity, $relationColumn);
-			
-			if ($relationColumnValue === null) {
+			$entityClass = $this->entityStore->normalizeEntityClass($entity);
+			$mapping = $this->resolveOwningRelationMapping($entityClass, $property);
+
+			// Reads every local FK component at once. All null clears the relationship;
+			// a partly null composite FK fails clearly rather than building a partial proxy.
+			$foreignKey = $this->readForeignKey($entity, $entityClass, $property, $mapping);
+
+			if ($foreignKey === null) {
 				$this->propertyHandler->set($entity, $property, null);
 				return;
 			}
-			
-			// Validate relationColumnValue
-			if (!is_integer($relationColumnValue) && !is_string($relationColumnValue)) {
-				throw new HydrationException("Cannot load proxy when lookup key is not int or string");
-			}
-			
-			// Gather information needed to create the proxy.
+
 			// normalizeEntityClass ensures we have the fully-qualified class name.
 			$targetEntityName = $this->entityStore->normalizeEntityClass($dependency->getTargetEntity());
-			
-			// resolveTargetProperty returns null only when the target entity has no
-			// primary key — a configuration error that should have been caught earlier.
-			$relationPropertyName = $this->resolveTargetProperty($dependency);
-
-			// Error when entity has no primary key
-			if ($relationPropertyName === null) {
-				throw new \LogicException(
-					"Cannot build proxy for '{$property}': target entity '{$dependency->getTargetEntity()}' " .
-					"has no primary key. Ensure the entity is correctly annotated."
-				);
-			}
-
-			// The fast, PK-based proxy only works when $relationPropertyName actually is the
-			// target's primary key: it seeds the proxy's PK and later calls find() by that
-			// same value, relying on EntityHydrator to populate this exact instance in place
-			// once it's re-discovered in the UnitOfWork by that PK. When referencedColumn names
-			// a different (non-PK) property, that value is not a valid PK lookup at all, so a
-			// separate path resolves it correctly instead.
 			$targetMetadata = $this->entityStore->getMetadata($targetEntityName);
 
-			if ($relationPropertyName === $targetMetadata->getPrimaryKey()) {
-				$proxy = $this->findOrCreateProxy($targetEntityName, $relationPropertyName, $relationColumnValue);
+			// The fast, PK-based proxy only works when the foreign key's target properties
+			// are exactly the target's full primary key: it seeds the proxy's PK and later
+			// calls find() by that same key, relying on EntityHydrator to populate this exact
+			// instance in place once it's re-discovered in the UnitOfWork by that PK. When the
+			// relation references a different (non-PK) property instead, that key is not a
+			// valid PK lookup at all, so a separate path resolves it correctly instead.
+			$targetProperties = $mapping->targetProperties();
+			sort($targetProperties);
+			$targetIdentifierKeys = $targetMetadata->identifierKeys;
+			sort($targetIdentifierKeys);
+
+			if ($targetProperties === $targetIdentifierKeys) {
+				// Create the proxy, seeded with every identifier component at once
+				$proxy = $this->findOrCreateProxy($targetEntityName, $foreignKey);
 			} else {
-				$proxy = $this->createNonPrimaryKeyProxy($entity, $property, $targetEntityName, $relationPropertyName, $relationColumnValue);
+				$proxy = $this->createNonPrimaryKeyProxy($entity, $property, $targetEntityName, $foreignKey);
 			}
-			
+
 			// Set the proxy on the original entity
 			$this->propertyHandler->set($entity, $property, $proxy);
 		}
 
 		/**
+		 * Resolves the owning relation's column-pair mapping for $property on $entityClass,
+		 * failing clearly when none exists — a configuration error that should have been
+		 * caught at metadata build time, so reaching here means a caller passed a property
+		 * that isn't actually an owning ManyToOne/OneToOne.
+		 * @param string $entityClass
+		 * @param string $property
+		 * @return RelationColumnMapping
+		 * @throws EntityResolutionException
+		 */
+		private function resolveOwningRelationMapping(string $entityClass, string $property): RelationColumnMapping {
+			$mapping = $this->entityStore->getMetadata($entityClass)->getRelationColumnMapping($property);
+
+			if ($mapping === null) {
+				throw new \LogicException("No resolved column mapping for relation '{$property}' on '{$entityClass}'.");
+			}
+
+			return $mapping;
+		}
+
+		/**
+		 * Reads every local FK component of an owning relation from $entity at once.
+		 * Returns null when every component is null (no relation to resolve). A partly
+		 * null composite FK, or a component whose value isn't int|string, fails clearly
+		 * rather than being silently treated as a (wrong) single-column lookup.
+		 * @param object $entity
+		 * @param string $entityClass
+		 * @param string $property
+		 * @param RelationColumnMapping $mapping
+		 * @return array<string, int|string>|null Target property name => value, or null
+		 * @throws HydrationException
+		 */
+		private function readForeignKey(object $entity, string $entityClass, string $property, RelationColumnMapping $mapping): ?array {
+			$foreignKey = [];
+			$anyNonNull = false;
+			$anyNull = false;
+
+			foreach ($mapping->pairs as $pair) {
+				$value = $this->propertyHandler->get($entity, $pair->localProperty);
+
+				if ($value === null) {
+					$anyNull = true;
+					continue;
+				}
+
+				if (!is_int($value) && !is_string($value)) {
+					throw new HydrationException(
+						"Cannot load proxy for relation '{$property}' on '{$entityClass}': local column " .
+						"'{$pair->localProperty}' has a value that is not int or string."
+					);
+				}
+
+				$anyNonNull = true;
+				$foreignKey[$pair->targetProperty] = $value;
+			}
+
+			if (!$anyNonNull) {
+				return null;
+			}
+
+			if ($anyNull) {
+				throw new HydrationException(
+					"Relation '{$property}' on '{$entityClass}' has a partially-null composite foreign key " .
+					"(" . implode(', ', $mapping->localProperties()) . "); either every local column must be " .
+					"set, or all of them must be null."
+				);
+			}
+
+			return $foreignKey;
+		}
+
+		/**
 		 * Returns an existing entity from the UnitOfWork, or instantiates and persists a new proxy.
 		 * @param class-string $targetEntityName
-		 * @param string $relationPropertyName The property on the target that holds the PK
-		 * @param int|string $relationColumnValue
+		 * @param array<string, int|string> $foreignKey Target property name => value, every identifier component
 		 * @return object
 		 * @throws EntityResolutionException
 		 */
-		private function findOrCreateProxy(string $targetEntityName, string $relationPropertyName, int|string $relationColumnValue): object {
+		private function findOrCreateProxy(string $targetEntityName, array $foreignKey): object {
 			// Check if the entity already exists in the UnitOfWork
-			$existing = $this->unitOfWork->findEntity($targetEntityName, [
-				$relationPropertyName => $relationColumnValue
-			]);
+			$existing = $this->unitOfWork->findEntity($targetEntityName, $foreignKey);
 
 			// If the entity already is in UnitOfWork, return it
 			if ($existing !== null) {
@@ -256,16 +304,18 @@
 
 			// Build the PK-based initializer: seeds this proxy's PK then lets find() hydrate it
 			$entityManager = $this->entityManager;
-			$initializer = function () use ($entityManager, $targetEntityName, $relationColumnValue): void {
-				$entityManager->find($targetEntityName, $relationColumnValue);
+			$initializer = function () use ($entityManager, $targetEntityName, $foreignKey): void {
+				$entityManager->find($targetEntityName, $foreignKey);
 			};
 
 			// Instantiate the proxy with the explicit initializer
 			$proxy = new $proxyClassName($this->entityManager, $initializer);
 
-			// Set the primary key on the proxy using the target entity's primary key property name
-			$metadata = $this->entityStore->getMetadata($targetEntityName);
-			$this->propertyHandler->set($proxy, $metadata->identifierKeys[0], $relationColumnValue);
+			// Seed every identifier component on the proxy — ProxyCodeGenerator ensures every
+			// identifier getter can be read without triggering initialization.
+			foreach ($foreignKey as $targetProperty => $value) {
+				$this->propertyHandler->set($proxy, $targetProperty, $value);
+			}
 
 			// Put the proxy under ownership
 			$this->entityManager->persist($proxy);
@@ -275,20 +325,20 @@
 		}
 
 		/**
-		 * Builds a lazy proxy for an owning relation whose referencedColumn names a non-PK
-		 * property on the target entity. Such a proxy cannot be pre-registered under the
-		 * identity-map key find() would use (the UnitOfWork only indexes entities by their
-		 * real primary key), so it is resolved by findOneBy() on $relationPropertyName instead,
-		 * and the result is copied into this exact proxy instance — mirroring the InverseOf
-		 * scalar lazy-load pattern in loadInverseScalarLazy(), which faces the same constraint.
+		 * Builds a lazy proxy for an owning relation whose resolved target properties are not
+		 * exactly the target's full primary key (e.g. a singular relation whose referencedColumn
+		 * names a non-PK property). Such a proxy cannot be pre-registered under the identity-map
+		 * key find() would use (the UnitOfWork only indexes entities by their real primary key),
+		 * so it is resolved by findOneBy() on the full foreign key instead, and the result is
+		 * copied into this exact proxy instance — mirroring the InverseOf scalar lazy-load
+		 * pattern in loadInverseScalarLazy(), which faces the same constraint.
 		 * @param object $entity The entity on which the proxy will be set
 		 * @param string $property The property on $entity that will hold the proxy
 		 * @param class-string $targetEntityName
-		 * @param string $relationPropertyName The (non-PK) property on the target to match
-		 * @param int|string $relationColumnValue The value to match it against
+		 * @param array<string, int|string> $foreignKey Target property name => value, every component
 		 * @return object
 		 */
-		private function createNonPrimaryKeyProxy(object $entity, string $property, string $targetEntityName, string $relationPropertyName, int|string $relationColumnValue): object {
+		private function createNonPrimaryKeyProxy(object $entity, string $property, string $targetEntityName, array $foreignKey): object {
 			$generator = $this->entityStore->getProxyGenerator();
 			$proxyClassName = $generator->getProxyClass($targetEntityName);
 
@@ -310,8 +360,7 @@
 					$entity,
 					$property,
 					$targetEntityName,
-					$relationPropertyName,
-					$relationColumnValue
+					$foreignKey
 				): void {
 					// doInitialize() invokes this on every accessor call, so bail out once the
 					// proxy has already been resolved to avoid re-running the findOneBy query.
@@ -320,7 +369,7 @@
 					}
 
 					// findOneBy returns a fully hydrated entity registered in the UnitOfWork.
-					$result = $entityManager->findOneBy($targetEntityName, [$relationPropertyName => $relationColumnValue]);
+					$result = $entityManager->findOneBy($targetEntityName, $foreignKey);
 
 					// Copy scalar fields to the proxy so generated accessors return resolved data.
 					// Mark initialized first to prevent deserialize() from triggering recursive
@@ -337,7 +386,7 @@
 				}
 			);
 		}
-		
+
 		/**
 		 * Checks if a specific entity type was requested via a specific join property.
 		 * @param string $currentEntity
@@ -391,56 +440,46 @@
 			// The via property name on the dependent entity — the FK that points back to this entity
 			$relation = $dependency->getRelation();
 			$targetEntity = $this->entityStore->normalizeEntityClass($dependency->getTargetEntity());
-			
-			// Look up the relation annotation on the dependent entity's via property so we can
-			// determine which property on *this* entity the FK references (usually the PK,
-			// but may be a unique non-PK column if inversedBy says otherwise)
-			$dependentMetadata = $this->entityStore->getMetadata($targetEntity);
-			$viaRelation = $this->getRelationAnnotation($dependentMetadata, $relation);
-			
-			// Resolve the referenced property on this entity; fall back to primary key when
-			// inversedBy is absent or the relation annotation cannot be found
-			$ownerPrimaryKey = $this->entityStore->getMetadata($entityClass)->getPrimaryKey();
-			$resolvedTarget = $viaRelation !== null ? $this->resolveTargetProperty($viaRelation) : null;
-			$parentProperty = $resolvedTarget ?? $ownerPrimaryKey;
-			
-			if ($parentProperty === null) {
-				throw new \RuntimeException(
-					"Cannot resolve parent property for InverseOf on {$entityClass}::{$property}: entity has no primary key."
-				);
+			$mapping = $this->resolveInverseRelationMapping($targetEntity, $relation, $entityClass);
+
+			// One WHERE criterion per FK component, keyed by the dependent entity's own local
+			// (FK) property names — never just the first component of a composite relation.
+			$criteria = [];
+
+			foreach ($mapping->pairs as $pair) {
+				$criteria[$pair->localProperty] = $this->propertyHandler->get($entity, $pair->targetProperty);
 			}
-			
-			// Read the value of the referenced property from this entity instance
-			$parentKeyValue = $this->propertyHandler->get($entity, $parentProperty);
-			
+
 			// Load the proxy class file if needed
 			$generator = $this->entityStore->getProxyGenerator();
 			$proxyClassName = $generator->getProxyClass($targetEntity);
-			
+
 			if (!class_exists($proxyClassName, false)) {
 				require_once $generator->getProxyFilePath($targetEntity);
 			}
-			
+
 			// Capture references for the initializer closure
 			$entityManager = $this->entityManager;
 			$propertyHandler = $this->propertyHandler;
 			$unitOfWork = $this->unitOfWork;
-			
+
 			$proxy = new $proxyClassName(
 				$this->entityManager,
-				function (ProxyInterface $proxy) use ($entityManager, $unitOfWork, $propertyHandler, $entity, $property, $targetEntity, $relation, $parentKeyValue): void {
+				function (ProxyInterface $proxy) use ($entityManager, $unitOfWork, $propertyHandler, $entity, $property, $targetEntity, $criteria): void {
 					// doInitialize() invokes this on every accessor call, so bail out once the
 					// proxy has already been resolved to avoid re-running the findOneBy query.
 					if ($proxy->isInitialized()) {
 						return;
 					}
-					
-					// findOneBy returns a fully hydrated entity registered in the UnitOfWork.
-					$result = $entityManager->findOneBy($targetEntity, [$relation => $parentKeyValue]);
 
-					// Copy resolved scalar fields into the proxy for generated accessors.
-					// Mark initialized before deserializing to prevent generated setters
-					// from recursively triggering initialization.
+					// findOneBy returns a fully hydrated entity registered in the UnitOfWork.
+					$result = $entityManager->findOneBy($targetEntity, $criteria);
+
+					// Copy the resolved entity's scalar columns into the proxy itself. Generated
+					// accessors read the proxy's own fields via parent::, so the access that triggered
+					// initialization must see real data rather than an empty proxy. Marked initialized
+					// first to prevent deserialize() from triggering recursive initialization through
+					// the proxy's generated setters.
 					if ($result !== null) {
 						$proxy->setInitialized();
 						$serializer = $unitOfWork->getSerializer();
@@ -611,41 +650,26 @@
 			
 			// Complete short entity names to their full namespace form
 			$targetEntity = $this->entityStore->normalizeEntityClass($dependency->getTargetEntity());
-			
+
 			// Check if InverseOf has via. If not error out
 			$relation = $dependency->getRelation();
-			
-			// Resolve which property on the current entity the candidate's via FK points to
-			$parentProperty = $this->resolveInverseOfParentProperty($targetEntity, $relation, $entityClass);
-			$primaryKeyValue = $this->propertyHandler->get($entity, $parentProperty);
-			
-			// Resolve the FK column name on the dependent entity — EntityCollection queries
-			// by column property (e.g. userId), not by the relation property (e.g. user),
-			// since relation properties are rejected by the semantic analyser.
-			$dependentMetadata = $this->entityStore->getMetadata($targetEntity);
-			$viaAnnotation = $this->getRelationAnnotation($dependentMetadata, $relation);
-			$fkColumn = $viaAnnotation?->getLocalColumn() ?? $relation . 'Id';
-			
+			$mapping = $this->resolveInverseRelationMapping($targetEntity, $relation, $entityClass);
+
+			// One criterion per FK component, keyed by the dependent entity's own local (FK)
+			// property names — EntityCollection queries by column property (e.g. userId), not
+			// by the relation property (e.g. user), since relation properties are rejected by
+			// the semantic analyser. Never just the first component of a composite relation.
+			$criteria = [];
+
+			foreach ($mapping->pairs as $pair) {
+				$criteria[$pair->localProperty] = $this->propertyHandler->get($entity, $pair->targetProperty);
+			}
+
 			// Create an Entity Collection
-			$proxy = new EntityCollection($this->entityManager, $targetEntity, $fkColumn, $primaryKeyValue);
-			
+			$proxy = EntityCollection::forCriteria($this->entityManager, $targetEntity, $criteria);
+
 			// Assign it to entity
 			$this->propertyHandler->set($entity, $property, $proxy);
-		}
-		
-		/**
-		 * Resolves the parent key value that an InverseOf candidate's FK must match: looks up which
-		 * property on the parent the via FK references, then reads that property from the parent.
-		 * @param object $entity The parent entity
-		 * @param string $entityClass The resolved class name of the parent entity
-		 * @param string $relation The via relation property name on the dependent entity
-		 * @param string $targetEntity The resolved dependent entity class name
-		 * @return mixed The scalar value the candidate's FK is compared against
-		 * @throws EntityResolutionException
-		 */
-		private function resolveParentKeyValue(object $entity, string $entityClass, string $relation, string $targetEntity): mixed {
-			$parentProperty = $this->resolveInverseOfParentProperty($targetEntity, $relation, $entityClass);
-			return $this->propertyHandler->get($entity, $parentProperty);
 		}
 		
 		/**
@@ -671,24 +695,32 @@
 		private function findInverseMatches(object $entity, string $entityClass, InverseOf $dependency, array $entities, array &$index): array {
 			$relation = $dependency->getRelation();
 			$targetEntity = $this->entityStore->normalizeEntityClass($dependency->getTargetEntity());
-			$parentKeyValue = $this->resolveParentKeyValue($entity, $entityClass, $relation, $targetEntity);
-			
+			$mapping = $this->resolveInverseRelationMapping($targetEntity, $relation, $entityClass);
+
+			// The parent's own value for every pair's target property, in pair order —
+			// the tuple a matching candidate's full local (FK) tuple must equal exactly.
+			$parentKeyTuple = [];
+
+			foreach ($mapping->pairs as $pair) {
+				$parentKeyTuple[] = $this->propertyHandler->get($entity, $pair->targetProperty);
+			}
+
 			// One index per (target entity, via relation, declaring class). parentClass is part of the
 			// key because candidateMapsToParent() is evaluated against it, so buckets cannot be shared
 			// across parents of different classes. A NUL separator cannot occur in a class or property
 			// name, so the composite key is unambiguous.
 			$indexKey = $targetEntity . "\0" . $relation . "\0" . $entityClass;
-			
+
 			if (!isset($index[$indexKey])) {
 				$buckets = [];
-				
+
 				foreach ($entities as $candidate) {
 					// Skip entities that are not of the expected related type. Checked first so unrelated
 					// candidates never trigger a metadata lookup.
 					if (!($candidate instanceof $targetEntity)) {
 						continue;
 					}
-					
+
 					// Verify that the candidate's via property is actually
 					// annotated as a relation pointing back to this parent entity type.
 					// This prevents false matches in schemas where two unrelated entity
@@ -696,47 +728,52 @@
 					if (!$this->candidateMapsToParent($candidate, $relation, $entityClass)) {
 						continue;
 					}
-					
-					// Bucket by the candidate's FK column value. $relation is the relation property
-					// (e.g. "user"), but we need the underlying FK column value (e.g. "userId") since
-					// the relation property holds an object, not a scalar.
-					$buckets[$this->inverseBucketKey($this->getCandidateFkValue($candidate, $relation))][] = $candidate;
+
+					// Bucket by the candidate's full local (FK) tuple, in the same pair order as
+					// $parentKeyTuple — every component must match, not just the first.
+					$candidateTuple = [];
+
+					foreach ($mapping->pairs as $pair) {
+						$candidateTuple[] = $this->propertyHandler->get($candidate, $pair->localProperty);
+					}
+
+					$buckets[$this->inverseBucketKey($candidateTuple)][] = $candidate;
 				}
-				
+
 				$index[$indexKey] = $buckets;
 			}
-			
-			return $index[$indexKey][$this->inverseBucketKey($parentKeyValue)] ?? [];
+
+			return $index[$indexKey][$this->inverseBucketKey($parentKeyTuple)] ?? [];
 		}
-		
+
 		/**
-		 * Encodes a scalar FK value into a bucket key that preserves strict (===) semantics: the
-		 * type-prefixed encoding keeps int 1, string "1", null and false in separate buckets,
-		 * matching the comparison the previous linear scan performed. FK values are int|string in
-		 * practice (the proxy path constrains lookup keys to those types).
-		 * @param mixed $value
+		 * Encodes an ordered tuple of scalar FK values into a bucket key that preserves strict
+		 * (===) per-component semantics: each value is first type-tagged (keeping int 1, string
+		 * "1", null and false distinct, as the previous single-column version did), then every
+		 * tagged component is wrapped in an explicit length prefix before being concatenated —
+		 * a component itself containing the ':' or any other separator character can never be
+		 * misread as a boundary between components, however many there are.
+		 * @param array<int, mixed> $tuple
 		 * @return string
 		 */
-		private function inverseBucketKey(mixed $value): string {
-			if (is_int($value)) {
-				return 'i:' . $value;
+		private function inverseBucketKey(array $tuple): string {
+			$segments = [];
+
+			foreach ($tuple as $value) {
+				$tagged = match (true) {
+					is_int($value) => 'i:' . $value,
+					is_string($value) => 's:' . $value,
+					$value === null => 'n:',
+					is_bool($value) => 'b:' . ($value ? '1' : '0'),
+					default => 'x:' . var_export($value, true),
+				};
+
+				$segments[] = strlen($tagged) . ':' . $tagged;
 			}
-			
-			if (is_string($value)) {
-				return 's:' . $value;
-			}
-			
-			if ($value === null) {
-				return 'n:';
-			}
-			
-			if (is_bool($value)) {
-				return 'b:' . ($value ? '1' : '0');
-			}
-			
-			return 'x:' . var_export($value, true);
+
+			return implode('', $segments);
 		}
-		
+
 		/**
 		 * Returns the ManyToOne or owning-side OneToOne annotation for a given property
 		 * on an entity, or null if no such relation exists.
@@ -777,76 +814,51 @@
 		}
 		
 		/**
-		 * Resolves the property on the owner entity that an InverseOf's via FK references.
-		 * Looks up the ManyToOne or OneToOne annotation on the dependent entity's via property,
-		 * validates that it points back to the owner, and returns the referenced property name.
+		 * Resolves the full column-pair mapping for an InverseOf's via relation: looks up the
+		 * ManyToOne or OneToOne annotation on the dependent entity's via property, validates
+		 * that it points back to the owner, and returns its resolved mapping — every pair's
+		 * localProperty lives on the dependent (candidate) entity, every targetProperty on
+		 * the owner. Replaces resolving a single referenced property, which only ever captured
+		 * the first component of a composite relation.
 		 * @param string $targetEntity Fully qualified dependent entity class name
 		 * @param string $relation Property name on the dependent entity that holds the FK
 		 * @param string $ownerClass Fully qualified owner entity class name
-		 * @return string The referenced property name on the owner
+		 * @return RelationColumnMapping
 		 * @throws EntityResolutionException
 		 * @throws \RuntimeException When via does not reference a valid back-pointing relation
 		 */
-		private function resolveInverseOfParentProperty(string $targetEntity, string $relation, string $ownerClass): string {
+		private function resolveInverseRelationMapping(string $targetEntity, string $relation, string $ownerClass): RelationColumnMapping {
 			$dependentMetadata = $this->entityStore->getMetadata($targetEntity);
 			$viaRelation = $this->getRelationAnnotation($dependentMetadata, $relation);
-			
+
 			// via must reference a ManyToOne or OneToOne on the dependent entity
 			if ($viaRelation === null) {
 				throw new \RuntimeException(
 					"InverseOf relation='{$relation}' on {$ownerClass} does not match any ManyToOne or OneToOne on {$targetEntity}."
 				);
 			}
-			
+
 			// The relation must point back at the declaring entity
 			$resolvedEntity = $this->entityStore->normalizeEntityClass($viaRelation->getTargetEntity());
-			
+
 			if ($resolvedEntity !== $ownerClass) {
 				throw new \RuntimeException(
 					"InverseOf via='{$relation}' on {$ownerClass} points to {$resolvedEntity}, not {$ownerClass}. " .
 					"The via property must reference a relation that points back to the declaring entity."
 				);
 			}
-			
-			// Resolve the referenced property on the owner; fall back to its primary key.
-			// Both being null means the target entity has no primary key — a configuration error.
-			$ownerPrimaryKey = $this->entityStore->getMetadata($ownerClass)->getPrimaryKey();
-			$resolvedTarget = $this->resolveTargetProperty($viaRelation);
-			$parentProperty = $resolvedTarget ?? $ownerPrimaryKey;
-			
-			if ($parentProperty === null) {
+
+			$mapping = $dependentMetadata->getRelationColumnMapping($relation);
+
+			if ($mapping === null) {
 				throw new \RuntimeException(
-					"Cannot resolve parent property for InverseOf on {$ownerClass}: owner entity '{$ownerClass}' has no primary key."
+					"InverseOf relation='{$relation}' on {$ownerClass} has no resolved column mapping on {$targetEntity}."
 				);
 			}
-			
-			return $parentProperty;
+
+			return $mapping;
 		}
-		
-		/**
-		 * Resolves the FK column value on a candidate entity for a given via property.
-		 * The via property is a relation object (e.g. UserEntity), not a scalar, so we
-		 * read the underlying FK column (e.g. userId) instead.
-		 * @param object $candidate
-		 * @param string $relation The relation property name on the candidate
-		 * @return mixed The scalar FK value
-		 * @throws EntityResolutionException
-		 */
-		private function getCandidateFkValue(object $candidate, string $relation): mixed {
-			// If the candidate is a proxy, convert it to regular class
-			$candidateClass = $this->entityStore->normalizeEntityClass($candidate);
-			
-			// Fetch the metadata of the candidate entity
-			$candidateMeta = $this->entityStore->getMetadata($candidateClass);
-			
-			// Look up the relation annotation to find the FK column name
-			$viaAnnotation = $this->getRelationAnnotation($candidateMeta, $relation);
-			$fkProperty = $viaAnnotation?->getLocalColumn() ?? $relation . 'Id';
-			
-			// Return the value of the relation column
-			return $this->propertyHandler->get($candidate, $fkProperty);
-		}
-		
+
 		/**
 		 * Returns true if the declared PHP type of $property on $objectClass implements CollectionInterface.
 		 * Used to determine whether an InverseOf annotation targets a collection or a scalar entity.
@@ -898,19 +910,5 @@
 			}
 			
 			return $result;
-		}
-		/**
-		 * Resolves the target property for a ManyToOne or OneToOne relation.
-		 * Uses inversedBy if set, otherwise falls back to the target's primary key.
-		 * @param ManyToOne|OneToOne $relation
-		 * @return string|null Null if unresolvable
-		 * @throws EntityResolutionException If target metadata cannot be loaded
-		 */
-		private function resolveTargetProperty(ManyToOne|OneToOne $relation): ?string {
-			// Fetch metadata for entity
-			$metadata = $this->entityStore->getMetadata($relation->getTargetEntity());
-			
-			// Return referencedColumn, falling back to the primary key
-			return $relation->getReferencedColumn() ?? $metadata->getPrimaryKey();
 		}
 	}

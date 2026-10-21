@@ -18,7 +18,9 @@
 	use Quellabs\ObjectQuel\ObjectQuel\AstInterface;
 	use Quellabs\ObjectQuel\ObjectQuel\AstVisitorInterface;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\IdentifierType;
-	
+	use Quellabs\ObjectQuel\Metadata\RelationColumnMapping;
+	use Quellabs\ObjectQuel\Metadata\RelationColumnPair;
+
 	/**
 	 * Transforms 'via' relationship references in the AST into direct property lookups
 	 * suitable for SQL JOIN condition generation.
@@ -84,33 +86,19 @@
 				return $side;
 			}
 			
-			// When the via property is an InverseOf, resolve it to the corresponding owning-side
-			// relation on the target entity. InverseOf carries no column mapping of its own —
-			// the owning side (ManyToOne or OneToOne) has all the information needed to build
-			// the JOIN condition. The resolved annotation is then handled identically to a
-			// directly declared owning-side relation.
-			$owningProperty = null;
-			
-			if ($relation instanceof InverseOf) {
-				// Capture the owning-side property name (e.g. 'customer') before resolving.
-				// This is the correct base for the localColumn default ('customerId').
-				// The InverseOf property name (e.g. 'addresses') must not be used for this.
-				$owningProperty = $relation->getRelation();
-				$relation = $this->resolveInverseOfToOwningSide($relation);
-				
-				if ($relation === null) {
-					throw new TransformationException(
-						"InverseOf property '{$propertyNode->getName()}' on '{$entityName}' could not be resolved to " .
-						"a ManyToOne or OneToOne on the target entity. Ensure the 'relation' parameter points " .
-						"to a valid owning-side relation."
-					);
-				}
-			}
-			
-			// Replace the relation reference with a direct FK/PK property lookup that SQL can
-			// understand as a JOIN condition. $owningProperty is non-null only on the InverseOf
-			// path; the dispatcher derives $fkOnJoiningRange from it to pick the FK-holding side.
-			return $this->buildJoinConditionFromRelation($propertyNode, $relation, $owningProperty);
+			// When the via property is an InverseOf, the owning side's resolved column
+			// mapping lives on the target entity instead, under the owning relation's
+			// own property name (e.g. 'customer') — captured here, since the InverseOf
+			// property name itself (e.g. 'addresses') is never a valid mapping key.
+			// InverseOf carries no column mapping of its own; buildJoinConditionFromRelation()
+			// resolves and validates the owning-side mapping from this property name.
+			$owningProperty = $relation instanceof InverseOf ? $relation->getRelation() : null;
+
+			// Replace the relation reference with a JOIN condition built from the
+			// relation's fully resolved column-pair mapping. $owningProperty is non-null
+			// only on the InverseOf path; it drives both which entity's mapping to look
+			// up and which range holds the FK.
+			return $this->buildJoinConditionFromRelation($propertyNode, $owningProperty);
 		}
 		
 		/**
@@ -152,43 +140,45 @@
 		}
 		
 		/**
-		 * Creates a JOIN condition AST from a relation annotation by dispatching to a
-		 * dedicated handler for each relation type.
+		 * Creates a JOIN condition AST from a relation's fully resolved column-pair
+		 * mapping — an AND of one equality per pair, built identically regardless of
+		 * whether the relation is ManyToOne, OneToOne, single-column, or composite.
 		 * @param AstIdentifier $joinProperty The property node (e.g. 'addresses') whose parent is the range identifier
-		 * @param ManyToOne|OneToOne $relation The owning-side relation annotation (InverseOf already resolved)
 		 * @param string|null $owningProperty Owning-side property name when reached via InverseOf, null on the direct path
 		 * @return AstInterface
 		 * @throws TransformationException
 		 * @throws EntityResolutionException
 		 */
-		private function buildJoinConditionFromRelation(AstIdentifier $joinProperty, ManyToOne|OneToOne $relation, ?string $owningProperty): AstInterface {
+		private function buildJoinConditionFromRelation(AstIdentifier $joinProperty, ?string $owningProperty): AstInterface {
 			// The parent of the property node is the range identifier (e.g. 'c')
 			$entity = $joinProperty->getParent();
-			
+
 			// Error when this is the root identifier
 			if (!$entity instanceof AstIdentifier) {
 				throw new TransformationException('Expected parent to be an AstIdentifier');
 			}
-			
+
 			// Get the range object and verify it is non-null
 			$range = $entity->getRange();
-			
+
 			// Error when there is no range attached
 			if ($range === null) {
 				throw new TransformationException('Expected parent identifier to have an attached range');
 			}
-			
+
 			// Error when the parent has no entity attached
-			if ($entity->getEntityName() === null) {
+			$entityName = $entity->getEntityName();
+
+			if ($entityName === null) {
 				throw new TransformationException('Expected parent identifier to belong to an entity range');
 			}
-			
+
 			// $owningProperty is set only when this relation was reached through an InverseOf.
 			// On that path the FK lives on $this->range (the range being joined); on the direct
 			// path it lives on $range. This single flag drives both the via-relation tagging
-			// below and the column side-assignment performed by the handlers.
+			// below and the column side-assignment of the generated condition.
 			$fkOnJoiningRange = $owningProperty !== null;
-			
+
 			// Tag the FK-holding (dependent) range with the owning-side relation name so the
 			// hydrator can match by (entity, relation) instead of re-inspecting the rewritten
 			// JOIN columns. On the InverseOf path that name is $owningProperty; on the direct
@@ -202,14 +192,29 @@
 			if ($dependentRange->getViaRelation() === null) {
 				$dependentRange->setViaRelation($owningProperty ?? $joinProperty->getName());
 			}
-			
-			// Dispatch on relation type. The parameter type is ManyToOne|OneToOne, so these
-			// two branches are exhaustive.
-			if ($relation instanceof ManyToOne) {
-				return $this->createManyToOneJoinCondition($joinProperty, $relation, $range, $owningProperty, $fkOnJoiningRange);
+
+			// The resolved column-pair mapping always lives on the entity that owns the
+			// relation (the ManyToOne/OneToOne side), keyed by that entity's own property
+			// name for it. On the InverseOf path that's $this->range's entity and
+			// $owningProperty; on the direct path it's this via-clause's own entity/property.
+			if ($fkOnJoiningRange) {
+				$ownerEntityName = $this->range->getEntityName();
+				$ownerProperty = $owningProperty;
+			} else {
+				$ownerEntityName = $entityName;
+				$ownerProperty = $joinProperty->getName();
 			}
-			
-			return $this->createOneToOneJoinCondition($joinProperty, $relation, $range, $owningProperty, $fkOnJoiningRange);
+
+			$mapping = $this->entityStore->getMetadata($ownerEntityName)->getRelationColumnMapping($ownerProperty);
+
+			if ($mapping === null) {
+				throw new TransformationException(
+					"Relation '{$ownerProperty}' on '{$ownerEntityName}' has no resolved column mapping; " .
+					"expected a ManyToOne or OneToOne annotation there."
+				);
+			}
+
+			return $this->createJoinConditionFromMapping($mapping, $range, $fkOnJoiningRange);
 		}
 		
 		/**
@@ -240,120 +245,42 @@
 		}
 		
 		/**
-		 * Assembles the two property sides of a JOIN equality from the resolved columns,
-		 * choosing which range carries the FK from $fkOnJoiningRange.
+		 * Builds a JOIN condition AST from a relation's resolved column-pair mapping:
+		 * one equality per pair, ANDed together — a single equality for a plain
+		 * single-column relation, same as before composite support existed.
 		 *
-		 * On the InverseOf path the FK lives on $this->range, so the local FK column goes on
-		 * side A and the referenced column on side B (e.g. a.userId = c.id). On the direct
-		 * path the sides swap (e.g. u.id = p.userId).
-		 * @param string $localColumn FK column on the owning/dependent entity
-		 * @param string $referencedColumn Referenced (usually PK) column on the other entity
+		 * On the InverseOf path the FK lives on $this->range, so each pair's local
+		 * property goes on side A and its target property on side B (e.g. a.userId =
+		 * c.id). On the direct path the sides swap (e.g. u.id = p.userId).
+		 * @param RelationColumnMapping $mapping Resolved pairs for this relation
 		 * @param AstRange|AstRangeDatabase|AstRangeJsonSource $range The other range
 		 * @param bool $fkOnJoiningRange True when the FK is on $this->range (InverseOf path)
 		 * @return AstInterface
 		 */
-		private function createJoinConditionAst(string $localColumn, string $referencedColumn, AstRange|AstRangeDatabase|AstRangeJsonSource $range, bool $fkOnJoiningRange): AstInterface {
+		private function createJoinConditionFromMapping(RelationColumnMapping $mapping, AstRange|AstRangeDatabase|AstRangeJsonSource $range, bool $fkOnJoiningRange): AstInterface {
+			$pairs = $mapping->pairs;
+			$condition = $this->createPairConditionAst($pairs[0], $range, $fkOnJoiningRange);
+
+			for ($i = 1, $count = count($pairs); $i < $count; $i++) {
+				$condition = new AstBinaryOperator($condition, $this->createPairConditionAst($pairs[$i], $range, $fkOnJoiningRange), 'AND');
+			}
+
+			return $condition;
+		}
+
+		/**
+		 * Builds the single equality AST for one resolved column pair, choosing which
+		 * range carries the FK from $fkOnJoiningRange.
+		 * @param RelationColumnPair $pair
+		 * @param AstRange|AstRangeDatabase|AstRangeJsonSource $range The other range
+		 * @param bool $fkOnJoiningRange True when the FK is on $this->range (InverseOf path)
+		 * @return AstInterface
+		 */
+		private function createPairConditionAst(RelationColumnPair $pair, AstRange|AstRangeDatabase|AstRangeJsonSource $range, bool $fkOnJoiningRange): AstInterface {
 			if ($fkOnJoiningRange) {
-				return $this->createPropertyLookupAst($localColumn, $range, $referencedColumn);
+				return $this->createPropertyLookupAst($pair->localProperty, $range, $pair->targetProperty);
 			}
-			
-			return $this->createPropertyLookupAst($referencedColumn, $range, $localColumn);
-		}
-		
-		/**
-		 * Builds a JOIN condition AST for a ManyToOne relation.
-		 * The FK is on $this->range (the owning/child entity); the PK is on $range (the parent entity).
-		 * @param AstIdentifier $joinProperty The property node used in the via-clause (e.g. 'customer')
-		 * @param ManyToOne $relation The ManyToOne annotation
-		 * @param AstRange|AstRangeDatabase|AstRangeJsonSource $range The parent (target) range
-		 * @param string|null $owningProperty Owning-side property name on the InverseOf path, null otherwise
-		 * @param bool $fkOnJoiningRange True when the FK is on $this->range (InverseOf path)
-		 * @return AstInterface
-		 * @throws TransformationException
-		 * @throws EntityResolutionException
-		 */
-		private function createManyToOneJoinCondition(AstIdentifier $joinProperty, ManyToOne $relation, AstRange|AstRangeDatabase|AstRangeJsonSource $range, ?string $owningProperty, bool $fkOnJoiningRange): AstInterface {
-			// referencedColumn is the column on the target (parent) entity that the FK
-			// points at — not the FK itself. When omitted, fall back to the target
-			// entity's primary key.
-			$referencedColumn = $relation->getReferencedColumn();
-			
-			if ($referencedColumn === null) {
-				$targetEntity = $relation->getTargetEntity();
-				$referencedColumn = $this->entityStore->getMetadata($targetEntity)->getPrimaryKey();
-				
-				if ($referencedColumn === null) {
-					throw new TransformationException(
-						"ManyToOne relation on '{$joinProperty->getName()}' has no referencedColumn and " .
-						"target entity '{$targetEntity}' has no primary key to fall back on."
-					);
-				}
-			}
-			
-			// localColumn is the FK property on the owning (child) entity, defaulting to the
-			// owning-side relation property name suffixed with 'Id' (e.g. 'customer' -> 'customerId').
-			// On the InverseOf path that base is $owningProperty (the resolved owning property);
-			// on the direct path it is the via-clause property itself. The InverseOf property
-			// name (e.g. 'addresses') must not be used as the base.
-			$localColumnBase = $owningProperty ?? $joinProperty->getName();
-			$relationColumn = $relation->getLocalColumn() ?? $localColumnBase . 'Id';
-			
-			return $this->createJoinConditionAst($relationColumn, $referencedColumn, $range, $fkOnJoiningRange);
-		}
-		
-		/**
-		 * Builds a JOIN condition AST for a OneToOne relation.
-		 * The owning side always holds the FK column; referencedColumn is always set.
-		 * @param AstIdentifier $joinProperty The property node used in the via-clause (e.g. 'profile')
-		 * @param OneToOne $relation The OneToOne annotation
-		 * @param AstRange|AstRangeDatabase|AstRangeJsonSource $range The related range
-		 * @param string|null $owningProperty Owning-side property name on the InverseOf path, null otherwise
-		 * @param bool $fkOnJoiningRange True when the FK is on $this->range (InverseOf path)
-		 * @return AstInterface
-		 * @throws TransformationException When referencedColumn is missing
-		 */
-		private function createOneToOneJoinCondition(AstIdentifier $joinProperty, OneToOne $relation, AstRange|AstRangeDatabase|AstRangeJsonSource $range, ?string $owningProperty, bool $fkOnJoiningRange): AstInterface {
-			// All stored OneToOne relations are owning-side; the non-owning side is declared
-			// with @InverseOf and never reaches this method. referencedColumn is the column on
-			// the target entity that the FK points at (usually its primary key).
-			$referencedColumn = $relation->getReferencedColumn();
-			
-			if (empty($referencedColumn)) {
-				throw new TransformationException('OneToOne relation is missing referencedColumn');
-			}
-			
-			// localColumn is the FK column on the owning entity, defaulting to the owning-side
-			// relation property name suffixed with 'Id' (e.g. 'user' -> 'userId'). On the InverseOf
-			// path that base is $owningProperty; on the direct path it is the via-clause property.
-			// The InverseOf property name (e.g. 'profile') must not be used as the base.
-			// This mirrors the ManyToOne handler.
-			$localColumnBase = $owningProperty ?? $joinProperty->getName();
-			$relationColumn = $relation->getLocalColumn() ?? $localColumnBase . 'Id';
-			return $this->createJoinConditionAst($relationColumn, $referencedColumn, $range, $fkOnJoiningRange);
-		}
-		
-		/**
-		 * Resolves an InverseOf annotation to the owning-side ManyToOne or OneToOne annotation
-		 * on the target entity. InverseOf carries no column mapping — the owning side has all
-		 * the information needed to build a JOIN condition.
-		 * Returns null if the named relation property does not exist or is not an owning-side relation.
-		 * @param InverseOf $inverseOf
-		 * @return ManyToOne|OneToOne|null
-		 * @throws EntityResolutionException
-		 */
-		private function resolveInverseOfToOwningSide(InverseOf $inverseOf): ManyToOne|OneToOne|null {
-			// Resolve the fully qualified target entity class
-			$targetEntity = $this->entityStore->normalizeEntityClass($inverseOf->getTargetEntity());
-			
-			// The relation parameter names the property on the target entity that owns the FK.
-			// getRelation() always returns a non-empty string — the constructor enforces this.
-			$relationProperty = $inverseOf->getRelation();
-			
-			// Look up the owning-side annotation on the target entity
-			$targetMetadata = $this->entityStore->getMetadata($targetEntity);
-			
-			return $targetMetadata->getManyToOneDependencies()[$relationProperty]
-				?? $targetMetadata->getOneToOneDependencies()[$relationProperty]
-				?? null;
+
+			return $this->createPropertyLookupAst($pair->targetProperty, $range, $pair->localProperty);
 		}
 	}

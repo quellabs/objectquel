@@ -112,17 +112,17 @@ HELP;
 			// projects that don't want ObjectQuel managing real constraints.
 			$foreignKeys = $this->configuration->getGenerateForeignKeys()
 				? $this->getTableForeignKeys($table)
-				: [];
+				: ['single' => [], 'composite' => []];
 
 			// Generate namespace and imports
 			$entityCode = "<?php\n";
 			$entityCode .= $this->generateNamespace();
 			$entityCode .= $this->generateImports();
-			$entityCode .= $this->generateClassDocBlock($table, $tableCamelCase);
+			$entityCode .= $this->generateClassDocBlock($table, $tableCamelCase, $foreignKeys['composite']);
 
 			// Generate entity code
 			$entityCode .= "    class {$tableCamelCase}Entity {\n";
-			$entityCode .= $this->generateMemberVariables($tableDescription, $foreignKeys);
+			$entityCode .= $this->generateMemberVariables($tableDescription, $foreignKeys['single']);
 			$entityCode .= $this->generateConstructor($tableDescription);
 			$entityCode .= $this->generateGettersAndSetters($tableDescription);
 			$entityCode .= "    }\n"; // Class closing brace
@@ -186,15 +186,18 @@ HELP;
 		 * Generate the class docblock with ORM annotations
 		 * @param string $tableName The table name
 		 * @param string $tableCamelCase The camelCase version of the table name
+		 * @param list<array{target: string, localProperties: list<string>, referencedProperties: list<string>, onDelete: string, onUpdate: string}> $compositeForeignKeys
+		 *        Composite (more-than-one-column) foreign keys, which @Orm\ForeignKey can only express at
+		 *        class level. Empty when generate_foreign_keys is disabled.
 		 * @return string The class docblock
 		 */
-		private function generateClassDocBlock(string $tableName, string $tableCamelCase): string {
+		private function generateClassDocBlock(string $tableName, string $tableCamelCase, array $compositeForeignKeys = []): string {
 			$output = "";
 			$output .= "    /**\n";
 			$output .= "     * Class {$tableCamelCase}Entity\n";
 			$output .= "     * @package {$this->configuration->getEntityNameSpace()}\n";
 			$output .= "     * @Orm\\Table(name=\"{$tableName}\")\n";
-			
+
 			foreach ($this->getTableIndexes($tableName) as $name => $indexConfig) {
 				// Index annotations use PHP property names, not database column names.
 				// The database stores 'customer_id' but the entity declares '$customerId',
@@ -203,17 +206,36 @@ HELP;
 					fn(string $col) => lcfirst($this->camelCase($col)),
 					$indexConfig['columns']
 				);
-				
+
 				// Format as a comma-separated list of single-quoted strings for the annotation
 				$columns = "'" . implode("', '", $propertyNames) . "'";
-				
+
 				// UniqueIndex and Index are separate annotation classes — pick the right one
 				$annotationType = $indexConfig['unique'] ? "UniqueIndex" : "Index";
-				
+
 				// Add to output
 				$output .= "     * @Orm\\{$annotationType}(name=\"{$name}\", columns={{$columns}})\n";
 			}
-			
+
+			foreach ($compositeForeignKeys as $foreignKey) {
+				$pairs = array_map(
+					fn(string $localProp, string $targetProp) => "\"{$localProp}\"=\"{$targetProp}\"",
+					$foreignKey['localProperties'],
+					$foreignKey['referencedProperties']
+				);
+
+				$output .= "     * @Orm\\ForeignKey(target={$foreignKey['target']}::class, columns={" . implode(', ', $pairs) . "})\n";
+
+				// Only emit ForeignKeyAction when the live constraint's rule deviates
+				// from the safe defaults (RESTRICT / NO ACTION) — same convention
+				// the property-level case follows below.
+				if ($foreignKey['onDelete'] !== 'RESTRICT' || $foreignKey['onUpdate'] !== 'NO ACTION') {
+					$localColumns = "\"" . implode('", "', $foreignKey['localProperties']) . "\"";
+					$output .= "     * @Orm\\ForeignKeyAction(localColumns={{$localColumns}}, onDelete=\"{$foreignKey['onDelete']}\", " .
+						"onUpdate=\"{$foreignKey['onUpdate']}\")\n";
+				}
+			}
+
 			$output .= "     */\n";
 			return $output;
 		}
@@ -611,8 +633,11 @@ HELP;
 		}
 
 		/**
-		 * Retrieves database foreign key constraints for a table, keyed by local
-		 * column name, and resolves each one's target entity class name.
+		 * Retrieves database foreign key constraints for a table and resolves
+		 * each one's target entity class name, split into property-level
+		 * (single-column) and class-level (composite) shapes — the same split
+		 * @Orm\ForeignKey itself draws between its scalar-property and
+		 * class-level placements.
 		 *
 		 * The target table's own entity may not have been generated yet — this
 		 * command is typically run per-table, in whatever order the user chooses.
@@ -622,35 +647,56 @@ HELP;
 		 * that file exists yet; annotation parameters are resolved lazily by the
 		 * metadata layer, not required to exist at generation time.
 		 *
-		 * Composite foreign keys (more than one local/referenced column) are
-		 * skipped: @Orm\ForeignKey only supports a single referencedColumn, so a
-		 * composite constraint can't be represented as one annotation.
+		 * referencedColumn/columns name a PHP property on the target entity, not
+		 * a raw database column name (see EntityMetadataBuilder's resolution of
+		 * these same annotations) — every column name read from introspection is
+		 * converted with the same column→property transform used for index
+		 * columns above.
 		 *
 		 * @param string $tableName The name of the database table to get foreign keys for
-		 * @return array<string, array{target: string, referencedColumn: string, onDelete: string, onUpdate: string}>
+		 * @return array{
+		 *     single: array<string, array{target: string, referencedColumn: string, onDelete: string, onUpdate: string}>,
+		 *     composite: list<array{target: string, localProperties: list<string>, referencedProperties: list<string>, onDelete: string, onUpdate: string}>
+		 * }
 		 */
 		private function getTableForeignKeys(string $tableName): array {
-			$result = [];
+			$single = [];
+			$composite = [];
 
 			foreach ($this->provider->getDatabaseAdapter()->getForeignKeys($tableName) as $foreignKey) {
-				if (count($foreignKey->columns) !== 1 || count($foreignKey->referencedColumns) !== 1) {
+				$targetEntityName = $this->camelCase($foreignKey->referencedTable);
+				$target = "{$this->configuration->getEntityNameSpace()}\\{$targetEntityName}Entity";
+
+				$referencedProperties = array_values(array_map(
+					fn(string $col) => lcfirst($this->camelCase($col)),
+					$foreignKey->referencedColumns
+				));
+
+				if (count($foreignKey->columns) === 1) {
+					$single[$foreignKey->columns[0]] = [
+						'target'           => $target,
+						// Round-trip the source constraint's actual rule — defaulting
+						// to RESTRICT here would silently misrepresent what the
+						// database actually enforces.
+						'referencedColumn' => $referencedProperties[0],
+						'onDelete'         => $foreignKey->onDelete,
+						'onUpdate'         => $foreignKey->onUpdate,
+					];
 					continue;
 				}
 
-				$localColumn = $foreignKey->columns[0];
-				$targetEntityName = $this->camelCase($foreignKey->referencedTable);
-
-				$result[$localColumn] = [
-					'target'           => "{$this->configuration->getEntityNameSpace()}\\{$targetEntityName}Entity",
-					// Round-trip the source constraint's actual rule — defaulting to
-					// RESTRICT here would silently misrepresent what the database
-					// actually enforces.
-					'referencedColumn' => $foreignKey->referencedColumns[0],
-					'onDelete'         => $foreignKey->onDelete,
-					'onUpdate'         => $foreignKey->onUpdate,
+				$composite[] = [
+					'target'               => $target,
+					'localProperties'      => array_values(array_map(
+						fn(string $col) => lcfirst($this->camelCase($col)),
+						$foreignKey->columns
+					)),
+					'referencedProperties' => $referencedProperties,
+					'onDelete'             => $foreignKey->onDelete,
+					'onUpdate'             => $foreignKey->onUpdate,
 				];
 			}
 
-			return $result;
+			return ['single' => $single, 'composite' => $composite];
 		}
 	}

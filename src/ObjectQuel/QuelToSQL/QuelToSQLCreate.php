@@ -106,8 +106,7 @@
 
 			// Embedded `foreign key (...) references ...` entries append as
 			// trailing table constraints too — SQLite's only way to declare
-			// one at all (see objectquel-foreign-key-design.md, "Dialect
-			// reality"), and uniform across every other dialect as well.
+			// one at all, and uniform across every other dialect as well.
 			foreach ($statement->getForeignKeys() as $foreignKey) {
 				$columnDefs[] = $this->renderForeignKeyConstraint($tableName, $foreignKey);
 			}
@@ -155,34 +154,33 @@
 		 * other(...)` table constraint. The derived name is always emitted
 		 * explicitly — even on SQLite, where it's parsed but never
 		 * addressable afterward — keeping one code path across all four
-		 * dialects instead of a SQLite carve-out (see
-		 * objectquel-foreign-key-design.md, "Implementation surface").
+		 * dialects instead of a SQLite carve-out.
 		 * @param string $tableName
 		 * @param AstCreateTableForeignKey $foreignKey
 		 * @return string
-		 * @throws \LogicException If the referenced column was never resolved
+		 * @throws \LogicException If the referenced columns were never resolved
 		 * @throws QuelException If the derived constraint name exceeds the identifier length limit
 		 */
 		private function renderForeignKeyConstraint(string $tableName, AstCreateTableForeignKey $foreignKey): string {
-			$referencedColumn = $foreignKey->getReferencedColumn();
+			$referencedColumns = $foreignKey->getReferencedColumns();
 
-			if ($referencedColumn === null) {
+			if ($referencedColumns === null) {
 				throw new \LogicException(
-					"Cannot compile foreign key on '{$tableName}.{$foreignKey->getColumn()}': the referenced column " .
-					"was never resolved — callers must resolve a column-less 'references Table' via " .
+					"Cannot compile foreign key on '{$tableName}.(" . implode(', ', $foreignKey->getColumns()) . ")': " .
+					"the referenced columns were never resolved — callers must resolve a column-less 'references Table' via " .
 					"ForeignKeyReferenceResolver before compiling"
 				);
 			}
 
-			$name = ForeignKeyConstraintNamer::nameOrThrow($tableName, $foreignKey->getColumn());
+			$name = ForeignKeyConstraintNamer::nameForColumnsOrThrow($tableName, $foreignKey->getColumns());
 			$dialect = $this->platform->getDatabaseType();
 
 			return sprintf(
 				'CONSTRAINT %s FOREIGN KEY (%s) REFERENCES %s (%s) ON DELETE %s ON UPDATE %s',
 				$this->identifierQuoter->quoteIdentifier($name),
-				$this->identifierQuoter->quoteIdentifier($foreignKey->getColumn()),
+				$this->identifierQuoter->quoteIdentifierList($foreignKey->getColumns()),
 				$this->identifierQuoter->quoteIdentifier($foreignKey->getReferencedTable()),
-				$this->identifierQuoter->quoteIdentifier($referencedColumn),
+				$this->identifierQuoter->quoteIdentifierList($referencedColumns),
 				ForeignKeyActionNormalizer::forDialect($foreignKey->getOnDelete(), $dialect),
 				ForeignKeyActionNormalizer::forDialect($foreignKey->getOnUpdate(), $dialect)
 			);

@@ -96,7 +96,7 @@
 				);
 			}
 
-			[$innerRetrieve, $clonedRange, $originalRange, $primaryKey] = $this->beginHelperRange(
+			[$innerRetrieve, $clonedRange, $originalRange, $primaryKeys] = $this->beginHelperRange(
 				$root,
 				'a nested sequence function inside ' . $outerAggregate->getType() . '(...)'
 			);
@@ -159,7 +159,7 @@
 				}
 			}
 
-			$this->finishHelperRange($root, $innerRetrieve, $originalRange, $clonedRange, $primaryKey, $helperRangeName, $pendingHelperIdentifiers);
+			$this->finishHelperRange($root, $innerRetrieve, $originalRange, $clonedRange, $primaryKeys, $helperRangeName, $pendingHelperIdentifiers);
 
 			$log->note(
 				'optimizer', 'aggregate', 'WINDOW_CHAIN',

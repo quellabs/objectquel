@@ -42,24 +42,20 @@
 		/**
 		 * Determine if a LEFT JOIN can be safely converted to INNER JOIN.
 		 *
-		 * Safe when:
-		 * - Table has non-nullable field access (guarantees row exists)
-		 * - Table not used in conditions, OR
-		 * - No explicit NULL checks on this table
+		 * Safe only when the table has an unconditionally-required non-nullable
+		 * field access (RangeUsageAnalyzer only sets this when the reference isn't
+		 * reachable through an OR), since that's the only signal that proves every
+		 * row must have a match. Not being referenced in the conditions at all
+		 * proves nothing: the table is still joined into the subquery's FROM, so an
+		 * unmatched row can still change whether that subquery's result is empty
+		 * regardless of what the WHERE clause does or doesn't mention — collapsing
+		 * on that absence alone can silently drop rows.
 		 */
 		public function canSafelyCollapseToInner(): bool {
 			if ($this->hasNullChecks) {
 				return false;  // Explicit NULL checks mean LEFT JOIN semantics matter
 			}
-			
-			if ($this->hasNonNullableFieldAccess) {
-				return true;   // Non-nullable access guarantees row existence
-			}
-			
-			if (!$this->usedInConditions) {
-				return true;   // Not used in WHERE, safe to optimize
-			}
-			
-			return false;      // Conservative: preserve LEFT JOIN semantics
+
+			return $this->hasNonNullableFieldAccess;
 		}
 	}

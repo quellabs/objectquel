@@ -87,10 +87,13 @@
 
 		/**
 		 * Builds the target foreign-key configuration declared by an entity's
-		 * @Orm\ForeignKey annotations, keyed by a deterministic constraint name.
+		 * @Orm\ForeignKey annotations — both property-level (single column)
+		 * and class-level (possibly composite) — keyed by a deterministic
+		 * constraint name.
 		 * @param string|object $entity The entity object or class to get foreign keys for
 		 * @return array<string, ForeignKeyDefinition> Constraint name => definition
-		 * @throws \Exception When a ForeignKey's target entity has no primary key to default to
+		 * @throws \Exception When a referenced property has no matching target column,
+		 *         or a ForeignKey's target entity has no primary key to default to
 		 */
 		public function getEntityForeignKeys(mixed $entity): array {
 			$metadata = $this->entityStore->getMetadata($entity);
@@ -98,14 +101,27 @@
 
 			foreach ($metadata->foreignKeys as $columnName => $annotation) {
 				$targetMetadata = $this->entityStore->getMetadata($annotation->getTarget());
-				$referencedColumn = $annotation->getReferencedColumn() ?? ($targetMetadata->identifierColumns[0] ?? null);
+				$referencedProperty = $annotation->getReferencedColumn();
 
-				if ($referencedColumn === null) {
-					throw new \Exception(
-						"ForeignKey on '{$metadata->tableName}.{$columnName}' targets " .
-						"'{$annotation->getTarget()}', which has no primary key to default " .
-						"referencedColumn to. Declare 'referencedColumn' explicitly."
-					);
+				if ($referencedProperty !== null) {
+					$referencedColumn = $targetMetadata->columnMap[$referencedProperty] ?? null;
+
+					if ($referencedColumn === null) {
+						throw new \Exception(
+							"ForeignKey on '{$metadata->tableName}.{$columnName}' targets property " .
+							"'{$referencedProperty}' on '{$annotation->getTarget()}', which has no matching column."
+						);
+					}
+				} else {
+					$referencedColumn = $targetMetadata->identifierColumns[0] ?? null;
+
+					if ($referencedColumn === null) {
+						throw new \Exception(
+							"ForeignKey on '{$metadata->tableName}.{$columnName}' targets " .
+							"'{$annotation->getTarget()}', which has no primary key to default " .
+							"referencedColumn to. Declare 'referencedColumn' explicitly."
+						);
+					}
 				}
 
 				// ForeignKeyAction is optional and independent of ForeignKey itself —
@@ -122,11 +138,44 @@
 				);
 			}
 
+			foreach ($metadata->classForeignKeys as $declaration) {
+				$targetMetadata = $this->entityStore->getMetadata($declaration->targetEntity);
+				$referencedColumns = [];
+
+				foreach ($declaration->targetProperties as $targetProperty) {
+					$referencedColumn = $targetMetadata->columnMap[$targetProperty] ?? null;
+
+					if ($referencedColumn === null) {
+						throw new \Exception(
+							"ForeignKey on '{$metadata->tableName}.(" . implode(', ', $declaration->localColumns) . ")' " .
+							"targets property '{$targetProperty}' on '{$declaration->targetEntity}', which has no matching column."
+						);
+					}
+
+					$referencedColumns[] = $referencedColumn;
+				}
+
+				$name = ForeignKeyConstraintNamer::nameForColumns($metadata->tableName, $declaration->localColumns);
+
+				$result[$name] = new ForeignKeyDefinition(
+					columns: $declaration->localColumns,
+					referencedTable: $targetMetadata->tableName,
+					referencedColumns: $referencedColumns,
+					onDelete: $declaration->onDelete,
+					onUpdate: $declaration->onUpdate,
+				);
+			}
+
 			return $result;
 		}
 
 		/**
 		 * Compares two foreign key configurations to check if they differ.
+		 * $columns/$referencedColumns are positionally paired on both sides
+		 * (declaration order for an entity, ordinal position for an
+		 * introspected constraint) — compared as ordered lists, never
+		 * independently sorted, so two constraints with the same column
+		 * sets but swapped pairings are correctly detected as different.
 		 * @param ForeignKeyDefinition $dbConfig Database foreign key configuration
 		 * @param ForeignKeyDefinition $entityConfig Entity foreign key configuration
 		 * @return bool True if configurations differ, false otherwise
@@ -144,20 +193,10 @@
 				return true;
 			}
 
-			$dbColumns = $dbConfig->columns;
-			$entityColumns = $entityConfig->columns;
-			sort($dbColumns);
-			sort($entityColumns);
-
-			if ($dbColumns !== $entityColumns) {
+			if ($dbConfig->columns !== $entityConfig->columns) {
 				return true;
 			}
 
-			$dbReferencedColumns = $dbConfig->referencedColumns;
-			$entityReferencedColumns = $entityConfig->referencedColumns;
-			sort($dbReferencedColumns);
-			sort($entityReferencedColumns);
-
-			return $dbReferencedColumns !== $entityReferencedColumns;
+			return $dbConfig->referencedColumns !== $entityConfig->referencedColumns;
 		}
 	}

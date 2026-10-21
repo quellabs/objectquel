@@ -16,7 +16,7 @@
 		 * Generate a new primary key for the given entity
 		 * @param EntityManager $em The EntityManager instance
 		 * @param object $entity The entity object for which to generate a primary key
-		 * @param string $property The primary key property to generate a value for
+		 * @param string $property The primary key property to generate a value for — a composite key's components each get their own MAX(col)+1 read
 		 * @return mixed The generated primary key value
 		 * @throws QuelException|EntityResolutionException
 		 */

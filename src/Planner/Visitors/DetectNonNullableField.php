@@ -12,6 +12,7 @@
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRetrieve;
 	use Quellabs\ObjectQuel\ObjectQuel\AstInterface;
 	use Quellabs\ObjectQuel\ObjectQuel\AstVisitorInterface;
+	use Quellabs\ObjectQuel\Planner\Helpers\AstUtilities;
 	
 	/**
 	 * Visitor that checks if a range references any non-nullable fields in the AST.
@@ -83,6 +84,14 @@
 				return;
 			}
 
+			// A reference reachable only through an OR doesn't prove the row must
+			// exist either: the WHERE clause can still be satisfied by the other
+			// OR branch while this range has no match at all, so promoting on this
+			// reference alone would drop rows an unmatched LEFT JOIN should keep.
+			if (AstUtilities::isNestedInsideOr($node)) {
+				return;
+			}
+
 			// Check the correct part of the query
 			if ($this->subquery !== null) {
 				$this->checkSubqueryField($next->getName());
@@ -112,7 +121,7 @@
 
 			return false;
 		}
-		
+
 		/**
 		 * Resolves nullability for a direct entity range field.
 		 * @param string|null $entityName

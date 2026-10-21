@@ -49,7 +49,9 @@
 
 		/**
 		 * The primary key a write-verb statement generated, when applicable
-		 * and known (see AppendExecutor). Always null for a retrieve result.
+		 * and known (see AppendExecutor) — a scalar for a single-column key,
+		 * or a property-keyed array of every key component's value for a
+		 * composite key. Always null for a retrieve result.
 		 */
 		private readonly mixed $generatedId;
 
@@ -118,7 +120,9 @@
 		 * rows to hydrate, just how many rows were affected and, when
 		 * applicable, a generated primary key (see AppendExecutor).
 		 * @param int $affectedRows Number of rows affected by the statement
-		 * @param mixed $generatedId The generated primary key, if applicable and known; null otherwise
+		 * @param mixed $generatedId The generated primary key, if applicable and known; null otherwise.
+		 *        A scalar for a single-column key, or a property-keyed array
+		 *        of every key component's value for a composite key.
 		 * @return self
 		 */
 		public static function fromWriteStatement(int $affectedRows, mixed $generatedId = null): self {
@@ -153,8 +157,10 @@
 
 		/**
 		 * Returns the primary key a write-verb statement generated, when
-		 * applicable and known (see AppendExecutor). Always null for a
-		 * retrieve result.
+		 * applicable and known (see AppendExecutor) — a scalar for a
+		 * single-column key, or a property-keyed array of every key
+		 * component's value for a composite key. Always null for a retrieve
+		 * result.
 		 * @return mixed
 		 */
 		public function getGeneratedId(): mixed {

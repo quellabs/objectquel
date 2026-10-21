@@ -22,15 +22,12 @@
 		/** @var class-string<T> */
 		protected string $target_entity;
 		
-		/** @var string Name of the property */
-		protected string $property_name;
-		
-		/** @var mixed */
-		protected mixed $id;
-		
+		/** @var array<string, mixed> Property name => value, every component of the foreign key */
+		protected array $criteria;
+
 		/** @var bool */
 		protected bool $initialized;
-		
+
 		/**
 		 * EntityCollection constructor.
 		 * @param EntityManager $entityManager The entity manager handling database operations
@@ -49,9 +46,24 @@
 			$this->entity_manager = $entityManager;
 			$this->collection = new Collection($sortOrder);
 			$this->target_entity = $targetEntity;
-			$this->property_name = $propertyName;
-			$this->id = $id;
+			$this->criteria = [$propertyName => $id];
 			$this->initialized = false;
+		}
+
+		/**
+		 * Creates an EntityCollection matching on every component of a composite foreign
+		 * key at once — the single-column constructor only ever filters by one property,
+		 * which would silently drop the remaining components of a composite FK.
+		 * @param EntityManager $entityManager The entity manager handling database operations
+		 * @param class-string<T> $targetEntity The fully qualified class name of the target entity
+		 * @param array<string, mixed> $criteria Property name => value, every component of the foreign key
+		 * @param string $sortOrder Optional sort order for the collection
+		 * @return self<T>
+		 */
+		public static function forCriteria(EntityManager $entityManager, string $targetEntity, array $criteria, string $sortOrder = ''): self {
+			$instance = new self($entityManager, $targetEntity, '', null, $sortOrder);
+			$instance->criteria = $criteria;
+			return $instance;
 		}
 
 		/**
@@ -82,7 +94,7 @@
 			
 			try {
 				// Load the entities
-				$entities = $this->entity_manager->findBy($this->target_entity, [$this->property_name => $this->id]);
+				$entities = $this->entity_manager->findBy($this->target_entity, $this->criteria);
 				
 				// Add each found entity to the collection
 				// But first check if the entity is already present in the collection to avoid duplicates

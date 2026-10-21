@@ -6,9 +6,15 @@
 
 	/**
 	 * @Annotation
-	 * Declares the ON DELETE / ON UPDATE behavior of an @Orm\ForeignKey on the same
-	 * property. Optional — a bare @Orm\ForeignKey with no ForeignKeyAction gets the
-	 * safe defaults (RESTRICT / NO ACTION).
+	 * Declares the ON DELETE / ON UPDATE behavior of an @Orm\ForeignKey. Optional —
+	 * a bare @Orm\ForeignKey with no ForeignKeyAction gets the safe defaults
+	 * (RESTRICT / NO ACTION).
+	 *
+	 * At property level, matched to the @Orm\ForeignKey on the same property by
+	 * colocation — localColumns is not used there. At class level, where a class
+	 * may declare more than one @Orm\ForeignKey, localColumns (an ordered list of
+	 * local property names) matches this action to exactly one of them: the
+	 * @ForeignKey whose 'columns' keys, in order, equal this list.
 	 *
 	 * Deliberately independent of @Orm\Cascade: this configures what the database
 	 * constraint itself does, not whether the ORM also walks the relation in PHP.
@@ -16,7 +22,9 @@
 	 * scalar @Orm\Column-backed FK column (no ManyToOne/OneToOne, no Cascade) can
 	 * still declare a real ON DELETE CASCADE/SET NULL here.
 	 *
-	 * Example: @Orm\ForeignKeyAction(onDelete="CASCADE", onUpdate="RESTRICT")
+	 * Examples:
+	 *   @Orm\ForeignKeyAction(onDelete="CASCADE", onUpdate="RESTRICT")
+	 *   @Orm\ForeignKeyAction(localColumns={"orderTenantId", "orderNumber"}, onDelete="CASCADE")
 	 */
 	class ForeignKeyAction implements AnnotationInterface {
 
@@ -32,6 +40,9 @@
 		private string $onDelete;
 		private string $onUpdate;
 
+		/** @var list<string> Ordered local property names, for matching a class-level @ForeignKey; empty at property level */
+		private array $localColumns;
+
 		/**
 		 * ForeignKeyAction constructor.
 		 * @param array<string, mixed> $parameters Array of parameters from the annotation
@@ -40,6 +51,7 @@
 		public function __construct(array $parameters) {
 			$onDelete = $parameters['onDelete'] ?? 'RESTRICT';
 			$onUpdate = $parameters['onUpdate'] ?? 'NO ACTION';
+			$localColumns = $parameters['localColumns'] ?? null;
 
 			if (!is_string($onDelete) || !in_array($onDelete, self::VALID_ACTIONS, true)) {
 				throw new \InvalidArgumentException(
@@ -53,9 +65,26 @@
 				);
 			}
 
+			$normalizedLocalColumns = [];
+
+			if ($localColumns !== null) {
+				if (!is_array($localColumns) || $localColumns === []) {
+					throw new \InvalidArgumentException("ForeignKeyAction: 'localColumns' must be a non-empty list of local property names");
+				}
+
+				foreach ($localColumns as $property) {
+					if (!is_string($property) || $property === '') {
+						throw new \InvalidArgumentException("ForeignKeyAction: 'localColumns' entries must be non-empty strings");
+					}
+
+					$normalizedLocalColumns[] = $property;
+				}
+			}
+
 			$this->parameters = $parameters;
 			$this->onDelete = $onDelete;
 			$this->onUpdate = $onUpdate;
+			$this->localColumns = $normalizedLocalColumns;
 		}
 
 		/**
@@ -80,5 +109,24 @@
 		 */
 		public function getOnUpdate(): string {
 			return $this->onUpdate;
+		}
+
+		/**
+		 * Returns the 'localColumns' parameter: ordered local property names,
+		 * for matching this action to one class-level @ForeignKey. Empty at
+		 * property level, where colocation on the same property is the match.
+		 * @return list<string>
+		 */
+		public function getLocalColumns(): array {
+			return $this->localColumns;
+		}
+
+		/**
+		 * True when this ForeignKeyAction declared 'localColumns' (a class-level
+		 * declaration), false for the property-level form.
+		 * @return bool
+		 */
+		public function hasLocalColumns(): bool {
+			return $this->localColumns !== [];
 		}
 	}

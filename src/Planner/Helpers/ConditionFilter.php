@@ -23,10 +23,13 @@
 	 *   - isolateJoinConditionsForRange(): extracts join conditions that connect a
 	 *     specific range to another range (e.g. x.id = y.xId).
 	 *
-	 * All three delegate tree traversal to filterTree(), which handles structural
-	 * node types (AstBinaryOperator, NodeConditionWrapper) via their interfaces
-	 * and passes leaf nodes to a caller-supplied predicate. Adding a new filter
-	 * only requires writing a predicate — the traversal logic is shared.
+	 * All three delegate to filterTree(), which splits the condition into
+	 * top-level AND-ed chunks and keeps each chunk whole only when every leaf
+	 * inside it (found via the same structural dispatch over AstBinaryOperator/
+	 * NodeConditionWrapper) is accepted by a caller-supplied predicate — never
+	 * partially rewriting a chunk, since that could silently narrow the result
+	 * below what the original condition allowed. Adding a new filter only
+	 * requires writing a predicate — the traversal logic is shared.
 	 *
 	 * Leaf classification is handled by three private helpers:
 	 *   - isDatabaseCompatibleExpression()
@@ -243,61 +246,80 @@
 		}
 		
 		/**
-		 * Recursively filters a condition tree by structural role, delegating leaf
-		 * decisions to a caller-supplied predicate.
+		 * Filters a condition tree into an exact, leaf-decided subset that is never
+		 * more permissive — and, critically, never more restrictive — than the
+		 * original. Splits $condition into top-level AND-ed chunks (descending
+		 * only through AND; an OR, NOT, IS NULL/IS NOT NULL, or comparison is one
+		 * atomic chunk) and keeps a chunk whole, unmodified, only when every leaf
+		 * inside it is accepted by $predicate — otherwise the whole chunk is dropped.
 		 *
-		 * Structural dispatch:
-		 *   - AstBinaryOperator (AND/OR): recurse into both children; reconstruct the
-		 *     node from whichever children survive, collapsing to a single child when
-		 *     only one side passes.
-		 *   - NodeConditionWrapper (NOT, IS NULL, IS NOT NULL): recurse into the inner
-		 *     expression; reconstruct the wrapper with the filtered inner node if it
-		 *     survives, otherwise discard the whole wrapper.
-		 *   - Everything else is a leaf: pass directly to $predicate and return its result.
-		 *
-		 * The predicate receives any non-structural node and returns either the node to
-		 * keep (cloned if needed) or null to discard it. The predicate is responsible
-		 * for cloning — filterTree never clones leaf nodes itself.
+		 * Partially accepting a chunk — e.g. collapsing `A or B` to just `A` because
+		 * B can't be evaluated here, or collapsing `not (A and B)` to `not A` — would
+		 * silently narrow the result: a row satisfying the original condition only
+		 * through the un-evaluable part would then be wrongly excluded by this
+		 * "filter", with no way to recover it later. Dropping the whole chunk instead
+		 * only costs precision (this stage fetches more candidate rows than strictly
+		 * necessary); it never excludes a row the real condition would have kept.
+		 * Every caller of this method relies on that guarantee.
 		 * @param AstInterface|null $condition Root of the subtree to filter
-		 * @param callable(AstInterface): ?AstInterface $predicate Leaf classification test
-		 * @return AstInterface|null Filtered subtree, or null if nothing survived
+		 * @param callable(AstInterface): ?AstInterface $predicate Leaf acceptance test — only whether it returns null matters here
+		 * @return AstInterface|null The AND of every fully-accepted chunk, or null if none survived
 		 */
 		private function filterTree(?AstInterface $condition, callable $predicate): ?AstInterface {
 			if ($condition === null) {
 				return null;
 			}
-			
-			// AND / OR: recurse into both children and reconstruct from survivors.
-			if ($condition instanceof AstBinaryOperator) {
-				$left = $this->filterTree($condition->getLeft(), $predicate);
-				$right = $this->filterTree($condition->getRight(), $predicate);
-				
-				if ($left !== null && $right !== null) {
-					$node = clone $condition;
-					$node->setLeft($left);
-					$node->setRight($right);
-					return $node;
+
+			$kept = [];
+
+			foreach ($this->splitTopLevelAndChunks($condition) as $chunk) {
+				if ($this->chunkIsFullyAccepted($chunk, $predicate)) {
+					$kept[] = $chunk->deepClone();
 				}
-				
-				// One side was eliminated — collapse to whichever child survived.
-				return $left ?? $right;
 			}
-			
-			// NOT / IS NULL / IS NOT NULL: recurse into the inner expression and
-			// rebuild the wrapper around it if the inner expression survives.
-			if ($condition instanceof NodeConditionWrapper) {
-				$inner = $this->filterTree($condition->getExpression(), $predicate);
-				
-				if ($inner !== null) {
-					$node = $condition->deepClone();
-					$node->setExpression($inner);
-					return $node;
-				}
-				
-				return null;
+
+			return AstUtilities::combinePredicatesWithAnd($kept);
+		}
+
+		/**
+		 * Flattens a top-level AND tree into its chunks. Descent stops at any node
+		 * that isn't itself AND — including OR, NOT, IS NULL/IS NOT NULL, and plain
+		 * comparisons — which is returned whole as a single chunk, never split further.
+		 * @param AstInterface $condition
+		 * @return AstInterface[]
+		 */
+		private function splitTopLevelAndChunks(AstInterface $condition): array {
+			if (!AstUtilities::isBinaryAndOperator($condition)) {
+				return [$condition];
 			}
-			
-			// Leaf node — delegate entirely to the predicate.
-			return $predicate($condition);
+
+			/** @var AstBinaryOperator $condition */
+			return array_merge(
+				$this->splitTopLevelAndChunks($condition->getLeft()),
+				$this->splitTopLevelAndChunks($condition->getRight())
+			);
+		}
+
+		/**
+		 * Returns true only when every leaf within $chunk is accepted by $predicate.
+		 * Mirrors filterTree()'s structural dispatch (AstBinaryOperator,
+		 * NodeConditionWrapper) but as an all-leaves boolean test rather than a tree
+		 * reconstruction, so a chunk is never partially accepted.
+		 * @param AstInterface $chunk
+		 * @param callable(AstInterface): ?AstInterface $predicate
+		 * @return bool
+		 */
+		private function chunkIsFullyAccepted(AstInterface $chunk, callable $predicate): bool {
+			if ($chunk instanceof AstBinaryOperator) {
+				return
+					$this->chunkIsFullyAccepted($chunk->getLeft(), $predicate) &&
+					$this->chunkIsFullyAccepted($chunk->getRight(), $predicate);
+			}
+
+			if ($chunk instanceof NodeConditionWrapper) {
+				return $this->chunkIsFullyAccepted($chunk->getExpression(), $predicate);
+			}
+
+			return $predicate($chunk) !== null;
 		}
 	}

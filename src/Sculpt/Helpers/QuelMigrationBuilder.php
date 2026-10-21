@@ -73,6 +73,9 @@
 		/** @var SqlIdentifierQuoter */
 		private SqlIdentifierQuoter $identifierQuoter;
 
+		/** @var ForeignKeyDependencyFinder Finds a dependent constraint on the other side of a primary-key change */
+		private ForeignKeyDependencyFinder $foreignKeyDependencyFinder;
+
 		/**
 		 * @param DatabaseAdapter $adapter Active database connection
 		 * @param string $migrationsPath Directory that will receive the generated file
@@ -83,6 +86,7 @@
 			$this->migrationsPath = $migrationsPath;
 			$this->platform = $platform;
 			$this->identifierQuoter = new SqlIdentifierQuoter($platform);
+			$this->foreignKeyDependencyFinder = new ForeignKeyDependencyFinder($adapter);
 		}
 
 		// -------------------------------------------------------------------------
@@ -164,6 +168,71 @@
 			$downColumnsAndIndexes = [];
 			$downForeignKeys = [];
 			$downDropTables = [];
+			$postRestoreForeignKeys = [];
+			$downPostRestoreForeignKeys = [];
+
+			// Pass 0: find every live foreign key — on any table, including
+			// one this migration doesn't otherwise touch — that references a
+			// table whose primary key is changing. Changing or dropping a
+			// primary key still referenced by such a constraint is rejected
+			// outright by every engine that enforces named foreign keys
+			// (SQLite doesn't — its constraints are checked at write time,
+			// not tied to the referenced table's schema, so nothing here
+			// applies there). Each one is dropped up front — before pass 1
+			// below changes the key it depends on — and restored only after
+			// pass 2 has run, in whatever shape it's actually supposed to
+			// end up in: unchanged, the table's own diff's new shape, or not
+			// restored at all if that diff deletes it outright. The two
+			// 'pass 2 must not also...' exclusions below hand ownership of
+			// each affected constraint entirely to this pass, in both
+			// directions, so it's never dropped or restored twice.
+			if ($this->platform->supportsNamedForeignKeys()) {
+				$changingTables = [];
+
+				foreach ($normalized as $tableName => $changes) {
+					if (!$changes['table_not_exists'] && $changes['primaryKey']['action'] !== null) {
+						$changingTables[] = $tableName;
+					}
+				}
+
+				if ($changingTables !== []) {
+					foreach ($this->foreignKeyDependencyFinder->findReferencing($changingTables) as $ownerTable => $constraints) {
+						$up[] = $this->queryStatement($this->buildAlterForeignKeysStatement($ownerTable, $this->buildDropForeignKeyOps($constraints)));
+						$downPostRestoreForeignKeys[] = $this->queryStatement($this->buildAlterForeignKeysStatement($ownerTable, $this->buildAddForeignKeyOps($constraints)));
+
+						// $ownerTable may not appear in $normalized at all — a
+						// table hosting nothing but an untouched dependent
+						// constraint has no other change of its own to report.
+						$ownForeignKeyChanges = $normalized[$ownerTable]['foreignKeys'] ?? ['added' => [], 'modified' => [], 'deleted' => []];
+						$toRestore = [];
+
+						foreach (array_keys($constraints) as $name) {
+							if (isset($ownForeignKeyChanges['deleted'][$name])) {
+								// Genuinely going away — pass 2 must not drop it
+								// again (already done above), and there's nothing
+								// to restore.
+								unset($normalized[$ownerTable]['foreignKeys']['deleted'][$name]);
+								continue;
+							}
+
+							if (isset($ownForeignKeyChanges['modified'][$name])) {
+								// Restore in the table's own newly-declared shape, not
+								// the one just dropped; pass 2 must not also add/drop it.
+								$toRestore[$name] = $ownForeignKeyChanges['modified'][$name]['entity'];
+								unset($normalized[$ownerTable]['foreignKeys']['modified'][$name]);
+							} else {
+								// Untouched by this migration otherwise — put back exactly as it was.
+								$toRestore[$name] = $constraints[$name];
+							}
+						}
+
+						if ($toRestore !== []) {
+							$postRestoreForeignKeys[] = $this->queryStatement($this->buildAlterForeignKeysStatement($ownerTable, $this->buildAddForeignKeyOps($toRestore)));
+							$downForeignKeys[] = $this->queryStatement($this->buildAlterForeignKeysStatement($ownerTable, $this->buildDropForeignKeyOps($toRestore)));
+						}
+					}
+				}
+			}
 
 			// Pass 1: tables, columns, and indexes. Foreign keys are deliberately
 			// left for pass 2 below — see class docblock.
@@ -246,13 +315,26 @@
 				}
 			}
 
-			// down() must undo in the exact reverse of up(): foreign keys first — a
-			// column or table this migration constrains can't be altered or dropped
-			// while that constraint still exists — then column/index changes, then
-			// finally the tables this migration created, in reverse of creation
-			// order (a table with an inline FK, e.g. on SQLite, has no separate
-			// drop-foreign-key step, so a referenced parent can't drop first).
-			$down = [...$downForeignKeys, ...$downColumnsAndIndexes, ...array_reverse($downDropTables)];
+			// Pass 0's restore step runs only now, after every table/column/
+			// index/foreign-key change above — including the primary-key
+			// change these constraints were cleared out of the way for.
+			$up = [...$up, ...$postRestoreForeignKeys];
+
+			// down() must undo in the exact reverse of up(): pass 0's restore
+			// first (those constraints must be gone again before the primary
+			// key they depend on reverts), then foreign keys, then column/
+			// index changes — a column or table this migration constrains
+			// can't be altered or dropped while that constraint still exists
+			// — then the tables this migration created, in reverse of
+			// creation order, and finally pass 0's original drop, undone
+			// last since it needs the primary key already back in its
+			// original shape.
+			$down = [
+				...$downForeignKeys,
+				...$downColumnsAndIndexes,
+				...array_reverse($downDropTables),
+				...$downPostRestoreForeignKeys,
+			];
 
 			$upBody = implode("\n", $up);
 			$downBody = implode("\n", $down);
@@ -624,19 +706,22 @@ PHP;
 		}
 
 		/**
-		 * Render a `foreign key (col) references Table (col) on delete X
-		 * on update Y` clause, shared by `create`'s embedded entries and
-		 * `alter`'s `add foreign key` op (see buildAddForeignKeyOps()).
+		 * Render a `foreign key (col {, col}) references Table (col {,
+		 * col}) on delete X on update Y` clause, shared by `create`'s
+		 * embedded entries and `alter`'s `add foreign key` op (see
+		 * buildAddForeignKeyOps()). $config->columns/referencedColumns are
+		 * already positionally paired, so they're rendered in order,
+		 * however many there are.
 		 * @param ForeignKeyDefinition $config
 		 * @return string
 		 */
 		private function renderForeignKeyClause(ForeignKeyDefinition $config): string {
-			$column = $config->columns[0];
-			$referencedColumn = $config->referencedColumns[0];
+			$columns = implode(', ', $config->columns);
+			$referencedColumns = implode(', ', $config->referencedColumns);
 			$onDelete = strtolower($config->onDelete);
 			$onUpdate = strtolower($config->onUpdate);
 
-			return "foreign key ({$column}) references {$config->referencedTable} ({$referencedColumn}) on delete {$onDelete} on update {$onUpdate}";
+			return "foreign key ({$columns}) references {$config->referencedTable} ({$referencedColumns}) on delete {$onDelete} on update {$onUpdate}";
 		}
 
 		/**
@@ -655,7 +740,8 @@ PHP;
 			$ops = [];
 
 			foreach ($foreignKeys as $config) {
-				$ops[] = "drop foreign key ({$config->columns[0]})";
+				$columns = implode(', ', $config->columns);
+				$ops[] = "drop foreign key ({$columns})";
 			}
 
 			return $ops;

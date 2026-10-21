@@ -37,8 +37,8 @@
 	 *   drop primary key                     -> AstAlterDropPrimaryKey
 	 *   add [unique|fulltext] index name (…) -> AstAlterAddIndex
 	 *   drop index name                      -> AstAlterDropIndex
-	 *   add foreign key (col) references ... -> AstAlterAddForeignKey
-	 *   drop foreign key (col)               -> AstAlterDropForeignKey
+	 *   add foreign key (col {, col}) references ... -> AstAlterAddForeignKey
+	 *   drop foreign key (col {, col})               -> AstAlterDropForeignKey
 	 *
 	 * matching QUEL's preference for explicit single-purpose verbs
 	 * (`append`/`replace`/`delete`) over SQL's do-everything `MODIFY`/
@@ -171,19 +171,20 @@
 		}
 
 		/**
-		 * `add foreign key (col) references Table (col) [on delete action]
-		 * [on update action]` — same grammar as `create`'s embedded
-		 * foreign key entry, minus the redundant `add` handled by the
-		 * caller. Shared with Rules\CreateTable via Rules\ForeignKeyClause.
+		 * `add foreign key (col {, col}) references Table (col {, col})
+		 * [on delete action] [on update action]` — same grammar as
+		 * `create`'s embedded foreign key entry, minus the redundant `add`
+		 * handled by the caller. Shared with Rules\CreateTable via
+		 * Rules\ForeignKeyClause.
 		 * @throws LexerException|ParserException
 		 */
 		private function parseAddForeignKey(): AstAlterAddForeignKey {
 			$foreignKey = ForeignKeyClause::parse($this->lexer);
 
 			return new AstAlterAddForeignKey(
-				$foreignKey['column'],
+				$foreignKey['columns'],
 				$foreignKey['referencedTable'],
-				$foreignKey['referencedColumn'],
+				$foreignKey['referencedColumns'],
 				$foreignKey['onDelete'],
 				$foreignKey['onUpdate']
 			);
@@ -191,7 +192,7 @@
 
 		/**
 		 * `drop` is followed by a bare column name, `primary key`, `index
-		 * name`, or `foreign key (col)`.
+		 * name`, or `foreign key (col {, col})`.
 		 * @throws LexerException|ParserException
 		 */
 		private function parseDrop(): AstAlterOperation {
@@ -208,10 +209,8 @@
 
 			if ($this->lexer->optionalMatchKeyword('foreign') !== null) {
 				$this->lexer->matchKeyword('key');
-				$this->lexer->match(Token::ParenthesesOpen);
-				$column = $this->lexer->match(Token::Identifier)->getStringValue();
-				$this->lexer->match(Token::ParenthesesClose);
-				return new AstAlterDropForeignKey($column);
+				$columns = ForeignKeyClause::parseColumnList($this->lexer);
+				return new AstAlterDropForeignKey($columns);
 			}
 
 			$columnName = $this->lexer->match(Token::Identifier)->getStringValue();
