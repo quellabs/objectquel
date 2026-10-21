@@ -173,7 +173,11 @@
 		 * pair per AND branch, recursively. Returns null for anything else — OR,
 		 * non-identifier operands, a non-`=` comparison (even as one AND branch),
 		 * or a non-binary node — since those join shapes cannot be matched against
-		 * relation annotations, or must not be promoted to an inner join.
+		 * relation annotations, or must not be promoted to an inner join. A `<>`
+		 * branch is rejected rather than treated as equality: @RequiredRelation
+		 * only guarantees a match exists under the FK's equality mapping, so a
+		 * differently-operated branch may describe rows the annotation says
+		 * nothing about, regardless of whether the columns involved are nullable.
 		 * @param AstInterface|null $node
 		 * @return list<array{0: AstIdentifier, 1: AstIdentifier}>|null
 		 */
