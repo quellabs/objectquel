@@ -1,9 +1,10 @@
 <?php
-	
+
 	namespace Quellabs\ObjectQuel\Annotations\Orm;
-	
+
 	use Quellabs\AnnotationReader\AnnotationInterface;
-	
+	use Quellabs\AnnotationReader\Annotation\ReflectsAnnotationParameters;
+
 	/**
 	 * @Annotation
 	 *
@@ -28,48 +29,43 @@
 	 *
 	 * @package Quellabs\ObjectQuel\Annotations\Orm
 	 */
+	#[\Attribute(\Attribute::TARGET_PROPERTY)]
 	class SourceField implements AnnotationInterface {
-		
-		/** @var array<string, mixed> */
-		protected array $parameters;
-		
-		/** @var string Source Field */
-		private string $field;
-		
-		/** @var string|null Source range */
-		private ?string $range;
-		
+		use ReflectsAnnotationParameters;
+
+
 		/**
-		 * SourceField constructor.
-		 * @param array<string, mixed> $parameters Recognised keys: 'field' (required), 'range' (optional).
-		 * @throws \InvalidArgumentException When 'field' is absent or not a string.
+		 * @var string Source Field
 		 */
-		public function __construct(array $parameters) {
-			$field = $parameters['field'] ?? null;
-			$range = $parameters['range'] ?? null;
-			
-			if (!is_string($field) || $field === '') {
+		private string $field;
+
+		/**
+		 * @var string|null Source range
+		 */
+		private ?string $range;
+
+		/**
+		 * Constructs the SourceField annotation.
+		 * @param string $field
+		 * @param ?string $range
+		 * @return void
+		 */
+		public function __construct(string $field, ?string $range = null) {
+			if ($field === '') {
 				throw new \InvalidArgumentException(
 					'SourceField annotation requires a non-empty "field" parameter'
 				);
 			}
-			
-			if ($range !== null && !is_string($range)) {
-				throw new \InvalidArgumentException(
-					'SourceField: "range" must be a string'
-				);
-			}
-			
-			$this->parameters = $parameters;
+
 			$this->field = $field;
 			$this->range = $range;
+
 		}
-		
-		/** @return array<string, mixed> */
-		public function getParameters(): array {
-			return $this->parameters;
-		}
-		
+
+
+
+
+
 		/**
 		 * Returns the field name to read from the external source row.
 		 * This is the key as it appears inside the source data (without any range prefix).
@@ -78,7 +74,7 @@
 		public function getField(): string {
 			return $this->field;
 		}
-		
+
 		/**
 		 * Returns the explicit range alias this field should be sourced from, or null
 		 * when the range is to be inferred automatically from the query context.

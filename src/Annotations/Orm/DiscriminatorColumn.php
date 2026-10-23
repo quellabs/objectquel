@@ -1,42 +1,37 @@
 <?php
-	
+
 	namespace Quellabs\ObjectQuel\Annotations\Orm;
-	
+
 	use Quellabs\AnnotationReader\AnnotationInterface;
-	
+	use Quellabs\AnnotationReader\Annotation\ReflectsAnnotationParameters;
+
 	/**
 	 * @Annotation
 	 */
+	#[\Attribute(\Attribute::TARGET_CLASS)]
 	class DiscriminatorColumn implements AnnotationInterface {
-		
-		/** @var array<string, mixed> */
-		protected array $parameters;
-		
-		/** @var string Column name */
+		use ReflectsAnnotationParameters;
+
+
+
+		/**
+		 * @var string Column name
+		 */
 		private string $name;
-		
+
 		/**
-		 * DiscriminatorColumn constructor.
-		 * @param array<string, mixed> $parameters
-		 * @throws \InvalidArgumentException
+		 * Constructs the DiscriminatorColumn annotation.
+		 * @param string $name
+		 * @return void
 		 */
-		public function __construct(array $parameters) {
-			if (!isset($parameters['name']) || !is_string($parameters['name'])) {
-				throw new \InvalidArgumentException("DiscriminatorColumn annotation requires a valid 'name' parameter");
-			}
-			
-			$this->parameters = $parameters;
-			$this->name = $parameters['name'];
+		public function __construct(string $name) {
+			$this->name = $name;
 		}
-		
-		/**
-		 * Returns the parameters for this annotation
-		 * @return array<string, mixed>
-		 */
-		public function getParameters(): array {
-			return $this->parameters;
-		}
-		
+
+
+
+
+
 		/**
 		 * Returns the name
 		 * @return string

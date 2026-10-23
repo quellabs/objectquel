@@ -3,6 +3,7 @@
 	namespace Quellabs\ObjectQuel\Annotations\Orm;
 
 	use Quellabs\AnnotationReader\AnnotationInterface;
+	use Quellabs\AnnotationReader\Annotation\ReflectsAnnotationParameters;
 
 	/**
 	 * @Annotation
@@ -19,41 +20,28 @@
 	 *
 	 * Example: @Orm\Cascade(operations={"remove"})
 	 */
+	#[\Attribute(\Attribute::TARGET_PROPERTY)]
 	class Cascade implements AnnotationInterface {
+		use ReflectsAnnotationParameters;
+
 
 		/**
-		 * Contains all parameters defined in the annotation
-		 * Example: @Orm\Cascade(operations={"remove"})
-		 * @var array<string, mixed>
+		 * @var array<int, string>
 		 */
-		protected array $parameters;
-
-		/** @var array<int, string> */
 		private array $operations;
 
 		/**
-		 * Cascade constructor.
-		 * @param array<string, mixed> $parameters Array of parameters from the annotation
-		 * @throws \InvalidArgumentException
+		 * Constructs the Cascade annotation.
+		 * @param array<mixed>|null $operations
+		 * @return void
 		 */
-		public function __construct(array $parameters) {
-			$operations = $parameters['operations'] ?? [];
-
-			if (!is_array($operations)) {
-				$operations = [];
-			}
-
-			$this->parameters = $parameters;
-			$this->operations = array_values(array_filter($operations, 'is_string'));
+		public function __construct(?array $operations = null) {
+			$this->operations = array_values(array_filter($operations ?? [], 'is_string'));
 		}
 
-		/**
-		 * Returns the parameters for this annotation
-		 * @return array<string, mixed>
-		 */
-		public function getParameters(): array {
-			return $this->parameters;
-		}
+
+
+
 
 		/**
 		 * Get the operations that should cascade

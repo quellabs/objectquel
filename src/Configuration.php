@@ -64,6 +64,27 @@
 		 * Only used when $useMetadataCache is true.
 		 */
 		private string $metadataCachePath = '';
+
+		private string $annotationSource = \Quellabs\AnnotationReader\Configuration::SOURCE_DOCBLOCKS;
+
+		/**
+		 * Returns the metadata source used for entity annotations.
+		 * @return string
+		 */
+		public function getAnnotationSource(): string {
+			return $this->annotationSource;
+		}
+
+		/**
+		 * Selects the source used for entity annotations.
+		 * @param string $source
+		 * @return void
+		 */
+		public function setAnnotationSource(string $source): void {
+			$readerConfiguration = new \Quellabs\AnnotationReader\Configuration();
+			$readerConfiguration->setSource($source);
+			$this->annotationSource = $source;
+		}
 		
 		/**
 		 * @var string Migration path

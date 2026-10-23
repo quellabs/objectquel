@@ -1,76 +1,57 @@
 <?php
-	
+
 	namespace Quellabs\ObjectQuel\Annotations\Orm;
-	
+
 	use Quellabs\AnnotationReader\AnnotationInterface;
-	
+	use Quellabs\AnnotationReader\Annotation\ReflectsAnnotationParameters;
+
 	/**
 	 * @Annotation
 	 * Defines the ManyToOne class that describes the relationship between entities
 	 */
+	#[\Attribute(\Attribute::TARGET_PROPERTY)]
 	class ManyToOne implements AnnotationInterface {
-		
-		// Contains parameters that provide additional information about the relationship
-		/** @var array<string, mixed> */
-		protected array $parameters;
-		
+		use ReflectsAnnotationParameters;
+
+
 		private string $targetEntity;
 		private ?string $referencedColumn;
 		private ?string $localColumn;
-		/** @var list<string> */
-		private array $localColumns;
-		/** @var list<string> */
-		private array $referencedColumns;
+		/**
+		 * @var list<string>
+		 */
+		private ?array $localColumns;
+		/**
+		 * @var list<string>
+		 */
+		private ?array $referencedColumns;
 		private string $fetch;
 
 		/**
-		 * Constructor to initialize the parameters.
-		 * @param array<string, mixed> $parameters Array with parameters that describe the relationship.
-		 * @throws \InvalidArgumentException
+		 * Constructs the ManyToOne annotation.
+		 * @param string $targetEntity
+		 * @param ?string $referencedColumn
+		 * @param ?string $localColumn
+		 * @param array<mixed>|null $localColumns
+		 * @param array<mixed>|null $referencedColumns
+		 * @param string $fetch
+		 * @return void
 		 */
-		public function __construct(array $parameters) {
-			$targetEntity = $parameters['targetEntity'] ?? null;
-			$referencedColumn = $parameters['referencedColumn'] ?? null;
-			$localColumn = $parameters['localColumn'] ?? null;
-			$localColumns = $parameters['localColumns'] ?? null;
-			$referencedColumns = $parameters['referencedColumns'] ?? null;
-			$fetch = $parameters['fetch'] ?? 'EAGER';
-
-			if (!is_string($targetEntity)) {
-				throw new \InvalidArgumentException("ManyToOne: 'targetEntity' must be a string");
-			}
-
-			if ($referencedColumn !== null && !is_string($referencedColumn)) {
-				throw new \InvalidArgumentException("ManyToOne: 'referencedColumn' must be a string or null");
-			}
-
-			if ($localColumn !== null && !is_string($localColumn)) {
-				throw new \InvalidArgumentException("ManyToOne: 'localColumn' must be a string or null");
-			}
-
+		public function __construct(string $targetEntity, ?string $referencedColumn = null, ?string $localColumn = null, ?array $localColumns = null, ?array $referencedColumns = null, string $fetch = 'EAGER') {
 			AnnotationColumnArrays::validate('ManyToOne', $localColumns, $referencedColumns, $localColumn, $referencedColumn);
-
-			if (!is_string($fetch)) {
-				throw new \InvalidArgumentException("ManyToOne: 'fetch' must be a string");
-			}
-
-			$this->parameters = $parameters;
 			$this->targetEntity = $targetEntity;
 			$this->referencedColumn = $referencedColumn;
 			$this->localColumn = $localColumn;
-			$this->localColumns = AnnotationColumnArrays::normalizeList($localColumns);
-			$this->referencedColumns = AnnotationColumnArrays::normalizeList($referencedColumns);
+			$this->localColumns = $localColumns === null ? null : AnnotationColumnArrays::normalizeList($localColumns);
+			$this->referencedColumns = $referencedColumns === null ? null : AnnotationColumnArrays::normalizeList($referencedColumns);
 			$this->fetch = strtoupper($fetch);
+
 		}
-		
-		/**
-		 * Returns the parameters for this annotation
-		 * @return array<string, mixed>
-		 */
-		public function getParameters(): array {
-			return $this->parameters;
-		}
-		
+
+
+
+
+
 		/**
 		 * Retrieves the target entity.
 		 * @return string The full namespace of the target entity.
@@ -78,7 +59,7 @@
 		public function getTargetEntity(): string {
 			return $this->targetEntity;
 		}
-		
+
 		/**
 		 * Retrieve the target entity.
 		 * @param string $targetEntity
@@ -86,9 +67,8 @@
 		 */
 		public function setTargetEntity(string $targetEntity): void {
 			$this->targetEntity = $targetEntity;
-			$this->parameters['targetEntity'] = $targetEntity;
 		}
-		
+
 		/**
 		 * Retrieves the 'referencedColumn' parameter, if present.
 		 * @return string|null The target entity's scalar @Column-backed property that the
@@ -97,7 +77,7 @@
 		public function getReferencedColumn(): ?string {
 			return $this->referencedColumn;
 		}
-		
+
 		/**
 		 * Retrieve the name of the relationship column in the current entity.
 		 * This method retrieves the name of the column that represents the ManyToOne relationship in the database.
@@ -114,7 +94,7 @@
 		 * @return list<string>
 		 */
 		public function getLocalColumns(): array {
-			return $this->localColumns;
+			return $this->localColumns ?? [];
 		}
 
 		/**
@@ -123,7 +103,7 @@
 		 * @return list<string>
 		 */
 		public function getReferencedColumns(): array {
-			return $this->referencedColumns;
+			return $this->referencedColumns ?? [];
 		}
 
 		/**
@@ -132,7 +112,7 @@
 		 * @return bool
 		 */
 		public function hasCompositeColumns(): bool {
-			return $this->localColumns !== [];
+			return $this->localColumns !== null && $this->localColumns !== [];
 		}
 
 		/**

@@ -21,7 +21,9 @@
 	 */
 	class ClearCacheCommand extends CommandBase {
 		
-		/** @var Configuration ORM configuration passed in via the service provider */
+		/**
+		 * @var Configuration ORM configuration passed in via the service provider
+		 */
 		private Configuration $configuration;
 		
 		/**
@@ -86,6 +88,7 @@ HELP;
 			$annotationReaderConfig = new \Quellabs\AnnotationReader\Configuration();
 			$annotationReaderConfig->setUseAnnotationCache($this->configuration->useMetadataCache());
 			$annotationReaderConfig->setAnnotationCachePath($this->configuration->getMetadataCachePath());
+			$annotationReaderConfig->setSource($this->configuration->getAnnotationSource());
 			
 			// Clear only entity annotation caches, identified by the Table annotation class
 			$annotationReader = new AnnotationReader($annotationReaderConfig);

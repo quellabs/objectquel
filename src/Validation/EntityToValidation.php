@@ -2,16 +2,17 @@
 	
 	namespace Quellabs\ObjectQuel\Validation;
 	
-	use Quellabs\AnnotationReader\Configuration;
 	use Quellabs\AnnotationReader\AnnotationReader;
+	use Quellabs\AnnotationReader\AnnotationReaderLocator;
+	use Quellabs\AnnotationReader\Exception\AnnotationReaderException;
 	use Quellabs\ObjectQuel\Annotations\Validation\PropertyValidationInterface;
-	use Quellabs\ObjectQuel\Validation\Rules\Date;
-	use Quellabs\ObjectQuel\Validation\Rules\Email;
-	use Quellabs\ObjectQuel\Validation\Rules\Length;
-	use Quellabs\ObjectQuel\Validation\Rules\NotBlank;
-	use Quellabs\ObjectQuel\Validation\Rules\RegExp;
-	use Quellabs\ObjectQuel\Validation\Rules\Type;
-	use Quellabs\ObjectQuel\Validation\Rules\ValueIn;
+	use Quellabs\ObjectQuel\Annotations\Validation\Date;
+	use Quellabs\ObjectQuel\Annotations\Validation\Email;
+	use Quellabs\ObjectQuel\Annotations\Validation\Length;
+	use Quellabs\ObjectQuel\Annotations\Validation\NotBlank;
+	use Quellabs\ObjectQuel\Annotations\Validation\RegExp;
+	use Quellabs\ObjectQuel\Annotations\Validation\Type;
+	use Quellabs\ObjectQuel\Annotations\Validation\ValueIn;
 	use Quellabs\ObjectQuel\ReflectionManagement\ReflectionHandler;
 	
 	class EntityToValidation {
@@ -20,15 +21,23 @@
 		private ReflectionHandler $reflectionHandler;
 		
 		/**
-		 * EntityToValidation constructor
+		 * Uses an injected reader or ObjectQuel's registered reader. Does not invent a
+		 * default-configured reader, since that would silently ignore the app's configured
+		 * annotation source (docblocks vs attributes).
+		 * @param AnnotationReader|null $annotationReader
+		 * @throws AnnotationReaderException If no reader was injected and none is registered for 'objectquel'
 		 */
-		public function __construct() {
-			$annotationReaderConfiguration = new Configuration();
-			$annotationReaderConfiguration->setUseAnnotationCache(false);
-			$annotationReaderConfiguration->setAnnotationCachePath('');
-			
+		public function __construct(?AnnotationReader $annotationReader = null) {
+			$reader = $annotationReader ?? AnnotationReaderLocator::getInstance('objectquel');
+
+			if ($reader === null) {
+				throw new AnnotationReaderException(
+					'EntityToValidation requires an AnnotationReader, either injected or registered for \'objectquel\' via AnnotationReaderLocator.'
+				);
+			}
+
 			$this->reflectionHandler = new ReflectionHandler();
-			$this->annotationReader = new AnnotationReader($annotationReaderConfiguration);
+			$this->annotationReader = $reader;
 		}
 		
 		/**
@@ -69,7 +78,9 @@
 						$annotation instanceof PropertyValidationInterface
 					) {
 						// Add a new instance of the validation rule to the result
-						$result[$property][] = new $annotationMap[$annotationClass]($annotation->getParameters());
+						$conditions = $annotation->getParameters();
+						unset($conditions['property'], $conditions['message']);
+						$result[$property][] = new $annotationMap[$annotationClass]($conditions, $annotation->getMessage());
 					}
 				}
 			}

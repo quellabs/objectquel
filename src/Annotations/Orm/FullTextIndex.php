@@ -1,9 +1,10 @@
 <?php
-	
+
 	namespace Quellabs\ObjectQuel\Annotations\Orm;
-	
+
 	use Quellabs\AnnotationReader\AnnotationInterface;
-	
+	use Quellabs\AnnotationReader\Annotation\ReflectsAnnotationParameters;
+
 	/**
 	 * @Annotation
 	 *
@@ -26,47 +27,45 @@
 	 *
 	 * @package Quellabs\ObjectQuel\Annotations\Orm
 	 */
+	#[\Attribute(\Attribute::TARGET_CLASS | \Attribute::IS_REPEATABLE)]
 	class FullTextIndex implements AnnotationInterface {
-		
+		use ReflectsAnnotationParameters;
+
+
 		/**
-		 * Contains all parameters defined in the full-text index annotation
-		 * @var array<string, mixed>
+		 * @var string Index name
 		 */
-		protected array $parameters;
-		
-		/** @var string Index name */
 		private string $name;
-		
-		/** @var array<int, string> */
-		private array $columns;
-		
+
 		/**
-		 * FullTextIndex constructor.
-		 * @param array<string, mixed> $parameters Array of parameters from the annotation
-		 * @throws \InvalidArgumentException
+		 * @var array<int, string>
 		 */
-		public function __construct(array $parameters) {
-			if (!isset($parameters['name']) || !is_string($parameters['name'])) {
+		private array $columns;
+
+		/**
+		 * Constructs the FullTextIndex annotation.
+		 * @param string $name
+		 * @param array<mixed> $columns
+		 * @return void
+		 */
+		public function __construct(string $name, array $columns) {
+			if ($name === '') {
 				throw new \InvalidArgumentException("FullTextIndex annotation requires a valid 'name' parameter");
 			}
-			
-			if (!is_array($parameters['columns']) || empty($parameters['columns'])) {
+
+			if ($columns === []) {
 				throw new \InvalidArgumentException("FullTextIndex annotation requires a non-empty 'columns' array");
 			}
-			
-			$this->parameters = $parameters;
-			$this->name = $parameters['name'];
-			$this->columns = array_values(array_filter($parameters['columns'], 'is_string'));
+
+			$this->name = $name;
+			$this->columns = array_values(array_filter($columns, 'is_string'));
+
 		}
-		
-		/**
-		 * Returns all parameters for this full-text index annotation
-		 * @return array<string, mixed> All parameters defined in the annotation
-		 */
-		public function getParameters(): array {
-			return $this->parameters;
-		}
-		
+
+
+
+
+
 		/**
 		 * Returns the name of the full-text index
 		 * @return string The index name
@@ -74,7 +73,7 @@
 		public function getName(): string {
 			return $this->name;
 		}
-		
+
 		/**
 		 * Returns the columns covered by this full-text index.
 		 * These are property names on the entity, not database column names.

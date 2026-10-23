@@ -75,6 +75,7 @@
 		 *      proxy_namespace: string,
 		 *      proxy_path: string,
 		 *      metadata_cache_path: string,
+		 *      annotation_source: string,
 		 *      generate_foreign_keys: bool
 		 * }
 		 */
@@ -94,6 +95,7 @@
 				'proxy_namespace'       => 'Quellabs\\ObjectQuel\\Proxy\\Runtime',
 				'proxy_path'            => '',
 				'metadata_cache_path'   => ComposerUtils::getProjectRoot() . "/storage/annotations",
+				'annotation_source'     => \Quellabs\AnnotationReader\Configuration::SOURCE_DOCBLOCKS,
 				'generate_foreign_keys' => false,
 			];
 		}
@@ -111,6 +113,7 @@
 			$configuration->setMigrationsPath($this->getConfigValueAsString('migrations_path', $defaults['migrations_path']));
 			$configuration->setMigrationTable($this->getConfigValueAsString('migration_table', $defaults['migration_table']));
 			$configuration->setMetadataCachePath($this->getConfigValueAsString('metadata_cache_path', $defaults['metadata_cache_path']));
+			$configuration->setAnnotationSource($this->getConfigValueAsString('annotation_source', $defaults['annotation_source']));
 			$configuration->setUseMetadataCache(!empty($this->getConfigValueAsString('metadata_cache_path', $defaults['metadata_cache_path'])));
 			$configuration->setGenerateForeignKeys($this->getConfigValueAsBool('generate_foreign_keys', $defaults['generate_foreign_keys']));
 			$configuration->setCollation($this->getConfigValueAsString('collation', '') ?: null);

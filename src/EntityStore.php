@@ -43,41 +43,63 @@
 	 */
 	class EntityStore {
 		
-		/** @var Configuration Holds paths, namespaces, etc */
+		/**
+		 * @var Configuration Holds paths, namespaces, etc
+		 */
 		private Configuration $configuration;
 		
-		/** @var AnnotationReader Reads the annotations in classes, methods and properties */
+		/**
+		 * @var AnnotationReader Reads the annotations in classes, methods and properties
+		 */
 		private AnnotationReader $annotationReader;
 		
-		/** @var ReflectionHandler Reads properties using reflection */
+		/**
+		 * @var ReflectionHandler Reads properties using reflection
+		 */
 		private ReflectionHandler $reflectionHandler;
 		
-		/** @var ProxyGenerator Reads and writes entity proxy files for lazy loading */
+		/**
+		 * @var ProxyGenerator Reads and writes entity proxy files for lazy loading
+		 */
 		private ProxyGenerator $proxyGenerator;
 		
-		/** @var EntityMetadataBuilder Gives access to entity metadata */
+		/**
+		 * @var EntityMetadataBuilder Gives access to entity metadata
+		 */
 		private EntityMetadataBuilder $metadataBuilder;
 		
-		/** @var string Namespace to be used for proxies */
+		/**
+		 * @var string Namespace to be used for proxies
+		 */
 		private string $proxyNamespace;
 		
-		/** @var string Namespace to be added to entities when none given */
+		/**
+		 * @var string Namespace to be added to entities when none given
+		 */
 		private string $entityNamespace;
 		
 		// Simple registry of normalized class name => table name
-		/** @var array<class-string, string> */
+		/**
+		 * @var array<class-string, string>
+		 */
 		private array $entityRegistry = [];
 		
 		// Cache for normalized entity names
-		/** @var array<string, string> */
+		/**
+		 * @var array<string, string>
+		 */
 		private array $normalizedNameCache = [];
 		
 		// Cache for EntityMetadata objects (replaces all the old separate caches)
-		/** @var array<string, EntityMetadataRecord> */
+		/**
+		 * @var array<string, EntityMetadataRecord>
+		 */
 		private array $metadataCache = [];
 		
 		// Dependency graph (calculated once on demand)
-		/** @var array<class-string, array<int, class-string>>|null */
+		/**
+		 * @var array<class-string, array<int, class-string>>|null
+		 */
 		private ?array $dependencyGraph = null;
 		
 		/**
@@ -99,12 +121,13 @@
 			// ObjectQuel's own reader, keyed separately so its cache path stays independent of Canvas's
 			$reader = AnnotationReaderLocator::getInstance('objectquel');
 
-			if ($reader !== null) {
+			if ($reader !== null && $reader->getSource() === $configuration->getAnnotationSource()) {
 				$this->annotationReader = $reader;
 			} else {
 				$annotationReaderConfiguration = new \Quellabs\AnnotationReader\Configuration();
 				$annotationReaderConfiguration->setUseAnnotationCache($configuration->useMetadataCache());
 				$annotationReaderConfiguration->setAnnotationCachePath($configuration->getMetadataCachePath());
+				$annotationReaderConfiguration->setSource($configuration->getAnnotationSource());
 				$this->annotationReader = new AnnotationReader($annotationReaderConfiguration);
 				AnnotationReaderLocator::setInstance($this->annotationReader, 'objectquel');
 			}
@@ -246,7 +269,9 @@
 			
 			// Return cached entity name if present
 			if (isset($this->normalizedNameCache[$className])) {
-				/** @var class-string $cached */
+				/**
+				 * @var class-string $cached
+				 */
 				$cached = $this->normalizedNameCache[$className];
 				return $cached;
 			}

@@ -1,40 +1,35 @@
 <?php
-	
+
 	namespace Quellabs\ObjectQuel\Annotations;
-	
+
 	use Quellabs\AnnotationReader\AnnotationInterface;
-	
+	use Quellabs\AnnotationReader\Annotation\ReflectsAnnotationParameters;
+
 	/**
 	 * @Annotation
 	 * Class for handling serialization groups in object serialization
 	 * Implements the AnnotationInterface for the annotation reader system
 	 */
+	#[\Attribute(\Attribute::TARGET_PROPERTY)]
 	class SerializationGroups implements AnnotationInterface {
-		
+		use ReflectsAnnotationParameters;
 		/**
-		 * Array to store annotation parameters
-		 * @var array<string, mixed>
+		 * @var array<mixed>
 		 */
-		protected array $parameters;
-		
+		private array $groups;
+
+
 		/**
-		 * SerializationGroups constructor.
-		 * Initializes the class with the provided annotation parameters
-		 * @param array<string, mixed> $parameters Parameters passed to this annotation
+		 * Constructs the SerializationGroups annotation.
+		 * @param array<mixed>|null $groups
+		 * @return void
 		 */
-		public function __construct(array $parameters) {
-			$this->parameters = $parameters;
+		public function __construct(?array $groups = null) {
+			$this->groups = $groups ?? [];
 		}
-		
-		/**
-		 * Returns the parameters for this annotation
-		 * Used by the annotation reader to access all parameters
-		 * @return array<string, mixed> All parameters stored in this annotation
-		 */
-		public function getParameters(): array {
-			return $this->parameters;
-		}
-		
+
+
+
 		/**
 		 * Returns the specific serialization groups defined in the parameters
 		 * Provides direct access to the "groups" parameter array
@@ -42,12 +37,11 @@
 		 */
 		public function getGroups(): array {
 			if (
-				!isset($this->parameters['groups']) ||
-				!is_array($this->parameters['groups'])
+				$this->groups === []
 			) {
 				return [];
 			}
-			
-			return array_values(array_filter($this->parameters['groups'], 'is_string'));
+
+			return array_values(array_filter($this->groups, 'is_string'));
 		}
 	}

@@ -3,6 +3,7 @@
 	namespace Quellabs\ObjectQuel\Annotations\Orm;
 
 	use Quellabs\AnnotationReader\AnnotationInterface;
+	use Quellabs\AnnotationReader\Annotation\ReflectsAnnotationParameters;
 
 	/**
 	 * @Annotation
@@ -26,40 +27,39 @@
 	 *   @Orm\ForeignKeyAction(onDelete="CASCADE", onUpdate="RESTRICT")
 	 *   @Orm\ForeignKeyAction(localColumns={"orderTenantId", "orderNumber"}, onDelete="CASCADE")
 	 */
+	#[\Attribute(\Attribute::TARGET_CLASS | \Attribute::TARGET_PROPERTY | \Attribute::IS_REPEATABLE)]
 	class ForeignKeyAction implements AnnotationInterface {
+		use ReflectsAnnotationParameters;
+
 
 		/**
-		 * Contains all parameters defined in the annotation
-		 * @var array<string, mixed>
+		 * @var array<int, string> Valid values for onDelete/onUpdate
 		 */
-		protected array $parameters;
-
-		/** @var array<int, string> Valid values for onDelete/onUpdate */
 		private const array VALID_ACTIONS = ['RESTRICT', 'CASCADE', 'SET NULL', 'NO ACTION'];
 
 		private string $onDelete;
 		private string $onUpdate;
 
-		/** @var list<string> Ordered local property names, for matching a class-level @ForeignKey; empty at property level */
-		private array $localColumns;
+		/**
+		 * @var list<string> Ordered local property names, for matching a class-level @ForeignKey; empty at property level
+		 */
+		private ?array $localColumns;
 
 		/**
-		 * ForeignKeyAction constructor.
-		 * @param array<string, mixed> $parameters Array of parameters from the annotation
-		 * @throws \InvalidArgumentException
+		 * Constructs the ForeignKeyAction annotation.
+		 * @param string $onDelete
+		 * @param string $onUpdate
+		 * @param array<array-key, mixed>|null $localColumns
+		 * @return void
 		 */
-		public function __construct(array $parameters) {
-			$onDelete = $parameters['onDelete'] ?? 'RESTRICT';
-			$onUpdate = $parameters['onUpdate'] ?? 'NO ACTION';
-			$localColumns = $parameters['localColumns'] ?? null;
-
-			if (!is_string($onDelete) || !in_array($onDelete, self::VALID_ACTIONS, true)) {
+		public function __construct(string $onDelete = 'RESTRICT', string $onUpdate = 'NO ACTION', ?array $localColumns = null) {
+			if (!in_array($onDelete, self::VALID_ACTIONS, true)) {
 				throw new \InvalidArgumentException(
 					"ForeignKeyAction: 'onDelete' must be one of: " . implode(', ', self::VALID_ACTIONS)
 				);
 			}
 
-			if (!is_string($onUpdate) || !in_array($onUpdate, self::VALID_ACTIONS, true)) {
+			if (!in_array($onUpdate, self::VALID_ACTIONS, true)) {
 				throw new \InvalidArgumentException(
 					"ForeignKeyAction: 'onUpdate' must be one of: " . implode(', ', self::VALID_ACTIONS)
 				);
@@ -68,7 +68,7 @@
 			$normalizedLocalColumns = [];
 
 			if ($localColumns !== null) {
-				if (!is_array($localColumns) || $localColumns === []) {
+				if ($localColumns === []) {
 					throw new \InvalidArgumentException("ForeignKeyAction: 'localColumns' must be a non-empty list of local property names");
 				}
 
@@ -81,19 +81,15 @@
 				}
 			}
 
-			$this->parameters = $parameters;
 			$this->onDelete = $onDelete;
 			$this->onUpdate = $onUpdate;
-			$this->localColumns = $normalizedLocalColumns;
+			$this->localColumns = $localColumns === null ? null : $normalizedLocalColumns;
+
 		}
 
-		/**
-		 * Returns the parameters for this annotation
-		 * @return array<string, mixed>
-		 */
-		public function getParameters(): array {
-			return $this->parameters;
-		}
+
+
+
 
 		/**
 		 * Returns the ON DELETE action (default: "RESTRICT")
@@ -118,7 +114,7 @@
 		 * @return list<string>
 		 */
 		public function getLocalColumns(): array {
-			return $this->localColumns;
+			return array_values($this->localColumns ?? []);
 		}
 
 		/**
@@ -127,6 +123,6 @@
 		 * @return bool
 		 */
 		public function hasLocalColumns(): bool {
-			return $this->localColumns !== [];
+			return $this->localColumns !== null && $this->localColumns !== [];
 		}
 	}

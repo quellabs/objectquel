@@ -1,30 +1,27 @@
 <?php
-	
+
 	namespace Quellabs\ObjectQuel\Annotations\Orm;
-	
+
 	use Quellabs\AnnotationReader\AnnotationInterface;
-	
+	use Quellabs\AnnotationReader\Annotation\ReflectsAnnotationParameters;
+
 	/**
 	 * @Annotation
 	 */
+	#[\Attribute(\Attribute::TARGET_PROPERTY)]
 	class RequiredRelation implements AnnotationInterface {
-		
-		/** @var array<string, mixed> */
-		protected array $parameters;
-		
+		use ReflectsAnnotationParameters;
+
+
+
 		/**
-		 * RequiredRelation constructor
-		 * @param array<string, mixed> $parameters Array met parameters die de relatie beschrijven.
+		 * Constructs the RequiredRelation annotation.
+		 * @return void
 		 */
-		public function __construct(array $parameters) {
-			$this->parameters = $parameters;
+		public function __construct() {
 		}
-		
-		/**
-		 * Returns the parameters for this annotation
-		 * @return array<string, mixed>
-		 */
-		public function getParameters(): array {
-			return $this->parameters;
-		}
+
+
+
+
 	}

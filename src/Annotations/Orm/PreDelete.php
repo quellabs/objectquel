@@ -1,30 +1,27 @@
 <?php
-    
+
     namespace Quellabs\ObjectQuel\Annotations\Orm;
-    
+
     use Quellabs\AnnotationReader\AnnotationInterface;
-    
+	use Quellabs\AnnotationReader\Annotation\ReflectsAnnotationParameters;
+
     /**
      * @Annotation
      */
-    class PreDelete implements AnnotationInterface {
-        
-        /** @var array<string, mixed> */
-        protected array $parameters;
-        
+    #[\Attribute(\Attribute::TARGET_METHOD)]
+	class PreDelete implements AnnotationInterface {
+		use ReflectsAnnotationParameters;
+
+
+
         /**
-         * PreDelete constructor.
-         * @param array<string, mixed> $parameters
-         */
-        public function __construct(array $parameters) {
-            $this->parameters = $parameters;
-        }
-	    
-	    /**
-	     * Returns the parameters for this annotation
-	     * @return array<string, mixed>
-	     */
-	    public function getParameters(): array {
-		    return $this->parameters;
-	    }
+		 * Constructs the PreDelete annotation.
+		 * @return void
+		 */
+		public function __construct() {
+		}
+
+
+
+
     }

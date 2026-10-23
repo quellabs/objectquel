@@ -479,7 +479,7 @@
 		 * @return array<int|string, array<int, ValidationInterface>>
 		 */
 		public function getValidationRules(object $entity): array {
-			$validate = new EntityToValidation();
+			$validate = new EntityToValidation($this->entityStore->getAnnotationReader());
 			return $validate->convert($entity);
 		}
 	}
