@@ -1,10 +1,10 @@
 <?php
-
+	
 	namespace Quellabs\ObjectQuel\Annotations\Orm;
-
+	
 	use Quellabs\AnnotationReader\AnnotationInterface;
 	use Quellabs\AnnotationReader\Annotation\ReflectsAnnotationParameters;
-
+	
 	/**
 	 * @Annotation
 	 * Declares ORM-side (PHP) cascading behavior for a relation: whether
@@ -22,14 +22,14 @@
 	 */
 	#[\Attribute(\Attribute::TARGET_PROPERTY)]
 	class Cascade implements AnnotationInterface {
+		
 		use ReflectsAnnotationParameters;
-
-
+		
 		/**
 		 * @var array<int, string>
 		 */
 		private array $operations;
-
+		
 		/**
 		 * Constructs the Cascade annotation.
 		 * @param array<mixed>|null $operations
@@ -38,17 +38,10 @@
 		public function __construct(?array $operations = null) {
 			$this->operations = array_values(array_filter($operations ?? [], 'is_string'));
 		}
-
-
-
-
-
+		
 		/**
 		 * Get the operations that should cascade
-		 *
-		 * Possible values include:
-		 * - "remove": Cascade deletion
-		 * - "persist": Cascade persistence
+		 * Possible values include "remove" (Cascade deletion) and "persist" (Cascade persistence)
 		 * @return array<int, string> List of operations to cascade
 		 */
 		public function getOperations(): array {

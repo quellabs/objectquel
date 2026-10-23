@@ -1,10 +1,10 @@
 <?php
-
+	
 	namespace Quellabs\ObjectQuel\Annotations\Orm;
-
+	
 	use Quellabs\AnnotationReader\AnnotationInterface;
 	use Quellabs\AnnotationReader\Annotation\ReflectsAnnotationParameters;
-
+	
 	/**
 	 * @Annotation
 	 *
@@ -22,15 +22,14 @@
 	#[\Attribute(\Attribute::TARGET_CLASS | \Attribute::IS_REPEATABLE)]
 	class Index implements AnnotationInterface {
 		use ReflectsAnnotationParameters;
-
-
+		
 		private string $name;
-
+		
 		/**
 		 * @var array<int, string>
 		 */
 		private array $columns;
-
+		
 		/**
 		 * Constructs the Index annotation.
 		 * @param string $name
@@ -41,20 +40,15 @@
 			if ($name === '') {
 				throw new \InvalidArgumentException("Index annotation requires a valid 'name' parameter");
 			}
-
+			
 			if ($columns === []) {
 				throw new \InvalidArgumentException("Index annotation requires a non-empty 'columns' array");
 			}
-
+			
 			$this->name = $name;
 			$this->columns = array_values(array_filter($columns, 'is_string'));
-
 		}
-
-
-
-
-
+		
 		/**
 		 * Returns the name of the index
 		 * @return string The index name
@@ -62,7 +56,7 @@
 		public function getName(): string {
 			return $this->name;
 		}
-
+		
 		/**
 		 * Returns the columns to create an index on
 		 * @return array<int, string> List of column names to be indexed

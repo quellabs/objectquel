@@ -1,10 +1,10 @@
 <?php
-
+	
 	namespace Quellabs\ObjectQuel\Annotations\Orm;
-
+	
 	use Quellabs\AnnotationReader\AnnotationInterface;
 	use Quellabs\AnnotationReader\Annotation\ReflectsAnnotationParameters;
-
+	
 	/**
 	 * @Annotation
 	 *
@@ -24,18 +24,17 @@
 	#[\Attribute(\Attribute::TARGET_CLASS | \Attribute::IS_REPEATABLE)]
 	class UniqueIndex implements AnnotationInterface {
 		use ReflectsAnnotationParameters;
-
-
+		
 		/**
 		 * @var string Index name
 		 */
 		protected string $name;
-
+		
 		/**
 		 * @var array<string>
 		 */
 		protected array $columns;
-
+		
 		/**
 		 * Constructs the UniqueIndex annotation.
 		 * @param string $name
@@ -46,20 +45,16 @@
 			if ($name === '') {
 				throw new \InvalidArgumentException("UniqueIndex annotation requires a valid 'name' parameter");
 			}
-
+			
 			if ($columns === []) {
 				throw new \InvalidArgumentException("UniqueIndex annotation requires a non-empty 'columns' array");
 			}
-
+			
 			$this->name = $name;
 			$this->columns = array_values(array_filter($columns, 'is_string'));
-
+			
 		}
-
-
-
-
-
+		
 		/**
 		 * Returns the name of the unique index
 		 * @return string The unique index name
@@ -67,7 +62,7 @@
 		public function getName(): string {
 			return $this->name;
 		}
-
+		
 		/**
 		 * Returns the columns to create a unique index on
 		 * @return array<int, string> List of column names to be uniquely indexed

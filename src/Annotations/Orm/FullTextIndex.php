@@ -1,10 +1,10 @@
 <?php
-
+	
 	namespace Quellabs\ObjectQuel\Annotations\Orm;
-
+	
 	use Quellabs\AnnotationReader\AnnotationInterface;
 	use Quellabs\AnnotationReader\Annotation\ReflectsAnnotationParameters;
-
+	
 	/**
 	 * @Annotation
 	 *
@@ -30,18 +30,17 @@
 	#[\Attribute(\Attribute::TARGET_CLASS | \Attribute::IS_REPEATABLE)]
 	class FullTextIndex implements AnnotationInterface {
 		use ReflectsAnnotationParameters;
-
-
+		
 		/**
 		 * @var string Index name
 		 */
 		private string $name;
-
+		
 		/**
 		 * @var array<int, string>
 		 */
 		private array $columns;
-
+		
 		/**
 		 * Constructs the FullTextIndex annotation.
 		 * @param string $name
@@ -52,20 +51,15 @@
 			if ($name === '') {
 				throw new \InvalidArgumentException("FullTextIndex annotation requires a valid 'name' parameter");
 			}
-
+			
 			if ($columns === []) {
 				throw new \InvalidArgumentException("FullTextIndex annotation requires a non-empty 'columns' array");
 			}
-
+			
 			$this->name = $name;
 			$this->columns = array_values(array_filter($columns, 'is_string'));
-
 		}
-
-
-
-
-
+		
 		/**
 		 * Returns the name of the full-text index
 		 * @return string The index name
@@ -73,7 +67,7 @@
 		public function getName(): string {
 			return $this->name;
 		}
-
+		
 		/**
 		 * Returns the columns covered by this full-text index.
 		 * These are property names on the entity, not database column names.
