@@ -2,6 +2,7 @@
 	
 	namespace Quellabs\ObjectQuel\Sculpt\Helpers;
 	
+	use Quellabs\AnnotationReader\Configuration as AnnotationReaderConfiguration;
 	use Quellabs\ObjectQuel\Configuration;
 	use Quellabs\ObjectQuel\Sculpt\SculptTypes;
 	use Quellabs\ObjectQuel\DatabaseAdapter\Mapper\TypeMapper;
@@ -199,7 +200,7 @@
 		 * @return string Updated content with new property declarations spliced in
 		 */
 		protected function insertProperties(string $content, array $properties): string {
-			$generator = new PhpClassGenerator();
+			$generator = new PhpClassGenerator($this->configuration->getAnnotationSource());
 			
 			foreach ($properties as $property) {
 				// Re-create the analyser each iteration: addProperty mutates $content,
@@ -237,7 +238,7 @@
 		 * @return string Updated class content with new methods
 		 */
 		protected function insertGettersAndSetters(string $content, array $properties, string $entityName): string {
-			$generator = new PhpClassGenerator();
+			$generator = new PhpClassGenerator($this->configuration->getAnnotationSource());
 			
 			foreach ($properties as $property) {
 				// Re-create the analyser each iteration: addMethod mutates $content,
@@ -274,7 +275,7 @@
 			
 			// Insert $id through PhpClassGenerator + PhpClassEditor, identical to
 			// how every other property is inserted in updateEntity().
-			$generator = new PhpClassGenerator();
+			$generator = new PhpClassGenerator($this->configuration->getAnnotationSource());
 			$content = PhpClassEditor::addProperty($content, $generator->generateIdProperty());
 			
 			// Constructor, additional properties, and accessors all go through the same
@@ -378,38 +379,71 @@
 		}
 		
 		/**
-		 * Generates the class-level docblock containing @Table and all index annotations
+		 * Generates the class-level docblock or attributes containing the Table and
+		 * all index metadata, depending on the configured annotation source.
 		 * @param string $entityName Entity name without "Entity" suffix
 		 * @param array<int, IndexDefinition> $indexes Index definitions to emit as annotations
-		 * @return string The docblock string, ending with a newline
+		 * @return string The docblock/attribute block, ending with a newline
 		 */
 		private function generateClassDocBlock(string $entityName, array $indexes): string {
 			// Derive the table name: pluralize the entity name, then convert to snake_case
 			// e.g. "ProductCategory" → "product_categories"
 			$tableNamePlural = StringInflector::pluralize($entityName);
 			$tableName = StringInflector::snakeCase($tableNamePlural);
-			
+
+			if ($this->configuration->getAnnotationSource() === AnnotationReaderConfiguration::SOURCE_ATTRIBUTES) {
+				return $this->generateClassAttributes($tableName, $indexes);
+			}
+
 			$content = "\n\t/**\n";
 			$content .= "\t * @Orm\\Table(name=\"{$tableName}\")\n";
-			
+
 			foreach ($indexes as $index) {
 				$indexName = $index['name'];
 				$indexColumns = '{"' . implode('", "', $index['columns']) . '"}';
 				$indexType = strtoupper($index['type'] ?? 'INDEX');
-				
+
 				// Map the index type string to its annotation class name
 				$annotationClass = match ($indexType) {
 					'UNIQUE' => 'UniqueIndex',
 					'FULLTEXT' => 'FullTextIndex',
 					default => 'Index',
 				};
-				
+
 				$content .= "\t * @Orm\\{$annotationClass}(name=\"{$indexName}\", columns={$indexColumns})\n";
 			}
-			
+
 			$content .= "\t */\n";
-			
+
 			return $content;
 		}
-		
+
+		/**
+		 * Generates the class-level #[Table] and #[Index]/#[UniqueIndex]/#[FullTextIndex]
+		 * attributes, one per line.
+		 * @param string $tableName Database table name
+		 * @param array<int, IndexDefinition> $indexes Index definitions to emit as attributes
+		 * @return string The attribute block, ending with a newline
+		 */
+		private function generateClassAttributes(string $tableName, array $indexes): string {
+			$content = "\n\t#[Table(name: \"{$tableName}\")]\n";
+
+			foreach ($indexes as $index) {
+				$indexName = $index['name'];
+				$indexColumns = "['" . implode("', '", $index['columns']) . "']";
+				$indexType = strtoupper($index['type'] ?? 'INDEX');
+
+				// Map the index type string to its attribute class name
+				$attributeClass = match ($indexType) {
+					'UNIQUE' => 'UniqueIndex',
+					'FULLTEXT' => 'FullTextIndex',
+					default => 'Index',
+				};
+
+				$content .= "\t#[{$attributeClass}(name: \"{$indexName}\", columns: {$indexColumns})]\n";
+			}
+
+			return $content;
+		}
+
 	}
