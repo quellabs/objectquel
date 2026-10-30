@@ -33,7 +33,9 @@
 	 */
 	class PhpClassGenerator {
 
-		/** @var string Configuration::SOURCE_DOCBLOCKS or Configuration::SOURCE_ATTRIBUTES */
+		/**
+		 * @var string Configuration::SOURCE_DOCBLOCKS or Configuration::SOURCE_ATTRIBUTES
+		 */
 		private string $annotationSource;
 
 		/**
