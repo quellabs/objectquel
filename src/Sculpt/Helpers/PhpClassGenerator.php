@@ -1,12 +1,12 @@
 <?php
 	
 	namespace Quellabs\ObjectQuel\Sculpt\Helpers;
-
+	
 	use Quellabs\AnnotationReader\Configuration as AnnotationReaderConfiguration;
 	use Quellabs\Support\StringInflector;
 	use Quellabs\ObjectQuel\Sculpt\SculptTypes;
 	use Quellabs\ObjectQuel\DatabaseAdapter\Mapper\TypeMapper;
-
+	
 	/**
 	 * Generic PHP class source editor.
 	 *
@@ -32,12 +32,12 @@
 	 * @phpstan-import-type PropertyDefinition from SculptTypes
 	 */
 	class PhpClassGenerator {
-
+		
 		/**
 		 * @var string Configuration::SOURCE_DOCBLOCKS or Configuration::SOURCE_ATTRIBUTES
 		 */
 		private string $annotationSource;
-
+		
 		/**
 		 * @param string $annotationSource Which syntax to emit for ORM metadata: docblocks (default) or native attributes
 		 */
@@ -93,10 +93,10 @@
 			$code .= " * @Orm\\PrimaryKeyStrategy(strategy=\"identity\")\n";
 			$code .= " */\n";
 			$code .= "protected ?int \$id = null;";
-
+			
 			return $code;
 		}
-
+		
 		/**
 		 * Generates ORM Column metadata for regular properties, as a docblock
 		 * annotation or a native attribute depending on the configured annotation source.
@@ -106,21 +106,21 @@
 		 */
 		public function generatePropertyDocComment(array $property): string {
 			$arguments = $this->buildColumnAnnotationArguments($property);
-
+			
 			if ($this->usesNativeAttributes()) {
 				$lines = ["#[Column(" . $this->renderArguments($arguments, ': ') . ")]"];
 				array_push($lines, ...$this->buildForeignKeyAttributeLines($property));
 				return implode("\n", $lines);
 			}
-
+			
 			$code = "/**\n";
 			$code .= " * @Orm\\Column(" . $this->renderArguments($arguments, '=') . ")\n";
 			$code .= $this->buildForeignKeyDocblockLines($property);
 			$code .= " */";
-
+			
 			return $code;
 		}
-
+		
 		/**
 		 * Builds the ordered @Orm\ForeignKey (and, when the rule deviates from the safe
 		 * defaults, @Orm\ForeignKeyAction) docblock lines for a property carrying
@@ -137,17 +137,17 @@
 			if (!isset($property['foreignKey'])) {
 				return "";
 			}
-
+			
 			$foreignKey = $property['foreignKey'];
 			$lines = " * @Orm\\ForeignKey(" . $this->renderArguments($this->buildForeignKeyArguments($foreignKey), '=') . ")\n";
-
+			
 			if ($this->foreignKeyActionDeviatesFromDefaults($foreignKey)) {
 				$lines .= " * @Orm\\ForeignKeyAction(" . $this->renderArguments($this->buildForeignKeyActionArguments($foreignKey), '=') . ")\n";
 			}
-
+			
 			return $lines;
 		}
-
+		
 		/**
 		 * Builds the #[ForeignKey] (and, on deviation from the safe defaults,
 		 * #[ForeignKeyAction]) attribute lines for a property carrying FK constraint
@@ -160,17 +160,17 @@
 			if (!isset($property['foreignKey'])) {
 				return [];
 			}
-
+			
 			$foreignKey = $property['foreignKey'];
 			$lines = ["#[ForeignKey(" . $this->renderArguments($this->buildForeignKeyArguments($foreignKey), ': ') . ")]"];
-
+			
 			if ($this->foreignKeyActionDeviatesFromDefaults($foreignKey)) {
 				$lines[] = "#[ForeignKeyAction(" . $this->renderArguments($this->buildForeignKeyActionArguments($foreignKey), ': ') . ")]";
 			}
-
+			
 			return $lines;
 		}
-
+		
 		/**
 		 * @param array{target: string, onDelete: string, onUpdate: string} $foreignKey
 		 * @return array<string, string>
@@ -180,7 +180,7 @@
 			// backslashes inside quoted strings as escapes, corrupting a namespaced FQCN.
 			return ['target' => "{$foreignKey['target']}::class"];
 		}
-
+		
 		/**
 		 * @param array{target: string, onDelete: string, onUpdate: string} $foreignKey
 		 * @return array<string, string>
@@ -191,7 +191,7 @@
 				'onUpdate' => "\"{$foreignKey['onUpdate']}\"",
 			];
 		}
-
+		
 		/**
 		 * @param array{onDelete: string, onUpdate: string} $foreignKey
 		 * @return bool
@@ -199,7 +199,7 @@
 		private function foreignKeyActionDeviatesFromDefaults(array $foreignKey): bool {
 			return $foreignKey['onDelete'] !== 'RESTRICT' || $foreignKey['onUpdate'] !== 'NO ACTION';
 		}
-
+		
 		/**
 		 * Generates ORM relationship metadata, as a docblock annotation or a native
 		 * attribute depending on the configured annotation source.
@@ -212,27 +212,27 @@
 			$targetEntity = $property['targetEntity'];
 			$arguments = $this->buildRelationshipArguments($property);
 			$isCollection = $relationshipType === 'InverseOf' && ($property['collection'] ?? false);
-
+			
 			if ($this->usesNativeAttributes()) {
 				$lines = [];
-
+				
 				// InverseOf collections get an additional @var hint so IDEs know the collection's generic type
 				if ($isCollection) {
 					$lines[] = "/**\n * @var CollectionInterface<{$targetEntity}Entity>\n */";
 				}
-
+				
 				$lines[] = "#[{$relationshipType}(" . $this->renderArguments($arguments, ': ') . ")]";
 				return implode("\n", $lines);
 			}
-
+			
 			$comment = "/**\n * @Orm\\{$relationshipType}(" . $this->renderArguments($arguments, '=') . ")";
-
+			
 			if ($isCollection) {
 				$comment .= "\n * @var CollectionInterface<{$targetEntity}Entity>";
 			}
-
+			
 			$comment .= "\n */";
-
+			
 			return $comment;
 		}
 		
@@ -423,42 +423,42 @@
 		 */
 		private function buildColumnAnnotationArguments(array $property): array {
 			$nullable = $property['nullable'] ?? false;
-
+			
 			// Column name follows snake_case convention regardless of the PHP property name
 			$arguments = [
 				'name' => "\"" . StringInflector::snakeCase($property['name']) . "\"",
 				'type' => "\"{$property['type']}\"",
 			];
-
+			
 			// Enum columns reference the backing PHP enum class
 			if (!empty($property['enumType'])) {
 				$arguments['enumType'] = ltrim($property['enumType'], "\\") . "::class";
 			}
-
+			
 			// Optional column attributes — only emit attributes that were explicitly provided
 			if (isset($property['limit']) && is_numeric($property['limit'])) {
 				$arguments['limit'] = "{$property['limit']}";
 			}
-
+			
 			if (isset($property['unsigned'])) {
 				$arguments['unsigned'] = $property['unsigned'] ? "true" : "false";
 			}
-
+			
 			if (isset($property['precision'])) {
 				$arguments['precision'] = "{$property['precision']}";
 			}
-
+			
 			if (isset($property['scale'])) {
 				$arguments['scale'] = "{$property['scale']}";
 			}
-
+			
 			if ($nullable) {
 				$arguments['nullable'] = "true";
 			}
-
+			
 			return $arguments;
 		}
-
+		
 		/**
 		 * Builds the full key => raw-PHP-value-code arguments for an @Orm\Relationship
 		 * annotation, targetEntity first followed by whichever optional keys apply.
@@ -468,31 +468,31 @@
 		 */
 		private function buildRelationshipArguments(array $property): array {
 			$arguments = ['targetEntity' => "\"{$property['targetEntity']}Entity\""];
-
+			
 			// relation identifies the property on the owning entity that points to this entity
 			if (!empty($property['relation'])) {
 				$arguments['relation'] = "\"{$property['relation']}\"";
 			}
-
+			
 			// referencedColumn identifies the target property the FK points to
 			if (!empty($property['referencedColumn'])) {
 				$arguments['referencedColumn'] = "\"{$property['referencedColumn']}\"";
 			}
-
+			
 			// Collections are fetched lazily to avoid loading the entire related set on access
 			if ($property['relationshipType'] === 'InverseOf') {
 				$arguments['fetch'] = "\"LAZY\"";
 			}
-
+			
 			// The owning side is the one without relation — it holds the foreign key column
 			if (empty($property['relation']) && !empty($property['localColumn'])) {
 				// The column in the current table that stores the foreign key value
 				$arguments['localColumn'] = "\"{$property['localColumn']}\"";
 			}
-
+			
 			return $arguments;
 		}
-
+		
 		/**
 		 * Joins key => raw-PHP-value-code pairs into an annotation/attribute argument list.
 		 * @param array<string, string> $arguments
@@ -501,14 +501,14 @@
 		 */
 		private function renderArguments(array $arguments, string $separator): string {
 			$parts = [];
-
+			
 			foreach ($arguments as $key => $value) {
 				$parts[] = "{$key}{$separator}{$value}";
 			}
-
+			
 			return implode(", ", $parts);
 		}
-
+		
 		/**
 		 * @return bool True when ORM metadata should be emitted as native PHP attributes
 		 */

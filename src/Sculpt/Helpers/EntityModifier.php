@@ -390,34 +390,34 @@
 			// e.g. "ProductCategory" → "product_categories"
 			$tableNamePlural = StringInflector::pluralize($entityName);
 			$tableName = StringInflector::snakeCase($tableNamePlural);
-
+			
 			if ($this->configuration->getAnnotationSource() === AnnotationReaderConfiguration::SOURCE_ATTRIBUTES) {
 				return $this->generateClassAttributes($tableName, $indexes);
 			}
-
+			
 			$content = "\n\t/**\n";
 			$content .= "\t * @Orm\\Table(name=\"{$tableName}\")\n";
-
+			
 			foreach ($indexes as $index) {
 				$indexName = $index['name'];
 				$indexColumns = '{"' . implode('", "', $index['columns']) . '"}';
 				$indexType = strtoupper($index['type'] ?? 'INDEX');
-
+				
 				// Map the index type string to its annotation class name
 				$annotationClass = match ($indexType) {
 					'UNIQUE' => 'UniqueIndex',
 					'FULLTEXT' => 'FullTextIndex',
 					default => 'Index',
 				};
-
+				
 				$content .= "\t * @Orm\\{$annotationClass}(name=\"{$indexName}\", columns={$indexColumns})\n";
 			}
-
+			
 			$content .= "\t */\n";
-
+			
 			return $content;
 		}
-
+		
 		/**
 		 * Generates the class-level #[Table] and #[Index]/#[UniqueIndex]/#[FullTextIndex]
 		 * attributes, one per line.
@@ -427,23 +427,23 @@
 		 */
 		private function generateClassAttributes(string $tableName, array $indexes): string {
 			$content = "\n\t#[Table(name: \"{$tableName}\")]\n";
-
+			
 			foreach ($indexes as $index) {
 				$indexName = $index['name'];
 				$indexColumns = "['" . implode("', '", $index['columns']) . "']";
 				$indexType = strtoupper($index['type'] ?? 'INDEX');
-
+				
 				// Map the index type string to its attribute class name
 				$attributeClass = match ($indexType) {
 					'UNIQUE' => 'UniqueIndex',
 					'FULLTEXT' => 'FullTextIndex',
 					default => 'Index',
 				};
-
+				
 				$content .= "\t#[{$attributeClass}(name: \"{$indexName}\", columns: {$indexColumns})]\n";
 			}
-
+			
 			return $content;
 		}
-
+		
 	}

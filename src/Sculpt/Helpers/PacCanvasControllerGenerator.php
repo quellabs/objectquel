@@ -1,7 +1,7 @@
 <?php
 	
 	namespace Quellabs\ObjectQuel\Sculpt\Helpers;
-
+	
 	use Quellabs\AnnotationReader\Configuration as AnnotationReaderConfiguration;
 	use Quellabs\Support\StringInflector;
 	
@@ -66,9 +66,9 @@
 
     // Auto-generated WakePAC controller for %s
     // Generated on %s
-
+    
     namespace App\Controllers;
-
+    
     use Symfony\Component\HttpFoundation\JsonResponse;
     use Symfony\Component\HttpFoundation\Request;
     use Quellabs\Canvas\Annotations\Route;
@@ -76,7 +76,7 @@
     use Quellabs\Canvas\Controllers\WriteOperation;
 
     class %s extends JsonApiController {
-
+    
         /**
          * Get the entity class name for this controller
          * @return string Fully qualified entity class name
@@ -84,7 +84,7 @@
         protected function getEntityClass(): string {
             return %s::class;
         }
-
+    
         /**
          * Get the JSON:API resource type for this entity
          * @return string The resource type identifier used in JSON:API responses
@@ -103,7 +103,7 @@
         public function get(int $id): JsonResponse {
             return $this->getResource($id);
         }
-
+    
         /**
          * Create a new %s resource
          * @param Request $request HTTP request containing JSON:API formatted data
@@ -113,7 +113,7 @@
         public function create(Request $request): JsonResponse {
             return $this->createResource($request);
         }
-
+    
         /**
          * Update an existing %s resource
          * @param int $id The resource ID to update
@@ -124,7 +124,7 @@
         public function update(int $id, Request $request): JsonResponse {
             return $this->updateResource($id, $request);
         }
-
+    
         /**
          * Delete a %s resource
          * @param int $id The resource ID to delete
@@ -147,9 +147,9 @@
 
     // Auto-generated WakePAC controller for %s
     // Generated on %s
-
+    
     namespace App\Controllers;
-
+    
     use Symfony\Component\HttpFoundation\JsonResponse;
     use Symfony\Component\HttpFoundation\Request;
     use Quellabs\Canvas\Annotations\Route;
@@ -157,7 +157,7 @@
     use Quellabs\Canvas\Controllers\WriteOperation;
 
     class %s extends JsonApiController {
-
+    
         /**
          * Get the entity class name for this controller
          * @return string Fully qualified entity class name
@@ -165,7 +165,7 @@
         protected function getEntityClass(): string {
             return %s::class;
         }
-
+    
         /**
          * Get the JSON:API resource type for this entity
          * @return string The resource type identifier used in JSON:API responses
@@ -184,7 +184,7 @@
         public function get(int $id): JsonResponse {
             return $this->getResource($id);
         }
-
+    
         /**
          * Create a new %s resource
          * @param Request $request HTTP request containing JSON:API formatted data
@@ -194,7 +194,7 @@
         public function create(Request $request): JsonResponse {
             return $this->createResource($request);
         }
-
+    
         /**
          * Update an existing %s resource
          * @param int $id The resource ID to update
@@ -205,7 +205,7 @@
         public function update(int $id, Request $request): JsonResponse {
             return $this->updateResource($id, $request);
         }
-
+    
         /**
          * Delete a %s resource
          * @param int $id The resource ID to delete

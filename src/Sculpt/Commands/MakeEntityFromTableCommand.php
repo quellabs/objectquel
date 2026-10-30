@@ -1,7 +1,7 @@
 <?php
 	
 	namespace Quellabs\ObjectQuel\Sculpt\Commands;
-
+	
 	use Quellabs\AnnotationReader\Configuration as AnnotationReaderConfiguration;
 	use Quellabs\Contracts\Discovery\ProviderInterface;
 	use Quellabs\ObjectQuel\Configuration;
@@ -191,7 +191,7 @@ HELP;
 		private function usesNativeAttributes(): bool {
 			return $this->configuration->getAnnotationSource() === AnnotationReaderConfiguration::SOURCE_ATTRIBUTES;
 		}
-
+		
 		/**
 		 * Generate the class-level docblock or attributes with ORM metadata, depending
 		 * on the configured annotation source.
@@ -206,7 +206,7 @@ HELP;
 			if ($this->usesNativeAttributes()) {
 				return $this->generateClassAttributes($tableName, $compositeForeignKeys);
 			}
-
+			
 			$output = "";
 			$output .= "    /**\n";
 			$output .= "     * Class {$tableCamelCase}Entity\n";
@@ -264,25 +264,25 @@ HELP;
 		 */
 		private function generateClassAttributes(string $tableName, array $compositeForeignKeys = []): string {
 			$output = "    #[Table(name: \"{$tableName}\")]\n";
-
+			
 			foreach ($this->getTableIndexes($tableName) as $name => $indexConfig) {
 				$propertyNames = array_map(
 					fn(string $col) => lcfirst($this->camelCase($col)),
 					$indexConfig['columns']
 				);
-
+				
 				$columns = "'" . implode("', '", $propertyNames) . "'";
 				$attributeType = $indexConfig['unique'] ? "UniqueIndex" : "Index";
 				$output .= "    #[{$attributeType}(name: \"{$name}\", columns: [{$columns}])]\n";
 			}
-
+			
 			foreach ($compositeForeignKeys as $foreignKey) {
 				$pairs = array_map(
 					fn(string $localProp, string $targetProp) => "'{$localProp}' => '{$targetProp}'",
 					$foreignKey['localProperties'],
 					$foreignKey['referencedProperties']
 				);
-
+				
 				$output .= "    #[ForeignKey(target: {$foreignKey['target']}::class, columns: [" . implode(', ', $pairs) . "])]\n";
 
 				if ($foreignKey['onDelete'] !== 'RESTRICT' || $foreignKey['onUpdate'] !== 'NO ACTION') {
@@ -291,7 +291,7 @@ HELP;
 						"onUpdate: \"{$foreignKey['onUpdate']}\")]\n";
 				}
 			}
-
+			
 			return $output;
 		}
 		
@@ -397,7 +397,7 @@ HELP;
 
 				// Begin the property declaration with its type
 				$output .= "        protected {$acceptType} \${$columnCamelCase};";
-
+				
 				// Add a blank line for readability
 				$output .= "\n\n";
 			}
@@ -414,17 +414,17 @@ HELP;
 		 */
 		private function generateMemberVariableDocblock(string $columnName, ColumnDefinition $column, ?array $foreignKey): string {
 			$output = "        /**\n";
-
+			
 			// Normalize the database-native type to the ORM canonical type before
 			// writing the annotation. PostgreSQL returns 'jsonb' from its schema
 			// catalog but the ORM only knows 'json'.
 			$ormType = $column->type === 'jsonb' ? 'json' : $column->type;
-
+			
 			// Add the Column annotation with name and type
 			$output .= "         * @Orm\Column(name=\"{$columnName}\", type=\"{$ormType}\"";
 			$output .= $this->getColumnAnnotationDetails($column);
 			$output .= ")\n";
-
+			
 			// If a real FK constraint was detected on this column, annotate it too.
 			// The property stays a plain scalar (protected int $userId) — this does
 			// not convert the column into a ManyToOne/OneToOne object relation.
@@ -434,7 +434,7 @@ HELP;
 				// since it's a plain column name, not a class reference.
 				$output .= "         * @Orm\ForeignKey(target={$foreignKey['target']}::class, " .
 					"referencedColumn=\"{$foreignKey['referencedColumn']}\")\n";
-
+				
 				// Only emit ForeignKeyAction when the live constraint's rule deviates
 				// from the safe defaults (RESTRICT / NO ACTION) — presence means
 				// something was actually declared, matching @Orm\Index's own convention.
@@ -443,23 +443,23 @@ HELP;
 						"onUpdate=\"{$foreignKey['onUpdate']}\")\n";
 				}
 			}
-
+			
 			// If this is an auto-incrementing primary key, add the PrimaryKeyStrategy annotation
 			if ($column->primary_key && $column->identity) {
 				$output .= "         * @Orm\PrimaryKeyStrategy(strategy=\"identity\")\n";
 			}
-
+			
 			// Add special note for columns that are nullable in PHP but NOT NULL in database
 			if ($this->isNullableInPhpOnly($column)) {
 				$output .= "         * @note Field made nullable in PHP due to missing default value in database\n";
 			}
-
+			
 			// Close the PHPDoc comment block
 			$output .= "         */\n";
-
+			
 			return $output;
 		}
-
+		
 		/**
 		 * Generates the #[Column] (plus #[ForeignKey]/#[ForeignKeyAction]/#[PrimaryKeyStrategy]
 		 * as applicable) attribute lines for a single column.
@@ -470,29 +470,29 @@ HELP;
 		 */
 		private function generateMemberVariableAttributes(string $columnName, ColumnDefinition $column, ?array $foreignKey): string {
 			$ormType = $column->type === 'jsonb' ? 'json' : $column->type;
-
+			
 			$output = "        #[Column(name: \"{$columnName}\", type: \"{$ormType}\"";
 			$output .= $this->getColumnAnnotationDetails($column, true);
 			$output .= ")]\n";
-
+			
 			if ($foreignKey !== null) {
 				$output .= "        #[ForeignKey(target: {$foreignKey['target']}::class, " .
 					"referencedColumn: \"{$foreignKey['referencedColumn']}\")]\n";
-
+				
 				if ($foreignKey['onDelete'] !== 'RESTRICT' || $foreignKey['onUpdate'] !== 'NO ACTION') {
 					$output .= "        #[ForeignKeyAction(onDelete: \"{$foreignKey['onDelete']}\", " .
 						"onUpdate: \"{$foreignKey['onUpdate']}\")]\n";
 				}
 			}
-
+			
 			if ($column->primary_key && $column->identity) {
 				$output .= "        #[PrimaryKeyStrategy(strategy: \"identity\")]\n";
 			}
-
+			
 			if ($this->isNullableInPhpOnly($column)) {
 				$output .= "        // Field made nullable in PHP due to missing default value in database\n";
 			}
-
+		
 			return $output;
 		}
 		
@@ -602,7 +602,7 @@ HELP;
 			if (!empty($column->scale)) {
 				$details[] = "scale{$separator}{$column->scale}";
 			}
-
+			
 			// Implode the array with comma separator and prepend a comma if details exist
 			// If no details found, return an empty string
 			return !empty($details) ? ", " . implode(", ", $details) : "";
