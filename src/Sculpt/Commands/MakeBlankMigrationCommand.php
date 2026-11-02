@@ -3,6 +3,7 @@
 	namespace Quellabs\ObjectQuel\Sculpt\Commands;
 
 	use Quellabs\Sculpt\ConfigurationManager;
+	use Quellabs\Support\OrmEngineResolver;
 
 	/**
 	 * MakeBlankMigrationCommand - Create a blank migration skeleton for hand-written migrations
@@ -15,8 +16,16 @@
 	 */
 	class MakeBlankMigrationCommand extends MakeCommandBase {
 
+		/**
+		 * Get the command signature used to invoke it from the CLI: the short
+		 * 'make:blank-migration' when ObjectQuel is the only ORM installed, or
+		 * the 'quel:' prefixed form when another ORM's own make:blank-migration
+		 * command would otherwise collide with it.
+		 * @return string
+		 */
 		public function getSignature(): string {
-			return 'make:blank-migration';
+			$prefix = OrmEngineResolver::count() > 1 ? 'quel:' : '';
+			return $prefix . 'make:blank-migration';
 		}
 
 		public function getDescription(): string {
@@ -32,13 +41,13 @@ DESCRIPTION:
     or DDL make:migrations can't infer on its own.
 
 USAGE:
-    php sculpt make:blank-migration <Name>
+    php sculpt {$this->getSignature()} <Name>
 
 ARGUMENTS:
     Name    The migration's class name (PascalCase, e.g. BackfillUserStatus)
 
 EXAMPLES:
-    php sculpt make:blank-migration BackfillUserStatus
+    php sculpt {$this->getSignature()} BackfillUserStatus
 
 NOTES:
     - The generated class extends AbstractMigration; fill in up()/down() with
@@ -58,7 +67,7 @@ HELP;
 				$name = $config->getPositional(0);
 
 				if ($name === null) {
-					$this->output->error("Missing required argument: Name. Usage: php sculpt make:blank-migration <Name>");
+					$this->output->error("Missing required argument: Name. Usage: php sculpt {$this->getSignature()} <Name>");
 					return 1;
 				}
 
