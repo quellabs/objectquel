@@ -28,10 +28,18 @@
 			return $prefix . 'make:blank-migration';
 		}
 
+		/**
+		 * Returns the command description.
+		 * @return string
+		 */
 		public function getDescription(): string {
 			return 'Create a blank migration file for hand-written schema or data changes';
 		}
 
+		/**
+		 * Returns detailed help text for the command.
+		 * @return string
+		 */
 		public function getHelp(): string {
 			return <<<HELP
 DESCRIPTION:

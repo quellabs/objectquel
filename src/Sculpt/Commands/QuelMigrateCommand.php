@@ -29,6 +29,11 @@
 	 */
 	class QuelMigrateCommand extends CommandBase {
 
+		/**
+		 * @param ConsoleInput $input
+		 * @param ConsoleOutput $output
+		 * @param ServiceProvider $provider
+		 */
 		public function __construct(ConsoleInput $input, ConsoleOutput $output, ServiceProvider $provider) {
 			parent::__construct($input, $output, $provider);
 		}
