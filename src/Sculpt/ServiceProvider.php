@@ -69,7 +69,7 @@
 		 *      port: int,
 		 *      encoding: string,
 		 *      migrations_path: string,
-		 *      migration_table: string,
+		 *      migrations_table: string,
 		 *      entity_namespace: string,
 		 *      entity_path: string,
 		 *      proxy_namespace: string,
@@ -89,7 +89,7 @@
 				'port'                  => 3306,
 				'encoding'              => 'utf8mb4',
 				'migrations_path'       => '',
-				'migration_table'       => 'quel_migrations',
+				'migrations_table'      => 'quel_migrations',
 				'entity_namespace'      => '',
 				'entity_path'           => '',
 				'proxy_namespace'       => 'Quellabs\\ObjectQuel\\Proxy\\Runtime',
@@ -111,7 +111,7 @@
 			$configuration->setEntityPath($this->getConfigValueAsString('entity_path', $defaults['entity_path']));
 			$configuration->setEntityNameSpace($this->getConfigValueAsString('entity_namespace', $defaults['entity_namespace']));
 			$configuration->setMigrationsPath($this->getConfigValueAsString('migrations_path', $defaults['migrations_path']));
-			$configuration->setMigrationTable($this->getConfigValueAsString('migration_table', $defaults['migration_table']));
+			$configuration->setMigrationsTable($this->getConfigValueAsString('migrations_table', $defaults['migrations_table']));
 			$configuration->setMetadataCachePath($this->getConfigValueAsString('metadata_cache_path', $defaults['metadata_cache_path']));
 			$configuration->setAnnotationSource($this->getConfigValueAsString('annotation_source', $defaults['annotation_source']));
 			$configuration->setUseMetadataCache(!empty($this->getConfigValueAsString('metadata_cache_path', $defaults['metadata_cache_path'])));

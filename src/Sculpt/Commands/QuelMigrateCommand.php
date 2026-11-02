@@ -142,7 +142,7 @@ HELP;
 			$configuration = $serviceProvider->getConfiguration();
 			$entityManager = $serviceProvider->getEntityManager();
 			$platform = new PlatformCapabilities($serviceProvider->getDatabaseAdapter());
-			$repository = new MigrationRepository($entityManager, $configuration->getMigrationTable());
+			$repository = new MigrationRepository($entityManager, $configuration->getMigrationsTable());
 			$locator = new MigrationLocator($entityManager, $configuration->getMigrationsPath());
 
 			return new MigrationRunner($entityManager, $platform, $repository, $locator);

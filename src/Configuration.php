@@ -99,7 +99,7 @@
 		 * Defaults to 'quel_migrations' — the ObjectQuel-native tracking table,
 		 * unrelated to Phinx's 'phinxlog'.
 		 */
-		private string $migrationTable = 'quel_migrations';
+		private string $migrationsTable = 'quel_migrations';
 
 		/**
 		 * @var int|null Window size to use for pagination, or null if none
@@ -276,17 +276,17 @@
 		 * Returns the name of the table quel:migrate tracks applied migrations in
 		 * @return string
 		 */
-		public function getMigrationTable(): string {
-			return $this->migrationTable;
+		public function getMigrationsTable(): string {
+			return $this->migrationsTable;
 		}
 
 		/**
 		 * Sets the name of the table quel:migrate tracks applied migrations in
-		 * @param string $migrationTable
+		 * @param string $migrationsTable
 		 * @return void
 		 */
-		public function setMigrationTable(string $migrationTable): void {
-			$this->migrationTable = $migrationTable;
+		public function setMigrationsTable(string $migrationsTable): void {
+			$this->migrationsTable = $migrationsTable;
 		}
 
 		/**
