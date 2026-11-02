@@ -11,7 +11,8 @@
 	use Quellabs\Sculpt\ConfigurationManager;
 	use Quellabs\Sculpt\Console\ConsoleInput;
 	use Quellabs\Sculpt\Console\ConsoleOutput;
-	
+	use Quellabs\Support\OrmEngineResolver;
+
 	/**
 	 * MakeEntityFromTableCommand - Generate an entity class from an existing database table
 	 *
@@ -40,11 +41,15 @@
 		}
 		
 		/**
-		 * Get the command signature/name for registration in the CLI
+		 * Get the command signature/name for registration in the CLI: the
+		 * short 'make:entity-from-table' when ObjectQuel is the only ORM
+		 * installed, or the 'quel:' prefixed form when another ORM's own
+		 * make:entity-from-table command would otherwise collide with it.
 		 * @return string Command signature
 		 */
 		public function getSignature(): string {
-			return "make:entity-from-table";
+			$prefix = OrmEngineResolver::count() > 1 ? "quel:" : "";
+			return $prefix . "make:entity-from-table";
 		}
 		
 		/**
@@ -68,7 +73,7 @@ DESCRIPTION:
     getter/setter methods for all columns.
 
 USAGE:
-    php sculpt make:entity-from-table
+    php sculpt {$this->getSignature()}
 
 ARGUMENTS:
     None — all input is collected via interactive prompts

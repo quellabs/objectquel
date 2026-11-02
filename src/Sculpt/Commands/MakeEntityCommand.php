@@ -7,8 +7,9 @@
 	use Quellabs\ObjectQuel\Sculpt\Helpers\EntityModifier;
 	use Quellabs\ObjectQuel\Sculpt\SculptTypes;
 	use Quellabs\Sculpt\ConfigurationManager;
+	use Quellabs\Support\OrmEngineResolver;
 	use Quellabs\Support\StringInflector;
-	
+
 	/**
 	 * MakeEntityCommand - Create or update entity classes interactively
 	 *
@@ -31,11 +32,15 @@
 		private ?EntityModifier $entityModifier = null;
 
 		/**
-		 * Get the command signature used to invoke this command.
+		 * Get the command signature used to invoke this command: the short
+		 * 'make:entity' when ObjectQuel is the only ORM installed, or the
+		 * 'quel:' prefixed form when another ORM's own make:entity command
+		 * would otherwise collide with it.
 		 * @return string Command signature
 		 */
 		public function getSignature(): string {
-			return "make:entity";
+			$prefix = OrmEngineResolver::count() > 1 ? "quel:" : "";
+			return $prefix . "make:entity";
 		}
 		
 		/**
@@ -58,7 +63,7 @@ DESCRIPTION:
     appended without touching existing ones.
 
 USAGE:
-    php sculpt make:entity
+    php sculpt {$this->getSignature()}
 
 ARGUMENTS:
     None — all input is collected via interactive prompts
