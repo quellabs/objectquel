@@ -15,6 +15,7 @@
 	use Quellabs\Sculpt\Console\ConsoleInput;
 	use Quellabs\Sculpt\Console\ConsoleOutput;
 	use Quellabs\AnnotationReader\Exception\AnnotationReaderException;
+	use Quellabs\Support\OrmEngineResolver;
 	
 	/**
 	 * MakeMigrationsCommand - CLI command for generating database migrations
@@ -97,11 +98,15 @@
 		}
 		
 		/**
-		 * Get the command signature used to invoke it from the CLI
+		 * Get the command signature used to invoke it from the CLI: the short
+		 * 'make:migrations' when ObjectQuel is the only ORM installed, or the
+		 * 'quel:' prefixed form when another ORM's own make:migrations command
+		 * would otherwise collide with it.
 		 * @return string
 		 */
 		public function getSignature(): string {
-			return "make:migrations";
+			$prefix = OrmEngineResolver::count() > 1 ? "quel:" : "";
+			return $prefix . "make:migrations";
 		}
 		
 		/**
@@ -123,7 +128,7 @@ DESCRIPTION:
     current database schema and producing an ObjectQuel migration to synchronize them.
 
 USAGE:
-    php sculpt make:migrations
+    php sculpt {$this->getSignature()}
 
 ARGUMENTS:
     None

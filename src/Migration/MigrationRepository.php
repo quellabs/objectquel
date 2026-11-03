@@ -6,7 +6,7 @@
 
 	/**
 	 * Tracks which migrations have been applied, in a dedicated table
-	 * (default `quel_migrations`, see Configuration::getMigrationTable()).
+	 * (default `quel_migrations`, see Configuration::getMigrationsTable()).
 	 *
 	 * The table is created via ObjectQuel DDL (`create ...`), but rows are
 	 * read/written through the underlying CakePHP query builder instead of
@@ -21,7 +21,7 @@
 
 		public function __construct(
 			private readonly EntityManager $entityManager,
-			private readonly string $migrationTable = 'quel_migrations',
+			private readonly string $migrationsTable = 'quel_migrations',
 		) {
 		}
 
@@ -31,12 +31,12 @@
 		 * @return void
 		 */
 		public function ensureTableExists(): void {
-			if (in_array($this->migrationTable, $this->entityManager->getConnection()->getTables(), true)) {
+			if (in_array($this->migrationsTable, $this->entityManager->getConnection()->getTables(), true)) {
 				return;
 			}
 
 			$this->entityManager->executeQuery(
-				"create {$this->migrationTable} (" .
+				"create {$this->migrationsTable} (" .
 				"version = biginteger, " .
 				"migration_name = string(255), " .
 				"executed_at = datetime, " .
@@ -50,7 +50,7 @@
 		 */
 		public function getAppliedVersions(): array {
 			$rows = $this->entityManager->getConnection()->getConnection()
-				->selectQuery('version', $this->migrationTable)
+				->selectQuery('version', $this->migrationsTable)
 				->orderBy('version')
 				->execute()
 				->fetchAll('assoc');
@@ -66,7 +66,7 @@
 		 */
 		public function getAppliedRecords(): array {
 			$rows = $this->entityManager->getConnection()->getConnection()
-				->selectQuery(['version', 'executed_at'], $this->migrationTable)
+				->selectQuery(['version', 'executed_at'], $this->migrationsTable)
 				->orderBy('version')
 				->execute()
 				->fetchAll('assoc');
@@ -88,7 +88,7 @@
 		 */
 		public function recordApplied(int $version, string $name): void {
 			$this->entityManager->getConnection()->getConnection()
-				->insertQuery($this->migrationTable, [
+				->insertQuery($this->migrationsTable, [
 					'version'        => $version,
 					'migration_name' => $name,
 					'executed_at'    => (new \DateTimeImmutable())->format('Y-m-d H:i:s'),
@@ -103,7 +103,7 @@
 		 */
 		public function recordReverted(int $version): void {
 			$this->entityManager->getConnection()->getConnection()
-				->deleteQuery($this->migrationTable, ['version' => $version])
+				->deleteQuery($this->migrationsTable, ['version' => $version])
 				->execute();
 		}
 	}

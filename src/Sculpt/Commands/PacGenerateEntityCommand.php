@@ -8,6 +8,7 @@
 	use Quellabs\Sculpt\ConfigurationManager;
 	use Quellabs\Support\ComposerUtils;
 	use Quellabs\Support\FrameworkResolver;
+	use Quellabs\Support\OrmEngineResolver;
 	
 	/**
 	 * PacGenerateCommand - CLI command for generating WakaPAC JavaScript abstractions from ObjectQuel entities
@@ -19,11 +20,15 @@
 	class PacGenerateEntityCommand extends MakeCommandBase {
 		
 		/**
-		 * Get the command signature for CLI usage
+		 * Get the command signature for CLI usage: the short 'make:pac-entity'
+		 * when ObjectQuel is the only ORM installed, or the 'quel:' prefixed
+		 * form when another ORM's own make:pac-entity command would
+		 * otherwise collide with it.
 		 * @return string The command signature
 		 */
 		public function getSignature(): string {
-			return "make:pac-entity";
+			$prefix = OrmEngineResolver::count() > 1 ? "quel:" : "";
+			return $prefix . "make:pac-entity";
 		}
 		
 		/**
@@ -49,7 +54,7 @@ DESCRIPTION:
     the entity's column definitions.
 
 USAGE:
-    php sculpt make:pac-entity [EntityName] [options]
+    php sculpt {$this->getSignature()} [EntityName] [options]
 
 ARGUMENTS:
     EntityName        The name of the entity class (without "Entity" suffix)
@@ -61,13 +66,13 @@ OPTIONS:
                       Default: public/js/abstractions/{EntityName}Abstraction.js
 
 EXAMPLES:
-    php sculpt make:pac-entity User
+    php sculpt {$this->getSignature()} User
         Generates UserAbstraction.js from UserEntity in default location
-    
-    php sculpt make:pac-entity Product --o ./frontend/js/Product.js
+
+    php sculpt {$this->getSignature()} Product --o ./frontend/js/Product.js
         Generates Product.js from ProductEntity in custom location
-    
-    php sculpt make:pac-entity
+
+    php sculpt {$this->getSignature()}
         Interactive mode - prompts for entity name
 
 NOTES:

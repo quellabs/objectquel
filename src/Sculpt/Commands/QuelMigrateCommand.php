@@ -29,6 +29,11 @@
 	 */
 	class QuelMigrateCommand extends CommandBase {
 
+		/**
+		 * @param ConsoleInput $input
+		 * @param ConsoleOutput $output
+		 * @param ServiceProvider $provider
+		 */
 		public function __construct(ConsoleInput $input, ConsoleOutput $output, ServiceProvider $provider) {
 			parent::__construct($input, $output, $provider);
 		}
@@ -137,7 +142,7 @@ HELP;
 			$configuration = $serviceProvider->getConfiguration();
 			$entityManager = $serviceProvider->getEntityManager();
 			$platform = new PlatformCapabilities($serviceProvider->getDatabaseAdapter());
-			$repository = new MigrationRepository($entityManager, $configuration->getMigrationTable());
+			$repository = new MigrationRepository($entityManager, $configuration->getMigrationsTable());
 			$locator = new MigrationLocator($entityManager, $configuration->getMigrationsPath());
 
 			return new MigrationRunner($entityManager, $platform, $repository, $locator);

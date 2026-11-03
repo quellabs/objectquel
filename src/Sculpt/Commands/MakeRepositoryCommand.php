@@ -4,6 +4,7 @@
 
 	use Quellabs\Sculpt\ConfigurationManager;
 	use Quellabs\Support\ComposerUtils;
+	use Quellabs\Support\OrmEngineResolver;
 	use RuntimeException;
 
 	/**
@@ -25,11 +26,15 @@
 		private const string REPOSITORY_SUFFIX = 'Repository';
 		
 		/**
-		 * Get the command name for CLI usage.
+		 * Get the command name for CLI usage: the short 'make:repository'
+		 * when ObjectQuel is the only ORM installed, or the 'quel:' prefixed
+		 * form when another ORM's own make:repository command would
+		 * otherwise collide with it.
 		 * @return string Command signature
 		 */
 		public function getSignature(): string {
-			return 'make:repository';
+			$prefix = OrmEngineResolver::count() > 1 ? 'quel:' : '';
+			return $prefix . 'make:repository';
 		}
 		
 		/**
@@ -52,7 +57,7 @@ DESCRIPTION:
     exist before the repository can be generated.
 
 USAGE:
-    php sculpt make:repository [entity] [--force]
+    php sculpt {$this->getSignature()} [entity] [--force]
 
 ARGUMENTS:
     entity     Optional entity class name. If omitted, you will be prompted.
@@ -61,7 +66,7 @@ OPTIONS:
     --force    Overwrite the repository file if it already exists
 
 EXAMPLES:
-    php sculpt make:repository User
+    php sculpt {$this->getSignature()} User
 
 NOTES:
     - The entity class must already exist in the configured entity path

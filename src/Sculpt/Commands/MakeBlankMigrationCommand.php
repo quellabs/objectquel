@@ -3,6 +3,7 @@
 	namespace Quellabs\ObjectQuel\Sculpt\Commands;
 
 	use Quellabs\Sculpt\ConfigurationManager;
+	use Quellabs\Support\OrmEngineResolver;
 
 	/**
 	 * MakeBlankMigrationCommand - Create a blank migration skeleton for hand-written migrations
@@ -11,18 +12,37 @@
 	 * migrations that aren't derived from an entity diff (data backfills,
 	 * one-off DDL make:migrations can't infer, etc.). The author fills in
 	 * both bodies with query(...) calls, same as a generated migration
-	 * (see AbstractMigration).
+	 * (see AbstractMigration). Name is optional; when omitted, it defaults
+	 * to "Migration<YmdHis>" so the run time's own version stamp doubles
+	 * as the class name, guaranteeing it's unique across the migrations
+	 * directory the way MigrationLocator requires.
 	 */
 	class MakeBlankMigrationCommand extends MakeCommandBase {
 
+		/**
+		 * Get the command signature used to invoke it from the CLI: the short
+		 * 'make:blank-migration' when ObjectQuel is the only ORM installed, or
+		 * the 'quel:' prefixed form when another ORM's own make:blank-migration
+		 * command would otherwise collide with it.
+		 * @return string
+		 */
 		public function getSignature(): string {
-			return 'make:blank-migration';
+			$prefix = OrmEngineResolver::count() > 1 ? 'quel:' : '';
+			return $prefix . 'make:blank-migration';
 		}
 
+		/**
+		 * Returns the command description.
+		 * @return string
+		 */
 		public function getDescription(): string {
 			return 'Create a blank migration file for hand-written schema or data changes';
 		}
 
+		/**
+		 * Returns detailed help text for the command.
+		 * @return string
+		 */
 		public function getHelp(): string {
 			return <<<HELP
 DESCRIPTION:
@@ -32,13 +52,15 @@ DESCRIPTION:
     or DDL make:migrations can't infer on its own.
 
 USAGE:
-    php sculpt make:blank-migration <Name>
+    php sculpt {$this->getSignature()} [Name]
 
 ARGUMENTS:
-    Name    The migration's class name (PascalCase, e.g. BackfillUserStatus)
+    Name    Optional. The migration's class name (PascalCase, e.g.
+            BackfillUserStatus). Defaults to Migration<timestamp> when omitted.
 
 EXAMPLES:
-    php sculpt make:blank-migration BackfillUserStatus
+    php sculpt {$this->getSignature()}
+    php sculpt {$this->getSignature()} BackfillUserStatus
 
 NOTES:
     - The generated class extends AbstractMigration; fill in up()/down() with
@@ -55,12 +77,8 @@ HELP;
 		 */
 		public function execute(ConfigurationManager $config): int {
 			try {
-				$name = $config->getPositional(0);
-
-				if ($name === null) {
-					$this->output->error("Missing required argument: Name. Usage: php sculpt make:blank-migration <Name>");
-					return 1;
-				}
+				$version = date('YmdHis');
+				$name = $config->getPositional(0) ?? "Migration{$version}";
 
 				if (!$this->isValidPhpIdentifier($name)) {
 					$this->output->error("Invalid migration name '{$name}'. Must be a valid PHP class name.");
@@ -76,7 +94,6 @@ HELP;
 
 				$this->ensureDirectoryExists($migrationsPath);
 
-				$version = date('YmdHis');
 				$filePath = rtrim($migrationsPath, '/\\') . "/{$version}_{$name}.php";
 
 				if (file_exists($filePath)) {
