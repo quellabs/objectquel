@@ -102,10 +102,7 @@
 		private string $migrationsTable = 'quel_migrations';
 
 		/**
-		 * @var int|null Window size to use for pagination, or null if none
-		 * Default number of records to return per page in paginated queries.
-		 * Set to null to disable default pagination.
-		 * Can be overridden on a per-query basis.
+		 * @var int|null Fallback page size for a WINDOW clause that omits one, or null for the built-in default of 1
 		 */
 		private ?int $defaultWindowSize = null;
 		
@@ -290,16 +287,16 @@
 		}
 
 		/**
-		 * Returns the standard window size for pagination
-		 * @return int|null Default page size or null if not configured
+		 * Returns the fallback page size for a WINDOW clause that omits one.
+		 * @return int|null Fallback page size, or null to use the built-in default of 1
 		 */
 		public function getDefaultWindowSize(): ?int {
 			return $this->defaultWindowSize;
 		}
-		
+
 		/**
-		 * Sets the standard window size for pagination
-		 * @param int|null $defaultWindowSize Default page size (null to disable)
+		 * Sets the fallback page size for a WINDOW clause that omits one.
+		 * @param int|null $defaultWindowSize Fallback page size, or null to use the built-in default of 1
 		 * @return void
 		 */
 		public function setDefaultWindowSize(?int $defaultWindowSize): void {

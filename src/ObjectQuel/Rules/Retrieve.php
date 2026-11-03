@@ -17,9 +17,6 @@
 	 * Parser for 'retrieve' statements in the ObjectQuel language.
 	 */
 	class Retrieve {
-		
-		/** @var int Default number of records per page when window size is not specified */
-		private const int DEFAULT_WINDOW_SIZE = 1;
 
 		/** @var bool Whether this retrieve is for a temporary table (affects column aliasing) */
 		private bool $isTemporaryTable;
@@ -244,22 +241,22 @@
 		
 		/**
 		 * Parse the window size specification from a WINDOW clause.
-		 * @return int|float The parsed window size or default if not specified
+		 * @return int|float|null The parsed window size, or null when omitted (execution resolves the default)
 		 * @throws LexerException on parsing errors
 		 */
-		private function parseWindowSize(): int|float {
+		private function parseWindowSize(): int|float|null {
 			// Short notation: WINDOW 1, 10
 			if ($this->lexer->optionalMatch(Token::Comma)) {
 				return SignedNumber::parse($this->lexer);
 			}
-			
+
 			// Explicit notation: WINDOW 1 USING WINDOW_SIZE 10
 			if ($this->lexer->optionalMatch(Token::Using)) {
 				$this->lexer->match(Token::WindowSize);
 				return SignedNumber::parse($this->lexer);
 			}
-			
-			return self::DEFAULT_WINDOW_SIZE;
+
+			return null;
 		}
 
 		/**

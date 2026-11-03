@@ -168,7 +168,7 @@
 				return $sql;
 			}
 
-			$size = $prepared->getWindowSize() ?? 1;
+			$size = $prepared->getWindowSize() ?? $this->entityManager->getConfiguration()->getDefaultWindowSize() ?? 1;
 			$window = (int)$window;
 			$size = (int)$size;
 			if ($window < 0 || $size <= 0) {

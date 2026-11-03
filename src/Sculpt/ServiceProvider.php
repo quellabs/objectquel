@@ -118,6 +118,7 @@
 			$configuration->setUseMetadataCache(!empty($this->getConfigValueAsString('metadata_cache_path', $defaults['metadata_cache_path'])));
 			$configuration->setGenerateForeignKeys($this->getConfigValueAsBool('generate_foreign_keys', $defaults['generate_foreign_keys']));
 			$configuration->setCollation($this->getConfigValueAsString('collation', '') ?: null);
+			$configuration->setDefaultWindowSize($this->getConfigValueAsInt('default_window_size', 0) ?: null);
 			return $configuration;
 		}
 		

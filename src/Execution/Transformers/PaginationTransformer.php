@@ -3,6 +3,7 @@
 	namespace Quellabs\ObjectQuel\Execution\Transformers;
 
 	use Quellabs\ObjectQuel\Capabilities\PlatformCapabilitiesInterface;
+	use Quellabs\ObjectQuel\Configuration;
 	use Quellabs\ObjectQuel\DatabaseAdapter\DatabaseAdapter;
 	use Quellabs\ObjectQuel\EntityManager;
 	use Quellabs\ObjectQuel\EntityStore;
@@ -32,6 +33,7 @@
 		private EntityStore $entityStore;
 		private DatabaseAdapter $connection;
 		private PlatformCapabilitiesInterface $platform;
+		private Configuration $configuration;
 
 		/** Monotonic counter for this transform() call's generated bound-parameter names. */
 		private int $parameterSequence = 0;
@@ -45,6 +47,7 @@
 			$this->entityStore = $entityManager->getEntityStore();
 			$this->connection = $entityManager->getConnection();
 			$this->platform = $platform;
+			$this->configuration = $entityManager->getConfiguration();
 		}
 
 		/**
@@ -59,12 +62,14 @@
 		 */
 		public function transform(AstRetrieve $ast, array &$parameters): void {
 			$window = $ast->getWindow();
-			$windowSize = $ast->getWindowSize();
 
 			// Only database-sorted WINDOW queries need a primary-key page pass.
-			if ($window === null || $windowSize === null || $ast->getSortInApplicationLogic()) {
+			if ($window === null || $ast->getSortInApplicationLogic()) {
 				return;
 			}
+
+			// A window with no explicit size falls back to the configured default.
+			$windowSize = $ast->getWindowSize() ?? $this->configuration->getDefaultWindowSize() ?? 1;
 
 			// Resolve the root key used by both the key query and the final page filter.
 			$primaryKeyInfo = PrimaryKeyInfo::fromRetrieve($ast, $this->entityStore);
