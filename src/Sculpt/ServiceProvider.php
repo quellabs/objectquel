@@ -46,6 +46,7 @@
 					\Quellabs\ObjectQuel\Sculpt\Commands\MakeMigrationsCommand::class,
 					\Quellabs\ObjectQuel\Sculpt\Commands\MakeBlankMigrationCommand::class,
 					\Quellabs\ObjectQuel\Sculpt\Commands\QuelMigrateCommand::class,
+					\Quellabs\ObjectQuel\Sculpt\Commands\StatusCommand::class,
 					\Quellabs\ObjectQuel\Sculpt\Commands\PacGenerateEntityCommand::class,
 					\Quellabs\ObjectQuel\Sculpt\Commands\QuelIndexHideCommand::class,
 					\Quellabs\ObjectQuel\Sculpt\Commands\QuelIndexShowCommand::class,

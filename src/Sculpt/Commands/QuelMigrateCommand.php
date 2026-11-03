@@ -2,16 +2,9 @@
 
 	namespace Quellabs\ObjectQuel\Sculpt\Commands;
 
-	use Quellabs\ObjectQuel\Capabilities\PlatformCapabilities;
 	use Quellabs\ObjectQuel\Migration\LocatedMigration;
-	use Quellabs\ObjectQuel\Migration\MigrationLocator;
-	use Quellabs\ObjectQuel\Migration\MigrationRepository;
 	use Quellabs\ObjectQuel\Migration\MigrationRunner;
-	use Quellabs\ObjectQuel\Sculpt\ServiceProvider;
-	use Quellabs\Sculpt\Contracts\CommandBase;
 	use Quellabs\Sculpt\ConfigurationManager;
-	use Quellabs\Sculpt\Console\ConsoleInput;
-	use Quellabs\Sculpt\Console\ConsoleOutput;
 
 	/**
 	 * QuelMigrateCommand - Run, roll back, or check the status of database migrations
@@ -27,16 +20,7 @@
 	 * "list what would run/be rolled back, without invoking any
 	 * migration's up()/down() at all" (see Phase 3's dry-run note).
 	 */
-	class QuelMigrateCommand extends CommandBase {
-
-		/**
-		 * @param ConsoleInput $input
-		 * @param ConsoleOutput $output
-		 * @param ServiceProvider $provider
-		 */
-		public function __construct(ConsoleInput $input, ConsoleOutput $output, ServiceProvider $provider) {
-			parent::__construct($input, $output, $provider);
-		}
+	class QuelMigrateCommand extends AbstractMigrationCommand {
 
 		/**
 		 * Get the command signature/name for registration in the CLI
@@ -95,6 +79,7 @@ EXAMPLES:
 
     php sculpt quel:migrate --status
         Show which migrations have been applied and which are pending
+        (equivalent to "php sculpt quel:migrate:status")
 
     php sculpt quel:migrate --dry-run
         Preview pending migrations without applying them
@@ -107,18 +92,15 @@ HELP;
 		 * @return int Exit code (0 for success)
 		 */
 		public function execute(ConfigurationManager $config): int {
-			$serviceProvider = $this->getProvider();
+			$runner = $this->makeRunner();
 
-			if (!$serviceProvider instanceof ServiceProvider) {
-				$this->output->error("Unable to fetch ObjectQuel configuration");
+			if ($runner === null) {
 				return 1;
 			}
 
-			$runner = $this->makeRunner($serviceProvider);
-
 			try {
 				if ($config->hasFlag('status')) {
-					return $this->showStatus($runner);
+					return $this->renderStatus($runner);
 				}
 
 				if ($config->hasFlag('rollback')) {
@@ -130,22 +112,6 @@ HELP;
 				$this->output->error("Migration error: " . $e->getMessage());
 				return 1;
 			}
-		}
-
-		/**
-		 * Builds a MigrationRunner wired to the application's configured
-		 * connection, migrations path, and tracking table.
-		 * @param ServiceProvider $serviceProvider
-		 * @return MigrationRunner
-		 */
-		private function makeRunner(ServiceProvider $serviceProvider): MigrationRunner {
-			$configuration = $serviceProvider->getConfiguration();
-			$entityManager = $serviceProvider->getEntityManager();
-			$platform = new PlatformCapabilities($serviceProvider->getDatabaseAdapter());
-			$repository = new MigrationRepository($entityManager, $configuration->getMigrationsTable());
-			$locator = new MigrationLocator($entityManager, $configuration->getMigrationsPath());
-
-			return new MigrationRunner($entityManager, $platform, $repository, $locator);
 		}
 
 		/**
@@ -289,32 +255,6 @@ HELP;
 			$runner->rollback($target, $steps);
 
 			$this->output->success("Rollback completed successfully.");
-			return 0;
-		}
-
-		/**
-		 * Show migration status
-		 * @param MigrationRunner $runner
-		 * @return int Exit code (0 for success)
-		 */
-		private function showStatus(MigrationRunner $runner): int {
-			$this->output->writeLn("Migration Status:");
-			$this->output->writeLn("");
-
-			$status = $runner->status();
-
-			if ($status === []) {
-				$this->output->writeLn("No migrations found.");
-				return 0;
-			}
-
-			$rows = [];
-
-			foreach ($status as $entry) {
-				$rows[] = [$entry['version'], $entry['name'], $entry['applied_at'] ?? 'pending'];
-			}
-
-			$this->output->table(['Version', 'Migration Name', 'Applied At'], $rows);
 			return 0;
 		}
 
