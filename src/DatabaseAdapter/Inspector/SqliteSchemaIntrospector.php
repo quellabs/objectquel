@@ -61,6 +61,7 @@
 				} catch (\RuntimeException $e) {
 					throw new \RuntimeException("Column '{$tableName}.{$row['name']}': " . $e->getMessage(), 0, $e);
 				}
+				
 				$precisionScale = $type === 'decimal' ? $this->parseSqliteNumericPrecisionScale($row['type']) : new NumericPrecisionScale(null, null);
 				$isIdentity = $identityByColumn[$row['name']] ?? false;
 
@@ -68,16 +69,16 @@
 					'string', 'char' => $this->parseSqliteLimit($row['type']),
 					default => TypeMapper::getDefaultLimit($type),
 				};
-
+				
+				// A rowid-alias identity column always reports notnull=0
+				// here even though it can never hold NULL (inserting one
+				// triggers autoincrement instead) -- taken literally,
+				// this would diff as "nullable" forever.
 				$result[$row['name']] = new ColumnDefinition(
 					type: $type,
 					php_type: TypeMapper::phinxTypeToPhpType($type),
 					limit: $limit,
 					default: $this->normalizeSqliteDefault($row['dflt_value']),
-					// A rowid-alias identity column always reports notnull=0
-					// here even though it can never hold NULL (inserting one
-					// triggers autoincrement instead) -- taken literally,
-					// this would diff as "nullable" forever.
 					nullable: $isIdentity ? false : (int)$row['notnull'] === 0,
 					precision: $precisionScale->precision,
 					scale: $precisionScale->scale,
