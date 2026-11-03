@@ -76,7 +76,9 @@
 		 * @param array<string, string> $entityClasses Map of entity class names to table names
 		 * @param bool $useCache Whether to use cached analysis results
 		 * @return array<string, EntityChangeSet> Map of table names to their detected changes
-		 * @throws RuntimeException If schema analysis fails
+		 * @throws RuntimeException If retrieving the existing tables fails, or if
+		 *          analyzing a specific entity fails — in the latter case the
+		 *          message names which entity class and table triggered it.
 		 */
 		public function analyzeEntityChanges(array $entityClasses, bool $useCache = true): array {
 			// Generate cache key from entity classes to enable result reuse
@@ -90,33 +92,44 @@
 			try {
 				// Retrieve all existing tables from the database
 				$existingTables = $this->connection->getTables();
-				
-				// Analyze each entity class individually
-				$allChanges = [];
-				
-				foreach ($entityClasses as $className => $tableName) {
-					// Ensure entity class and table name are valid
-					$this->validate($className, $tableName);
-					
-					// Compare entity definition against database schema
-					$changes = $this->compareSchemas($tableName, $className, $existingTables);
-					
-					// Only include entities that have detected changes
-					if ($this->hasChanges($changes)) {
-						$allChanges[$tableName] = $changes;
-					}
-				}
-				
-				// Cache the results if caching is enabled
-				if ($useCache) {
-					$this->analysisCache[$cacheKey] = $allChanges;
-				}
-				
-				return $allChanges;
-				
 			} catch (\Exception $e) {
 				throw new RuntimeException('Schema analysis failed: ' . $e->getMessage(), 0, $e);
 			}
+
+			// Analyze each entity class individually. A failure is wrapped with
+			// which entity/table it came from before propagating -- the
+			// original exception (e.g. an unrecognized column type surfaced by
+			// the schema introspector) only names what went wrong, not which
+			// table it found it on, and that's only known here, at the call site.
+			$allChanges = [];
+
+			foreach ($entityClasses as $className => $tableName) {
+				try {
+					// Ensure entity class and table name are valid
+					$this->validate($className, $tableName);
+
+					// Compare entity definition against database schema
+					$changes = $this->compareSchemas($tableName, $className, $existingTables);
+				} catch (\Exception $e) {
+					throw new RuntimeException(
+						"Schema analysis failed for entity {$className} (table '{$tableName}'): " . $e->getMessage(),
+						0,
+						$e
+					);
+				}
+
+				// Only include entities that have detected changes
+				if ($this->hasChanges($changes)) {
+					$allChanges[$tableName] = $changes;
+				}
+			}
+
+			// Cache the results if caching is enabled
+			if ($useCache) {
+				$this->analysisCache[$cacheKey] = $allChanges;
+			}
+
+			return $allChanges;
 		}
 		
 		/**

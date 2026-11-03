@@ -37,6 +37,9 @@
 		 * Reads column definitions for a table via `PRAGMA table_info()`.
 		 * @param string $tableName
 		 * @return array<string, ColumnDefinition>
+		 * @throws \RuntimeException If a column's declared type isn't one
+		 *          TypeMapper::sqliteType() recognizes — the message names
+		 *          the table and column it came from.
 		 */
 		public function getColumns(string $tableName): array {
 			$quotedTable = $this->adapter->escapeIdentifier($tableName);
@@ -53,7 +56,11 @@
 			$result = [];
 
 			foreach ($rows as $row) {
-				$type = NativeColumnTypeMapper::sqliteType($row['type']);
+				try {
+					$type = NativeColumnTypeMapper::sqliteType($row['type']);
+				} catch (\RuntimeException $e) {
+					throw new \RuntimeException("Column '{$tableName}.{$row['name']}': " . $e->getMessage(), 0, $e);
+				}
 				$precisionScale = $type === 'decimal' ? $this->parseSqliteNumericPrecisionScale($row['type']) : new NumericPrecisionScale(null, null);
 				$isIdentity = $identityByColumn[$row['name']] ?? false;
 
