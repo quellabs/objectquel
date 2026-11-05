@@ -7,6 +7,7 @@
 	use Quellabs\ObjectQuel\DatabaseAdapter\ColumnDefinition;
 	use Quellabs\ObjectQuel\DatabaseAdapter\DatabaseAdapter;
 	use Quellabs\ObjectQuel\DatabaseAdapter\ForeignKeyDefinition;
+	use Quellabs\ObjectQuel\Exception\QuelException;
 	use Quellabs\ObjectQuel\ObjectQuel\Helpers\SqlDialect\SqlIdentifierQuoter;
 	use Quellabs\ObjectQuel\ObjectQuel\Helpers\SqlDialect\SqlDialectSyntax;
 	use Quellabs\ObjectQuel\Sculpt\SculptTypes;
@@ -102,6 +103,8 @@
 		 * @param AllChanges $allChanges Table-keyed change descriptors (see class docblock)
 		 * @return array{success: bool, message: string, path?: string}
 		 * @throws \RuntimeException If a non-nullable added column has no safe backfill value (see buildAddColumnOp())
+		 * @throws QuelException If a modified column would need retyping on SQLite, which has no
+		 *          ALTER COLUMN (see assertRetypeSupported())
 		 */
 		public function generateMigrationFile(array $allChanges): array {
 			if (empty($allChanges)) {
@@ -505,6 +508,7 @@ PHP;
 				}
 
 				foreach ($changes['modified'] as $columnName => $modification) {
+					$this->assertRetypeSupported($tableName, $columnName);
 					$ops[] = 'retype ' . $this->renderColumnDefinition($columnName, $modification['to']);
 				}
 
@@ -559,6 +563,7 @@ PHP;
 				}
 
 				foreach ($changes['modified'] as $columnName => $modification) {
+					$this->assertRetypeSupported($tableName, $columnName);
 					$ops[] = 'retype ' . $this->renderColumnDefinition($columnName, $modification['from']);
 				}
 
@@ -585,6 +590,30 @@ PHP;
 			}
 
 			return $ops;
+		}
+
+		/**
+		 * Refuses to emit a `retype` op for SQLite before a broken migration
+		 * file ever gets written. QuelToSQLAlter::compileRetypeColumn()
+		 * already refuses the same operation, but only once `quel:migrate`
+		 * tries to apply it — by then make:migrations has already reported
+		 * success and written a file that's guaranteed to fail the moment
+		 * anyone runs it. Checking here instead fails the CLI command
+		 * itself, with no file written, at the point the problem is
+		 * actually known.
+		 * @param string $tableName
+		 * @param string $columnName
+		 * @throws QuelException If the target platform is SQLite
+		 */
+		private function assertRetypeSupported(string $tableName, string $columnName): void {
+			if ($this->platform->getDatabaseType() === 'sqlite') {
+				throw new QuelException(
+					"Cannot generate a migration for '{$tableName}.{$columnName}': SQLite has no ALTER COLUMN — " .
+					"changing a column's type or constraints requires rebuilding the table, which make:migrations " .
+					"does not attempt. This column needs a hand-written migration or a manual table rebuild instead.",
+					'alter_unsupported'
+				);
+			}
 		}
 
 		/**
