@@ -95,9 +95,6 @@
 				'entity_path'           => '',
 				'proxy_namespace'       => 'Quellabs\\ObjectQuel\\Proxy\\Runtime',
 				'proxy_path'            => '',
-				// Must match canvas-objectquel\ConfigurationServiceProvider's own
-				// default exactly, or a Sculpt command (e.g. quel:clear-cache) silently
-				// operates on a directory the running app never actually caches into.
 				'metadata_cache_path'   => ComposerUtils::getProjectRoot() . "/storage/objectquel/annotations",
 				'annotation_source'     => \Quellabs\AnnotationReader\Configuration::SOURCE_DOCBLOCKS,
 				'generate_foreign_keys' => false,
