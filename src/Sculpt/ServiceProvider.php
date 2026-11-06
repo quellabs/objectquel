@@ -95,7 +95,7 @@
 				'entity_path'           => '',
 				'proxy_namespace'       => 'Quellabs\\ObjectQuel\\Proxy\\Runtime',
 				'proxy_path'            => '',
-				'metadata_cache_path'   => ComposerUtils::getProjectRoot() . "/storage/annotations",
+				'metadata_cache_path'   => ComposerUtils::getProjectRoot() . "/storage/objectquel/annotations",
 				'annotation_source'     => \Quellabs\AnnotationReader\Configuration::SOURCE_DOCBLOCKS,
 				'generate_foreign_keys' => false,
 			];
