@@ -128,6 +128,7 @@
 				$annotationReaderConfiguration->setUseAnnotationCache($configuration->useMetadataCache());
 				$annotationReaderConfiguration->setAnnotationCachePath($configuration->getMetadataCachePath());
 				$annotationReaderConfiguration->setSource($configuration->getAnnotationSource());
+				$annotationReaderConfiguration->setDebugMode($configuration->getDevelopmentMode());
 				$this->annotationReader = new AnnotationReader($annotationReaderConfiguration);
 				AnnotationReaderLocator::setInstance($this->annotationReader, 'objectquel');
 			}

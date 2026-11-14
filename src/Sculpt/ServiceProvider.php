@@ -116,6 +116,7 @@
 			$configuration->setMetadataCachePath($this->getConfigValueAsString('metadata_cache_path', $defaults['metadata_cache_path']));
 			$configuration->setAnnotationSource($this->getConfigValueAsString('annotation_source', $defaults['annotation_source']));
 			$configuration->setUseMetadataCache(!empty($this->getConfigValueAsString('metadata_cache_path', $defaults['metadata_cache_path'])));
+			$configuration->setDevelopmentMode($this->getConfigValueAsBool('development_mode', false));
 			$configuration->setGenerateForeignKeys($this->getConfigValueAsBool('generate_foreign_keys', $defaults['generate_foreign_keys']));
 			$configuration->setCollation($this->getConfigValueAsString('collation', '') ?: null);
 			$configuration->setDefaultWindowSize($this->getConfigValueAsInt('default_window_size', 0) ?: null);
