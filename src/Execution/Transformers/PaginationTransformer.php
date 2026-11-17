@@ -455,9 +455,13 @@
 				$this->connection->getRoutineSchema()
 			);
 
+			// Convert query to SQL
 			$sql = $quelToSQL->convertToSQL($retrieve);
-
+			
+			// Apply parameters
 			$parameters = $stringKeyedParameters;
+
+			// Return the SQL
 			return $sql;
 		}
 
