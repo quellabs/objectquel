@@ -70,26 +70,80 @@
 			// Collect all AstSearch nodes anywhere in the WHERE clause tree
 			$collector = new CollectNodes(AstSearch::class);
 			$conditions->accept($collector);
-			
+
+			$searchNodes = $collector->getCollectedNodes();
+
+			if (empty($searchNodes)) {
+				return;
+			}
+
+			// How many times each named :parameter appears anywhere in the query
+			// (WHERE, HAVING, SORT, SELECT values, and every search()'s own search
+			// string) — needed below to tell whether a search()'s own :parameter is
+			// safe to unbind once consumed, or whether some other part of the query
+			// (a plain comparison, or another search() reusing the same name) still
+			// needs it bound.
+			$parameterUsageCounts = $this->countParameterUsages($query, $searchNodes);
+
 			// Replace each collected node in-place via its parent reference.
 			// CollectNodes preserves document order, so replacements do not
 			// interfere with nodes that have not yet been processed.
-			foreach ($collector->getCollectedNodes() as $searchNode) {
+			foreach ($searchNodes as $searchNode) {
 				// Fetch the parent
 				$parent = $searchNode->getParent();
-				
+
 				// AstSearch always appears inside a WHERE clause, so it always has a
 				// parent. A null parent here means the AST was constructed incorrectly.
 				if ($parent === null) {
 					throw new \LogicException('AstSearch node has no parent; cannot replace it in the tree.');
 				}
-				
+
 				// Generate replacement
-				$replacement = $this->rewriteSearch($searchNode, $parameters, $log);
-				
+				$replacement = $this->rewriteSearch($searchNode, $parameters, $parameterUsageCounts, $log);
+
 				// Replace the node
 				AstNodeReplacer::replaceChild($parent, $searchNode, $replacement);
 			}
+		}
+
+		/**
+		 * Counts how many AstParameter nodes with each name appear anywhere in the
+		 * query — ranges excluded, since a :parameter cannot appear in a FROM/JOIN
+		 * clause. Used to tell whether a search()'s own search-string parameter is
+		 * referenced only by that search() (safe to unbind once consumed) or also
+		 * used elsewhere in the query (must stay bound for that other use).
+		 *
+		 * NodeSearch::accept() deliberately does not recurse into its own
+		 * $searchString — a search() node's embedded :parameter is otherwise
+		 * invisible to this collector, so every search node's own search-string
+		 * parameter is counted explicitly below.
+		 *
+		 * @param AstRetrieve $query
+		 * @param AstSearch[] $searchNodes Every search() node found in $query's WHERE clause
+		 * @return array<string, int>
+		 */
+		private function countParameterUsages(AstRetrieve $query, array $searchNodes): array {
+			$collector = new CollectNodes(AstParameter::class);
+			$query->acceptWithoutRanges($collector);
+
+			$counts = [];
+
+			foreach ($collector->getCollectedNodes() as $parameter) {
+				/**
+				 * @var AstParameter $parameter
+				 */
+				$counts[$parameter->getName()] = ($counts[$parameter->getName()] ?? 0) + 1;
+			}
+
+			foreach ($searchNodes as $searchNode) {
+				$searchString = $searchNode->getSearchString();
+
+				if ($searchString instanceof AstParameter) {
+					$counts[$searchString->getName()] = ($counts[$searchString->getName()] ?? 0) + 1;
+				}
+			}
+
+			return $counts;
 		}
 		
 		// =========================================================================
@@ -105,11 +159,13 @@
 		 *
 		 * @param AstSearch $search
 		 * @param array<string, mixed> $parameters
+		 * @param array<string, int> $parameterUsageCounts
+		 * @param PlanLogInterface $log
 		 * @return AstSearchInMemory|AstSearchFullText|AstSearchLike
 		 * @throws EntityResolutionException
 		 * @throws QuelException
 		 */
-		private function rewriteSearch(AstSearch $search, array $parameters, PlanLogInterface $log): AstSearchInMemory|AstSearchFullText|AstSearchLike {
+		private function rewriteSearch(AstSearch $search, array $parameters, array $parameterUsageCounts, PlanLogInterface $log): AstSearchInMemory|AstSearchFullText|AstSearchLike {
 			$identifiers = $search->getIdentifiers();
 			$rangeName = $identifiers[0]->getRange()?->getName() ?? 'unknown';
 			$columns = implode(', ', array_map(fn($id) => ($id->getNext()?->getName() ?? $id->getName()), $identifiers));
@@ -138,7 +194,7 @@
 					$rangeName
 				);
 				
-				return $this->buildLikeNode($search, $parameters);
+				return $this->buildLikeNode($search, $parameters, $parameterUsageCounts);
 			}
 		}
 		
@@ -174,28 +230,45 @@
 		 * rendered SQL are stable and unique across multiple search() calls in the
 		 * same query.
 		 *
+		 * When the search string is an AstParameter used nowhere else in the query,
+		 * its name is recorded as "exclusive" so the executor can unbind it once
+		 * consumed: the rewritten LIKE chain binds its own fresh parameters instead,
+		 * and the original name no longer corresponds to any placeholder in the
+		 * rendered SQL — left bound, it would be an orphaned value with no matching
+		 * token, which some drivers reject outright (e.g. PDO's "number of bound
+		 * variables does not match number of tokens").
+		 *
 		 * @param AstSearch $search
 		 * @param array<string, mixed> $parameters
+		 * @param array<string, int> $parameterUsageCounts
 		 * @return AstSearchLike
 		 * @throws QuelException
 		 */
-		private function buildLikeNode(AstSearch $search, array $parameters): AstSearchLike {
+		private function buildLikeNode(AstSearch $search, array $parameters, array $parameterUsageCounts): AstSearchLike {
 			// Generate a unique key now so LIKE parameter names are stable and
 			// consistent across any number of re-renders of the same plan.
 			$searchKey = uniqid('inject_');
-			
+			$searchString = $search->getSearchString();
+
 			// Pre-parse only when the search string is a known literal.
 			// AstParameter values are unknown until execution.
-			$parsed = $search->getSearchString() instanceof AstString
+			$parsed = $searchString instanceof AstString
 				? $search->parseSearchData($parameters)
 				: null;
-			
+
+			$exclusiveParameterName = null;
+
+			if ($searchString instanceof AstParameter && ($parameterUsageCounts[$searchString->getName()] ?? 0) === 1) {
+				$exclusiveParameterName = $searchString->getName();
+			}
+
 			// Return the replacement AstSearchLike
 			return new AstSearchLike(
 				$search->getIdentifiers(),
-				$search->getSearchString(),
+				$searchString,
 				$parsed,
-				$searchKey
+				$searchKey,
+				$exclusiveParameterName
 			);
 		}
 		

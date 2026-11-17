@@ -426,13 +426,21 @@
 
 		/**
 		 * Convert AstRetrieve node to SQL
+		 *
+		 * $parameters is taken by reference, and reassigned to the re-keyed copy
+		 * once SQL generation finishes, so a caller's array reflects whatever that
+		 * generation step added, renamed, or removed (e.g. search()'s LIKE
+		 * rendering binds fresh inject_* values and may drop its own original
+		 * :parameter) — otherwise the caller would execute the returned SQL
+		 * against bindings that no longer match its placeholders.
+		 *
 		 * @param AstRetrieve $retrieve The AST to convert
 		 * @param array<string, mixed> $parameters Query parameters (passed by reference)
 		 * @return string The generated SQL query
 		 * @throws EntityResolutionException
 		 * @throws QuelException
 		 */
-		private function convertToSQL(AstRetrieve $retrieve, array $parameters): string {
+		private function convertToSQL(AstRetrieve $retrieve, array &$parameters): string {
 			// Convert all keys to strings
 			$stringKeyedParameters = [];
 			foreach ($parameters as $key => $value) {
@@ -447,7 +455,10 @@
 				$this->connection->getRoutineSchema()
 			);
 
-			return $quelToSQL->convertToSQL($retrieve);
+			$sql = $quelToSQL->convertToSQL($retrieve);
+
+			$parameters = $stringKeyedParameters;
+			return $sql;
 		}
 
 		/**

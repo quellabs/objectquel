@@ -29,22 +29,34 @@
 		 * @var string
 		 */
 		private string $searchKey;
-		
+
+		/**
+		 * Name of the original :parameter this node's search string consumed, set only
+		 * when planning confirmed no other part of the query still references that same
+		 * name. Null when the search string was a literal, or when the name is shared
+		 * with another usage elsewhere in the query and must stay bound for it.
+		 * @var string|null
+		 */
+		private ?string $exclusiveParameterName;
+
 		/**
 		 * @param AstIdentifier[]        $identifiers
 		 * @param AstString|AstParameter $searchString
 		 * @param array{or_terms: string[], and_terms: string[], not_terms: string[]}|null $parsed
 		 * @param string                 $searchKey
+		 * @param string|null            $exclusiveParameterName
 		 */
 		public function __construct(
 			array                  $identifiers,
 			AstString|AstParameter $searchString,
 			?array                 $parsed,
-			string                 $searchKey
+			string                 $searchKey,
+			?string                $exclusiveParameterName = null
 		) {
 			parent::__construct($identifiers, $searchString);
-			$this->parsed    = $parsed;
-			$this->searchKey = $searchKey;
+			$this->parsed                 = $parsed;
+			$this->searchKey              = $searchKey;
+			$this->exclusiveParameterName = $exclusiveParameterName;
 		}
 		
 		/**
@@ -66,11 +78,21 @@
 		}
 		
 		/**
+		 * Returns the name of the original :parameter this node's search string
+		 * consumed when it is safe to unbind after rendering, or null when the
+		 * search string was a literal or that name is still used elsewhere.
+		 * @return string|null
+		 */
+		public function getExclusiveParameterName(): ?string {
+			return $this->exclusiveParameterName;
+		}
+
+		/**
 		 * Deep clone this node and all its children
 		 * @return static
 		 */
 		public function deepClone(): static {
 			// @phpstan-ignore-next-line new.static
-			return new static($this->cloneArray($this->identifiers), $this->searchString->deepClone(), $this->parsed, $this->searchKey);
+			return new static($this->cloneArray($this->identifiers), $this->searchString->deepClone(), $this->parsed, $this->searchKey, $this->exclusiveParameterName);
 		}
 	}

@@ -360,20 +360,28 @@
 			// getParsed() returns null when the search string was a runtime parameter
 			// at planning time; parse it now that the value is available.
 			$parsed = $search->getParsed() ?? $search->parseSearchData($this->parameters);
-			
+
 			$conditions = [];
-			
+
 			foreach ($search->getIdentifiers() as $identifier) {
 				// Build LIKE / NOT LIKE conditions for this column
 				$columnName = $this->buildColumnName($identifier);
 				$fieldConditions = $this->buildFieldConditions($columnName, $parsed, $search->getSearchKey());
-				
+
 				// Group the conditions for this column with AND, then collect them
 				if (!empty($fieldConditions)) {
 					$conditions[] = '(' . implode(' AND ', $fieldConditions) . ')';
 				}
 			}
-			
+
+			// The rewritten LIKE chain above binds its own fresh inject_* parameters;
+			// the original :parameter no longer corresponds to any placeholder in the
+			// rendered SQL. Planning already confirmed nothing else in the query still
+			// needs it, so drop it rather than leave it bound with nothing to bind to.
+			if ($search->getExclusiveParameterName() !== null) {
+				unset($this->parameters[$search->getExclusiveParameterName()]);
+			}
+
 			return '(' . implode(' OR ', $conditions) . ')';
 		}
 		
