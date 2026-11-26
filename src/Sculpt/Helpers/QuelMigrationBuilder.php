@@ -24,9 +24,12 @@
 	 * index changes on an existing table become one combined `alter
 	 * tableName (add ..., drop ..., retype ..., primary key (...), add
 	 * index ..., drop index ...)` statement — all real grammar the
-	 * executor already knows how to compile. Foreign keys are a deliberate
-	 * second pass over every table, after every table/column/index change,
-	 * so a table a new FK references is guaranteed to already exist.
+	 * executor already knows how to compile. Added and modified foreign
+	 * keys are a deliberate second pass over every table, after every
+	 * table/column/index change, so a table a new FK references is
+	 * guaranteed to already exist. A deleted foreign key is dropped before
+	 * those changes instead, so a column it constrains can be dropped in
+	 * the same migration.
 	 *
 	 * `enum(...)` is always emitted verbatim — QuelToSQLCreate/QuelToSQLAlter
 	 * pick native ENUM vs. VARCHAR at DDL-compile time — and 'json' is
@@ -170,6 +173,7 @@
 			$up = [];
 			$downColumnsAndIndexes = [];
 			$downForeignKeys = [];
+			$downRestoreDeletedForeignKeys = [];
 			$downDropTables = [];
 			$postRestoreForeignKeys = [];
 			$downPostRestoreForeignKeys = [];
@@ -237,8 +241,21 @@
 				}
 			}
 
-			// Pass 1: tables, columns, and indexes. Foreign keys are deliberately
-			// left for pass 2 below — see class docblock.
+			// Deleted foreign keys go first: engines that enforce named foreign
+			// keys reject dropping a column (or its backing index) while a
+			// constraint still uses it. down() restores them only after the
+			// columns they constrain are back.
+			foreach ($normalized as $tableName => $changes) {
+				$deletedForeignKeys = $changes['foreignKeys']['deleted'];
+
+				if (!empty($deletedForeignKeys)) {
+					$up[] = $this->queryStatement($this->buildAlterForeignKeysStatement($tableName, $this->buildDropForeignKeyOps($deletedForeignKeys)));
+					$downRestoreDeletedForeignKeys[] = $this->queryStatement($this->buildAlterForeignKeysStatement($tableName, $this->buildAddForeignKeyOps($deletedForeignKeys)));
+				}
+			}
+
+			// Pass 1: tables, columns, and indexes. Added and modified foreign
+			// keys are deliberately left for pass 2 below — see class docblock.
 			foreach ($normalized as $tableName => $changes) {
 				if ($changes['table_not_exists']) {
 					[$embeddedIndexes, $deferredIndexes] = $this->splitIndexesForNewTable($changes['indexes']['added']);
@@ -289,7 +306,7 @@
 				}
 			}
 
-			// Pass 2: foreign keys, once every table (new or existing) is guaranteed to exist.
+			// Pass 2: added and modified foreign keys, once every table (new or existing) is guaranteed to exist.
 			foreach ($normalized as $tableName => $changes) {
 				$foreignKeys = $changes['foreignKeys'];
 
@@ -311,11 +328,6 @@
 						[...$this->buildDropForeignKeyOps($entitySide), ...$this->buildAddForeignKeyOps($databaseSide)]
 					));
 				}
-
-				if (!empty($foreignKeys['deleted'])) {
-					$up[] = $this->queryStatement($this->buildAlterForeignKeysStatement($tableName, $this->buildDropForeignKeyOps($foreignKeys['deleted'])));
-					$downForeignKeys[] = $this->queryStatement($this->buildAlterForeignKeysStatement($tableName, $this->buildAddForeignKeyOps($foreignKeys['deleted'])));
-				}
 			}
 
 			// Pass 0's restore step runs only now, after every table/column/
@@ -328,13 +340,15 @@
 			// key they depend on reverts), then foreign keys, then column/
 			// index changes — a column or table this migration constrains
 			// can't be altered or dropped while that constraint still exists
-			// — then the tables this migration created, in reverse of
-			// creation order, and finally pass 0's original drop, undone
+			// — then the foreign keys up() deleted, now that their columns
+			// are back, then the tables this migration created, in reverse
+			// of creation order, and finally pass 0's original drop, undone
 			// last since it needs the primary key already back in its
 			// original shape.
 			$down = [
 				...$downForeignKeys,
 				...$downColumnsAndIndexes,
+				...$downRestoreDeletedForeignKeys,
 				...array_reverse($downDropTables),
 				...$downPostRestoreForeignKeys,
 			];
