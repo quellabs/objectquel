@@ -9,8 +9,11 @@
 	use Quellabs\ObjectQuel\Exception\EntityResolutionException;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstAggregate;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstBinaryOperator;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstCount;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstCountU;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstExpression;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstIdentifier;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstSubquery;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstUnaryOperation;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\NodeBinary;
 	use Quellabs\ObjectQuel\ObjectQuel\AstInterface;
@@ -93,6 +96,19 @@
 			// regardless of the argument type, and they declare that via getReturnType().
 			// No-argument sequence functions (rank, dense_rank, row_number) have no
 			// identifier to recurse into; they fall through to their own getReturnType().
+			if ($ast instanceof AstCount || $ast instanceof AstCountU) {
+				return $ast->getReturnType();
+			}
+
+			// A scalar or window subquery yields the value of the aggregate it wraps.
+			// EXISTS and CASE WHEN subqueries yield a truth value instead.
+			if ($ast instanceof AstSubquery) {
+				$aggregation = $ast->getAggregation();
+				$yieldsAggregate = in_array($ast->getType(), [AstSubquery::TYPE_SCALAR, AstSubquery::TYPE_WINDOW], true);
+
+				return $yieldsAggregate && $aggregation !== null ? $this->inferReturnType($aggregation) : $ast->getReturnType();
+			}
+
 			if ($ast instanceof AstAggregate) {
 				$identifier = $ast->getIdentifier();
 				return $identifier !== null ? $this->inferReturnType($identifier) : $ast->getReturnType();

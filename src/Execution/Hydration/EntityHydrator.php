@@ -11,6 +11,17 @@
 	use Quellabs\ObjectQuel\UnitOfWork;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstAlias;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstCast;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstCount;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstCountU;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstFactor;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstMax;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstMin;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstNumber;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstSubquery;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstSum;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstSumU;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstTerm;
+	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstUnaryOperation;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstRoutineCall;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstDate;
 	use Quellabs\ObjectQuel\ObjectQuel\Ast\AstIdentifier;
@@ -628,13 +639,81 @@
 				} elseif ($node instanceof AstRoutineCall && $node->getRoutineReturnType() !== null) {
 					$hydrators[$name] = $this->hydratorForRoutineCall($name, $node->getRoutineReturnType());
 				} else {
-					$hydrators[$name] = static fn(array $row) => $row[$name] ?? null;
+					$hydrators[$name] = $this->hydratorForComputedValue($name, $node);
 				}
 			}
-			
+
 			return $hydrators;
 		}
-		
+
+		/**
+		 * Builds a hydration closure for a computed value (an aggregate or arithmetic over columns).
+		 * Drivers hand such a value back in the SQL result type, e.g. MySQL returns SUM over an
+		 * integer column as a DECIMAL string, so it is converted to the type its operands determine.
+		 * A value whose type does not follow from its operands is returned as the driver delivered it.
+		 * @param string $name Result column
+		 * @param AstInterface $node The projected expression
+		 * @return ValueHydrator
+		 * @throws EntityResolutionException
+		 */
+		private function hydratorForComputedValue(string $name, AstInterface $node): \Closure {
+			$type = $this->keepsOperandType($node) ? $this->resolveType->inferReturnType($node) : null;
+
+			if ($type === 'int' || $type === 'integer') {
+				return static function (array $row) use ($name): mixed {
+					$raw = $row[$name] ?? null;
+					return is_numeric($raw) ? (int)$raw : $raw;
+				};
+			}
+
+			if ($type === 'float') {
+				return static function (array $row) use ($name): mixed {
+					$raw = $row[$name] ?? null;
+					return is_numeric($raw) ? (float)$raw : $raw;
+				};
+			}
+
+			return static fn(array $row) => $row[$name] ?? null;
+		}
+
+		/**
+		 * Returns true if the value of an expression has the type inferred from its operands on
+		 * every platform: columns, number literals, COUNT, SUM/MIN/MAX (also when planned as a
+		 * scalar or window subquery) and +, - and * over those.
+		 * Division and AVG are left out because the platform decides whether integer operands give
+		 * an integer or a fractional result; any other node has no operand type to rely on.
+		 * @param AstInterface $node
+		 * @return bool
+		 */
+		private function keepsOperandType(AstInterface $node): bool {
+			if ($node instanceof AstIdentifier || $node instanceof AstNumber || $node instanceof AstCount || $node instanceof AstCountU) {
+				return true;
+			}
+
+			if ($node instanceof AstSum || $node instanceof AstSumU || $node instanceof AstMin || $node instanceof AstMax) {
+				$identifier = $node->getIdentifier();
+
+				return $identifier !== null && $this->keepsOperandType($identifier);
+			}
+
+			if ($node instanceof AstSubquery) {
+				$aggregation = $node->getAggregation();
+				$yieldsAggregate = in_array($node->getType(), [AstSubquery::TYPE_SCALAR, AstSubquery::TYPE_WINDOW], true);
+
+				return $yieldsAggregate && $aggregation !== null && $this->keepsOperandType($aggregation);
+			}
+
+			if ($node instanceof AstUnaryOperation) {
+				return $this->keepsOperandType($node->getExpression());
+			}
+
+			if ($node instanceof AstTerm || ($node instanceof AstFactor && $node->getOperator() === '*')) {
+				return $this->keepsOperandType($node->getLeft()) && $this->keepsOperandType($node->getRight());
+			}
+
+			return false;
+		}
+
 		/**
 		 * Builds a hydration closure for a cast expression.
 		 * The inner type is resolved once here so the closure pays no inference cost per row.
