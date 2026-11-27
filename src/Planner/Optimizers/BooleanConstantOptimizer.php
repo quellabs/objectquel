@@ -144,9 +144,11 @@
 			
 			// Identify which side (if any) is the boolean constant
 			if ($left instanceof AstBool) {
-				[$constant, $other] = [$left, $right];
+				$constant = $left;
+				$other = $right;
 			} elseif ($right instanceof AstBool) {
-				[$constant, $other] = [$right, $left];
+				$constant = $right;
+				$other = $left;
 			} else {
 				return null;
 			}
@@ -186,7 +188,9 @@
 			// Canonicalize: put the constant on the right so the rules below only
 			// need to handle one orientation instead of two.
 			if ($leftIsBool && !$rightIsBool) {
-				[$left, $right] = [$right, $left];
+				$constant = $left;
+				$left = $right;
+				$right = $constant;
 			}
 			
 			/** @var AstBool $right */
