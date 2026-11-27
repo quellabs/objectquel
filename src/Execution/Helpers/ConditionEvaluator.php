@@ -141,21 +141,15 @@
 					$operator = $ast->getOperator();
 					$left = self::evaluate($ast->getLeft(), $contents, $row, $initialParams);
 
-					// Equality picks its matching strategy from the right-hand AST
-					if (in_array($operator, ['=', '<>', '!='], true)) {
-						$equals = self::evaluateEquals($left, $ast->getRight(), $contents, $row, $initialParams);
-						return $operator === '=' ? $equals : !$equals;
-					}
-
-					$right = self::evaluate($ast->getRight(), $contents, $row, $initialParams);
-
-					// Apply the ordering comparison operator
+					// Equality picks its matching strategy from the right-hand AST; ordering compares evaluated values
 					return match ($operator) {
-						'<' => $left < $right,
-						'>' => $left > $right,
-						'<=' => $left <= $right,
-						'>=' => $left >= $right,
-						default => throw new QuelException("Unknown operator {$operator}"),
+						'='        => self::evaluateEquals($left, $ast->getRight(), $contents, $row, $initialParams),
+						'<>', '!=' => !self::evaluateEquals($left, $ast->getRight(), $contents, $row, $initialParams),
+						'<'        => $left < self::evaluate($ast->getRight(), $contents, $row, $initialParams),
+						'>'        => $left > self::evaluate($ast->getRight(), $contents, $row, $initialParams),
+						'<='       => $left <= self::evaluate($ast->getRight(), $contents, $row, $initialParams),
+						'>='       => $left >= self::evaluate($ast->getRight(), $contents, $row, $initialParams),
+						default    => throw new QuelException("Unknown operator {$operator}"),
 					};
 				
 				// Handle logical operators (AND, OR) for boolean conditions
