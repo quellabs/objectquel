@@ -43,8 +43,10 @@
 			$this->escapeMapSingleQuote = [
 				'\'' => "'",
 				'\\' => "\\",
+				'*'  => "*",
+				'?'  => "?",
 			];
-			
+
 			$this->escapeMapDoubleQuote = [
 				'a'  => "\a",
 				'b'  => "\b",
@@ -56,6 +58,8 @@
 				'"'  => "\"",
 				'\\' => "\\",
 				"'"  => "'",
+				'*'  => "*",
+				'?'  => "?",
 			];
 	        
 	        $this->keywords = [
@@ -223,7 +227,8 @@
             if (($this->string[$this->pos] == '"') || ($this->string[$this->pos] == '\'')) {
 				$firstChar = $this->string[$this->pos];
                 $string = "";
-    
+				$wildcardOffsets = [];
+
 				while (++$this->pos < $this->length && $this->string[$this->pos] !== $firstChar) {
 					
 					// Behandel een niet afgesloten string op basis van een enter
@@ -255,6 +260,11 @@
 						}
 					}
 					
+					// Unescaped * and ? are wildcards in comparisons; record where they sit in the value
+					if ($this->string[$this->pos] === '*' || $this->string[$this->pos] === '?') {
+						$wildcardOffsets[] = strlen($string);
+					}
+
 					// Voeg het karakter toe
 					$string .= $this->string[$this->pos];
                 }
@@ -262,9 +272,13 @@
 				if ($this->pos >= $this->length) {
 					throw new LexerException("Unexpected end of data");
 				}
-    
+
                 ++$this->pos;
-                return new Token(Token::String, $string, $this->lineNumber, ['char' => $firstChar]);
+
+				return new Token(Token::String, $string, $this->lineNumber, [
+					'char'            => $firstChar,
+					'wildcardOffsets' => $wildcardOffsets
+				]);
             }
 
 			// compiler directive

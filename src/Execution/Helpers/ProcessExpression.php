@@ -68,21 +68,6 @@
 		private const int COMPARISON_PRECEDENCE = 3;
 
 		/**
-		 * Wildcard character mappings for converting user-friendly patterns to SQL LIKE syntax
-		 *
-		 * Maps common wildcard characters to their SQL LIKE equivalents:
-		 * - '%' and '_' are escaped to prevent conflicts with existing SQL wildcards
-		 * - '*' becomes '%' (matches any sequence of characters)
-		 * - '?' becomes '_' (matches exactly one character)
-		 */
-		private const array WILDCARD_MAPPINGS = [
-			'%' => '\\%',   // Escape existing SQL wildcards to treat them as literals
-			'_' => '\\_',   // Escape existing SQL wildcards to treat them as literals
-			'*' => '%',     // Convert asterisk to SQL any-sequence wildcard
-			'?' => '_'      // Convert question mark to SQL single-character wildcard
-		];
-		
-		/**
 		 * Regular expression patterns for runtime type checking
 		 *
 		 * These patterns validate string representations of different numeric types:
@@ -991,34 +976,24 @@
 		}
 		
 		/**
-		 * Handle wildcard string patterns for SQL LIKE conversion.
-		 *
-		 * Returns the LIKE expression if the string contains wildcard characters (* or ?),
-		 * or null if no wildcards are present (letting standard processing handle it).
-		 *
+		 * Converts a comparison against a string with unescaped * or ? wildcards into LIKE / NOT LIKE.
+		 * Returns null when the string has no unescaped wildcards, so it compiles as plain equality.
 		 * @param AstString $rightAst The string containing potential wildcards
 		 * @param NodeBinary $ast The full expression
 		 * @param string $operator The comparison operator (= or <>)
 		 * @return string|null The LIKE expression, or null if no wildcards found
 		 */
 		private function handleWildcardString(AstString $rightAst, NodeBinary $ast, string $operator): ?string {
-			$stringValue = $rightAst->getValue();
-			
-			if (!str_contains($stringValue, '*') && !str_contains($stringValue, '?')) {
+			if (!$rightAst->hasWildcards()) {
 				return null;
 			}
-			
-			$leftResult = $this->operandSql($ast->getLeft(), self::OPERATOR_PRECEDENCE[$operator] ?? null, false, false);
 
-			$stringValue = str_replace(
-				array_keys(self::WILDCARD_MAPPINGS),
-				array_values(self::WILDCARD_MAPPINGS),
-				$stringValue
-			);
-			
+			$leftResult = $this->operandSql($ast->getLeft(), self::OPERATOR_PRECEDENCE[$operator] ?? null, false, false);
 			$likeOperator = $operator === '=' ? ' LIKE ' : ' NOT LIKE ';
-			
-			return $leftResult . $likeOperator . $this->visitNodeAndReturnSQL(new AstString($stringValue, '"'));
+			$pattern = $this->identifierQuoter->quoteStringLiteral(WildcardPattern::toSqlLike($rightAst));
+			$escapeChar = $this->identifierQuoter->quoteStringLiteral(WildcardPattern::ESCAPE_CHAR);
+
+			return "{$leftResult}{$likeOperator}{$pattern} ESCAPE {$escapeChar}";
 		}
 		
 		/**

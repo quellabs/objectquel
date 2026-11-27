@@ -160,6 +160,31 @@
 		}
 		
 		/**
+		 * Returns the byte offsets of unescaped * and ? wildcards in a String token's value.
+		 * @return int[]
+		 * @throws \LogicException if the lexer stored malformed offsets
+		 */
+		public function getWildcardOffsets(): array {
+			$offsets = $this->extraData['wildcardOffsets'] ?? [];
+
+			if (!is_array($offsets)) {
+				throw new \LogicException('Token wildcard offsets must be a list of integers');
+			}
+
+			$result = [];
+
+			foreach ($offsets as $offset) {
+				if (!is_int($offset)) {
+					throw new \LogicException('Token wildcard offsets must be a list of integers');
+				}
+
+				$result[] = $offset;
+			}
+
+			return $result;
+		}
+
+		/**
 		 * Returns the (optional) extra data for this token
 		 * @return array<string, mixed>
 		 */

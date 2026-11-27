@@ -138,12 +138,19 @@
 				
 				// Handle comparison expressions (e.g., a = b, x > y)
 				case AstExpression::class:
-					// Evaluate both sides uniformly — AstRegExp evaluates to a RegExpValue,
-					// which evaluateEquals() detects to apply the right matching strategy.
+					// AstRegExp evaluates to a RegExpValue, which evaluateEquals() detects to apply a regexp match.
 					$operator = $ast->getOperator();
 					$left = self::evaluate($ast->getLeft(), $contents, $row, $initialParams);
-					$right = self::evaluate($ast->getRight(), $contents, $row, $initialParams);
-					
+					$rightAst = $ast->getRight();
+
+					// String literal: its parsed wildcard offsets decide between pattern match and plain equality
+					if ($rightAst instanceof AstString && in_array($operator, ['=', '<>', '!='], true)) {
+						$matches = self::evaluateStringLiteralEquals($left, $rightAst);
+						return $operator === '=' ? $matches : !$matches;
+					}
+
+					$right = self::evaluate($rightAst, $contents, $row, $initialParams);
+
 					// Apply the appropriate comparison operator
 					return match ($operator) {
 						'=' => self::evaluateEquals($left, $right),
@@ -365,18 +372,8 @@
 		}
 		
 		/**
-		 * Evaluates equality between two values, handling regexp and wildcard patterns.
-		 *
-		 * Three matching strategies, applied in order:
-		 *   1. RegExpValue (produced by evaluating AstRegExp): apply preg_match() with
-		 *      the stored PCRE pattern and flags.
-		 *   2. String containing * or ?: apply fnmatch() case-insensitively to mirror
-		 *      SQL LIKE wildcard behaviour (* = any sequence, ? = single character).
-		 *   3. Anything else: loose equality (==), matching SQL's implicit type coercion.
-		 *
-		 * Called by the AstExpression handler for both = and <> operators;
-		 * the caller negates the result for <>.
-		 *
+		 * Evaluates equality for a non-literal right side: regexp match for a RegExpValue, otherwise loose equality.
+		 * Wildcards only apply to string literals (see evaluateStringLiteralEquals()), matching the SQL path.
 		 * @param mixed $left The evaluated left-hand side value.
 		 * @param mixed $right The evaluated right-hand side value (may be a RegExpValue).
 		 * @return bool
@@ -386,15 +383,24 @@
 			if ($right instanceof RegExpValue) {
 				return (bool)preg_match($right->toPcre(), self::stringify($left));
 			}
-			
-			// Wildcard: right side is a string containing * or ?
-			// fnmatch() with FNM_CASEFOLD mirrors SQL LIKE case-insensitive behaviour
-			if (is_string($right) && (str_contains($right, '*') || str_contains($right, '?'))) {
-				return fnmatch($right, self::stringify($left), FNM_CASEFOLD);
-			}
-			
+
 			// Plain equality — loose comparison to match SQL's implicit type coercion
 			return $left == $right;
+		}
+
+		/**
+		 * Compares a value against a string literal; unescaped * and ? match like SQL LIKE wildcards, escaped ones literally.
+		 * @param mixed $left The evaluated left-hand side value
+		 * @param AstString $literal The right-hand side string literal
+		 * @return bool
+		 */
+		private static function evaluateStringLiteralEquals(mixed $left, AstString $literal): bool {
+			if (!$literal->hasWildcards()) {
+				return $left == $literal->getValue();
+			}
+
+			// fnmatch() with FNM_CASEFOLD mirrors SQL LIKE case-insensitive behaviour
+			return fnmatch(WildcardPattern::toFnmatch($literal), self::stringify($left), FNM_CASEFOLD);
 		}
 		
 		/**
