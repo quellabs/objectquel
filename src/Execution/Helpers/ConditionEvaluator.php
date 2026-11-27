@@ -372,8 +372,7 @@
 		}
 		
 		/**
-		 * Evaluates equality for a non-literal right side: regexp match for a RegExpValue, otherwise loose equality.
-		 * Wildcards only apply to string literals (see evaluateStringLiteralEquals()), matching the SQL path.
+		 * Evaluates equality for a non-literal right side: regexp match for a RegExpValue, otherwise loose equality (no wildcards).
 		 * @param mixed $left The evaluated left-hand side value.
 		 * @param mixed $right The evaluated right-hand side value (may be a RegExpValue).
 		 * @return bool

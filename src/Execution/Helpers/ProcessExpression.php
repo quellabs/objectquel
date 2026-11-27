@@ -976,8 +976,7 @@
 		}
 		
 		/**
-		 * Converts a comparison against a string with unescaped * or ? wildcards into LIKE / NOT LIKE.
-		 * Returns null when the string has no unescaped wildcards, so it compiles as plain equality.
+		 * Converts a comparison against a string with unescaped * or ? wildcards into LIKE / NOT LIKE; null when it has none.
 		 * @param AstString $rightAst The string containing potential wildcards
 		 * @param NodeBinary $ast The full expression
 		 * @param string $operator The comparison operator (= or <>)
