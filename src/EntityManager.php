@@ -92,8 +92,7 @@
 				? new SlowQueryLogWriter($slowQueryLog, $configuration->getSlowQueryThreshold())
 				: null;
 			
-			// The debug signal is shared by all EntityManagers on the global hub and stays registered,
-			// since other EntityManagers may still emit on it.
+			// Shared by all EntityManagers on the global hub, so it is never unregistered
 			$globalHub = SignalHubLocator::getInstance();
 			$this->debugQuerySignal = $globalHub->getSignal('debug.database.query');
 			
