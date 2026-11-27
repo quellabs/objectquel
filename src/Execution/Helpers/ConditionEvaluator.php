@@ -138,23 +138,19 @@
 				
 				// Handle comparison expressions (e.g., a = b, x > y)
 				case AstExpression::class:
-					// AstRegExp evaluates to a RegExpValue, which evaluateEquals() detects to apply a regexp match.
 					$operator = $ast->getOperator();
 					$left = self::evaluate($ast->getLeft(), $contents, $row, $initialParams);
-					$rightAst = $ast->getRight();
 
-					// String literal: its parsed wildcard offsets decide between pattern match and plain equality
-					if ($rightAst instanceof AstString && in_array($operator, ['=', '<>', '!='], true)) {
-						$matches = self::evaluateStringLiteralEquals($left, $rightAst);
-						return $operator === '=' ? $matches : !$matches;
+					// Equality picks its matching strategy from the right-hand AST
+					if (in_array($operator, ['=', '<>', '!='], true)) {
+						$equals = self::evaluateEquals($left, $ast->getRight(), $contents, $row, $initialParams);
+						return $operator === '=' ? $equals : !$equals;
 					}
 
-					$right = self::evaluate($rightAst, $contents, $row, $initialParams);
+					$right = self::evaluate($ast->getRight(), $contents, $row, $initialParams);
 
-					// Apply the appropriate comparison operator
+					// Apply the ordering comparison operator
 					return match ($operator) {
-						'=' => self::evaluateEquals($left, $right),
-						'<>', '!=' => !self::evaluateEquals($left, $right),
 						'<' => $left < $right,
 						'>' => $left > $right,
 						'<=' => $left <= $right,
@@ -372,13 +368,23 @@
 		}
 		
 		/**
-		 * Evaluates equality for a non-literal right side: regexp match for a RegExpValue, otherwise loose equality (no wildcards).
-		 * @param mixed $left The evaluated left-hand side value.
-		 * @param mixed $right The evaluated right-hand side value (may be a RegExpValue).
+		 * Evaluates equality: wildcard or exact match for a string literal, regexp match for a regexp, otherwise loose equality.
+		 * @param mixed $left The evaluated left-hand side value
+		 * @param AstInterface $rightAst The right-hand side AST node
+		 * @param list<array<string, mixed>> $contents The full row dataset (used by aggregate functions)
+		 * @param array<string, mixed> $row The data row to evaluate against
+		 * @param array<string, mixed> $initialParams Parameters that can be referenced in the AST
 		 * @return bool
+		 * @throws QuelException When the right side contains an unknown AST node or operator
 		 */
-		private static function evaluateEquals(mixed $left, mixed $right): bool {
-			// Regexp: right side evaluated to a RegExpValue carrier
+		private static function evaluateEquals(mixed $left, AstInterface $rightAst, array $contents, array $row, array $initialParams): bool {
+			if ($rightAst instanceof AstString) {
+				return self::evaluateStringLiteralEquals($left, $rightAst);
+			}
+
+			$right = self::evaluate($rightAst, $contents, $row, $initialParams);
+
+			// Regexp: AstRegExp evaluates to a RegExpValue carrier
 			if ($right instanceof RegExpValue) {
 				return (bool)preg_match($right->toPcre(), self::stringify($left));
 			}
