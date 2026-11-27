@@ -41,7 +41,6 @@
 	use Quellabs\ObjectQuel\Serialization\Serializers\SQLSerializer;
 	use Quellabs\SignalHub\Signal;
 	use Quellabs\SignalHub\SignalHub;
-	use Quellabs\SignalHub\SignalHubLocator;
 	
 	class UnitOfWork {
 		
@@ -84,7 +83,7 @@
 		 * @param EntityManager $entityManager
 		 */
 		public function __construct(EntityManager $entityManager) {
-			$this->signalHub = SignalHubLocator::getInstance();
+			$this->signalHub = $entityManager->getSignalHub();
 			$this->connection = $entityManager->getConnection();
 			$this->platformCapabilities = new PlatformCapabilities($this->connection);
 			$this->entityManager = $entityManager;
@@ -102,7 +101,7 @@
 			$this->signalPreDelete = new Signal('orm.preDelete');
 			$this->signalPostDelete = new Signal('orm.postDelete');
 			
-			// Hook the signals up
+			// Register the signals on the owning EntityManager's hub
 			$this->signalHub->registerSignal($this->signalPrePersist);
 			$this->signalHub->registerSignal($this->signalPostPersist);
 			$this->signalHub->registerSignal($this->signalPreUpdate);
@@ -119,18 +118,6 @@
 			$this->insertPersister = new InsertPersister($this, $primaryKeyFactory);
 			$this->updatePersister = new UpdatePersister($this);
 			$this->deletePersister = new DeletePersister($this);
-		}
-		
-		/**
-		 * Remove signals from hub
-		 */
-		public function __destruct() {
-			$this->signalHub->unregisterSignal($this->signalPostDelete);
-			$this->signalHub->unregisterSignal($this->signalPreDelete);
-			$this->signalHub->unregisterSignal($this->signalPostUpdate);
-			$this->signalHub->unregisterSignal($this->signalPreUpdate);
-			$this->signalHub->unregisterSignal($this->signalPostPersist);
-			$this->signalHub->unregisterSignal($this->signalPrePersist);
 		}
 		
 		/**

@@ -61,6 +61,7 @@
 		 * Properties
 		 */
 		protected Configuration $configuration;
+		/** Per-EntityManager hub for orm.* lifecycle signals */
 		protected SignalHub $signalHub;
 		protected DatabaseAdapter $connection;
 		protected UnitOfWork $unitOfWork;
@@ -77,7 +78,7 @@
 		 */
 		public function __construct(Configuration $configuration, Connection $connection) {
 			$this->configuration = $configuration;
-			$this->signalHub = SignalHubLocator::getInstance();
+			$this->signalHub = new SignalHub();
 			$this->connection = new DatabaseAdapter($connection);
 			$this->entityStore = new EntityStore($configuration);
 			$this->unitOfWork = new UnitOfWork($this);
@@ -91,27 +92,23 @@
 				? new SlowQueryLogWriter($slowQueryLog, $configuration->getSlowQueryThreshold())
 				: null;
 			
-			// Fetch Signal or create if it doesn't exist
-			$this->debugQuerySignal = $this->signalHub->getSignal('debug.database.query');
+			// The debug signal is shared by all EntityManagers on the global hub and stays registered,
+			// since other EntityManagers may still emit on it.
+			$globalHub = SignalHubLocator::getInstance();
+			$this->debugQuerySignal = $globalHub->getSignal('debug.database.query');
 			
 			if ($this->debugQuerySignal === null) {
 				$this->debugQuerySignal = new Signal('debug.database.query');
-				$this->signalHub->registerSignal($this->debugQuerySignal);
+				$globalHub->registerSignal($this->debugQuerySignal);
 			}
 		}
 		
 		/**
-		 * Remove signal from hub. Uses isset() rather than !== null so a
-		 * constructor-bypassed instance (e.g. a PHPUnit mock with the
-		 * constructor disabled) destructs safely instead of fataling on
-		 * the uninitialized typed property — isset() returns false for an
-		 * uninitialized typed property instead of throwing, unlike a direct
-		 * read.
+		 * Returns this EntityManager's own signal hub, holding its orm.* lifecycle signals
+		 * @return SignalHub
 		 */
-		public function __destruct() {
-			if (isset($this->debugQuerySignal)) {
-				$this->signalHub->unregisterSignal($this->debugQuerySignal);
-			}
+		public function getSignalHub(): SignalHub {
+			return $this->signalHub;
 		}
 		
 		/**
