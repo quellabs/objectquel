@@ -141,12 +141,8 @@
 				$rightAst = $ast->getRight();
 				
 				// Check if right side is a wildcard string pattern
-				if ($rightAst instanceof AstString) {
-					$wildcardResult = $this->handleWildcardString($rightAst, $ast, $operator);
-					
-					if ($wildcardResult !== null) {
-						return $wildcardResult;
-					}
+				if ($rightAst instanceof AstString && $rightAst->hasWildcards()) {
+					return $this->handleWildcardString($rightAst, $ast, $operator);
 				}
 				
 				// Check if right side is a regular expression pattern
@@ -976,17 +972,13 @@
 		}
 		
 		/**
-		 * Converts a comparison against a string with unescaped * or ? wildcards into LIKE / NOT LIKE; null when it has none.
-		 * @param AstString $rightAst The string containing potential wildcards
+		 * Converts a comparison against a string with unescaped * or ? wildcards into LIKE / NOT LIKE.
+		 * @param AstString $rightAst The string containing wildcards
 		 * @param NodeBinary $ast The full expression
 		 * @param string $operator The comparison operator (= or <>)
-		 * @return string|null The LIKE expression, or null if no wildcards found
+		 * @return string The LIKE expression
 		 */
-		private function handleWildcardString(AstString $rightAst, NodeBinary $ast, string $operator): ?string {
-			if (!$rightAst->hasWildcards()) {
-				return null;
-			}
-
+		private function handleWildcardString(AstString $rightAst, NodeBinary $ast, string $operator): string {
 			$leftResult = $this->operandSql($ast->getLeft(), self::OPERATOR_PRECEDENCE[$operator] ?? null, false, false);
 			$likeOperator = $operator === '=' ? ' LIKE ' : ' NOT LIKE ';
 			$pattern = $this->identifierQuoter->quoteStringLiteral(WildcardPattern::toSqlLike($rightAst));
