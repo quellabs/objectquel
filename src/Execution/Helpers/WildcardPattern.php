@@ -13,12 +13,12 @@
 		public const string ESCAPE_CHAR = '\\';
 
 		/**
-		 * Builds an SQL LIKE pattern: wildcards become % and _, literal %, _ and \ are escaped.
+		 * Builds an SQL LIKE pattern: wildcards become % and _; literal %, _, [ and \ are escaped ([ opens a class in T-SQL LIKE).
 		 * @param AstString $string String literal containing wildcards
 		 * @return string
 		 */
 		public static function toSqlLike(AstString $string): string {
-			return self::build($string, ['*' => '%', '?' => '_'], '%_\\');
+			return self::build($string, ['*' => '%', '?' => '_'], '%_[\\');
 		}
 
 		/**
