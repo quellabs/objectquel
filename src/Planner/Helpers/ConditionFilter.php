@@ -163,8 +163,8 @@
 		 *
 		 * An expression is DB-compatible when at least one side references a DB range
 		 * and the other side is either also a DB range (join) or a plain literal
-		 * (scalar filter). Expressions where one side is a non-DB range (e.g. JSON)
-		 * are excluded.
+		 * (scalar filter), or when it references no range at all (constant condition).
+		 * Expressions where one side is a non-DB range (e.g. JSON) are excluded.
 		 * @param AstExpression $expr The comparison expression to test
 		 * @param array<int, AstRange> $dbRanges Ranges that can be handled by the database
 		 * @return bool
@@ -187,8 +187,9 @@
 			if ($rightDb && $this->analyzer->isConstantExpression($expr->getLeft())) {
 				return true;
 			}
-			
-			return false;
+
+			// literal op literal — a constant condition the database can evaluate
+			return $this->analyzer->isConstantExpression($expr);
 		}
 		
 		/**
