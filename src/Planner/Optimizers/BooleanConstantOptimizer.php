@@ -200,6 +200,11 @@
 			if (!$left instanceof AstBool && BooleanExpressionClassifier::isScalarValue($left)) {
 				return null;
 			}
+
+			// Literal 1/0 is only a boolean constant against a boolean operand; `2 = 1` is an integer comparison.
+			if ($left->getReturnType() !== 'boolean') {
+				return null;
+			}
 			
 			// expr = true  → expr (identity)
 			// expr = false → NOT(expr) (negation)
